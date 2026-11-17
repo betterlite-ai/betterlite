@@ -394,3 +394,10 @@ path = "fuzz_targets/fal_video_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "assemblyai_transcript"
+path = "fuzz_targets/assemblyai_transcript.rs"
+test = false
+doc = false
+bench = false

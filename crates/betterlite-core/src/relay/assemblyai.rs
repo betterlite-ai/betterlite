@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::user_url::split::urlparse;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_models::decisions::Json;
@@ -75,7 +76,11 @@ impl Default for AssemblyAiSettings {
 // _get_assembly_region_from_url, for the relay route and the logging handler alike
 #[must_use]
 pub fn assembly_region_from_url(url: Option<&str>) -> Option<&'static str> {
-    if hostname(url?).is_some_and(|host| host.eq_ignore_ascii_case(EU_HOST)) {
+    if urlparse(url?, "")
+        .ok()?
+        .hostname()
+        .is_some_and(|host| host == EU_HOST)
+    {
         return Some(EU_REGION);
     }
     None
@@ -89,32 +94,6 @@ pub fn assembly_base_url_from_region(region: Option<&str>) -> &'static str {
     } else {
         ROUTING_BASE_URL
     }
-}
-
-// urlparse(url).hostname: the host of an absolute or scheme-relative URL
-fn hostname(url: &str) -> Option<&str> {
-    let url = url.trim();
-    let authority = scheme_end(url).unwrap_or(url).strip_prefix("//")?;
-    let end = authority.find(['/', '?', '#']).unwrap_or(authority.len());
-    let netloc = authority.get(..end)?;
-    let host_port = netloc.rsplit_once('@').map_or(netloc, |split| split.1);
-    if let Some(rest) = host_port.strip_prefix('[') {
-        let close = rest.find(']')?;
-        return rest.get(..close).filter(|host| !host.is_empty());
-    }
-    let host = host_port.split_once(':').map_or(host_port, |split| split.0);
-    (!host.is_empty()).then_some(host)
-}
-
-// What urlsplit reads as the URL scheme, and the text after its colon
-fn scheme_end(url: &str) -> Option<&str> {
-    let colon = url.find(':')?;
-    let scheme = url.get(..colon)?;
-    let mut bytes = scheme.bytes();
-    let first = bytes.next()?;
-    let named = first.is_ascii_alphabetic()
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'));
-    if named { url.get(colon + 1..) } else { None }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -246,6 +225,35 @@ where
 
     // _handle_assemblyai_passthrough_logging: read the submitted job, poll it, price it, then dispatch
     pub async fn run(&self, call: &AssemblyLogCall) -> Result<(), AssemblyAiError> {
+        let (spend, response) = self.poll_spend(call).await?;
+        let mut kwargs = call.kwargs.clone();
+        kwargs
+            .entries
+            .insert("model".to_owned(), Json::Text(spend.model.clone()));
+        kwargs.entries.insert(
+            "custom_llm_provider".to_owned(),
+            Json::Text(ASSEMBLY_AI_PROVIDER.to_owned()),
+        );
+        self.ports
+            .sink
+            .handle_logging(AssemblyTranscriptLog {
+                response: PassThroughResponse::Transcription(response),
+                spend,
+                result: call.result.clone(),
+                start_time: call.start_time,
+                end_time: call.end_time,
+                cache_hit: call.cache_hit,
+                kwargs,
+            })
+            .await;
+        Ok(())
+    }
+
+    // The submitted job's transcript, polled to an answer and priced by speech model
+    async fn poll_spend(
+        &self,
+        call: &AssemblyLogCall,
+    ) -> Result<(MediaSpend, Json), AssemblyAiError> {
         let empty = IndexMap::new();
         let body = match &call.response_body {
             Json::Object(fields) => fields,
@@ -266,27 +274,7 @@ where
             custom_llm_provider: ASSEMBLY_AI_PROVIDER,
             response_cost,
         };
-        let mut kwargs = call.kwargs.clone();
-        kwargs
-            .entries
-            .insert("model".to_owned(), Json::Text(spend.model.clone()));
-        kwargs.entries.insert(
-            "custom_llm_provider".to_owned(),
-            Json::Text(ASSEMBLY_AI_PROVIDER.to_owned()),
-        );
         let response = transcript.map_or_else(|| Json::Object(IndexMap::new()), Json::Object);
-        self.ports
-            .sink
-            .handle_logging(AssemblyTranscriptLog {
-                response: PassThroughResponse::Transcription(response),
-                spend,
-                result: call.result.clone(),
-                start_time: call.start_time,
-                end_time: call.end_time,
-                cache_hit: call.cache_hit,
-                kwargs,
-            })
-            .await;
-        Ok(())
+        Ok((spend, response))
     }
 }

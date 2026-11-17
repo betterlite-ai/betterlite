@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::ffi::OsStr;
+use std::fs;
 use std::future::{Future, ready};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -21,7 +24,7 @@ use serde_json::Number;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
-use super::poll::TokioSleeper;
+use super::poll::{TokioSleeper, decode_assembly_transcript};
 use super::{
     AssemblyAiError, AssemblyAiLogging, AssemblyAiPorts, AssemblyAiSettings,
     AssemblyCredentialSource, AssemblyLogCall, AssemblySleeper, AssemblyTranscriptLog,
@@ -420,7 +423,11 @@ fn default_settings_match_litellm() {
 #[case::no_scheme(Some("eu.assemblyai.com/v2/transcript"), None)]
 #[case::empty(Some(""), None)]
 #[case::ipv6(Some("https://[::1]/x"), None)]
-#[case::bracketed_eu(Some("https://[eu.assemblyai.com]/x"), Some("eu"))]
+#[case::bracketed_eu(Some("https://[eu.assemblyai.com]/x"), None)]
+#[case::interior_tab(Some("https://eu.assemblyai.com\t/x"), Some("eu"))]
+#[case::interior_newline(Some("https://eu.assemblyai.com\n/x"), Some("eu"))]
+#[case::host_before_space(Some("https://eu.assemblyai.com /x"), None)]
+#[case::nfkc_rejected(Some("https://eu.assemblyai.com\u{2100}/x"), None)]
 #[case::numeric_scheme(Some("1https://eu.assemblyai.com/x"), None)]
 #[case::empty_authority(Some("https:///x"), None)]
 fn assembly_region_follows_the_url_host(#[case] url: Option<&str>, #[case] expected: Option<&str>) {
@@ -890,4 +897,29 @@ fn logging_outside_a_runtime_skips_the_poll() {
         (harness.sink.count(), harness.transport.request_count()),
         (0, 0)
     );
+}
+
+#[rstest::rstest]
+fn replays_the_assembly_transcript_corpus(
+    #[files("fuzz/corpus/assemblyai_transcript/*")] path: PathBuf,
+) {
+    let name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default()
+        .to_owned();
+    let bytes = fs::read(&path).expect("a corpus file is readable");
+    let outcome = decode_assembly_transcript(&bytes);
+    if name.starts_with("rejected-") {
+        assert!(
+            matches!(outcome, Err(AssemblyAiError::TranscriptShape)),
+            "{name}"
+        );
+        return;
+    }
+    if name.starts_with("ok-tolerated-") {
+        assert!(matches!(outcome, Ok(None)), "{name}");
+        return;
+    }
+    assert!(matches!(outcome, Ok(Some(_))), "{name}");
 }

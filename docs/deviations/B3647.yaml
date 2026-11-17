@@ -34,6 +34,17 @@ deviations:
       inf and the spend is recorded as an infinite cost. betterlite's money rule keeps every cost
       in rust_decimal::Decimal, which cannot represent that value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L245
+  - what: >-
+      A relay route that urllib rejects (a bracketed host that is not an IP address, or a
+      netloc its NFKC check refuses) reads as no region, so the transcript is polled on the
+      default base and the spend is logged; LiteLLM lets the ValueError escape
+      _get_assembly_region_from_url and logs nothing.
+    why: >-
+      LiteLLM calls urlparse(url) outside any try in _get_assembly_region_from_url, so the
+      executor thread dies before the transcript is polled and a working setup loses the
+      spend. betterlite reuses the same urllib-compatible parser and treats its rejection as
+      an absent host, which keeps the spend on the default base instead of discarding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L289-L297
 kept_bugs:
   - what: >-
       The poll sleeps one polling interval after the last allowed attempt too, so giving up after

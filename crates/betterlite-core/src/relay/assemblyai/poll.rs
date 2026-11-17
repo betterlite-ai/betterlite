@@ -41,6 +41,20 @@ impl AssemblySleeper for TokioSleeper {
     }
 }
 
+// The provider's answer: a null body reads as absent, an object as the transcript, the rest is a shape error
+pub fn decode_assembly_transcript(
+    body: &[u8],
+) -> Result<Option<IndexMap<String, Json>>, AssemblyAiError> {
+    let Ok(answer) = serde_json::from_slice::<Json>(body) else {
+        return Ok(None);
+    };
+    match answer {
+        Json::Null => Ok(None),
+        Json::Object(fields) => Ok(Some(fields)),
+        _ => Err(AssemblyAiError::TranscriptShape),
+    }
+}
+
 impl<Credentials, Transport, Pricing, Sleeper, Sink>
     AssemblyAiLogging<Credentials, Transport, Pricing, Sleeper, Sink>
 where
@@ -103,13 +117,6 @@ where
         if response.status >= 400 {
             return Ok(None);
         }
-        let Ok(answer) = serde_json::from_slice::<Json>(&response.body) else {
-            return Ok(None);
-        };
-        match answer {
-            Json::Null => Ok(None),
-            Json::Object(fields) => Ok(Some(fields)),
-            _ => Err(AssemblyAiError::TranscriptShape),
-        }
+        decode_assembly_transcript(&response.body)
     }
 }
