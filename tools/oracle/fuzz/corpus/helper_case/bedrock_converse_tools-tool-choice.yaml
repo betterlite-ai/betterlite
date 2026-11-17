@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-converse-tools-tool-choice
+call:
+  bedrock_converse_tools:
+    function: tool_choice
+    model: amazon.nova-pro-v1:0
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true}
+    tool_choice: required
+    global_drop: true
+    call_drop: false
+env: {}
+compare: {ignore: []}
