@@ -315,6 +315,7 @@ async fn basic_retrieve() {
     let batch = run_retrieve(&handler, &request, &mut state).await.unwrap();
     assert_eq!(batch.id, "msgbatch_9");
     assert_eq!(batch.status, BatchStatus::Completed);
+    assert_eq!(fixture.sent(), 1);
     let sent = fixture.only_request();
     assert_eq!(sent.method, Method::GET);
     assert_eq!(
