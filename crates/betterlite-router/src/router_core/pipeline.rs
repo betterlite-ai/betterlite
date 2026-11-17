@@ -1,6 +1,10 @@
+mod filters;
+
 use betterlite_models::decisions::Json;
+use betterlite_models::deployment_filters::get_order_filtered_deployments;
 use rand::Rng;
 
+use self::filters::{pre_call_pool, static_pool};
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::lookup::CatalogResolver;
 use crate::deployment_catalog::types::{AliasStep, Candidates, CatalogMatch, LookupRequest};
@@ -116,12 +120,15 @@ fn single_route(
             enable_pre_call_checks: false,
             drop_params: context.policy.drop_params,
         },
-        &eligibility_services(context),
+        &EligibilityServices {
+            limits: context.limits,
+            params: context.params,
+        },
     )?;
-    let Some(deployment) = filtered.deployments.into_iter().next() else {
+    let Some(selected) = filtered.deployments.into_iter().next() else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, deployment, None))
+    Ok(attempt(context, resolved, selected, None))
 }
 
 async fn pool_route<R>(
@@ -163,29 +170,26 @@ async fn narrowed_pool(
     pool: Vec<DeploymentSpec>,
 ) -> Result<CandidateSet, RoutingError> {
     let candidates = CandidateSet { deployments: pool };
-    let pool = context::run(RouteStage::AccessWindows, candidates, context).await?;
-    let filtered = eligible(
-        EligibilityInput {
-            model: group,
-            candidates: Candidates::Pool(pool.deployments),
-            facts: context.request.facts,
-            environment: context.request.environment,
-            enable_pre_call_checks: context.policy.enable_pre_call_checks,
-            drop_params: context.policy.drop_params,
-        },
-        &eligibility_services(context),
-    )?;
+    let windowed = context::run(RouteStage::AccessWindows, candidates, context).await?;
     let mut set = CandidateSet {
-        deployments: filtered.deployments,
+        deployments: static_pool(context, windowed.deployments)?,
     };
     set = context::run(RouteStage::CooldownState, set, context).await?;
     set = CandidateSet {
         deployments: without_blocked(set.deployments),
     };
     let kept = context.services.filter_deployments(set.deployments)?;
-    set = CandidateSet { deployments: kept };
+    set = CandidateSet {
+        deployments: pre_call_pool(context, group, kept)?,
+    };
     set = context::run(RouteStage::TagRouting, set, context).await?;
     set = context::run(RouteStage::RoutingPlugins, set, context).await?;
+    set = CandidateSet {
+        deployments: get_order_filtered_deployments(
+            set.deployments,
+            context.request.facts.target_order,
+        ),
+    };
     set = set.excluded(context.request.excluded_deployment_ids);
     let without_skipped = set
         .clone()
@@ -229,15 +233,6 @@ where
     )
     .await?;
     Ok(Some((strategy, index)))
-}
-
-fn eligibility_services<'services>(
-    context: &'services RouteContext<'_>,
-) -> EligibilityServices<'services> {
-    EligibilityServices {
-        limits: context.limits,
-        params: context.params,
-    }
 }
 
 // async_raise_no_deployment_exception, in the fields the proxy and the caller read back
