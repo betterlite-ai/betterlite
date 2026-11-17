@@ -1,11 +1,8 @@
-use std::fs;
-use std::path::Path;
-use std::process;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use betterlite_core::api::responses_usage::{Usage, UsageInput, normalize_usage};
+use betterlite_router::retry_policy::retry_after::parse_retry_after;
 use betterlite_router::router_observations::RouterObservations;
 use betterlite_router::router_observations::failure::{self, AsyncFailureEvent, FailureEvent};
 use betterlite_router::router_observations::keys::{outcome_keys, usage_keys};
@@ -21,7 +18,7 @@ use crate::router_probes::random::InjectedRandom;
 mod input;
 mod stores;
 
-use self::input::{FailureInput, Payload, Step, deployment_usage, failure_facts, retry_after};
+use self::input::{FailureInput, Payload, Step, deployment_usage, failure_facts};
 use self::stores::{ProbeCooldowns, ProbeCounters};
 
 // the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
@@ -142,14 +139,17 @@ impl<'payload> Scenario<'payload> {
     }
 
     fn failure(&self, failure: &FailureInput) -> Result<bool, OperationError> {
-        let facts = failure_facts(failure);
+        let facts = failure_facts(failure)?;
         let event = FailureEvent {
             deployment_id: Some(&self.payload.catalog.target_id),
             failure: &facts,
             requested_model_group: Some(&self.payload.catalog.model_group),
             model_info_cooldown_time: self.payload.deployment.info_cooldown_time,
             litellm_params_cooldown_time: self.payload.deployment.params_cooldown_time,
-            retry_after: retry_after(failure),
+            retry_after: failure
+                .retry_after
+                .as_deref()
+                .and_then(|value| parse_retry_after(value.as_bytes()).ok()),
         };
         failure::on_failure(&self.observations(), &event, self.payload.now_millis)
             .map_err(|error| invalid(&error.to_string()))
@@ -212,14 +212,7 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    dump_diagnostic("payload", &serde_json::to_string(input).unwrap_or_default());
-    let outcome = run_steps(&input.0);
-    dump_diagnostic("outcome", &format!("{outcome:?}"));
-    outcome
-}
-
-fn run_steps(payload: &Payload) -> Result<ProbeOutput, OperationError> {
-    let scenario = Scenario::new(payload)?;
+    let scenario = Scenario::new(&input.0)?;
     let mut metadata = ObservationMetadata::default();
     let mut steps = Vec::with_capacity(scenario.payload.steps.len());
     for step in &scenario.payload.steps {
@@ -227,15 +220,6 @@ fn run_steps(payload: &Payload) -> Result<ProbeOutput, OperationError> {
         steps.push(scenario.observe(key, cooldown));
     }
     Ok(ProbeOutput::RouterObservations(Output { steps }))
-}
-
-fn dump_diagnostic(name: &str, body: &str) {
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(".git/betterlite/B397/gate");
-    let _created = fs::create_dir_all(&directory);
-    let path = directory.join(format!("b397-{name}-{}.txt", process::id()));
-    let _written = fs::write(path, body);
 }
 
 fn group_id(target_id: &str, index: u32) -> String {

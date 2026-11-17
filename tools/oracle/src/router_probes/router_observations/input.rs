@@ -4,8 +4,9 @@ use betterlite_router::cooldown_decisions::failure::{
     ErrorStatus, FailureClass, FailureFacts, Seconds, TimeoutFacts,
 };
 use betterlite_router::cooldown_decisions::policy::AllowedFailsPolicy;
-use betterlite_router::retry_policy::retry_after::{RetryAfter, parse_retry_after};
 use betterlite_router::router_observations::usage::DeploymentUsage;
+
+use crate::router_probes::error::OperationError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,12 +82,13 @@ impl Default for RouterInput {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// a float inside a step reaches serde's content buffer as a map under serde_json's arbitrary_precision, so the step carries seconds as text
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CallerTimeout {
     pub client_side_timeout: bool,
-    pub timeout_seconds: Option<Seconds>,
-    pub elapsed_seconds: Option<Seconds>,
+    pub timeout_seconds: Option<String>,
+    pub elapsed_seconds: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,22 +155,38 @@ pub(super) fn deployment_usage(limits: &Limits) -> DeploymentUsage {
     }
 }
 
-pub(super) fn failure_facts(failure: &FailureInput) -> FailureFacts {
-    FailureFacts {
+pub(super) fn failure_facts(failure: &FailureInput) -> Result<FailureFacts, OperationError> {
+    let caller_timeout = match failure.caller_timeout.as_ref() {
+        Some(timeout) => Some(TimeoutFacts {
+            client_side_timeout: timeout.client_side_timeout,
+            timeout_seconds: timeout
+                .timeout_seconds
+                .as_deref()
+                .map(seconds)
+                .transpose()?,
+            elapsed_seconds: timeout
+                .elapsed_seconds
+                .as_deref()
+                .map(seconds)
+                .transpose()?,
+        }),
+        None => None,
+    };
+    Ok(FailureFacts {
         class: failure.class_name,
         status: failure.status.clone(),
         advisor_orchestration: failure.advisor_orchestration,
         background_response_cost_poll: failure.background_response_cost_poll,
         wrapped_exception: None,
-        caller_timeout: failure.caller_timeout.map(|timeout| TimeoutFacts {
-            client_side_timeout: timeout.client_side_timeout,
-            timeout_seconds: timeout.timeout_seconds,
-            elapsed_seconds: timeout.elapsed_seconds,
-        }),
-    }
+        caller_timeout,
+    })
 }
 
-pub(super) fn retry_after(failure: &FailureInput) -> Option<RetryAfter> {
-    let value = failure.retry_after.as_deref()?;
-    parse_retry_after(value.as_bytes()).ok()
+fn seconds(text: &str) -> Result<Seconds, OperationError> {
+    let value = text
+        .parse::<f64>()
+        .map_err(|error| OperationError::InvalidRequest {
+            message: format!("the caller timeout {text} is not a number of seconds: {error}"),
+        })?;
+    Ok(Seconds(value))
 }
