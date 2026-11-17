@@ -155,15 +155,13 @@ fn predict_text_embedding_builds_the_response_and_prices_it() {
 
 #[test]
 fn predict_text_embedding_sums_the_token_counts() {
-    let body = TEXT_BODY;
-    let fixture = fixture(PREDICT_ROUTE, body);
+    let fixture = fixture(PREDICT_ROUTE, TEXT_BODY);
     let cost = priced();
     let logger = VertexPredictLogger::new(cost.clone());
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the embedding reply is logged");
-    let result = result_json(&outcome);
-    let usage = field(&result, "usage");
+    let usage = field(&result_json(&outcome), "usage");
     assert_eq!(integer(field(usage, "prompt_tokens")), 5);
     assert_eq!(integer(field(usage, "completion_tokens")), 0);
     assert_eq!(integer(field(usage, "total_tokens")), 5);
@@ -177,6 +175,15 @@ fn predict_text_embedding_sums_the_token_counts() {
         Some("text-embedding-004")
     );
     assert_eq!(calls[0].usage, Some((5, 0, 5)));
+}
+
+#[test]
+fn predict_text_embedding_writes_the_kwargs_and_the_logging_details() {
+    let fixture = fixture(PREDICT_ROUTE, TEXT_BODY);
+    let logger = VertexPredictLogger::new(priced());
+    let outcome = logger
+        .handle_predict_response(predict_input(&fixture))
+        .expect("the embedding reply is logged");
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "0.0007");
     assert_eq!(logged_model(&fixture.logging_obj), "text-embedding-004");
     assert_eq!(

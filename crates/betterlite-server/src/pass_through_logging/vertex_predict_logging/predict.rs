@@ -45,43 +45,42 @@ pub(super) fn predict(
     let body = decode_body(input.response_body)?;
     let fields = object_fields(&body)?;
     let model = extract_model_from_url(input.url_route);
-    let provider = CustomLlmProvider::VertexAi;
     if let Some(response_cost) = audio_cost(fields, &model, catalog)? {
-        let spend = MediaSpend {
-            model,
-            custom_llm_provider: provider.as_str(),
-            response_cost: Some(response_cost),
-        };
         let result = PassThroughResponse::Standard(PassThroughResponseObject { response: body });
-        return Ok(spend::outcome(
-            input.logging_obj,
-            &spend,
-            result,
-            &input.kwargs,
-        ));
+        return Ok(priced_outcome(input, model, response_cost, result));
     }
     let prediction = prediction(input, &body, fields, &model)?;
     let response_cost = cost_service
         .completion_cost(&CompletionCostRequest {
             response: &prediction.cost_response,
             model: &model,
-            custom_llm_provider: provider,
+            custom_llm_provider: CustomLlmProvider::VertexAi,
             vertex_location: get_vertex_location_from_url(input.url_route),
         })
         .ok_or_else(|| VertexPredictError::Cost {
             model: model.clone(),
         })?;
+    Ok(priced_outcome(
+        input,
+        model,
+        response_cost,
+        prediction.result,
+    ))
+}
+
+// Both priced paths write the same three keys and the same logging fields, with the literal vertex_ai provider.
+fn priced_outcome(
+    input: &VertexPredictInput<'_>,
+    model: String,
+    response_cost: Decimal,
+    result: PassThroughResponse,
+) -> HandlerOutcome {
     let spend = MediaSpend {
         model,
-        custom_llm_provider: provider.as_str(),
+        custom_llm_provider: CustomLlmProvider::VertexAi.as_str(),
         response_cost: Some(response_cost),
     };
-    Ok(spend::outcome(
-        input.logging_obj,
-        &spend,
-        prediction.result,
-        &input.kwargs,
-    ))
+    spend::outcome(input.logging_obj, &spend, result, &input.kwargs)
 }
 
 // The audio price is the Lyria catalog price times the counted predictions; the cost trait is never called.
