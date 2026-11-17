@@ -54,7 +54,7 @@ struct RecordingCost {
 }
 
 impl RecordingCost {
-    fn new(price: Decimal) -> Self {
+    const fn new(price: Decimal) -> Self {
         Self {
             price,
             calls: Mutex::new(Vec::new()),
@@ -112,15 +112,15 @@ impl Helper for Op {
                     kwargs,
                 }),
         };
-        match outcome {
-            Ok(handled) => view::outcome_view(&handled, &logging_obj, &cost),
-            Err(_) => Ok(json!({ "failed": true })),
-        }
+        outcome.map_or_else(
+            |_error| Ok(json!({ "failed": true })),
+            |handled| view::outcome_view(&handled, &logging_obj, &cost),
+        )
     }
 }
 
 fn request_body(value: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
     value
-        .map(|value| serde_json::from_value(value.clone()).or_value_error())
+        .map(|body| serde_json::from_value(body.clone()).or_value_error())
         .transpose()
 }

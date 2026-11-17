@@ -157,8 +157,10 @@ fn logging_view(logging_obj: &StreamLoggingObject) -> Result<Value, Box<HelperEr
 }
 
 fn cost_view(cost: &RecordingCost) -> Value {
-    let calls = cost.calls.lock().unwrap_or_else(PoisonError::into_inner);
-    let rendered: Vec<Value> = calls
+    let rendered: Vec<Value> = cost
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
         .iter()
         .map(|call| {
             json!({
