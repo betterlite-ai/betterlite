@@ -1,0 +1,105 @@
+task: B9450
+deviations:
+  - what: >-
+      A failure to assemble the buffered chunks, to turn the assembled chat response into the
+      guardrail's Fields, or to rebuild the stream after a redaction answers with the scan-error SSE
+      event (guardrail_scan_error, 500) and withholds the chunks.
+    why: >-
+      LiteLLM reaches its except Exception branch for these failures as well, but here inspect_chat
+      returns an outcome instead of raising and B2227's builder error has no path back to the caller,
+      so the stream is withheld for safety instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L513-L526
+  - what: >-
+      The rebuilt single chunk carries the assembled response's usage, whose counts are zero when the
+      stream carried no usage and no tokenizer is injected on the scan path.
+    why: >-
+      LiteLLM's stream_chunk_builder counts completion and prompt tokens through litellm.token_counter
+      while rebuilding, so its rebuilt chunk can report nonzero counts where betterlite reports zeros.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L56-L60
+  - what: >-
+      The rebuilt chunk is B010's convert_model_response_to_streaming ported locally into
+      cisco_stream_scan/rebuild.rs, producing one Chunk record with the delta taken from the
+      assembled message, instead of calling a shared B010 helper.
+    why: >-
+      betterlite has no MockResponseIterator yet; when B010 lands, this module should call it and
+      drop the local conversion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L19-L63
+  - what: >-
+      The MCP hook records applied_guardrails only in its private copy of the copied kwargs, so the
+      entry does not reach the logger's model_call_details.
+    why: >-
+      LiteLLM's copied metadata value is the same dict object as kwargs['metadata'], so its
+      add_guardrail_to_applied_guardrails_header write lands in the caller's metadata; B9650's
+      McpToolHookCall exposes kwargs immutably, so the hook cannot write it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L164
+  - what: >-
+      The first buffered item counts as an unsupported streaming shape when its first choice carries
+      a text-completion text field, not when a Python isinstance against ModelResponse or
+      ModelResponseStream fails.
+    why: >-
+      The buffered items here are typed chat-chunk records, so the text-completion choice field is
+      the only shape the type still carries; any other non-chat item cannot reach this hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L458-L465
+  - what: >-
+      A logger response copy whose extracted tool response is null answers Ok(None) without
+      scanning and without recording the guardrail.
+    why: >-
+      LiteLLM's _extract_mcp_tool_call_response never returns None (it falls back to the response
+      object), so its own no-payload branch is unreachable too; B9650's dispatch always builds the
+      copy from a content list, which is never null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L276-L281
+  - what: >-
+      With original_response present, an MCP output redaction rewrites call.original's text content
+      but leaves the original's structured_content / structuredContent mirror with its old text.
+    why: >-
+      LiteLLM runs _set_mcp_tool_response_text against the original object, so it also replaces the
+      mirror with {"result": <sanitized text>}; inspect_mcp_response computes its TextUpdate against
+      the scanned response (the copy's content list), and TextUpdate carries neither the mirror nor
+      the sanitized text, so the hook cannot update the original's mirror without changing B3762's
+      entry point.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L532-L575
+  - what: >-
+      With original_response present, an MCP output block rewrites call.original's text content but
+      leaves the original's structured_content / structuredContent mirror and is_error unchanged.
+    why: >-
+      LiteLLM's _replace_mcp_tool_response also sets the mirror to the replacement's structured
+      content and is_error to true on the original object; B9450's replace_tool_response only
+      rewrites content, and the block payload carries no value for either field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L214-L243
+  - what: >-
+      The synthesized MCP violation message's text content is the block payload in compact JSON
+      (serde_json's formatting), not in Python's json.dumps spacing.
+    why: >-
+      LiteLLM builds the blocking TextContent with json.dumps(payload) (", " and ": " separators);
+      betterlite serializes the same payload with serde_json, which emits no spaces. The parsed JSON
+      is identical, so the oracle cases compare the text after parsing it, and a client that parses
+      the text sees no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense_mcp.py#L175-L213
+  - what: >-
+      The buffered stream is capped at the API boundary limits (64 Ki chunks and 16 MiB of serialized chunk JSON);
+      a stream over either cap is withheld and answers the scan-error SSE event (guardrail_scan_error, 500), on the
+      scanned path and on both passthrough branches.
+    why: >-
+      LiteLLM appends every chunk to an unbounded list, so an untrusted provider answer grows its memory without
+      limit; betterlite bounds the buffer the way the noma streaming hook does, with ApiLimits::default() and
+      RetentionBudget, so a stream over the cap now fails where LiteLLM buffered and delivered it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L444-L453
+  - what: >-
+      On both passthrough branches (inspection type other than chat, and a false post_call gate) scan_stream returns
+      the chunks as one list after the upstream stream ends, so an unscanned stream's first byte waits for the whole
+      answer and a stream that never ends delivers nothing.
+    why: >-
+      LiteLLM yields each chunk as it arrives on these branches. scan_stream's signature returns a Vec of items, so
+      the caller cannot see a chunk before the stream finishes; the caller that composes the hook (B8666) can skip
+      scan_stream for these two branches and forward the provider stream itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L429-L437
+  - what: >-
+      A streamed chunk whose reasoning lives only in the delta's reasoning_items is not part of the scanned text, so
+      a flagged reasoning item is delivered unscanned.
+    why: >-
+      LiteLLM's streamed Delta declares reasoning_items and _extract_message_reasoning_parts reads each item's summary
+      text and its text, reasoning and reasoning_content keys. B2227's Delta record has no such field and drops it
+      when the chunk is read, so the hook never sees it; the field has to be added to that record (B2227's file,
+      outside this task's scope) and read in scan_text.rs delta_fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L2049-L2057
+kept_bugs: []

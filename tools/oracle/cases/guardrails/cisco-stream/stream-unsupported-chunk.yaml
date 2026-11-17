@@ -1,0 +1,13 @@
+kind: helper
+name: stream-unsupported-chunk
+call:
+  b9450:
+    operation: stream
+    settings: {api_key: oracle-key, inspection_type: chat}
+    request_data: {metadata: {}}
+    chunks:
+      - {id: cmpl-1, object: text_completion, created: 1, model: gpt-3.5-turbo-instruct, choices: [{index: 0, text: "hi", finish_reason: null}]}
+    should_run: true
+    answer: {status: 200, headers: {}, body: {action: allow}}
+env: {}
+compare: {ignore: []}
