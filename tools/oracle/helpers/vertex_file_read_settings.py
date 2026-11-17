@@ -21,7 +21,7 @@ def run(input_value: Input) -> dict[str, str | None]:
         os.environ.pop(name, None)
     for name, value in input_value["environment"].items():
         os.environ[name] = value
-    handler = VertexAIFilesHandler()
+    handler = VertexAIFilesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/handler.py#L40
     bucket_name, service_account = handler._resolve_read_gcs_config(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/handler.py#L46-L77
         litellm_params=input_value["params"],
         vertex_credentials=input_value["argument"],
