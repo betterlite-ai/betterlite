@@ -42,70 +42,36 @@ pub struct FamilyFields {
 
 #[must_use]
 pub fn family_fields(class: &ErrorClass) -> FamilyFields {
-    match class {
-        ErrorClass::Authentication(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::NotFound(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::PermissionDenied(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::UnprocessableEntity(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "Exception",
-        },
+    let (message, missing_type_name) = match class {
+        ErrorClass::Authentication(details) => (details.message.clone(), "Exception"),
+        ErrorClass::NotFound(details) => (details.message.clone(), "Exception"),
+        ErrorClass::PermissionDenied(details) => (details.message.clone(), "Exception"),
+        ErrorClass::UnprocessableEntity(details) => (details.message.clone(), "Exception"),
         ErrorClass::BadRequest(details)
         | ErrorClass::ContextWindowExceeded(details)
-        | ErrorClass::ContentPolicyViolation(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::GuardrailRaised(details) => FamilyFields {
-            message: details.message.clone(),
-            missing_type_name: "GuardrailRaisedException",
-        },
-        ErrorClass::Timeout(details) => FamilyFields {
-            message: details.context.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::RateLimit(details) => FamilyFields {
-            message: details.context.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::BudgetExceeded(details) => FamilyFields {
-            message: budget_message(details),
-            missing_type_name: "BudgetExceededError",
-        },
+        | ErrorClass::ContentPolicyViolation(details) => (details.message.clone(), "Exception"),
+        ErrorClass::GuardrailRaised(details) => {
+            (details.message.clone(), "GuardrailRaisedException")
+        }
+        ErrorClass::Timeout(details) => (details.context.message.clone(), "Exception"),
+        ErrorClass::RateLimit(details) => (details.context.message.clone(), "Exception"),
+        ErrorClass::BudgetExceeded(details) => (budget_message(details), "BudgetExceededError"),
         ErrorClass::ServiceUnavailable(context)
         | ErrorClass::BadGateway(context)
         | ErrorClass::InternalServer(context)
         | ErrorClass::ApiConnection(context)
         | ErrorClass::ApiResponseValidation(context)
-        | ErrorClass::Unclassified(context) => FamilyFields {
-            message: context.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::UnsupportedParams(context) => FamilyFields {
-            message: context.message.clone(),
-            missing_type_name: "UnsupportedParamsError",
-        },
-        ErrorClass::Api(details) => FamilyFields {
-            message: details.context.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::MidStreamFallback(details) => FamilyFields {
-            message: details.context.message.clone(),
-            missing_type_name: "Exception",
-        },
-        ErrorClass::JsonSchemaValidation(details) => FamilyFields {
-            message: schema_message(details),
-            missing_type_name: "Exception",
-        },
+        | ErrorClass::Unclassified(context) => (context.message.clone(), "Exception"),
+        ErrorClass::UnsupportedParams(context) => {
+            (context.message.clone(), "UnsupportedParamsError")
+        }
+        ErrorClass::Api(details) => (details.context.message.clone(), "Exception"),
+        ErrorClass::MidStreamFallback(details) => (details.context.message.clone(), "Exception"),
+        ErrorClass::JsonSchemaValidation(details) => (schema_message(details), "Exception"),
+    };
+    FamilyFields {
+        message,
+        missing_type_name,
     }
 }
 
