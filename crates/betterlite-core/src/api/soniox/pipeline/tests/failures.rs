@@ -184,7 +184,7 @@ async fn an_invalid_duration_after_the_post_call_keeps_the_built_response() {
     let PipelineError::Duration { field, value } = &error else {
         panic!("expected the duration error, got {error:?}");
     };
-    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(*field, "audio_duration_ms");
     assert_eq!(value, "\"nope\"");
     assert_eq!(
         effects.kinds(),
@@ -387,7 +387,7 @@ async fn a_numeric_string_duration_is_refused_where_python_reads_a_float() {
     let PipelineError::Duration { field, value } = &error else {
         panic!("expected the duration error, got {error:?}");
     };
-    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(*field, "audio_duration_ms");
     assert_eq!(value, "\"1500\"");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
@@ -466,7 +466,7 @@ async fn a_boolean_duration_is_refused_where_python_reads_a_float() {
     let PipelineError::Duration { field, value } = &error else {
         panic!("expected the duration error, got {error:?}");
     };
-    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(*field, "audio_duration_ms");
     assert_eq!(value, "true");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
@@ -507,7 +507,7 @@ async fn a_duration_past_the_decimal_range_is_refused_after_the_post_call() {
     let PipelineError::Duration { field, .. } = &error else {
         panic!("expected the duration error, got {error:?}");
     };
-    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(*field, "audio_duration_ms");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
     assert_eq!(calls.len(), 6);
