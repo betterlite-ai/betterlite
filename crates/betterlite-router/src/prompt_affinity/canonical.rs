@@ -22,7 +22,9 @@ fn write_value(out: &mut String, value: &Json) {
         Json::List(items) => write_list(out, items),
         Json::Object(fields) => write_object(out, fields),
         // scalars keep Python's own json.dumps text, escapes and float repr included
-        scalar => out.push_str(&python_json::dumps(scalar)),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
+            out.push_str(&python_json::dumps(value));
+        }
     }
 }
 

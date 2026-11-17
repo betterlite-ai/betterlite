@@ -33,13 +33,13 @@ pub fn prefix_positions(
     tools: Option<&[Json]>,
     truncator: &Base64Truncator,
 ) -> Result<Vec<PrefixPosition>, PrefixError> {
-    let Some(messages) = messages else {
+    let Some(prompt) = messages else {
         return Ok(Vec::new());
     };
-    if messages.is_empty() {
+    if prompt.is_empty() {
         return Ok(Vec::new());
     }
-    let truncated = truncator.truncate_messages(&Json::List(cacheable_prefix(messages)))?;
+    let truncated = truncator.truncate_messages(&Json::List(cacheable_prefix(prompt)))?;
     // the truncator returns the shape it received, so the prefix is still a list of messages
     let Json::List(prefix) = truncated else {
         return Ok(Vec::new());
@@ -54,10 +54,9 @@ pub fn prompt_caching_cache_key(
     truncator: &Base64Truncator,
 ) -> Result<Option<String>, PrefixError> {
     let positions = prefix_positions(messages, tools, truncator)?;
-    match positions.last() {
-        Some(entry) => Ok(Some(entry.cache_key.clone())),
-        None => Ok(None),
-    }
+    positions
+        .last()
+        .map_or(Ok(None), |entry| Ok(Some(entry.cache_key.clone())))
 }
 
 // PromptCachingCache.extract_cacheable_prefix: everything up to and including the last ephemeral block
@@ -123,18 +122,14 @@ fn prefix_message(message: &Json, content_index: Option<usize>) -> Json {
     let Some(fields) = object(message) else {
         return message.clone();
     };
-    let Some(content_index) = content_index else {
+    let Some(cut) = content_index else {
         return message.clone();
     };
     let Some(Json::List(blocks)) = fields.get(CONTENT_KEY) else {
         return message.clone();
     };
     let mut copy = fields.clone();
-    let kept = blocks
-        .iter()
-        .take(content_index.saturating_add(1))
-        .cloned()
-        .collect();
+    let kept = blocks.iter().take(cut.saturating_add(1)).cloned().collect();
     copy.insert(CONTENT_KEY.to_owned(), Json::List(kept));
     Json::Object(copy)
 }
@@ -147,7 +142,7 @@ fn positions_of(prefix: &[Json], tools: Option<&[Json]>) -> Vec<PrefixPosition> 
     for message in prefix {
         for (unit, run_type) in message_units(message) {
             let continues = run_type.is_some() && run_type == previous;
-            position = position.saturating_add(if continues { 0_i64 } else { 1_i64 });
+            position = position.saturating_add(i64::from(!continues));
             digest = chain(&digest, &unit);
             positions.push(PrefixPosition {
                 cache_key: format!("deployment:{}:prompt_caching", hex::encode(&digest)),
@@ -176,12 +171,12 @@ fn message_units(message: &Json) -> Vec<(Vec<u8>, Option<&'static str>)> {
         Some(Json::Text(content)) if !content.is_empty() => {
             let value = text_block(content);
             vec![(
-                canonical_bytes(&Json::List(vec![envelope.clone(), value])),
+                canonical_bytes(&Json::List(vec![envelope, value])),
                 run_type,
             )]
         }
         _ => vec![(
-            canonical_bytes(&Json::List(vec![envelope.clone(), Json::Null])),
+            canonical_bytes(&Json::List(vec![envelope, Json::Null])),
             run_type,
         )],
     }
@@ -244,10 +239,7 @@ fn pairs(entries: &[(&str, Json)]) -> Json {
 }
 
 fn seed(tools: Option<&[Json]>) -> Vec<u8> {
-    let bytes = match tools {
-        Some(tools) => canonical_list_bytes(tools),
-        None => Vec::new(),
-    };
+    let bytes = tools.map_or_else(Vec::new, canonical_list_bytes);
     Sha256::digest(&bytes).to_vec()
 }
 

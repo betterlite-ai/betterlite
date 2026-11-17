@@ -56,6 +56,6 @@ pub async fn pinned_model_id(
 fn model_id_of(value: &Json) -> Option<String> {
     match value {
         Json::Object(fields) => fields.get("model_id").and_then(text).map(str::to_owned),
-        _ => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
