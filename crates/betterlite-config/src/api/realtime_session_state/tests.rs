@@ -69,13 +69,11 @@ fn loads_realtime_logged_events(#[case] source: &str, #[case] expected: LoggedEv
 fn rejects_other_realtime_logged_events(#[case] source: &str, #[case] flagged: bool) {
     let error = load(source).expect_err("only null, a string list and \"*\" select logged events");
     assert_eq!(error.category(), "invalid_scalar");
-    match error {
-        ConfigError::InvalidScalar { path, value } => {
-            assert_eq!(path, LOGGED_EVENT_TYPES_PATH);
-            assert_eq!(value, flagged);
-        }
-        other => panic!("unexpected error: {other}"),
-    }
+    let ConfigError::InvalidScalar { path, value } = error else {
+        panic!("the loader returned another error");
+    };
+    assert_eq!(path, LOGGED_EVENT_TYPES_PATH);
+    assert_eq!(value, flagged);
 }
 
 #[rstest]
@@ -89,25 +87,6 @@ fn rejects_other_realtime_logged_events(#[case] source: &str, #[case] flagged: b
     BTreeMap::from([("REALTIME_EVENTS".to_owned(), String::new())]),
     LoggedEventTypes::Default
 )]
-fn reads_an_environment_reference_in_logged_events(
-    #[case] reference: &str,
-    #[case] lookup: BTreeMap<String, String>,
-    #[case] expected: LoggedEventTypes,
-) {
-    let source = format!("litellm_settings:\n  logged_real_time_event_types: {reference}\n");
-    let config = ConfigLoader { lookup }
-        .load(&source)
-        .expect("an environment reference is read into the selection");
-    assert_eq!(
-        config
-            .sections
-            .realtime_session_state
-            .logged_real_time_event_types,
-        expected
-    );
-}
-
-#[rstest]
 #[case::list_item(
     "[os.environ/REALTIME_EVENT, response.done]",
     BTreeMap::from([("REALTIME_EVENT".to_owned(), "session.created".to_owned())]),
@@ -121,7 +100,7 @@ fn reads_an_environment_reference_in_logged_events(
     BTreeMap::<String, String>::new(),
     LoggedEventTypes::Only(vec!["os.environ/REALTIME_EVENT".to_owned()])
 )]
-fn keeps_an_environment_reference_inside_a_list_literal(
+fn reads_environment_references_in_logged_events(
     #[case] reference: &str,
     #[case] lookup: BTreeMap<String, String>,
     #[case] expected: LoggedEventTypes,
@@ -129,7 +108,7 @@ fn keeps_an_environment_reference_inside_a_list_literal(
     let source = format!("litellm_settings:\n  logged_real_time_event_types: {reference}\n");
     let config = ConfigLoader { lookup }
         .load(&source)
-        .expect("a string inside a list is stored as written");
+        .expect("the event selection loads");
     assert_eq!(
         config
             .sections
@@ -147,13 +126,11 @@ fn rejects_an_environment_selection_that_is_not_a_wildcard() {
     .load("litellm_settings:\n  logged_real_time_event_types: os.environ/REALTIME_EVENTS\n")
     .expect_err("a resolved event name is not the setting's type");
     assert_eq!(error.category(), "invalid_scalar");
-    match error {
-        ConfigError::InvalidScalar { path, value } => {
-            assert_eq!(path, LOGGED_EVENT_TYPES_PATH);
-            assert!(!value);
-        }
-        other => panic!("unexpected error: {other}"),
-    }
+    let ConfigError::InvalidScalar { path, value } = error else {
+        panic!("the loader returned another error");
+    };
+    assert_eq!(path, LOGGED_EVENT_TYPES_PATH);
+    assert!(!value);
 }
 
 #[test]
