@@ -29,11 +29,13 @@ pub const fn as_text(value: &Json) -> Option<&str> {
 }
 
 // The two trees differ only in their types, and IndexMap keeps key order through serde, so one pass converts either way.
-pub fn convert<Source, Target>(value: &Source) -> Result<Target, serde_json::Error>
+pub fn convert_all<Source, Target>(values: &[Source]) -> Result<Vec<Target>, serde_json::Error>
 where
     Source: Serialize,
     Target: DeserializeOwned,
 {
-    let encoded = serde_json::to_string(value)?;
-    serde_json::from_str(&encoded)
+    values
+        .iter()
+        .map(|value| serde_json::from_str(&serde_json::to_string(value)?))
+        .collect()
 }

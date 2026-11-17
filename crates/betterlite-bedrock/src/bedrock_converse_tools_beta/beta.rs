@@ -23,8 +23,11 @@ const EFFORT: &str = "effort";
 
 #[must_use]
 pub fn client_betas(headers: Option<&BTreeMap<String, BetaHeader>>) -> Vec<Json> {
-    let values = headers.map_or_else(Vec::new, anthropic_beta_from_headers);
-    values.into_iter().map(beta_value).collect()
+    headers
+        .map_or_else(Vec::new, anthropic_beta_from_headers)
+        .into_iter()
+        .map(beta_value)
+        .collect()
 }
 
 // LiteLLM adds the eager beta only behind the anthropic gate, so a foreign model never parses the flag.
