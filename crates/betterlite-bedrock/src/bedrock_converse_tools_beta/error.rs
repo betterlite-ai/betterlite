@@ -11,6 +11,8 @@ pub enum ToolsAndBetaError {
     Tool(#[from] BedrockToolError),
     #[error(transparent)]
     Features(#[from] FeatureFlagsError),
+    #[error("the tool tree does not convert: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl ToolsAndBetaError {
@@ -19,7 +21,7 @@ impl ToolsAndBetaError {
         match self {
             Self::Tools(error) => error.status_code(),
             Self::Features(error) => error.status_code(),
-            Self::Tool(_) => None,
+            Self::Tool(_) | Self::Json(_) => None,
         }
     }
 }

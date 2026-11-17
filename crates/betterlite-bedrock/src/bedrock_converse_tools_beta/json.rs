@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
-use betterlite_prompts::arguments::json::Json as PromptsJson;
 use indexmap::IndexMap;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 // The Converse path carries decisions::Json, while the shared tool helpers take the isomorphic prompts value.
 #[must_use]
@@ -27,36 +28,12 @@ pub const fn as_text(value: &Json) -> Option<&str> {
     }
 }
 
-#[must_use]
-pub fn to_prompts(value: &Json) -> PromptsJson {
-    match value {
-        Json::Null => PromptsJson::Null,
-        Json::Bool(flag) => PromptsJson::Bool(*flag),
-        Json::Number(number) => PromptsJson::Number(number.clone()),
-        Json::Text(text) => PromptsJson::Text(text.clone()),
-        Json::List(items) => PromptsJson::List(items.iter().map(to_prompts).collect()),
-        Json::Object(fields) => PromptsJson::Object(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), to_prompts(entry)))
-                .collect(),
-        ),
-    }
-}
-
-#[must_use]
-pub fn from_prompts(value: &PromptsJson) -> Json {
-    match value {
-        PromptsJson::Null => Json::Null,
-        PromptsJson::Bool(flag) => Json::Bool(*flag),
-        PromptsJson::Number(number) => Json::Number(number.clone()),
-        PromptsJson::Text(text) => Json::Text(text.clone()),
-        PromptsJson::List(items) => Json::List(items.iter().map(from_prompts).collect()),
-        PromptsJson::Object(fields) => Json::Object(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), from_prompts(entry)))
-                .collect(),
-        ),
-    }
+// The two trees differ only in their types, and IndexMap keeps key order through serde, so one pass converts either way.
+pub fn convert<Source, Target>(value: &Source) -> Result<Target, serde_json::Error>
+where
+    Source: Serialize,
+    Target: DeserializeOwned,
+{
+    let encoded = serde_json::to_string(value)?;
+    serde_json::from_str(&encoded)
 }

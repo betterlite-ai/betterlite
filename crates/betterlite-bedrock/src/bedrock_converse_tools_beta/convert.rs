@@ -6,7 +6,7 @@ use betterlite_prompts::bedrock_tools::tools::bedrock_tools;
 use indexmap::IndexMap;
 
 use crate::bedrock_converse_tools_beta::error::ToolsAndBetaError;
-use crate::bedrock_converse_tools_beta::json::{from_prompts, to_prompts};
+use crate::bedrock_converse_tools_beta::json::convert;
 use crate::converse_tools::computer_use::{
     is_computer_use_tool_used, separate_computer_use_tools, transform_computer_use_tools,
 };
@@ -74,7 +74,8 @@ pub fn convert_tools(
         return regular_blocks(prompts, capabilities);
     }
     let (computer, regular) = separate_computer_use_tools(filtered)?;
-    let regular_prompts: Vec<PromptsJson> = regular.iter().map(to_prompts).collect();
+    let regular_prompts: Vec<PromptsJson> =
+        regular.iter().map(convert).collect::<Result<_, _>>()?;
     let converted = regular_blocks(&regular_prompts, capabilities)?;
     // Hosted computer tools travel in additionalModelRequestFields, not in toolConfig.
     params.insert(
@@ -93,8 +94,13 @@ fn regular_blocks(
     capabilities: BedrockToolCapabilities,
 ) -> Result<ConvertedTools, ToolsAndBetaError> {
     let converted = bedrock_tools(prompts, capabilities)?;
+    let blocks: Vec<Json> = converted
+        .blocks
+        .iter()
+        .map(convert)
+        .collect::<Result<_, _>>()?;
     Ok(ConvertedTools {
-        blocks: converted.blocks.iter().map(from_prompts).collect(),
+        blocks,
         names: converted.names,
         computer_beta: None,
     })

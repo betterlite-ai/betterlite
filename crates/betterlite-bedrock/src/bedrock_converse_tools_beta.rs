@@ -27,7 +27,7 @@ use crate::bedrock_converse_tools_beta::beta::{
 use crate::bedrock_converse_tools_beta::context_management::filter_context_management;
 use crate::bedrock_converse_tools_beta::convert::convert_tools;
 use crate::bedrock_converse_tools_beta::error::ToolsAndBetaError;
-use crate::bedrock_converse_tools_beta::json::to_prompts;
+use crate::bedrock_converse_tools_beta::json::convert;
 use crate::bedrock_converse_tools_beta::partition::partition_tools;
 use crate::bedrock_messages_beta::beta::FINE_GRAINED_STREAMING_BETA;
 use crate::event_frames::beta::BetaHeader;
@@ -63,7 +63,11 @@ where
         capabilities,
     } = request;
     let partition = partition_tools(tools);
-    let prompts: Vec<PromptsJson> = partition.filtered.iter().map(to_prompts).collect();
+    let prompts: Vec<PromptsJson> = partition
+        .filtered
+        .iter()
+        .map(convert)
+        .collect::<Result<_, _>>()?;
     // LiteLLM tests the base model for the anthropic family, not the caller's model id
     let anthropic_base = get_bedrock_base_model(model).starts_with("anthropic");
     let mut betas = client_betas(headers);
