@@ -127,21 +127,16 @@ async fn run_steps(input: &Input, fixture: &fixture::Fixture) -> HelperResult {
     let mut answers = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
         let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
-        answers.push(answer(step, &context, &mut environment).await?);
+        let step_answer = match step {
+            Step::MapOpenaiParams(step) => map_answer(step, &context, &mut environment).await?,
+            Step::TransformRequest(step) => {
+                request_answer(step, &context, &mut environment).await?
+            }
+            Step::TransformResponse(step) => response_answer(step)?,
+        };
+        answers.push(step_answer);
     }
     Ok(Value::Array(answers))
-}
-
-async fn answer(
-    step: &Step,
-    context: &StepContext<'_>,
-    environment: &mut Environment<'_>,
-) -> Result<Value, Box<HelperError>> {
-    match step {
-        Step::MapOpenaiParams(step) => map_answer(step, context, environment).await,
-        Step::TransformRequest(step) => request_answer(step, context, environment).await,
-        Step::TransformResponse(step) => response_answer(step),
-    }
 }
 
 async fn map_answer(
@@ -208,42 +203,35 @@ async fn request_answer(
     Ok(body_answer(prepared))
 }
 
-// LiteLLM writes the beta set into a body list and a header string in hash order; both sides report
-// the membership only, so the comparison never depends on the order Python happened to iterate.
+// Both sides report the beta membership sorted, so the comparison never depends on Python's hash order.
 fn body_answer(prepared: PreparedRequest) -> Value {
     let mut body = prepared.body;
     let mut headers = prepared.headers.values;
-    let betas = sorted_betas(body.shift_remove("anthropic_beta"));
-    let beta_header = sorted_header(headers.shift_remove("anthropic-beta"));
+    let betas = sorted_members(body.shift_remove("anthropic_beta"));
+    let beta_header = sorted_members(headers.shift_remove("anthropic-beta").map(Json::Text));
     json!({"body": body, "anthropic_beta": betas, "beta_header": beta_header})
 }
 
-fn sorted_betas(value: Option<Json>) -> Vec<String> {
-    let Some(Json::List(items)) = value else {
-        return Vec::new();
+fn sorted_members(value: Option<Json>) -> Vec<String> {
+    let mut members: Vec<String> = match value {
+        Some(Json::List(items)) => items
+            .into_iter()
+            .filter_map(|item| match item {
+                Json::Text(text) => Some(text),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
+            })
+            .collect(),
+        Some(Json::Text(text)) => text
+            .split(',')
+            .filter(|member| !member.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => Vec::new(),
     };
-    let mut betas: Vec<String> = items
-        .into_iter()
-        .filter_map(|item| match item {
-            Json::Text(text) => Some(text),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-        })
-        .collect();
-    betas.sort();
-    betas
-}
-
-fn sorted_header(value: Option<String>) -> Vec<String> {
-    let mut betas: Vec<String> = value
-        .map(|text| {
-            text.split(',')
-                .filter(|beta| !beta.is_empty())
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
-    betas.sort();
-    betas
+    members.sort();
+    members
 }
 
 fn response_answer(step: &ResponseStep) -> Result<Value, Box<HelperError>> {
