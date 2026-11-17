@@ -91,14 +91,23 @@ mod dispatch {
 
 mod finish {
     use crate::otel::support::{
-        anchored, attribute, event, finished, harness, owned_http, payload_start, pre_call,
-        success, team_payload, with_id,
+        PreCall, anchored, attribute, event, finished, harness, owned_http, payload_start,
+        pre_call, success, team_payload, with_id,
     };
 
     #[tokio::test]
     async fn finish_renames_the_boundary_span_with_the_payload_model() {
         let harness = harness(owned_http(), anchored());
-        pre_call(&harness.logger, "call-a", "other-model", false, None, None);
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "other-model",
+                no_upstream: false,
+                dynamic: None,
+                auth: None,
+            },
+        );
         success(&harness.logger, event(with_id(inference(), "call-a"))).await;
         let spans = finished(&harness.spans);
         assert_eq!(spans.len(), 1);
@@ -130,14 +139,24 @@ mod llm_close {
     use betterlite_models::decisions::Json;
 
     use crate::otel::support::{
-        anchored, event, event_with, failure, finished, harness, inference, inference_failure,
-        no_upstream, owned_http, payload_start, pre_call, success, with_id, zero_start,
+        PreCall, anchored, event, event_with, failure, finished, harness, inference,
+        inference_failure, no_upstream, owned_http, payload_start, pre_call, success, with_id,
+        zero_start,
     };
 
     #[tokio::test]
     async fn llm_close_dedups_the_second_callback_for_one_call_id() {
         let harness = harness(owned_http(), anchored());
-        pre_call(&harness.logger, "call-a", "gpt-4o", false, None, None);
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: None,
+                auth: None,
+            },
+        );
         success(&harness.logger, event(with_id(inference(), "call-a"))).await;
         failure(
             &harness.logger,
@@ -245,7 +264,7 @@ mod mcp_tool {
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        anchored, event, failure, finished, harness, harness_for, inference, mcp_tool,
+        PreCall, anchored, event, failure, finished, harness, harness_for, inference, mcp_tool,
         mcp_tool_failure, mcp_tool_with_auth, names, owned_http, payload_start, phoenix_http,
         pre_call, root_trace_id, success, with_id,
     };
@@ -265,7 +284,16 @@ mod mcp_tool {
     #[tokio::test]
     async fn mcp_tool_emission_drops_the_stray_llm_carrier() {
         let harness = harness(owned_http(), anchored());
-        pre_call(&harness.logger, "call-mcp", "gpt-4o", false, None, None);
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-mcp",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: None,
+                auth: None,
+            },
+        );
         success(&harness.logger, event(with_id(mcp_tool(), "call-mcp"))).await;
         success(&harness.logger, event(with_id(inference(), "call-mcp"))).await;
         let spans = finished(&harness.spans);
@@ -383,14 +411,11 @@ mod open_calls {
     use indexmap::IndexMap;
 
     use crate::otel::support::{
-        anchored, creds, event_with, finished, harness, inference, owned_http, payload_start,
-        pre_call, success, with_id,
+        Harness, PreCall, anchored, creds, event_with, finished, harness, inference, owned_http,
+        payload_start, pre_call, success, with_id,
     };
 
-    #[test]
-    fn open_calls_caps_the_map_and_evicts_the_oldest() {
-        let mut calls = OpenCalls::default();
-        let start = SystemTime::now();
+    fn store_carriers(calls: &mut OpenCalls, start: SystemTime) {
         for index in 0..OPEN_CALLS_MAX {
             let at = start
                 .checked_add(Duration::from_secs(u64::try_from(index).expect("index")))
@@ -408,6 +433,28 @@ mod open_calls {
                     .is_none()
             );
         }
+    }
+
+    fn build_boundaries(harness: &Harness, count: usize) {
+        for index in 0..count {
+            pre_call(
+                &harness.logger,
+                PreCall {
+                    call_id: &format!("call-{index}"),
+                    model: "gpt-4o",
+                    no_upstream: false,
+                    dynamic: Some(creds("S")),
+                    auth: None,
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn open_calls_caps_the_map_and_evicts_the_oldest() {
+        let mut calls = OpenCalls::default();
+        let start = SystemTime::now();
+        store_carriers(&mut calls, start);
         let evicted = calls
             .store(
                 "overflow".to_owned(),
@@ -429,16 +476,7 @@ mod open_calls {
     #[tokio::test]
     async fn overflow_eviction_still_emits_the_evicted_call_deferred() {
         let harness = harness(owned_http(), anchored());
-        for index in 0..=OPEN_CALLS_MAX {
-            pre_call(
-                &harness.logger,
-                &format!("call-{index}"),
-                "gpt-4o",
-                false,
-                Some(creds("S")),
-                None,
-            );
-        }
+        build_boundaries(&harness, OPEN_CALLS_MAX.saturating_add(1));
         assert_eq!(harness.built.builds(), 1);
         success(
             &harness.logger,
@@ -470,8 +508,8 @@ mod pre_call {
     use serde_json::json;
 
     use crate::otel::support::{
-        anchored, creds, empty_trace, event, event_with, finished, harness, inference, owned_http,
-        payload_start, pre_call, success, with_id,
+        PreCall, anchored, creds, empty_trace, event, event_with, finished, harness, inference,
+        owned_http, payload_start, pre_call, success, with_id,
     };
 
     #[tokio::test]
@@ -479,11 +517,13 @@ mod pre_call {
         let harness = harness(owned_http(), anchored());
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            false,
-            Some(creds("S")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S")),
+                auth: None,
+            },
         );
         assert_eq!(harness.built.builds(), 1);
         success(&harness.logger, event(with_id(inference(), "call-a"))).await;
@@ -499,11 +539,13 @@ mod pre_call {
         let harness = harness(owned_http(), empty_trace());
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            false,
-            Some(creds("S")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S")),
+                auth: None,
+            },
         );
         assert_eq!(harness.built.builds(), 0);
         success(
@@ -520,21 +562,25 @@ mod pre_call {
         let harness = harness(owned_http(), anchored());
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            true,
-            Some(creds("S")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: true,
+                dynamic: Some(creds("S")),
+                auth: None,
+            },
         );
         assert_eq!(harness.built.builds(), 0);
         // no carrier was stored, so a real boundary for the same id still opens one
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            false,
-            Some(creds("S")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S")),
+                auth: None,
+            },
         );
         assert_eq!(harness.built.builds(), 1);
     }
@@ -544,19 +590,23 @@ mod pre_call {
         let harness = harness(owned_http(), anchored());
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            false,
-            Some(creds("S1")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S1")),
+                auth: None,
+            },
         );
         pre_call(
             &harness.logger,
-            "call-a",
-            "gpt-4o",
-            false,
-            Some(creds("S2")),
-            None,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S2")),
+                auth: None,
+            },
         );
         assert_eq!(harness.built.builds(), 1);
         let specs = harness.built.specs();

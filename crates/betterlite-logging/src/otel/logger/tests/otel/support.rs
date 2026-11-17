@@ -33,7 +33,7 @@ use betterlite_logging::otel::plumbing::exporters::{
     ExportResult, ExporterFactories, ExporterFactory, HttpClients,
 };
 use betterlite_logging::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
-use betterlite_logging::otel::plumbing::routing::cache::TenantTracerCache;
+use betterlite_logging::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
 use betterlite_logging::otel::plumbing::sinks::SpanSink;
 use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
 use betterlite_logging::otel_provider_assembly::tracer_provider_assembly::{
@@ -53,7 +53,8 @@ use opentelemetry_sdk::metrics::data::{
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvider, SpanData};
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer};
@@ -86,18 +87,27 @@ const PAYLOAD: &str = r#"{
     "hidden_params": {}
 }"#;
 
-pub(crate) fn payload(call_type: &str, status: &str, metadata: Value) -> StandardLoggingPayload {
-    let mut value: Value = serde_json::from_str(PAYLOAD).expect("payload fixture");
+pub(crate) fn payload<T: Serialize>(
+    call_type: &str,
+    status: &str,
+    metadata: T,
+) -> StandardLoggingPayload {
+    // parsed through the crate's own Json first: the lint table forbids naming serde_json's Value
+    let parsed: Json = serde_json::from_str(PAYLOAD).expect("payload fixture");
+    let mut value = serde_json::to_value(parsed).expect("payload fixture");
     let object = value.as_object_mut().expect("payload object");
-    object.insert("call_type".to_owned(), Value::String(call_type.to_owned()));
-    object.insert("status".to_owned(), Value::String(status.to_owned()));
+    object.insert("call_type".to_owned(), json!(call_type));
+    object.insert("status".to_owned(), json!(status));
     if status == "failure" {
         object.insert(
             "status_fields".to_owned(),
             json!({"llm_api_status": "failure", "guardrail_status": "not_run"}),
         );
     }
-    object.insert("metadata".to_owned(), metadata);
+    object.insert(
+        "metadata".to_owned(),
+        serde_json::to_value(metadata).expect("payload metadata"),
+    );
     serde_json::from_value(value).expect("standard logging payload")
 }
 
@@ -207,45 +217,54 @@ pub(crate) fn details(
     model: &str,
     no_upstream: bool,
     dynamic: Option<Json>,
-    auth: Option<Value>,
+    auth: Option<Json>,
 ) -> Json {
-    let mut object = serde_json::Map::new();
-    object.insert("model".to_owned(), json!(model));
-    object.insert("call_type".to_owned(), json!("completion"));
-    object.insert("litellm_call_id".to_owned(), json!(call_id));
+    let mut object = IndexMap::new();
+    object.insert("model".to_owned(), Json::Text(model.to_owned()));
+    object.insert("call_type".to_owned(), Json::Text("completion".to_owned()));
+    object.insert("litellm_call_id".to_owned(), Json::Text(call_id.to_owned()));
     object.insert(
         "litellm_no_upstream_llm_call".to_owned(),
-        json!(no_upstream),
+        Json::Bool(no_upstream),
     );
     if let Some(dynamic) = dynamic {
-        object.insert(
-            "standard_callback_dynamic_params".to_owned(),
-            serde_json::to_value(dynamic).expect("dynamic params"),
-        );
+        object.insert("standard_callback_dynamic_params".to_owned(), dynamic);
     }
     if let Some(auth) = auth {
+        let metadata = Json::Object(IndexMap::from([(
+            "user_api_key_auth_metadata".to_owned(),
+            auth,
+        )]));
         object.insert(
             "litellm_params".to_owned(),
-            json!({"metadata": {"user_api_key_auth_metadata": auth}}),
+            Json::Object(IndexMap::from([("metadata".to_owned(), metadata)])),
         );
     }
-    serde_json::from_value(Value::Object(object)).expect("model call details")
+    Json::Object(object)
 }
 
-pub(crate) fn pre_call(
-    logger: &OpenTelemetryV2,
-    call_id: &str,
-    model: &str,
-    no_upstream: bool,
-    dynamic: Option<Json>,
-    auth: Option<Value>,
-) {
-    let details = details(call_id, model, no_upstream, dynamic, auth);
+// one pre_call boundary as a test states it: the model, whether the proxy tagged a gate rejection, and the request's dynamic params and auth
+pub(crate) struct PreCall<'a> {
+    pub(crate) call_id: &'a str,
+    pub(crate) model: &'a str,
+    pub(crate) no_upstream: bool,
+    pub(crate) dynamic: Option<Json>,
+    pub(crate) auth: Option<Json>,
+}
+
+pub(crate) fn pre_call(logger: &OpenTelemetryV2, call: PreCall<'_>) {
+    let details = details(
+        call.call_id,
+        call.model,
+        call.no_upstream,
+        call.dynamic,
+        call.auth,
+    );
     let messages = Json::List(Vec::new());
     log_pre_api_call(
         logger,
         &PreCallEvent {
-            model,
+            model: call.model,
             messages: &messages,
             details: &details,
         },
@@ -277,7 +296,9 @@ pub(crate) fn anchored() -> RequestTraceContext {
             ),
             http_route: Some("/v1/chat/completions".to_owned()),
         }),
-        ..RequestTraceContext::default()
+        mcp_carrier: None,
+        mcp_transport: None,
+        destinations: Vec::new(),
     }
 }
 
@@ -395,14 +416,12 @@ pub(crate) fn cache(
     callback: Option<&str>,
     built: &Built,
 ) -> TenantTracerCache {
-    TenantTracerCache::new(
-        settings,
-        callback.map(str::to_owned),
-        "litellm",
-        factories(built),
-        Arc::new(FixedScope),
-        hosts(),
-    )
+    let sources = TenantSources {
+        factories: factories(built),
+        scope_source: Arc::new(FixedScope),
+        allowed_hosts: hosts(),
+    };
+    TenantTracerCache::new(settings, callback.map(str::to_owned), "litellm", sources)
 }
 
 pub(crate) fn default_tracer() -> SdkTracer {
@@ -438,37 +457,20 @@ pub(crate) fn harness_for(
     let spans = InMemorySpanExporter::default();
     let factories = factories(&built);
     let scope: Arc<dyn RequestScopeSource> = Arc::new(FixedScope);
-    let provider = build_tracer_provider(
-        &settings,
-        &factories,
-        &scope,
-        AssemblyOptions {
-            exporter: Some(SpanSink::InMemory(spans.clone())),
-            use_simple_processor: Some(true),
-            ..AssemblyOptions::default()
-        },
-    )
-    .expect("main provider");
-    let tracer = provider.tracer("litellm");
-    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
-        Arc::new(BTreeMap::<String, String>::new());
-    let emitter = SpanEmitter {
-        tracer: tracer.clone(),
-        environment,
-        mappers: Vec::new(),
-        event_recorder: None,
-        attribute_limit: None,
-        emitted: DedupCache::default(),
+    let tracer = main_tracer(&settings, &factories, &scope, &spans);
+    let emitter = main_emitter(&tracer);
+    let sources = TenantSources {
+        factories,
+        scope_source: Arc::clone(&scope),
+        allowed_hosts: hosts(),
     };
     let tenants = TenantTracerCache::new(
         settings.clone(),
         Some(callback.to_owned()),
         "litellm",
-        factories,
-        Arc::clone(&scope),
-        hosts(),
+        sources,
     );
-    let trace = Arc::new(FixedTrace(Mutex::new(trace)));
+    let source = Arc::new(FixedTrace(Mutex::new(trace)));
     Harness {
         logger: OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
             name: callback.to_owned(),
@@ -477,10 +479,45 @@ pub(crate) fn harness_for(
             emitter,
             metrics,
             tenants,
-            trace,
+            trace: source,
         }),
         spans,
         built,
+    }
+}
+
+// the logger's own provider: in memory, simple processor, so a test reads the span right after emit
+fn main_tracer(
+    settings: &Settings,
+    factories: &ExporterFactories,
+    scope: &Arc<dyn RequestScopeSource>,
+    spans: &InMemorySpanExporter,
+) -> SdkTracer {
+    let provider = build_tracer_provider(
+        settings,
+        factories,
+        scope,
+        AssemblyOptions {
+            exporter: Some(SpanSink::InMemory(spans.clone())),
+            baggage_processor: None,
+            use_simple_processor: Some(true),
+            tenant_overrides: false,
+        },
+    )
+    .expect("main provider");
+    provider.tracer("litellm")
+}
+
+fn main_emitter(tracer: &SdkTracer) -> SpanEmitter<SdkTracer> {
+    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
+        Arc::new(BTreeMap::<String, String>::new());
+    SpanEmitter {
+        tracer: tracer.clone(),
+        environment,
+        mappers: Vec::new(),
+        event_recorder: None,
+        attribute_limit: None,
+        emitted: DedupCache::default(),
     }
 }
 
