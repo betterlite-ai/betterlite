@@ -40,7 +40,6 @@ pub(super) async fn text_answer(
     }
 }
 
-// the chat answer as the text completion response the route writes
 pub(super) fn converted(
     completion: ChatCompletion,
     upstream_headers: HeaderMap,
@@ -67,7 +66,6 @@ pub(super) async fn text_stream(
     Ok(stream_answer(answer, model))
 }
 
-// The text endpoint reached for this deployment, with the stream flag the dropped body loses
 async fn text_send(
     calls: &CompletionCalls,
     call: &TextCompletionCallInput<'_>,
@@ -92,7 +90,6 @@ async fn text_send(
         .map_err(bridge_failure)
 }
 
-// the provider's buffered answer as the dispatch pipeline's text result
 pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
     TextCompletionResult {
         response: answer.response,
@@ -101,23 +98,17 @@ pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
     }
 }
 
-// The text endpoint's chunks as the dispatch pipeline's stream answer, model restamped.
 fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStreamAnswer {
     let named = model.unwrap_or_default().to_owned();
     let body = answer
         .stream
         .map(move |item| match item {
-            Ok(chunk) => shaped_chunk(chunk, &named)
-                .map_err(|source| stream_failure(&source))
-                .and_then(|value| {
-                    serde_json::from_value::<Json>(value).map_err(|source| stream_failure(&source))
-                }),
-            Err(error) => Err(TextCompletionFailure {
-                status: 500,
-                error_type: None,
-                param: None,
-                message: error.to_string(),
-            }),
+            Ok(chunk) => {
+                let value =
+                    shaped_chunk(chunk, &named).map_err(|source| stream_failure(&source))?;
+                serde_json::from_value::<Json>(value).map_err(|source| stream_failure(&source))
+            }
+            Err(error) => Err(TextCompletionFailure::new(500, None, error.to_string())),
         })
         .boxed();
     TextStreamAnswer {
@@ -127,7 +118,6 @@ fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStr
     }
 }
 
-// The chat endpoint's bytes as the dispatch pipeline's stream answer the wrapper converts.
 pub(super) fn chat_stream_answer(
     upstream: StreamResponse,
     model: Option<&str>,
@@ -150,7 +140,6 @@ pub(super) fn chat_stream_answer(
     }
 }
 
-// The chat endpoint's SSE bytes read as the chat chunks the text wrapper converts, model restamped.
 struct ChatChunkState {
     bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     parser: SseParser,
@@ -228,24 +217,13 @@ pub(super) fn bridge_failure(failure: CompletionFailure) -> TextCompletionFailur
 }
 
 fn stream_failure(source: &serde_json::Error) -> TextCompletionFailure {
-    TextCompletionFailure {
-        status: 500,
-        error_type: None,
-        param: None,
-        message: source.to_string(),
-    }
+    TextCompletionFailure::new(500, None, source.to_string())
 }
 
 fn internal_failure(message: &str) -> TextCompletionFailure {
-    TextCompletionFailure {
-        status: 500,
-        error_type: Some(String::from("internal_server_error")),
-        param: None,
-        message: message.to_owned(),
-    }
+    TextCompletionFailure::new(500, Some("internal_server_error"), message.to_owned())
 }
 
-// the chat route's status, type and param for a failure the text provider answered with
 pub(super) fn chat_call_failure(
     error: CallError<ChatError>,
     calls: &CompletionCalls,

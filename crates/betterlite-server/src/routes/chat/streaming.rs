@@ -36,7 +36,7 @@ use tokio::sync::OnceCell;
 
 use super::CallContext;
 use super::headers::stream_headers;
-use crate::routes::completions::streaming::provider_stream;
+use crate::routes::completions::streaming::{StreamUsage, provider_stream};
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
 use self::relay::{Pump, TextSource, next_frame, relay_bytes};
@@ -100,9 +100,15 @@ impl ChatCall for ChatCalls {
             return mock_stream(executor, &call.deployment, call.request, &plan);
         }
         let started = Instant::now();
-        let upstream = provider_stream(executor, &call.deployment, call.request, control)
-            .await
-            .map_err(chat_failure)?;
+        let upstream = provider_stream(
+            executor,
+            &call.deployment,
+            call.request,
+            control,
+            StreamUsage::Chat,
+        )
+        .await
+        .map_err(chat_failure)?;
         let upstream_time = started.elapsed();
         let upstream_headers = upstream.response.headers().clone();
         Ok(ChatStreamAnswer {
@@ -129,7 +135,6 @@ impl ChatCall for ChatCalls {
     }
 }
 
-// The text endpoint's answer in the shape the route asked for, a mismatch being a dispatch bug
 fn answered_result(
     executor: &ChatExecutor,
     mode: TextCallMode,
@@ -142,8 +147,10 @@ fn answered_result(
             buffered_result(&answer, convert, request.model.as_deref(), created)
         }
         (TextCallMode::Streamed, CompletionCallAnswer::Streamed(answer)) => {
-            let options = request.stream_options.as_ref();
-            let include_usage = options.is_some_and(|chosen| chosen.include_usage);
+            let include_usage = request
+                .stream_options
+                .as_ref()
+                .is_some_and(|chosen| chosen.include_usage);
             let model = request.model.clone().unwrap_or_default();
             Ok(streamed_result(answer, model, include_usage))
         }
@@ -151,7 +158,6 @@ fn answered_result(
     }
 }
 
-// The text endpoint's buffered answer converted to chat unless the deployment is a fine-tuned model.
 fn buffered_result(
     answer: &CompletionAnswer,
     convert: bool,
@@ -171,7 +177,6 @@ fn buffered_result(
     }))
 }
 
-// The text endpoint's stream rewritten as the chat route's SSE events.
 fn streamed_result(
     answer: CompletionStreamAnswer,
     model: String,
@@ -191,7 +196,6 @@ fn streamed_result(
     })
 }
 
-// The text endpoint reached for this chat deployment: the built request sent the way the route asked
 async fn bridged_send(
     calls: &ChatCalls,
     call: &ChatCallInput<'_>,
@@ -219,26 +223,20 @@ async fn bridged_send(
 
 // the chat route answers with the provider's own error envelope, as LiteLLM's exception path does
 fn completion_failure(failure: CompletionFailure) -> ChatFailure {
-    let CompletionFailure {
-        status,
-        error_type,
-        param,
-        message,
-    } = failure;
     let body = ErrorResponse {
         error: ErrorObject {
-            message,
-            error_type: error_type.map_or(WireField::Null, WireField::Text),
-            param: param.map_or(WireField::Null, WireField::Text),
+            message: failure.message,
+            error_type: failure.error_type.map_or(WireField::Null, WireField::Text),
+            param: failure.param.map_or(WireField::Null, WireField::Text),
             code: WireField::Null,
         },
     };
     match serde_json::to_vec(&body) {
-        Ok(body) => ChatFailure::Route(ChatError::Provider {
+        Ok(encoded) => ChatFailure::Route(ChatError::Provider {
             response: Box::new(UpstreamResponse {
-                status,
+                status: failure.status,
                 headers: HeaderMap::new(),
-                body,
+                body: encoded,
             }),
         }),
         Err(source) => ChatFailure::Route(ChatError::Encode { source }),

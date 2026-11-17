@@ -106,7 +106,6 @@ impl TextCompletionCall for CompletionCalls {
         text_stream(self, &call).await
     }
 
-    // a chat-catalog deployment answers or streams on the chat endpoint and converts back
     async fn chat(
         &self,
         call: TextCompletionCallInput<'_>,
@@ -131,6 +130,7 @@ impl TextCompletionCall for CompletionCalls {
                     &call.deployment,
                     &chat,
                     control,
+                    streaming::StreamUsage::Text,
                 )
                 .await
                 .map_err(|error| chat_call_failure(error, self))?;

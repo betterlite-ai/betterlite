@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::io;
 use std::time::Instant;
 
+use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
@@ -15,7 +16,10 @@ use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
-use betterlite_provider::operation::{ChatOperation, OperationRequest, OperationResult};
+use betterlite_provider::operation::{
+    ChatOperation, OperationError, OperationRequest, OperationResult,
+};
+use betterlite_provider::prepared::PreparedRequest;
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use futures_util::StreamExt as _;
@@ -24,12 +28,21 @@ use futures_util::stream::{self, BoxStream};
 use crate::routes::chat::headers::success_headers;
 use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
+use self::pump::{FrameSource, Pump, next_frame};
+
+// The route whose upstream rules a chat stream follows: only the chat route's provider adds stream usage
+pub(crate) enum StreamUsage {
+    Chat,
+    Text,
+}
+
 // The chat endpoint reached for a chat-catalog deployment; routes/chat.rs keeps its streaming module private
 pub(crate) async fn provider_stream(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &ChatRequest,
     control: ControlOptions,
+    usage: StreamUsage,
 ) -> Result<StreamResponse, CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
     let inputs = Deployment::from_chat(deployment);
@@ -38,9 +51,13 @@ pub(crate) async fn provider_stream(
         request: request.clone(),
         control,
     }));
-    let prepared = provider
+    let mut prepared = provider
         .prepare(&operation, &inputs, &executor.catalog)
         .map_err(chat_error)?;
+    // atext_completion never asks the chat provider for stream usage unless the caller chose it
+    if matches!(usage, StreamUsage::Text) && request.stream_options.is_none() {
+        strip_stream_usage(&mut prepared)?;
+    }
     let client = executor
         .client
         .deployments
@@ -55,6 +72,23 @@ pub(crate) async fn provider_stream(
         return Err(CallError::Mismatched);
     };
     Ok(*stream)
+}
+
+// the chat route's auto-injected usage options have no place in a bridged completion's provider body
+fn strip_stream_usage(prepared: &mut PreparedRequest) -> Result<(), CallError<ChatError>> {
+    let PreparedRequest::Stream(chat) = prepared else {
+        return Ok(());
+    };
+    let Json::Object(mut fields) = serde_json::from_slice(&chat.http.body)
+        .map_err(|source| chat_error(OperationError::Encode { source }))?
+    else {
+        return Ok(());
+    };
+    if fields.shift_remove("stream_options").is_some() {
+        chat.http.body = serde_json::to_vec(&Json::Object(fields))
+            .map_err(|source| chat_error(OperationError::Encode { source }))?;
+    }
+    Ok(())
 }
 
 // The completion route's stream headers: the text answer is an event stream the client reads at once
@@ -84,62 +118,30 @@ pub(super) fn render(
     (headers, body).into_response()
 }
 
-struct FrameState {
+struct ChunkFrames {
     body: BoxStream<'static, Result<Json, StreamError>>,
-    pending: VecDeque<Bytes>,
-    finished: bool,
 }
 
-// Every wrapper chunk becomes one data event, and the stream closes with the DONE event.
-fn frames(
-    body: BoxStream<'static, Result<Json, StreamError>>,
-) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
-    stream::unfold(
-        FrameState {
-            body,
-            pending: VecDeque::new(),
-            finished: false,
-        },
-        next_frame,
-    )
-}
-
-async fn next_frame(mut state: FrameState) -> Option<(Result<Bytes, io::Error>, FrameState)> {
-    loop {
-        if let Some(frame) = state.pending.pop_front() {
-            return Some((Ok(frame), state));
-        }
-        if state.finished {
-            return None;
-        }
-        match state.body.next().await {
-            Some(Ok(chunk)) => {
-                if let Err(error) = push_chunk(&mut state, &chunk) {
-                    state.finished = true;
-                    return Some((Err(error), state));
-                }
-            }
-            Some(Err(error)) => {
-                state.finished = true;
-                return Some((Err(io::Error::other(error)), state));
-            }
-            None => {
-                state.finished = true;
-                state
-                    .pending
-                    .push_back(Bytes::from_static(DONE_FRAME.as_bytes()));
-            }
-        }
+#[async_trait]
+impl FrameSource<io::Error> for ChunkFrames {
+    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, io::Error> {
+        let Some(item) = self.body.next().await else {
+            pending.push_back(Bytes::from_static(DONE_FRAME.as_bytes()));
+            return Ok(true);
+        };
+        let chunk = item.map_err(io::Error::other)?;
+        let value = serde_json::to_value(&chunk).map_err(io::Error::other)?;
+        let text = serde_json::to_string(&without_nulls(value)).map_err(io::Error::other)?;
+        pending.push_back(Bytes::from(format!("data: {text}\n\n")));
+        Ok(false)
     }
 }
 
-fn push_chunk(state: &mut FrameState, chunk: &Json) -> Result<(), io::Error> {
-    let value = serde_json::to_value(chunk).map_err(io::Error::other)?;
-    let text = serde_json::to_string(&without_nulls(value)).map_err(io::Error::other)?;
-    state
-        .pending
-        .push_back(Bytes::from(format!("data: {text}\n\n")));
-    Ok(())
+fn frames(
+    body: BoxStream<'static, Result<Json, StreamError>>,
+) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
+    stream::unfold(Pump::new(ChunkFrames { body }), next_frame)
 }
 
+pub(crate) mod pump;
 mod tests;

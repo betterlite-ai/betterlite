@@ -12,55 +12,8 @@ use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
-// A source the frame pump drains: fills the queue and answers true once it has ended.
-#[async_trait]
-pub(super) trait FrameSource<Error: Send + 'static>: Send {
-    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, Error>;
-}
+use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
 
-pub(super) struct Pump<Source> {
-    source: Source,
-    pending: VecDeque<Bytes>,
-    finished: bool,
-}
-
-impl<Source> Pump<Source> {
-    pub(super) const fn new(source: Source) -> Self {
-        Self {
-            source,
-            pending: VecDeque::new(),
-            finished: false,
-        }
-    }
-}
-
-// One data event at a time, then the DONE event; the source's error closes the stream.
-pub(super) async fn next_frame<Source, Error>(
-    mut state: Pump<Source>,
-) -> Option<(Result<Bytes, Error>, Pump<Source>)>
-where
-    Source: FrameSource<Error> + Send,
-    Error: Send + 'static,
-{
-    loop {
-        if let Some(frame) = state.pending.pop_front() {
-            return Some((Ok(frame), state));
-        }
-        if state.finished {
-            return None;
-        }
-        match state.source.fill(&mut state.pending).await {
-            Ok(false) => {}
-            Ok(true) => state.finished = true,
-            Err(error) => {
-                state.finished = true;
-                return Some((Err(error), state));
-            }
-        }
-    }
-}
-
-// The provider's SSE bytes relayed as the chat route's events, model restamped and usage filtered.
 pub(super) struct RelaySource {
     pub(super) upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     pub(super) parser: SseParser,
@@ -143,12 +96,14 @@ pub(super) fn relay_bytes(
     upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     request: &ChatRequest,
 ) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
-    let options = request.stream_options.as_ref();
     let source = RelaySource {
         upstream,
         parser: SseParser::default(),
         model: request.model.clone().unwrap_or_default(),
-        include_usage: options.is_some_and(|chosen| chosen.include_usage),
+        include_usage: request
+            .stream_options
+            .as_ref()
+            .is_some_and(|chosen| chosen.include_usage),
     };
     stream::unfold(Pump::new(source), next_frame)
 }
