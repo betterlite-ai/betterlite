@@ -15,7 +15,7 @@ pub(crate) enum Input {
     Additional(AdditionalInput),
     OutputConfig(OutputConfigInput),
     ToolSpec(ToolSpecInput),
-    MediaTypes(Params),
+    MediaTypes,
 }
 
 #[derive(Debug, Deserialize)]

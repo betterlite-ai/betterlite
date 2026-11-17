@@ -24,8 +24,8 @@ use tokio::runtime::Builder;
 
 use super::fixture::{CaseCapabilities, Fixture};
 use super::input::{
-    ApplyToolsInput, DetectorInput, Input, OutputConfigInput, SeparateInput, ToolChoiceInput,
-    ToolSpecInput, TransformInput, TranslateInput,
+    ApplyToolsInput, DetectorInput, Input, SeparateInput, ToolChoiceInput, ToolSpecInput,
+    TransformInput, TranslateInput,
 };
 
 fn failed<E>(error: E, status: Option<u16>) -> Box<HelperError>
@@ -110,15 +110,6 @@ fn translate(input: &TranslateInput) -> HelperResult {
     Ok(json!({ "params": params }))
 }
 
-fn output_config(input: &OutputConfigInput) -> HelperResult {
-    let config = create_output_config(
-        input.json_schema.as_ref(),
-        input.name.as_deref(),
-        input.description.as_deref(),
-    );
-    Ok(json!({ "config": config }))
-}
-
 fn tool_spec(input: &ToolSpecInput) -> HelperResult {
     let block = BedrockToolSpec {
         name: &input.name,
@@ -144,9 +135,15 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::ApplyTools(call) => apply_tools(call),
         Input::Translate(call) => translate(call),
         Input::Additional(call) => Ok(json!({ "schema": add_additional_properties(&call.schema) })),
-        Input::OutputConfig(call) => output_config(call),
+        Input::OutputConfig(call) => Ok(json!({
+            "config": create_output_config(
+                call.json_schema.as_ref(),
+                call.name.as_deref(),
+                call.description.as_deref(),
+            ),
+        })),
         Input::ToolSpec(call) => tool_spec(call),
-        Input::MediaTypes(_) => Ok(json!({
+        Input::MediaTypes => Ok(json!({
             "image": SUPPORTED_IMAGE_TYPES,
             "document": SUPPORTED_DOCUMENT_TYPES,
             "video": SUPPORTED_VIDEO_TYPES,

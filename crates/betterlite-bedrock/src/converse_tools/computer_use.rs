@@ -36,7 +36,11 @@ pub fn separate_computer_use_tools(
 pub fn transform_computer_use_tools(tools: &[Json]) -> Result<Vec<Json>, ConverseToolsError> {
     let mut transformed = Vec::with_capacity(tools.len());
     for tool in tools {
-        transformed.push(transform_tool(tool)?);
+        // A missing type reads as not a computer tool, so the tool is copied unchanged.
+        let fields = fields_of(tool)?;
+        transformed.push(
+            tool_type(fields)?.map_or_else(|| Ok(tool.clone()), |kind| typed_tool(fields, kind))?,
+        );
     }
     Ok(transformed)
 }
@@ -62,12 +66,6 @@ fn tool_type(fields: &IndexMap<String, Json>) -> Result<Option<&str>, ConverseTo
             Err(ConverseToolsError::ToolType)
         }
     }
-}
-
-// The transformer reads a missing type as "not a computer tool" and copies the tool unchanged.
-fn transform_tool(tool: &Json) -> Result<Json, ConverseToolsError> {
-    let fields = fields_of(tool)?;
-    tool_type(fields)?.map_or_else(|| Ok(tool.clone()), |kind| typed_tool(fields, kind))
 }
 
 fn typed_tool(

@@ -149,76 +149,30 @@ fn format_shapes(catalogs: &CatalogSources<'_>) {
 
 fn format_errors(catalogs: &CatalogSources<'_>) {
     let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
-    rejected_shape(catalogs, &mut native);
-    rejected_envelope(catalogs, &mut native);
-    rejected_name(catalogs, &mut native);
-}
-
-fn rejected_shape(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
-    let not_object = translated(catalogs, &call(json("5"), MODEL, false, "true"), native)
-        .expect_err("a number is not a format");
-    assert!(matches!(not_object, ConverseToolsError::FormatNotAnObject));
-    let missing_type = translated(
-        catalogs,
-        &call(json(r#"{"json_schema": {}}"#), MODEL, false, "true"),
-        native,
-    )
-    .expect_err("the type key is required");
-    assert!(matches!(
-        missing_type,
-        ConverseToolsError::MissingFormatType
-    ));
-}
-
-fn rejected_envelope(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
-    let bad_envelope = translated(
-        catalogs,
-        &call(
+    let rows = [
+        (json("5"), "the response_format value is not an object"),
+        (
+            json(r#"{"json_schema": {}}"#),
+            "response_format has no type field",
+        ),
+        (
             json(r#"{"type": "json_schema", "json_schema": 5}"#),
-            MODEL,
-            false,
-            "true",
+            "response_format.json_schema is not an object",
         ),
-        native,
-    )
-    .expect_err("the envelope must be an object");
-    assert!(matches!(
-        bad_envelope,
-        ConverseToolsError::JsonSchemaNotAnObject
-    ));
-    let missing_schema = translated(
-        catalogs,
-        &call(
+        (
             json(r#"{"type": "json_schema", "json_schema": {}}"#),
-            MODEL,
-            false,
-            "true",
+            "response_format.json_schema has no schema field",
         ),
-        native,
-    )
-    .expect_err("the schema key is required");
-    assert!(matches!(
-        missing_schema,
-        ConverseToolsError::MissingSchemaField
-    ));
-}
-
-fn rejected_name(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
-    let bad_name = translated(
-        catalogs,
-        &call(
+        (
             json(r#"{"type": "json_schema", "json_schema": {"schema": {}, "name": 5}}"#),
-            MODEL,
-            false,
-            "true",
+            "response_format json_schema name is not a string",
         ),
-        native,
-    )
-    .expect_err("the name must be a string");
-    assert!(matches!(
-        bad_name,
-        ConverseToolsError::NotText { field: "name" }
-    ));
+    ];
+    for (value, message) in rows {
+        let error = translated(catalogs, &call(value, MODEL, false, "true"), &mut native)
+            .expect_err("a malformed format is rejected");
+        assert_eq!(error.to_string(), message);
+    }
 }
 
 fn output_config_blocks() {
