@@ -1,0 +1,28 @@
+task: B1611
+deviations:
+  - what: >-
+      A stored metadata column whose JSON value is a string holding an object is decoded and merged into, so the fields
+      inside the wrapper survive the attribution merge. LiteLLM sees a string where it expects an object, treats the
+      column as absent and overwrites it with the attribution metadata alone.
+    why: >-
+      betterlite reads the column as JSON text, so it can see the object inside the wrapper, and dropping those fields
+      would lose data a working setup wrote. A working LiteLLM setup cannot rely on that loss.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L592-L596
+  - what: >-
+      The skipped unsafe destination and the persistence success and failure messages are tracing events with
+      structured fields (destination, user id, flattened keys, error), where LiteLLM passes formatted text to
+      verbose_proxy_logger. The levels and the information carried are the same.
+    why: >-
+      betterlite logs through tracing in every crate, and structured fields keep the user id and keys filterable.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L606-L612
+kept_bugs:
+  - what: >-
+      A user row that find_unique does not find is not created: update_many updates no row, and the login logs the
+      persistence as done anyway. The logged key list is the attribution metadata, not the merged column.
+    why: >-
+      A working setup relies on the login continuing when the user row is absent at that moment, and inserting a user
+      from a claim map would create an identity the SSO flow did not create.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L591-L610
