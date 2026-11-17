@@ -1,16 +1,17 @@
 use std::ffi::OsStr;
-use std::io::Read;
+use std::fs::File;
+use std::io::{Error, Read as _};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 // the index is built once and then only read, so the whole route config stays in memory under one byte bound
-pub const ROUTE_INDEX_MAX_BYTES: usize = 1_048_576;
+pub const ROUTE_INDEX_MAX_BYTES: usize = 0x0010_0000;
 // LiteLLMRouterEncoder's score threshold default, used by every route that sets no threshold of its own
 pub const DEFAULT_SCORE_THRESHOLD: f64 = 0.3;
 // one byte past the bound, so a file at the limit reads whole while a longer one still proves TooLarge
-const READ_LIMIT_BYTES: u64 = 1_048_577;
+const READ_LIMIT_BYTES: u64 = 0x0010_0001;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RouteIndexError {
@@ -20,7 +21,7 @@ pub enum RouteIndexError {
     Read {
         path: PathBuf,
         #[source]
-        source: std::io::Error,
+        source: Error,
     },
     #[error("the route config at {} must end in .json, .yaml or .yml", path.display())]
     UnsupportedExtension { path: PathBuf },
@@ -102,9 +103,9 @@ struct RawRoute {
     score_threshold: Option<f64>,
     #[serde(default, rename = "function_schemas")]
     _function_schemas: Option<IgnoredAny>,
-    #[serde(default)]
+    #[serde(default, rename = "llm")]
     _llm: Option<IgnoredAny>,
-    #[serde(default)]
+    #[serde(default, rename = "metadata")]
     _metadata: Option<IgnoredAny>,
 }
 
@@ -129,9 +130,9 @@ struct RawFileRoute {
     score_threshold: Option<f64>,
     #[serde(default, rename = "function_schemas")]
     _function_schemas: Option<IgnoredAny>,
-    #[serde(default)]
+    #[serde(default, rename = "llm")]
     _llm: Option<IgnoredAny>,
-    #[serde(default)]
+    #[serde(default, rename = "metadata")]
     _metadata: Option<IgnoredAny>,
 }
 
@@ -145,17 +146,18 @@ fn assemble(routes: Vec<IndexedRoute>) -> Result<RouteIndex, RouteIndexError> {
             return Err(RouteIndexError::NonFiniteThreshold { name: route.name });
         }
         // a repeated route name keeps the first route's threshold, as the router's first-name lookup does
-        let threshold = match groups.iter().find(|group| group.name == route.name) {
-            Some(group) => group.threshold,
-            None => {
-                let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
-                groups.push(RouteGroup {
-                    name: route.name.clone(),
-                    threshold,
-                });
-                threshold
-            }
-        };
+        let first_threshold = groups
+            .iter()
+            .find(|group| group.name == route.name)
+            .map(|group| group.threshold);
+        let threshold = first_threshold.unwrap_or_else(|| {
+            let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
+            groups.push(RouteGroup {
+                name: route.name.clone(),
+                threshold,
+            });
+            threshold
+        });
         for text in route.utterances {
             rows.push(UtteranceRow {
                 route: route.name.clone(),
@@ -191,7 +193,7 @@ pub fn parse_inline(config: &str) -> Result<RouteIndex, RouteIndexError> {
 
 // one read past the bound proves TooLarge without allocating a longer input
 fn read_bounded(path: &Path) -> Result<Vec<u8>, RouteIndexError> {
-    let file = std::fs::File::open(path).map_err(|source| RouteIndexError::Read {
+    let file = File::open(path).map_err(|source| RouteIndexError::Read {
         path: path.to_owned(),
         source,
     })?;
