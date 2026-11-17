@@ -215,19 +215,27 @@ pub(super) struct UsageCase<'fixture> {
         Option<&'fixture (dyn Fn() -> Result<i64, CountError> + Send + Sync)>,
 }
 
-pub(super) fn fixture_hooks() -> VerboseHooks<FixtureLogger, FixtureConsole> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
+pub(super) fn redactor() -> Arc<Redactor> {
+    Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles"))
+}
+
+pub(super) fn fixture_hooks(
+    redactor: &Arc<Redactor>,
+) -> VerboseHooks<FixtureLogger, FixtureConsole> {
     VerboseHooks {
         logger: FixtureLogger::default(),
         console: FixtureConsole::default(),
         set_verbose: Payload::Bool(false),
-        redactor: Arc::new(redactor),
+        redactor: Arc::clone(redactor),
     }
 }
 
 impl UsageCase<'_> {
-    pub(super) async fn run(&self) -> (Result<Usage, UsageAssemblyError>, Vec<String>) {
-        let hooks = fixture_hooks();
+    pub(super) async fn run(
+        &self,
+        redactor: &Arc<Redactor>,
+    ) -> (Result<Usage, UsageAssemblyError>, Vec<String>) {
+        let hooks = fixture_hooks(redactor);
         let request = UsageRequest {
             chunks: self.chunks,
             model: "gpt-4o",
@@ -254,10 +262,14 @@ pub(super) fn simple_case<'fixture>(
     }
 }
 
-pub(super) async fn simple_usage(counter: &FixtureCounter, source: &str) -> Usage {
+pub(super) async fn simple_usage(
+    counter: &FixtureCounter,
+    source: &str,
+    redactor: &Arc<Redactor>,
+) -> Usage {
     let parsed = chunks(source);
     simple_case(counter, &parsed)
-        .run()
+        .run(redactor)
         .await
         .0
         .expect("the fixture usage is calculated")
@@ -335,7 +347,7 @@ pub(super) fn real_counter() -> Counter {
         Arc::clone(&service),
         false,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, catalog, settings)
 }
 
 fn hub_settings() -> HubSettings {

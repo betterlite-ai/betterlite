@@ -86,7 +86,6 @@ jobs:
       # names every version the two install steps pin, so a bump misses the cache and installs fresh; layout2 skips the cache saved without shellcheck and shfmt
       TOOLS_KEY: tools-layout2-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-shellcheck-0.11.0-shfmt-3.14.1-actionlint-1.7.12-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0-similarity-py-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
-      BETTERLITE_ORACLE_CACHE: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'shared' || 'own' }}
     steps:
       # a test build filled the disk on runner image 20261018.96; emptying the 14 GiB Android SDK takes 30 to 270 s, so it waits for a runner with less than 60 GiB free
       - name: Free the runner's disk
@@ -200,8 +199,8 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
-          key: oracle-answers-${{ github.sha }}
-          restore-keys: oracle-answers-
+          key: oracle-answers-all-${{ github.sha }}
+          restore-keys: oracle-answers-all-
 
       # a task's own checks may run node (B9090's do), and the image has none; 24.19.0 is what LiteLLM's ui/litellm-dashboard/.nvmrc pins
       - name: Set up Node
@@ -336,12 +335,15 @@ jobs:
           fi
           cargo gate run "${TASK:-B000}" "${selection[@]}"
 
-      - name: Save LiteLLM's helper answers
+      # a shard computes only its own packages' answers, so the oracle answers job in gate.yml merges them into the one cache every part restores
+      - name: Keep LiteLLM's new helper answers
         if: github.ref == 'refs/heads/main' && startsWith(matrix.part, 'tests-')
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: ~/.cache/betterlite-oracle
-          key: oracle-answers-${{ github.sha }}-${{ matrix.part }}
+          name: oracle-answers-${{ matrix.part }}
+          path: target/oracle-answers
+          if-no-files-found: ignore
+          retention-days: 1
 
       - name: Keep the gate logs
         if: always()

@@ -17,6 +17,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::client::cleanup::failure::ErrorContext;
 use crate::client::cleanup::http_client::CleanupScope;
+use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::client::sessions::client::{SessionClient, SessionSettings};
 use crate::client::sessions::error::{ExitFailure, McpFailure, SessionError};
 use crate::client::sessions::factory::{HttpClientConfig, SseRequest};
@@ -671,6 +672,7 @@ pub(crate) fn settings(config: &Config) -> SessionSettings {
         protocol_version,
         client_version,
         callbacks,
+        handlers: ServerRequestHandlers::default(),
     }
 }
 

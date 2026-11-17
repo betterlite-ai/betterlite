@@ -158,5 +158,18 @@ panic = "unwind" # a panic that slips through ends one request's task, not every
 debug = false # nobody reads debug info here; dropping it cut a full CI test build by 18% (run 43735860292) and saves disk in every worktree
 
 [profile.dev.package]
+# with serde_core, serde_json and sha1 also at 3, a test parses the 3 MB bundled model catalog in 0.2 s instead of 0.73 s, and betterlite-models builds in 43 s instead of 12
+betterlite-models = { opt-level = 3 }
+granit-parser = { opt-level = 3 } # with serde-saphyr and serde_ignored, the 352-file config corpus loads in 19.7 s instead of 37.6 s
+kitoken = { opt-level = 3 } # a tiktoken vocabulary builds twice as fast
+lopdf = { opt-level = 3 } # with nom, a 33 MiB PDF text stream parses in 1.0 s instead of 20 s
+nom = { opt-level = 3 }
 regex-automata = { opt-level = 2 } # Redactor compilation otherwise dominates debug startup.
 regex-syntax = { opt-level = 2 }
+salsa20 = { opt-level = 3 }
+scrypt = { opt-level = 3 } # an N=2^15 key derivation takes 0.1 s instead of 6 s
+serde-saphyr = { opt-level = 3 }
+serde_core = { opt-level = 3 }
+serde_json = { opt-level = 3 }
+serde_ignored = { opt-level = 3 }
+sha1 = { opt-level = 3 }

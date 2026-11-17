@@ -4,8 +4,9 @@ description: >-
   Complete the native Messages transformation facade with the response JSON decoder and stream factory, and
   implement every function in pass_through/utils.py. B2430 now owns request/effort transforms as whole functions.
   Keep this facade in betterlite-core::api::messages_thinking, using B958 response records, B567 AnthropicError,
-  B2436's native stream factory, B323's supported-effort resolver and B2225 model metadata. B012 supplies logging
-  context identity; the logging-object helper accepts that type only, never a dictionary resembling it.
+  B2436's native stream factory, the supported-effort resolver in betterlite_openai::reasoning_effort_capability
+  (B323's build, moved there by B9980) and B2225 model metadata. B247 supplies logging context identity; the
+  logging-object helper accepts that type only, never a dictionary resembling it.
 
   decode_messages_response(bytes,status,ApiLimits) returns the decoded JSON object without replacing the provider
   model or checking HTTP status. Invalid JSON raises AnthropicError with the original status and response text;
@@ -134,7 +135,7 @@ out_of_scope:
 - B2430 owns messages/transformation.py L287-L570 request transforms; B961 owns L59-L284 native preparation.
 - B960 owns _messages_carry_output_config and native beta injection L610-L709.
 - B2436 owns the constructor and pass-through chunk-processor delegation; B979 separately owns detached relay scheduling and drain limits.
-- B323 and B2225 own supported reasoning-effort resolution and model metadata lookup, respectively.
+- B323 built supported reasoning-effort resolution and B9980 moves it to betterlite_openai::reasoning_effort_capability; B2225 owns model metadata lookup.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as messages_thinking in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/messages_thinking.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/messages_thinking.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A plain metadata.user_id names a person and must not become a provider prompt_cache_key.

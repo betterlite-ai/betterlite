@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod gemini_request_settings;
+
 mod support;
 
 use std::collections::BTreeMap;
@@ -67,12 +69,13 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        let catalog = BundledCatalog::default().get();
         Self {
             runtime: Builder::new_current_thread()
                 .build()
                 .expect("a fixture runtime"),
-            counter: counter(),
-            catalog: BundledCatalog::default().get(),
+            counter: counter(&catalog),
+            catalog,
             hooks: hooks(),
             auth_token: SecretString::from("token-abc"),
             extra_headers: BTreeMap::new(),

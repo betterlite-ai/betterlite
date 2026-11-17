@@ -7,8 +7,10 @@ use crate::client::cleanup::http_client::CleanupScope;
 use super::error::ExitFailure;
 use super::factory::{HttpClientConfig, SseRequest};
 use super::negotiate::ClientSession;
-use super::runtime::{HttpClientHandle, McpRuntime, SessionContext, SessionOptions};
-use super::stdio::{StdioServer, StdioStreams, StdioTransport};
+use super::runtime::{
+    HttpClientHandle, McpRuntime, SessionContext, SessionOptions, stdio_transport,
+};
+use super::stdio::{StdioStreams, StdioTransport};
 use super::transport::StdioServerParameters;
 
 pub trait StdioSessionFactory: Send + Sync + 'static {
@@ -68,12 +70,7 @@ where
     type Session = StdioSessionContext<Factory>;
 
     fn stdio_client(&self, parameters: StdioServerParameters) -> StdioTransport {
-        StdioTransport::Server(Box::new(StdioServer {
-            parameters,
-            child: None,
-            stdin: None,
-            stdout: None,
-        }))
+        stdio_transport(parameters)
     }
 
     fn sse_client(&self, _request: SseRequest) -> StdioTransport {

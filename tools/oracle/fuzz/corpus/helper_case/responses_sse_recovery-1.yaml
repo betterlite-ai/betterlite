@@ -1,0 +1,9 @@
+kind: helper
+name: responses-sse-recovery-corpus
+call:
+  responses_sse_recovery:
+    action: recover_recorded_output
+    recordings:
+      - 'data: {"type":"response.output_text.done","output_index":0,"text":"corpus"}'
+env: {}
+compare: {ignore: []}

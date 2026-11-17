@@ -3,7 +3,7 @@ title: Cache-cost-aware complexity placement
 description: 'Integrate B3123''s cache prediction service with B334 placement and B325 affinity
   observations. Add cache_aware_routing configuration and the bounded prediction deadline; preserve the
   original classified route when prediction is unavailable. Carry the selected cost comparison as Decimal
-  and update decision metadata through B012. This part only orchestrates the prediction and placement;
+  and update decision metadata. This part only orchestrates the prediction and placement;
   B3122 owns cache observations, B3121 provider token-count calls and B3123 pricing eligibility. Keep the integration
   adapter in betterlite-server in this task module; consume predecessor public interfaces without editing
   their implementation crates. Configuration boundary keys introduced or consumed here: cache_aware_routing,
