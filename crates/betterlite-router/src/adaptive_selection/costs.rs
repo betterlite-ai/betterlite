@@ -15,12 +15,8 @@ pub fn normalized_cost(
     let mut lowest = *first;
     let mut highest = *first;
     for cost in all_costs {
-        if *cost < lowest {
-            lowest = *cost;
-        }
-        if *cost > highest {
-            highest = *cost;
-        }
+        lowest = lowest.min(*cost);
+        highest = highest.max(*cost);
     }
     if highest == lowest {
         return Ok(NO_SPREAD_SCORE);

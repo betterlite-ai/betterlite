@@ -87,12 +87,7 @@ pub fn initial_cell(
     } else {
         0.0
     };
-    let mean = weight + bonus;
-    let prior = if mean > PRIOR_MEAN_CEILING {
-        PRIOR_MEAN_CEILING
-    } else {
-        mean
-    };
+    let prior = (weight + bonus).min(PRIOR_MEAN_CEILING);
     BanditCell::new(prior * COLD_START_MASS, (1.0 - prior) * COLD_START_MASS)
 }
 
