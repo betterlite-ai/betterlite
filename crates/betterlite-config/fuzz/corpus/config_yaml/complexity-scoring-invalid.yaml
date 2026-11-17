@@ -1,0 +1,7 @@
+model_list:
+  - model_name: complexity-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        complexity_thresholds:
+          simple: "15"
