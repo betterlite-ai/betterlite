@@ -1,6 +1,6 @@
 pub mod families;
 mod tests;
-mod values;
+pub mod values;
 
 use serde::Deserialize;
 

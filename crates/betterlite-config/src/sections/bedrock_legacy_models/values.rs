@@ -32,54 +32,60 @@ pub(super) struct ModelValues {
 
 impl ModelValues {
     pub(super) fn merged_with(&self, deployment: &Self) -> Self {
-        Self {
-            max_tokens_camel: deployment.max_tokens_camel.or(self.max_tokens_camel),
-            max_token_count: deployment.max_token_count.or(self.max_token_count),
-            max_tokens: deployment.max_tokens.or(self.max_tokens),
-            max_tokens_to_sample: deployment
-                .max_tokens_to_sample
-                .or(self.max_tokens_to_sample),
-            temperature: deployment
-                .temperature
-                .clone()
-                .or_else(|| self.temperature.clone()),
-            top_p_camel: deployment
-                .top_p_camel
-                .clone()
-                .or_else(|| self.top_p_camel.clone()),
-            top_p: deployment.top_p.clone().or_else(|| self.top_p.clone()),
-            top_k: deployment.top_k.clone().or_else(|| self.top_k.clone()),
-            stop_sequences_camel: deployment
-                .stop_sequences_camel
-                .clone()
-                .or_else(|| self.stop_sequences_camel.clone()),
-            stop_sequences: deployment
-                .stop_sequences
-                .clone()
-                .or_else(|| self.stop_sequences.clone()),
-            stop: deployment.stop.clone().or_else(|| self.stop.clone()),
-            frequence_penalty: deployment
-                .frequence_penalty
-                .clone()
-                .or_else(|| self.frequence_penalty.clone()),
-            presence_penalty: deployment
-                .presence_penalty
-                .clone()
-                .or_else(|| self.presence_penalty.clone()),
-            count_penalty: deployment
-                .count_penalty
-                .clone()
-                .or_else(|| self.count_penalty.clone()),
-            return_likelihood: deployment
-                .return_likelihood
-                .clone()
-                .or_else(|| self.return_likelihood.clone()),
-            anthropic_version: deployment
-                .anthropic_version
-                .clone()
-                .or_else(|| self.anthropic_version.clone()),
-        }
+        let mut merged = self.clone();
+        merge_token_limits(&mut merged, deployment);
+        merge_request_values(&mut merged, deployment);
+        merged
     }
+}
+
+fn merge_token_limits(merged: &mut ModelValues, deployment: &ModelValues) {
+    prefer(
+        &mut merged.max_tokens_camel,
+        deployment.max_tokens_camel.as_ref(),
+    );
+    prefer(
+        &mut merged.max_token_count,
+        deployment.max_token_count.as_ref(),
+    );
+    prefer(&mut merged.max_tokens, deployment.max_tokens.as_ref());
+    prefer(
+        &mut merged.max_tokens_to_sample,
+        deployment.max_tokens_to_sample.as_ref(),
+    );
+}
+
+fn merge_request_values(merged: &mut ModelValues, deployment: &ModelValues) {
+    prefer(&mut merged.temperature, deployment.temperature.as_ref());
+    prefer(&mut merged.top_p_camel, deployment.top_p_camel.as_ref());
+    prefer(&mut merged.top_p, deployment.top_p.as_ref());
+    prefer(&mut merged.top_k, deployment.top_k.as_ref());
+    prefer(
+        &mut merged.stop_sequences_camel,
+        deployment.stop_sequences_camel.as_ref(),
+    );
+    prefer(
+        &mut merged.stop_sequences,
+        deployment.stop_sequences.as_ref(),
+    );
+    prefer(&mut merged.stop, deployment.stop.as_ref());
+    prefer(
+        &mut merged.frequence_penalty,
+        deployment.frequence_penalty.as_ref(),
+    );
+    prefer(
+        &mut merged.presence_penalty,
+        deployment.presence_penalty.as_ref(),
+    );
+    prefer(&mut merged.count_penalty, deployment.count_penalty.as_ref());
+    prefer(
+        &mut merged.return_likelihood,
+        deployment.return_likelihood.as_ref(),
+    );
+    prefer(
+        &mut merged.anthropic_version,
+        deployment.anthropic_version.as_ref(),
+    );
 }
 
 #[derive(Debug, Clone, Default)]
@@ -92,54 +98,89 @@ impl Settings {
     // A deployment's value wins over litellm_settings; Claude2's field starts from litellm.max_tokens.
     #[must_use]
     pub fn resolve(&self, index: usize, default_max_tokens: i64) -> Resolved {
-        let values = self.deployments.get(index).map_or_else(
+        let values = self.values_for(index);
+        Resolved {
+            ai21: ai21_view(&values),
+            cohere: cohere_view(&values),
+            llama: llama_view(&values),
+            mistral: mistral_view(&values),
+            titan: titan_view(&values),
+            anthropic: anthropic_view(&values, default_max_tokens),
+        }
+    }
+
+    fn values_for(&self, index: usize) -> ModelValues {
+        self.deployments.get(index).map_or_else(
             || self.litellm_settings.clone(),
             |deployment| self.litellm_settings.merged_with(deployment),
-        );
-        Resolved {
-            ai21: Ai21Values {
-                max_tokens: values.max_tokens_camel,
-                temperature: values.temperature.clone(),
-                top_p: values.top_p_camel.clone(),
-                stop_sequences: values.stop_sequences_camel.clone(),
-                frequence_penalty: values.frequence_penalty,
-                presence_penalty: values.presence_penalty,
-                count_penalty: values.count_penalty,
-            },
-            cohere: CohereValues {
-                max_tokens: values.max_tokens,
-                temperature: values.temperature.clone(),
-                return_likelihood: values.return_likelihood,
-            },
-            llama: LlamaValues {
-                max_token_count: values.max_token_count,
-                temperature: values.temperature.clone(),
-                top_p: values.top_p_camel.clone(),
-            },
-            mistral: MistralValues {
-                max_tokens: values.max_tokens,
-                temperature: values.temperature.clone(),
-                top_p: values.top_p.clone(),
-                top_k: values.top_k.clone(),
-                stop: values.stop,
-            },
-            titan: TitanValues {
-                max_token_count: values.max_token_count,
-                stop_sequences: values.stop_sequences_camel,
-                temperature: values.temperature.clone(),
-                top_p: values.top_p_camel,
-            },
-            anthropic: AnthropicValues {
-                max_tokens_to_sample: Some(
-                    values.max_tokens_to_sample.unwrap_or(default_max_tokens),
-                ),
-                stop_sequences: values.stop_sequences,
-                temperature: values.temperature,
-                top_k: values.top_k,
-                top_p: values.top_p,
-                anthropic_version: values.anthropic_version,
-            },
-        }
+        )
+    }
+}
+
+fn prefer<T>(target: &mut Option<T>, value: Option<&T>)
+where
+    T: Clone,
+{
+    if let Some(found) = value.cloned() {
+        *target = Some(found);
+    }
+}
+
+fn ai21_view(values: &ModelValues) -> Ai21Values {
+    Ai21Values {
+        max_tokens: values.max_tokens_camel,
+        temperature: values.temperature.clone(),
+        top_p: values.top_p_camel.clone(),
+        stop_sequences: values.stop_sequences_camel.clone(),
+        frequence_penalty: values.frequence_penalty.clone(),
+        presence_penalty: values.presence_penalty.clone(),
+        count_penalty: values.count_penalty.clone(),
+    }
+}
+
+fn cohere_view(values: &ModelValues) -> CohereValues {
+    CohereValues {
+        max_tokens: values.max_tokens,
+        temperature: values.temperature.clone(),
+        return_likelihood: values.return_likelihood.clone(),
+    }
+}
+
+fn llama_view(values: &ModelValues) -> LlamaValues {
+    LlamaValues {
+        max_token_count: values.max_token_count,
+        temperature: values.temperature.clone(),
+        top_p: values.top_p_camel.clone(),
+    }
+}
+
+fn mistral_view(values: &ModelValues) -> MistralValues {
+    MistralValues {
+        max_tokens: values.max_tokens,
+        temperature: values.temperature.clone(),
+        top_p: values.top_p.clone(),
+        top_k: values.top_k.clone(),
+        stop: values.stop.clone(),
+    }
+}
+
+fn titan_view(values: &ModelValues) -> TitanValues {
+    TitanValues {
+        max_token_count: values.max_token_count,
+        stop_sequences: values.stop_sequences_camel.clone(),
+        temperature: values.temperature.clone(),
+        top_p: values.top_p_camel.clone(),
+    }
+}
+
+fn anthropic_view(values: &ModelValues, default_max_tokens: i64) -> AnthropicValues {
+    AnthropicValues {
+        max_tokens_to_sample: Some(values.max_tokens_to_sample.unwrap_or(default_max_tokens)),
+        stop_sequences: values.stop_sequences.clone(),
+        temperature: values.temperature.clone(),
+        top_k: values.top_k.clone(),
+        top_p: values.top_p.clone(),
+        anthropic_version: values.anthropic_version.clone(),
     }
 }
 
