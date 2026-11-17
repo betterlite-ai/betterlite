@@ -8,7 +8,7 @@ pub(super) fn decode_body(body: &[u8]) -> Result<Json, VertexPredictError> {
     serde_json::from_slice(body).map_err(|source| VertexPredictError::Decode { source })
 }
 
-pub(super) fn object_fields(value: &Json) -> Result<&Extra, VertexPredictError> {
+pub(super) const fn object_fields(value: &Json) -> Result<&Extra, VertexPredictError> {
     match value {
         Json::Object(fields) => Ok(fields),
         other => Err(VertexPredictError::BodyShape { found: kind(other) }),
