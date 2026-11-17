@@ -283,7 +283,7 @@ fn other_breaks_keep_two_frames_on_one_line(#[case] separator: &[u8]) {
 }
 
 #[rstest]
-#[case::plain(r#"see data: here"#, "see data: here")]
+#[case::plain("see data: here", "see data: here")]
 #[case::after_an_escaped_quote(r#"a\"data: b"#, "a\"data: b")]
 #[case::starts_with_an_escaped_quote(r#"\"data: b"#, "\"data: b")]
 fn a_data_mention_inside_a_json_string_does_not_start_a_field(
