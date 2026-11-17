@@ -8,10 +8,8 @@ use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 
 const ENABLE_PREVIEW_FEATURES_PATH: &str = "litellm_settings.enable_preview_features";
-pub const EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER_ENV: &str =
-    "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER";
-pub const DEFAULT_EMBEDDING_ENCODING_FORMAT_ENV: &str =
-    "LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT";
+pub const EXPERIMENTAL_HANDLER_ENV: &str = "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER";
+pub const EMBEDDING_FORMAT_ENV: &str = "LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT";
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -28,9 +26,9 @@ struct Global {
 // main.py's OpenAI dispatch reads these three flags; the two environment ones have no YAML owner
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub experimental_base_llm_http_handler: bool,
+    pub experimental_handler: bool,
     pub enable_preview_features: bool,
-    pub default_embedding_encoding_format: Option<String>,
+    pub embedding_format: Option<String>,
 }
 
 impl Section for Raw {
@@ -42,14 +40,17 @@ impl Section for Raw {
     {
         Ok(Settings {
             // get_secret_bool defaults to unset, so any text but true or false leaves the handler off
-            experimental_base_llm_http_handler: lookup
-                .lookup(EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER_ENV)
+            experimental_handler: lookup
+                .lookup(EXPERIMENTAL_HANDLER_ENV)
                 .as_deref()
                 .and_then(text_to_bool)
                 .unwrap_or(false),
-            enable_preview_features: preview(self.litellm_settings.enable_preview_features, lookup)?,
-            default_embedding_encoding_format: lookup
-                .lookup(DEFAULT_EMBEDDING_ENCODING_FORMAT_ENV)
+            enable_preview_features: preview(
+                self.litellm_settings.enable_preview_features,
+                lookup,
+            )?,
+            embedding_format: lookup
+                .lookup(EMBEDDING_FORMAT_ENV)
                 .filter(|value| !value.is_empty()),
         })
     }
