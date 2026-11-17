@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-media-prepare-assistant-image
+call:
+  b9965:
+    model: gemini-2.5-flash
+    provider: vertex_ai
+    mode: sequential
+    messages:
+      - {role: user, content: q}
+      - role: assistant
+        content: a
+        images:
+          - type: image_url
+            image_url: {url: "http://example.com/cat"}
+            index: 0
+      - {role: user, content: next}
+    data_urls:
+      "http://example.com/cat": "data:image/png;base64,YWJj"
+    optional_params: {}
+    litellm_params: {}
+    supports: {system_message: true, response_schema: true}
+env: {}
+compare: {ignore: []}

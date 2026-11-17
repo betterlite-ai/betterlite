@@ -1,0 +1,209 @@
+use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
+use betterlite_context::anthropic_catalog_lookup::model_capability;
+use betterlite_context::bedrock_model::get_bedrock_base_model;
+use betterlite_models::lemonade_model_metadata::ModelInfoClient;
+use betterlite_models::model_capability_predicates::{
+    CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest, NamedCapability,
+};
+use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
+
+use crate::converse_options::family::{
+    is_deepseek_model, is_nova_2_model, is_openai_gpt_reasoning_model, rejects_reasoning_effort,
+};
+use crate::model_routes::{ParamMap, ParamValue};
+
+const CONVERSE_PROVIDER: &str = "bedrock_converse";
+const SAMPLING_CAPABILITY: &str = "supports_sampling_params";
+const THINKING_MODEL_MARKERS: [&str; 3] = ["claude-3-7", "claude-sonnet-4", "claude-opus-4"];
+const TOOL_SEARCH_PARAMS: [&str; 5] = [
+    "tools",
+    "tool_choice",
+    "thinking",
+    "reasoning_effort",
+    "output_config",
+];
+const TOOL_BASE_PREFIXES: [&str; 8] = [
+    "anthropic",
+    "mistral",
+    "cohere",
+    "meta.llama3-1",
+    "meta.llama3-2",
+    "meta.llama3-3",
+    "meta.llama4",
+    "amazon.nova",
+];
+
+#[must_use]
+pub fn supports_sampling_params(model: &str, catalogs: &CatalogSources<'_>) -> bool {
+    let base_model = get_bedrock_base_model(model);
+    if base_model.starts_with("anthropic") {
+        return true;
+    }
+    let candidates = [
+        model.to_owned(),
+        format!("global.{base_model}"),
+        format!("us.{base_model}"),
+        format!("eu.{base_model}"),
+    ];
+    for candidate in candidates {
+        if let Some(flag) = model_capability(
+            catalogs.patterns,
+            catalogs.runtime,
+            catalogs.packaged,
+            &candidate,
+            SAMPLING_CAPABILITY,
+        ) {
+            return flag;
+        }
+    }
+    true
+}
+
+#[must_use]
+pub async fn accepts_thinking_param<Source, Transport>(
+    model: &str,
+    base_model: &str,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> bool
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    if is_deepseek_model(model, base_model) {
+        return false;
+    }
+    if THINKING_MODEL_MARKERS
+        .into_iter()
+        .any(|marker| model.contains(marker))
+    {
+        return true;
+    }
+    supports_on(environment, model, base_model, NamedCapability::Reasoning).await
+}
+
+#[must_use]
+pub fn auto_tool_choice() -> ParamMap {
+    let mut block = ParamMap::new();
+    block.insert("auto".to_owned(), ParamValue::Mapping(ParamMap::new()));
+    block
+}
+
+#[must_use]
+pub async fn supported_openai_params<Source, Transport>(
+    model: &str,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    catalogs: &CatalogSources<'_>,
+) -> Vec<String>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let mut params = base_params(model, catalogs);
+    if model.contains("arn") {
+        params.extend(TOOL_SEARCH_PARAMS.map(str::to_owned));
+        if model.to_lowercase().contains("nova") {
+            params.push("web_search_options".to_owned());
+        }
+        return params;
+    }
+    let base_model = get_bedrock_base_model(model);
+    push_capability_params(&mut params, model, &base_model, environment).await;
+    if base_model.starts_with("anthropic") {
+        params.push("context_management".to_owned());
+    }
+    params
+}
+
+fn base_params(model: &str, catalogs: &CatalogSources<'_>) -> Vec<String> {
+    let leading = [
+        "max_tokens",
+        "max_completion_tokens",
+        "stream",
+        "stream_options",
+        "stop",
+    ];
+    let mut params: Vec<String> = leading.map(str::to_owned).into_iter().collect();
+    if supports_sampling_params(model, catalogs) {
+        params.push("temperature".to_owned());
+        params.push("top_p".to_owned());
+    }
+    params.extend(
+        [
+            "extra_headers",
+            "response_format",
+            "requestMetadata",
+            "service_tier",
+            "parallel_tool_calls",
+        ]
+        .map(str::to_owned),
+    );
+    params
+}
+
+async fn push_capability_params<Source, Transport>(
+    params: &mut Vec<String>,
+    model: &str,
+    base_model: &str,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let request = CapabilityRequest {
+        model,
+        custom_llm_provider: Some(CONVERSE_PROVIDER),
+    };
+    if TOOL_BASE_PREFIXES
+        .into_iter()
+        .any(|prefix| base_model.starts_with(prefix))
+        || environment
+            .supports_factory(&request, NamedCapability::FunctionCalling.key())
+            .await
+    {
+        params.push("tools".to_owned());
+    }
+    if base_model.starts_with("amazon.nova") {
+        params.push("web_search_options".to_owned());
+    }
+    if supports_on(environment, model, base_model, NamedCapability::ToolChoice).await {
+        params.push("tool_choice".to_owned());
+    }
+    let deepseek = is_deepseek_model(model, base_model);
+    let raw_effort = model.contains("gpt-oss")
+        || is_openai_gpt_reasoning_model(model)
+        || is_openai_gpt_reasoning_model(base_model)
+        || (deepseek && !rejects_reasoning_effort(model, base_model))
+        || (!deepseek && is_nova_2_model(model));
+    if raw_effort {
+        params.push("reasoning_effort".to_owned());
+        return;
+    }
+    if accepts_thinking_param(model, base_model, environment).await {
+        params.extend(["thinking", "reasoning_effort", "output_config"].map(str::to_owned));
+    }
+}
+
+async fn supports_on<Source, Transport>(
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    model: &str,
+    base_model: &str,
+    capability: NamedCapability,
+) -> bool
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    let mut supported = false;
+    for name in [model, base_model] {
+        supported |= environment
+            .supports_factory(
+                &CapabilityRequest {
+                    model: name,
+                    custom_llm_provider: Some(CONVERSE_PROVIDER),
+                },
+                capability.key(),
+            )
+            .await;
+    }
+    supported
+}

@@ -1,0 +1,44 @@
+kind: sdk_http
+name: messages-chat-async-error-event-ends-stream
+env: {}
+call:
+  messages_chat_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - mode: wrapper
+        failure: {kind: reported, status_code: 429, message: busy, after: 1}
+        steps: [next, next, next, next, drain]
+      - mode: sse
+        failure: {kind: reported, status_code: 429, message: busy, after: 1}
+        steps: [drain]
+      - mode: sse
+        failure: {kind: empty, after: 1}
+        steps: [drain]
+      - mode: sse
+        steps: [drain]
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - 'null'
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

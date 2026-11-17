@@ -1,0 +1,133 @@
+kind: helper
+name: hosted-vllm-media-rerank-params
+call:
+  b8151:
+    function: "rerank_params"
+    calls:
+      - api_base: "http://host/v1/rerank"
+        env: {}
+        headers: {}
+        api_key: "secret"
+        model: "my-model"
+        query: "q"
+        documents: ["first", {"text": "second"}]
+        top_n: 2
+        rank_fields: ["title"]
+        return_documents: true
+        max_chunks_per_doc: null
+        max_tokens_per_doc: 8
+        instruction: "rank by relevance"
+        non_default_params: {truncate_prompt_tokens: 4, truncation_side: "right", max_tokens_per_query: 6}
+      - api_base: "http://host"
+        env: {HOSTED_VLLM_API_BASE: "http://env"}
+        headers: {Authorization: "Bearer caller", x-extra: "1"}
+        api_key: null
+        model: "my-model"
+        query: "q"
+        documents: ["first"]
+        top_n: null
+        rank_fields: null
+        return_documents: null
+        max_chunks_per_doc: null
+        max_tokens_per_doc: null
+        instruction: null
+        non_default_params: {}
+      - api_base: "http://host"
+        env: {HOSTED_VLLM_API_KEY: "env-key"}
+        headers: {}
+        api_key: null
+        model: "my-model"
+        query: "q"
+        documents: ["first"]
+        top_n: 1
+        rank_fields: null
+        return_documents: false
+        max_chunks_per_doc: null
+        max_tokens_per_doc: null
+        instruction: null
+        non_default_params: {}
+      - api_base: "http://host/"
+        env: {HOSTED_VLLM_API_KEY: "env-key"}
+        headers: {accept: "text/plain"}
+        api_key: ""
+        model: "my-model"
+        query: "q"
+        documents: ["first"]
+        top_n: null
+        rank_fields: null
+        return_documents: true
+        max_chunks_per_doc: null
+        max_tokens_per_doc: null
+        instruction: null
+        non_default_params: {truncation_side: "left"}
+calls:
+  - b8151:
+      function: "rerank_params"
+      calls:
+        - api_base: "http://host"
+          env: {}
+          headers: {}
+          api_key: "secret"
+          model: "my-model"
+          query: "q"
+          documents: ["first"]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          max_chunks_per_doc: 5
+          max_tokens_per_doc: null
+          instruction: null
+          non_default_params: {}
+  - b8151:
+      function: "rerank_params"
+      calls:
+        - api_base: "http://host"
+          env: {}
+          headers: {}
+          api_key: "secret"
+          model: "my-model"
+          query: "q"
+          documents: ["first"]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          max_chunks_per_doc: null
+          max_tokens_per_doc: null
+          instruction: null
+          non_default_params: {truncation_side: "up"}
+  - b8151:
+      function: "rerank_params"
+      calls:
+        - api_base: null
+          env: {}
+          headers: {}
+          api_key: "secret"
+          model: "my-model"
+          query: "q"
+          documents: ["first"]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          max_chunks_per_doc: null
+          max_tokens_per_doc: null
+          instruction: null
+          non_default_params: {}
+  - b8151:
+      function: "rerank_params"
+      calls:
+        - api_base: null
+          env: {HOSTED_VLLM_API_BASE: "http://env"}
+          headers: {}
+          api_key: "secret"
+          model: "my-model"
+          query: "q"
+          documents: ["first"]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          max_chunks_per_doc: null
+          max_tokens_per_doc: null
+          instruction: null
+          non_default_params: {}
+env: {}
+compare: {ignore: []}

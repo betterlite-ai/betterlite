@@ -1,0 +1,29 @@
+task: B9965
+deviations:
+  - what: >-
+      The synchronous entry fetches every selected media url before converting any message part, and assistant
+      images are fetched after all content parts; LiteLLM's synchronous path downloads each url while converting
+      its part and stops at the first conversion failure.
+    why: >-
+      betterlite prepares messages before the shared body build so the conversion code never performs I/O; the
+      asynchronous entry fetches in the same order LiteLLM's async pre-inline does.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1194
+  - what: >-
+      A Studio file part whose remote download fails fails the request with 400, where LiteLLM's synchronous
+      Studio prepass swallows the failed file fetch and its walker can still forward an https url with an image
+      extension as file_data.
+    why: >-
+      A failed fetch is treated as final so no request continues with a uri the caller asked the gateway to inline.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L154-L167
+  - what: >-
+      A failing download for a tool-result media part fails the request with 400 in both entries, where LiteLLM's
+      synchronous tool-result conversion catches the failure, logs a warning and sends the result without that
+      media part; its asynchronous entry already fails the same way.
+    why: >-
+      betterlite prepares every message before the shared body build, so one pass performs the fetches and its
+      failure is final instead of dropping data the caller sent.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1419-L1435
+kept_bugs: []

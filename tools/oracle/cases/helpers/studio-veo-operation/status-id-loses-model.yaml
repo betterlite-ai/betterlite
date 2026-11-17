@@ -1,0 +1,19 @@
+kind: helper
+name: status-id-loses-model
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: status_response
+        provider: gemini
+        body:
+          name: operations/generate_1234567890
+          done: true
+          metadata:
+            createTime: '2026-01-01T00:00:00.000000Z'
+            model: veo-3.0-generate-001
+      - function: status_request
+        video_id: 'video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmdlbWluaTttb2RlbF9pZDp2ZW8tMy4wLWdlbmVyYXRlLTAwMTt2aWRlb19pZDpvcGVyYXRpb25zL2dlbmVyYXRlXzEyMzQ1Njc4OTA='
+        api_base: 'https://generativelanguage.googleapis.com/'
+env: {}
+compare: {ignore: []}

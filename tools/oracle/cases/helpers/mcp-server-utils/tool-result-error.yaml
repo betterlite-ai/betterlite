@@ -1,0 +1,22 @@
+kind: helper
+name: mcp-server-utils-tool-result-error
+call:
+  b6594:
+    function: tool_result_error
+    result:
+      isError: true
+      content:
+        - {type: text, text: ""}
+        - {type: text, text: "boom: upstream failed"}
+calls:
+  - b6594:
+      function: tool_result_error
+      result: {is_error: true, content: [{type: text, text: legacy boom}]}
+  - b6594:
+      function: tool_result_error
+      result: {isError: true, content: [{type: image, data: abc}]}
+  - b6594:
+      function: tool_result_error
+      result: {isError: false, content: [{type: text, text: not an error}]}
+env: {}
+compare: {ignore: []}

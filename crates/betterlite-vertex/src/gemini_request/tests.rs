@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -22,6 +22,7 @@ use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
@@ -46,9 +47,8 @@ use tokio::time::Instant;
 use crate::cache_create::orchestration::CacheCreateRequest;
 use crate::cache_lookup::target::CacheProvider;
 use crate::cache_lookup::transport::CacheTransport;
-use crate::gemini_history::error::HistoryError;
 use crate::gemini_request::body::Transformed;
-use crate::gemini_request::error::{BodyError, RequestError};
+use crate::gemini_request::error::RequestError;
 use crate::gemini_request::orchestration::CallRequest;
 use crate::gemini_request::orchestration::async_media::transform_request_body_async;
 use crate::gemini_request::orchestration::transform_request_body;
@@ -62,6 +62,18 @@ const SYSTEM_USER_MESSAGES: &str =
     r#"[{"role":"system","content":"rules"},{"role":"user","content":"hi"}]"#;
 const USER_CONTENTS: &str = r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#;
 const IMAGE_MESSAGES: &str = r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"data:image/png;base64,YWJj","detail":"high"}}]}]"#;
+const FETCHED: &str = "data:image/png;base64,YWJj";
+const REMOTE_HTTP: &str = "http://example.com/cat";
+const REMOTE_HTTP_PNG: &str = "http://example.com/cat.png";
+const REMOTE_HTTPS: &str = "https://example.com/cat";
+const REMOTE_HTTPS_PNG: &str = "https://example.com/cat.png";
+const REMOTE_A: &str = "https://example.com/a";
+const REMOTE_B: &str = "https://example.com/b";
+const REMOTE_PDF: &str = "https://example.com/doc.pdf";
+const INLINE_CAT_BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text":"what"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]}]}"#;
+const ASSISTANT_TEXT_BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]},{"role":"user","parts":[{"text":"next"}]}]}"#;
+const ASSISTANT_JPEG_BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/jpeg"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#;
+const STUDIO_FILE_MESSAGES: &str = r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/doc.pdf","format":"application/pdf"}}]}]"#;
 
 struct SilentLogger;
 
@@ -205,32 +217,64 @@ impl ModelCapabilityLookup for FixtureLookup {
 }
 
 #[derive(Default)]
-struct CountingFetch {
-    calls: AtomicUsize,
+struct MapFetch {
+    urls: BTreeMap<String, String>,
+    converted: Mutex<Vec<String>>,
+    batches: Mutex<Vec<Vec<String>>>,
 }
 
-impl CountingFetch {
+impl MapFetch {
+    fn with_urls(&mut self, urls: &[(&str, &str)]) {
+        self.urls = urls
+            .iter()
+            .map(|(url, data_url)| ((*url).to_owned(), (*data_url).to_owned()))
+            .collect();
+    }
+
+    fn lookup(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.urls
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Attempts {
+                url: url.to_owned(),
+            })
+    }
+
     fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
+        self.converted()
+            .len()
+            .saturating_add(self.batches.lock().expect("fixture fetcher").len())
+    }
+
+    fn converted(&self) -> Vec<String> {
+        self.converted.lock().expect("fixture fetcher").clone()
+    }
+
+    fn batches(&self) -> Vec<Vec<String>> {
+        self.batches.lock().expect("fixture fetcher").clone()
     }
 }
 
-impl RemoteMediaFetcher for CountingFetch {
+impl RemoteMediaFetcher for MapFetch {
     fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        ready(Err(ImageFetchError::Rejected {
-            url: url.to_owned(),
-        }))
+        self.converted
+            .lock()
+            .expect("fixture fetcher")
+            .push(url.to_owned());
+        ready(self.lookup(url))
     }
 
     fn convert_urls(
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        ready(Err(ImageFetchError::Rejected {
-            url: urls.join(","),
-        }))
+        self.batches
+            .lock()
+            .expect("fixture fetcher")
+            .push(urls.to_vec());
+        let values: Result<Vec<String>, ImageFetchError> =
+            urls.iter().map(|url| self.lookup(url)).collect();
+        ready(values)
     }
 }
 
@@ -270,7 +314,7 @@ struct Harness {
     counter: Counter,
     catalog: Arc<ModelCatalog>,
     hooks: Hooks,
-    fetcher: CountingFetch,
+    fetcher: MapFetch,
     transport: NoTransport,
     now: Timestamp,
 }
@@ -284,10 +328,15 @@ impl Harness {
             counter: counter(),
             catalog: BundledCatalog::default().get(),
             hooks: hooks(),
-            fetcher: CountingFetch::default(),
+            fetcher: MapFetch::default(),
             transport: NoTransport::default(),
             now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
         }
+    }
+
+    fn with_fetch(mut self, urls: &[(&str, &str)]) -> Self {
+        self.fetcher.with_urls(urls);
+        self
     }
 
     fn run(&self, input: &RequestInput) -> Result<Transformed, RequestError> {
@@ -694,85 +743,6 @@ fn media_input(provider: VertexCapabilityProvider, messages: &str) -> RequestInp
     input
 }
 
-fn remote_media_error(harness: &Harness, input: &RequestInput) -> HistoryError {
-    let error = harness
-        .run_async(input)
-        .expect_err("the media would need a download");
-    match error {
-        RequestError::Body(BodyError::History(history)) => history,
-        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
-            panic!("the refusal is a history media error, got {other}")
-        }
-    }
-}
-
-fn assert_reference(input: &RequestInput, expected: &str) {
-    let harness = Harness::new();
-    let transformed = harness
-        .run_async(input)
-        .expect("the media stays a reference");
-    assert_eq!(Json::Object(transformed.body), parse_json(expected));
-    assert_no_io(&harness);
-}
-
-#[test]
-fn inline_policy_no_io() {
-    let harness = Harness::new();
-    let studio_image = media_input(
-        VertexCapabilityProvider::Gemini,
-        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
-    );
-    let studio_error = remote_media_error(&harness, &studio_image);
-    assert_eq!(
-        (
-            studio_error.status(),
-            studio_error.error_type(),
-            studio_error.param(),
-            studio_error.code(),
-        ),
-        (
-            400,
-            Some("invalid_request_error"),
-            Some("image_url"),
-            Some("unsupported_remote_media")
-        )
-    );
-    let vertex_image = media_input(
-        VertexCapabilityProvider::VertexAi,
-        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"http://example.com/cat"}}]}]"#,
-    );
-    assert_eq!(
-        remote_media_error(&harness, &vertex_image).param(),
-        Some("image_url")
-    );
-    assert_no_io(&harness);
-}
-
-#[test]
-fn inline_policy_keeps_references() {
-    assert_reference(
-        &media_input(
-            VertexCapabilityProvider::VertexAi,
-            r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
-        ),
-        r#"{"contents":[{"role":"user","parts":[{"text":"what"},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/cat.png"}}]}]}"#,
-    );
-    assert_reference(
-        &media_input(
-            VertexCapabilityProvider::Gemini,
-            r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://generativelanguage.googleapis.com/v1beta/files/abc123","format":"image/png"}}]}]"#,
-        ),
-        r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}},{"text":" "}]}]}"#,
-    );
-    assert_reference(
-        &media_input(
-            VertexCapabilityProvider::VertexAi,
-            r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"gs://bucket/cat.png"}}]}]"#,
-        ),
-        r#"{"contents":[{"role":"user","parts":[{"file_data":{"mime_type":"image/png","file_uri":"gs://bucket/cat.png"}},{"text":" "}]}]}"#,
-    );
-}
-
 #[test]
 fn async_keeps_the_cached_content() {
     let harness = Harness::new();
@@ -789,49 +759,240 @@ fn async_keeps_the_cached_content() {
     assert_eq!(harness.transport.calls(), 0);
 }
 
-#[test]
-fn the_first_inlined_media_names_the_param() {
-    let harness = Harness::new();
-    let input = media_input(
-        VertexCapabilityProvider::Gemini,
-        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/report.pdf","format":"application/pdf"}}]}]"#,
+fn run_entry(
+    harness: &Harness,
+    input: &RequestInput,
+    asynchronous: bool,
+) -> Result<Transformed, RequestError> {
+    if asynchronous {
+        harness.run_async(input)
+    } else {
+        harness.run(input)
+    }
+}
+
+fn assistant_image_messages(image_url: &str) -> String {
+    format!(
+        r#"[{{"role":"user","content":"q"}},{{"role":"assistant","content":"a","images":[{{"type":"image_url","image_url":{image_url},"index":0}}]}},{{"role":"user","content":"next"}}]"#
+    )
+}
+
+fn assert_fetched(harness: &Harness, asynchronous: bool, urls: &[&str]) {
+    let expected: Vec<String> = urls.iter().map(|url| (*url).to_owned()).collect();
+    assert_eq!(harness.fetcher.calls(), expected.len());
+    if asynchronous {
+        assert_eq!(harness.fetcher.batches(), vec![expected]);
+        assert!(harness.fetcher.converted().is_empty());
+    } else {
+        assert_eq!(harness.fetcher.converted(), expected);
+        assert!(harness.fetcher.batches().is_empty());
+    }
+}
+
+#[rstest]
+#[case::sequential(false, REMOTE_HTTPS)]
+#[case::concurrent(true, REMOTE_HTTPS)]
+#[case::http_extension(false, REMOTE_HTTP_PNG)]
+#[case::http_extension_concurrent(true, REMOTE_HTTP_PNG)]
+fn media_download(#[case] asynchronous: bool, #[case] url: &str) {
+    let harness = Harness::new().with_fetch(&[(url, FETCHED)]);
+    let messages = format!(
+        r#"[{{"role":"user","content":[{{"type":"text","text":"what"}},{{"type":"image_url","image_url":{{"url":"{url}"}}}}]}}]"#
     );
-    assert_eq!(remote_media_error(&harness, &input).param(), Some("file"));
+    let input = media_input(VertexCapabilityProvider::VertexAi, &messages);
+    let transformed = run_entry(&harness, &input, asynchronous).expect("the media is fetched");
+    assert_body(&transformed, INLINE_CAT_BODY);
+    assert_fetched(&harness, asynchronous, &[url]);
+    assert_eq!(harness.transport.calls(), 0);
+}
+
+#[rstest]
+#[case::format(VertexCapabilityProvider::VertexAi, "format", "image/png")]
+#[case::format_beta(VertexCapabilityProvider::VertexAiBeta, "format", "image/png")]
+#[case::mime_type(VertexCapabilityProvider::VertexAi, "mime_type", "image/jpeg")]
+#[case::content_type(VertexCapabilityProvider::VertexAi, "content_type", "image/webp")]
+fn media_https_hint_passes_mime(
+    #[case] provider: VertexCapabilityProvider,
+    #[case] key: &str,
+    #[case] mime: &str,
+) {
+    let harness = Harness::new();
+    let messages = format!(
+        r#"[{{"role":"user","content":[{{"type":"text","text":"what"}},{{"type":"image_url","image_url":{{"url":"https://example.com/cat","{key}":"{mime}"}}}}]}}]"#
+    );
+    let input = media_input(provider, &messages);
+    let transformed = harness.run(&input).expect("the hinted reference stays");
+    let expected = format!(
+        r#"{{"contents":[{{"role":"user","parts":[{{"text":"what"}},{{"file_data":{{"mime_type":"{mime}","file_uri":"https://example.com/cat"}}}}]}}]}}"#
+    );
+    assert_body(&transformed, &expected);
+    assert_no_io(&harness);
 }
 
 #[test]
-fn references_do_not_name_the_param() {
-    let harness = Harness::new();
+fn media_studio_https_extension() {
+    let harness = Harness::new().with_fetch(&[(REMOTE_HTTPS_PNG, FETCHED)]);
     let input = media_input(
         VertexCapabilityProvider::Gemini,
-        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://generativelanguage.googleapis.com/v1beta/files/abc123","format":"image/png"}}]},{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
+        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}}]}]"#,
     );
-    let error = remote_media_error(&harness, &input);
-    assert_eq!(error.param(), Some("image_url"));
+    let transformed = harness.run(&input).expect("the media is downloaded");
+    assert_body(&transformed, INLINE_CAT_BODY);
+    assert_fetched(&harness, false, &[REMOTE_HTTPS_PNG]);
 }
 
-// A tool result's remote media is only fetched by the history conversion, so this is the shape the refusal owns
+#[rstest]
+#[case::vertex(VertexCapabilityProvider::VertexAi)]
+#[case::studio(VertexCapabilityProvider::Gemini)]
+fn media_files_api_uri_passthrough(#[case] provider: VertexCapabilityProvider) {
+    let harness = Harness::new();
+    let input = media_input(
+        provider,
+        r#"[{"role":"user","content":[{"type":"text","text":"read"},{"type":"image_url","image_url":{"url":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}}]}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("the uploaded uri stays a reference");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"read"},{"file_data":{"file_uri":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}}]}]}"#,
+    );
+    assert_no_io(&harness);
+}
+
 #[test]
-fn tool_media_is_refused_before_the_fetch() {
+fn media_data_url_not_fetched() {
     let harness = Harness::new();
     let input = media_input(
         VertexCapabilityProvider::VertexAi,
-        r#"[{"role":"tool","name":"f","content":[{"type":"image_url","image_url":{"url":"http://example.com/cat"}},{"type":"file","file":{"file_id":"http://example.com/report.pdf","format":"application/pdf"}}]}]"#,
+        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"data:image/png;base64,YWJj"}}]}]"#,
     );
-    let error = remote_media_error(&harness, &input);
-    assert_eq!(
-        (
-            error.status(),
-            error.error_type(),
-            error.param(),
-            error.code(),
-        ),
-        (
-            400,
-            Some("invalid_request_error"),
-            Some("image_url"),
-            Some("unsupported_remote_media")
-        )
+    let transformed = harness.run(&input).expect("the inline data stays");
+    assert_body(&transformed, INLINE_CAT_BODY);
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::vertex_sync(VertexCapabilityProvider::VertexAi, false)]
+#[case::vertex_async(VertexCapabilityProvider::VertexAi, true)]
+#[case::studio_sync(VertexCapabilityProvider::Gemini, false)]
+#[case::studio_async(VertexCapabilityProvider::Gemini, true)]
+fn media_assistant_image_fetches(
+    #[case] provider: VertexCapabilityProvider,
+    #[case] asynchronous: bool,
+) {
+    let harness = Harness::new().with_fetch(&[(REMOTE_HTTP, FETCHED)]);
+    let messages =
+        assistant_image_messages(r#"{"url":"http://example.com/cat","format":"image/jpeg"}"#);
+    let input = media_input(provider, &messages);
+    let transformed = run_entry(&harness, &input, asynchronous).expect("the image is downloaded");
+    assert_body(&transformed, ASSISTANT_JPEG_BODY);
+    assert_fetched(&harness, asynchronous, &[REMOTE_HTTP]);
+}
+
+#[test]
+fn media_assistant_image_hint_passthrough() {
+    let harness = Harness::new();
+    let messages =
+        assistant_image_messages(r#"{"url":"https://example.com/a","mime_type":"image/webp"}"#);
+    let input = media_input(VertexCapabilityProvider::VertexAi, &messages);
+    let transformed = harness
+        .run(&input)
+        .expect("the hinted image stays a reference");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"file_data":{"mime_type":"image/webp","file_uri":"https://example.com/a"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
     );
-    assert_eq!(harness.fetcher.calls(), 0);
+    assert_no_io(&harness);
+}
+
+#[test]
+fn media_assistant_image_string_skipped() {
+    let harness = Harness::new();
+    let messages = assistant_image_messages(r#""https://example.com/a""#);
+    let input = media_input(VertexCapabilityProvider::VertexAi, &messages);
+    let transformed = harness.run(&input).expect("the string is skipped");
+    assert_body(&transformed, ASSISTANT_TEXT_BODY);
+    assert_no_io(&harness);
+}
+
+#[test]
+fn media_assistant_image_hint_survives_a_shared_download() {
+    let harness = Harness::new().with_fetch(&[(REMOTE_A, FETCHED)]);
+    let messages = r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"https://example.com/a"}},{"type":"image_url","image_url":{"url":"https://example.com/a","format":"image/jpeg"}},{"type":"image_url","image_url":{"url":"https://example.com/a"}}]},{"role":"user","content":"next"}]"#;
+    let input = media_input(VertexCapabilityProvider::VertexAi, messages);
+    let transformed = harness.run(&input).expect("the media is downloaded");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}},{"file_data":{"mime_type":"image/jpeg","file_uri":"https://example.com/a"}},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+    );
+    assert_fetched(&harness, false, &[REMOTE_A]);
+}
+
+#[test]
+fn media_studio_image_extension() {
+    let harness = Harness::new();
+    let messages = assistant_image_messages(r#"{"url":"https://example.com/a.png"}"#);
+    let input = media_input(VertexCapabilityProvider::Gemini, &messages);
+    let transformed = harness.run(&input).expect("the image stays a reference");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/a.png"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+    );
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::sequential(false)]
+#[case::concurrent(true)]
+fn media_refused_fetch_fails_once(#[case] asynchronous: bool) {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"http://example.com/cat"}}]}]"#,
+    );
+    let error = run_entry(&harness, &input, asynchronous).expect_err("the download is refused");
+    let url = match error {
+        RequestError::Inline(MediaError::Fetch(ImageFetchError::Attempts { url })) => url,
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("a refused download is an inline media error, got {other:?}")
+        }
+    };
+    assert_eq!(url, REMOTE_HTTP);
+    assert_fetched(&harness, asynchronous, &[REMOTE_HTTP]);
+    assert_eq!(harness.transport.calls(), 0);
+}
+
+#[test]
+fn media_studio_file_fetch_failure() {
+    let harness = Harness::new();
+    let input = media_input(VertexCapabilityProvider::Gemini, STUDIO_FILE_MESSAGES);
+    let error = harness.run(&input).expect_err("the download is refused");
+    let url = match error {
+        RequestError::Inline(MediaError::Fetch(ImageFetchError::Attempts { url })) => url,
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("a refused studio file download is not inline media: {other:?}")
+        }
+    };
+    assert_eq!(url, REMOTE_PDF);
+    assert_fetched(&harness, false, &[REMOTE_PDF]);
+    assert_eq!(harness.transport.calls(), 0);
+}
+
+#[test]
+fn media_sequential_fetch_order() {
+    let harness = Harness::new().with_fetch(&[
+        (REMOTE_A, FETCHED),
+        (REMOTE_B, "data:image/png;base64,ZGVm"),
+    ]);
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"https://example.com/a"}},{"type":"image_url","image_url":{"url":"https://example.com/b"}}]}]"#,
+    );
+    let transformed = harness.run(&input).expect("both media are downloaded");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}},{"inline_data":{"data":"ZGVm","mime_type":"image/png"}}]}]}"#,
+    );
+    assert_fetched(&harness, false, &[REMOTE_A, REMOTE_B]);
 }

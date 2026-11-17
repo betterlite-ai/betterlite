@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-live-frames-reordered
+call:
+  gemini_live_frames:
+    model: gemini/gemini-3.5-transcribe-live
+    unbilled_input_audio_bytes: 48000
+    frames:
+      - '{"usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}, "serverContent": {"inputTranscription": {"text": "hello"}}}'
+      - '{"usageMetadata": {"promptTokenCount": 1, "totalTokenCount": 1}, "toolCall": {"functionCalls": [{"name": "lookup"}]}, "serverContent": {"turnComplete": true}}'
+      - '{"serverContent": {"modelTurn": {"parts": [{"text": "hi"}]}, "turnComplete": true}}'
+env: {}
+compare: {ignore: []}

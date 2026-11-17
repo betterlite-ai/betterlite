@@ -154,6 +154,7 @@ fn the_count_tokens_location_is_chosen_in_order(
         location: settings_location.map(str::to_owned),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let params = VertexParams {
         project: None,

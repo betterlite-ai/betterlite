@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-server-utils-synthetic-headers
+call:
+  b6594:
+    function: synthetic
+    path: /mcp/connect
+    raw_headers:
+      - [Host, evil.test]
+      - [Content-Type, text/plain]
+      - [X-Kept, one]
+      - [X-Mcp-Auth, secret]
+      - [X-Mcp-Servers, srv-1]
+      - [X-Forwarded-For, "6.6.6.6"]
+      - [X-É, "é"]
+    client_ip: 9.9.9.9
+    extra_excluded: [x-mcp-auth]
+calls:
+  - b6594:
+      function: synthetic
+      path: /mcp/other
+      client_ip: 10.0.0.1
+      extra_excluded: []
+env: {}
+compare: {ignore: []}
