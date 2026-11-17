@@ -60,11 +60,15 @@ impl RemoteMediaFetcher for MapFetcher<'_> {
         ready(mapped(self.urls, url))
     }
 
+    // LiteLLM converts one URL per content item, so a batch call must fail the case instead of answering it
     fn convert_urls(
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(urls.iter().map(|url| mapped(self.urls, url)).collect())
+        ready(urls.first().map_or_else(
+            || Ok(Vec::new()),
+            |url| Err(ImageFetchError::Attempts { url: url.clone() }),
+        ))
     }
 }
 
