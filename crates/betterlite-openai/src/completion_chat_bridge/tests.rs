@@ -79,6 +79,49 @@ fn a_text_completion_prefix_selects_the_converting_text_endpoint() {
         chat_endpoint(&codestral),
         ChatEndpoint::Text { convert: true }
     );
+    assert_eq!(
+        text_endpoint_model(&codestral),
+        Some(String::from("oracle-text"))
+    );
+    let inception = unsupported("text-completion-inception/oracle-text");
+    assert_eq!(
+        chat_endpoint(&inception),
+        ChatEndpoint::Text { convert: true }
+    );
+    assert_eq!(
+        text_endpoint_model(&inception),
+        Some(String::from("oracle-text"))
+    );
+}
+
+#[test]
+fn a_bare_text_completion_model_selects_the_converting_text_endpoint() {
+    let instruct = unsupported("gpt-3.5-turbo-instruct");
+    assert_eq!(
+        chat_endpoint(&instruct),
+        ChatEndpoint::Text { convert: true }
+    );
+    assert_eq!(
+        text_endpoint_model(&instruct),
+        Some(String::from("gpt-3.5-turbo-instruct"))
+    );
+    // babbage-002 is in the set, so an untagged deployment converts like text-completion-openai does
+    let babbage = unsupported("babbage-002");
+    assert_eq!(
+        chat_endpoint(&babbage),
+        ChatEndpoint::Text { convert: true }
+    );
+    // an untagged fine-tuned model is in the set too, so completion()'s own provider converts its answer
+    let bare_ft = unsupported("ft:babbage-002");
+    assert_eq!(
+        chat_endpoint(&bare_ft),
+        ChatEndpoint::Text { convert: true }
+    );
+    // a model outside the set stays on the chat endpoint
+    assert_eq!(
+        chat_endpoint(&unsupported("some-unknown-model")),
+        ChatEndpoint::Chat
+    );
 }
 
 #[test]
@@ -198,6 +241,49 @@ fn a_token_prompt_and_an_unmapped_prompt_fail_before_the_call() {
     assert_eq!(
         failure.message,
         "Unmapped prompt format. Your prompt is neither a list of strings nor a string."
+    );
+}
+
+#[test]
+fn the_text_logprob_choices_reach_the_chat_call() {
+    let request = completion(
+        r#"{"model":"m","prompt":"hi","logit_bias":{"50256":-100},"logprobs":2,"top_logprobs":3}"#,
+    );
+    let chat = chat_request(&request).expect("chat");
+    assert_eq!(
+        chat.passthrough.get("logit_bias"),
+        Some(&json!({"50256": -100}))
+    );
+    assert_eq!(chat.passthrough.get("logprobs"), Some(&json!(2)));
+    assert_eq!(chat.passthrough.get("top_logprobs"), Some(&json!(3)));
+    // the typed flag stays empty, so one logprobs value is written and it is the text request's depth
+    assert_eq!(chat.logprobs, None);
+    let value = serde_json::to_value(&chat).expect("json");
+    assert_eq!(value.get("logprobs"), Some(&json!(2)));
+    let plain = chat_request(&completion(r#"{"model":"m","prompt":"hi"}"#)).expect("chat");
+    assert!(!plain.passthrough.contains_key("logit_bias"));
+    assert!(!plain.passthrough.contains_key("logprobs"));
+    assert!(!plain.passthrough.contains_key("top_logprobs"));
+}
+
+#[test]
+fn a_parameter_the_text_config_does_not_support_is_a_400() {
+    let request = chat(
+        r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":4}"#,
+    );
+    let failure =
+        text_request(&deployment("gpt-4o"), &request, "gpt-4o").expect_err("max_completion_tokens");
+    assert_eq!(failure.status, 400);
+    assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(failure.param, None);
+    // extra_headers is in the text config's list; the text transport turns it into request headers
+    let headers = chat(
+        r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"extra_headers":{"x-trace":"1"}}"#,
+    );
+    let built = text_request(&deployment("gpt-4o"), &headers, "gpt-4o").expect("extra_headers");
+    assert_eq!(
+        built.optional_params.get("extra_headers"),
+        Some(&json!({"x-trace": "1"}))
     );
 }
 
