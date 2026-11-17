@@ -127,12 +127,10 @@ fn id_field(value: Option<Json>) -> Result<String, DecodeError> {
 }
 
 fn text_field(value: Json, detail: &'static str) -> Result<String, DecodeError> {
-    match value {
-        Json::Text(text) => Ok(text),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(DecodeError::Shape { detail })
-        }
-    }
+    let Json::Text(text) = value else {
+        return Err(DecodeError::Shape { detail });
+    };
+    Ok(text)
 }
 
 fn counts_of(value: Option<Json>) -> Result<BatchCounts, DecodeError> {
