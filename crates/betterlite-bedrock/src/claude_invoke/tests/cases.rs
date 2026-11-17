@@ -82,6 +82,15 @@ pub(super) fn bedrock_anthropic_version() {
     );
     assert!(body_json(&prepared).get("aws_access_key_id").is_none());
     assert!(body_json(&prepared).get("aws_secret_access_key").is_none());
+    let null_version = plain_request(
+        &defaults,
+        &catalog,
+        map_of(r#"{"max_tokens": 64, "anthropic_version": null}"#),
+    );
+    let prepared = session
+        .transform(&null_version, &fetcher)
+        .expect("the null version transforms");
+    assert_eq!(body_json(&prepared)["anthropic_version"], Value::Null);
     assert!(fetcher.calls().is_empty());
 }
 
@@ -324,7 +333,7 @@ pub(super) fn claude_response_usage() {
 pub(super) fn response_format_tool_stub() {
     let fixture = Fixture::new(&model_cost_of(
         r#"{
-            "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_native_structured_output": false},
+            "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_native_structured_output": false, "supports_adaptive_thinking": true},
             "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true}
         }"#,
     ))
@@ -379,6 +388,17 @@ pub(super) fn response_format_tool_stub() {
                 },
             },
         })
+    );
+    let requested = params(
+        &json!({"thinking": {"type": "enabled", "display": "updates", "budget_tokens": 1024}}),
+    );
+    let mut updates = requested.clone();
+    session
+        .map_params("claude-test", false, &requested, &mut updates)
+        .expect("the display update maps");
+    assert_eq!(
+        serde_json::to_value(&updates).expect("the params serialize")["thinking"],
+        json!({"type": "adaptive", "display": "updates"})
     );
     assert_eq!(
         session.supported("claude-test"),
