@@ -12,4 +12,10 @@ deviations:
   - what: Ties among utterances with equal similarity and among routes with equal totals keep the earlier row's order, where LiteLLM's top-k selection goes through numpy argsort whose order for equal scores is unspecified.
     why: A selected route must be deterministic, and the request asserts it exactly; the earlier row is the order both sides build the index in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L243-L249
+  - what: A route score threshold that is not finite is rejected when the config is read, where LiteLLM accepts a NaN or infinite score_threshold and compares the route mean against it, a value Python's comparison semantics make the route never or always match.
+    why: The task requires rejecting nonfinite statistical input, and a rejected config names the malformed route instead of carrying a threshold whose comparison has no useful outcome.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L112-L118
+  - what: A document embedding vector that holds a non-finite value or has zero norm fails the index build and reaches the caller, where LiteLLM scores every query against it as NaN and falls back to the default model.
+    why: A NaN score cannot be ordered deterministically, and an embedding the provider could not compute is a provider fault rather than a routing miss, so betterlite surfaces the build error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L24
 kept_bugs: []
