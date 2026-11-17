@@ -117,7 +117,15 @@ enum Command {
     #[command(
         about = "Stop hook for Claude Code and Codex: reads the hook JSON on stdin, prints a block decision while the task is not done"
     )]
-    Hook,
+    Hook {
+        #[arg(
+            long,
+            value_enum,
+            default_value = "last-message",
+            help = "Where the report arrives: in the last message, or as --json-schema output that the dispatcher checks after the answer, so the hook runs only the commit, hooks and similarity checks"
+        )]
+        report: hook::ReportIn,
+    },
     #[command(
         about = "Run a task through the worker ladder and the reviewer until it is ready to merge or needs the architect"
     )]
@@ -242,7 +250,7 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
         path: PathBuf::from("."),
         source,
     })?;
-    if matches!(command, Command::Hook) {
+    if let Command::Hook { report } = command {
         let mut input = String::new();
         io::stdin()
             .read_to_string(&mut input)
@@ -250,7 +258,7 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
                 path: PathBuf::from("stdin"),
                 source,
             })?;
-        return Ok((hook::hook(&input)?, true));
+        return Ok((hook::hook(&input, report)?, true));
     }
     run_command(command, &Development::open(&directory)?)
 }
@@ -311,7 +319,7 @@ fn run_command(
         Command::Coverage { paths: true } => path_report(development),
         Command::Trace { target } => trace::trace(development, &target),
         Command::Show { task } => show::show(development, &task),
-        Command::Hook => Ok((Vec::new(), true)),
+        Command::Hook { .. } => Ok((Vec::new(), true)),
     }
 }
 
