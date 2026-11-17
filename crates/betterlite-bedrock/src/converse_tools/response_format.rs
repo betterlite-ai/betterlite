@@ -30,6 +30,8 @@ enum Format<'value> {
     },
 }
 
+const NATIVE_STRUCTURED_OUTPUT: NamedCapability = NamedCapability::NativeStructuredOutput;
+
 pub async fn translate_response_format<Capabilities>(
     value: &Json,
     request: &ResponseFormatRequest<'_, '_>,
@@ -40,21 +42,15 @@ where
     Capabilities: CapabilityPredicates,
 {
     let Format::Json {
-        schema,
+        schema: schema_field,
         name,
         description,
     } = read_format(value)?
     else {
         return Ok(());
     };
-    if let Some(schema) = schema {
-        if capability_supported(
-            request,
-            NamedCapability::NativeStructuredOutput,
-            capabilities,
-        )
-        .await
-        {
+    if let Some(schema) = schema_field {
+        if capability_supported(request, NATIVE_STRUCTURED_OUTPUT, capabilities).await {
             optional_params.insert(
                 "outputConfig".to_owned(),
                 create_output_config(Some(schema), name, description),
@@ -80,11 +76,11 @@ pub fn create_output_config(
     );
     let mut definition = IndexMap::new();
     definition.insert("schema".to_owned(), Json::Text(schema));
-    if let Some(name) = name {
-        definition.insert("name".to_owned(), Json::Text(name.to_owned()));
+    if let Some(label) = name {
+        definition.insert("name".to_owned(), Json::Text(label.to_owned()));
     }
-    if let Some(description) = description {
-        definition.insert("description".to_owned(), Json::Text(description.to_owned()));
+    if let Some(note) = description {
+        definition.insert("description".to_owned(), Json::Text(note.to_owned()));
     }
     let mut structure = IndexMap::new();
     structure.insert("jsonSchema".to_owned(), Json::Object(definition));
@@ -114,23 +110,27 @@ fn read_format(value: &Json) -> Result<Format<'_>, ConverseToolsError> {
     })
 }
 
-fn read_schema(
-    fields: &IndexMap<String, Json>,
-) -> Result<(Option<&Json>, Option<&str>, Option<&str>), ConverseToolsError> {
-    if let Some(schema) = fields.get("response_schema") {
-        let schema = (!matches!(schema, Json::Null)).then_some(schema);
+type SchemaFields<'value> = (
+    Option<&'value Json>,
+    Option<&'value str>,
+    Option<&'value str>,
+);
+
+fn read_schema(fields: &IndexMap<String, Json>) -> Result<SchemaFields<'_>, ConverseToolsError> {
+    if let Some(candidate) = fields.get("response_schema") {
+        let schema = (!matches!(candidate, Json::Null)).then_some(candidate);
         return Ok((schema, None, None));
     }
-    let Some(envelope) = fields.get("json_schema") else {
+    let Some(raw) = fields.get("json_schema") else {
         return Ok((None, None, None));
     };
-    let Json::Object(envelope) = envelope else {
+    let Json::Object(envelope) = raw else {
         return Err(ConverseToolsError::JsonSchemaNotAnObject);
     };
-    let Some(schema) = envelope.get("schema") else {
+    let Some(candidate) = envelope.get("schema") else {
         return Err(ConverseToolsError::MissingSchemaField);
     };
-    let schema = (!matches!(schema, Json::Null)).then_some(schema);
+    let schema = (!matches!(candidate, Json::Null)).then_some(candidate);
     Ok((
         schema,
         text_field(envelope, "name")?,
