@@ -168,9 +168,16 @@ jobs:
     needs: [find, checks]
     if: always() && github.ref == 'refs/heads/main' && contains(needs.find.outputs.first, 'tests-')
     runs-on: ubuntu-24.04
+    # actions/cache keeps a path outside the workspace relative to it, so the save has to run in the shards' image or their restore lands outside $HOME (11-17)
+    container:
+      image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
     timeout-minutes: 10
     permissions: {}
     steps:
+      # the compression method is part of the cache version, and the shards compress with zstd
+      - name: Install zstd
+        run: apt-get update && apt-get install --yes --no-install-recommends zstd
+
       - name: Restore the answers so far
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
