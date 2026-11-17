@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+use betterlite_config::sections::pointfive_params::{
+    DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL, DEFAULT_MAX_BATCH_BYTES,
+    DEFAULT_MAX_UPLOAD_RETRIES, PointFiveInitParams,
+};
 use rstest::rstest;
-use secrecy::ExposeSecret;
 
 use super::types::{
-    DEFAULT_API_URL, PointFiveInitParams, PointFiveUploadFailure, PointFiveUploadTarget,
-    RETRYABLE_UPLOAD_STATUS_CODES,
+    DEFAULT_API_URL, PointFiveUploadFailure, PointFiveUploadTarget, RETRYABLE_UPLOAD_STATUS_CODES,
 };
 
 fn parse(source: &str) -> PointFiveInitParams {
@@ -22,6 +24,10 @@ fn defaults_match_litellm() {
     assert_eq!(params.max_batch_bytes, 8 * 1024 * 1024);
     assert_eq!(params.max_upload_retries, 3);
     assert!(!params.turn_off_message_logging);
+    assert_eq!(params.batch_size, DEFAULT_BATCH_SIZE);
+    assert_eq!(params.flush_interval, DEFAULT_FLUSH_INTERVAL);
+    assert_eq!(params.max_batch_bytes, DEFAULT_MAX_BATCH_BYTES);
+    assert_eq!(params.max_upload_retries, DEFAULT_MAX_UPLOAD_RETRIES);
 }
 
 #[test]
@@ -50,7 +56,10 @@ fn configured_values_are_read() {
         }"#,
     );
     assert_eq!(
-        params.api_key.as_ref().map(ExposeSecret::expose_secret),
+        params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-test")
     );
     assert_eq!(

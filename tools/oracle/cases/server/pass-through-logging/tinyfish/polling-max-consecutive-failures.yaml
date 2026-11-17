@@ -1,0 +1,15 @@
+kind: helper
+name: tinyfish-polling-max-consecutive-failures
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      run_id: run_flaky
+      status: PENDING
+      num_of_steps: 0
+    replies:
+      - status: 500
+        body: {error: upstream}
+env: {}
+compare: {ignore: []}
