@@ -1,1 +1,3 @@
-mod logging_pipeline_logging_integration_tests_behavior;
+#[cfg(test)]
+#[path = "logging_integration/mod.rs"]
+mod logging_integration;

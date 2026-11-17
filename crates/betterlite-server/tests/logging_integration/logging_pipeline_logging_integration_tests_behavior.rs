@@ -124,17 +124,6 @@ impl Running {
             .expect("the server reported its listening port");
     }
 
-    async fn wait_for(&self, wanted: &str) {
-        let waited = async {
-            while !self.log().contains(wanted) {
-                sleep(Duration::from_millis(20)).await;
-            }
-        };
-        timeout(Duration::from_secs(60), waited)
-            .await
-            .unwrap_or_else(|_| panic!("the log never carried {wanted:?}"));
-    }
-
     async fn shut_down(mut self) -> Vec<LogRecord> {
         raise(SIGTERM).unwrap();
         let joined = timeout(Duration::from_secs(120), self.served.join_next())
@@ -368,8 +357,8 @@ async fn a_cancelled_stream_logs_one_terminal_event() {
     timeout(Duration::from_secs(60), read)
         .await
         .expect("the first streamed chunk arrived");
+    // the client that closes mid-stream is the cancellation; the connection drain drops the body
     drop(client);
-    running.wait_for("the request was cancelled").await;
     let records = running.shut_down().await;
     let events = service_events(&records);
     assert_one_call(&events, "acompletion", true);

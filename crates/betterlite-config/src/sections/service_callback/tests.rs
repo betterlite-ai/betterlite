@@ -18,35 +18,14 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 #[rstest]
-#[case::defaults("{}", &[], LogLevel::Debug, false, 50_000, 100, 20)]
+#[case::defaults("{}", &[])]
 #[case::list(
     "litellm_settings: {service_callback: [datadog, otel]}",
-    &["datadog", "otel"],
-    LogLevel::Debug,
-    false,
-    50_000,
-    100,
-    20
+    &["datadog", "otel"]
 )]
-#[case::single_string(
-    "litellm_settings: {service_callback: datadog}",
-    &["datadog"],
-    LogLevel::Debug,
-    false,
-    50_000,
-    100,
-    20
-)]
-#[case::empty_list("litellm_settings: {service_callback: []}", &[], LogLevel::Debug, false, 50_000, 100, 20)]
-fn service_callback_names_tests_behavior(
-    #[case] yaml: &str,
-    #[case] names: &[&str],
-    #[case] level: LogLevel,
-    #[case] json: bool,
-    #[case] queue: usize,
-    #[case] concurrency: usize,
-    #[case] timeout: u64,
-) {
+#[case::single_string("litellm_settings: {service_callback: datadog}", &["datadog"])]
+#[case::empty_list("litellm_settings: {service_callback: []}", &[])]
+fn service_callback_names_tests_behavior(#[case] yaml: &str, #[case] names: &[&str]) {
     let settings = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -61,11 +40,18 @@ fn service_callback_names_tests_behavior(
             .map(|name| (*name).to_owned())
             .collect::<Vec<_>>()
     );
-    assert_eq!(settings.log_level, level);
-    assert_eq!(settings.json_logs, json);
-    assert_eq!(settings.max_queue_size, queue);
-    assert_eq!(settings.concurrency, concurrency);
-    assert_eq!(settings.event_timeout, Duration::from_secs(timeout));
+}
+
+#[test]
+fn service_callback_untouched_fields_keep_the_defaults_tests_behavior() {
+    let settings = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("{}")
+    .unwrap()
+    .sections
+    .service_callback;
+    assert_eq!(settings, super::Settings::default());
 }
 
 #[rstest]
