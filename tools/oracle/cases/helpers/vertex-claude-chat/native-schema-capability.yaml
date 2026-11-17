@@ -1,0 +1,33 @@
+kind: helper
+name: vertex-claude-chat-native-schema-capability
+call:
+  vertex_claude_chat:
+    fixture:
+      model_cost:
+        claude-sonnet-4-6: {litellm_provider: vertex_ai, supports_native_structured_output: true}
+        claude-sonnet-4-5: {litellm_provider: vertex_ai, supports_adaptive_thinking: true}
+        claude-3-sonnet-20240229: {litellm_provider: vertex_ai, supports_forced_tool_use: false}
+      packaged: {}
+    steps:
+      - function: map_openai_params
+        model: claude-sonnet-4-6
+        non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}
+        optional_params: {}
+        drop_params: false
+        global_drop_params: false
+      - function: map_openai_params
+        model: claude-sonnet-4-5
+        non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}
+        optional_params: {}
+        drop_params: false
+        global_drop_params: false
+      - function: map_openai_params
+        model: claude-sonnet-4-5
+        non_default_params:
+          response_format: {type: json_schema, json_schema: {schema: {type: object}}}
+          thinking: {type: enabled, budget_tokens: 4096}
+        optional_params: {}
+        drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}
