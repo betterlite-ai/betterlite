@@ -2,7 +2,7 @@ task: B1620
 deviations:
   - what: OAuth failure diagnostics report the status and the failure category without copying the provider response body into logs or error messages; the pinned code logs the first 500 characters of a failed token response and of a failed userinfo response.
     why: Those bodies carry the freshly issued access_token, id_token and refresh_token, so logging them would put bearer credentials into the proxy's log stream. secrets-stay-secret requires redaction, and no working setup can depend on a log line it cannot read.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4091-L4101
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4093-L4104
   - what: Provider response bytes are capped at 1 MiB and parsed with the decoder's nesting limit, so an oversized or deeply nested token or userinfo response fails as invalid JSON where the pinned json.loads would accept it.
     why: betterlite bounds every untrusted response before it allocates, and a 4 MiB JSON document from a token endpoint is a memory amplification vector, not a working configuration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3967-L3977
@@ -14,8 +14,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3968
   - what: A truthy non-object userinfo body answers 500 internal_server_error with code 500, where the pinned code lets the dict unpacking raise an unhandled TypeError that FastAPI turns into its generic 500 body.
     why: The status is the same; betterlite answers its typed error envelope so the failure is classified and the unhandled exception never reaches the server's panic path. No working setup relies on the shape of a crash response.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4210-L4219
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4136
   - what: The pinned Content-Type, Accept and Authorization headers replace an additional header of the same name whatever its letter case; the pinned dict spread only replaces the exact-case key, so a differently cased duplicate would be sent alongside it.
     why: Sending two conflicting Authorization headers makes the provider pick one by its own rule, which is exactly what the pinned comment says must not happen; betterlite's header map is case-insensitive, so the pinned value wins.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4049-L4057
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4056-L4059
 kept_bugs: []
