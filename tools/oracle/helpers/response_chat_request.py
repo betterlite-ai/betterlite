@@ -29,7 +29,7 @@ class Input(TypedDict):
     client: str | None
 
 
-def request_view(data: dict[str, object]) -> dict[str, JsonValue]:
+def request_view(data: dict[str, JsonValue]) -> dict[str, JsonValue]:
     del data["litellm_logging_obj"]
     return JSON.validate_json(json.dumps(data))
 

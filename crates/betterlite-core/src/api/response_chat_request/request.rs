@@ -49,7 +49,7 @@ pub fn build_request<'a, Client: ?Sized>(
     if stream {
         params.insert("stream".to_owned(), Value::Bool(true));
     }
-    log_ignored_previous_response_id(optional_params);
+    log_ignored_response_id(optional_params);
     logging.call_type = RESPONSES_CALL_TYPE.to_owned();
     let parts = RequestParts {
         model,
@@ -86,7 +86,7 @@ fn converted_input(
     Ok((converted.input, converted.instructions))
 }
 
-fn log_ignored_previous_response_id(optional_params: &IndexMap<String, Value>) {
+fn log_ignored_response_id(optional_params: &IndexMap<String, Value>) {
     if let Some(Value::String(id)) = optional_params.get("previous_response_id") {
         if !id.is_empty() {
             tracing::debug!(
