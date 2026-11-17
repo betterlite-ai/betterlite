@@ -89,7 +89,7 @@ fn beta_value(value: BetaValue) -> Json {
         BetaValue::Bool(flag) => Json::Bool(flag),
         BetaValue::Number(number) => Json::Number(number),
         BetaValue::Text(text) => Json::Text(text),
-        BetaValue::List(items) => Json::List(items.into_iter().map(beta_value).collect()),
+        BetaValue::Array(items) => Json::List(items.into_iter().map(beta_value).collect()),
         BetaValue::Object(fields) => Json::Object(
             fields
                 .into_iter()
