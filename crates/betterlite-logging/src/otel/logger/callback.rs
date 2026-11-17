@@ -98,10 +98,15 @@ fn record(
     }
     let response: OtelModelValue =
         serde_json::from_value(serde_json::to_value(&payload.response)?)?;
+    // a JSON null response is a response the call never had; the recorder reads no metric out of either
+    let response = match &response {
+        OtelModelValue::Null(()) => None,
+        response => Some(response),
+    };
     guarded_record(logger, |recorder| {
         recorder.record(&MetricCall {
             kwargs: &kwargs,
-            response: (!matches!(response, OtelModelValue::Null(()))).then_some(&response),
+            response,
             start_time: call.start_time,
             end_time: call.end_time,
         })

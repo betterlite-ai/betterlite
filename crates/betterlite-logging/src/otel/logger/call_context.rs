@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::StandardCallbackDynamicParams;
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use chrono::{Offset as _, Utc};
 use opentelemetry::Context;
 use rust_decimal::Decimal;
 
@@ -18,7 +18,7 @@ use crate::otel::model::metadata::wire::callback::{
     Callback, OptionalParams, Params, ProxyRequest,
 };
 use crate::otel::model::payloads::RequestIdentity;
-use crate::otel::model::utils::time::{LocalTimeResolver, to_ns};
+use crate::otel::model::utils::time::{FixedLocalTimeResolver, to_ns};
 use crate::otel::plumbing::context::baggage_context::set_request_baggage;
 
 // LiteLLM's litellm_no_upstream_llm_call kwargs flag, which the proxy sets on a synthetic gate log
@@ -45,8 +45,8 @@ impl CallContext {
         let api_call_start_time = api_start
             .and_then(epoch_seconds)
             .or(Some(start_time))
-            .filter(|seconds| *seconds > Decimal::ZERO)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .max(Decimal::ZERO);
         let callback = wire_callback(event, api_call_start_time)?;
         Ok(Self {
             event: LLMCallEvent::from_dict(&callback)?,
@@ -135,18 +135,14 @@ impl SpanTimes {
     }
 }
 
-// a value exists only when it names an instant chrono can represent, as the SDK timestamps require
-struct NoLocalTime;
-
-impl LocalTimeResolver for NoLocalTime {
-    fn resolve(&self, _local: NaiveDateTime) -> Option<DateTime<FixedOffset>> {
-        None
-    }
-}
-
+// the payload stamps are epoch seconds, so to_ns never consults the resolver it takes alongside them
 #[must_use]
 pub fn system_time(seconds: Decimal) -> Option<SystemTime> {
-    let stamp = to_ns(Some(&seconds), None, &NoLocalTime)?;
+    let stamp = to_ns(
+        Some(&seconds),
+        None,
+        &FixedLocalTimeResolver { offset: Utc.fix() },
+    )?;
     let nanos = u64::try_from(stamp).ok()?;
     UNIX_EPOCH.checked_add(Duration::from_nanos(nanos))
 }
