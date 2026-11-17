@@ -38,6 +38,20 @@ fn case_1_message_envelope() {
         result, details, ..
     } = Scenario::new(&source).run();
     let envelope = result.expect("the envelope should be built");
+    assert_envelope_identity(&envelope);
+    assert_message(&envelope);
+    assert_tool_calls(&envelope);
+    assert_usage(&envelope);
+    assert_hidden_params(&envelope);
+    assert_eq!(
+        logged(&details),
+        &Json::Text(source),
+        "the raw reply is logged"
+    );
+    speed_reaches_usage();
+}
+
+fn assert_envelope_identity(envelope: &ResponseEnvelope) {
     assert_eq!(envelope.id, CALLER_ID);
     assert_ne!(envelope.id, UPSTREAM_ID);
     assert_eq!(envelope.object, "chat.completion");
@@ -45,10 +59,12 @@ fn case_1_message_envelope() {
     assert_eq!(envelope.model.as_deref(), Some(MODEL));
     assert_eq!(envelope.system_fingerprint, None);
     assert_eq!(envelope.choices.len(), 1);
-    let choice = &envelope.choices[0];
-    assert_eq!(choice.index, 0);
-    assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
-    let message = &choice.message;
+    assert_eq!(envelope.choices[0].index, 0);
+    assert_eq!(envelope.choices[0].finish_reason.as_deref(), Some("stop"));
+}
+
+fn assert_message(envelope: &ResponseEnvelope) {
+    let message = &envelope.choices[0].message;
     assert_eq!(message.role, "assistant");
     assert_eq!(message.content.as_deref(), Some("Hello"));
     assert_eq!(message.reasoning_content.as_deref(), Some("plan"));
@@ -57,21 +73,37 @@ fn case_1_message_envelope() {
         object(thinking.first()).get("thinking"),
         Some(&Json::Text("plan".to_owned()))
     );
-    let tool_calls = message.tool_calls.as_ref().expect("tool calls");
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].id.as_deref(), Some("toolu_1"));
-    assert_eq!(tool_calls[0].function.name.as_deref(), Some("get_weather"));
+}
+
+fn assert_tool_calls(envelope: &ResponseEnvelope) {
+    let calls = envelope.choices[0]
+        .message
+        .tool_calls
+        .as_ref()
+        .expect("tool calls");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id.as_deref(), Some("toolu_1"));
+    assert_eq!(calls[0].function.name.as_deref(), Some("get_weather"));
     assert_eq!(
-        tool_calls[0].function.arguments.as_deref(),
+        calls[0].function.arguments.as_deref(),
         Some(r#"{"city": "Paris"}"#)
     );
-    assert_eq!(tool_calls[0].index, 2);
+    assert_eq!(calls[0].index, 2);
+}
+
+fn assert_usage(envelope: &ResponseEnvelope) {
     let usage = envelope.usage.as_ref().expect("usage");
-    assert_eq!(usage.prompt_tokens, 18);
-    assert_eq!(usage.completion_tokens, 4);
-    assert_eq!(usage.total_tokens, 22);
-    assert_eq!(usage.completion_tokens_details.reasoning, Some(2));
-    assert_eq!(usage.completion_tokens_details.text, Some(2));
+    let counts = (
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+        usage.completion_tokens_details.reasoning,
+        usage.completion_tokens_details.text,
+    );
+    assert_eq!(counts, (18, 4, 22, Some(2), Some(2)));
+}
+
+fn assert_hidden_params(envelope: &ResponseEnvelope) {
     assert_eq!(envelope.hidden_params.len(), 2);
     assert!(!envelope.hidden_params.contains_key("original_response"));
     let headers = object(envelope.hidden_params.get("additional_headers"));
@@ -85,12 +117,6 @@ fn case_1_message_envelope() {
     );
     let provider = object(envelope.hidden_params.get("provider_specific_fields"));
     assert_eq!(provider.get("citations"), Some(&Json::Null));
-    assert_eq!(
-        logged(&details),
-        &Json::Text(source.clone()),
-        "the raw reply is logged"
-    );
-    speed_reaches_usage();
 }
 
 fn speed_reaches_usage() {
@@ -211,8 +237,21 @@ fn case_3_reverse_tool_name() {
         r#"[{"type":"text","text":""},{"type":"tool_use","id":"toolu_a","name":"sanitized_name","input":{"q":"x"}},{"type":"tool_use","id":"toolu_b","name":"kept","input":{}}]"#,
         "tool_use",
     );
+    renames_mapped_calls(&source);
+    unmapped_maps_leave_names_alone(&source);
+    rejects_a_non_text_value(&source);
+}
+
+fn first_tool_name(envelope: &ResponseEnvelope) -> Option<&str> {
+    envelope.choices[0].message.tool_calls.as_ref()?[0]
+        .function
+        .name
+        .as_deref()
+}
+
+fn renames_mapped_calls(source: &str) {
     let reverse = r#"{"_anthropic_tool_name_map": {"sanitized_name": "caller.name"}}"#;
-    let envelope = Scenario::new(&source)
+    let envelope = Scenario::new(source)
         .litellm_params(reverse)
         .run()
         .envelope();
@@ -229,39 +268,26 @@ fn case_3_reverse_tool_name() {
     );
     assert_eq!(tool_calls[0].index, 1);
     assert_eq!(tool_calls[1].function.name.as_deref(), Some("kept"));
+}
 
+fn unmapped_maps_leave_names_alone(source: &str) {
     let unrelated = r#"{"_anthropic_tool_name_map": {"other": "caller.other"}}"#;
-    let kept = Scenario::new(&source)
+    let kept = Scenario::new(source)
         .litellm_params(unrelated)
         .run()
         .envelope();
-    assert_eq!(
-        kept.choices[0].message.tool_calls.as_ref().expect("calls")[0]
-            .function
-            .name
-            .as_deref(),
-        Some("sanitized_name")
-    );
-
+    assert_eq!(first_tool_name(&kept), Some("sanitized_name"));
     let not_a_map = r#"{"_anthropic_tool_name_map": "caller.name"}"#;
-    let ignored = Scenario::new(&source)
+    let ignored = Scenario::new(source)
         .litellm_params(not_a_map)
         .run()
         .envelope();
-    assert_eq!(
-        ignored.choices[0]
-            .message
-            .tool_calls
-            .as_ref()
-            .expect("calls")[0]
-            .function
-            .name
-            .as_deref(),
-        Some("sanitized_name")
-    );
+    assert_eq!(first_tool_name(&ignored), Some("sanitized_name"));
+}
 
+fn rejects_a_non_text_value(source: &str) {
     let bad_value = r#"{"_anthropic_tool_name_map": {"sanitized_name": 5}}"#;
-    let error = Scenario::new(&source)
+    let error = Scenario::new(source)
         .litellm_params(bad_value)
         .run()
         .error();
@@ -276,9 +302,8 @@ fn case_4_json_mode_message() {
     pure_json_message();
     mixed_json_text();
     tool_only_message_has_no_content();
-    reverse_map_runs_before_selection();
+    the_reverse_map_reaches_both_projections();
     two_internal_json_tools_keep_the_first();
-    reverse_map_renames_the_second_projection();
 }
 
 fn pure_json_message() {
@@ -327,45 +352,37 @@ fn tool_only_message_has_no_content() {
     );
 }
 
-fn reverse_map_runs_before_selection() {
-    let source = body(
+fn the_reverse_map_reaches_both_projections() {
+    let renamed_internal = body(
         r#"[{"type":"text","text":"kept"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":1}}]"#,
         "tool_use",
     );
-    let reverse = r#"{"_anthropic_tool_name_map": {"json_tool_call": "json.tool.call"}}"#;
-    let envelope = Scenario::new(&source)
+    let first = Scenario::new(&renamed_internal)
         .json_mode(true)
-        .litellm_params(reverse)
+        .litellm_params(r#"{"_anthropic_tool_name_map": {"json_tool_call": "json.tool.call"}}"#)
         .run()
         .envelope();
-    let choice = &envelope.choices[0];
-    assert_eq!(choice.message.content.as_deref(), Some("kept"));
-    let tool_calls = choice.message.tool_calls.as_ref().expect("reversed call");
-    assert_eq!(tool_calls.len(), 1);
+    assert_eq!(first.choices[0].message.content.as_deref(), Some("kept"));
+    assert_eq!(first_tool_name(&first), Some("json.tool.call"));
     assert_eq!(
-        tool_calls[0].function.name.as_deref(),
-        Some("json.tool.call")
+        first.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
     );
-    assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
-}
-
-fn reverse_map_renames_the_second_projection() {
-    let source = body(
+    let renamed_real = body(
         r#"[{"type":"text","text":"pre"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":1}},{"type":"tool_use","id":"r","name":"sanitized","input":{}}]"#,
         "tool_use",
     );
-    let reverse = r#"{"_anthropic_tool_name_map": {"sanitized": "caller.tool"}}"#;
-    let envelope = Scenario::new(&source)
+    let second = Scenario::new(&renamed_real)
         .json_mode(true)
-        .litellm_params(reverse)
+        .litellm_params(r#"{"_anthropic_tool_name_map": {"sanitized": "caller.tool"}}"#)
         .run()
         .envelope();
-    let choice = &envelope.choices[0];
-    assert_eq!(choice.message.content.as_deref(), Some("pre1"));
-    let tool_calls = choice.message.tool_calls.as_ref().expect("the real tool");
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].function.name.as_deref(), Some("caller.tool"));
-    assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(second.choices[0].message.content.as_deref(), Some("pre1"));
+    assert_eq!(first_tool_name(&second), Some("caller.tool"));
+    assert_eq!(
+        second.choices[0].finish_reason.as_deref(),
+        Some("tool_calls")
+    );
 }
 
 fn two_internal_json_tools_keep_the_first() {

@@ -16,6 +16,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -202,7 +203,10 @@ impl Outcome {
     }
 }
 
-pub(crate) fn parsed<T: serde::de::DeserializeOwned>(source: &str) -> T {
+pub(crate) fn parsed<T>(source: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(source).expect("the fixture JSON should parse")
 }
 
