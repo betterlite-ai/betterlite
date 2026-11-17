@@ -1,0 +1,20 @@
+kind: helper
+name: anthropic-batches-error-counts-seed
+call:
+  anthropic_batches:
+    error_counts:
+      now: 1700000000
+      bodies:
+        - '{not json'
+        - '{"request_counts":{"succeeded":"seed"}}'
+      errors:
+        - message: seed
+          status: 500
+          headers: [[x-request-id, seed]]
+          headers_object: null
+        - message: seed-object
+          status: 429
+          headers: null
+          headers_object: [[retry-after, "1"]]
+env: {}
+compare: {ignore: []}
