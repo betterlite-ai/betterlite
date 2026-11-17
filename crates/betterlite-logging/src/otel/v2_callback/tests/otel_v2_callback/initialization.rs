@@ -22,6 +22,11 @@ fn injected_provider_receives_the_emitted_span() {
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].name.as_ref(), "auth");
+    assert_eq!(spans[0].instrumentation_scope.name(), "litellm");
+    assert_eq!(
+        spans[0].instrumentation_scope.version(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
 }
 
 #[test]
