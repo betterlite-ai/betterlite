@@ -1,0 +1,54 @@
+kind: helper
+name: bedrock-converse-tools-computer-use-tool-split
+call:
+  bedrock_converse_tools:
+    function: detector
+    tools:
+      - type: computer_use_preview
+        name: computer
+      - type: function
+        function: {name: weather}
+calls:
+  - bedrock_converse_tools:
+      function: detector
+      tools: null
+  - bedrock_converse_tools:
+      function: detector
+      tools:
+        - type: function
+          function: {name: weather}
+  - bedrock_converse_tools:
+      function: detector
+      tools:
+        - type: custom_tool
+        - type: bash_20250124
+  - bedrock_converse_tools:
+      function: separate
+      tools:
+        - type: computer_use_preview
+          name: computer
+        - type: function
+          function: {name: weather}
+        - function: {name: bare}
+  - bedrock_converse_tools:
+      function: separate
+      tools:
+        - type: function
+          function: {name: weather}
+  - bedrock_converse_tools:
+      function: transform
+      tools:
+        - type: computer_20241022
+          function:
+            name: act
+            parameters: {type: object, name: overridden, left_click: true}
+        - type: bash_20241022
+        - type: bash_20241022
+          name: ""
+        - type: text_editor_20241022
+          name: kept
+        - type: computer_20241022
+        - type: function
+          function: {name: weather}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,62 @@
+kind: helper
+name: bedrock-converse-tools-additional-properties-recursion
+call:
+  bedrock_converse_tools:
+    function: additional
+    schema:
+      type: object
+      properties:
+        name: {type: string}
+        address:
+          type: object
+          properties:
+            street: {type: string}
+        tags:
+          type: array
+          items:
+            type: object
+            properties: {label: {type: string}}
+      required: [name]
+calls:
+  - bedrock_converse_tools:
+      function: additional
+      schema:
+        type: object
+        $defs:
+          Address: {type: object, properties: {city: {type: string}}}
+        definitions:
+          Country: {type: object, properties: {code: {type: string}}}
+        properties:
+          here:
+            anyOf: [{type: object}, {type: string}]
+          there:
+            allOf: [{type: object}]
+          where:
+            oneOf: [{type: object, properties: {x: {type: integer}}}]
+  - bedrock_converse_tools:
+      function: additional
+      schema: {type: string}
+  - bedrock_converse_tools:
+      function: additional
+      schema:
+        type: object
+        additionalProperties: true
+        properties: {city: {type: string}}
+  - bedrock_converse_tools:
+      function: additional
+      schema:
+        type:
+          - object
+          - 'null'
+        properties: {city: {type: object}}
+  - bedrock_converse_tools:
+      function: additional
+      schema:
+        type: object
+        not: {type: object}
+        patternProperties:
+          '^x-': {type: object}
+        additionalProperties: {type: object}
+        properties: {city: {type: object}}
+env: {}
+compare: {ignore: []}

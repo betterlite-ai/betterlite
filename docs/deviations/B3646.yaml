@@ -1,0 +1,43 @@
+task: B3646
+deviations:
+  - what: >-
+      The job cost is an exact Decimal: the rate times the seconds B3645 measures, charged through transcribe_max_job_cost
+      or the priced download, and turned into f64 only when it is written into the kwargs map and the payload. LiteLLM
+      multiplies Python floats, so a rate and a duration whose product is inexact can differ in the last digit.
+    why: the project's money rule keeps prices in Decimal from ingestion to logging. The oracle's Transcribe cases stop at
+      the operation name and the priced-start test, so no case compares a float product.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L339-L345
+  - what: >-
+      At most 10,000 pricing tasks (MAX_PENDING_PRICING_JOBS) run at once. A job that arrives with every permit taken
+      skips the pricer and charges transcribe_max_job_cost at once, with a warning, so the spend row still exists; when
+      that maximum is outside Decimal's range the task logs an error and records nothing. LiteLLM spawns a task per job
+      with no bound at all, through a set that only keeps the handles alive.
+    why: rules.yaml bounded-inputs forbids unbounded work per request, and LiteLLM's task set has no limit. Charging the
+      maximum at the cap keeps the spend row, in line with the fail-closed rule B3645 uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L603-L634
+  - what: >-
+      A request host with fewer than two labels, or a second label holding anything but ASCII lowercase letters, digits
+      and "-", logs an error and ends the task without spend. LiteLLM indexes the host labels and hands the second one to
+      the pricer whatever it holds, so a short host raises IndexError inside the task and any other text goes into the
+      signed Transcribe and S3 URLs.
+    why: the region becomes part of the signed Transcribe and S3 request URLs. The route builds the host from
+      configuration, so a bad value cannot occur in normal use, and this check keeps one away from the signer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L655
+  - what: >-
+      An Err from the pricer is logged at the tracing error level and ends the task, so the job gets no spend row; a
+      logging state another owner has already taken is logged the same way. B3605's StreamSuccessDispatch cannot fail,
+      so there is no dispatch error to report. LiteLLM's task raises instead and asyncio reports the exception when
+      nobody retrieves it.
+    why: Rust has no unobserved task exceptions, so the error line is the equivalent of that report.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L636-L683
+  - what: >-
+      The delayed spend goes to B3605's StreamSuccessDispatch, the trait whose call owns the logging state and the
+      correlation context, not to the PassThroughLogDispatch the task text names. The task takes the logging object's
+      slot immediately before dispatching and restores it afterwards, because the spawned task cannot borrow the
+      pass-through success handler that PassThroughLogCall requires.
+    why: PassThroughLogCall holds &SuccessHandler<'call>, &mut LoggingState and &mut CorrelationContext, none of which a
+      task spawned on the server tracker can own for 'static. StreamSuccessCall carries the same state, correlation,
+      start and end times, cache_hit and kwargs, and its dispatcher reaches the same callbacks LiteLLM's log callback
+      does, so the logged row is built from the same fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L674-L682
+kept_bugs: []
