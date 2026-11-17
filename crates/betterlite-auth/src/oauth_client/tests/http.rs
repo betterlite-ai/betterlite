@@ -12,7 +12,7 @@ use url::form_urlencoded;
 use crate::oauth_client::OAuthClient;
 use crate::oauth_client::discovery::{DiscoverySource, fetch_discovery};
 use crate::oauth_client::document::OAuthDiscoveryDocument;
-use crate::oauth_client::error::OAuthClientError;
+use crate::oauth_client::error::{OAuthClientError, OAuthEndpoint};
 use crate::oauth_client::exchange::{CallbackRequest, ExchangeRequest, exchange};
 use crate::oauth_client::tests::provider::{
     Provider, SeenRequest, serve, serve_sequence, transport,
@@ -468,6 +468,28 @@ async fn an_insecure_discovery_url_needs_the_opt_in() {
         .err()
         .unwrap();
     assert!(matches!(&error, OAuthClientError::Insecure { .. }));
+    assert_eq!(error.response().status, 500);
+    assert!(provider.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_discovery_url_that_is_not_a_url_is_a_server_error() {
+    let provider = serve_sequence(Vec::new()).await;
+    let error = fetch_discovery(
+        &client(),
+        &transport(),
+        &DiscoverySource::WellKnown(String::new()),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(matches!(
+        &error,
+        OAuthClientError::Endpoint {
+            endpoint: OAuthEndpoint::Discovery,
+            ..
+        }
+    ));
     assert_eq!(error.response().status, 500);
     assert!(provider.seen.lock().unwrap().is_empty());
 }
