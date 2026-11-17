@@ -81,5 +81,13 @@ calls:
       optional_params: {guardrailConfig: null}
       neutralize_orphaned_blocks: true
       modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: user, content: x, tool_calls: [{id: c, type: function, function: {name: n, arguments: ''}}]}
+        - {role: developer, content: y, tool_calls: [{id: d, type: function, function: {name: m, arguments: ''}}]}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
 env: {}
 compare: {ignore: []}

@@ -166,6 +166,7 @@ pub(super) fn orphan_neutralization_default() {
     truthy_tools_keep_the_tool_blocks();
     the_default_path_ignores_modify_params();
     an_empty_tool_calls_list_stays();
+    only_assistant_tool_calls_are_orphans();
     a_request_without_orphans_stays_quiet();
 }
 
@@ -212,6 +213,21 @@ fn an_empty_tool_calls_list_stays() {
             user_turn("[tool result for c: r]"),
         ])
     );
+}
+
+fn only_assistant_tool_calls_are_orphans() {
+    let quiet = Warnings::default();
+    let guard = quiet.install();
+    let history = r#"[
+        {"role": "user", "content": "x", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "n", "arguments": ""}}]},
+        {"role": "developer", "content": "y", "tool_calls": [{"id": "d", "type": "function", "function": {"name": "m", "arguments": ""}}]}
+    ]"#;
+    let (kept, parameters) = handle(history, "{}", NEUTRALIZE);
+    assert_eq!(render(&kept), expected(history));
+    assert!(parameters.is_empty());
+    let captured = quiet.captured();
+    assert!(captured.is_empty(), "{captured}");
+    drop(guard);
 }
 
 fn a_request_without_orphans_stays_quiet() {

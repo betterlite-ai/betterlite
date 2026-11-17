@@ -29,6 +29,7 @@ const R2: &str = r#"{"role": "tool", "tool_call_id": "call_1", "content": "r2"}"
 const USER_RESULT: &str =
     r#"{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c", "content": "r"}]}"#;
 const TEXT_THEN_RESULT: &str = r#"{"role": "user", "content": [{"type": "text", "text": "x"}, {"type": "tool_result", "tool_use_id": "c", "content": "r"}]}"#;
+const USER_CALLS: &str = r#"{"role": "user", "content": "x", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "n", "arguments": ""}}]}"#;
 const FUNCTION_TURN: &str = r#"{"role": "function", "name": "f", "content": "r"}"#;
 const SYSTEM_TOP: &str = r#"{"role": "system", "content": "top"}"#;
 const SYSTEM_HOLD: &str = r#"{"role": "system", "content": "hold"}"#;
@@ -97,6 +98,14 @@ fn leaves_incomplete_adjacency_alone() {
     function_messages_do_not_open_a_run();
     a_plain_user_turn_does_not_open_a_run();
     a_leading_tool_result_does_not_open_a_run();
+    a_non_assistant_call_holds_the_move();
+}
+
+fn a_non_assistant_call_holds_the_move() {
+    let hold = text_turn("hold");
+    let history = json_list(&[USER_CALLS, SYSTEM_HOLD, R1]);
+    let wanted = format!("[{USER_CALLS}, {hold}, {R1}]");
+    assert_eq!(order(&history), expected(&wanted));
 }
 
 fn an_empty_tool_calls_list_does_not_open_a_run() {

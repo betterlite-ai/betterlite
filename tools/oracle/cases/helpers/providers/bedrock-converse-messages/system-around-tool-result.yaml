@@ -124,5 +124,13 @@ calls:
         - {role: user, content: next}
       model: null
       model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: x, tool_calls: [{id: c, type: function, function: {name: n, arguments: ''}}]}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
 env: {}
 compare: {ignore: []}
