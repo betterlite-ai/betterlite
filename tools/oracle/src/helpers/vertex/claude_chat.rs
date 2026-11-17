@@ -128,11 +128,13 @@ async fn run_steps(input: &Input, fixture: &fixture::Fixture) -> HelperResult {
     for step in &input.steps {
         let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
         let step_answer = match step {
-            Step::MapOpenaiParams(step) => map_answer(step, &context, &mut environment).await?,
-            Step::TransformRequest(step) => {
-                request_answer(step, &context, &mut environment).await?
+            Step::MapOpenaiParams(map_step) => {
+                map_answer(map_step, &context, &mut environment).await?
             }
-            Step::TransformResponse(step) => response_answer(step)?,
+            Step::TransformRequest(request_step) => {
+                request_answer(request_step, &context, &mut environment).await?
+            }
+            Step::TransformResponse(response_step) => response_answer(response_step)?,
         };
         answers.push(step_answer);
     }

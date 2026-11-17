@@ -60,8 +60,7 @@ use crate::vertex_claude_chat::params::map_openai_params;
 use crate::vertex_claude_chat::request::prepare;
 use crate::vertex_claude_chat::response::{TransformCall, transform_response};
 
-// Models that resolve only under vertex_ai carry the prefix, so a missed provider override loses the capability.
-// supports_output_config is only read from the raw catalog, which looks the bare name up.
+// A bare key is what the raw-catalog-only supports_output_config lookup matches; the others carry vertex_ai/ so a missed provider override loses them.
 pub(crate) const MODELS: &str = r#"{
     "claude-haiku-4-5": {"litellm_provider": "vertex_ai", "supports_speed": true},
     "claude-3-sonnet-20240229": {"litellm_provider": "vertex_ai", "supports_forced_tool_use": false},
@@ -301,7 +300,10 @@ pub(crate) struct Scenario {
     billing_header: BillingHeader,
 }
 
-fn block_on<T>(future: impl Future<Output = T>) -> T {
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()

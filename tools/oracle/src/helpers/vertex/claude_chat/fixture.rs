@@ -138,9 +138,9 @@ impl LogSink for Silent {
 pub(super) fn header_map(values: &IndexMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
     for (name, value) in values {
-        let name = HeaderName::from_bytes(name.as_bytes()).or_config_error()?;
-        let value = HeaderValue::from_str(value).or_config_error()?;
-        headers.append(name, value);
+        let header_name = HeaderName::from_bytes(name.as_bytes()).or_config_error()?;
+        let header_value = HeaderValue::from_str(value).or_config_error()?;
+        headers.append(header_name, header_value);
     }
     Ok(headers)
 }
