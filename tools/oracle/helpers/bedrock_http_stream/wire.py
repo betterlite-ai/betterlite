@@ -7,6 +7,7 @@ from litellm.types.utils import ModelResponseStream
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+BYTES: Final[TypeAdapter[bytes]] = TypeAdapter(bytes)
 FakeFailure = Literal["timeout", "other"]
 Consume = Literal["none", "first", "all"]
 Consumed = tuple[list[JsonValue], list[JsonValue]]
@@ -87,8 +88,7 @@ class Fixture:
 
     def reply(self, url: str, options: PostOptions) -> httpx.Response:
         pairs = sorted([name, value] for name, value in options["headers"].items())
-        data = options["data"]
-        payload: list[int] = list(data.encode() if isinstance(data, str) else data)
+        payload: list[int] = list(BYTES.validate_python(options["data"]))
         self.posts.append({
             "url": url,
             "body": JSON.validate_python(payload),
