@@ -1,13 +1,18 @@
 use std::collections::BTreeMap;
+use std::env;
+use std::fs;
 use std::future::Future;
 use std::path::PathBuf;
+use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
+use serde_json::Value;
 use serde_json::json;
+use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 
 use crate::semantic_router::service::{
@@ -137,7 +142,7 @@ impl FakeEmbedder {
     }
 
     async fn wait_and_fail(&self, counter: &AtomicUsize) -> Result<(), FakeError> {
-        tokio::time::sleep(self.delay).await;
+        sleep(self.delay).await;
         if take_failure(counter) {
             return Err(FakeError::Injected);
         }
@@ -166,6 +171,29 @@ impl FakeEmbedder {
             vectors.push(self.vector(&text)?);
         }
         Ok(vectors)
+    }
+
+    async fn answer_query(
+        &self,
+        model: &str,
+        text: String,
+        raw_text: &str,
+        caller: &CallerContext,
+    ) -> Result<Vec<Vec<f64>>, FakeError> {
+        record(
+            &self.queries,
+            QueryCall {
+                model: model.to_owned(),
+                text: text.clone(),
+                raw_text: raw_text.to_owned(),
+                caller: caller.clone(),
+            },
+        );
+        self.wait_and_fail(&self.query_failures).await?;
+        if let Some(vectors) = self.query_answers.get(&text) {
+            return Ok(vectors.clone());
+        }
+        Ok(vec![self.vector(&text)?])
     }
 }
 
@@ -198,22 +226,7 @@ impl RouteEmbedder for FakeEmbedder {
         raw_text: &str,
         caller: &CallerContext,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            record(
-                &self.queries,
-                QueryCall {
-                    model: model.to_owned(),
-                    text: text.clone(),
-                    raw_text: raw_text.to_owned(),
-                    caller: caller.clone(),
-                },
-            );
-            self.wait_and_fail(&self.query_failures).await?;
-            if let Some(vectors) = self.query_answers.get(&text) {
-                return Ok(vectors.clone());
-            }
-            Ok(vec![self.vector(&text)?])
-        }
+        self.answer_query(model, text, raw_text, caller)
     }
 }
 
@@ -250,11 +263,11 @@ pub(crate) fn caller() -> CallerContext {
     CallerContext::default()
 }
 
-pub(crate) fn decisions(route: Option<&str>, model: &str) -> Option<RouteDecision> {
-    Some(RouteDecision {
+pub(crate) fn decisions(route: Option<&str>, model: &str) -> RouteDecision {
+    RouteDecision {
         route: route.map(str::to_owned),
         model: model.to_owned(),
-    })
+    }
 }
 
 pub(crate) fn message(role: Role, content: Option<MessageContent>) -> ChatMessage {
@@ -294,7 +307,7 @@ pub(crate) fn image_part() -> ContentPart {
     )
 }
 
-fn part(kind: &str, fields: IndexMap<String, serde_json::Value>) -> ContentPart {
+fn part(kind: &str, fields: IndexMap<String, Value>) -> ContentPart {
     ContentPart {
         kind: kind.to_owned(),
         fields,
@@ -306,8 +319,7 @@ pub(crate) fn user_parts(parts: Vec<ContentPart>) -> ChatMessage {
 }
 
 pub(crate) fn temporary_directory(name: &str) -> PathBuf {
-    let directory =
-        std::env::temp_dir().join(format!("betterlite-b327-{name}-{}", std::process::id()));
-    std::fs::create_dir_all(&directory).expect("the temporary directory is writable");
+    let directory = env::temp_dir().join(format!("betterlite-b327-{name}-{}", process::id()));
+    fs::create_dir_all(&directory).expect("the temporary directory is writable");
     directory
 }

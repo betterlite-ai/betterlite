@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
@@ -12,7 +13,7 @@ mod support;
 
 #[rstest]
 fn replays_the_route_index_corpus(#[files("fuzz/corpus/route_index/*")] path: PathBuf) {
-    let source = std::fs::read_to_string(&path).expect("the corpus seed is readable");
+    let source = fs::read_to_string(&path).expect("the corpus seed is readable");
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
