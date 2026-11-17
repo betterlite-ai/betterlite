@@ -424,6 +424,32 @@ fn comprehend_writes_the_model_provider_cost_and_result() {
 }
 
 #[test]
+fn comprehend_keeps_the_callers_kwargs() {
+    let mut entries = IndexMap::new();
+    entries.insert("user".to_owned(), Json::Text("abc".to_owned()));
+    let fixture = Fixture::new(
+        Some("ComprehendMedical_V20181030.DetectPHI"),
+        &text_body(100),
+    )
+    .caller_kwargs(PassThroughLoggingKwargs { entries });
+    let outcome = run(&fixture);
+
+    assert_eq!(text(entry(&outcome, "user")), "abc");
+    assert_eq!(
+        text(entry(&outcome, "model")),
+        "comprehendmedical/DetectPHI"
+    );
+    assert_eq!(
+        text(entry(&outcome, "custom_llm_provider")),
+        "comprehendmedical"
+    );
+    assert_eq!(
+        decimal(entry(&outcome, "response_cost")),
+        Decimal::new(14, 4)
+    );
+}
+
+#[test]
 fn comprehend_warns_and_returns_the_raw_result_for_a_body_that_is_not_an_object() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let mut entries = IndexMap::new();

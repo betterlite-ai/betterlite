@@ -449,6 +449,20 @@ fn typesafe_honors_the_openrouter_cost() {
 }
 
 #[test]
+fn typesafe_honors_a_zero_openrouter_cost() {
+    let fixture = Fixture::new(
+        "openrouter",
+        r#"{"model": "gpt-4o", "usage": {"input_tokens": 100, "output_tokens": 20, "cost": 0}}"#,
+        "{}",
+    );
+    let outcome = run(&fixture);
+    let payload = payload(&outcome);
+
+    assert_eq!(decimal(field(&payload, "response_cost")), Decimal::ZERO);
+    assert_eq!(decimal(entry(&outcome, "response_cost")), Decimal::ZERO);
+}
+
+#[test]
 fn typesafe_ignores_the_usage_cost_for_any_other_provider() {
     let fixture = Fixture::new(
         "typesafe",
@@ -562,6 +576,43 @@ fn typesafe_prices_a_model_through_its_catalog_alias() {
 }
 
 #[test]
+fn typesafe_charges_nothing_when_no_catalog_key_names_the_model() {
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"usage": {"input_tokens": 100, "output_tokens": 20}}"#,
+        "{}",
+    );
+    let outcome = run(&fixture);
+    let payload = payload(&outcome);
+
+    assert_eq!(text(field(&payload, "model")), "typesafe/unknown");
+    assert_eq!(decimal(field(&payload, "response_cost")), Decimal::ZERO);
+    assert_eq!(integer(field(&payload, "prompt_tokens")), 100);
+    assert_eq!(integer(field(&payload, "completion_tokens")), 20);
+}
+
+#[test]
+fn typesafe_reads_a_missing_input_rate_as_zero() {
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"model": "gpt-4o-output-only", "usage": {"input_tokens": 100, "output_tokens": 20}}"#,
+        "{}",
+    );
+    let outcome = run_with(
+        &fixture,
+        &[(
+            "typesafe/gpt-4o-output-only",
+            r#"{"litellm_provider": "typesafe", "output_cost_per_token": 0.00001}"#,
+        )],
+    );
+
+    assert_eq!(
+        decimal(field(&payload(&outcome), "response_cost")),
+        Decimal::new(2, 4)
+    );
+}
+
+#[test]
 fn typesafe_always_returns_the_relayed_result() {
     let fixture = Fixture::new("typesafe", "[]", "\"not an object\"")
         .caller_kwargs(PassThroughLoggingKwargs::default());
@@ -604,5 +655,26 @@ fn typesafe_writes_the_combined_usage_into_the_call_details() {
             "total_tokens"
         )),
         10
+    );
+}
+
+#[test]
+fn typesafe_keeps_the_callers_kwargs() {
+    let mut entries = IndexMap::new();
+    entries.insert("user".to_owned(), Json::Text("abc".to_owned()));
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"model": "gpt-4o", "usage": {"input_tokens": 7, "output_tokens": 3}}"#,
+        "{}",
+    )
+    .caller_kwargs(PassThroughLoggingKwargs { entries });
+    let outcome = run(&fixture);
+
+    assert_eq!(text(entry(&outcome, "user")), "abc");
+    assert_eq!(text(entry(&outcome, "model")), "typesafe/gpt-4o");
+    assert_eq!(text(entry(&outcome, "custom_llm_provider")), "typesafe");
+    assert_eq!(
+        decimal(entry(&outcome, "response_cost")),
+        Decimal::new(475, 7)
     );
 }

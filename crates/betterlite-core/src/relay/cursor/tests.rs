@@ -356,7 +356,10 @@ fn cursor_summarizes_the_agent_fields_or_the_relayed_result(
     let outcome = run(&fixture);
 
     assert_eq!(text(field(&result_json(&outcome), "response")), expected);
-    assert_eq!(text(field(&payload(&outcome), "response")), expected);
+    assert_eq!(
+        text(field(field(&payload(&outcome), "response"), "response")),
+        expected
+    );
 }
 
 #[test]
