@@ -55,13 +55,13 @@ call:
         data: {"type":"response.output_item.done","output_index":2,"item":{"id":"target"}}
       - |-
         data: {"type":"response.output_item.done","output_index": "1_","item":{"id":"tested"}}
-        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"target"}}
+        data: {"type":"response.output_item.done","output_index":1,"item":{"id":"target"}}
       - |-
         data: {"type":"response.output_item.done","output_index":[],"item":{"id":"tested"}}
-        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"target"}}
+        data: {"type":"response.output_item.done","output_index":1,"item":{"id":"target"}}
       - |-
         data: {"type":"response.output_item.done","output_index":{},"item":{"id":"tested"}}
-        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"target"}}
+        data: {"type":"response.output_item.done","output_index":1,"item":{"id":"target"}}
 env: {}
 compare:
   ignore: []

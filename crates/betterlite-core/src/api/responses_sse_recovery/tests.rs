@@ -183,7 +183,10 @@ fn recovery_line_filter_parses_a_multiline_payload() {
 
 #[test]
 fn recovery_line_filter_does_not_join_data_lines() {
-    assert!(recover("data: {\ndata: \"a\": 1}").is_empty());
+    let first = r#"data: {"type":"response.output_item.done","#;
+    let second = r#"data: "output_index":0,"item":{"id":"x"}}"#;
+    // joining the two payloads would parse as one output_item.done event and recover an item
+    assert!(recover(&format!("{first}\n{second}")).is_empty());
 }
 
 #[rstest]
@@ -223,7 +226,10 @@ fn recovery_line_filter_rejects_a_line_over_the_event_cap() {
             limit: 8
         })
     ));
-    assert!(decode_recovery_line(b"{\"a\": 1}", &limits).is_ok());
+    assert_eq!(
+        decode_recovery_line(b"{\"a\": 1}", &limits).expect("the object line decodes"),
+        Some(IndexMap::from([("a".to_owned(), json("1"))]))
+    );
 }
 
 #[test]
@@ -231,9 +237,12 @@ fn recovery_rejects_bytes_that_are_not_utf8() {
     let bytes = b"data: \xff";
     let error = decode_recovery_line(bytes, &ApiLimits::default()).expect_err("the bytes are not");
     assert!(matches!(error, ResponsesSseRecoveryError::Utf8(_)));
-    let error =
+    let recovered_error =
         recover_recorded_output(bytes, &ApiLimits::default()).expect_err("the bytes are not");
-    assert!(matches!(error, ResponsesSseRecoveryError::Utf8(_)));
+    assert!(matches!(
+        recovered_error,
+        ResponsesSseRecoveryError::Utf8(_)
+    ));
 }
 
 #[test]
@@ -242,8 +251,13 @@ fn recovery_drops_nonstandard_json_literals() {
     let infinity =
         r#"{"type":"response.output_item.done","output_index":Infinity,"item":{"id":"beyond"}}"#;
     let surrogate = r#"{"type":"response.output_text.done","output_index":0,"text":"x","content_index":0,"item_id":"\ud800"}"#;
-    // Python's json.loads takes all three; RFC 8259 JSON does not, and an Infinity index raises OverflowError there
-    assert!(recover(&recording(&[nan, infinity, surrogate])).is_empty());
+    let nest = format!("{}0{}", "[".repeat(200), "]".repeat(200));
+    let deep = format!(
+        r#"{{"type":"response.output_item.done","output_index":0,"item":{{"id":"deep","nested":{nest}}}}}"#
+    );
+    // Python's json.loads takes all four; RFC 8259 JSON does not, a nested line exceeds serde_json's 128-level cap, and an Infinity index raises OverflowError there
+    let events = [nan, infinity, surrogate, deep.as_str()];
+    assert!(recover(&recording(&events)).is_empty());
 }
 
 #[rstest]
@@ -346,8 +360,8 @@ fn indexed_item_recovery_coerces_to_the_parsed_index(#[case] index: &str, #[case
 #[case::leading_underscore(r#""output_index": "_1","#)]
 #[case::double_underscore(r#""output_index": "1__2","#)]
 fn indexed_item_recovery_falls_back_for_an_unusable_index(#[case] index: &str) {
-    let expected = list(r#"[{"id":"target"}]"#);
-    assert_eq!(recover(&coerced(index, 0)), expected);
+    let expected = list(r#"[{"id":"tested"},{"id":"target"}]"#);
+    assert_eq!(recover(&coerced(index, 1)), expected);
 }
 
 #[test]
@@ -455,10 +469,11 @@ fn text_item_recovery_replaces_text_at_a_repeated_index() {
 #[case::null(r#","annotations":null"#, r#"[{"url":"u"}]"#)]
 #[case::replaced(r#","annotations":[{"url":"v"}]"#, r#"[{"url":"v"}]"#)]
 fn text_item_recovery_annotations(#[case] field: &str, #[case] expected: &str) {
+    let first = r#"{"type":"response.output_text.done","output_index":0,"content_index":0,"text":"a","annotations":[{"url":"u"}]}"#;
     let second = format!(
         r#"{{"type":"response.output_text.done","output_index":0,"content_index":0,"text":"b"{field}}}"#
     );
-    let recorded = recording(&[text_at(0, 0, "a").as_str(), second.as_str()]);
+    let recorded = recording(&[first, second.as_str()]);
     assert_eq!(
         recover(&recorded),
         vec![message_with(r#""msg_0""#, "b", expected)]
@@ -702,5 +717,7 @@ fn replays_corpus() {
         .collect();
     assert!(selectors.iter().any(|selector| selector.is_multiple_of(2)));
     assert!(selectors.iter().any(|selector| !selector.is_multiple_of(2)));
-    seeds.iter().for_each(|seed| replay(seed));
+    for seed in &seeds {
+        replay(seed);
+    }
 }

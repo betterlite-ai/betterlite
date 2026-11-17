@@ -9,8 +9,8 @@ deviations:
 - what: The index parser reads ASCII digits only, so a string holding "U+0663" (ARABIC-INDIC DIGIT THREE) is 3 to Python's int() and an unusable index here, which falls back to the item count.
   why: Unicode digit folding needs a decimal-digit table for a value no provider sends, and the ASCII rule stays.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L49
-- what: A line is strict RFC 8259 JSON, so a NaN or Infinity literal or a lone surrogate escape yields no object and drops its event, where Python's json.loads takes all three.
-  why: serde_json refuses the literals and no recovered value can carry them, so the strict parse is kept.
+- what: A line is strict RFC 8259 JSON, so a NaN or Infinity literal, a lone surrogate escape or a document nested more than 128 levels deep yields no object and drops its event, where Python's json.loads takes all of them and parses about a thousand levels.
+  why: serde_json refuses the literals and no recovered value can carry them, and its default recursion limit keeps an adversarial line off the stack; docs/compatibility.md makes standard JSON the rule, so the strict bounded parse stays.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L35-L41
 - what: An Infinity, -Infinity or 1e400 index raises OverflowError out of LiteLLM's int() call and fails the whole recovery, where here the line is dropped or the index falls back and the other lines still recover.
   why: A recorded response that fails one number should not become a 500; an unbounded float cannot index anything, so it takes the fallback or drops with its line.
