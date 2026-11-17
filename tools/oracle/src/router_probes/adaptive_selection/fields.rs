@@ -8,7 +8,7 @@ use betterlite_router::bandit_math::{BanditCell, Candidate, apply_delta, pick_be
 use rust_decimal::Decimal;
 
 use super::wire::{
-    CellOutput, CostCheckInput, CostScoreOutput, DeltaInput, Fields, Payload, RoutingOutput,
+    CellOutput, Check, CostCheckInput, CostScoreOutput, DeltaInput, Fields, Payload, RoutingOutput,
     SnapshotOutput,
 };
 use super::{
@@ -16,11 +16,25 @@ use super::{
 };
 use crate::router_probes::error::OperationError;
 
-pub(super) fn apply_delta_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        cells: Some(updated_cells(&payload.deltas)?),
-        ..Fields::default()
-    })
+pub(super) fn fields_for(payload: &Payload) -> Result<Fields, OperationError> {
+    let mut fields = Fields {
+        cells: None,
+        selected: None,
+        cost_scores: None,
+        snapshot: None,
+        routing: None,
+    };
+    match payload.check {
+        Check::ApplyDelta => fields.cells = Some(updated_cells(&payload.deltas)?),
+        Check::NormalizedCost => fields.cost_scores = Some(cost_scores(&payload.cost_checks)?),
+        Check::Pick => fields.selected = Some(selected_candidate(payload)?),
+        Check::PickModel => fields.selected = Some(selected_model(payload)?),
+        Check::PreRouting => fields.routing = Some(planned_route(payload)?),
+        Check::Snapshot => {
+            fields.snapshot = Some(SnapshotOutput::from(&service(payload)?.state_snapshot()));
+        }
+    }
+    Ok(fields)
 }
 
 fn updated_cells(deltas: &[DeltaInput]) -> Result<Vec<CellOutput>, OperationError> {
@@ -43,13 +57,6 @@ fn updated_cells(deltas: &[DeltaInput]) -> Result<Vec<CellOutput>, OperationErro
         });
     }
     Ok(cells)
-}
-
-pub(super) fn normalized_cost_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        cost_scores: Some(cost_scores(&payload.cost_checks)?),
-        ..Fields::default()
-    })
 }
 
 fn cost_scores(checks: &[CostCheckInput]) -> Result<Vec<CostScoreOutput>, OperationError> {
@@ -79,13 +86,6 @@ fn cost_scores(checks: &[CostCheckInput]) -> Result<Vec<CostScoreOutput>, Operat
         .collect()
 }
 
-pub(super) fn pick_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        selected: Some(selected_candidate(payload)?),
-        ..Fields::default()
-    })
-}
-
 fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
     let weights = weights(payload)?;
     let costs = cost_map(payload)?;
@@ -102,19 +102,14 @@ fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
         candidates.push(Candidate {
             model: &cell.model,
             cell: bandit_cell,
-            cost_score: normalized_cost(*cost, &all_costs).map_err(selection_error)?,
+            economy_score: normalized_cost(*cost, &all_costs).map_err(selection_error)?,
         });
     }
-    let samples = sample_values(payload)?;
-    let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(samples));
+    let mut sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
+        samples: sample_values(payload)?,
+        position: 0,
+    }));
     pick_best(&candidates, weights, &mut sampler).map_err(operation_error)
-}
-
-pub(super) fn pick_model_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        selected: Some(selected_model(payload)?),
-        ..Fields::default()
-    })
 }
 
 fn selected_model(payload: &Payload) -> Result<String, OperationError> {
@@ -123,13 +118,6 @@ fn selected_model(payload: &Payload) -> Result<String, OperationError> {
     selection
         .pick_model(request_type, payload.min_quality_tier)
         .map_err(selection_error)
-}
-
-pub(super) fn pre_routing_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        routing: Some(planned_route(payload)?),
-        ..Fields::default()
-    })
 }
 
 fn planned_route(payload: &Payload) -> Result<RoutingOutput, OperationError> {
@@ -156,12 +144,5 @@ fn planned_route(payload: &Payload) -> Result<RoutingOutput, OperationError> {
         })?,
         request_type,
         min_quality_tier: minimum_quality_tier(payload.headers.as_ref(), payload.metadata.as_ref()),
-    })
-}
-
-pub(super) fn snapshot_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    Ok(Fields {
-        snapshot: Some(SnapshotOutput::from(&service(payload)?.state_snapshot())),
-        ..Fields::default()
     })
 }

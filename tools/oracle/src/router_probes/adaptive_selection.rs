@@ -11,11 +11,8 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use self::fields::{
-    apply_delta_fields, normalized_cost_fields, pick_fields, pick_model_fields, pre_routing_fields,
-    snapshot_fields,
-};
-use self::wire::{Check, Fields, Payload};
+use self::fields::fields_for;
+use self::wire::{Fields, Payload};
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -36,14 +33,7 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let fields = match payload.check {
-        Check::ApplyDelta => apply_delta_fields(payload)?,
-        Check::NormalizedCost => normalized_cost_fields(payload)?,
-        Check::Pick => pick_fields(payload)?,
-        Check::PickModel => pick_model_fields(payload)?,
-        Check::PreRouting => pre_routing_fields(payload)?,
-        Check::Snapshot => snapshot_fields(payload)?,
-    };
+    let fields = fields_for(payload)?;
     Ok(ProbeOutput::AdaptiveSelection(Output(Box::new(fields))))
 }
 
@@ -149,7 +139,10 @@ fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {
         },
         &preferences,
         &costs,
-        QualitySampler::Scripted(ScriptedSampler::new(sample_values(payload)?)),
+        QualitySampler::Scripted(Box::new(ScriptedSampler {
+            samples: sample_values(payload)?,
+            position: 0,
+        })),
     )
     .map_err(selection_error)
 }

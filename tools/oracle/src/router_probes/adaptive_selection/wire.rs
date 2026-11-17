@@ -93,7 +93,7 @@ pub(super) struct WeightsInput {
     pub(super) cost: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Fields {
     pub(super) cells: Option<Vec<CellOutput>>,
     pub(super) selected: Option<String>,
