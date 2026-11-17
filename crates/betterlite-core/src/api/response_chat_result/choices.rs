@@ -9,8 +9,9 @@ use super::error::{ResponseChatResultError as Error, serialized};
 use super::raw::raw_message_choice;
 use super::reasoning::{PendingReasoning, pending};
 use super::records::{ChatChoice, ChatMessage, ChatRole};
-use super::tools::{apply_patch_chunk, is_raw_tool_item, raw_tool_chunk, typed_function_chunk};
+use super::tools::{apply_patch_chunk, chat_tool_chunk, is_raw_tool_item, typed_function_chunk};
 use crate::api::response_chat_content::annotations::{AnnotationValue, annotation_fallback};
+use crate::api::response_chat_history::tool_fields::output_tool_fields;
 use crate::api::responses_tool_results::records::ToolCallChunk;
 
 pub(crate) fn output_choices(output: &[ResponseOutputItem]) -> Result<Vec<ChatChoice>, Error> {
@@ -100,8 +101,9 @@ impl Assembly {
             return Ok(());
         };
         if is_raw_tool_item(&fields) {
-            let chunk = raw_tool_chunk(&fields, self.tool_index)?;
-            self.tool_calls.push(chunk);
+            let chunk = output_tool_fields(&fields, self.tool_index)
+                .map_err(|source| Error::History { source })?;
+            self.tool_calls.push(chat_tool_chunk(chunk));
             self.tool_index = self.tool_index.saturating_add(1);
             return Ok(());
         }

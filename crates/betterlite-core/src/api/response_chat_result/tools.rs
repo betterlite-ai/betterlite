@@ -7,7 +7,6 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
 use super::error::ResponseChatResultError as Error;
-use crate::api::response_chat_history::tool_fields::output_tool_fields;
 use crate::api::responses_codex_tools::records::AttributeValue;
 use crate::api::responses_tool_results::outbound_call::{CallIdentity, FunctionToolCall};
 use crate::api::responses_tool_results::records::{FunctionChunk, ToolCallChunk};
@@ -39,14 +38,6 @@ pub(super) fn is_raw_tool_item(fields: &Map<String, Value>) -> bool {
     )
 }
 
-pub(super) fn raw_tool_chunk(
-    fields: &Map<String, Value>,
-    index: usize,
-) -> Result<ToolCallChunk, Error> {
-    let chunk = output_tool_fields(fields, index).map_err(|source| Error::History { source })?;
-    Ok(chat_tool_chunk(chunk))
-}
-
 pub(super) fn apply_patch_chunk(call: &OutputApplyPatch, index: usize) -> ToolCallChunk {
     ToolCallChunk {
         id: call.call_id.clone(),
@@ -62,7 +53,7 @@ pub(super) fn apply_patch_chunk(call: &OutputApplyPatch, index: usize) -> ToolCa
 }
 
 // Message's Function model keeps only name and arguments, so the call is the sole carrier of these
-fn chat_tool_chunk(mut chunk: ToolCallChunk) -> ToolCallChunk {
+pub(super) fn chat_tool_chunk(mut chunk: ToolCallChunk) -> ToolCallChunk {
     chunk.function.provider_specific_fields = None;
     chunk
 }
