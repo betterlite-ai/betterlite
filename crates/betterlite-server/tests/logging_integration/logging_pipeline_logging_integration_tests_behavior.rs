@@ -498,13 +498,32 @@ async fn a_cancelled_stream_logs_one_terminal_event() {
     );
     let running = start(&source).await;
     running.wait_for_listening().await;
-    let body = r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
+    let client = open_stream_until_first_chunk(
+        running.address,
+        r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+    )
+    .await;
+    // the client that closes mid-stream is the cancellation; the connection drain drops the body
+    drop(client);
+    let records = running.shut_down().await;
+    let events = service_events(&records);
+    assert_one_call(&events, "acompletion", true);
+    assert_eq!(
+        events[1].error.as_deref(),
+        Some("the request was cancelled")
+    );
+    assert_drained(&records);
+    origin.abort_all();
+}
+
+// sends a streaming chat request and reads until the first chunk, then returns the open client
+async fn open_stream_until_first_chunk(address: SocketAddr, body: &str) -> TcpStream {
     let head = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\n\
          x-litellm-call-id: {CALL_ID}\r\ncontent-length: {}\r\n\r\n",
         body.len()
     );
-    let mut client = TcpStream::connect(running.address).await.unwrap();
+    let mut client = TcpStream::connect(address).await.unwrap();
     client.write_all(head.as_bytes()).await.unwrap();
     client.write_all(body.as_bytes()).await.unwrap();
     let mut received = Vec::new();
@@ -519,17 +538,7 @@ async fn a_cancelled_stream_logs_one_terminal_event() {
     timeout(Duration::from_secs(60), read)
         .await
         .expect("the first streamed chunk arrived");
-    // the client that closes mid-stream is the cancellation; the connection drain drops the body
-    drop(client);
-    let records = running.shut_down().await;
-    let events = service_events(&records);
-    assert_one_call(&events, "acompletion", true);
-    assert_eq!(
-        events[1].error.as_deref(),
-        Some("the request was cancelled")
-    );
-    assert_drained(&records);
-    origin.abort_all();
+    client
 }
 
 fn holds_first_chunk(bytes: &[u8]) -> bool {
