@@ -293,6 +293,47 @@ async fn a_route_mean_ignores_the_rows_past_the_top_five() {
 }
 
 #[tokio::test]
+async fn an_utterance_vector_is_scored_by_cosine() {
+    let config =
+        r#"{"routes": [{"name": "tilted", "utterances": ["tilted"], "score_threshold": 0.9}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0, 0.0]),
+        ("tilted", vec![1.0, 1.0]),
+        ("ask", vec![1.0, 0.0]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        decisions(None, "fallback"),
+        "the tilted utterance scores 1/sqrt(2), below the 0.9 threshold"
+    );
+}
+
+#[tokio::test]
+async fn tied_routes_keep_the_earlier_route() {
+    let config = r#"{"routes": [
+        {"name": "first", "utterances": ["same"]},
+        {"name": "second", "utterances": ["same2"]}
+    ]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0, 0.0]),
+        ("same", vec![1.0, 0.0]),
+        ("same2", vec![1.0, 0.0]),
+        ("ask", vec![1.0, 0.0]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, decisions(Some("first"), "first"));
+}
+
+#[tokio::test]
 async fn a_probe_batch_of_the_wrong_size_is_a_vector_count_error() {
     let embedder = Arc::new(
         FakeEmbedder::new(&[]).documents_answer(&["test"], vec![vec![1.0, 0.0], vec![0.0, 1.0]]),

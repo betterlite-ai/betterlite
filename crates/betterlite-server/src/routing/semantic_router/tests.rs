@@ -203,6 +203,34 @@ fn session_ids_reach_the_sub_call_only_as_text() {
 }
 
 #[test]
+fn litellm_params_metadata_alone_sets_the_flag() {
+    let params_metadata = object(&[("turn_off_message_logging", Json::Bool(true))]);
+    let null_params = Json::Null;
+    let request = CallerRequest {
+        litellm_params_metadata: Some(&params_metadata),
+        ..requested(None)
+    };
+    assert_eq!(flag_of(&request), Some(true));
+    let nulled = CallerRequest {
+        litellm_params_metadata: Some(&null_params),
+        ..requested(None)
+    };
+    assert_eq!(flag_of(&nulled), None);
+}
+
+#[test]
+fn a_text_flag_resolves_like_a_boolean_one() {
+    let metadata = object(&[("turn_off_message_logging", text("true"))]);
+    assert_eq!(flag_of(&requested(Some(&metadata))), Some(true));
+}
+
+#[test]
+fn a_null_flag_counts_as_unset() {
+    let metadata = object(&[("turn_off_message_logging", Json::Null)]);
+    assert_eq!(flag_of(&requested(Some(&metadata))), None);
+}
+
+#[test]
 fn a_metadata_that_is_not_an_object_is_rejected() {
     let metadata = text("not an object");
     let error = caller_context(&requested(Some(&metadata)), PrivacyContext::default())
