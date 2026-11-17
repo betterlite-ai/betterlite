@@ -856,6 +856,18 @@ async fn schedule_dispatches_the_handler_result_and_payload() {
 }
 
 #[tokio::test]
+async fn schedule_restores_the_logging_state_after_the_dispatch() {
+    let job = Job::new();
+    let pricer = FixedPricer::pricing(price());
+    let logger = logger_with(Arc::clone(&pricer), Some(rate()), 10);
+    job.run(&logger).await;
+    assert_eq!(
+        logged_model(&job.logging_obj),
+        "transcribe/StartTranscriptionJob"
+    );
+}
+
+#[tokio::test]
 async fn failure_missing_rate_logs_and_dispatches_nothing() {
     let (log, _guard) = capture_log();
     let job = Job::new();
@@ -927,6 +939,7 @@ async fn failure_taken_state_dispatches_nothing_and_ends_the_task() {
 
 #[tokio::test]
 async fn limits_full_queue_charges_the_maximum_without_pricing() {
+    let (log, _guard) = capture_log();
     let job = Job::new();
     let pricer = FixedPricer::pricing(price());
     let logger = logger_with(Arc::clone(&pricer), Some(rate()), 1);
@@ -941,6 +954,9 @@ async fn limits_full_queue_charges_the_maximum_without_pricing() {
     assert_eq!(
         entry(&calls[0].kwargs, "response_cost"),
         &decimal_json(maximum)
+    );
+    assert!(
+        log_text(&log).contains("Transcribe pricing queue is full, charging maximum for job job-1")
     );
     drop(held);
 }
