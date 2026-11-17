@@ -373,11 +373,9 @@ impl<'fixture> Session<'fixture> {
             blocks: &blocks,
             new_id: &new_id,
         };
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         let mut sources = TransformSources {
             environment: &mut environment,
             catalogs: &catalogs,
@@ -386,7 +384,8 @@ impl<'fixture> Session<'fixture> {
             lookup: &self.fixture.lookup,
             packaged: self.fixture.packaged.as_ref(),
         };
-        self.runtime.block_on(transform_request(request, &mut sources))
+        self.runtime
+            .block_on(transform_request(request, &mut sources))
     }
 
     pub(super) fn async_transform(
@@ -402,11 +401,9 @@ impl<'fixture> Session<'fixture> {
             blocks: &blocks,
             new_id: &new_id,
         };
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         let mut sources = TransformSources {
             environment: &mut environment,
             catalogs: &catalogs,
@@ -439,11 +436,9 @@ impl<'fixture> Session<'fixture> {
             packaged: self.fixture.packaged.as_ref(),
             lookup: &self.fixture.lookup,
         };
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         self.runtime.block_on(map_openai_params(
             &request,
             non_default_params,
@@ -454,11 +449,9 @@ impl<'fixture> Session<'fixture> {
 
     pub(super) fn supported(&mut self, model: &str) -> Vec<&'static str> {
         let catalogs = self.fixture.catalogs();
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         self.runtime.block_on(get_supported_openai_params(
             model,
             &mut environment,
@@ -466,11 +459,7 @@ impl<'fixture> Session<'fixture> {
         ))
     }
 
-    pub(super) fn response(
-        &mut self,
-        raw: &str,
-        messages: Vec<Json>,
-    ) -> ResponseEnvelope {
+    pub(super) fn response(&mut self, raw: &str, messages: Vec<Json>) -> ResponseEnvelope {
         let headers = HeaderMap::new();
         let raw_response = RawResponse {
             status: 200,
@@ -551,7 +540,9 @@ pub(super) fn body_json(prepared: &ClaudeInvokePrepared) -> serde_json::Value {
 pub(super) fn headers_of(entries: &[(&str, &str)]) -> AnthropicHeaders {
     let mut headers = AnthropicHeaders::default();
     for (name, value) in entries {
-        headers.values.insert((*name).to_owned(), (*value).to_owned());
+        headers
+            .values
+            .insert((*name).to_owned(), (*value).to_owned());
     }
     headers
 }

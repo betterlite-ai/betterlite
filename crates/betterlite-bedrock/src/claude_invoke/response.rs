@@ -18,10 +18,6 @@ where
 {
     anthropic_transform_response(
         // the parent owns the usage, metadata, JSON-mode and error behavior this provider keeps
-        envelope,
-        raw,
-        request,
-        logging,
-        counter,
+        envelope, raw, request, logging, counter,
     )
 }

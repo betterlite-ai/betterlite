@@ -95,8 +95,14 @@ where
     )
     .await;
     betas.extend(generated.into_iter().map(str::to_owned));
-    adjust_tool_search_beta(request.model, beta_mode(&tools), &mut betas, environment, catalogs)
-        .await;
+    adjust_tool_search_beta(
+        request.model,
+        beta_mode(&tools),
+        &mut betas,
+        environment,
+        catalogs,
+    )
+    .await;
     if is_eager_input_streaming_used(&tools)? {
         betas.insert(FINE_GRAINED_STREAMING_BETA.to_owned());
     }

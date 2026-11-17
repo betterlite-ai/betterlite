@@ -76,13 +76,7 @@ where
     Transport: ModelInfoClient,
 {
     // LiteLLM's override hands the parent class its own custom_llm_provider, which is bedrock here.
-    anthropic_supported_params(
-        model,
-        Some(CUSTOM_LLM_PROVIDER),
-        environment,
-        catalogs,
-    )
-    .await
+    anthropic_supported_params(model, Some(CUSTOM_LLM_PROVIDER), environment, catalogs).await
 }
 
 pub async fn map_openai_params<Source, Transport, Lookup>(
@@ -98,8 +92,7 @@ where
 {
     let original_model = request.model;
     let requested_thinking = thinking_param(non_default_params)?;
-    let display_updates =
-        has_thinking_display_updates(requested_thinking.as_ref());
+    let display_updates = has_thinking_display_updates(requested_thinking.as_ref());
     let has_response_format = non_default_params.contains_key(RESPONSE_FORMAT);
     let mut mapped_model = original_model;
     if has_response_format
@@ -187,10 +180,7 @@ where
     )
     .await?;
     if let Some(ParamValue::Text(effort)) = clamped.get(REASONING_EFFORT) {
-        params.insert(
-            REASONING_EFFORT.to_owned(),
-            Json::Text(effort.clone()),
-        );
+        params.insert(REASONING_EFFORT.to_owned(), Json::Text(effort.clone()));
     }
     Ok(())
 }
@@ -221,9 +211,19 @@ where
         output_config: optional_params.get("output_config").cloned(),
     };
     let before = params.clone();
-    translate_legacy_thinking(&thinking_request, &mut params, environment, request.catalogs)
-        .await?;
-    write_back(optional_params, "thinking", &before.thinking, params.thinking);
+    translate_legacy_thinking(
+        &thinking_request,
+        &mut params,
+        environment,
+        request.catalogs,
+    )
+    .await?;
+    write_back(
+        optional_params,
+        "thinking",
+        &before.thinking,
+        params.thinking,
+    );
     write_back(
         optional_params,
         "output_config",
@@ -266,10 +266,7 @@ fn apply_display_updates(requested: bool, optional_params: &mut IndexMap<String,
     }
     let mut rewritten = IndexMap::new();
     rewritten.insert("type".to_owned(), Json::Text("adaptive".to_owned()));
-    rewritten.insert(
-        "display".to_owned(),
-        Json::Text("updates".to_owned()),
-    );
+    rewritten.insert("display".to_owned(), Json::Text("updates".to_owned()));
     optional_params.insert("thinking".to_owned(), Json::Object(rewritten));
 }
 

@@ -5,9 +5,9 @@ pub mod error;
 pub mod params;
 pub mod request;
 pub mod response;
+mod tests;
 pub mod tools;
 mod wire;
-mod tests;
 
 // LiteLLM's AmazonAnthropicClaudeConfig.custom_llm_provider
 pub const CUSTOM_LLM_PROVIDER: &str = "bedrock";

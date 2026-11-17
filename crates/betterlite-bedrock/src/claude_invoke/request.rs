@@ -98,12 +98,9 @@ where
     Lookup: ModelInfoLookup,
 {
     let typed: Vec<Message> = wire::convert(&request.messages).map_err(ClaudeInvokeError::Body)?;
-    let inlined = async_inline_remote_media(
-        &typed,
-        &INLINE_EVERY_REMOTE_URL,
-        sources.prompts.fetcher,
-    )
-    .await?;
+    let inlined =
+        async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, sources.prompts.fetcher)
+            .await?;
     let messages: Vec<Json> = wire::convert(&inlined).map_err(ClaudeInvokeError::Body)?;
     build(request, messages, sources).await
 }
@@ -139,11 +136,7 @@ where
         global_drop_params: request.global_drop_params,
     };
     let prepared = anthropic_request
-        .prepare(
-            &mut *sources.environment,
-            sources.catalogs,
-            sources.prompts,
-        )
+        .prepare(&mut *sources.environment, sources.catalogs, sources.prompts)
         .await?;
     let mut body: Object = wire::convert(&prepared.body).map_err(ClaudeInvokeError::Body)?;
     body.shift_remove(MODELS);
@@ -260,9 +253,7 @@ fn strip_eager_input_streaming_tools(body: &mut Object) {
 }
 
 // Every AWS credential field LiteLLM's aws_authentication_params keeps out of the model body.
-fn authentication_filtered(
-    optional_params: &IndexMap<String, Json>,
-) -> IndexMap<String, Json> {
+fn authentication_filtered(optional_params: &IndexMap<String, Json>) -> IndexMap<String, Json> {
     optional_params
         .iter()
         .filter(|(key, _value)| !AUTHENTICATION_PARAMS.contains(&key.as_str()))

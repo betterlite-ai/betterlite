@@ -181,11 +181,9 @@ impl<'fixture> Session<'fixture> {
             blocks: &blocks,
             new_id: &new_id,
         };
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         let mut sources = TransformSources {
             environment: &mut environment,
             catalogs: &catalogs,
@@ -223,11 +221,9 @@ impl<'fixture> Session<'fixture> {
             packaged: self.fixture.packaged.as_ref(),
             lookup: &self.fixture.lookup,
         };
-        let mut environment = self.fixture.capability_environment(
-            &self.resolution,
-            &mut self.keys,
-            &self.dynamic,
-        );
+        let mut environment =
+            self.fixture
+                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
         self.runtime.block_on(map_openai_params(
             &request,
             non_default_params,

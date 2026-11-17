@@ -55,7 +55,9 @@ pub(super) fn bedrock_anthropic_version() {
     let defaults = OptionDefaults::default();
     let catalog = catalog();
     let request = plain_request(&defaults, &catalog, map_of(r#"{"max_tokens": 64}"#));
-    let prepared = session.transform(&request, &fetcher).expect("the request transforms");
+    let prepared = session
+        .transform(&request, &fetcher)
+        .expect("the request transforms");
     assert_eq!(
         body_json(&prepared),
         json!({
