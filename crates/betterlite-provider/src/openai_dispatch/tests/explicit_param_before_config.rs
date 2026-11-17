@@ -29,12 +29,9 @@ fn chat_call(body: &str, credentials: Credentials) -> ChatCall {
 
 fn globals_composition(api_key: Option<&str>, openai_key: Option<&str>) -> Composition {
     let mut composition = support::composition();
-    composition.globals = support::globals(
-        Some("https://global.test/v1"),
-        api_key,
-        openai_key,
-        Some("org-global"),
-    );
+    let identity =
+        support::credentials(Some("https://global.test/v1"), api_key, Some("org-global"));
+    composition.globals = support::globals(identity, openai_key);
     composition.env_api_key = Some(SecretString::from("sk-env"));
     composition
 }
@@ -55,12 +52,12 @@ async fn dispatched(composition: &Composition, credentials: Credentials) -> Vec<
 // The explicit values the route resolved win over every global and the configured defaults.
 pub(super) async fn check_explicit_wins() {
     let mut composition = support::composition();
-    composition.globals = support::globals(
+    let identity = support::credentials(
         Some("https://global.test/v1"),
         Some("sk-global"),
-        Some("sk-openai-global"),
         Some("org-global"),
     );
+    composition.globals = support::globals(identity, Some("sk-openai-global"));
     composition.env_api_key = Some(SecretString::from("sk-env"));
     composition.credentials.api_base = String::from("https://settings.test/v1");
     composition.credentials.organization = Some(String::from("org-settings"));

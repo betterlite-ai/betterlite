@@ -106,8 +106,8 @@ async fn round_trip(reply: &str) -> (String, Vec<u8>, Result<OperationResult, Op
     (request, expected, result)
 }
 
-// The composed plan names the endpoint and carries the resolved auth and content type.
-pub(super) fn check_plan_shape() {
+// The composed plan names the endpoint with the resolved auth and content type, and a stream adds its body flag.
+pub(super) fn check_plans() {
     let composition = support::composition();
     let plan = chat_plan(&composition, &call(String::from("http://127.0.0.1:9/v1")))
         .expect("the chat plan");
@@ -115,6 +115,21 @@ pub(super) fn check_plan_shape() {
     assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
     assert_eq!(sent.header("authorization"), Some("Bearer oracle-key"));
     assert_eq!(sent.header("content-type"), Some("application/json"));
+    let call = ChatCall {
+        request: support::chat_request(
+            r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+        ),
+        ..call(String::from("http://127.0.0.1:9/v1"))
+    };
+    let plan = chat_plan(&composition, &call).expect("the chat plan");
+    let sent = RecordedRequest::of(&plan.prepared).expect("a prepared stream");
+    assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
+    assert_eq!(sent.header("accept"), Some("application/json"));
+    let body = support::body_fields(&sent.body);
+    assert_eq!(
+        support::field(&body, "stream"),
+        &betterlite_models::controls::json_value::JsonValue::Bool(true)
+    );
 }
 
 // The composed call reaches the upstream with its auth, headers and body, and the reply decodes.
@@ -158,26 +173,6 @@ pub(super) async fn check_failure() {
     };
     assert_eq!(response.status, 400);
     assert_eq!(response.body, ERROR_BODY.as_bytes());
-}
-
-pub(super) fn check_stream() {
-    // the composed stream branch builds the same endpoint with its own accept header
-    let composition = support::composition();
-    let call = ChatCall {
-        request: support::chat_request(
-            r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
-        ),
-        ..call(String::from("http://127.0.0.1:9/v1"))
-    };
-    let plan = chat_plan(&composition, &call).expect("the chat plan");
-    let sent = RecordedRequest::of(&plan.prepared).expect("a prepared stream");
-    assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
-    assert_eq!(sent.header("accept"), Some("application/json"));
-    let body = support::body_fields(&sent.body);
-    assert_eq!(
-        support::field(&body, "stream"),
-        &betterlite_models::controls::json_value::JsonValue::Bool(true)
-    );
 }
 
 // A successful streamed chat call logs the opened stream itself, with a null original response.
@@ -234,9 +229,8 @@ async fn streamed_chat() -> (
 }
 
 pub(super) async fn check_all() {
-    check_plan_shape();
+    check_plans();
     check_round_trip().await;
     check_failure().await;
-    check_stream();
     check_stream_post_call().await;
 }

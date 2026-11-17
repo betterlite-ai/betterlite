@@ -102,20 +102,20 @@ pub(super) async fn check_without_caller_headers() {
     assert!(logger.calls[0].headers.is_none());
 }
 
-// The experimental branch logs the map validate_environment wrote into: the caller map plus the key and content type.
-pub(super) async fn check_experimental() {
+async fn experimental_failure(headers: Option<Headers>, extra: Option<Headers>) -> FixtureLogger {
     let mut composition = support::composition();
     composition.provider.experimental_handler = true;
     let answer = FixtureAnswer::new(500, ERROR_BODY.as_bytes().to_vec());
     let mut logger = FixtureLogger::default();
-    let error = support::dispatch_chat(
-        &composition,
-        call(Some(caller_headers()), Some(extra_headers())),
-        &answer,
-        &mut logger,
-    )
-    .await;
+    let error =
+        support::dispatch_chat(&composition, call(headers, extra), &answer, &mut logger).await;
     assert!(error.is_err());
+    logger
+}
+
+// The experimental branch logs the map validate_environment wrote: the caller's map and the key, and its own content type only when the caller named none.
+pub(super) async fn check_experimental() {
+    let logger = experimental_failure(Some(caller_headers()), Some(extra_headers())).await;
     assert_eq!(logger.calls.len(), 1);
     assert_eq!(
         support::logged_header(&logger.calls[0], "Authorization"),
@@ -128,6 +128,18 @@ pub(super) async fn check_experimental() {
     assert_eq!(
         support::logged_header(&logger.calls[0], "x-other"),
         Some("1")
+    );
+    let mut headers = caller_headers();
+    headers.insert(String::from("Content-Type"), String::from("text/plain"));
+    let logger = experimental_failure(Some(headers), None).await;
+    assert_eq!(logger.calls.len(), 1);
+    assert_eq!(
+        support::logged_header(&logger.calls[0], "Content-Type"),
+        Some("text/plain")
+    );
+    assert_eq!(
+        support::logged_header(&logger.calls[0], "content-type"),
+        None
     );
 }
 
@@ -148,33 +160,6 @@ pub(super) async fn check_preparation_failure_has_no_log() {
     ));
     assert!(logger.calls.is_empty());
     assert!(answer.requests().is_empty());
-}
-
-// validate_environment adds Content-Type only when the caller's map names neither spelling, and the log keeps what the caller sent.
-pub(super) async fn check_experimental_content_type() {
-    let mut composition = support::composition();
-    composition.provider.experimental_handler = true;
-    let mut headers = caller_headers();
-    headers.insert(String::from("Content-Type"), String::from("text/plain"));
-    let answer = FixtureAnswer::new(500, ERROR_BODY.as_bytes().to_vec());
-    let mut logger = FixtureLogger::default();
-    let error = support::dispatch_chat(
-        &composition,
-        call(Some(headers), None),
-        &answer,
-        &mut logger,
-    )
-    .await;
-    assert!(error.is_err());
-    assert_eq!(logger.calls.len(), 1);
-    assert_eq!(
-        support::logged_header(&logger.calls[0], "Content-Type"),
-        Some("text/plain")
-    );
-    assert_eq!(
-        support::logged_header(&logger.calls[0], "content-type"),
-        None
-    );
 }
 
 // The failure log carries the messages the call sent beside the error text.
@@ -274,7 +259,6 @@ pub(super) async fn check_all() {
     check_without_caller_headers().await;
     check_experimental().await;
     check_preparation_failure_has_no_log().await;
-    check_experimental_content_type().await;
     check_logged_input().await;
     check_b249_logger();
 }

@@ -55,8 +55,8 @@ async fn dispatched() -> (FixtureAnswer, FixtureLogger, OperationResult) {
     (answer, logger, result)
 }
 
-// The explicit identity names the call, and the configured organization is sent beside it.
-pub(super) async fn check_identity() {
+// The explicit identity names the call, the configured organization is sent beside it, and the SDK sends JSON.
+pub(super) async fn check_request() {
     let (answer, _logger, _result) = dispatched().await;
     let sent = answer.requests();
     assert_eq!(sent.len(), 1);
@@ -64,12 +64,7 @@ pub(super) async fn check_identity() {
     assert_eq!(sent[0].url, "https://explicit.test/v1/chat/completions");
     assert_eq!(sent[0].header("authorization"), Some("Bearer sk-explicit"));
     assert_eq!(sent[0].header("openai-organization"), Some("org-global"));
-}
-
-// completion() merges the caller's map with its extra headers, and the SDK sends JSON.
-pub(super) async fn check_headers() {
-    let (answer, _logger, _result) = dispatched().await;
-    let sent = answer.requests();
+    // completion() merges the caller's map with its extra headers
     assert_eq!(sent[0].header("accept"), Some("application/json"));
     assert_eq!(sent[0].header("content-type"), Some("application/json"));
     assert_eq!(sent[0].header("x-header"), Some("e"));
@@ -107,7 +102,6 @@ pub(super) async fn check_body_and_reply() {
 }
 
 pub(super) async fn check_all() {
-    check_identity().await;
-    check_headers().await;
+    check_request().await;
     check_body_and_reply().await;
 }

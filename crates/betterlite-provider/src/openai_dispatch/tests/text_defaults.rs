@@ -1,7 +1,7 @@
 use betterlite_openai::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, ResponseKind, SecretHeaders,
 };
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::support;
 use crate::openai_dispatch::call::{Composition, Credentials, TextCall};
@@ -33,24 +33,21 @@ fn plan(
 
 fn global_composition() -> Composition {
     let mut composition = support::composition();
-    composition.globals = support::globals(
+    let identity = support::credentials(
         Some("https://global.test/v1"),
         Some("sk-global"),
-        None,
         Some("org-global"),
     );
+    composition.globals = support::globals(identity, None);
     composition.text_defaults = support::text_defaults(r#"{"temperature":0.5,"top_p":0.9}"#);
     composition
 }
 
+// The transport case moves the key to litellm.openai_key and keeps the rest of the global identity.
 fn transport_composition() -> Composition {
-    let mut composition = support::composition();
-    composition.globals = support::globals(
-        Some("https://global.test/v1"),
-        None,
-        Some("sk-openai-global"),
-        Some("org-global"),
-    );
+    let mut composition = global_composition();
+    composition.globals.api_key = None;
+    composition.globals.openai_key = Some(SecretString::from("sk-openai-global"));
     composition.text_defaults = support::text_defaults(r#"{"temperature":0.5}"#);
     composition
 }

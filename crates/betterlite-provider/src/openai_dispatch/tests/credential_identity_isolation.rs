@@ -1,5 +1,5 @@
 use betterlite_openai::openai_base_config::Headers;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::support;
 use crate::openai_dispatch::call::{ChatCall, Composition};
@@ -25,33 +25,24 @@ fn tenant_headers(tenant: &str) -> Headers {
     Headers::from([(String::from("x-tenant"), tenant.to_owned())])
 }
 
-fn first_identity() -> Composition {
+fn identity(api_base: &str, api_key: &str, organization: &str) -> Composition {
     let mut composition = support::composition();
-    composition.globals = support::globals(
-        Some("https://first.test/v1"),
-        Some("sk-first"),
-        None,
-        Some("org-first"),
-    );
-    composition
-}
-
-fn second_identity() -> Composition {
-    let mut composition = support::composition();
-    composition.globals = support::globals(
-        Some("https://second.test/v1"),
-        Some("sk-second"),
-        None,
-        Some("org-second"),
-    );
+    let resolved = support::credentials(Some(api_base), Some(api_key), Some(organization));
+    composition.globals = support::globals(resolved, None);
     composition
 }
 
 // Two configured identities resolve their own base, key and organization.
 fn identities_resolve_apart() {
     let plain = support::credentials(None, None, None);
-    let resolved_first = resolve(&first_identity(), &plain);
-    let resolved_second = resolve(&second_identity(), &plain);
+    let resolved_first = resolve(
+        &identity("https://first.test/v1", "sk-first", "org-first"),
+        &plain,
+    );
+    let resolved_second = resolve(
+        &identity("https://second.test/v1", "sk-second", "org-second"),
+        &plain,
+    );
     assert_eq!(resolved_first.api_base, "https://first.test/v1");
     assert_eq!(resolved_second.api_base, "https://second.test/v1");
     assert_eq!(
@@ -74,7 +65,7 @@ fn identities_resolve_apart() {
 
 // An explicit identity on one call is never memoized into the composition or the next call.
 fn explicit_identity_is_not_memoized() {
-    let first = first_identity();
+    let first = identity("https://first.test/v1", "sk-first", "org-first");
     let explicit = support::credentials(
         Some("https://explicit.test/v1"),
         Some("sk-explicit"),
@@ -104,8 +95,10 @@ async fn dispatched(composition: &Composition, headers: Option<Headers>) -> Vec<
 
 // Each call's headers and identity reach only its own wire request.
 async fn identities_send_their_own_headers() {
-    let first_sent = dispatched(&first_identity(), Some(tenant_headers("first"))).await;
-    let second_sent = dispatched(&second_identity(), Some(tenant_headers("second"))).await;
+    let first = identity("https://first.test/v1", "sk-first", "org-first");
+    let first_sent = dispatched(&first, Some(tenant_headers("first"))).await;
+    let second = identity("https://second.test/v1", "sk-second", "org-second");
+    let second_sent = dispatched(&second, Some(tenant_headers("second"))).await;
     assert_eq!(first_sent[0].url, "https://first.test/v1/chat/completions");
     assert_eq!(
         first_sent[0].header("authorization"),
@@ -133,7 +126,8 @@ async fn identities_send_their_own_headers() {
 
 // A third call without a caller map resolves the configured identity again.
 async fn a_plain_call_has_no_caller_headers() {
-    let sent = dispatched(&first_identity(), None).await;
+    let first = identity("https://first.test/v1", "sk-first", "org-first");
+    let sent = dispatched(&first, None).await;
     assert_eq!(sent[0].header("authorization"), Some("Bearer sk-first"));
     assert_eq!(sent[0].header("x-tenant"), None);
 }

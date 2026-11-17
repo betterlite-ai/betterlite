@@ -68,8 +68,8 @@ pub(super) async fn check_disabled() {
     assert!(!fields.contains_key("metadata"));
 }
 
-// Enabled: the cleaned nested map becomes the body metadata and keeps strings only.
-pub(super) async fn check_enabled() {
+// Enabled: the cleaned nested map becomes the body metadata, or the whole map when cleaning it leaves nothing.
+pub(super) async fn check_cleaning() {
     let fields = sent_body(&preview_composition(), call(BODY, Some(nested()))).await;
     let cleaned = support::object_field(&fields, "metadata");
     assert_eq!(cleaned.len(), 1);
@@ -77,10 +77,6 @@ pub(super) async fn check_enabled() {
         cleaned.get("user_id").expect("the string value"),
         &support::text_value("u-1")
     );
-}
-
-// An empty cleaned nested map falls back to the whole metadata, strings only.
-pub(super) async fn check_outer_fallback() {
     let outer_only = metadata(&[
         (
             "requester_metadata",
@@ -129,8 +125,7 @@ pub(super) async fn check_limits_to_sixteen() {
 
 pub(super) async fn check_all() {
     check_disabled().await;
-    check_enabled().await;
-    check_outer_fallback().await;
+    check_cleaning().await;
     check_nothing_survives().await;
     check_limits_to_sixteen().await;
 }

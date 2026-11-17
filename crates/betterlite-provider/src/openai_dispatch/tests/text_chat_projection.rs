@@ -64,11 +64,13 @@ pub(super) fn check_projection_predicate() {
     assert!(!text::projects_to_chat(&plan("{}", TEXT_ONLY)));
 }
 
-async fn log_count(optional_params: &str, flags: Flags) -> usize {
-    let source =
-        FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
+async fn dispatch(
+    optional_params: &str,
+    flags: Flags,
+    source: FixtureTextSource,
+) -> (OperationResult, FixtureLogger) {
     let mut logger = FixtureLogger::default();
-    support::dispatch_text(
+    let result = support::dispatch_text(
         &support::composition(),
         call(optional_params, flags),
         &source,
@@ -76,54 +78,52 @@ async fn log_count(optional_params: &str, flags: Flags) -> usize {
     )
     .await
     .expect("the text dispatch");
-    logger.calls.len()
+    (result, logger)
+}
+
+async fn log_count(optional_params: &str, flags: Flags) -> usize {
+    let source =
+        FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
+    dispatch(optional_params, flags, source).await.1.calls.len()
 }
 
 // main.py logs the text success for a truthy stream option or an async call, and not for a false or absent one.
 pub(super) async fn check_stream_logging() {
-    assert_eq!(log_count("{}", SYNC).await, 0);
-    assert_eq!(log_count(r#"{"stream":false}"#, SYNC).await, 0);
-    assert_eq!(log_count(r#"{"stream":null}"#, SYNC).await, 0);
-    assert_eq!(log_count(r#"{"stream":true}"#, SYNC).await, 1);
-    assert_eq!(log_count("{}", ASYNC).await, 1);
-    assert_eq!(log_count(r#"{"stream":true}"#, ASYNC).await, 1);
+    for (optional_params, flags, expected) in [
+        ("{}", SYNC, 0),
+        (r#"{"stream":false}"#, SYNC, 0),
+        (r#"{"stream":null}"#, SYNC, 0),
+        (r#"{"stream":true}"#, SYNC, 1),
+        ("{}", ASYNC, 1),
+        (r#"{"stream":true}"#, ASYNC, 1),
+    ] {
+        assert_eq!(log_count(optional_params, flags).await, expected);
+    }
 }
 
-// A truthy stream keeps the text reply: only a literally false stream projects the reply to chat.
-pub(super) async fn check_stream_keeps_text() {
+// A truthy stream keeps the text reply, a literally false one projects it to chat, and the text-only marker keeps it as text.
+pub(super) async fn check_projection() {
     let source =
         FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let mut logger = FixtureLogger::default();
-    let result = support::dispatch_text(
-        &support::composition(),
-        call(r#"{"stream":true}"#, SYNC),
-        &source,
-        &mut logger,
-    )
-    .await
-    .expect("the text dispatch");
+    let (streamed, _logger) = dispatch(r#"{"stream":true}"#, SYNC, source).await;
     assert!(matches!(
-        result,
+        streamed,
         OperationResult::OpenAi(OpenAiResult::Text(_))
     ));
-}
-
-// A synchronous text call becomes a chat completion and logs nothing.
-pub(super) async fn check_sync_projection() {
     let source =
         FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let mut logger = FixtureLogger::default();
-    let result = support::dispatch_text(
-        &support::composition(),
-        call("{}", SYNC),
-        &source,
-        &mut logger,
-    )
-    .await
-    .expect("the text dispatch");
+    let (sync, logger) = dispatch("{}", SYNC, source).await;
     assert!(matches!(
-        result,
+        sync,
         OperationResult::Chat(ChatCompletion::OpenAi(_))
+    ));
+    assert!(logger.calls.is_empty());
+    let source =
+        FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
+    let (text_only, logger) = dispatch("{}", TEXT_ONLY, source).await;
+    assert!(matches!(
+        text_only,
+        OperationResult::OpenAi(OpenAiResult::Text(_))
     ));
     assert!(logger.calls.is_empty());
 }
@@ -158,26 +158,6 @@ pub(super) async fn check_async_logging() {
     assert_eq!(support::logged_header(&logger.calls[0], "x-log"), Some("1"));
 }
 
-// The text-only marker keeps the reply as text instead of projecting it, and main.py logs nothing.
-pub(super) async fn check_text_completion_marker() {
-    let source =
-        FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let mut logger = FixtureLogger::default();
-    let result = support::dispatch_text(
-        &support::composition(),
-        call("{}", TEXT_ONLY),
-        &source,
-        &mut logger,
-    )
-    .await
-    .expect("the text dispatch");
-    assert!(matches!(
-        result,
-        OperationResult::OpenAi(OpenAiResult::Text(_))
-    ));
-    assert!(logger.calls.is_empty());
-}
-
 // A streamed text call keeps the opened stream and logs its absence beside the resolved headers.
 pub(super) async fn check_text_stream_logging() {
     let source = FixtureTextSource::new(TextReply::streaming(
@@ -208,9 +188,7 @@ pub(super) async fn check_text_stream_logging() {
 pub(super) async fn check_all() {
     check_projection_predicate();
     check_stream_logging().await;
-    check_stream_keeps_text().await;
-    check_sync_projection().await;
+    check_projection().await;
     check_async_logging().await;
-    check_text_completion_marker().await;
     check_text_stream_logging().await;
 }
