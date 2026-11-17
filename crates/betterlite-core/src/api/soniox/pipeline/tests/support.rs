@@ -314,7 +314,7 @@ pub(super) fn params(entries: &[(&str, JsonValue)]) -> Object {
         .collect()
 }
 
-pub(super) fn call<'call>(params: &'call Object, atranscription: bool) -> PipelineCall<'call> {
+pub(super) fn call(params: &Object, atranscription: bool) -> PipelineCall<'_> {
     PipelineCall {
         model: MODEL,
         optional_params: params,

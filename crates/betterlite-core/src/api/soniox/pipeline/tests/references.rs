@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use http::Method;
 use serde_json::json;
@@ -75,7 +76,10 @@ async fn uploaded_success_runs_create_poll_fetch_and_deletes_both() {
     assert_eq!(sent(&calls[1], "x-client"), Some("suite"));
     assert_eq!(
         json_body(&calls[1].body),
-        &json!({"model": MODEL, "file_id": "file_1"})
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("file_id", json!("file_1")),
+        ]))
     );
     assert_eq!(calls[2].method, Method::GET);
     assert_eq!(calls[2].url, format!("{TRANSCRIPTIONS_URL}/tr_1"));
@@ -88,7 +92,7 @@ async fn uploaded_success_runs_create_poll_fetch_and_deletes_both() {
     assert_eq!(calls[4].url, format!("{TRANSCRIPTIONS_URL}/tr_1"));
     assert_eq!(calls[5].method, Method::DELETE);
     assert_eq!(calls[5].url, "https://api.soniox.test/v1/files/file_1");
-    assert!(calls.iter().all(|call| call.deadline == TIMEOUT));
+    assert!(calls.iter().all(|recorded| recorded.deadline == TIMEOUT));
     assert_eq!(response.text.as_deref(), Some("hello"));
     assert_eq!(response.extra.get("task"), Some(&json!("transcribe")));
     assert_eq!(response.extra.get("duration"), Some(&json!(1.5)));
@@ -108,19 +112,34 @@ async fn uploaded_success_runs_create_poll_fetch_and_deletes_both() {
     match pre {
         support::LogRecord::PreCall { url, body } => {
             assert_eq!(url, TRANSCRIPTIONS_URL);
-            assert_eq!(body, &json!({"model": MODEL, "file_id": "file_1"}));
+            assert_eq!(
+                body,
+                &JsonValue::Object(params(&[
+                    ("model", json!(MODEL)),
+                    ("file_id", json!("file_1")),
+                ]))
+            );
         }
         support::LogRecord::PostCall { .. } => panic!("the first record is the pre-call"),
     }
     match post {
         support::LogRecord::PostCall { input, original } => {
             assert_eq!(input, &json!(AUDIO_NAME));
+            let transcription = JsonValue::Object(params(&[
+                ("status", json!("completed")),
+                ("audio_duration_ms", json!(1500)),
+            ]));
+            let transcript = JsonValue::Object(params(&[
+                ("text", json!("hello")),
+                ("tokens", json!([])),
+                ("audio_duration_ms", json!(1500)),
+            ]));
             assert_eq!(
                 original,
-                &json!({
-                    "transcription": {"status": "completed", "audio_duration_ms": 1500},
-                    "transcript": {"text": "hello", "tokens": [], "audio_duration_ms": 1500},
-                })
+                &JsonValue::Object(params(&[
+                    ("transcription", transcription),
+                    ("transcript", transcript),
+                ]))
             );
         }
         support::LogRecord::PreCall { .. } => panic!("the second record is the post-call"),
@@ -208,18 +227,21 @@ async fn a_caller_file_is_never_uploaded_or_deleted() {
     assert_eq!(calls[0].url, TRANSCRIPTIONS_URL);
     assert_eq!(
         json_body(&calls[0].body),
-        &json!({"model": MODEL, "file_id": "caller-file"})
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("file_id", json!("caller-file")),
+        ]))
     );
     assert_eq!(calls[3].method, Method::DELETE);
     assert_eq!(calls[3].url, format!("{TRANSCRIPTIONS_URL}/tr_1"));
     assert_eq!(
         calls
             .iter()
-            .filter(|call| call.method == Method::DELETE)
+            .filter(|recorded| recorded.method == Method::DELETE)
             .count(),
         1
     );
-    assert!(calls.iter().all(|call| call.url != UPLOAD_URL));
+    assert!(calls.iter().all(|recorded| recorded.url != UPLOAD_URL));
     assert_eq!(response.text.as_deref(), Some("hello"));
 }
 
@@ -248,10 +270,13 @@ async fn an_audio_url_skips_the_upload_and_still_deletes_the_job() {
 
     assert!(outcome.is_ok(), "{outcome:?}");
     let calls = recorder.calls();
-    assert!(calls.iter().all(|call| call.url != UPLOAD_URL));
+    assert!(calls.iter().all(|recorded| recorded.url != UPLOAD_URL));
     assert_eq!(
         json_body(&calls[0].body),
-        &json!({"model": MODEL, "audio_url": "https://audio.test/a.mp3"})
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("audio_url", json!("https://audio.test/a.mp3")),
+        ]))
     );
     assert_eq!(calls.len(), 4);
     assert_eq!(calls[3].method, Method::DELETE);
@@ -284,19 +309,19 @@ async fn both_references_are_sent_in_the_create_body() {
 
     assert!(outcome.is_ok(), "{outcome:?}");
     let calls = recorder.calls();
-    assert!(calls.iter().all(|call| call.url != UPLOAD_URL));
+    assert!(calls.iter().all(|recorded| recorded.url != UPLOAD_URL));
     assert_eq!(
         json_body(&calls[0].body),
-        &json!({
-            "model": MODEL,
-            "file_id": "caller-file",
-            "audio_url": "https://audio.test/a.mp3",
-        })
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("file_id", json!("caller-file")),
+            ("audio_url", json!("https://audio.test/a.mp3")),
+        ]))
     );
     assert_eq!(
         calls
             .iter()
-            .filter(|call| call.method == Method::DELETE)
+            .filter(|recorded| recorded.method == Method::DELETE)
             .count(),
         1
     );

@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::task::{Context, Waker};
 
 use betterlite_http::proxy::transport_error::TransportError;
@@ -63,7 +62,7 @@ async fn a_create_failure_deletes_only_the_uploaded_file() {
     assert!(
         calls
             .iter()
-            .all(|call| !call.url.contains("/transcriptions/"))
+            .all(|recorded| !recorded.url.contains("/transcriptions/"))
     );
     assert_eq!(response.text.as_deref(), Some(""));
     assert!(response.hidden_params.is_empty());
@@ -179,13 +178,12 @@ async fn an_invalid_duration_after_the_post_call_keeps_the_built_response() {
         )
         .await;
 
-    match outcome.expect_err("the duration cannot become seconds") {
-        PipelineError::Duration { field, value } => {
-            assert_eq!(field, "audio_duration_ms");
-            assert_eq!(value, "\"nope\"");
-        }
-        other => panic!("expected the duration error, got {other:?}"),
-    }
+    let error = outcome.expect_err("the duration cannot become seconds");
+    let PipelineError::Duration { field, value } = &error else {
+        panic!("expected the duration error, got {error:?}");
+    };
+    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(value, "\"nope\"");
     assert_eq!(
         effects.kinds(),
         [
@@ -284,7 +282,7 @@ async fn a_malformed_create_reply_leaves_the_job_and_deletes_the_file() {
     assert!(
         calls
             .iter()
-            .all(|call| !call.url.contains("/transcriptions/"))
+            .all(|recorded| !recorded.url.contains("/transcriptions/"))
     );
 }
 
@@ -347,7 +345,11 @@ fn dropping_the_job_future_skips_the_cleanup_requests() {
     assert_eq!(effects.kinds(), ["request", "pre_call", "request"]);
     let calls = recorder.calls();
     assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|call| call.method != Method::DELETE));
+    assert!(
+        calls
+            .iter()
+            .all(|recorded| recorded.method != Method::DELETE)
+    );
     assert_eq!(response.text.as_deref(), Some(""));
 }
 
@@ -379,13 +381,12 @@ async fn a_numeric_string_duration_is_refused_where_python_reads_a_float() {
         )
         .await;
 
-    match outcome.expect_err("a string is not a milliseconds number") {
-        PipelineError::Duration { field, value } => {
-            assert_eq!(field, "audio_duration_ms");
-            assert_eq!(value, "\"1500\"");
-        }
-        other => panic!("expected the duration error, got {other:?}"),
-    }
+    let error = outcome.expect_err("a string is not a milliseconds number");
+    let PipelineError::Duration { field, value } = &error else {
+        panic!("expected the duration error, got {error:?}");
+    };
+    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(value, "\"1500\"");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
     assert_eq!(calls.len(), 6);
@@ -459,13 +460,12 @@ async fn a_boolean_duration_is_refused_where_python_reads_a_float() {
         )
         .await;
 
-    match outcome.expect_err("a boolean is not a milliseconds number") {
-        PipelineError::Duration { field, value } => {
-            assert_eq!(field, "audio_duration_ms");
-            assert_eq!(value, "true");
-        }
-        other => panic!("expected the duration error, got {other:?}"),
-    }
+    let error = outcome.expect_err("a boolean is not a milliseconds number");
+    let PipelineError::Duration { field, value } = &error else {
+        panic!("expected the duration error, got {error:?}");
+    };
+    assert_eq!(field, "audio_duration_ms");
+    assert_eq!(value, "true");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
     assert_eq!(calls.len(), 6);
@@ -501,10 +501,11 @@ async fn a_duration_past_the_decimal_range_is_refused_after_the_post_call() {
         )
         .await;
 
-    match outcome.expect_err("the duration is past what Decimal holds") {
-        PipelineError::Duration { field, .. } => assert_eq!(field, "audio_duration_ms"),
-        other => panic!("expected the duration error, got {other:?}"),
-    }
+    let error = outcome.expect_err("the duration is past what Decimal holds");
+    let PipelineError::Duration { field, .. } = &error else {
+        panic!("expected the duration error, got {error:?}");
+    };
+    assert_eq!(field, "audio_duration_ms");
     assert_eq!(response.text.as_deref(), Some("hello"));
     let calls = recorder.calls();
     assert_eq!(calls.len(), 6);
@@ -530,12 +531,11 @@ async fn a_bad_api_base_fails_the_create_without_a_request() {
         .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
         .await;
 
-    match outcome.expect_err("the create URL cannot be parsed") {
-        PipelineError::Url { url, .. } => {
-            assert_eq!(url, "not a url/v1/transcriptions");
-        }
-        other => panic!("expected the URL error, got {other:?}"),
-    }
+    let error = outcome.expect_err("the create URL cannot be parsed");
+    let PipelineError::Url { url, .. } = &error else {
+        panic!("expected the URL error, got {error:?}");
+    };
+    assert_eq!(url, "not a url/v1/transcriptions");
     assert_eq!(effects.kinds(), ["pre_call"]);
     assert!(recorder.calls().is_empty());
 }

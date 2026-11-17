@@ -50,8 +50,7 @@ where
     P: RemoteTransport,
     S: Sleeper,
 {
-    // LiteLLM's two entry points differ only in which client they keep, so both run this one job.
-    // The start before the first await owns the audio file, whose borrow cannot cross it.
+    // Both entry points run this job; the start before the first await owns the audio file.
     #[must_use]
     pub fn transcribe<'run, T>(
         &'run self,

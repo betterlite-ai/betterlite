@@ -1,3 +1,4 @@
+use betterlite_config::sections::settings::JsonValue;
 use http::Method;
 use serde_json::json;
 
@@ -46,7 +47,10 @@ async fn an_srt_response_format_renders_the_transcript_as_subtitles() {
     let calls = recorder.calls();
     assert_eq!(
         json_body(&calls[0].body),
-        &json!({"model": MODEL, "file_id": "caller-file"})
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("file_id", json!("caller-file")),
+        ]))
     );
     assert_eq!(calls[3].method, Method::DELETE);
     assert_eq!(calls[3].url, format!("{TRANSCRIPTIONS_URL}/tr_1"));
@@ -78,16 +82,25 @@ async fn a_verbose_json_response_format_adds_the_word_timings() {
 
     assert!(outcome.is_ok(), "{outcome:?}");
     assert_eq!(response.text.as_deref(), Some("Hello"));
-    assert_eq!(
-        response.extra.get("words"),
-        Some(&json!([
-            {"word": "He", "start": 0.0, "end": 0.5},
-            {"word": "llo", "start": 0.5, "end": 1.0},
-        ]))
-    );
+    let words = JsonValue::Array(vec![
+        JsonValue::Object(params(&[
+            ("word", json!("He")),
+            ("start", json!(0.0)),
+            ("end", json!(0.5)),
+        ])),
+        JsonValue::Object(params(&[
+            ("word", json!("llo")),
+            ("start", json!(0.5)),
+            ("end", json!(1.0)),
+        ])),
+    ]);
+    assert_eq!(response.extra.get("words"), Some(&words));
     let calls = recorder.calls();
     assert_eq!(
         json_body(&calls[0].body),
-        &json!({"model": MODEL, "file_id": "caller-file"})
+        &JsonValue::Object(params(&[
+            ("model", json!(MODEL)),
+            ("file_id", json!("caller-file")),
+        ]))
     );
 }

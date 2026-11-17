@@ -114,7 +114,7 @@ impl Logger<'_> {
             .push(effect);
     }
 
-    fn pre_call(&self, record: SonioxPreCall) {
+    fn pre_call(&self, record: &SonioxPreCall) {
         self.push(json!({
             "effect": "pre_call",
             "url": record.url,
@@ -122,7 +122,7 @@ impl Logger<'_> {
         }));
     }
 
-    fn post_call(&self, record: SonioxPostCall) {
+    fn post_call(&self, record: &SonioxPostCall) {
         self.push(json!({
             "effect": "post_call",
             "input": record.input,
@@ -135,8 +135,8 @@ impl Logger<'_> {
 impl SonioxLogger for Logger<'_> {
     fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
         match event {
-            SonioxEvent::PreCall(record) => self.pre_call(record),
-            SonioxEvent::PostCall(record) => self.post_call(record),
+            SonioxEvent::PreCall(record) => self.pre_call(&record),
+            SonioxEvent::PostCall(record) => self.post_call(&record),
         }
         Ok(())
     }

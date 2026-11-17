@@ -60,8 +60,8 @@ fn run_job(
         .audio
         .as_ref()
         .map(|audio| NamedStream::new(&audio.filename, &audio.content));
-    let mut audio_file = stream.as_mut().map(|stream| {
-        let borrowed: &mut dyn AudioStream = stream;
+    let mut audio_file = stream.as_mut().map(|held| {
+        let borrowed: &mut dyn AudioStream = held;
         AudioFile::Stream(borrowed)
     });
     let call = pipeline_call(case, mode);
@@ -86,7 +86,7 @@ fn run_job(
     outcome_view(&response, outcome.as_ref().err())
 }
 
-fn pipeline_call<'call>(case: &'call Case, mode: Mode) -> PipelineCall<'call> {
+fn pipeline_call(case: &Case, mode: Mode) -> PipelineCall<'_> {
     PipelineCall {
         model: &case.model,
         optional_params: &case.optional_params,
@@ -121,19 +121,18 @@ fn outcome_view(
 ) -> Result<Value, Failure> {
     let value = serde_json::to_value(response).map_err(recorder::failure)?;
     let hidden = hidden_view(response);
-    let view = match error {
-        None => json!({"kind": "response", "value": value, "hidden": hidden}),
-        Some(failure) => match failure.provider() {
-            Some(exception) => json!({
-                "kind": "provider",
-                "status": exception.status_code,
-                "value": value,
-                "hidden": hidden,
-            }),
-            None => json!({"kind": "failure", "value": value, "hidden": hidden}),
-        },
+    let Some(failure) = error else {
+        return Ok(json!({"kind": "response", "value": value, "hidden": hidden}));
     };
-    Ok(view)
+    let Some(exception) = failure.provider() else {
+        return Ok(json!({"kind": "failure", "value": value, "hidden": hidden}));
+    };
+    Ok(json!({
+        "kind": "provider",
+        "status": exception.status_code,
+        "value": value,
+        "hidden": hidden,
+    }))
 }
 
 fn hidden_view(response: &SonioxTranscriptionResponse) -> Value {

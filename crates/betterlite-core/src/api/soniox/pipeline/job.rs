@@ -205,8 +205,7 @@ where
     Ok(())
 }
 
-// LiteLLM uploads only when the caller gave neither a file_id nor an audio_url, and only a supplied
-// file can be missing.
+// LiteLLM uploads only without a file_id or audio_url; only a supplied file can be missing.
 fn select_reference(
     prepared: &Prepared,
     sources: &(dyn AuthorizedAudioFiles + Sync),
@@ -225,8 +224,7 @@ fn select_reference(
     Ok(Some(processed))
 }
 
-// The audio's borrow cannot cross the job's awaits, so the job asks post_call for the input it
-// would log and replays that name through a stand-in the job never processes.
+// The audio's borrow cannot cross an await, so post_call's input is captured and replayed.
 struct LoggedAudio(Option<String>);
 
 impl SonioxLogger for LoggedAudio {
