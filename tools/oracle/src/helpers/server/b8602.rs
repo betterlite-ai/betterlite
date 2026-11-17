@@ -110,13 +110,36 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let answer = match input {
-            Input::ClientModel { requests } => client_models(requests),
-            Input::IntLike { values } => int_likes(values),
-            Input::IncludeErrors { expose, requests } => include_error_flags(*expose, requests),
-            Input::FallbackMeta { hidden } => fallback_metas(hidden),
-            Input::FallbackEvent { events } => fallback_events(events),
-            Input::Restamp { restamps } => restamp_answers(restamps),
-            Input::ChunkView { view, chunks } => chunk_views(*view, chunks),
+            Input::ClientModel { requests } => Json::List(
+                requests
+                    .iter()
+                    .map(|request| Json::Text(client_requested_model(request)))
+                    .collect(),
+            ),
+            Input::IntLike { values } => Json::List(
+                values
+                    .iter()
+                    .map(|value| Json::Bool(is_positive_int_like(Some(value))))
+                    .collect(),
+            ),
+            Input::IncludeErrors { expose, requests } => Json::List(
+                requests
+                    .iter()
+                    .map(|request| Json::Bool(include_fallback_errors(*expose, request)))
+                    .collect(),
+            ),
+            Input::FallbackMeta { hidden } => {
+                Json::List(hidden.iter().map(fallback_meta_answer).collect())
+            }
+            Input::FallbackEvent { events } => {
+                Json::List(events.iter().map(fallback_event_answer).collect())
+            }
+            Input::Restamp { restamps } => {
+                Json::List(restamps.iter().map(restamp_answer).collect())
+            }
+            Input::ChunkView { view, chunks } => {
+                Json::List(chunks.iter().map(|case| chunk_view(case, *view)).collect())
+            }
             Input::Frames {
                 payloads,
                 buffers,
@@ -125,35 +148,6 @@ impl Helper for Op {
         };
         Ok(serde_json::to_value(answer).unwrap_or_default())
     }
-}
-
-fn client_models(requests: &[JsonObject]) -> Json {
-    let answers = requests
-        .iter()
-        .map(|request| Json::Text(client_requested_model(request)))
-        .collect();
-    Json::List(answers)
-}
-
-fn int_likes(values: &[Json]) -> Json {
-    let answers = values
-        .iter()
-        .map(|value| Json::Bool(is_positive_int_like(Some(value))))
-        .collect();
-    Json::List(answers)
-}
-
-fn include_error_flags(expose: bool, requests: &[JsonObject]) -> Json {
-    let answers = requests
-        .iter()
-        .map(|request| Json::Bool(include_fallback_errors(expose, request)))
-        .collect();
-    Json::List(answers)
-}
-
-fn fallback_metas(hidden: &[Json]) -> Json {
-    let answers = hidden.iter().map(fallback_meta_answer).collect();
-    Json::List(answers)
 }
 
 fn fallback_meta_answer(hidden: &Json) -> Json {
@@ -174,11 +168,6 @@ fn fallback_meta_answer(hidden: &Json) -> Json {
     Json::Object(answer)
 }
 
-fn fallback_events(events: &[EventCase]) -> Json {
-    let answers = events.iter().map(fallback_event_answer).collect();
-    Json::List(answers)
-}
-
 fn fallback_event_answer(case: &EventCase) -> Json {
     let frame = fallback_event_frame(case.model.as_deref(), &case.errors, case.created);
     let mut answer = JsonObject::new();
@@ -194,11 +183,6 @@ fn frame_payload(frame: &str) -> Json {
         .and_then(|rest| rest.strip_suffix("\n\n"));
     let parsed = body.and_then(|body| serde_json::from_str::<Json>(body).ok());
     parsed.unwrap_or(Json::Null)
-}
-
-fn restamp_answers(cases: &[RestampCase]) -> Json {
-    let answers = cases.iter().map(restamp_answer).collect();
-    Json::List(answers)
 }
 
 fn restamp_answer(case: &RestampCase) -> Json {
@@ -220,11 +204,6 @@ fn restamp_answer(case: &RestampCase) -> Json {
     answer.insert("model".to_owned(), model.unwrap_or(Json::Null));
     answer.insert("logged".to_owned(), Json::Bool(logged));
     Json::Object(answer)
-}
-
-fn chunk_views(view: ViewName, chunks: &[ChunkCase]) -> Json {
-    let answers = chunks.iter().map(|case| chunk_view(case, view)).collect();
-    Json::List(answers)
 }
 
 fn chunk_view(case: &ChunkCase, view: ViewName) -> Json {
