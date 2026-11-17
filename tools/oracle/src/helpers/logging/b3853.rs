@@ -96,10 +96,10 @@ fn service(input: &Input) -> HelperResult {
         },
         event_metadata: None,
     };
-    let _emitted = match input.error.as_deref() {
-        Some(text) => service::async_service_failure_hook(&built.callback, &hook, Some(text)),
-        None => service::emit_service(&built.callback, &hook, None),
-    };
+    let _emitted = input.error.as_deref().map_or_else(
+        || service::emit_service(&built.callback, &hook, None),
+        |text| service::async_service_failure_hook(&built.callback, &hook, Some(text)),
+    );
     let spans = built.spans.get_finished_spans().or_config_error()?;
     Ok(answer(&registry, false, false, &spans, root_id))
 }
