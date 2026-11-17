@@ -5,6 +5,10 @@ use rstest::rstest;
 
 use super::resolve_tinyfish_api_base;
 use super::settings::{API_BASE_VARIABLE, api_base_from_text};
+use super::support::rerun_test_with_environment;
+
+const CHILD_MARKER: &str = "B3648_API_BASE_CHILD";
+const OVERRIDE: &str = "override.example.test";
 
 #[rstest]
 #[case::unset(None, "https://agent.tinyfish.ai")]
@@ -24,11 +28,19 @@ fn resolves_the_agent_api_base(#[case] configured: Option<&str>, #[case] expecte
     assert_eq!(api_base_from_text(configured), expected);
 }
 
+// The child run is the only way to prove the public resolver reads the process environment.
 #[test]
 fn the_public_base_follows_the_process_environment() {
-    let environment = process_environment();
-    assert_eq!(
-        resolve_tinyfish_api_base(),
-        api_base_from_text(environment.get(API_BASE_VARIABLE).map(String::as_str))
-    );
+    if process_environment().contains_key(CHILD_MARKER) {
+        assert_eq!(resolve_tinyfish_api_base(), "https://override.example.test");
+        println!("{CHILD_MARKER}");
+        return;
+    }
+    let this_test = module_path!()
+        .split_once("::")
+        .map(|(_crate_name, path)| {
+            format!("{path}::the_public_base_follows_the_process_environment")
+        })
+        .expect("the module path has a crate prefix");
+    rerun_test_with_environment(&this_test, API_BASE_VARIABLE, OVERRIDE, CHILD_MARKER);
 }

@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use std::env;
 use std::io;
+use std::process::Command;
 use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -93,8 +95,17 @@ pub(super) fn decimal(text: &str) -> Decimal {
     text.parse().expect("a decimal literal")
 }
 
-pub(super) fn cost_text(cost: Option<Decimal>) -> Option<String> {
-    cost.map(|value| value.normalize().to_string())
+// The child run sees the variable in its own environment, which the parent process cannot set for the resolver.
+pub(super) fn rerun_test_with_environment(test: &str, variable: &str, value: &str, marker: &str) {
+    let child = Command::new(env::current_exe().expect("the test binary path"))
+        .args(["--exact", test, "--nocapture"])
+        .env(marker, "1")
+        .env(variable, value)
+        .output()
+        .expect("the test binary starts");
+    let stdout = str::from_utf8(&child.stdout).expect("the child output is utf8");
+    assert!(child.status.success(), "{child:?}");
+    assert!(stdout.contains(marker), "{child:?}");
 }
 
 pub(super) fn kwargs(entries: &[(&str, Json)]) -> PassThroughLoggingKwargs {

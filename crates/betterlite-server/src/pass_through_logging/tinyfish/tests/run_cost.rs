@@ -3,7 +3,7 @@
 use rstest::rstest;
 
 use super::records::run_cost;
-use super::support::{cost_text, decimal, run};
+use super::support::{decimal, run};
 
 #[rstest]
 #[case::one_step(
@@ -54,7 +54,10 @@ fn prices_only_a_completed_run(
 ) {
     let submitted = run(text);
     let cost = run_cost(Some(&submitted), decimal(rate));
-    assert_eq!(cost_text(cost), expected.map(ToOwned::to_owned));
+    assert_eq!(
+        cost.map(|value| value.normalize().to_string()),
+        expected.map(ToOwned::to_owned)
+    );
 }
 
 #[test]
