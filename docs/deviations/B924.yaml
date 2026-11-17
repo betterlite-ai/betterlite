@@ -1,0 +1,15 @@
+task: B924
+deviations:
+  - what: content_part.done keeps the url_citation fields of each annotation; LiteLLM dumps every annotation as an empty object.
+    why: The citation fields are what the completed response and the message item carry, and B1115 already converts them; dropping them loses data the caller can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2785-L2807
+  - what: A provider read that fails mid-stream ends the driver with a ChatResponseStreamError::Stream carrying the decoded failure; LiteLLM lets the wrapper's exception propagate out of __next__ and __anext__.
+    why: The source reports each failure as a typed StreamFailure, so the driver hands the caller the class and status it decoded instead of a Python exception; the error text is betterlite's own either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L1136-L1139
+kept_bugs:
+  - what: Only async iteration closes a reasoning segment; the sync iterator emits no reasoning_summary_text.done, reasoning_summary_part.done or reasoning output_item.done for the same provider chunks.
+    why: A sync client of a working LiteLLM setup never sees those three events, so the driver keeps the asymmetry between __anext__'s reasoning close and __next__'s missing one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L1019-L1025
+  - what: Queued annotation events drain at most one per later transform call, and the ones still queued when the provider reaches EOF are dropped; a batch of three citations on the last content chunk emits two events while the completed response carries all three.
+    why: A working setup reads annotations from the completed response or the message item, and this is LiteLLM's own terminal behavior; the driver copies it rather than inventing extra events at the end of the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L1222-L1226
