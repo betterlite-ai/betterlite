@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use tracing::field::Field;
+use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
@@ -158,7 +158,7 @@ impl RealtimeLogging for Spy {
 impl RealtimeSuccessQueue for Spy {
     fn enqueue(&self, _work: SuccessWork) -> bool {
         let mut state = self.lock();
-        state.enqueues += 1;
+        state.enqueues = state.enqueues.saturating_add(1);
         state.accepted
     }
 }
@@ -180,7 +180,7 @@ impl Capture {
 #[derive(Default)]
 struct MessageVisitor(String);
 
-impl tracing::field::Visit for MessageVisitor {
+impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
@@ -240,6 +240,11 @@ fn realtime_initial_state() {
     assert_eq!(state.setup, SessionSetup::new(true));
     assert_eq!(state.force_transcription_model, None);
     assert_eq!(state.is_transcription_session, SessionFlag(false));
+}
+
+#[test]
+fn realtime_initial_state_starts_connection_flags_clear() {
+    let state = state();
     assert_eq!(state.client_wants_beta, SessionFlag(false));
     assert_eq!(state.backend_uses_beta_protocol, SessionFlag(false));
     assert_eq!(state.backend_sent_frames, SessionFlag(false));
@@ -704,27 +709,21 @@ fn realtime_usage_and_logging_copies_details_and_queues_once() {
         .expect("the stored event is valid JSON");
     assert!(state.log_messages());
     let details = spy.details();
-    assert_eq!(
-        details[0],
+    let expected = [
         (
             "messages".to_owned(),
-            Json::List(vec![Json::Object(message)])
-        )
-    );
-    assert_eq!(
-        details[1],
+            Json::List(vec![Json::Object(message)]),
+        ),
         (
             "realtime_tools".to_owned(),
-            Json::List(vec![Json::Object(tool)])
-        )
-    );
-    assert_eq!(
-        details[2],
+            Json::List(vec![Json::Object(tool)]),
+        ),
         (
             "realtime_tool_calls".to_owned(),
-            Json::List(vec![Json::Object(call)])
-        )
-    );
+            Json::List(vec![Json::Object(call)]),
+        ),
+    ];
+    assert_eq!(details, expected);
     assert_eq!(spy.flag(), Some(Json::Bool(true)));
     assert_eq!(spy.lock().dispatches.len(), 1);
     assert_eq!(
