@@ -16,11 +16,13 @@ async fn callback_logger_reports_its_name() {
 #[test]
 fn callback_logger_reports_the_configured_redaction_flag() {
     let http = FakeHttp::default();
+    let off: Arc<dyn CallbackLogger> = logger(default_params(), client(&http, 1));
+    assert!(!off.turn_off_message_logging());
     let mut params = default_params();
     params.turn_off_message_logging = true;
-    let logger: Arc<dyn CallbackLogger> = logger(params, client(&http, 1));
-    assert!(logger.turn_off_message_logging());
-    assert!(!logger.redacts_messages_itself());
+    let on: Arc<dyn CallbackLogger> = logger(params, client(&http, 1));
+    assert!(on.turn_off_message_logging());
+    assert!(!on.redacts_messages_itself());
 }
 
 #[tokio::test]

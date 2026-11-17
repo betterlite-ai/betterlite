@@ -182,6 +182,26 @@ fn a_redacted_record_keeps_the_other_fields() {
 }
 
 #[test]
+fn a_redacted_response_keeps_the_original_id_and_created() {
+    let http = FakeHttp::default();
+    let core = core_with(flagged(true), client(&http, 1), false);
+    let record = core
+        .record_for(&event(payload_with_messages("evt-1")))
+        .expect("the record builds");
+    let Some(Json::Object(response)) = record.response.as_ref() else {
+        panic!("the record has a response object");
+    };
+    assert_eq!(
+        response.get("id"),
+        Some(&Json::Text("chatcmpl-1".to_owned()))
+    );
+    assert_eq!(
+        response.get("created"),
+        Some(&Json::Number(serde_json::Number::from(1_700_000_000_i64)))
+    );
+}
+
+#[test]
 fn a_record_without_messages_survives_the_local_redaction() {
     let http = FakeHttp::default();
     let core = core_with(flagged(true), client(&http, 1), false);

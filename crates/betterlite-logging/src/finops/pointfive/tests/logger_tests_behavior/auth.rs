@@ -1,7 +1,10 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
+use betterlite_secret_managers::oidc::http_timeouts::OidcHttpTimeouts;
+use betterlite_secret_managers::secret_lookup::ports::OidcRequest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::finops::pointfive::logger::client::UploadClientSource;
@@ -135,4 +138,36 @@ fn the_upload_client_takes_its_retries_from_the_params() {
         .upload_client(&params)
         .expect("the client builds");
     assert_eq!(client.max_retries, 5);
+}
+
+#[test]
+fn the_secret_reader_carries_no_oidc_provider() {
+    let http = FakeHttp::default();
+    let service = service(&http, environment(&[]));
+    assert!(
+        service
+            .secrets
+            .azure_tokens
+            .token("api://pointfive")
+            .expect("the azure provider reads nothing")
+            .is_none()
+    );
+    let error = service
+        .secrets
+        .oidc_http
+        .get(OidcRequest {
+            url: "https://oidc.example/token".to_owned(),
+            query: Vec::new(),
+            headers: Vec::new(),
+            timeouts: OidcHttpTimeouts::DEFAULT,
+        })
+        .err()
+        .expect("there is no oidc transport");
+    assert!(
+        error
+            .to_string()
+            .contains("pointfive reads no OIDC secrets")
+    );
+    assert!(service.secrets.clock.now() <= Instant::now());
+    assert!(service.secrets.clock.unix_seconds() > 1_600_000_000);
 }

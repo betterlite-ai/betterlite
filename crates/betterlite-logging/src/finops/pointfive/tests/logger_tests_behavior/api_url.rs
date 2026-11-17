@@ -7,7 +7,7 @@ use secrecy::SecretString;
 use crate::finops::pointfive::logger::client::UploadClientSource;
 use crate::finops::pointfive::types::DEFAULT_API_URL;
 
-use super::support::{FakeHttp, MutableEnvironment, service};
+use super::support::{FakeHttp, MutableEnvironment, default_params, service};
 
 fn environment(pairs: &[(&str, &str)]) -> Arc<dyn EnvironmentLookup + Send + Sync> {
     Arc::new(MutableEnvironment::with(pairs))

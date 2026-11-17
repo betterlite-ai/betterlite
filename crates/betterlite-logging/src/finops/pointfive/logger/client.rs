@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
@@ -161,6 +161,9 @@ impl OidcClock for NoOidc {
     }
 
     fn unix_seconds(&self) -> i64 {
-        0
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        i64::try_from(elapsed).unwrap_or(i64::MAX)
     }
 }
