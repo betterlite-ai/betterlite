@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::error::TinyfishError;
-use super::records::{TinyfishRun, run_cost, run_json};
+use super::records::{TinyfishRun, run_cost};
 use super::{TINYFISH_MODEL_NAME, TINYFISH_PROVIDER};
 use crate::media_relay_logging::write_spend;
 
@@ -32,7 +32,11 @@ pub fn build_logging_payload(
         state.custom_llm_provider = Some(TINYFISH_PROVIDER.to_owned());
     });
     let response = match run {
-        Some(submitted) => run_json(submitted)?,
+        Some(submitted) => {
+            let encoded = serde_json::to_string(submitted)
+                .map_err(|source| TinyfishError::Encode { source })?;
+            serde_json::from_str(&encoded).map_err(|source| TinyfishError::Encode { source })?
+        }
         None => Json::Text(result.to_owned()),
     };
     let mut outcome_kwargs = spend.kwargs(kwargs);

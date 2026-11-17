@@ -14,7 +14,11 @@ impl BillingTasks {
     where
         Billing: Future<Output = ()> + Send + 'static,
     {
-        self.tasks.spawn(watched(billing))
+        self.tasks.spawn(async move {
+            let mut warning = CancellationWarning { armed: true };
+            billing.await;
+            warning.armed = false;
+        })
     }
 
     pub async fn shutdown(&self) {
@@ -36,13 +40,4 @@ impl Drop for CancellationWarning {
             );
         }
     }
-}
-
-async fn watched<Billing>(billing: Billing)
-where
-    Billing: Future<Output = ()>,
-{
-    let mut warning = CancellationWarning { armed: true };
-    billing.await;
-    warning.armed = false;
 }

@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::io;
 use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -84,13 +83,6 @@ pub(super) fn logging_object() -> StreamLoggingObject {
 
 pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("a JSON literal")
-}
-
-pub(super) fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
-    entries
-        .iter()
-        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-        .collect()
 }
 
 pub(super) fn run(text: &str) -> TinyfishRun {

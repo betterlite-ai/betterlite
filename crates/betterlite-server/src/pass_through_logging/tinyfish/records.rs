@@ -3,8 +3,6 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option;
 
-use super::error::TinyfishError;
-
 const COMPLETED_STATUS: &str = "COMPLETED";
 
 // LiteLLM's TinyfishRun is a total=False TypedDict: a missing field stays missing and an explicit null stays null.
@@ -71,9 +69,4 @@ pub fn run_cost(run: Option<&TinyfishRun>, cost_per_step: Decimal) -> Option<Dec
     }
     let steps = submitted.num_of_steps??;
     Decimal::from(steps).checked_mul(cost_per_step)
-}
-
-pub fn run_json(run: &TinyfishRun) -> Result<Json, TinyfishError> {
-    let encoded = serde_json::to_string(run).map_err(|source| TinyfishError::Encode { source })?;
-    serde_json::from_str(&encoded).map_err(|source| TinyfishError::Encode { source })
 }

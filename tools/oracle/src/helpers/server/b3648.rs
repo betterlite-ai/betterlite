@@ -13,7 +13,7 @@ use betterlite_server::pass_through_logging::tinyfish::is_allowed_tinyfish_endpo
 use betterlite_server::pass_through_logging::tinyfish::payload::build_logging_payload;
 use betterlite_server::pass_through_logging::tinyfish::records::parse_run;
 use betterlite_server::pass_through_logging::tinyfish::settings::{
-    api_base_from_environment, cost_per_step_from_environment,
+    API_BASE_VARIABLE, COST_VARIABLE, api_base_from_text, cost_per_step_from_text,
 };
 use betterlite_server::pass_through_logging::tinyfish::sse::run_id_from_sse_frames;
 use serde::Deserialize;
@@ -57,9 +57,11 @@ impl Helper for Op {
                 &input.method,
                 &input.path
             ))),
-            Function::ApiBase => Ok(json!(api_base_from_environment(&input.environment))),
+            Function::ApiBase => Ok(json!(api_base_from_text(
+                input.environment.get(API_BASE_VARIABLE).map(String::as_str)
+            ))),
             Function::CostPerStep => Ok(json!(
-                cost_per_step_from_environment(&input.environment)
+                cost_per_step_from_text(input.environment.get(COST_VARIABLE).map(String::as_str))
                     .normalize()
                     .to_string()
             )),
@@ -75,7 +77,7 @@ fn billing(input: &Input) -> HelperResult {
         None => None,
     };
     let kwargs = PassThroughLoggingKwargs::default();
-    let rate = cost_per_step_from_environment(&input.environment);
+    let rate = cost_per_step_from_text(input.environment.get(COST_VARIABLE).map(String::as_str));
     drop(
         build_logging_payload(&logging_obj, submitted.as_ref(), "", &kwargs, rate)
             .or_value_error()?,

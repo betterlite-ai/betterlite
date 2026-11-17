@@ -8,7 +8,13 @@ pub(crate) const SSE_POLLER_KEY: &str = "tinyfish_sse_poller_spawned";
 // LiteLLM decodes the frames with errors="replace" and splits them with Python's str.splitlines.
 #[must_use]
 pub fn run_id_from_sse_frames(frames: &[u8]) -> Option<String> {
-    let text = lossy_text(frames);
+    let mut text = String::with_capacity(frames.len());
+    for chunk in frames.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
     run_id_from_sse_lines(&split_lines(&text))
 }
 
@@ -60,17 +66,6 @@ pub fn sse_poller_spawned(logging_obj: &StreamLoggingObject) -> bool {
             )
         })
         .unwrap_or(false)
-}
-
-fn lossy_text(frames: &[u8]) -> String {
-    let mut text = String::with_capacity(frames.len());
-    for chunk in frames.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-    }
-    text
 }
 
 // Python splits a line at every one of these separators and adds no empty line after a trailing break.

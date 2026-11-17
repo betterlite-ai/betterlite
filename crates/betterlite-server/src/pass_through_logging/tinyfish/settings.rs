@@ -1,17 +1,15 @@
-use std::collections::BTreeMap;
-
 use rust_decimal::Decimal;
 
 use super::{TINYFISH_DEFAULT_API_BASE, TINYFISH_DEFAULT_STEP_COST};
 
-pub(crate) const API_BASE_VARIABLE: &str = "TINYFISH_AGENT_API_BASE";
-pub(crate) const COST_VARIABLE: &str = "TINYFISH_COST_PER_STEP";
+pub const API_BASE_VARIABLE: &str = "TINYFISH_AGENT_API_BASE";
+pub const COST_VARIABLE: &str = "TINYFISH_COST_PER_STEP";
 
 // LiteLLM strips every trailing slash, then promotes a value without a scheme so routing and billing see one host.
 #[must_use]
-pub fn api_base_from_environment(environment: &BTreeMap<String, String>) -> String {
-    let raw = match environment.get(API_BASE_VARIABLE) {
-        Some(value) if !value.is_empty() => value.as_str(),
+pub fn api_base_from_text(configured: Option<&str>) -> String {
+    let raw = match configured {
+        Some(value) if !value.is_empty() => value,
         _ => TINYFISH_DEFAULT_API_BASE,
     };
     let trimmed = raw.trim_end_matches('/');
@@ -24,8 +22,8 @@ pub fn api_base_from_environment(environment: &BTreeMap<String, String>) -> Stri
 
 // A rate that is not a number keeps the run billable at the published default instead of failing the request.
 #[must_use]
-pub fn cost_per_step_from_environment(environment: &BTreeMap<String, String>) -> Decimal {
-    let Some(raw) = environment.get(COST_VARIABLE) else {
+pub fn cost_per_step_from_text(configured: Option<&str>) -> Decimal {
+    let Some(raw) = configured else {
         return TINYFISH_DEFAULT_STEP_COST;
     };
     let trimmed = raw.trim();

@@ -35,13 +35,17 @@ pub(crate) const TINYFISH_PROVIDER: &str = "tinyfish";
 #[must_use]
 pub fn resolve_tinyfish_api_base() -> String {
     let environment = process_environment();
-    settings::api_base_from_environment(&environment)
+    let configured = environment
+        .get(settings::API_BASE_VARIABLE)
+        .map(String::as_str);
+    settings::api_base_from_text(configured)
 }
 
 #[must_use]
 pub fn resolve_tinyfish_cost_per_step() -> Decimal {
     let environment = process_environment();
-    settings::cost_per_step_from_environment(&environment)
+    let configured = environment.get(settings::COST_VARIABLE).map(String::as_str);
+    settings::cost_per_step_from_text(configured)
 }
 
 // The host also serves vault/wallet/profile management under the same key, so only run endpoints forward.
