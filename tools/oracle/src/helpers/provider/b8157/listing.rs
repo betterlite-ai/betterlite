@@ -1,4 +1,5 @@
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 use std::marker::PhantomData;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -78,7 +79,7 @@ impl<Request> Recorder<Request> {
 }
 
 impl ModelInfoClient for Recorder<ModelInfoRequest> {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn get(
         &self,
@@ -94,7 +95,7 @@ impl ModelInfoClient for Recorder<ModelInfoRequest> {
 }
 
 impl TagsTransport for Recorder<TagsRequest> {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn get_tags(&self, request: &TagsRequest) -> Result<TagsResponse, Self::Error> {
         self.push(&request.url, &request.headers);
@@ -138,8 +139,8 @@ pub(super) fn lemonade_models(runtime: &Runtime, case: &Case) -> HelperResult {
         ))
         .map_err(|error| input_failure(format!("the lemonade models lookup failed: {error}")))?;
     Ok(listed(
-        models,
-        client.first("the lemonade models lookup sent no request")?,
+        &models,
+        &client.first("the lemonade models lookup sent no request")?,
     ))
 }
 
@@ -164,8 +165,8 @@ pub(super) fn ollama_models(case: &Case) -> HelperResult {
     let transport = Recorder::<TagsRequest>::for_case(case)?;
     let models = ollama_names(case, &transport);
     Ok(listed(
-        models,
-        transport.first("the ollama models lookup sent no request")?,
+        &models,
+        &transport.first("the ollama models lookup sent no request")?,
     ))
 }
 
@@ -195,7 +196,7 @@ fn ollama_names(case: &Case, transport: &Recorder<TagsRequest>) -> Vec<String> {
 }
 
 // a listing answer names the socket the case wrote, since the python side only knows its own
-fn listed(models: Vec<String>, recorded: Recorded) -> Value {
+fn listed(models: &[String], recorded: &Recorded) -> Value {
     json!({
         "models": models,
         "request": {
