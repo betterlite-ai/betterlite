@@ -4,12 +4,18 @@ mod behaviors;
 mod boundaries;
 pub(crate) mod support;
 
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 
 use rstest::rstest;
 
 use crate::context::RouteStage;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
+
+// A synchronous case, as the completed future the case table awaits.
+fn settled(case: fn()) -> Ready<()> {
+    case();
+    ready(())
+}
 
 #[rstest]
 #[case::weighted_pick(behaviors::weighted_pick())]
@@ -29,14 +35,17 @@ use crate::strategy_dispatch::strategy::RoutingStrategy;
 #[case::healthy_blocked_pool(behaviors::healthy_blocked_pool())]
 #[case::order_lowest_wins(behaviors::order_lowest_wins())]
 #[case::order_after_blocked(behaviors::order_after_blocked())]
-#[case::headers_attach_to_object(ready(behaviors::headers_attach_to_object()))]
-#[case::header_model_id_kept(ready(behaviors::header_model_id_kept()))]
-#[case::token_count_from_usage(ready(behaviors::token_count_from_usage()))]
-#[case::token_count_from_input_output(ready(behaviors::token_count_from_input_output()))]
+#[case::headers_attach_to_object(settled(behaviors::headers_attach_to_object))]
+#[case::header_model_id_kept(settled(behaviors::header_model_id_kept))]
+#[case::token_count_from_usage(settled(behaviors::token_count_from_usage))]
+#[case::token_count_from_input_output(settled(behaviors::token_count_from_input_output))]
 #[case::override_pre_call_bound(behaviors::override_pre_call_bound())]
 #[case::override_pre_call_absent(behaviors::override_pre_call_absent())]
 #[tokio::test]
-async fn router_core_behaviors<Fut: Future<Output = ()>>(#[case] case: Fut) {
+async fn router_core_behaviors<Fut>(#[case] case: Fut)
+where
+    Fut: Future<Output = ()>,
+{
     case.await;
 }
 
@@ -80,7 +89,7 @@ async fn router_core_behaviors<Fut: Future<Output = ()>>(#[case] case: Fut) {
 #[case::lar1_routing(boundaries::strategy_unbuilt(RoutingStrategy::Lar1, "lar1_routing"))]
 #[case::no_deployment_rate_limit(boundaries::no_deployment_rate_limit())]
 #[case::no_deployment_all_in_cooldown(boundaries::no_deployment_all_in_cooldown())]
-#[case::default_min_cooldown(ready(boundaries::default_min_cooldown()))]
+#[case::default_min_cooldown(settled(boundaries::default_min_cooldown))]
 #[case::cancelled_callback(boundaries::cancelled_callback())]
 #[case::empty_group(boundaries::empty_group())]
 #[case::blocked_deployment(boundaries::blocked_deployment())]
@@ -101,19 +110,22 @@ async fn router_core_behaviors<Fut: Future<Output = ()>>(#[case] case: Fut) {
 #[case::pinned_pool_uses_strategy(boundaries::pinned_pool_uses_strategy())]
 #[case::provider_budget(boundaries::provider_budget_has_no_selection())]
 #[case::simple_shuffle_empty(boundaries::simple_shuffle_empty())]
-#[case::weights_read_metrics(ready(boundaries::weights_read_metrics()))]
-#[case::headers_absent(ready(boundaries::headers_absent()))]
-#[case::headers_opaque(ready(boundaries::headers_opaque()))]
-#[case::headers_empty_model_id(ready(boundaries::headers_empty_model_id()))]
-#[case::header_empty_metadata_id(ready(boundaries::header_empty_metadata_id()))]
-#[case::headers_non_text_model_id(ready(boundaries::headers_non_text_model_id()))]
-#[case::headers_non_text_model_id_kept(ready(boundaries::headers_non_text_model_id_kept()))]
-#[case::headers_non_object_map(ready(boundaries::headers_non_object_map()))]
-#[case::header_dict_reads_existing(ready(boundaries::header_dict_reads_existing()))]
-#[case::token_count_absent_usage(ready(boundaries::token_count_absent_usage()))]
-#[case::token_count_zero_total(ready(boundaries::token_count_zero_total()))]
-#[case::token_count_non_numeric(ready(boundaries::token_count_non_numeric()))]
+#[case::weights_read_metrics(settled(boundaries::weights_read_metrics))]
+#[case::headers_absent(settled(boundaries::headers_absent))]
+#[case::headers_opaque(settled(boundaries::headers_opaque))]
+#[case::headers_empty_model_id(settled(boundaries::headers_empty_model_id))]
+#[case::header_empty_metadata_id(settled(boundaries::header_empty_metadata_id))]
+#[case::headers_non_text_model_id(settled(boundaries::headers_non_text_model_id))]
+#[case::headers_non_text_model_id_kept(settled(boundaries::headers_non_text_model_id_kept))]
+#[case::headers_non_object_map(settled(boundaries::headers_non_object_map))]
+#[case::header_dict_reads_existing(settled(boundaries::header_dict_reads_existing))]
+#[case::token_count_absent_usage(settled(boundaries::token_count_absent_usage))]
+#[case::token_count_zero_total(settled(boundaries::token_count_zero_total))]
+#[case::token_count_non_numeric(settled(boundaries::token_count_non_numeric))]
 #[tokio::test]
-async fn router_core_boundaries<Fut: Future<Output = ()>>(#[case] case: Fut) {
+async fn router_core_boundaries<Fut>(#[case] case: Fut)
+where
+    Fut: Future<Output = ()>,
+{
     case.await;
 }

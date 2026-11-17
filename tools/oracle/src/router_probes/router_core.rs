@@ -105,7 +105,7 @@ fn observed(error: &NoDeployment) -> Observed {
             .map_or_else(String::new, |number| number.to_string()),
     }
 }
-fn selection(outcome: Outcome, selected: Option<Selected>) -> Found {
+const fn selection(outcome: Outcome, selected: Option<Selected>) -> Found {
     Found {
         outcome,
         selected,

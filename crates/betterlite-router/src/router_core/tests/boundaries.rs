@@ -423,7 +423,10 @@ pub(super) async fn provider_budget_has_no_selection() {
     assert!(matches!(&error, RoutingError::NoDeployment(_)));
 }
 
-async fn route_failure<S: RouteServices>(services: &S, strategy: RoutingStrategy) -> RoutingError {
+async fn route_failure<S>(services: &S, strategy: RoutingStrategy) -> RoutingError
+where
+    S: RouteServices,
+{
     let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a")]));
     let mut random = seeded();
     let error = run_route(
@@ -520,7 +523,7 @@ fn non_numeric_weights() {
 }
 
 fn out_of_range_weights() {
-    rejects_metric("weight", Json::Number(serde_json::Number::from(-1)));
+    rejects_metric("weight", Json::Number(serde_json::Number::from(-1_i32)));
     rejects_metric(
         "tpm",
         Json::Number(serde_json::Number::from(u64::from(u32::MAX) + 1)),
