@@ -1,0 +1,6 @@
+task: B016
+deviations:
+  - what: The healthy-deployments view returns a catalog resolution failure to its caller.
+    why: LiteLLM's legacy _async_get_healthy_deployments swallows that failure and answers an empty list; the typed service keeps the error, and no selection path reads that list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8611-L8618
+kept_bugs: []
