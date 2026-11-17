@@ -126,12 +126,12 @@ async fn a_fill_rule_applies_only_for_its_provider() {
         filled.model_info.get("supports_pdf"),
         Some(&Json::Bool(true))
     );
-    let unfilled = filled_by(
+    let without_fill = filled_by(
         &service,
         spec("gemini-2", Some("openai"), JsonObject::new()),
     )
     .await;
-    assert!(unfilled.model_info.get("supports_pdf").is_none());
+    assert!(without_fill.model_info.get("supports_pdf").is_none());
 }
 
 #[tokio::test]
