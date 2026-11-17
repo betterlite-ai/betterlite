@@ -309,21 +309,21 @@ fn citation_results() -> Vec<VectorStoreSearchResult> {
 }
 
 fn message_annotations() {
-    let citations = wire(&citation_annotations(&citation_results(), "answer")).expect("json");
+    let citations: Json = wire(&citation_annotations(&citation_results(), "answer")).expect("json");
     assert_eq!(
         citations,
         json(
             r#"[{"type":"file_citation","index":6,"file_id":"file_1","filename":"a.txt"},{"type":"file_citation","index":6,"file_id":"file_2","filename":""}]"#
         )
     );
-    let empty_text = wire(&citation_annotations(&citation_results(), "")).expect("json");
+    let empty_text: Json = wire(&citation_annotations(&citation_results(), "")).expect("json");
     assert_eq!(
         empty_text,
         json(
             r#"[{"type":"file_citation","index":0,"file_id":"file_1","filename":"a.txt"},{"type":"file_citation","index":0,"file_id":"file_2","filename":""}]"#
         )
     );
-    let message = wire(&build_message_output("answer", &citation_results())).expect("json");
+    let message: Json = wire(&build_message_output("answer", &citation_results())).expect("json");
     assert_eq!(
         message,
         json(
@@ -458,6 +458,26 @@ fn output_text_selection() {
         ),
         "yes"
     );
+    assert_eq!(
+        extracted(
+            r#"[{"type":"message","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}]"#
+        ),
+        "first"
+    );
+    assert_eq!(
+        extracted(
+            r#"[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"sdk","annotations":[]}]}]"#
+        ),
+        "sdk"
+    );
+    assert_eq!(extracted("[]"), "");
+    output_text_skips();
+    output_text_refusal();
+    output_text_typed();
+    output_text_errors();
+}
+
+fn output_text_skips() {
     let after_call: Vec<ResponseOutputItem> = serde_json::from_str(
         r#"[{"type":"function_call","arguments":"{}","call_id":"call_1","name":"search"},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#,
     )
@@ -484,6 +504,9 @@ fn output_text_selection() {
         response_output_text(&after_empty).expect("the empty message is skipped"),
         "later"
     );
+}
+
+fn output_text_refusal() {
     let refusal: Vec<ResponseOutputItem> = serde_json::from_str(
         r#"[{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}]"#,
     )
@@ -497,21 +520,15 @@ fn output_text_selection() {
         response_output_text(&refusal).expect("the refusal part is skipped"),
         "later"
     );
+    let skip_then_text = vec![
+        typed_message(Some("text"), Some("not output text")),
+        typed_message(Some("output_text"), Some("later")),
+    ];
     assert_eq!(
-        extracted(
-            r#"[{"type":"message","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}]"#
-        ),
-        "first"
+        response_output_text(&skip_then_text)
+            .expect("the next message answers after a skipped one"),
+        "later"
     );
-    assert_eq!(
-        extracted(
-            r#"[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"sdk","annotations":[]}]}]"#
-        ),
-        "sdk"
-    );
-    assert_eq!(extracted("[]"), "");
-    output_text_typed();
-    output_text_errors();
 }
 
 fn typed_message(part_type: Option<&str>, text: Option<&str>) -> ResponseOutputItem {
@@ -546,15 +563,6 @@ fn output_text_typed() {
     assert_eq!(
         response_output_text(&other_part).expect("a non output_text part is skipped"),
         ""
-    );
-    let skip_then_text = vec![
-        typed_message(Some("text"), Some("not output text")),
-        typed_message(Some("output_text"), Some("later")),
-    ];
-    assert_eq!(
-        response_output_text(&skip_then_text)
-            .expect("the next message answers after a skipped one"),
-        "later"
     );
     let function_call = vec![ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
         arguments: None,
