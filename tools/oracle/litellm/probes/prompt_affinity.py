@@ -13,7 +13,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false
 
 
 class Deployment(Strict):
@@ -82,7 +82,7 @@ class PromptAffinity(Operation):
             for deployment in self.deployments
         ]
         if self.write is not None:
-            event: Final[dict[str, JsonValue]] = {
+            event: Final[dict[str, object]] = {
                 "call_type": self.write.call_type,
                 "model": self.model,
                 "messages": self.write.messages,
@@ -97,7 +97,7 @@ class PromptAffinity(Operation):
             request_kwargs["_target_order"] = self.target_order
         litellm.enable_anthropic_prompt_caching = self.global_enabled
         try:
-            chosen = await check.async_filter_deployments(
+            chosen: Final[list[dict[str, JsonValue]]] = await check.async_filter_deployments(
                 model=self.model,
                 healthy_deployments=deployments,
                 messages=self.messages,
