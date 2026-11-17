@@ -249,7 +249,7 @@ fn an_empty_operation_name_is_rejected() {
 }
 
 #[rstest]
-#[case::absent(br#"{}"#.as_slice())]
+#[case::absent(b"{}".as_slice())]
 #[case::null(br#"{"name": null}"#.as_slice())]
 #[case::number(br#"{"name": 5}"#.as_slice())]
 fn an_unusable_operation_name_is_rejected(#[case] body: &[u8]) {

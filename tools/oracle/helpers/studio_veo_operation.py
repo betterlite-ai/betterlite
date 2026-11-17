@@ -115,15 +115,13 @@ def content_target_answer(call: ContentTargetCall) -> JsonValue:
 
 
 def answer(call: Call) -> JsonValue:
-    match call["function"]:
-        case "create_response":
-            return create_answer(call)
-        case "status_response":
-            return status_answer(call)
-        case "status_request":
-            return status_request_answer(call)
-        case "content_target":
-            return content_target_answer(call)
+    if call["function"] == "create_response":
+        return create_answer(call)
+    if call["function"] == "status_response":
+        return status_answer(call)
+    if call["function"] == "status_request":
+        return status_request_answer(call)
+    return content_target_answer(call)
 
 
 def run(input_value: Input) -> JsonValue:
