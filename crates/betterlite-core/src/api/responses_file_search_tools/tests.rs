@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem;
 use std::str::FromStr as _;
@@ -8,6 +9,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::responses_objects::{ResponseApiUsage, ResponseOutputItem};
+use betterlite_openai::api::responses_shapes::{
+    FunctionCallStatus, GenericResponseOutputItem, OutputFunctionToolCall, OutputText,
+};
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResult;
 use rust_decimal::Decimal;
 use tracing::field::{Field, Visit};
@@ -128,7 +132,7 @@ fn one_file_search_tool() {
 
 fn empty_vector_store_ids() {
     let fixture = json(
-        r#"[{"type":"file_search"},{"type":"file_search","vector_store_ids":null},{"type":"file_search","vector_store_ids":[]}]"#,
+        r#"[{"type":"file_search"},{"type":"file_search","vector_store_ids":null},{"type":"file_search","vector_store_ids":[]},{"type":"file_search","vector_store_ids":false},{"type":"file_search","vector_store_ids":0},{"type":"file_search","vector_store_ids":""}]"#,
     );
     let Json::List(tools) = fixture else {
         panic!("the fixture is a tool list");
@@ -166,17 +170,21 @@ fn first_seen_order() {
 }
 
 fn unknown_ids_type() {
-    let fixture = json(r#"[{"type":"file_search","vector_store_ids":"vs_x"}]"#);
-    let Json::List(tools) = fixture else {
-        panic!("the fixture is a tool list");
-    };
-    assert!(matches!(
-        replace_file_search_tools(Some(&tools)),
-        Err(FileSearchToolsError::WrongType {
-            field: "vector_store_ids",
-            ..
-        })
-    ));
+    for fixture in [
+        json(r#"[{"type":"file_search","vector_store_ids":"vs_x"}]"#),
+        json(r#"[{"type":"file_search","vector_store_ids":["vs_a",1]}]"#),
+    ] {
+        let Json::List(tools) = fixture else {
+            panic!("the fixture is a tool list");
+        };
+        assert!(matches!(
+            replace_file_search_tools(Some(&tools)),
+            Err(FileSearchToolsError::WrongType {
+                field: "vector_store_ids",
+                ..
+            })
+        ));
+    }
 }
 
 // 2. Result formatting
@@ -409,6 +417,33 @@ fn response_synthesis() {
     null_model();
     hidden_merge_sums();
     hidden_merge_copies();
+    clock_overflow();
+    cost_overflow();
+}
+
+fn clock_overflow() {
+    let error = synthesize_response(
+        &OriginalResponse::default(),
+        &outputs(),
+        None,
+        || GENERATED_ID.to_owned(),
+        || Decimal::MAX,
+    )
+    .expect_err("the clock must fit the signed 64-bit seconds");
+    assert!(matches!(error, FileSearchToolsError::ClockOutOfRange));
+}
+
+fn cost_overflow() {
+    let maximum = r#"{"response_cost":79228162514264337593543950335}"#;
+    let error = merged_hidden(Some(maximum), Some(maximum)).expect_err("the sum overflows");
+    assert!(matches!(error, FileSearchToolsError::CostOverflow));
+    assert!(matches!(
+        merged_hidden(
+            Some(r#"{"response_cost":1e999}"#),
+            Some(r#"{"response_cost":1}"#)
+        ),
+        Err(FileSearchToolsError::ResponseCost { .. })
+    ));
 }
 
 fn output_text_blocks() {
@@ -446,6 +481,86 @@ fn output_text_selection() {
         "sdk"
     );
     assert_eq!(extracted("[]"), "");
+    output_text_typed();
+    output_text_errors();
+}
+
+fn typed_message(part_type: Option<&str>, text: Option<&str>) -> ResponseOutputItem {
+    ResponseOutputItem::Message(GenericResponseOutputItem {
+        r#type: "message".to_owned(),
+        id: "msg_typed".to_owned(),
+        status: "completed".to_owned(),
+        role: "assistant".to_owned(),
+        content: vec![OutputText {
+            r#type: part_type.map(str::to_owned),
+            text: text.map(str::to_owned),
+            annotations: None,
+            extra: BTreeMap::new(),
+        }],
+        phase: None,
+        extra: BTreeMap::new(),
+    })
+}
+
+fn output_text_typed() {
+    let typed = vec![typed_message(Some("output_text"), Some("typed"))];
+    assert_eq!(
+        response_output_text(&typed).expect("the typed message extracts"),
+        "typed"
+    );
+    let typed_null = vec![typed_message(Some("output_text"), None)];
+    assert_eq!(
+        response_output_text(&typed_null).expect("a null typed text is empty"),
+        ""
+    );
+    let other_part = vec![typed_message(Some("text"), Some("not output text"))];
+    assert_eq!(
+        response_output_text(&other_part).expect("a non output_text part is skipped"),
+        ""
+    );
+    let function_call = vec![ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
+        arguments: None,
+        call_id: None,
+        name: None,
+        r#type: None,
+        id: None,
+        status: FunctionCallStatus::Completed,
+        phase: None,
+        extra: BTreeMap::new(),
+    })];
+    assert_eq!(
+        response_output_text(&function_call).expect("a function call has no text"),
+        ""
+    );
+}
+
+fn output_text_errors() {
+    let bad_content = vec![
+        serde_json::from_str::<ResponseOutputItem>(r#"{"type":"message","content":"blocks"}"#)
+            .expect("the item decodes"),
+    ];
+    assert!(matches!(
+        response_output_text(&bad_content),
+        Err(FileSearchToolsError::WrongType {
+            field: "content",
+            ..
+        })
+    ));
+    let bad_text = vec![
+        serde_json::from_str::<ResponseOutputItem>(
+            r#"{"type":"message","content":[{"type":"output_text","text":[]}]}"#,
+        )
+        .expect("the item decodes"),
+    ];
+    assert!(matches!(
+        response_output_text(&bad_text),
+        Err(FileSearchToolsError::WrongType { field: "text", .. })
+    ));
+    assert_eq!(
+        extracted(r#"[{"type":"message","content":[42,{"type":"output_text","text":"block"}]}]"#),
+        "block"
+    );
+    assert_eq!(extracted(r#"[{"type":"message","content":null}]"#), "");
 }
 
 fn original_fields_copied() {
@@ -643,8 +758,10 @@ fn prepared(kwargs: &str) -> bool {
 fn argument_preparation() {
     include_flag();
     stream_switched_off();
-    call_fields();
-    query_resolution();
+    call_id_precedence();
+    call_arguments();
+    query_list();
+    query_fallbacks();
 }
 
 fn include_flag() {
@@ -682,7 +799,7 @@ fn stream_switched_off() {
     assert!(logs.is_empty());
 }
 
-fn call_fields() {
+fn call_id_precedence() {
     assert_eq!(
         extract_tool_call_fields(
             &fields(r#"{"call_id":"call_1","id":"id_1","arguments":"{\"queries\":[\"q\"]}"}"#),
@@ -705,6 +822,21 @@ fn call_fields() {
         (String::from("id_3"), json(r#""{}""#))
     );
     assert_eq!(
+        extract_tool_call_fields(&fields(r#"{"call_id":"5","arguments":1.5}"#), "fb")
+            .expect("a numeric id reads as its JSON text"),
+        (String::from("5"), json("1.5"))
+    );
+    assert!(matches!(
+        extract_tool_call_fields(&fields(r#"{"call_id":true}"#), "fb"),
+        Err(FileSearchToolsError::WrongType {
+            field: "call_id",
+            ..
+        })
+    ));
+}
+
+fn call_arguments() {
+    assert_eq!(
         extract_tool_call_fields(&fields(r#"{"call_id":"c","arguments":null}"#), "fb")
             .expect("a null argument reads as an empty object"),
         (String::from("c"), json(r#""{}""#))
@@ -719,21 +851,9 @@ fn call_fields() {
             .expect("a non-string argument is preserved"),
         (String::from("c"), json(r#"{"a":1}"#))
     );
-    assert_eq!(
-        extract_tool_call_fields(&fields(r#"{"call_id":"5","arguments":1.5}"#), "fb")
-            .expect("a numeric id reads as its JSON text"),
-        (String::from("5"), json("1.5"))
-    );
-    assert!(matches!(
-        extract_tool_call_fields(&fields(r#"{"call_id":true}"#), "fb"),
-        Err(FileSearchToolsError::WrongType {
-            field: "call_id",
-            ..
-        })
-    ));
 }
 
-fn query_resolution() {
+fn query_list() {
     let input = json(r#""in""#);
     assert_eq!(
         resolve_queries_from_args(&fields(r#"{"queries":["q1","q2"]}"#), &input).expect("queries"),
@@ -744,7 +864,22 @@ fn query_resolution() {
         names(&["q"])
     );
     assert_eq!(
-        resolve_queries_from_args(&fields(r#"{"queries":[],"query":"legacy"}"#), &input)
+        resolve_queries_from_args(&fields(r#"{"queries":["a",3]}"#), &input)
+            .expect("numbers read as their JSON text"),
+        names(&["a", "3"])
+    );
+    assert!(matches!(
+        resolve_queries_from_args(&fields(r#"{"queries":[true]}"#), &input),
+        Err(FileSearchToolsError::WrongType {
+            field: "queries",
+            ..
+        })
+    ));
+}
+
+fn query_fallbacks() {
+    assert_eq!(
+        resolve_queries_from_args(&fields(r#"{"queries":[],"query":"legacy"}"#), &json("null"))
             .expect("the legacy query"),
         names(&["legacy"])
     );
@@ -762,16 +897,8 @@ fn query_resolution() {
             .expect("a null query falls through"),
         names(&["42"])
     );
-    assert_eq!(
-        resolve_queries_from_args(&fields(r#"{"queries":["a",3]}"#), &input)
-            .expect("numbers read as their JSON text"),
-        names(&["a", "3"])
-    );
     assert!(matches!(
-        resolve_queries_from_args(&fields(r#"{"queries":[true]}"#), &input),
-        Err(FileSearchToolsError::WrongType {
-            field: "queries",
-            ..
-        })
+        resolve_queries_from_args(&fields("{}"), &json("true")),
+        Err(FileSearchToolsError::WrongType { field: "input", .. })
     ));
 }
