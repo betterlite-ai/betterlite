@@ -9,4 +9,10 @@ deviations:
   - what: Token counts, request counts, the four budget limits and the Redis port are i64, so a JSON integer past i64::MAX is rejected where Python's unbounded int would take it.
     why: Rust integers have a fixed width, and i64 covers every count these records carry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5752-L5764
+  - what: CoordinationRedisParams hides password and sentinel_password from its Debug output, where LiteLLM's model prints both in repr.
+    why: The task text asks for it, and a config record's Debug output can reach logs; docs/compatibility.md leaves repr text out of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2641
+  - what: Datetime fields on the user info response record render an exact millisecond value with three fractional digits, where pydantic's JSON dump always writes six for a nonzero microsecond.
+    why: The shared database Timestamp type serializes through chrono's AutoSi format, which trims exact milliseconds to three digits; whole-second and microsecond-precision values render the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3590
 kept_bugs: []
