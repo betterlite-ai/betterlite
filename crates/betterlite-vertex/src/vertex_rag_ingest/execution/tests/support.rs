@@ -1,3 +1,4 @@
+use std::future::{pending, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
@@ -6,6 +7,7 @@ use betterlite_config::sections::vertex_credential_sources::vertex_settings::Adc
 use betterlite_openai::files::records::{
     CreatePurpose, FileKind, FileObject, FileStatus, FilesPurpose,
 };
+use google_cloud_gax::error::Error;
 use secrecy::ExposeSecret as _;
 
 use crate::vertex_rag_ingest::chunking::{ChunkDefaults, ChunkingRecord, RagChunkingStrategy};
@@ -133,7 +135,7 @@ impl NativeFileUpload for FakeUpload {
             expires_at: None,
             status_details: None,
         };
-        Box::pin(std::future::ready(Ok(object)))
+        Box::pin(ready(Ok(object)))
     }
 }
 
@@ -165,9 +167,9 @@ impl CorpusImport for FakeImport {
                     imported_rag_files_count: count,
                 }),
                 ImportBehavior::Rejected => Err(ImportError::Rpc {
-                    source: google_cloud_gax::error::Error::deser("the corpus rejected the file"),
+                    source: Error::deser("the corpus rejected the file"),
                 }),
-                ImportBehavior::NeverFinishes => std::future::pending().await,
+                ImportBehavior::NeverFinishes => pending().await,
             }
         })
     }

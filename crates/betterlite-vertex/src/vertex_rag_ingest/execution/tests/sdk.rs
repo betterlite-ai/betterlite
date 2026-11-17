@@ -1,10 +1,12 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use google_cloud_aiplatform_v1::client::VertexRagDataService;
 use google_cloud_aiplatform_v1::model::import_rag_files_config::ImportSource;
 use google_cloud_aiplatform_v1::model::rag_file_chunking_config::ChunkingConfig as WireChunkingConfig;
 use google_cloud_aiplatform_v1::model::{ImportRagFilesRequest, ImportRagFilesResponse};
+use google_cloud_aiplatform_v1::stub::VertexRagDataService as VertexRagDataStub;
+use google_cloud_auth::credentials::testing::error_credentials;
 use google_cloud_gax::error::Error;
 use google_cloud_gax::options::RequestOptions;
 use google_cloud_gax::response::Response;
@@ -27,7 +29,7 @@ struct CaptureImport {
     requests: Arc<Mutex<Vec<ImportRagFilesRequest>>>,
 }
 
-impl google_cloud_aiplatform_v1::stub::VertexRagDataService for CaptureImport {
+impl VertexRagDataStub for CaptureImport {
     fn import_rag_files(
         &self,
         request: ImportRagFilesRequest,
@@ -37,7 +39,7 @@ impl google_cloud_aiplatform_v1::stub::VertexRagDataService for CaptureImport {
             .lock()
             .expect("the capture lock")
             .push(request);
-        std::future::ready(Ok(Response::from(done_operation(3))))
+        ready(Ok(Response::from(done_operation(3))))
     }
 }
 
@@ -74,9 +76,7 @@ fn the_adapter_takes_an_endpoint_and_optional_credentials() {
     assert!(matches!(adc, VertexRagDataImport::Adc { .. }));
     let explicit = VertexRagDataImport::new(
         "https://aiplatform.googleapis.com",
-        Some(google_cloud_auth::credentials::testing::error_credentials(
-            false,
-        )),
+        Some(error_credentials(false)),
     );
     assert!(matches!(explicit, VertexRagDataImport::Credentials { .. }));
 }

@@ -1,7 +1,8 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 
 use betterlite_openai::files::records::{CreatePurpose, FileUpload};
+use tokio::time::timeout;
 
 use crate::vertex_rag_ingest::chunking::{
     ChunkDefaults, ChunkingRecord, transform_chunking_strategy,
@@ -145,7 +146,7 @@ impl<Upload: NativeFileUpload, Import: CorpusImport> VertexRagIngest<Upload, Imp
         chunking: ChunkingRecord,
         gcs_uri: &str,
     ) -> Result<ImportOutcome, RagIngestError> {
-        let attempt = tokio::time::timeout(
+        let attempt = timeout(
             self.settings.import_timeout,
             self.import.import(ImportRequest {
                 corpus: self.settings.corpus_name.clone(),
@@ -169,7 +170,7 @@ impl<Upload: NativeFileUpload, Import: CorpusImport> VertexRagIngest<Upload, Imp
 
 impl<Upload: NativeFileUpload, Import: CorpusImport> RagIngest for VertexRagIngest<Upload, Import> {
     fn embed<'request>(&'request self, _chunks: &'request [String]) -> EmbedFuture<'request> {
-        Box::pin(std::future::ready(None::<Vec<Vec<f32>>>))
+        Box::pin(ready(None::<Vec<Vec<f32>>>))
     }
 
     fn store<'request>(&'request self, request: StoreRequest<'request>) -> StoreFuture<'request> {
