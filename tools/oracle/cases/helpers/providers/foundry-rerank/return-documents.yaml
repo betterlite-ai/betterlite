@@ -1,0 +1,31 @@
+kind: helper
+name: foundry-rerank-return-documents
+call:
+  foundry_rerank:
+    requests:
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      return_documents: true
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      return_documents: false
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      return_documents: null
+    replies:
+    - status: 200
+      body: '{"results":[{"index":0,"relevance_score":0.5,"document":{"text":"first document"}}]}'
+    - status: 200
+      body: '{"results":[{"index":0,"relevance_score":0.5}]}'
+env: {}
+compare: {ignore: []}

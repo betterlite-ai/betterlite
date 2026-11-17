@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-rerank-relevance-scores
+call:
+  foundry_rerank:
+    replies:
+    - status: 200
+      body: '{"results":[{"index":0,"relevance_score":0.987654321,"document":{"text":"first document"}},{"index":1,"relevance_score":0.123456},{"index":2,"relevance_score":1},{"index":3,"relevance_score":0.0},{"index":4,"relevance_score":0.5}]}'
+    - status: 200
+      body: '{"results":[{"index":0,"relevance_score":0.25}]}'
+env: {}
+compare: {ignore: []}

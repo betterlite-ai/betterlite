@@ -119,6 +119,7 @@ fn direct_executor(
             mock_embedding,
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
                 .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
+            bundled_catalog: Arc::default(),
         },
         deployments: Vec::new(),
         defaults: defaults.clone(),
