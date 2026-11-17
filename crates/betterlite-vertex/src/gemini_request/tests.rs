@@ -802,22 +802,38 @@ fn media_https_hint_passes_mime() {
     assert_no_io(&harness);
 }
 
-#[test]
-fn media_http_extension_downloads() {
+#[rstest]
+#[case::sequential(false)]
+#[case::concurrent(true)]
+fn media_http_extension_downloads(#[case] asynchronous: bool) {
     let harness = Harness::new().with_fetch(&[(REMOTE_HTTP_PNG, FETCHED)]);
     let input = media_input(
         VertexCapabilityProvider::VertexAi,
         r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"http://example.com/cat.png"}}]}]"#,
     );
-    let transformed = harness.run(&input).expect("the media is downloaded");
+    let transformed = if asynchronous {
+        harness.run_async(&input)
+    } else {
+        harness.run(&input)
+    }
+    .expect("the media is downloaded");
     assert_body(
         &transformed,
         r#"{"contents":[{"role":"user","parts":[{"text":"what"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]}]}"#,
     );
-    assert_eq!(
-        harness.fetcher.converted(),
-        vec![REMOTE_HTTP_PNG.to_owned()]
-    );
+    if asynchronous {
+        assert!(harness.fetcher.converted().is_empty());
+        assert_eq!(
+            harness.fetcher.batches(),
+            vec![vec![REMOTE_HTTP_PNG.to_owned()]]
+        );
+    } else {
+        assert_eq!(
+            harness.fetcher.converted(),
+            vec![REMOTE_HTTP_PNG.to_owned()]
+        );
+        assert!(harness.fetcher.batches().is_empty());
+    }
 }
 
 #[test]
@@ -872,11 +888,13 @@ fn media_data_url_not_fetched() {
     assert_no_io(&harness);
 }
 
-#[test]
-fn media_assistant_image_fetches() {
+#[rstest]
+#[case::vertex(VertexCapabilityProvider::VertexAi)]
+#[case::studio(VertexCapabilityProvider::Gemini)]
+fn media_assistant_image_fetches(#[case] provider: VertexCapabilityProvider) {
     let harness = Harness::new().with_fetch(&[(REMOTE_HTTP, FETCHED)]);
     let input = media_input(
-        VertexCapabilityProvider::VertexAi,
+        provider,
         r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"http://example.com/cat"},"index":0}]},{"role":"user","content":"next"}]"#,
     );
     let transformed = harness
@@ -887,6 +905,40 @@ fn media_assistant_image_fetches() {
         r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
     );
     assert_eq!(harness.fetcher.converted(), vec![REMOTE_HTTP.to_owned()]);
+}
+
+#[test]
+fn media_assistant_image_string_skipped() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":"https://example.com/a"}]},{"role":"user","content":"next"}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("a bare string image_url is not media the walker visits");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+    );
+    assert_no_io(&harness);
+}
+
+#[test]
+fn media_assistant_image_extension_stays() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::VertexAi,
+        r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"},"index":0}]},{"role":"user","content":"next"}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("the assistant image stays a reference");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/a.png"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+    );
+    assert_no_io(&harness);
 }
 
 #[test]
