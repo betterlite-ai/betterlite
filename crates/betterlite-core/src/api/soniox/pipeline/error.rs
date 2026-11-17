@@ -47,9 +47,9 @@ impl PipelineError {
     #[must_use]
     pub const fn provider(&self) -> Option<&SonioxException> {
         match self {
-            Self::Provider(error) => Some(error),
-            Self::Prepare(PrepareError::Auth(error)) => Some(error),
-            Self::Remote(RemoteError::Provider(error)) => Some(error),
+            Self::Provider(error)
+            | Self::Prepare(PrepareError::Auth(error))
+            | Self::Remote(RemoteError::Provider(error)) => Some(error),
             Self::Prepare(_)
             | Self::Reply(_)
             | Self::Transport(_)

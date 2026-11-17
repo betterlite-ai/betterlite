@@ -151,26 +151,25 @@ impl RemoteTransport for Recorder<'_> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(record(request));
-        let answer = self
+        let next_answer = self
             .answers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        match answer {
+        let answer: BoxFuture = match next_answer {
             Some(Reply::Answer { status, body }) => {
                 let response = UpstreamResponse {
                     status,
                     headers: HeaderMap::new(),
                     body: body.into_bytes(),
                 };
-                Box::pin(ready(Ok(response))) as BoxFuture
+                Box::pin(ready(Ok(response)))
             }
-            Some(Reply::Fail(error)) => Box::pin(ready(Err(error))) as BoxFuture,
-            Some(Reply::Hang) => {
-                Box::pin(pending::<Result<UpstreamResponse, TransportError>>()) as BoxFuture
-            }
-            None => Box::pin(ready(Err(TransportError::Closed))) as BoxFuture,
-        }
+            Some(Reply::Fail(error)) => Box::pin(ready(Err(error))),
+            Some(Reply::Hang) => Box::pin(pending::<Result<UpstreamResponse, TransportError>>()),
+            None => Box::pin(ready(Err(TransportError::Closed))),
+        };
+        answer
     }
 }
 
@@ -211,36 +210,34 @@ impl SonioxLogger for Logger<'_> {
 }
 
 impl Logger<'_> {
-    fn pre_call(&self, record: SonioxPreCall) {
+    fn push(&self, kind: &'static str, record: LogRecord) {
         self.effects
             .kinds
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push("pre_call");
+            .push(kind);
         self.book
             .records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(LogRecord::PreCall {
+            .push(record);
+    }
+
+    fn pre_call(&self, record: SonioxPreCall) {
+        let body = to_value(record.body).expect("the pre-call body is JSON");
+        self.push(
+            "pre_call",
+            LogRecord::PreCall {
                 url: record.url,
-                body: to_value(record.body).expect("the pre-call body is JSON"),
-            });
+                body,
+            },
+        );
     }
 
     fn post_call(&self, record: SonioxPostCall) {
-        self.effects
-            .kinds
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("post_call");
-        self.book
-            .records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(LogRecord::PostCall {
-                input: record.input,
-                original: record.original_response,
-            });
+        let input = to_value(record.input).expect("the post-call input is JSON");
+        let original = to_value(record.original_response).expect("the post-call original is JSON");
+        self.push("post_call", LogRecord::PostCall { input, original });
     }
 }
 
@@ -334,7 +331,7 @@ pub(super) fn pipeline_with<'deps, P, S>(
     provider: &'deps P,
     sleeper: &'deps S,
 ) -> SonioxPipeline<'deps, P, S> {
-    let files: &'deps dyn AuthorizedAudioFiles = &NO_FILES;
+    let files: &'deps (dyn AuthorizedAudioFiles + Sync) = &NO_FILES;
     SonioxPipeline {
         provider,
         sleeper,
@@ -347,7 +344,7 @@ pub(super) fn pipeline_with<'deps, P, S>(
 pub(super) fn target<'call, 'file>(
     audio_file: Option<&'call mut AudioFile<'file>>,
     response: &'call mut SonioxTranscriptionResponse,
-    logger: &'call mut dyn SonioxLogger,
+    logger: &'call mut (dyn SonioxLogger + Send),
 ) -> PipelineTarget<'call, 'file> {
     PipelineTarget {
         audio_file,

@@ -18,7 +18,7 @@ pub(super) fn apply(
     model: &str,
     audio_duration_ms: Option<&JsonValue>,
 ) -> Result<(), PipelineError> {
-    let seconds = match audio_duration_ms {
+    let converted = match audio_duration_ms {
         Some(value) => seconds(value)?,
         None => JsonValue::Null,
     };
@@ -31,17 +31,23 @@ pub(super) fn apply(
     );
     response
         .hidden_params
-        .insert(DURATION_HIDDEN_FIELD.to_owned(), seconds);
+        .insert(DURATION_HIDDEN_FIELD.to_owned(), converted);
     Ok(())
 }
 
 fn seconds(value: &JsonValue) -> Result<JsonValue, PipelineError> {
-    let millis = decimal(value)?;
-    let converted = millis
-        .checked_div(Decimal::from(MILLIS_PER_SECOND))
+    let millis = match value {
+        JsonValue::Number(number) => decimal_millis(&number.to_string()),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
+    };
+    millis
+        .and_then(|quantity| quantity.checked_div(Decimal::from(MILLIS_PER_SECOND)))
         .and_then(|exact| exact.to_f64())
-        .and_then(Number::from_f64);
-    converted
+        .and_then(Number::from_f64)
         .map(JsonValue::Number)
         .ok_or_else(|| PipelineError::Duration {
             field: DURATION_FIELD,
@@ -49,24 +55,8 @@ fn seconds(value: &JsonValue) -> Result<JsonValue, PipelineError> {
         })
 }
 
-fn decimal(value: &JsonValue) -> Result<Decimal, PipelineError> {
-    let text = match value {
-        JsonValue::Number(number) => number.to_string(),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => {
-            return Err(PipelineError::Duration {
-                field: DURATION_FIELD,
-                value: value.to_string(),
-            });
-        }
-    };
-    Decimal::from_str_exact(&text)
-        .or_else(|_ignored| Decimal::from_scientific(&text))
-        .map_err(|_ignored| PipelineError::Duration {
-            field: DURATION_FIELD,
-            value: value.to_string(),
-        })
+fn decimal_millis(text: &str) -> Option<Decimal> {
+    Decimal::from_str_exact(text)
+        .or_else(|_ignored| Decimal::from_scientific(text))
+        .ok()
 }

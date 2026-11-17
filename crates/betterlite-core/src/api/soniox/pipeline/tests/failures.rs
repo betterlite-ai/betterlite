@@ -7,8 +7,8 @@ use http::Method;
 use serde_json::json;
 
 use super::support::{
-    self, AUDIO_CONTENT, AUDIO_NAME, MODEL, TRANSCRIPTIONS_URL, UPLOAD_URL, answer, call,
-    pipeline_with, response, target,
+    self, AUDIO_CONTENT, AUDIO_NAME, MODEL, TRANSCRIPTIONS_URL, answer, call, pipeline_with,
+    response, target,
 };
 use crate::api::soniox::pipeline::error::PipelineError;
 
@@ -31,7 +31,7 @@ async fn a_create_failure_deletes_only_the_uploaded_file() {
     ];
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -79,7 +79,7 @@ async fn a_fetch_failure_deletes_the_transcription_then_the_file() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -122,7 +122,7 @@ async fn a_poll_error_status_reports_the_failure_and_cleans_both() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -165,7 +165,7 @@ async fn an_invalid_duration_after_the_post_call_keeps_the_built_response() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -225,7 +225,7 @@ async fn a_failing_delete_does_not_replace_the_transcription_result() {
     answers.push(support::Reply::Fail(TransportError::Closed));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -259,7 +259,7 @@ async fn a_malformed_create_reply_leaves_the_job_and_deletes_the_file() {
     ];
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -298,7 +298,7 @@ async fn a_transport_failure_leaves_no_error_text_in_the_response() {
     ];
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -329,18 +329,17 @@ fn dropping_the_job_future_skips_the_cleanup_requests() {
     let answers = vec![answer(200, r#"{"id":"file_1"}"#), support::Reply::Hang];
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
     let mut response = response();
     let mut logger = support::Logger::new(&effects, &book);
-    let job = pipeline.transcribe::<support::Recorder<'_>>(
+    let mut job = pipeline.transcribe::<support::Recorder<'_>>(
         &call,
         target(Some(&mut file), &mut response, &mut logger),
         None,
     );
-    let mut job = Box::pin(job);
     let mut context = Context::from_waker(Waker::noop());
     assert!(job.as_mut().poll(&mut context).is_pending());
     drop(job);
@@ -366,7 +365,7 @@ async fn a_numeric_string_duration_is_refused_where_python_reads_a_float() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -411,7 +410,7 @@ async fn a_large_integer_duration_is_divided_once_before_rounding_to_seconds() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -428,7 +427,7 @@ async fn a_large_integer_duration_is_divided_once_before_rounding_to_seconds() {
     assert!(outcome.is_ok(), "{outcome:?}");
     assert_eq!(
         response.hidden_params.get("audio_transcription_duration"),
-        Some(&json!(9007199254740.994))
+        Some(&json!(9_007_199_254_740.994))
     );
 }
 
@@ -446,7 +445,7 @@ async fn a_boolean_duration_is_refused_where_python_reads_a_float() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -488,7 +487,7 @@ async fn a_duration_past_the_decimal_range_is_refused_after_the_post_call() {
     answers.push(answer(200, "{}"));
     let recorder = support::Recorder::new(answers, &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let case_params = support::params(&[("soniox_max_polling_attempts", json!(1))]);
     let call = call(&case_params, false);
     let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
     let mut file = AudioFile::Stream(&mut stream);
@@ -519,7 +518,7 @@ async fn a_bad_api_base_fails_the_create_without_a_request() {
     let book = support::LogBook::default();
     let recorder = support::Recorder::new(Vec::new(), &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[
+    let case_params = support::params(&[
         ("soniox_max_polling_attempts", json!(1)),
         ("file_id", json!("caller-file")),
     ]);
@@ -547,7 +546,7 @@ async fn an_unsendable_header_fails_the_create_without_a_request() {
     let book = support::LogBook::default();
     let recorder = support::Recorder::new(Vec::new(), &effects);
     let pipeline = pipeline_with(&recorder, &recorder);
-    let case_params = super::support::params(&[
+    let case_params = support::params(&[
         ("soniox_max_polling_attempts", json!(1)),
         ("file_id", json!("caller-file")),
     ]);
