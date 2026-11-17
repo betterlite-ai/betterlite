@@ -6,6 +6,7 @@ use betterlite_bedrock::s3_access::{TrustedModelCredentials, TrustedValue, froze
 use betterlite_logging::gcs_client::gcs_storage_auth::SERVICE_ACCOUNT_ENV;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileContentRequest;
+use indexmap::IndexMap;
 use tokio::time::timeout;
 use uuid::Uuid;
 
