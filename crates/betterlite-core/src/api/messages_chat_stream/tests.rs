@@ -466,17 +466,37 @@ async fn sse_frame_encoding() {
         raw
     );
 
-    let sync = SyncFrames {
+    let mut sync = SyncFrames {
         driver: sync_frames(vec![text("A")], "msg_fixed"),
     };
-    let encoded: Vec<Vec<u8>> = sync.collect::<Result<_, _>>().expect("every frame encodes");
+    let encoded: Vec<Vec<u8>> = sync
+        .by_ref()
+        .take(8)
+        .collect::<Result<_, _>>()
+        .expect("every frame encodes");
+    assert_eq!(
+        encoded.len(),
+        4,
+        "message_start, the block start, the delta, then message_stop"
+    );
+    assert!(
+        sync.next().is_none(),
+        "the synchronous wrapper ends its iteration"
+    );
     let mut view = byte_view(scripted(vec![text("A")]), setup());
     "msg_fixed".clone_into(&mut view.stream.state.message_id);
     let mut delegated = Vec::new();
-    while let Some(frame) = view.next_frame().await {
+    while delegated.len() < 8 {
+        let Some(frame) = view.next_frame().await else {
+            break;
+        };
         delegated.push(frame);
     }
     assert_eq!(encoded, delegated);
+    assert!(
+        view.next_frame().await.is_none(),
+        "the delegated view ends where the wrapper does"
+    );
     assert_eq!(
         String::from_utf8(encoded.first().cloned().expect("a first frame"))
             .expect("the frame is text")
@@ -527,9 +547,21 @@ async fn async_error_event_ends_stream() {
 
     let mut view = byte_view(failing(vec![text("A")], reported), setup());
     let mut frames = Vec::new();
-    while let Some(frame) = view.next_frame().await {
+    while frames.len() < 8 {
+        let Some(frame) = view.next_frame().await else {
+            break;
+        };
         frames.push(String::from_utf8(frame).expect("the frame is text"));
     }
+    assert_eq!(
+        frames.len(),
+        4,
+        "message_start, the block start, the delta, then the error"
+    );
+    assert!(
+        view.next_frame().await.is_none(),
+        "the error frame ended the stream"
+    );
     let last = frames.last().expect("the error frame ends the stream");
     assert_eq!(
         *last,
@@ -556,9 +588,21 @@ async fn async_error_event_ends_stream() {
     assert_eq!(failure.into_stream_failure(), empty);
     let mut view = byte_view(failing(vec![text("A")], empty), setup());
     let mut frames = Vec::new();
-    while let Some(frame) = view.next_frame().await {
+    while frames.len() < 8 {
+        let Some(frame) = view.next_frame().await else {
+            break;
+        };
         frames.push(String::from_utf8(frame).expect("the frame is text"));
     }
+    assert_eq!(
+        frames.len(),
+        4,
+        "message_start, the block start, the delta, then the error"
+    );
+    assert!(
+        view.next_frame().await.is_none(),
+        "the error frame ended the stream"
+    );
     assert_eq!(
         frames.last().map(String::as_str),
         Some(
@@ -572,6 +616,9 @@ async fn async_error_event_ends_stream() {
         message: "x".repeat(0x2000),
     };
     let mut view = byte_view(failing(Vec::new(), oversized), setup());
+    let start = String::from_utf8(view.next_frame().await.expect("the message_start frame"))
+        .expect("the frame is text");
+    assert!(start.starts_with("event: message_start\n"));
     assert!(
         view.next_frame().await.is_none(),
         "an error event past the wire limits is not written"
@@ -593,15 +640,18 @@ async fn async_byte_view_metadata() {
         ("role".to_owned(), decisions::Json::Text("user".to_owned())),
         ("content".to_owned(), decisions::Json::Text("hi".to_owned())),
     ]))];
+    let recorded = text("A");
     let mut source = scripted(vec![text("A")]);
-    source.chunks = Some(vec![chunk(
-        r#"{"choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}"#,
-    )]);
+    source.chunks = Some(vec![recorded.clone()]);
     source.messages = Some(messages.clone());
     let mut view = byte_view(source, setup());
     assert!(view.hidden_params.is_empty(), "the view starts with none");
     assert_eq!(view.model(), "claude-sonnet-4-5");
-    assert_eq!(view.chunks().map(<[StreamChunk]>::len), Some(1));
+    assert_eq!(
+        view.chunks(),
+        Some(std::slice::from_ref(&recorded)),
+        "the view hands the recorded chunks back unchanged"
+    );
     assert_eq!(view.messages(), Some(messages.as_slice()));
     let frame = view.next_frame().await.expect("the message_start frame");
     let encoded = String::from_utf8(frame).expect("the frame is text");
