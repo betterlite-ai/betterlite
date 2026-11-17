@@ -22,10 +22,13 @@ pub struct RouterServices {
 
 impl RouterServices {
     // Router.add_optional_pre_call_checks: the prompt caching check exists only when the config names it
-    pub fn from_config<Memory: MemoryCacheOps + 'static>(
+    pub fn from_config<Memory>(
         config: &Config,
         inputs: PromptAffinityInputs<Memory>,
-    ) -> Result<Self, PromptAffinityError> {
+    ) -> Result<Self, PromptAffinityError>
+    where
+        Memory: MemoryCacheOps + 'static,
+    {
         Ok(Self {
             prompt_affinity: build(&config.sections.prompt_affinity, inputs)?,
         })

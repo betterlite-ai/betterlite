@@ -18,6 +18,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_metadata::base64::Base64Truncator;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::chat::{RouterProjection, messages_with_defaults};
 use betterlite_prompts::cache_defaults::{CacheFacts, CachePolicy};
@@ -72,7 +73,7 @@ pub(crate) fn json_messages(source: &str) -> Vec<Json> {
     serde_json::from_str(source).unwrap()
 }
 
-pub(crate) fn request_kwargs(source: &str) -> betterlite_prompts::arguments::json::Object {
+pub(crate) fn request_kwargs(source: &str) -> Object {
     serde_json::from_str(source).unwrap()
 }
 
@@ -143,11 +144,7 @@ impl ModelFacts for ClaudeFacts {
     }
 
     fn provider(&self, model: &str) -> Option<String> {
-        if model.contains("claude") {
-            Some("anthropic".to_owned())
-        } else {
-            None
-        }
+        model.contains("claude").then(|| "anthropic".to_owned())
     }
 }
 
@@ -256,6 +253,25 @@ pub(super) fn token_counter() -> Counter {
         Arc::clone(&service),
     ));
     let catalog = BundledCatalog::default().get();
+    let downloader = hub_downloader(&client);
+    let selector = Arc::new(Selector::new(
+        Arc::clone(&fetcher),
+        downloader,
+        Arc::clone(&catalog),
+        Arc::clone(&service),
+        false,
+    ));
+    Counter::new(
+        selector,
+        fetcher,
+        service,
+        catalog,
+        TokenizerSettings::default(),
+    )
+}
+
+// a hub on a dead local port, since the bundled vocabulary never needs a download
+fn hub_downloader(client: &Arc<ProxiedClient>) -> Arc<HubDownloader> {
     let hub = HubSettings {
         endpoint: "http://127.0.0.1:1".to_owned(),
         offline: OfflineSetting::Online,
@@ -274,33 +290,19 @@ pub(super) fn token_counter() -> Counter {
     let resolver = Arc::new(HubTokenResolver::new(
         hub.clone(),
         OidcSettings::default(),
-        Arc::clone(&client),
+        Arc::clone(client),
         reader,
         clock,
     ));
-    let downloader = Arc::new(HubDownloader::new(
+    Arc::new(HubDownloader::new(
         Arc::new(hub),
         resolver,
         Arc::new(Instant::now),
-    ));
-    let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
-        downloader,
-        Arc::clone(&catalog),
-        Arc::clone(&service),
-        false,
-    ));
-    Counter::new(
-        selector,
-        fetcher,
-        service,
-        catalog,
-        TokenizerSettings::default(),
-    )
+    ))
 }
 
 // one message carrying the given content blocks in order
-fn message_with_blocks(role: &str, blocks: Vec<String>) -> String {
+fn message_with_blocks(role: &str, blocks: &[String]) -> String {
     format!(r#"[{{"role":"{role}","content":[{}]}}]"#, blocks.join(","))
 }
 
@@ -309,7 +311,7 @@ pub(super) fn text_blocks_source(count: usize) -> String {
         .map(|index| format!(r#"{{"type":"text","text":"block {index}"}}"#))
         .collect();
     blocks.push(r#"{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}"#.to_owned());
-    message_with_blocks("user", blocks)
+    message_with_blocks("user", &blocks)
 }
 
 // the tool block kind a lookback fixture repeats, and the message role that carries it
@@ -344,7 +346,7 @@ pub(super) fn tool_blocks_source(count: usize, kind: ToolBlocks) -> String {
         ToolBlocks::Use => "assistant",
         ToolBlocks::Result => "tool",
     };
-    message_with_blocks(role, blocks)
+    message_with_blocks(role, &blocks)
 }
 
 pub(super) fn image_message_source(payload: &str) -> String {
@@ -356,7 +358,7 @@ pub(super) fn image_message_source(payload: &str) -> String {
 // the messages the default breakpoints produce for these request arguments and globals
 pub(crate) fn injected_json(
     source: &str,
-    request_kwargs: &betterlite_prompts::arguments::json::Object,
+    request_kwargs: &Object,
     enable_prompt_caching: Option<bool>,
     global_enabled: bool,
 ) -> Vec<Json> {

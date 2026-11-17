@@ -49,10 +49,13 @@ pub struct PromptAffinityInputs<Memory: MemoryCacheOps> {
 }
 
 // Router.add_optional_pre_call_checks: the check exists only when the config names prompt_caching
-pub fn build<Memory: MemoryCacheOps + 'static>(
+pub fn build<Memory>(
     section: &section::Settings,
     inputs: PromptAffinityInputs<Memory>,
-) -> Result<Option<PromptAffinity>, PromptAffinityError> {
+) -> Result<Option<PromptAffinity>, PromptAffinityError>
+where
+    Memory: MemoryCacheOps + 'static,
+{
     let adapter = settings(section)?;
     if !adapter.enabled {
         return Ok(None);

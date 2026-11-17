@@ -10,7 +10,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::prompt_affinity as section;
 use betterlite_config::types::Config;
 use betterlite_core::message_utilities::prompt_cache_checks::PromptCacheSettings;
-use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -18,7 +18,7 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::CacheFacts;
 use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
-use betterlite_router::router_core::services::RouteServices;
+use betterlite_router::router_core::services::RouteServices as _;
 use indexmap::IndexMap;
 
 use crate::routing::prompt_affinity::settings;
@@ -173,12 +173,12 @@ fn inputs(cache: Arc<DualCache<LocalMemoryOps>>) -> PromptAffinityInputs<LocalMe
 }
 
 fn loaded(checks: &[&str], limit: Option<&str>) -> Config {
-    let checks = checks.join(", ");
+    let joined = checks.join(", ");
     let source =
-        format!("model_list: []\nrouter_settings:\n  optional_pre_call_checks: [{checks}]\n");
+        format!("model_list: []\nrouter_settings:\n  optional_pre_call_checks: [{joined}]\n");
     let mut lookup = BTreeMap::new();
-    if let Some(limit) = limit {
-        lookup.insert("MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(), limit.to_owned());
+    if let Some(value) = limit {
+        lookup.insert("MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(), value.to_owned());
     }
     ConfigLoader { lookup }
         .load(&source)

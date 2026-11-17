@@ -11,6 +11,28 @@ use crate::prompt_affinity::json::messages_json;
 
 pub(super) async fn run(name: &str) {
     match name {
+        "a_message_level_mark_ignores_later_messages" => {
+            a_message_level_mark_ignores_later_messages();
+        }
+        "a_message_key_order_never_changes_the_digest" => {
+            a_message_key_order_never_changes_the_digest();
+        }
+        "only_the_blocks_up_to_the_last_mark_are_hashed" => {
+            only_the_blocks_up_to_the_last_mark_are_hashed();
+        }
+        "cache_control_markers_never_change_the_digest" => {
+            cache_control_markers_never_change_the_digest();
+        }
+        "a_typed_message_converts_to_the_dict_litellm_hashes" => {
+            a_typed_message_converts_to_the_dict_litellm_hashes();
+        }
+        "tools_seed_the_prefix_digest" => tools_seed_the_prefix_digest(),
+        _ => run_async(name).await,
+    }
+}
+
+async fn run_async(name: &str) {
+    match name {
         "a_success_event_pins_the_deployment_the_next_request_reuses" => {
             a_success_event_pins_the_deployment_the_next_request_reuses().await;
         }
@@ -44,22 +66,6 @@ pub(super) async fn run(name: &str) {
         "request_kwargs_without_the_flag_do_not_inject" => {
             request_kwargs_without_the_flag_do_not_inject().await;
         }
-        "a_message_level_mark_ignores_later_messages" => {
-            a_message_level_mark_ignores_later_messages()
-        }
-        "a_message_key_order_never_changes_the_digest" => {
-            a_message_key_order_never_changes_the_digest();
-        }
-        "only_the_blocks_up_to_the_last_mark_are_hashed" => {
-            only_the_blocks_up_to_the_last_mark_are_hashed();
-        }
-        "cache_control_markers_never_change_the_digest" => {
-            cache_control_markers_never_change_the_digest();
-        }
-        "a_typed_message_converts_to_the_dict_litellm_hashes" => {
-            a_typed_message_converts_to_the_dict_litellm_hashes();
-        }
-        "tools_seed_the_prefix_digest" => tools_seed_the_prefix_digest(),
         _ => panic!("unknown case {name}"),
     }
 }

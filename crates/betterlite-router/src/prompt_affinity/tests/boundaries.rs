@@ -10,7 +10,7 @@ use super::support::{
     image_message_source, json_messages, lookback, messages, pin, positions, request, service,
     success, text_blocks_source, token_counter, tool_blocks_source,
 };
-use crate::prompt_affinity::service::{CountingGate, TokenGate};
+use crate::prompt_affinity::service::{CountingGate, TokenGate as _};
 
 const THREE_BLOCKS: &str = r#"[{"role":"user","content":[{"type":"text","text":"a"},{"type":"text","text":"b"},{"type":"text","text":"c","cache_control":{"type":"ephemeral"}}]}]"#;
 
@@ -108,8 +108,8 @@ async fn the_lookback_window_holds_twenty_positions() {
     let found = positions(&raw);
     assert_eq!(found.len(), 25);
     assert_eq!(lookback(&raw).len(), 20);
-    let inside = found.get(5).unwrap();
-    let outside = found.get(4).unwrap();
+    let inside = &found[5];
+    let outside = &found[4];
     let pins = Arc::new(FakePins::default());
     pins.seed(&inside.cache_key, pin("dep-a"));
     let seen = service(Arc::clone(&pins), 2000, false);
@@ -137,10 +137,10 @@ async fn a_value_that_is_not_a_pin_is_skipped() {
     let found = positions(&raw);
     assert_eq!(found.len(), 3);
     let pins = Arc::new(FakePins::default());
-    pins.seed(&found.get(2).unwrap().cache_key, Json::Bool(true));
+    pins.seed(&found[2].cache_key, Json::Bool(true));
     let mut wrong = IndexMap::new();
     wrong.insert("model_id".to_owned(), Json::Number(Number::from(7_u8)));
-    pins.seed(&found.get(1).unwrap().cache_key, Json::Object(wrong));
+    pins.seed(&found[1].cache_key, Json::Object(wrong));
     let affinity = service(Arc::clone(&pins), 2000, false);
     assert_eq!(affinity.pin_for(Some(&raw), None).await.unwrap(), None);
     pins.seed(&found.first().unwrap().cache_key, pin("dep-b"));
