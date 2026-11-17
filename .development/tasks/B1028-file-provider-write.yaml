@@ -5,7 +5,7 @@ description: >-
   afile_delete/file_delete functions. Consume typed file bytes and GenericLiteLLMParams;
   Python file handles and event-loop facades stay B159-B161. B2461/B2462 own generic upload/delete
   execution, B516 OpenAI-compatible methods, B694 Azure methods, B500/B2200 credentials,
-  B174 provider resolution, B176 trusted controls, B012 decorator logging, B010 native operation types
+  B174 provider resolution, B176 trusted controls, B247 decorator logging, B010 native operation types
   and B2464 file config/timeout selection.
   Sync compatibility is a mode of the native async service, not another transport implementation.
 
@@ -117,7 +117,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B1029 owns retrieve/list SDK functions; B1030 owns content functions and content logging/stream selection helpers in files/main.py.
-- B159-B161 own Python file and executor facades, B012 decorator callbacks, B2464 registry/timeout selection, and concrete providers their request/result transforms. B2461 and B2462 implement the generic HTTP callees.
+- B159-B161 own Python file and executor facades, B5368 decorator callbacks, B2464 registry/timeout selection, and concrete providers their request/result transforms. B2461 and B2462 implement the generic HTTP callees.
 pitfalls:
 - Only upload validates passthrough; deletion has no such guard.
 - Explicit-null litellm_call_id is retained by delete's fallback logger.

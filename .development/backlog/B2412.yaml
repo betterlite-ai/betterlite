@@ -2,7 +2,7 @@ id: B2412
 milestone: M5 API families
 title: Recover Responses output from recorded SSE
 status: todo
-depends_on: [B005, B012, B1087, B171]
+depends_on: [B005, B1087, B171, B247]
 file: tasks/B2412-responses-sse-recovery.yaml
 covers:
   - "litellm/responses/sse_output_recovery.py"
