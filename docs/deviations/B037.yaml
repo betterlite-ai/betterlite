@@ -1,0 +1,18 @@
+task: B037
+deviations:
+  - what: A Voyage multimodal embedding item reaches the wire as the caller wrote it, while LiteLLM wraps each string in a text content part.
+    why: The request transform is the provider-directory Voyage config owned by B1417, outside this task's scope, and this binding forwards the input unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_multimodal.py#L118-L141
+  - what: An embedding parameter the chosen family does not support is dropped from the request, where LiteLLM raises UnsupportedParamsError with status 500 unless drop_params is set.
+    why: LiteLLM validates the parameters in get_optional_params_embeddings, which belongs to the embedding lifecycle owned outside this task; this binding maps the supported parameters only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3775-L3789
+  - what: A family preparation failure that is not a missing key, an encode failure or a header failure becomes UnsupportedOperation for the embedding_rerank prepare stage, so its message names the stage instead of the provider's reason.
+    why: B186's OperationError has no variant carrying a family's own preparation error, and adding one is outside this task's files.
+    link: ""
+  - what: A Voyage rerank result whose document is neither a string nor an object whose only key is a text string is refused as a decode failure, where LiteLLM copies any other document object into the result unchanged.
+    why: The shared RerankResponseDocument holds a text string and no other keys, so any other document shape has nowhere to go and would lose data if it were truncated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/rerank/transformation.py#L118-L121
+  - what: A rerank call for a provider with no rerank config of its own selects no family here, where LiteLLM's factory falls back to the Cohere rerank client for every provider it does not match.
+    why: That fallback would send the other provider's request and API key to api.cohere.ai, so this returns no config and leaves the refusal to B1014's dispatch; the openai case in crates/betterlite-core/src/embedding_rerank_providers/tests.rs holds it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8908
+kept_bugs: []

@@ -1,0 +1,80 @@
+kind: helper
+name: bedrock-converse-tools-beta-context-management-filter
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost: {}
+    tools: []
+    headers: null
+    params:
+      other: keep
+      context_management:
+        edits:
+          - {type: compact_20260112, keep: all}
+          - {type: clear_tool_uses_20250919, trigger: {type: input_tokens, value: 100}}
+          - text-edit
+          - {type: compact_20260112}
+        strategy: {x: 1}
+      temperature: 0.5
+calls:
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params: {context_management: "on"}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params: {context_management: null}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params: {context_management: {other: 1}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params:
+        context_management: {edits: {type: compact_20260112}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params:
+        context_management:
+          edits:
+            - {type: clear_tool_uses_20250919}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: {anthropic-beta: compact-2026-01-12}
+      params:
+        context_management:
+          edits:
+            - {type: compact_20260112}
+  - bedrock_converse_tools_beta:
+      model: meta.llama3-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params:
+        context_management:
+          edits:
+            - {type: compact_20260112}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools: []
+      headers: null
+      params:
+        context_management: {edits: []}
+env: {}
+compare: {ignore: []}
