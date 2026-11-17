@@ -8,10 +8,9 @@ use crate::jwt_claims::handler::JwtHandler;
 use crate::jwt_claims::teams::TeamClaims as _;
 use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::{RoleMappings, TeamMappings};
-use crate::user_roles::UserRole;
 
-use super::claims::{SsoClaimsError, claim_groups, claim_role, claim_text, present, type_error};
-use super::roles::determine_role_from_groups;
+use super::claims::{SsoClaimsError, claim_text, present, type_error};
+use super::roles::resolve_role;
 
 // the configured handlers and mappings a generic provider's response is projected with
 pub struct ConversionConfig<'config> {
@@ -51,7 +50,17 @@ pub fn convert_generic_response(
         picture: None,
         provider: claim_text(response, &attributes.provider)?,
         team_ids,
-        user_role: convert_role(response, config.role_mappings, &attributes.role)?,
+        // only a generic or okta mapping decides this provider's role; any other one leaves the claim to speak
+        user_role: resolve_role(
+            response,
+            config.role_mappings.filter(|mappings| {
+                matches!(
+                    mappings.provider.to_lowercase().as_str(),
+                    "generic" | "okta"
+                )
+            }),
+            &attributes.role,
+        )?,
         extra_fields: extra_fields(response, &attributes.extra_attributes)?,
     })
 }
@@ -78,31 +87,6 @@ fn mapped_team_ids(response: &TypedValue, field: &str) -> Result<Vec<String>, Cl
         return Ok(Vec::new());
     }
     serde_json::from_value::<Vec<String>>(found.json).map_err(|source| type_error(field, source))
-}
-
-// the convertor's role: a generic or okta mapping decides, its default role standing in when no group matches
-fn convert_role(
-    response: &TypedValue,
-    role_mappings: Option<&RoleMappings>,
-    role_attribute: &str,
-) -> Result<Option<UserRole>, ClaimError> {
-    if let Some(mappings) = role_mappings
-        && matches!(
-            mappings.provider.to_lowercase().as_str(),
-            "generic" | "okta"
-        )
-    {
-        let groups = claim_groups(response, &mappings.group_claim)?;
-        let mapped = if groups.is_empty() {
-            mappings.default_role
-        } else {
-            determine_role_from_groups(&groups, mappings)
-        };
-        if mapped.is_some() {
-            return Ok(mapped);
-        }
-    }
-    claim_role(response, role_attribute)
 }
 
 // the nested claims GENERIC_USER_EXTRA_ATTRIBUTES names, with a null for each path the response does not follow

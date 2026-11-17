@@ -1,7 +1,8 @@
 use betterlite_paths::error::PathError;
 
 use crate::jwt_claims::claims::ClaimError;
-use crate::sso_claims::claims::{claim_groups, claim_role, claim_text};
+use crate::sso_claims::claims::{claim_groups, claim_text};
+use crate::sso_claims::roles::resolve_role;
 use crate::user_roles::UserRole;
 
 use super::support::{document, strings};
@@ -11,7 +12,7 @@ fn a_missing_path_is_absent() {
     let response = document(r#"{"email":"user@example.com"}"#);
     assert_eq!(claim_text(&response, "nickname").unwrap(), None);
     assert_eq!(claim_groups(&response, "nickname").unwrap(), Vec::new());
-    assert_eq!(claim_role(&response, "nickname").unwrap(), None);
+    assert_eq!(resolve_role(&response, None, "nickname").unwrap(), None);
 }
 
 #[test]
@@ -19,7 +20,7 @@ fn a_null_value_is_absent() {
     let response = document(r#"{"email":null,"groups":null,"role":null}"#);
     assert_eq!(claim_text(&response, "email").unwrap(), None);
     assert_eq!(claim_groups(&response, "groups").unwrap(), Vec::new());
-    assert_eq!(claim_role(&response, "role").unwrap(), None);
+    assert_eq!(resolve_role(&response, None, "role").unwrap(), None);
 }
 
 #[test]
@@ -78,7 +79,7 @@ fn a_non_text_group_scalar_has_no_groups() {
 fn a_role_list_resolves_to_its_highest_privilege_member() {
     let response = document(r#"{"role":["internal_user","proxy_admin","nonsense"]}"#);
     assert_eq!(
-        claim_role(&response, "role").unwrap(),
+        resolve_role(&response, None, "role").unwrap(),
         Some(UserRole::ProxyAdmin)
     );
 }
@@ -87,7 +88,7 @@ fn a_role_list_resolves_to_its_highest_privilege_member() {
 fn a_role_string_ignores_case() {
     let response = document(r#"{"role":"Proxy_Admin_Viewer"}"#);
     assert_eq!(
-        claim_role(&response, "role").unwrap(),
+        resolve_role(&response, None, "role").unwrap(),
         Some(UserRole::ProxyAdminViewer)
     );
 }
@@ -95,7 +96,7 @@ fn a_role_string_ignores_case() {
 #[test]
 fn an_unknown_role_name_is_absent() {
     let response = document(r#"{"role":"superuser"}"#);
-    assert_eq!(claim_role(&response, "role").unwrap(), None);
+    assert_eq!(resolve_role(&response, None, "role").unwrap(), None);
 }
 
 #[test]
@@ -113,7 +114,7 @@ fn a_path_over_the_length_limit_is_a_path_error() {
 fn a_path_over_the_depth_limit_is_a_path_error() {
     let response = document(r#"{"email":"user@example.com"}"#);
     let path = vec!["a"; 257].join(".");
-    let error = claim_role(&response, &path).unwrap_err();
+    let error = resolve_role(&response, None, &path).unwrap_err();
     assert!(
         matches!(&error, ClaimError::Path { claim, source } if claim == &path && matches!(source, PathError::TooDeep { .. })),
         "{error:?}"

@@ -4,8 +4,6 @@ use thiserror::Error;
 
 use crate::jwt_claims::TypedValue;
 use crate::jwt_claims::claims::ClaimError;
-use crate::sso_types::roles::role_from_claim;
-use crate::user_roles::UserRole;
 
 const CLAIM_PATH_LIMITS: PathLimits = PathLimits {
     max_path_bytes: 8192,
@@ -68,13 +66,4 @@ pub(super) fn claim_groups(response: &TypedValue, path: &str) -> Result<Vec<Stri
         .filter(|group| !group.is_empty())
         .map(str::to_owned)
         .collect())
-}
-
-// the direct role claim: a string names one role and a list resolves to its highest privilege member
-pub(super) fn claim_role(
-    response: &TypedValue,
-    path: &str,
-) -> Result<Option<UserRole>, ClaimError> {
-    let found = present(response, path)?;
-    Ok(found.as_ref().and_then(role_from_claim))
 }
