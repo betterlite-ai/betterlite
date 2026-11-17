@@ -6579,9 +6579,9 @@ dependencies = [
 
 [[package]]
 name = "google-cloud-aiplatform-v1"
-version = "1.6.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8284c51a8f1f8cd0905303d3ccfab8484f0d42a79b5c1da4a3a3be08285176a1"
+checksum = "2789337a24588a50d107ff06412c274794316f3232deae41b1eec45e8018cd56"
 dependencies = [
  "async-trait",
  "bytes",
@@ -6595,8 +6595,9 @@ dependencies = [
  "google-cloud-rpc",
  "google-cloud-type",
  "google-cloud-wkt",
- "lazy_static",
- "reqwest",
+ "http 1.5.0",
+ "prost",
+ "prost-types",
  "serde",
  "serde_json",
  "serde_with",
