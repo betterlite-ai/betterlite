@@ -1,35 +1,31 @@
 use crate::jwt_claims::TypedValue;
 use crate::jwt_claims::claims::ClaimError;
 use crate::sso_types::records::RoleMappings;
-use crate::sso_types::roles::role_from_claim;
+use crate::sso_types::roles::{highest_privilege_role, role_from_claim};
 use crate::user_roles::UserRole;
 
 use super::claims::{claim_groups, present};
 
-// the ranking LiteLLM walks over group mappings; a role outside it never answers a group
-const ROLE_HIERARCHY: [UserRole; 4] = [
-    UserRole::ProxyAdmin,
-    UserRole::ProxyAdminViewer,
-    UserRole::InternalUser,
-    UserRole::InternalUserViewer,
-];
-
 // determine_role_from_groups: the highest ranked mapped role one of the user's groups names, else the default role
 #[must_use]
 pub fn determine_role_from_groups(groups: &[String], mappings: &RoleMappings) -> Option<UserRole> {
-    for role in ROLE_HIERARCHY {
-        let Some((_, mapped_groups)) = mappings
-            .roles
-            .iter()
-            .find(|(mapped, _groups)| *mapped == role)
-        else {
-            continue;
-        };
-        if mapped_groups.iter().any(|group| groups.contains(group)) {
-            return Some(role);
-        }
-    }
-    mappings.default_role
+    let matched = mappings
+        .roles
+        .iter()
+        .filter(|(_, mapped_groups)| mapped_groups.iter().any(|group| groups.contains(group)))
+        .map(|(role, _groups)| *role);
+    highest_privilege_role(matched)
+        .filter(|role| {
+            // the ranked roles; the order among them is sso_types::roles::highest_privilege_role's
+            matches!(
+                role,
+                UserRole::ProxyAdmin
+                    | UserRole::ProxyAdminViewer
+                    | UserRole::InternalUser
+                    | UserRole::InternalUserViewer
+            )
+        })
+        .or(mappings.default_role)
 }
 
 // the role a claim set names: an applicable group mapping decides first, then the direct role claim

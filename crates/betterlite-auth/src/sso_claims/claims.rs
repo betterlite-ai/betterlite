@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::jwt_claims::TypedValue;
 use crate::jwt_claims::claims::ClaimError;
 
+// jwt_claims' CLAIM_PATH_LIMITS by hand: widening it needs B760's file, outside B1609's scope
 const CLAIM_PATH_LIMITS: PathLimits = PathLimits {
     max_path_bytes: 8192,
     max_depth: 256,
@@ -18,7 +19,7 @@ pub enum SsoClaimsError {
     Claim(#[from] ClaimError),
 }
 
-// get_nested_value without a default: the value at a dot path, where a missing path and a null both read as absent
+// JwtClaims::nested carries a handler's settings; this reads the same dot path over a plain response
 pub(super) fn present(response: &TypedValue, path: &str) -> Result<Option<TypedValue>, ClaimError> {
     find(&CLAIM_PATH_LIMITS, response, path)
         .map_err(|source| ClaimError::Path {
@@ -36,7 +37,7 @@ pub(super) fn type_error(path: &str, source: serde_json::Error) -> ClaimError {
     }
 }
 
-// the text at a dot path; null is absent, and another type is an error that names the path
+// nested_text over a plain response: null is absent, another type is an error naming the path
 pub(super) fn claim_text(response: &TypedValue, path: &str) -> Result<Option<String>, ClaimError> {
     let Some(found) = present(response, path)? else {
         return Ok(None);
