@@ -9,4 +9,7 @@ deviations:
   - what: A cost score is computed exactly in Decimal and converted to f64 once, so a price without an exact binary representation can land one ulp away from LiteLLM's float arithmetic.
     why: The task keeps prices in Decimal and lets only the dimensionless score enter the statistical module. The difference is confined to the diagnostic score and can only reorder two models whose float scores are within one ulp; selection, tie order and every money value stay exact.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L84-L94
+  - what: The weighted quality and economy terms are combined with a fused multiply-add, so a score whose two weights are both non-zero can differ from LiteLLM's separately rounded products and sum in the last bit.
+    why: The repository denies clippy::suboptimal_flops and combines float products elsewhere with mul_add, so the fused form is the house rule. The difference is confined to the diagnostic score and can only reorder two models whose scores are within one ulp; selection, tie order and every money value stay exact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L97-L109
 kept_bugs: []
