@@ -55,7 +55,7 @@ fn defaults_the_optional_counts() {
 )]
 fn rejects_a_negative_count(#[case] text: &str, #[case] field: &str) {
     let error = CostEstimateRequest::from_value(&contract(text)).expect_err("a count below zero");
-    assert_validation(error, &format!("{field} must be at least 0"));
+    assert_validation(&error, &format!("{field} must be at least 0"));
 }
 
 #[rstest]
@@ -65,7 +65,7 @@ fn rejects_a_negative_count(#[case] text: &str, #[case] field: &str) {
 )]
 fn rejects_cache_counts_above_the_input(#[case] text: &str) {
     let error = CostEstimateRequest::from_value(&contract(text)).expect_err("more cache tokens");
-    assert_validation(error, CACHE_SUBSET);
+    assert_validation(&error, CACHE_SUBSET);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn rejects_reasoning_tokens_above_the_output() {
         r#"{"model": "m", "input_tokens": 10, "output_tokens": 5, "reasoning_tokens": 6}"#,
     ))
     .expect_err("more reasoning tokens");
-    assert_validation(error, REASONING_SUBSET);
+    assert_validation(&error, REASONING_SUBSET);
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn reports_the_cache_message_when_both_subsets_break() {
         }"#,
     ))
     .expect_err("both subsets break");
-    assert_validation(error, CACHE_SUBSET);
+    assert_validation(&error, CACHE_SUBSET);
 }
 
 #[rstest]

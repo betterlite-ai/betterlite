@@ -53,7 +53,7 @@ fn new_user_accepts_the_four_roles(#[case] text: &str, #[case] role: UserRole) {
 fn new_user_rejects_the_other_roles(#[case] role: &str) {
     let body = format!(r#"{{"user_email": "a@example.com", "user_role": "{role}"}}"#);
     let error = NewUserRequest::from_value(&contract(&body)).expect_err("a rejected role");
-    assert_validation(error, &format!("user_role {role} is not allowed"));
+    assert_validation(&error, &format!("user_role {role} is not allowed"));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn new_user_rejects_an_unknown_role() {
 fn new_user_rejects_a_non_null_password(#[case] text: &str) {
     let error = NewUserRequest::from_value(&contract(text)).expect_err("a password");
     assert_validation(
-        error,
+        &error,
         "password cannot be set via /user/new. Users set their own password through an invitation link (POST /invitation/new).",
     );
 }
@@ -158,7 +158,7 @@ fn team_record_defaults_to_the_user_role() {
 #[case::id_null(r#"{"user_id": null}"#)]
 fn update_user_rejects_a_body_without_a_selector(#[case] text: &str) {
     let error = UpdateUserRequest::from_value(&contract(text)).expect_err("no selector");
-    assert_validation(error, "Either user id or user email must be provided");
+    assert_validation(&error, "Either user id or user email must be provided");
 }
 
 #[rstest]
@@ -175,14 +175,14 @@ fn update_user_rejects_a_role_outside_the_four() {
     let error =
         UpdateUserRequest::from_value(&contract(r#"{"user_id": "u", "user_role": "org_admin"}"#))
             .expect_err("a rejected role");
-    assert_validation(error, "user_role org_admin is not allowed");
+    assert_validation(&error, "user_role org_admin is not allowed");
 }
 
 #[test]
 fn update_fields_reject_a_role_outside_the_four() {
     let error = UpdateUserFields::from_value(&contract(r#"{"user_role": "team"}"#))
         .expect_err("a rejected role");
-    assert_validation(error, "user_role team is not allowed");
+    assert_validation(&error, "user_role team is not allowed");
 }
 
 #[test]

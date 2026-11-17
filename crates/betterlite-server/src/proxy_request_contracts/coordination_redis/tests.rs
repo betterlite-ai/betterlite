@@ -122,8 +122,8 @@ fn rejects_a_value_of_the_wrong_type(#[case] text: &str) {
 
 #[test]
 fn serializes_a_sentinel_value_as_text_or_integer() {
-    let text = serde_json::to_string(&SentinelValue::Integer(1)).expect("the dump");
-    assert_eq!(text, "1");
+    let number = serde_json::to_string(&SentinelValue::Integer(1)).expect("the dump");
+    assert_eq!(number, "1");
     let text = serde_json::to_string(&SentinelValue::Text("h".to_owned())).expect("the dump");
     assert_eq!(text, r#""h""#);
 }

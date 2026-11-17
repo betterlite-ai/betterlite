@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -28,8 +29,8 @@ pub(crate) fn validation_text(error: &ContractError) -> String {
     }
 }
 
-pub(crate) fn assert_validation(error: ContractError, expected: &str) {
-    let message = validation_text(&error);
+pub(crate) fn assert_validation(error: &ContractError, expected: &str) {
+    let message = validation_text(error);
     assert_eq!(message, expected);
 }
 
@@ -83,7 +84,7 @@ fn check_every_record(value: &JsonValue) {
 fn replays_the_proxy_request_contracts_corpus(
     #[files("fuzz/corpus/proxy_request_contracts/*")] path: PathBuf,
 ) {
-    let bytes = std::fs::read(&path).expect("a corpus seed");
+    let bytes = fs::read(&path).expect("a corpus seed");
     if let Ok(value) = serde_json::from_slice::<JsonValue>(&bytes) {
         check_every_record(&value);
     }

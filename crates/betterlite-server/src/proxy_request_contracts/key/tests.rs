@@ -17,7 +17,7 @@ use crate::proxy_request_contracts::tests::{
 fn rejects_a_body_without_a_key_or_alias(#[case] text: &str) {
     let error = KeyRequest::from_value(&contract(text)).expect_err("the request names nothing");
     assert_validation(
-        error,
+        &error,
         "At least one of 'keys' or 'key_aliases' must be provided.",
     );
 }
@@ -69,7 +69,7 @@ fn ignores_unknown_keys() {
 fn rejects_a_boolean_reset_to(#[case] value: &str) {
     let text = format!(r#"{{"reset_to": {value}}}"#);
     let error = ResetSpendRequest::from_value(&contract(&text)).expect_err("a boolean target");
-    assert_validation(error, "reset_to must be a number, not a boolean");
+    assert_validation(&error, "reset_to must be a number, not a boolean");
 }
 
 #[rstest]

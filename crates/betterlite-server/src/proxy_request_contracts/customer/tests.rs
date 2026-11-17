@@ -15,7 +15,7 @@ use crate::proxy_request_contracts::tests::{assert_decode, assert_validation, co
 #[case::negative(r#"{"user_id": "u", "max_budget": -1, "budget_id": "b"}"#)]
 fn rejects_a_set_max_budget_next_to_a_budget_id(#[case] text: &str) {
     let error = NewCustomerRequest::from_value(&contract(text)).expect_err("two budgets");
-    assert_validation(error, "Set either 'max_budget' or 'budget_id', not both.");
+    assert_validation(&error, "Set either 'max_budget' or 'budget_id', not both.");
 }
 
 #[rstest]

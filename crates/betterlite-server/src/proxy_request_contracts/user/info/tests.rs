@@ -59,13 +59,18 @@ fn user_info_v2_defaults_to_zero_and_empty() {
     assert_eq!(response.updated_at, None);
     assert_eq!(response.sso_user_id, None);
     assert!(response.teams.is_empty());
-    assert_eq!(response.object_permission, None);
-    assert_eq!(response.model_max_budget, None);
-    assert_eq!(response.model_max_budget_usage, None);
 }
 
 #[test]
-fn user_info_v2_reads_every_field() {
+fn user_info_v2_defaults_the_permission_and_budget_maps() {
+    let user = UserInfoV2Response::from_value(&contract(r#"{"user_id": "u"}"#)).expect("a user");
+    assert_eq!(user.object_permission, None);
+    assert_eq!(user.model_max_budget, None);
+    assert_eq!(user.model_max_budget_usage, None);
+}
+
+#[test]
+fn user_info_v2_reads_the_scalar_fields() {
     let response = UserInfoV2Response::from_value(&contract(
         r#"{
             "user_id": "u",
@@ -77,14 +82,8 @@ fn user_info_v2_reads_every_field() {
             "models": ["gpt-4o"],
             "budget_duration": "1d",
             "budget_reset_at": "2024-06-01T00:00:00Z",
-            "metadata": {"a": 1},
-            "created_at": "2024-01-01T00:00:00Z",
-            "updated_at": "2024-02-01T00:00:00Z",
             "sso_user_id": "s",
-            "teams": ["t"],
-            "object_permission": {"object_permission_id": "op", "models": ["gpt-4o"]},
-            "model_max_budget": {"gpt-4o": {"max_budget": "1"}},
-            "model_max_budget_usage": {"gpt-4o": {"spend": 0.5}}
+            "teams": ["t"]
         }"#,
     ))
     .expect("a full user");
@@ -103,11 +102,27 @@ fn user_info_v2_reads_every_field() {
             .parse::<DateTime<Utc>>()
             .expect("a fixed time")
     );
+    assert_eq!(response.sso_user_id.as_deref(), Some("s"));
+    assert_eq!(response.teams, vec!["t".to_owned()]);
+}
+
+#[test]
+fn user_info_v2_reads_the_map_fields() {
+    let response = UserInfoV2Response::from_value(&contract(
+        r#"{
+            "user_id": "u",
+            "metadata": {"a": 1},
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-02-01T00:00:00Z",
+            "object_permission": {"object_permission_id": "op", "models": ["gpt-4o"]},
+            "model_max_budget": {"gpt-4o": {"max_budget": "1"}},
+            "model_max_budget_usage": {"gpt-4o": {"spend": 0.5}}
+        }"#,
+    ))
+    .expect("a full user");
     assert!(response.metadata.is_some());
     assert!(response.created_at.is_some());
     assert!(response.updated_at.is_some());
-    assert_eq!(response.sso_user_id.as_deref(), Some("s"));
-    assert_eq!(response.teams, vec!["t".to_owned()]);
     let permission = response.object_permission.expect("an object permission");
     assert_eq!(permission.object_permission_id, "op");
     assert!(response.model_max_budget.is_some());
