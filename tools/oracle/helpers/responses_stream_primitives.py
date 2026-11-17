@@ -1,0 +1,305 @@
+from collections.abc import Callable
+from datetime import datetime
+from types import SimpleNamespace
+from typing import Final, Literal, TypeAlias, TypedDict, TypeVar
+
+import httpx
+import litellm
+from litellm.exceptions import Timeout
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.responses import streaming_iterator as primitives
+from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+
+litellm.suppress_debug_info = True
+
+MOMENT: Final = "2026-01-01T00:00:00+00:00"
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+# the base constructor stores logging_obj.start_time through getattr, so the declared type is lost
+START_TIME: Final[TypeAdapter[datetime]] = TypeAdapter(datetime)
+# the private loaders, guards and classifiers the stream iterator wraps
+LOAD_VALUE: Final = primitives._load_json_value  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L153
+IS_OBJECT: Final = primitives._is_json_object  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L80
+IS_ARRAY: Final = primitives._is_json_array  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L84
+OPTIONAL_STR: Final = primitives._optional_str  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L88
+ARRAY_OR_EMPTY: Final = primitives._json_array_or_empty  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L93
+IS_STR_MAPPING: Final = primitives._is_str_mapping  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L98
+ERROR_FIELDS: Final = primitives._error_event_fields  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L221
+STATUS_AND_MESSAGE: Final = primitives.stream_error_status_and_message
+MAP_ERROR: Final = primitives._map_stream_error_to_exception  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L258
+FALLBACK_ELIGIBLE: Final = primitives._mid_stream_fallback_eligible  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L281
+
+
+class ProbeSpec(TypedDict):
+    model: str
+    provider: str | None
+    litellm_metadata: dict[str, JsonValue] | None
+    request_data: dict[str, JsonValue] | None
+    call_type: str | None
+    start_time: str
+    created: float
+    litellm_params: dict[str, JsonValue]
+    headers: dict[str, str]
+
+
+class BaseCall(TypedDict):
+    operation: Literal["base_stream_state"]
+    rows: list[ProbeSpec]
+
+
+class ShapesCall(TypedDict):
+    operation: Literal["json_shape_guards"]
+    payloads: list[str]
+
+
+class ErrorRow(TypedDict):
+    kind: Literal["mapping", "attributes"]
+    fields: dict[str, JsonValue]
+
+
+class ErrorsCall(TypedDict):
+    operation: Literal["stream_error_fields"]
+    rows: list[ErrorRow]
+
+
+class MappedRow(TypedDict):
+    model: str
+    provider: str
+    fields: dict[str, JsonValue]
+
+
+class MappedCall(TypedDict):
+    operation: Literal["mapped_stream_failure"]
+    rows: list[MappedRow]
+
+
+class DurationRow(TypedDict):
+    environment: str | None
+    created: float
+    now: float
+    model: str
+    provider: str | None
+
+
+class DurationCall(TypedDict):
+    operation: Literal["duration_boundary"]
+    rows: list[DurationRow]
+
+
+Input: TypeAlias = BaseCall | ShapesCall | ErrorsCall | MappedCall | DurationCall
+Row = TypeVar("Row")
+
+
+class ErrorAttributes:
+    def __init__(self, fields: dict[str, JsonValue]) -> None:
+        self.message = fields.get("message")
+        self.type = fields.get("type")
+        self.code = fields.get("code")
+
+
+class MappedRecord(BaseModel):
+    status_code: int
+    error_type: str | None = Field(alias="type")
+    param: str | None = None
+    code: str | None = None
+
+
+class TimeoutRecord(BaseModel):
+    status_code: int
+    message: str
+    model: str
+    llm_provider: str
+
+
+class Clock:
+    def __init__(self, moments: list[float]) -> None:
+        self.moments = list(moments)
+
+    def __call__(self) -> float:
+        return self.moments.pop(0)
+
+
+class StreamProbe(BaseResponsesAPIStreamingIterator):
+    def duration_check(self) -> None:
+        self._check_max_streaming_duration()
+
+    def state(self) -> dict[str, JsonValue]:
+        answer: dict[str, JsonValue] = {
+            "model": self.model,
+            "custom_llm_provider": self.custom_llm_provider,
+            "litellm_metadata": JSON.validate_python(self.litellm_metadata),
+            "request_data": JSON.validate_python(self.request_data),
+            "call_type": self.call_type,
+            "start_time": START_TIME.validate_python(self.start_time).isoformat(),
+            "created_timestamp": self._stream_created_time,
+            "finished": self.finished,
+            "failure_handled": self._failure_handled,
+            "yielded_first_chunk": self._yielded_first_chunk,
+            "output_started": self._output_started,
+            "completed_response_cache_hit": self._completed_response_cache_hit,
+            "completed_response_cached": self._completed_response_cached,
+            "completed_response_logged": self._completed_response_logged,
+            "persist_before_logging": self._persist_completed_response_before_logging,
+            "generated_content": self._generated_content,
+            "generated_tool_arguments": self._generated_tool_arguments,
+            "pending_tasks": len(self._pending_logging_tasks),
+            "hidden_params": JSON.validate_python(self._hidden_params),
+            "raw_response_headers": JSON.validate_python(dict(self._raw_response_headers)),
+        }
+        return answer
+
+
+def rows_answer(rows: list[Row], build: Callable[[Row], JsonValue]) -> JsonValue:
+    answers: list[JsonValue] = [build(row) for row in rows]
+    return {"rows": answers}
+
+
+def stream_probe(row: ProbeSpec, clock: Clock, limit: float | None) -> StreamProbe:
+    logging_object = Logging(
+        model=row["model"],
+        messages=None,
+        stream=True,
+        call_type="responses",
+        start_time=datetime.fromisoformat(row["start_time"]),
+        litellm_call_id="call-1",
+        function_id="fn-1",
+    )
+    details: dict[str, JsonValue] = logging_object.model_call_details
+    details["litellm_params"] = row["litellm_params"]
+    object.__setattr__(primitives, "time", SimpleNamespace(time=clock))
+    object.__setattr__(primitives, "LITELLM_MAX_STREAMING_DURATION_SECONDS", limit)
+    return StreamProbe(
+        response=httpx.Response(
+            status_code=200,
+            headers=row["headers"],
+            request=httpx.Request("POST", "https://example.test/v1/responses"),
+        ),
+        model=row["model"],
+        responses_api_provider_config=None,
+        logging_obj=logging_object,
+        litellm_metadata=row["litellm_metadata"],
+        custom_llm_provider=row["provider"],
+        request_data=row["request_data"],
+        call_type=row["call_type"],
+    )
+
+
+def base_answer(row: ProbeSpec) -> JsonValue:
+    probe = stream_probe(row, Clock([row["created"]]), None)
+    return probe.state()
+
+
+def shape_answer(payload: str) -> JsonValue:
+    try:
+        loaded: JsonValue = JSON.validate_python(LOAD_VALUE(payload))
+    except ValueError:
+        return {"payload": payload, "decoded": False}
+    answer: dict[str, JsonValue] = {
+        "payload": payload,
+        "decoded": True,
+        "value": loaded,
+        "is_object": IS_OBJECT(loaded),
+        "is_array": IS_ARRAY(loaded),
+        "optional_str": OPTIONAL_STR(loaded),
+        "array_or_empty": JSON.validate_python(list(ARRAY_OR_EMPTY(loaded))),
+        "str_mapping": IS_STR_MAPPING(loaded),
+    }
+    return answer
+
+
+def error_target(row: ErrorRow) -> dict[str, JsonValue] | ErrorAttributes:
+    if row["kind"] == "mapping":
+        return row["fields"]
+    return ErrorAttributes(row["fields"])
+
+
+def errors_answer(row: ErrorRow) -> JsonValue:
+    error_object = error_target(row)
+    status, message = STATUS_AND_MESSAGE(error_object)
+    _, error_type, error_code = ERROR_FIELDS(error_object)
+    answer: dict[str, JsonValue] = {
+        "kind": row["kind"],
+        "message": message,
+        "type": error_type,
+        "code": error_code,
+        "status": status,
+    }
+    return answer
+
+
+def mapped_answer(row: MappedRow) -> JsonValue:
+    mapped = MAP_ERROR(row["fields"], row["model"], row["provider"])
+    record = MappedRecord.model_validate(mapped, from_attributes=True)
+    answer: dict[str, JsonValue] = {
+        "class": type(mapped).__name__,
+        "status": record.status_code,
+        "type": record.error_type,
+        "param": record.param,
+        "code": record.code,
+        "eligible": FALLBACK_ELIGIBLE(mapped),
+    }
+    return answer
+
+
+def duration_spec(row: DurationRow) -> ProbeSpec:
+    spec: ProbeSpec = {
+        "model": row["model"],
+        "provider": row["provider"],
+        "litellm_metadata": None,
+        "request_data": None,
+        "call_type": None,
+        "start_time": MOMENT,
+        "created": row["created"],
+        "litellm_params": {},
+        "headers": {},
+    }
+    return spec
+
+
+def limit_text(limit: float | None) -> str | None:
+    return None if limit is None else repr(limit)
+
+
+def duration_answer(row: DurationRow) -> JsonValue:
+    environment = row["environment"]
+    try:
+        limit = None if environment is None else float(environment)
+    except ValueError:
+        return {"loaded": False}
+    probe = stream_probe(duration_spec(row), Clock([row["created"], row["now"]]), limit)
+    try:
+        probe.duration_check()
+    except Timeout as error:
+        record = TimeoutRecord.model_validate(error, from_attributes=True)
+        answer: dict[str, JsonValue] = {
+            "loaded": True,
+            "limit": limit_text(limit),
+            "raised": True,
+            "status": record.status_code,
+            "message": record.message,
+            "model": record.model,
+            "llm_provider": record.llm_provider,
+        }
+        return answer
+    provider = "" if probe.custom_llm_provider is None else probe.custom_llm_provider
+    return {
+        "loaded": True,
+        "limit": limit_text(limit),
+        "raised": False,
+        "status": None,
+        "message": None,
+        "model": probe.model,
+        "llm_provider": provider,
+    }
+
+
+def run(input_value: Input) -> JsonValue:
+    if input_value["operation"] == "base_stream_state":
+        return rows_answer(input_value["rows"], base_answer)
+    if input_value["operation"] == "json_shape_guards":
+        return rows_answer(input_value["payloads"], shape_answer)
+    if input_value["operation"] == "stream_error_fields":
+        return rows_answer(input_value["rows"], errors_answer)
+    if input_value["operation"] == "mapped_stream_failure":
+        return rows_answer(input_value["rows"], mapped_answer)
+    return rows_answer(input_value["rows"], duration_answer)
