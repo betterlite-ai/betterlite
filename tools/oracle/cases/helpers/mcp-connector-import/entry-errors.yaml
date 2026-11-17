@@ -1,0 +1,36 @@
+kind: helper
+name: mcp-connector-import-entry-errors
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        "!!!":
+          url: https://x.example/mcp
+    stdio: {enabled: false, allowed_commands: [deno, docker, node, npx, python, python3, uvx]}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          "!!!":
+            url: https://x.example/mcp
+          both:
+            url: https://both.example/mcp
+            command: npx
+          neither: {}
+          grpc:
+            type: grpc
+            url: https://grpc.example/mcp
+          stdio-off:
+            command: npx
+            args: [-y]
+          uppercase-type:
+            type: GRPC
+            url: https://grpc.example/mcp
+          empty-type:
+            type: ""
+            url: https://empty.example/mcp
+      stdio: {enabled: false, allowed_commands: [deno, docker, node, npx, python, python3, uvx]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+task: B3735
+deviations:
+  - what: A terminal Responses event's response body is scanned as the JSON object it carries; betterlite does not validate it against LiteLLM's ResponsesAPIResponse model first.
+    why: betterlite's buffered chunks are JSON values, not pydantic objects an SDK has already parsed, so no construction step rejects a partial body. For a body of the declared type the same output texts and tool calls are read; a body the model would reject is scanned as it stands instead of reading as an unassembled stream, which keeps the scan running rather than forwarding it unscanned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L951-L972
+kept_bugs: []

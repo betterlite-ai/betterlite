@@ -1,0 +1,9 @@
+task: B548
+deviations:
+  - what: A logged non-chat relay response is the provider's decoded JSON body object, where LiteLLM returns the validated EmbeddingResponse, ResponsesAPIResponse or ImageResponse model.
+    why: betterlite log records carry standard JSON (docs/compatibility.md); B3570's RelayShape keeps the body object and B548 does not rebuild the pydantic model, so a consumer reads the same fields as JSON keys rather than model attributes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L46-L52
+  - what: AzurePassthroughConfig has no get_base_model or get_models override. A passthrough deployment's model is used as its own base model, and its provider model list comes from the inherited model-info owner, so this config rewrites no base model and lists no models.
+    why: LiteLLM's get_base_model returns its argument and get_models calls super(), whose body in BaseLLMModelInfo returns an empty list, so both overrides add no behavior. An identity function in Rust would only name its input, so betterlite states the identity where the model is used and leaves model info and listing to B010's owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L170-L174
+kept_bugs: []

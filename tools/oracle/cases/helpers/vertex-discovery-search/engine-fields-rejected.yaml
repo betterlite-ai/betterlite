@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-discovery-search-engine-fields-rejected
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: policy
+        api_base: https://host/v1
+        litellm_params: {}
+        extra_body:
+          dataStoreSpecs: []
+          numResultsPerDataStore: 2
+env: {}
+compare: {ignore: []}

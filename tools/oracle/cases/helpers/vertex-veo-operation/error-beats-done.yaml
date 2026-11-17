@@ -1,0 +1,31 @@
+kind: helper
+name: error-beats-done
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: status_response
+        provider: vertex_ai
+        now: 1700000000
+        time_zone: UTC
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+          done: true
+          error: {code: 13, message: boom}
+      - function: status_response
+        provider: vertex_ai
+        now: 1700000000
+        time_zone: UTC
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+          done: false
+      - function: status_response
+        provider: vertex_ai
+        now: 1700000000
+        time_zone: UTC
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+          done: true
+          metadata: {createTime: '2024-12-04T21:53:12.120184Z'}
+env: {}
+compare: {ignore: []}

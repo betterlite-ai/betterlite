@@ -1,0 +1,16 @@
+kind: helper
+name: usage-ai-chat-summary-usage-empty
+call:
+  b3103:
+    function: summary_usage
+    page:
+      results: []
+      metadata:
+        total_spend: 0
+        total_api_requests: 0
+        total_successful_requests: 0
+        total_failed_requests: 0
+        total_tokens: 0
+env: {}
+compare:
+  ignore: []

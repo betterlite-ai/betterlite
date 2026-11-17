@@ -1,0 +1,41 @@
+kind: helper
+name: mcp-payload-validation-new-dcr-bridge-auth-type
+call:
+  b4716:
+    function: new_request
+    payload:
+      dcr_bridge: true
+      auth_type: oauth2
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: new_request
+      payload:
+        dcr_bridge: true
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        dcr_bridge: true
+        auth_type: true_passthrough
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        dcr_bridge: true
+        auth_type: oauth_delegate
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        dcr_bridge: false
+        auth_type: oauth2
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        dcr_bridge: true
+        auth_type: api_key
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

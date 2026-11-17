@@ -1,0 +1,25 @@
+kind: helper
+name: first-video-content
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: content_response
+        response:
+          done: true
+          response:
+            videos:
+              - {bytesBase64Encoded: QUJD, mimeType: video/mp4}
+              - {bytesBase64Encoded: REVG, mimeType: video/webm}
+calls:
+  - vertex_veo_operation:
+      default_duration_seconds: 8
+      calls:
+        - function: content_response
+          response:
+            done: true
+            response:
+              videos:
+                - {bytesBase64Encoded: 'QU JD'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,96 @@
+kind: helper
+name: response-cache-writes-store-routing
+call:
+  b4304:
+    function: store
+    scenarios:
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: false
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}, {embedding: [0.25], index: 1, object: embedding}]}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: local
+        dual: false
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}, {embedding: [0.25], index: 1, object: embedding}]}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: s3
+        dual: true
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}, {embedding: [0.25], index: 1, object: embedding}]}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: s3
+        dual: false
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}, {embedding: [0.25], index: 1, object: embedding}]}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: raw, body: {custom: value}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: false
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: raw, body: {custom: value}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}]}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: text-embedding-3-small, input: only}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}]}}
+      - function_name: atext_completion
+        supported_call_types: [atext_completion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: text_completion, body: {id: textcmpl-1, created: 0, object: text_completion, model: gpt-4, choices: [{text: hello, index: 0, logprobs: null, finish_reason: stop}], usage: null}}
+env: {}
+compare: {ignore: []}

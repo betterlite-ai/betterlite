@@ -1,0 +1,69 @@
+task: B561
+deviations:
+  - what: >-
+      A url_citation annotation whose url_citation value is not a JSON object is treated as an empty citation, and its
+      top-level indexes still move inside it. LiteLLM unpacks that value with ** and raises TypeError instead.
+    why: >-
+      The value comes from provider output, so one malformed annotation must not fail the whole reply. The Rust test
+      citation_index_relocation pins the tolerated result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L196-L203
+  - what: >-
+      A text item whose text member is null or not an object yields empty content and no annotations. LiteLLM calls
+      .get on that value and raises AttributeError.
+    why: The reply record is decoded into a typed text block, where an absent or null text block is empty content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L169-L173
+  - what: >-
+      An SSE data line whose JSON is not an object, or whose delta, content, text or annotations members have
+      another shape than the declared one, is skipped. LiteLLM calls .get or iterates on those values and raises
+      AttributeError or TypeError, which ends the stream.
+    why: >-
+      Every event is decoded into a typed record, so a malformed event is ignored like invalid JSON and the run
+      continues. docs/compatibility.md leaves the handling of provider output that is outside its declared type to
+      betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L674-L706
+  - what: >-
+      A thread.created event whose id is present but not a string clears the collected thread id. LiteLLM stores that
+      value and copies a truthy non-string into _hidden_params.
+    why: The collected thread id is a string everywhere it is used, so a value of another type is treated as missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L667-L671
+  - what: >-
+      A non-200 or non-201 stream response whose body is not valid UTF-8 becomes a typed streaming error that keeps
+      the upstream status and says the body is not UTF-8. LiteLLM's bytes.decode raises UnicodeDecodeError inside
+      the generator, which carries neither the status nor the AzureAIAgentsError shape.
+    why: The status is the part a caller routes on, and the failure path must stay secret safe and typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L611-L616
+  - what: >-
+      A single SSE line is bounded at 1 MiB and an error body at 16 MiB, the transport default. LiteLLM buffers a
+      line and an error body without a bound.
+    why: A hostile or broken upstream must not be able to exhaust memory through a stream response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L630-L636
+  - what: >-
+      A token count sum that overflows u64 logs the usage warning and keeps whatever usage the reply already had.
+      LiteLLM adds Python integers of unlimited size and reports the sum.
+    why: Counts are u64 in the typed usage record, and a failed count keeps the existing usage by contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L240-L250
+  - what: >-
+      Dropping the betterlite chunk stream closes the upstream body, and so does reaching the [DONE] chunk. LiteLLM
+      never closes the httpx response, so an abandoned stream keeps its connection until garbage collection.
+    why: The task requires the upstream to be released on cancellation; the Rust tests pin that the body is dropped
+      with the stream and before the terminal chunk is consumed further.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L618-L620
+kept_bugs:
+  - what: >-
+      run.failed and every other run terminal or error event produce no chunk whatever. A failed run whose stream
+      carries no [DONE] therefore ends as a silent, partial reply instead of an error.
+    why: >-
+      The task's run_terminal_stream contract says those event names are ignored and only [DONE] emits a stop chunk,
+      so a working LiteLLM setup that reads this stream already sees that behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L689-L706
+  - what: >-
+      Annotations from thread.message.completed are accumulated without deduplication, so an upstream that repeats a
+      completed event puts the same citation on the terminal chunk twice.
+    why: The task's run_terminal_stream contract asks for every text annotation without deduplication.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L673-L683
+  - what: >-
+      A stream that reaches EOF without a [DONE] line ends with no terminal chunk and no error, so a truncated run
+      looks like a short successful reply.
+    why: The task's run_terminal_stream contract says EOF without DONE emits no terminal chunk; betterlite keeps it
+      so a working setup's chunk sequence stays identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L640-L665

@@ -14,7 +14,8 @@ use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
 use super::{
     anthropic_beta_config, embedding_executor, file_azure_storage, messages_header_stream,
-    messages_stream_logging, native, responses_agentic_continuation, vector_query_embedding,
+    messages_stream_logging, messages_sync_stream, native, responses_agentic_continuation,
+    vector_query_embedding,
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
@@ -69,6 +70,9 @@ impl<'sdk> Sdk<'sdk> {
                 messages_stream_logging::relay::send(relay, api_base, env),
                 stop,
             ),
+            (Self::Native, SdkHttpCall::MessagesSyncStream(stream)) => {
+                run_until_stopped(messages_sync_stream::send(stream, api_base, env), stop)
+            }
             (Self::Native, SdkHttpCall::ResponsesAgenticContinuation(continuation)) => {
                 run_until_stopped(
                     responses_agentic_continuation::send(continuation, api_base, env),

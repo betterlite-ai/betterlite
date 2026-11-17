@@ -1,0 +1,6 @@
+kind: helper
+name: responses-stream-scan-key-completed-envelope
+call:
+  b3672: {"function": "scan_key", "scenarios": [{"events": [{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "partial"}, {"type": "response.completed", "response": {"model": "gpt-4o", "output": [{"type": "message", "content": [{"type": "output_text", "text": "first"}, {"type": "output_text", "text": ""}, {"type": "output_text", "text": "second"}]}, {"type": "reasoning", "summary": [{"type": "summary_text", "text": "thinking"}]}, {"type": "message", "content": [{"text": "bare"}, {"type": "output_text", "text": 5}]}]}}]}, {"events": [{"type": "response.failed", "response": {"output": [{"type": "message", "content": [{"type": "output_text", "text": "kept"}]}]}}]}, {"events": [{"type": "response.incomplete", "response": {"output": []}}]}, {"events": [{"type": "response.completed"}]}, {"events": [{"type": "response.completed", "response": {"output": [{"type": "message", "content": [{"type": "output_text", "text": "x"}]}], "model": "m"}}]}]}
+env: {}
+compare: {ignore: []}

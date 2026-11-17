@@ -174,6 +174,7 @@ fn configured_settings() -> (VertexSettings, EmbeddingSettings) {
             "settings-key".to_owned(),
         ))),
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let embedding = EmbeddingSettings {
         project: None,

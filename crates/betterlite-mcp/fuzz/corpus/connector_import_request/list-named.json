@@ -1,0 +1,1 @@
+{"mcp_servers":[{"name":"beta","command":"npx","args":["-y","server-files"],"env":{"LOG":"debug"}},{"name":"","url":"https://mcp.example/http","type":"streamable_http"}]}

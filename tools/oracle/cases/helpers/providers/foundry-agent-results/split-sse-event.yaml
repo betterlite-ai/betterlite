@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-agent-results-split-sse-event
+call:
+  foundry_agent_results:
+    streams:
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: 92
+        body: "event: thread.message.delta\r\n\r\ndata: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"héllo 世界\"}}]}}\r\n\r\n"
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: 98
+        body: "event: thread.message.delta\r\n\r\ndata: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"héllo 世界\"}}]}}\r\n\r\n"
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: 68
+        body: "event: thread.message.delta\n\ndata: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"x\"}}]}}\ndata: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"y\"}}]}}\n"
+env: {}
+compare: {ignore: []}
