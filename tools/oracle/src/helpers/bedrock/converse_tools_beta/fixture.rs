@@ -114,7 +114,7 @@ impl Fixture {
         }
     }
 
-    pub(super) fn environment<'fixture>(
+    pub(super) const fn environment<'fixture>(
         &'fixture self,
         resolution: &'fixture ResolutionContext<'fixture>,
         keys: &'fixture mut ModelCostKeys,
