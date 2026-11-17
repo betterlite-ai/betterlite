@@ -56,10 +56,3 @@ impl<Memory: MemoryCacheOps + 'static> PinCache for DualCachePins<Memory> {
         values
     }
 }
-
-#[must_use]
-pub fn pin_cache<Memory: MemoryCacheOps + 'static>(
-    cache: Arc<DualCache<Memory>>,
-) -> Arc<dyn PinCache> {
-    Arc::new(DualCachePins { cache })
-}

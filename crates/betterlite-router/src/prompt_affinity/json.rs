@@ -36,7 +36,11 @@ pub fn message_json(message: &Message) -> Json {
 
 #[must_use]
 pub fn messages_json(messages: &[Message]) -> Vec<Json> {
-    messages.iter().map(message_json).collect()
+    let mut converted = Vec::with_capacity(messages.len());
+    for message in messages {
+        converted.push(message_json(message));
+    }
+    converted
 }
 
 fn content_json(content: &Content) -> Json {

@@ -8,7 +8,9 @@ use betterlite_config::sections::prompt_affinity as section;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::routing::prompt_affinity::{pin_cache, settings};
+use crate::routing::prompt_affinity::settings;
+
+use super::{DualCachePins, PinCache};
 
 fn configured(prompt_caching: bool, maximum_base64_length: Option<&str>) -> section::Settings {
     section::Settings {
@@ -74,7 +76,9 @@ fn a_malformed_base64_limit_is_an_error() {
 #[tokio::test]
 async fn a_pin_is_readable_until_its_ttl_expires() {
     let now = Arc::new(Mutex::new(0.0_f64));
-    let pins = pin_cache(cache_at(Arc::clone(&now)));
+    let pins: Arc<dyn PinCache> = Arc::new(DualCachePins {
+        cache: cache_at(Arc::clone(&now)),
+    });
     let key = "deployment:abc:prompt_caching".to_owned();
     pins.store(&key, &pin("dep-a")).await;
     let keys = vec![key];

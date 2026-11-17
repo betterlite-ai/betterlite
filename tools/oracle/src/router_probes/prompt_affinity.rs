@@ -141,7 +141,7 @@ pub(crate) fn run(
 fn service(input: &Input) -> Result<PromptAffinity, String> {
     let (counter, catalog) = counter::counting_pieces().map_err(|error| error.to_string())?;
     let settings = PromptCacheSettings::default();
-    Ok(PromptAffinity::new(PromptAffinityDependencies {
+    Ok(PromptAffinity::from(PromptAffinityDependencies {
         pins: Arc::new(ProbePins::default()),
         gate: Arc::new(CountingGate {
             counter: Arc::new(counter),
@@ -242,7 +242,10 @@ fn deployment_spec(deployment: &Deployment) -> Result<DeploymentSpec, InvalidDep
     )
 }
 
-fn invalid(error: impl ToString) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: ToString,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }

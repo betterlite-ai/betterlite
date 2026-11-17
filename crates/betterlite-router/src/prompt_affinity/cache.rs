@@ -44,12 +44,13 @@ pub async fn pinned_model_id(
     if cache_keys.is_empty() {
         return Ok(None);
     }
-    Ok(first_pin(&pins.read(&cache_keys).await))
-}
-
-// PromptCachingCache._first_pin: a value without a string model_id is not a pin
-fn first_pin(values: &[Option<Json>]) -> Option<String> {
-    values.iter().flatten().find_map(model_id_of)
+    // PromptCachingCache._first_pin: a value without a string model_id is not a pin
+    Ok(pins
+        .read(&cache_keys)
+        .await
+        .iter()
+        .flatten()
+        .find_map(model_id_of))
 }
 
 fn model_id_of(value: &Json) -> Option<String> {

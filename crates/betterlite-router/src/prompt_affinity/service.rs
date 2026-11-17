@@ -96,12 +96,13 @@ pub struct PromptAffinity {
     dependencies: PromptAffinityDependencies,
 }
 
-impl PromptAffinity {
-    #[must_use]
-    pub fn new(dependencies: PromptAffinityDependencies) -> Self {
+impl From<PromptAffinityDependencies> for PromptAffinity {
+    fn from(dependencies: PromptAffinityDependencies) -> Self {
         Self { dependencies }
     }
+}
 
+impl PromptAffinity {
     // PromptCachingDeploymentCheck.async_filter_deployments
     pub async fn filter_deployments(
         &self,

@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings as HubSettings};
+use betterlite_config::sections::huggingface_hub::{
+    OfflineSetting, Settings as HubSettings, TransferSetting,
+};
 use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::hub_oauth::clock::SystemHubClock;
@@ -72,7 +75,15 @@ fn downloader(client: Arc<ProxiedClient>) -> Arc<HubDownloader> {
     let hub = HubSettings {
         offline: OfflineSetting::Offline,
         endpoint: "http://127.0.0.1:1".to_owned(),
-        ..HubSettings::default()
+        etag_timeout: 10,
+        download_timeout: 10,
+        disable_implicit_token: false,
+        env_token: None,
+        hf_home: PathBuf::from("unused"),
+        hub_cache: PathBuf::from("unused"),
+        token_path: PathBuf::from("unused-token"),
+        stored_tokens_path: PathBuf::from("unused-stored-tokens"),
+        transfer: TransferSetting::Standard,
     };
     let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
     let tokens = Arc::new(HubTokenResolver::new(
@@ -89,7 +100,10 @@ fn downloader(client: Arc<ProxiedClient>) -> Arc<HubDownloader> {
     ))
 }
 
-fn invalid(error: impl ToString) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: ToString,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }

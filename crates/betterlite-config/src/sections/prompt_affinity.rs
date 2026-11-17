@@ -6,7 +6,7 @@ use crate::sections::Section;
 mod tests;
 
 const PROMPT_CACHING_CHECK: &str = "prompt_caching";
-const MAXIMUM_BASE64_ENVIRONMENT_VARIABLE: &str = "MAX_BASE64_LENGTH_FOR_LOGGING";
+const BASE64_LIMIT_VARIABLE: &str = "MAX_BASE64_LENGTH_FOR_LOGGING";
 
 // Router.add_optional_pre_call_checks builds PromptCachingDeploymentCheck when the list names prompt_caching
 #[derive(Debug, Default, Deserialize)]
@@ -40,7 +40,7 @@ impl Section for Raw {
             .unwrap_or_default();
         Ok(Settings {
             prompt_caching: checks.iter().any(|check| check == PROMPT_CACHING_CHECK),
-            maximum_base64_length: lookup.lookup(MAXIMUM_BASE64_ENVIRONMENT_VARIABLE),
+            maximum_base64_length: lookup.lookup(BASE64_LIMIT_VARIABLE),
         })
     }
 }

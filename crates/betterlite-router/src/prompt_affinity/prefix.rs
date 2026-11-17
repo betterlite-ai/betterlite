@@ -54,7 +54,10 @@ pub fn prompt_caching_cache_key(
     truncator: &Base64Truncator,
 ) -> Result<Option<String>, PrefixError> {
     let positions = prefix_positions(messages, tools, truncator)?;
-    Ok(positions.last().map(|entry| entry.cache_key.clone()))
+    match positions.last() {
+        Some(entry) => Ok(Some(entry.cache_key.clone())),
+        None => Ok(None),
+    }
 }
 
 // PromptCachingCache.extract_cacheable_prefix: everything up to and including the last ephemeral block
@@ -171,9 +174,16 @@ fn message_units(message: &Json) -> Vec<(Vec<u8>, Option<&'static str>)> {
             .map(|block| block_unit(&envelope, run_type, block))
             .collect(),
         Some(Json::Text(content)) if !content.is_empty() => {
-            vec![(unit(&envelope, &text_block(content)), run_type)]
+            let value = text_block(content);
+            vec![(
+                canonical_bytes(&Json::List(vec![envelope.clone(), value])),
+                run_type,
+            )]
         }
-        _ => vec![(unit(&envelope, &Json::Null), run_type)],
+        _ => vec![(
+            canonical_bytes(&Json::List(vec![envelope.clone(), Json::Null])),
+            run_type,
+        )],
     }
 }
 
@@ -183,17 +193,16 @@ fn block_unit(
     block: &Json,
 ) -> (Vec<u8>, Option<&'static str>) {
     let Some(fields) = object(block) else {
-        return (unit(envelope, block), message_run_type);
+        let unmarked = canonical_bytes(&Json::List(vec![envelope.clone(), block.clone()]));
+        return (unmarked, message_run_type);
     };
     let block_run_type = match fields.get("type").and_then(text) {
         Some(block_type) if TOOL_RUN_BLOCK_TYPES.contains(&block_type) => run_type(block_type),
         _ => None,
     };
     let stripped = sorted_pairs(fields, &[CACHE_CONTROL_KEY]);
-    (
-        unit(envelope, &stripped),
-        message_run_type.or(block_run_type),
-    )
+    let marked = canonical_bytes(&Json::List(vec![envelope.clone(), stripped]));
+    (marked, message_run_type.or(block_run_type))
 }
 
 fn run_type(block_type: &str) -> Option<&'static str> {
@@ -220,26 +229,18 @@ fn sorted_pairs(fields: &IndexMap<String, Json>, skipped: &[&str]) -> Json {
     Json::List(
         sorted
             .into_iter()
-            .map(|(key, value)| pair(key.as_str(), value))
+            .map(|(key, value)| Json::List(vec![Json::Text(key.to_owned()), value.clone()]))
             .collect(),
     )
-}
-
-fn pair(key: &str, value: &Json) -> Json {
-    Json::List(vec![Json::Text(key.to_owned()), value.clone()])
 }
 
 fn pairs(entries: &[(&str, Json)]) -> Json {
     Json::List(
         entries
             .iter()
-            .map(|(key, value)| pair(key, value))
+            .map(|(key, value)| Json::List(vec![Json::Text(key.to_string()), value.clone()]))
             .collect(),
     )
-}
-
-fn unit(envelope: &Json, value: &Json) -> Vec<u8> {
-    canonical_bytes(&Json::List(vec![envelope.clone(), value.clone()]))
 }
 
 fn seed(tools: Option<&[Json]>) -> Vec<u8> {
