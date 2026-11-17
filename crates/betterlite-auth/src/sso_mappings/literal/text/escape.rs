@@ -52,30 +52,15 @@ impl Cursor<'_> {
             return Err(LiteralError::Syntax);
         };
         let after = at.saturating_add(2);
+        // a bytes literal processes \x and keeps \u, \U and \N as the backslash and letter it wrote
         match next {
             b'\n' => Ok(after),
             b'\r' => Ok(self.skip_newline_of(after)),
-            b'x' | b'u' | b'U' | b'N' => self.scan_code_escape(at, next, bytes, value),
+            b'x' => self.push_code(after, 2, value),
+            b'u' if !bytes => self.push_code(after, 4, value),
+            b'U' if !bytes => self.push_code(after, 8, value),
+            b'N' if !bytes => Err(LiteralError::NamedEscape),
             _other => self.scan_short_escape(at, next, bytes, value),
-        }
-    }
-
-    fn scan_code_escape(
-        &mut self,
-        at: usize,
-        marker: u8,
-        bytes: bool,
-        value: &mut String,
-    ) -> Result<usize, LiteralError> {
-        if bytes {
-            return self.keep_unknown_escape(at, bytes, value);
-        }
-        let digits_at = at.saturating_add(2);
-        match marker {
-            b'x' => self.push_code(digits_at, 2, value),
-            b'u' => self.push_code(digits_at, 4, value),
-            b'U' => self.push_code(digits_at, 8, value),
-            _other => Err(LiteralError::NamedEscape),
         }
     }
 
@@ -120,19 +105,10 @@ impl Cursor<'_> {
             value.push(character);
             return Ok(at.saturating_add(2));
         }
-        if (b'0'..=b'7').contains(&next) {
-            return self.scan_octal(at, bytes, value);
+        if !(b'0'..=b'7').contains(&next) {
+            return self.keep_unknown_escape(at, bytes, value);
         }
-        self.keep_unknown_escape(at, bytes, value)
-    }
-
-    // an octal escape takes up to three digits; a bytes literal keeps only the low byte
-    fn scan_octal(
-        &mut self,
-        at: usize,
-        bytes: bool,
-        value: &mut String,
-    ) -> Result<usize, LiteralError> {
+        // an octal escape takes up to three digits; a bytes literal keeps only the low byte
         let mut code = 0_u32;
         let mut width = 0_usize;
         while width < 3 {
