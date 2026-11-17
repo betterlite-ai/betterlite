@@ -1,5 +1,5 @@
 use betterlite_core::api::responses_stream_primitives::error_fields::{
-    StreamErrorAttributes, StreamErrorObject, error_event_fields, stream_error_status_and_message,
+    StreamErrorAttributes, StreamErrorObject, error_event_fields, error_status_and_message,
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -21,14 +21,9 @@ pub(crate) struct ErrorRow {
     fields: IndexMap<String, Json>,
 }
 
-pub(crate) fn answer(rows: &[ErrorRow]) -> Value {
-    let answers: Vec<Value> = rows.iter().map(row_answer).collect();
-    json!({ "rows": answers })
-}
-
-fn row_answer(row: &ErrorRow) -> Value {
+pub(crate) fn row_answer(row: &ErrorRow) -> Value {
     let fields = error_event_fields(object_of(row));
-    let (status, message) = stream_error_status_and_message(object_of(row));
+    let (status, message) = error_status_and_message(object_of(row));
     json!({
         "kind": row.kind,
         "message": message,

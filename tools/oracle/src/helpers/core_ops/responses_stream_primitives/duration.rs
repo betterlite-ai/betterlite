@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::api::responses_stream_primitives::{
     STREAM_DURATION_ENV, StreamDurationError, loads_stream_duration_settings,
 };
-use betterlite_core::api::responses_stream_primitives::python_text::python_float_text;
+use betterlite_core::api::responses_stream_primitives::python_text::float_text;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -66,7 +66,7 @@ fn row_answer(row: &DurationRow) -> Result<Value, Box<HelperError>> {
     };
     Ok(json!({
         "loaded": true,
-        "limit": limit.map(python_float_text),
+        "limit": limit.map(float_text),
         "raised": raised,
         "status": status,
         "message": message,

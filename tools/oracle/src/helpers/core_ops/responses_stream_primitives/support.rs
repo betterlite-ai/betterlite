@@ -9,7 +9,6 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_oracle_helper_api::error::HelperError;
-use chrono::{DateTime, FixedOffset};
 
 pub(crate) const MOMENT: &str = "2026-01-01T00:00:00+00:00";
 
@@ -22,10 +21,6 @@ pub(crate) fn failure(message: String) -> Box<HelperError> {
         code: None,
         message,
     })
-}
-
-pub(crate) fn parse_time(text: &str) -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339(text).map_err(|error| failure(error.to_string()))
 }
 
 // B7320's callers supply these two hooks; the case gives it no login-free provider or vertex model

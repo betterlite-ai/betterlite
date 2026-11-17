@@ -5,11 +5,12 @@ use betterlite_core::api::responses_stream_primitives::state::{
 use betterlite_models::api_base_lookup::ApiBaseContext;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
+use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::support::{NoHooks, SharedResolution, parse_time, resolution_context};
+use super::support::{NoHooks, SharedResolution, failure, resolution_context};
 
 // the fields the Python probe receives, and the logging state the base constructor reads
 #[derive(Debug, Deserialize)]
@@ -52,7 +53,8 @@ pub(crate) fn build_state(
             resolution: &resolution,
         },
     };
-    let start_time = parse_time(&spec.start_time)?;
+    let start_time = DateTime::parse_from_rfc3339(&spec.start_time)
+        .map_err(|error| failure(error.to_string()))?;
     Ok(base_stream_state(&BaseStreamStateInput {
         model: &spec.model,
         custom_llm_provider: spec.provider.as_deref(),
@@ -92,7 +94,7 @@ fn state_answer(spec: &ProbeSpec) -> Result<Value, Box<HelperError>> {
         "completed_response_cache_hit": state.completed_response_cache_hit,
         "completed_response_cached": state.completed_response_cached,
         "completed_response_logged": state.completed_response_logged,
-        "persist_before_logging": state.persist_completed_response_before_logging,
+        "persist_before_logging": state.persist_before_logging,
         "generated_content": state.generated_content,
         "generated_tool_arguments": state.generated_tool_arguments,
         "pending_tasks": state.pending_tasks.len(),
