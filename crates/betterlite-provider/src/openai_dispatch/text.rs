@@ -116,23 +116,8 @@ where
         now,
         next_id,
     };
-    let messages = serde_json::to_value(&plan.messages)
-        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    let messages = serde_json::from_value(messages)
-        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    let request = TextCompletionRequest {
-        model: Some(plan.model.clone()),
-        messages: Some(messages),
-        api_key: plan.api_key.clone(),
-        api_base: Some(plan.api_base.clone()),
-        timeout: plan.timeout,
-        // main.py assigns the SDK module global only, and B2238's handler builds its client without an organization
-        organization: None,
-        optional_params: plan.optional_params.clone(),
-        headers: plan.headers.clone().map(SecretHeaders),
-        acompletion: plan.acompletion,
-    };
     let completion = logger.completion();
+    let request = text_request(plan)?;
     let begun = transport.begin(request, ProviderId::TextCompletionOpenai, completion)?;
     let sent = transport.send(&begun, None).await?;
     match transport.finish(&begun, sent, completion)? {
@@ -149,33 +134,34 @@ where
     }
 }
 
+fn text_request(plan: &TextPlan) -> Result<TextCompletionRequest, OpenAiProviderError> {
+    let messages = serde_json::to_value(&plan.messages)
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    let messages = serde_json::from_value(messages)
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    Ok(TextCompletionRequest {
+        model: Some(plan.model.clone()),
+        messages: Some(messages),
+        api_key: plan.api_key.clone(),
+        api_base: Some(plan.api_base.clone()),
+        timeout: plan.timeout,
+        // main.py assigns the SDK module global only, and B2238's handler builds its client without an organization
+        organization: None,
+        optional_params: plan.optional_params.clone(),
+        headers: plan.headers.clone().map(SecretHeaders),
+        acompletion: plan.acompletion,
+    })
+}
+
 // main.py projects text to chat only for an absent or literally false stream, acompletion and text_completion.
 #[must_use]
 pub fn projects_to_chat(plan: &TextPlan) -> bool {
     // `is False` compares identity: an absent key took the False default, and a null or 0 stream is not False
-    let stream_is_false = match plan.optional_params.get("stream") {
-        None | Some(JsonValue::Bool(false)) => true,
-        Some(_other) => false,
-    };
+    let stream_is_false = matches!(
+        plan.optional_params.get("stream"),
+        None | Some(serde_json::Value::Bool(false))
+    );
     stream_is_false && !plan.acompletion && !plan.text_completion
-}
-
-// main.py logs text success for a truthy stream or an async call, and nothing else.
-#[must_use]
-pub fn logs_post_call(plan: &TextPlan) -> bool {
-    truthy(plan.optional_params.get("stream")) || plan.acompletion
-}
-
-// Python truthiness of the stream option, for the values a request can carry before the transport refuses the rest.
-fn truthy(value: Option<&JsonValue>) -> bool {
-    match value {
-        None | Some(JsonValue::Null | JsonValue::Bool(false)) => false,
-        Some(JsonValue::Bool(true)) => true,
-        Some(JsonValue::Number(number)) => number.as_f64() != Some(0.0_f64),
-        Some(JsonValue::Text(text)) => !text.is_empty(),
-        Some(JsonValue::Array(values)) => !values.is_empty(),
-        Some(JsonValue::Object(fields)) => !fields.is_empty(),
-    }
 }
 
 // ModelResponse() before the conversion: the reply's id, created, model and usage replace these, the object stays

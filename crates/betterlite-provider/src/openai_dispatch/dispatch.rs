@@ -1,8 +1,8 @@
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::operation::{ChatCompletion, OperationRequest, OperationResult};
@@ -36,17 +36,7 @@ where
     match operation {
         OpenAiOperation::Chat(call) => chat(&call, composition, deps.answer, logger).await,
         OpenAiOperation::Embedding(call) => embedding(&call, composition, deps.answer).await,
-        OpenAiOperation::Text(call) => {
-            text(
-                &call,
-                composition,
-                deps.text,
-                deps.now,
-                deps.next_id,
-                logger,
-            )
-            .await
-        }
+        OpenAiOperation::Text(call) => text(&call, composition, deps, logger).await,
     }
 }
 
@@ -71,7 +61,7 @@ where
     };
     if call.request.stream {
         logger.post_call(LoggedCall {
-            input: logged_input(&call.request.messages),
+            input: logged_json(&call.request.messages),
             // LiteLLM logs the opened stream itself, which betterlite hands to the client unrendered
             original_response: Json::Null,
             headers: logged_headers(plan.logged_headers.as_ref()),
@@ -88,7 +78,7 @@ fn logged_failure<Logger: OpenAiLogger>(
     error: OpenAiProviderError,
 ) -> OpenAiProviderError {
     logger.post_call(LoggedCall {
-        input: logged_input(&call.request.messages),
+        input: logged_json(&call.request.messages),
         original_response: Json::Text(error.to_string()),
         headers: logged_headers(plan.logged_headers.as_ref()),
     });
@@ -108,12 +98,10 @@ where
     OpenAi.decode(&prepared, upstream)
 }
 
-async fn text<Source, Logger>(
+async fn text<Answer, Source, Logger>(
     call: &TextCall,
     composition: &Composition,
-    source: &Source,
-    now: fn() -> StreamInstant,
-    next_id: fn() -> Uuid,
+    deps: Deps<'_, Answer, Source>,
     logger: &mut Logger,
 ) -> Result<OperationResult, OpenAiProviderError>
 where
@@ -122,44 +110,56 @@ where
     Logger: OpenAiLogger,
 {
     let plan = text::plan(composition, call)?;
-    let outcome = text::execute(&plan, source, now, next_id, logger).await?;
+    let outcome = text::execute(&plan, deps.text, deps.now, deps.next_id, logger).await?;
     let response = match outcome {
         TextOutcome::Buffered(response) => response,
         TextOutcome::Stream(stream) => {
             logger.post_call(LoggedCall {
-                input: logged_input(&plan.messages),
+                input: logged_json(&plan.messages),
                 // the opened text stream has no rendered JSON form, so the log records its absence
                 original_response: Json::Null,
-                headers: logged_headers(plan.logged_headers.as_ref()),
+                headers: logged_headers(plan.headers.as_ref()),
             });
             return Ok(OperationResult::OpenAi(OpenAiResult::TextStream(stream)));
         }
     };
-    let (result, logged) = if text::projects_to_chat(&plan) {
-        let chat = text::project(&response, now(), next_id)?;
-        let logged = logged_json(&chat);
-        (
-            OperationResult::Chat(ChatCompletion::OpenAi(Box::new(chat))),
-            logged,
-        )
-    } else {
-        (
-            OperationResult::OpenAi(OpenAiResult::Text(Box::new(response.clone()))),
-            logged_json(&response),
-        )
-    };
-    if text::logs_post_call(&plan) {
+    let (result, logged) = buffered_text(&plan, response, deps.now(), deps.next_id())?;
+    // main.py logs a truthy stream option or an async call; the transport refused every stream value but a bool
+    if matches!(
+        plan.optional_params.get("stream"),
+        Some(serde_json::Value::Bool(true))
+    ) || plan.acompletion
+    {
         logger.post_call(LoggedCall {
-            input: logged_input(&plan.messages),
+            input: logged_json(&plan.messages),
             original_response: logged,
-            headers: logged_headers(plan.logged_headers.as_ref()),
+            headers: logged_headers(plan.headers.as_ref()),
         });
     }
     Ok(result)
 }
 
-fn logged_input<Message: Serialize>(messages: &[Message]) -> Json {
-    logged_json(&messages)
+// main.py converts the buffered reply to chat for a literally false stream and both flags, and logs what it returns.
+fn buffered_text(
+    plan: &text::TextPlan,
+    response: JsonValue,
+    now: StreamInstant,
+    next_id: fn() -> Uuid,
+) -> Result<(OperationResult, Json), OpenAiProviderError> {
+    if text::projects_to_chat(plan) {
+        let chat = text::project(&response, now, next_id)?;
+        let logged = logged_json(&chat);
+        Ok((
+            OperationResult::Chat(ChatCompletion::OpenAi(Box::new(chat))),
+            logged,
+        ))
+    } else {
+        let logged = logged_json(&response);
+        Ok((
+            OperationResult::OpenAi(OpenAiResult::Text(Box::new(response))),
+            logged,
+        ))
+    }
 }
 
 // main.py logs the resolved supplied header map itself, never the extra headers the SDK merged beside it

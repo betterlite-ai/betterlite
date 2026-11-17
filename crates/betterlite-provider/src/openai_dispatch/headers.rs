@@ -17,14 +17,16 @@ pub fn resolved_headers(
     supplied: Option<&Headers>,
     extra: Option<&Headers>,
 ) -> Option<Headers> {
-    let base = present_headers(supplied)
-        .or_else(|| present_headers(extra))
-        .or_else(|| present_headers(composition.globals_headers.as_ref()));
+    let base = supplied
+        .filter(|map| !map.is_empty())
+        .or_else(|| extra.filter(|map| !map.is_empty()))
+        .or_else(|| {
+            composition
+                .globals_headers
+                .as_ref()
+                .filter(|map| !map.is_empty())
+        });
     merge_headers(base.as_ref(), extra)
-}
-
-fn present_headers(headers: Option<&Headers>) -> Option<Headers> {
-    headers.filter(|map| !map.is_empty()).cloned()
 }
 
 // The first map is the base and the second wins a shared name; an absent map keeps the other one as it is.

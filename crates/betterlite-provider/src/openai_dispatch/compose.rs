@@ -60,46 +60,16 @@ pub fn chat_plan(
     call: &ChatCall,
 ) -> Result<ChatPlan, OpenAiProviderError> {
     let credentials = resolve(composition, &call.credentials);
-    // the experimental handler never receives the organization, so that branch sends no organization header
-    let organization = if composition.provider.experimental_base_llm_http_handler {
-        None
-    } else {
-        credentials.organization.clone()
-    };
-    let deployment = build_deployment(&call.model, call.timeout, &credentials, organization)?;
-    let mut body = chat_fields(&call.request, &call.model, &composition.catalog)?;
-    // extra_headers travel as HTTP headers; the normal branch hands them to the SDK through optional_params
-    body.shift_remove("extra_headers");
-    if composition.provider.enable_preview_features {
-        if let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata) {
-            body.insert(String::from("metadata"), metadata);
-        }
-    }
-    merge_defaults(&mut body, &composition.chat_defaults)?;
-    let body = encode(body)?;
+    let deployment = chat_deployment(composition, call, &credentials)?;
+    let body = chat_body(composition, call)?;
     // completion() hands this branch the caller's headers already merged with its extra headers
     let headers = resolved_headers(
         composition,
         call.headers.as_ref(),
         call.extra_headers.as_ref(),
     );
-    let logged_headers = if composition.provider.experimental_base_llm_http_handler {
-        experiment_logged_headers(headers.as_ref(), credentials.api_key.as_ref())
-    } else {
-        headers.clone()
-    };
-    let http = PreparedHttp {
-        method: Method::POST,
-        url: deployment.endpoint.clone(),
-        headers: chat_headers(
-            &deployment,
-            headers.as_ref(),
-            composition.provider.experimental_base_llm_http_handler,
-        )?,
-        body,
-        deadline: deployment.timeout,
-        body_limit: None,
-    };
+    let logged_headers = logged_chat_headers(composition, &credentials, headers.as_ref());
+    let http = chat_http(composition, &deployment, headers.as_ref(), body)?;
     let prepared = PreparedChat {
         http,
         retry: TransformRetry::DISABLED,
@@ -118,6 +88,65 @@ pub fn chat_plan(
     })
 }
 
+// the experimental handler never receives the organization, so that branch sends no organization header
+fn chat_deployment(
+    composition: &Composition,
+    call: &ChatCall,
+    credentials: &Resolved,
+) -> Result<Deployment, OpenAiProviderError> {
+    let organization = if composition.provider.experimental_handler {
+        None
+    } else {
+        credentials.organization.clone()
+    };
+    build_deployment(&call.model, call.timeout, credentials, organization)
+}
+
+// extra_headers travel as HTTP headers; the normal branch hands them to the SDK through optional_params
+fn chat_body(composition: &Composition, call: &ChatCall) -> Result<Vec<u8>, OpenAiProviderError> {
+    let mut body = chat_fields(&call.request, &call.model, &composition.catalog)?;
+    body.shift_remove("extra_headers");
+    if composition.provider.enable_preview_features {
+        if let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata) {
+            body.insert(String::from("metadata"), metadata);
+        }
+    }
+    merge_defaults(&mut body, &composition.chat_defaults)?;
+    Ok(encode(body)?)
+}
+
+// main.py logs the map completion() resolved; the experimental branch logs the map validate_environment wrote instead.
+fn logged_chat_headers(
+    composition: &Composition,
+    credentials: &Resolved,
+    headers: Option<&Headers>,
+) -> Option<Headers> {
+    if composition.provider.experimental_handler {
+        return experiment_logged_headers(headers, credentials.api_key.as_ref());
+    }
+    headers.cloned()
+}
+
+fn chat_http(
+    composition: &Composition,
+    deployment: &Deployment,
+    headers: Option<&Headers>,
+    body: Vec<u8>,
+) -> Result<PreparedHttp, OpenAiProviderError> {
+    Ok(PreparedHttp {
+        method: Method::POST,
+        url: deployment.endpoint.clone(),
+        headers: chat_headers(
+            deployment,
+            headers,
+            composition.provider.experimental_handler,
+        )?,
+        body,
+        deadline: deployment.timeout,
+        body_limit: None,
+    })
+}
+
 // B504's validate_environment writes the key and the content type into the map it was handed, which main.py then logs.
 fn experiment_logged_headers(
     headers: Option<&Headers>,
@@ -133,7 +162,7 @@ fn experiment_logged_headers(
     }
     if !logged
         .keys()
-        .any(|name| name == "content-type" || name == "Content-Type")
+        .any(|name| name.as_str() == "content-type" || name.as_str() == "Content-Type")
     {
         logged.insert(
             String::from("Content-Type"),
@@ -190,13 +219,8 @@ fn requested_encoding_format(composition: &Composition, call: &EmbeddingCall) ->
                 .map(encoding_text)
                 .map(str::to_owned)
         })
-        .or_else(|| {
-            composition
-                .provider
-                .default_embedding_encoding_format
-                .clone()
-        });
-    requested.filter(|format| !is_none_sentinel(format))
+        .or_else(|| composition.provider.embedding_format.clone());
+    requested.filter(|format| format.trim().to_lowercase() != NONE_FORMAT)
 }
 
 const fn encoding_text(format: EncodingFormat) -> &'static str {
@@ -204,10 +228,6 @@ const fn encoding_text(format: EncodingFormat) -> &'static str {
         EncodingFormat::Float => "float",
         EncodingFormat::Base64 => "base64",
     }
-}
-
-fn is_none_sentinel(format: &str) -> bool {
-    format.trim().to_lowercase() == NONE_FORMAT
 }
 
 // The chat branch merges every configured default that the call and its provider filter left absent.
