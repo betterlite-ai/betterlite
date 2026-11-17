@@ -15,6 +15,7 @@ betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 chrono.workspace = true
 hex.workspace = true
 http = "1.5.0"
@@ -33,6 +34,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-openai = { path = "../betterlite-openai" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true, features = ["registry"] }
 
 [lints]
 workspace = true
