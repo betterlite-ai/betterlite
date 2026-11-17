@@ -1,7 +1,7 @@
 id: B580
 milestone: M3 providers
 title: Anthropic response envelope conversion
-status: todo
+status: done
 depends_on: [B578, B579, B570, B567, B206, B190, B002, B171, B249]
 file: tasks/B580-anthropic-response.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/anthropic.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2254
