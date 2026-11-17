@@ -108,10 +108,13 @@ pub enum CachedMessagesResult<L> {
 }
 
 // LiteLLM's convert_cached_anthropic_messages_result; the request body already lives on the injected logging seam
-pub fn convert_cached_messages_result<L: CachedStreamLogging>(
+pub fn convert_cached_messages_result<L>(
     cached: CachedDict,
     logging: L,
-) -> Result<CachedMessagesResult<L>, CachedStreamEventsError> {
+) -> Result<CachedMessagesResult<L>, CachedStreamEventsError>
+where
+    L: CachedStreamLogging,
+{
     let Some(events) = get_cached_stream_events(&cached)? else {
         return Ok(CachedMessagesResult::Unchanged(cached));
     };

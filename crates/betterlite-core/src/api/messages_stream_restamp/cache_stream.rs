@@ -212,13 +212,14 @@ where
         )]));
         let request_kwargs = self.request_kwargs();
         let factory = move |_call: CallState| -> CacheWriteFuture {
-            let target = Arc::clone(&target);
-            let payload = payload.clone();
-            let request_kwargs = request_kwargs.clone();
+            let cache_target = Arc::clone(&target);
+            let cached_payload = payload.clone();
+            let cached_request_kwargs = request_kwargs.clone();
             Box::pin(async move {
-                if let Err(failure) = target.add_cached_stream(payload, request_kwargs).await {
-                    tracing::error!("Anthropic Messages stream cache write failed: {failure}");
-                }
+                let outcome = cache_target
+                    .add_cached_stream(cached_payload, cached_request_kwargs)
+                    .await;
+                log_write_failure(outcome);
                 Ok(())
             })
         };
@@ -239,6 +240,13 @@ where
             max_event_bytes: self.limits.max_json_bytes,
             ..self.limits
         }
+    }
+}
+
+// LiteLLM logs a failed stream cache write and keeps serving the stream
+fn log_write_failure(outcome: Result<(), CacheWriteFailure>) {
+    if let Err(failure) = outcome {
+        tracing::error!("Anthropic Messages stream cache write failed: {failure}");
     }
 }
 

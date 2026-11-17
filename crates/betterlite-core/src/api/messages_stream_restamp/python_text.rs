@@ -29,10 +29,11 @@ pub(super) fn splitlines_keepends(text: &str) -> Vec<&str> {
             continue;
         }
         let mut end = index.saturating_add(character.len_utf8());
-        if character == '\r' && characters.peek().is_some_and(|(_, next)| *next == '\n') {
-            if let Some((next_index, next_character)) = characters.next() {
-                end = next_index.saturating_add(next_character.len_utf8());
-            }
+        if character == '\r'
+            && characters.peek().is_some_and(|(_, next)| *next == '\n')
+            && let Some((next_index, next_character)) = characters.next()
+        {
+            end = next_index.saturating_add(next_character.len_utf8());
         }
         if let Some(line) = text.get(start..end) {
             lines.push(line);

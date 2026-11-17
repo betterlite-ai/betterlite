@@ -9,7 +9,7 @@ pub const MESSAGE_START_EVENT: &str = "message_start";
 const MESSAGE_START_MARKER: &[u8] = b"message_start";
 const SSE_DATA_FIELD: &str = "data:";
 const SSE_DONE_PAYLOAD: &str = "[DONE]";
-pub const MAX_HELD_BYTES: usize = 65_536;
+pub const MAX_HELD_BYTES: usize = 0x0001_0000;
 const PING_MARKERS: [&[u8]; 3] = [b"event: ping", b"\"type\": \"ping\"", b"\"type\":\"ping\""];
 const SSE_FRAME_ENDS: [&[u8]; 3] = [b"\r\n\r\n", b"\r\r", b"\n\n"];
 const TYPE_FIELD: &str = "type";
@@ -44,7 +44,7 @@ pub fn restamp_chunk(chunk: &MessagesStreamChunk, requested_model: &str) -> Mess
 pub fn is_ping_frame(frame: &[u8]) -> bool {
     PING_MARKERS
         .iter()
-        .any(|marker| contains_marker(frame, *marker))
+        .any(|marker| contains_marker(frame, marker))
 }
 
 // LiteLLM's per-stream restamper: complete SSE frames leave as their terminator closes them and torn tails wait in held
@@ -56,7 +56,7 @@ pub struct StreamModelRestamper {
 
 impl StreamModelRestamper {
     #[must_use]
-    pub fn new(requested_model: String) -> Self {
+    pub const fn new(requested_model: String) -> Self {
         Self {
             requested_model,
             held: Vec::new(),
@@ -121,8 +121,8 @@ impl StreamModelRestamper {
     fn restamped_closed_block(&mut self, closed: &[u8]) -> Vec<u8> {
         let boundaries = frame_end_positions(closed);
         let frames = frames_between(closed, &boundaries);
-        let decider = frames.iter().copied().position(is_decider);
-        let Some(decider) = decider else {
+        let found_decider = frames.iter().copied().position(is_decider);
+        let Some(decider) = found_decider else {
             return closed.to_vec();
         };
         self.armed = false;
@@ -135,11 +135,11 @@ impl StreamModelRestamper {
             return closed.to_vec();
         };
         let mut output = Vec::with_capacity(closed.len());
-        for (index, frame) in frames.iter().copied().enumerate() {
+        for (index, part) in frames.iter().copied().enumerate() {
             if index == decider {
                 output.extend_from_slice(restamped.as_bytes());
             } else {
-                output.extend_from_slice(frame);
+                output.extend_from_slice(part);
             }
         }
         output
@@ -241,10 +241,10 @@ fn frame_end_positions(bytes: &[u8]) -> Vec<usize> {
     let mut ends = Vec::new();
     let mut index = 0_usize;
     while let Some(rest) = bytes.get(index..).filter(|window| !window.is_empty()) {
-        let width = SSE_FRAME_ENDS
+        let found_width = SSE_FRAME_ENDS
             .iter()
             .find_map(|end| rest.starts_with(end).then_some(end.len()));
-        let Some(width) = width else {
+        let Some(width) = found_width else {
             index = index.saturating_add(1);
             continue;
         };
