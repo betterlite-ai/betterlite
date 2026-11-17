@@ -32,6 +32,18 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L428-L448
   - what: >-
+      A DB team mapping's claim contributes team ids only when it is a list of strings: another type adds none and a
+      list holding a non-string raises a typed error that names the claim. LiteLLM extends the identity's teams with
+      whatever the claim holds, so a string adds its characters and an object its keys, and only a non-string list
+      member fails, later, at CustomOpenID construction.
+    why: >-
+      betterlite's port of get_all_jwt_team_ids reads a plural team claim as a list of strings or nothing at all, so
+      the DB mapping's claim behaves the same, and docs/compatibility.md excludes Python iteration and coercion in
+      favor of a typed error that names the field. A mapping whose claim is a string or an object names no team ids
+      that could be meant.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1161-L1176
+  - what: >-
       A configured claim path longer than 8192 bytes or with more than 256 segments raises a typed error instead of
       being looked up, for the GENERIC_USER_* attribute paths and for each GENERIC_USER_EXTRA_ATTRIBUTES name.
     why: >-
