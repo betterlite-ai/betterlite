@@ -227,10 +227,10 @@ impl FrameState<'_> {
             if let Some(usage) = self.frame.message.usage_metadata.clone() {
                 self.session.pending_usage_metadata = Some(usage);
             }
-            let unhandled = self.frame.entries.keys().any(|key| {
-                KNOWN_KEYS.contains(&key.as_str())
-                    && !(key == "serverContent" && self.server_content_handled)
-                    && !(key == "toolCall" && self.tool_call_handled)
+            let unhandled = self.frame.entries.keys().any(|key| match key.as_str() {
+                "serverContent" => !self.server_content_handled,
+                "toolCall" => !self.tool_call_handled,
+                _ => KNOWN_KEYS.contains(&key.as_str()),
             });
             if unhandled {
                 return Err(LiveFrameError::UnknownMessage);
