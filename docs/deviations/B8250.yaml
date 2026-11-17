@@ -1,0 +1,27 @@
+task: B8250
+deviations:
+  - what: LangfuseOtel wraps OpenTelemetryV2 by composition and reads the live root through an injected RootSpanSource of RootSpanSink values, where LiteLLM subclasses OpenTelemetryV2 and reads a ContextVar holding the span object.
+    why: Rust has no inheritance, and B3847's request slot keeps only a SpanContext, which cannot record; the server layer that owns the live span supplies it (B8680 and B8910 wire it).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L19-L28
+  - what: langfuse.trace.tags is stamped as its JSON text, so a reader parses ["env:test","beta"] back into a list, where LiteLLM sets a string-list attribute.
+    why: RootSpanSink carries strings only, as the task requires, so the mapper's list travels as JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/langfuse.py#L91-L100
+  - what: An entry of OTEL_PYTHON_FASTAPI_EXCLUDED_URLS that is not a valid regex is an error from ServerSpanPolicy::from_gate. LiteLLM lets the instrumentation raise, swallows it in instrument_fastapi_app and mounts nothing, logging at debug. Python's re accepts lookaround and backreferences, so a pattern that uses them is valid in LiteLLM and an invalid entry here.
+    why: A config typo must surface where the operator can see it instead of silently dropping every server span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L126-L141
+  - what: 'A projection that renders nothing is a None in betterlite, so the debug line "otel v2 langfuse: could not render the root observation input or output" and its exception path do not exist; a stamped output stays when only the input renders nothing.'
+    why: B3857's request_input, response_output and stream_output return Option, not Result, so there is no error to log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L60-L76
+  - what: The success and streaming hooks are plain functions, and the streaming one returns a stream that stamps at its tail; LiteLLM's are async methods, one of them an async generator.
+    why: The stamp renders synchronously from B3857's projections, so neither hook awaits; the caller drives the returned stream, which stamps only once the inner stream ends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L40-L58
+  - what: passthrough_span_name computes the name and route for the caller to apply, where LiteLLM's server_request_hook renames the span itself and catches every exception.
+    why: The Rust server opens its own span (B8680), so this task supplies the decision as pure code with no span object to rename.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L79-L99
+  - what: is_excluded matches the OTEL_PYTHON_FASTAPI_EXCLUDED_URLS patterns against the request path, where LiteLLM hands them to FastAPIInstrumentor, whose ASGI middleware matches them against scheme://host + path.
+    why: The task pins a path argument and the server layer (B8680) checks the path before it opens the span; the eleven default entries are path fragments that match the same in either string, so only an anchored pattern such as ^https://proxy.example.com/health$ differs, excluding in LiteLLM and matching nothing here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L126-L139
+  - what: The wrappers forward only the CallbackLogger methods OpenTelemetryV2 overrides (callback_name, async_log_success_event, async_log_failure_event) and keep every other method at its trait default, where LiteLLM's classes inherit the whole of OpenTelemetryV2.
+    why: Every default there equals the wrapped logger's own value today, and forwarding the rest would add methods no test can tell apart; an override added to OpenTelemetryV2 later needs the same forwarding here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L178-L381
+kept_bugs: []
