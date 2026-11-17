@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-converse-response-error-class-seed
+call:
+  bedrock_converse_response:
+    error_class:
+      - {message: seed failure, status: 422, headers: [[x-amzn-requestid, seed]]}
+env: {}
+compare: {ignore: []}
