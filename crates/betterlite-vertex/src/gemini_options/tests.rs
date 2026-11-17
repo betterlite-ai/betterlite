@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod gemini_option_settings;
+
 use std::fs;
 use std::sync::Arc;
 

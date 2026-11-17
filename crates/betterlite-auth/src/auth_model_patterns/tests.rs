@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod config_section;
+
 mod access_groups;
 mod view;
 

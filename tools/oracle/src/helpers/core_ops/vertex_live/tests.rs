@@ -4,6 +4,8 @@ use std::fs;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 
+use rstest::rstest;
+
 use betterlite_oracle_helper_api::helper::Helper as _;
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use betterlite_oracle_runner::helpers::{HelperRun, run_case};
@@ -12,15 +14,13 @@ use super::Op;
 
 const OPERATION: &str = "vertex_live";
 
-#[test]
-fn replays_the_vertex_live_helper_cases() {
-    let cases = case_paths();
-    assert!(!cases.is_empty(), "the vertex_live cases are present");
-    let differences: Vec<String> = cases
-        .iter()
-        .filter_map(|path| replay_case(path).err())
-        .collect();
-    assert!(differences.is_empty(), "{differences:?}");
+#[rstest]
+fn replays_the_vertex_live_helper_cases(
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/vertex-live/*.yaml")]
+    path: PathBuf,
+) {
+    assert_eq!(replay_case(&path), Ok(()));
 }
 
 #[test]
@@ -32,11 +32,6 @@ fn replays_the_vertex_live_seeds() {
         .filter_map(|path| check_seed(path).err())
         .collect();
     assert!(failures.is_empty(), "{failures:?}");
-}
-
-fn case_paths() -> Vec<PathBuf> {
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../cases/helpers/vertex-live");
-    yaml_paths(&folder)
 }
 
 fn seed_paths() -> Vec<PathBuf> {

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod config_section;
+
 use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::fs;

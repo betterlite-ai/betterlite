@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+#[path = "tests/voyage_credentials.rs"]
+mod voyage_credentials;
+
 use std::{error::Error as _, fs, path::PathBuf};
 
 use betterlite_models::decisions::Json;

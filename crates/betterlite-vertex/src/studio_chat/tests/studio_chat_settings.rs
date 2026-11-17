@@ -1,7 +1,7 @@
-use betterlite_vertex::studio_chat::settings::StudioSettings;
+use crate::studio_chat::settings::StudioSettings;
 use serde::Deserialize;
 
-use crate::loader::{ConfigError, parse_view};
+use betterlite_config::loader::{ConfigError, parse_view};
 
 const CONFIGURED: &str = "model_list:\n  - litellm_params:\n      model: gemini/gemini-3-pro-preview\n      temperature: 0\n      max_output_tokens: 256\n      top_p: 0.95\n      top_k: 40\n      response_mime_type: application/json\n      response_schema:\n        type: object\n        properties:\n          name: {type: string}\n      candidate_count: 2\n      stop_sequences: [END]\n";
 

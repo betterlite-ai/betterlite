@@ -1,16 +1,21 @@
 #![cfg(test)]
 
-use std::path::Path;
+use std::path::PathBuf;
+
+use rstest::rstest;
 
 use betterlite_oracle_runner::case::load_helper_cases;
-use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
+use betterlite_oracle_runner::helpers::{HelperRun, run_helper_cases};
 
-#[test]
-fn replays_corpus() {
-    let folder = Path::new(ORACLE_DIR).join("cases/logging/gcs-bucket-logging");
-    let cases = load_helper_cases(&[folder]).unwrap();
-    assert!(cases.iter().all(|case| matches!(
-        run_case(&[crate::GROUP], case, false).unwrap(),
+#[rstest]
+fn replays_corpus(
+    #[base_dir = "../../.."]
+    #[files("cases/logging/gcs-bucket-logging/*.yaml")]
+    path: PathBuf,
+) {
+    let cases = load_helper_cases(&[path]).unwrap();
+    assert!(matches!(
+        run_helper_cases(&[crate::GROUP], &cases, false).unwrap(),
         HelperRun::Match
-    )));
+    ));
 }

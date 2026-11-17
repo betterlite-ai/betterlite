@@ -1,7 +1,7 @@
-use betterlite_vertex::partner_count::options::PartnerCountOptions;
+use crate::partner_count::options::PartnerCountOptions;
 use serde::Deserialize;
 
-use crate::loader::{ConfigError, parse_view};
+use betterlite_config::loader::{ConfigError, parse_view};
 
 const CONFIGURED: &str = "model_list:\n  - litellm_params:\n      model: vertex_ai/claude-sonnet-4-6@default\n      vertex_count_tokens_location: asia-southeast1\n";
 

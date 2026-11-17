@@ -1,8 +1,8 @@
+use crate::partner_openai::settings::PartnerSettings;
 use betterlite_openai::base_helpers::provider_config;
-use betterlite_vertex::partner_openai::settings::PartnerSettings;
 use serde::Deserialize;
 
-use crate::loader::{ConfigError, parse_view};
+use betterlite_config::loader::{ConfigError, parse_view};
 
 const CONFIGURED: &str = "model_list:\n  - litellm_params:\n      model: vertex_ai/jamba-1.5-large@001\n      max_tokens: 64\n";
 const UNCONFIGURED: &str =

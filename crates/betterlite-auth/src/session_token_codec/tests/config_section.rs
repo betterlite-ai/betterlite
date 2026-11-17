@@ -1,9 +1,7 @@
-#![cfg(test)]
-
 use std::collections::BTreeMap;
 
-use betterlite_auth::session_token_codec::builders::{CliSession, SessionTokenCodec};
-use betterlite_auth::session_token_codec::decode_session_token;
+use crate::session_token_codec::builders::{CliSession, SessionTokenCodec};
+use crate::session_token_codec::decode_session_token;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_secrets::error::SecretError;
@@ -14,8 +12,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::loader::ConfigLoader;
-use crate::types::Config;
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
 
 const SALT: &str = "salt-one";
 

@@ -3,11 +3,6 @@ use crate::loader::EnvironmentLookup;
 pub(crate) mod dispatch;
 pub(crate) mod embeddings;
 pub(crate) mod images;
-pub(crate) mod options;
-pub(crate) mod partner_count;
-pub(crate) mod partner_options;
-pub(crate) mod request;
-pub(crate) mod studio_chat;
 pub(crate) mod thinking;
 
 const DEFER_SETUP_VARIABLE: &str = "LITELLM_GEMINI_LIVE_DEFER_SETUP";

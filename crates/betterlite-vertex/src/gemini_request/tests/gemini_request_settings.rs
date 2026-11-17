@@ -1,19 +1,17 @@
-#![cfg(test)]
-
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
+use crate::gemini_request::body::{BodyInput, transform};
+use crate::model_policy::capabilities::{
+    CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
+};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::Message;
-use betterlite_vertex::gemini_request::body::{BodyInput, transform};
-use betterlite_vertex::model_policy::capabilities::{
-    CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-};
 use tokio::runtime::Builder;
 
-use crate::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::{ConfigError, ConfigLoader};
 
 const CACHED_MESSAGES: &str =
     r#"[{"role":"system","content":"rules"},{"role":"user","content":"hi"}]"#;

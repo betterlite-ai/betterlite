@@ -14,7 +14,6 @@ mod vertex_batch_download_settings;
 mod vertex_file_read_settings;
 mod vertex_gcs_settings;
 mod vertex_rag_settings;
-mod vertex_search_settings;
 mod xai_identity;
 mod xai_oauth;
 

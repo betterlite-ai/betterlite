@@ -1,9 +1,9 @@
-use betterlite_vertex::vertex_discovery_search::options::{
+use crate::vertex_discovery_search::options::{
     DEFAULT_COLLECTION_ID, RawSearchOptions, VertexSearchOptions,
 };
 use serde::Deserialize;
 
-use crate::loader::{ConfigError, parse_view};
+use betterlite_config::loader::{ConfigError, parse_view};
 
 #[derive(Debug, Default, Deserialize)]
 struct Raw {
