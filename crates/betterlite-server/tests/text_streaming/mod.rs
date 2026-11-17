@@ -8,7 +8,9 @@ use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyT
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
-use betterlite_openai::text_completion_execution::{CompletionCallAnswer, CompletionExecutor};
+use betterlite_openai::text_completion_execution::{
+    CompletionCallAnswer, CompletionExecutor, CompletionStreamAnswer,
+};
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
@@ -48,6 +50,13 @@ fn client() -> ProxiedClient {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("proxy policy"),
     );
     ProxiedClient::outbound(&policy).expect("client")
+}
+
+fn text_executor() -> CompletionExecutor {
+    CompletionExecutor {
+        client: client(),
+        catalog: OnceCell::new(),
+    }
 }
 
 // The provider sends one event, waits for the client to consume it, then sends the next and holds the connection
@@ -92,6 +101,28 @@ async fn paused_provider(
     closed.send(()).expect("closed signal");
 }
 
+// The text endpoint's stream for the request, sent the way the route sends it.
+async fn text_stream(
+    executor: &CompletionExecutor,
+    deployment: &ChatDeployment,
+    request: &CompletionRequest,
+) -> CompletionStreamAnswer {
+    let redactor = Redactor::new(0).expect("redactor");
+    let mut logger = TracingCompletionLog;
+    let transport = executor
+        .text_transport(deployment, request, true)
+        .await
+        .expect("transport");
+    let answer = executor
+        .send(deployment, transport, true, &redactor, &mut logger)
+        .await
+        .expect("stream");
+    let CompletionCallAnswer::Streamed(answer) = answer else {
+        panic!("the provider answered a buffered completion");
+    };
+    answer
+}
+
 #[tokio::test]
 async fn text_streaming_text_stream_tests_behavior() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -102,27 +133,11 @@ async fn text_streaming_text_stream_tests_behavior() {
     tasks.spawn(paused_provider(upstream, first_delivered, closed));
 
     let deployment = deployment(&format!("http://{address}/v1"));
-    let executor = CompletionExecutor {
-        client: client(),
-        catalog: OnceCell::new(),
-    };
     let request =
         CompletionRequest::parse(br#"{"model":"text-model","prompt":"hello","stream":true}"#)
             .expect("completion request");
-    let redactor = Redactor::new(0).expect("redactor");
-    let mut logger = TracingCompletionLog;
-    let transport = executor
-        .text_transport(&deployment, &request, true)
-        .await
-        .expect("transport");
-    let answer = executor
-        .send(&deployment, transport, true, &redactor, &mut logger)
-        .await
-        .expect("stream");
-    let CompletionCallAnswer::Streamed(answer) = answer else {
-        panic!("the provider answered a buffered completion");
-    };
-    let mut stream = answer.stream;
+    let executor = text_executor();
+    let mut stream = text_stream(&executor, &deployment, &request).await.stream;
 
     let first = timeout(Duration::from_secs(5), stream.next())
         .await

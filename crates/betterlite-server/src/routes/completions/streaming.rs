@@ -114,7 +114,7 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<Bytes, io::Error>, 
         }
         match state.body.next().await {
             Some(Ok(chunk)) => {
-                if let Err(error) = push_chunk(&mut state, chunk) {
+                if let Err(error) = push_chunk(&mut state, &chunk) {
                     state.finished = true;
                     return Some((Err(error), state));
                 }
@@ -133,9 +133,9 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<Bytes, io::Error>, 
     }
 }
 
-fn push_chunk(state: &mut FrameState, chunk: Json) -> Result<(), io::Error> {
-    let value = serde_json::to_value(&chunk).map_err(io::Error::other)?;
-    let text = serde_json::to_string(&without_nulls(value)).map_err(io::Error::other)?;
+fn push_chunk(state: &mut FrameState, chunk: &Json) -> Result<(), io::Error> {
+    let value = serde_json::to_value(chunk).map_err(io::Error::other)?;
+    let text = serde_json::to_string(without_nulls(value)).map_err(io::Error::other)?;
     state
         .pending
         .push_back(Bytes::from(format!("data: {text}\n\n")));

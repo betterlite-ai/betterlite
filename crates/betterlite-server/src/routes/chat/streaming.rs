@@ -14,6 +14,7 @@ use betterlite_core::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatResult, ChatStreamAnswer,
     TextCallMode,
 };
+use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -25,7 +26,9 @@ use betterlite_openai::completion_chat_bridge::{
 };
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
-use betterlite_openai::text_completion_execution::{CompletionCallAnswer, CompletionExecutor};
+use betterlite_openai::text_completion_execution::{
+    CompletionAnswer, CompletionCallAnswer, CompletionExecutor, CompletionStreamAnswer,
+};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use tokio::sync::OnceCell;
@@ -119,52 +122,72 @@ impl ChatCall for ChatCalls {
         call: ChatCallInput<'_>,
         mode: TextCallMode,
     ) -> Result<ChatResult, ChatFailure> {
-        match mode {
-            // converted to chat unless the deployment is a fine-tuned model
-            TextCallMode::Buffered { convert } => {
-                let answered = bridged_send(self, &call, false).await?;
-                let CompletionCallAnswer::Buffered(answered) = answered else {
-                    return Err(ChatFailure::Mismatched);
-                };
-                let asked = call.request.model.as_deref();
-                let body = if convert {
-                    let created = i64::try_from((self.executor.clock)()).unwrap_or(i64::MAX);
-                    answer::chat_completion_body(&answered.response, created, asked)
-                } else {
-                    answer::text_completion_body(&answered.response, asked)
-                }
-                .map_err(completion_failure)?;
-                Ok(ChatResult::Completion(ChatCompletionAnswer {
-                    body,
-                    upstream_headers: HeaderMap::new(),
-                    upstream_time: answered.upstream_time,
-                }))
-            }
-            // rewritten as the chat route's SSE events
-            TextCallMode::Streamed => {
-                let answered = bridged_send(self, &call, true).await?;
-                let CompletionCallAnswer::Streamed(answered) = answered else {
-                    return Err(ChatFailure::Mismatched);
-                };
-                let source = TextSource {
-                    stream: answered.stream,
-                    model: call.request.model.clone().unwrap_or_default(),
-                    include_usage: call
-                        .request
-                        .stream_options
-                        .as_ref()
-                        .is_some_and(|options| options.include_usage),
-                };
-                Ok(ChatResult::Stream(ChatStreamAnswer {
-                    body: stream::unfold(Pump::new(source), next_frame)
-                        .map(|item| item.map(|bytes| bytes.to_vec()))
-                        .boxed(),
-                    upstream_headers: HeaderMap::new(),
-                    upstream_time: answered.upstream_time,
-                }))
-            }
-        }
+        let streamed = matches!(mode, TextCallMode::Streamed);
+        let answered = bridged_send(self, &call, streamed).await?;
+        answered_result(&self.executor, mode, answered, call.request)
     }
+}
+
+// The text endpoint's answer in the shape the route asked for, a mismatch being a dispatch bug
+fn answered_result(
+    executor: &ChatExecutor,
+    mode: TextCallMode,
+    answered: CompletionCallAnswer,
+    request: &ChatRequest,
+) -> Result<ChatResult, ChatFailure> {
+    match (mode, answered) {
+        (TextCallMode::Buffered { convert }, CompletionCallAnswer::Buffered(answer)) => {
+            let created = i64::try_from((executor.clock)()).unwrap_or(i64::MAX);
+            buffered_result(&answer, convert, request.model.as_deref(), created)
+        }
+        (TextCallMode::Streamed, CompletionCallAnswer::Streamed(answer)) => {
+            let options = request.stream_options.as_ref();
+            let include_usage = options.is_some_and(|chosen| chosen.include_usage);
+            let model = request.model.clone().unwrap_or_default();
+            Ok(streamed_result(answer, model, include_usage))
+        }
+        _ => Err(ChatFailure::Mismatched),
+    }
+}
+
+// The text endpoint's buffered answer converted to chat unless the deployment is a fine-tuned model.
+fn buffered_result(
+    answer: &CompletionAnswer,
+    convert: bool,
+    asked: Option<&str>,
+    created: i64,
+) -> Result<ChatResult, ChatFailure> {
+    let body = if convert {
+        answer::chat_completion_body(&answer.response, created, asked)
+    } else {
+        answer::text_completion_body(&answer.response, asked)
+    }
+    .map_err(completion_failure)?;
+    Ok(ChatResult::Completion(ChatCompletionAnswer {
+        body,
+        upstream_headers: HeaderMap::new(),
+        upstream_time: answer.upstream_time,
+    }))
+}
+
+// The text endpoint's stream rewritten as the chat route's SSE events.
+fn streamed_result(
+    answer: CompletionStreamAnswer,
+    model: String,
+    include_usage: bool,
+) -> ChatResult {
+    let source = TextSource {
+        stream: answer.stream,
+        model,
+        include_usage,
+    };
+    ChatResult::Stream(ChatStreamAnswer {
+        body: stream::unfold(Pump::new(source), next_frame)
+            .map(|item| item.map(|bytes| bytes.to_vec()))
+            .boxed(),
+        upstream_headers: HeaderMap::new(),
+        upstream_time: answer.upstream_time,
+    })
 }
 
 // The text endpoint reached for this chat deployment: the built request sent the way the route asked
@@ -177,7 +200,11 @@ async fn bridged_send(
     let transport =
         text_request(&call.deployment, call.request, &model).map_err(completion_failure)?;
     let mut logger = TracingCompletionLog;
-    text_executor(&calls.executor)
+    let executor = CompletionExecutor {
+        client: calls.executor.client.clone(),
+        catalog: OnceCell::new(),
+    };
+    executor
         .send(
             &call.deployment,
             transport,
@@ -189,13 +216,6 @@ async fn bridged_send(
         .map_err(completion_failure)
 }
 
-fn text_executor(executor: &Arc<ChatExecutor>) -> CompletionExecutor {
-    CompletionExecutor {
-        client: executor.client.clone(),
-        catalog: OnceCell::new(),
-    }
-}
-
 // the chat route answers with the provider's own error envelope, as LiteLLM's exception path does
 fn completion_failure(failure: CompletionFailure) -> ChatFailure {
     let CompletionFailure {
@@ -204,9 +224,14 @@ fn completion_failure(failure: CompletionFailure) -> ChatFailure {
         param,
         message,
     } = failure;
-    let body = serde_json::json!({
-        "error": {"message": message, "type": error_type, "param": param}
-    });
+    let body = ErrorResponse {
+        error: ErrorObject {
+            message,
+            error_type: error_type.map_or(WireField::Null, WireField::Text),
+            param: param.map_or(WireField::Null, WireField::Text),
+            code: WireField::Null,
+        },
+    };
     match serde_json::to_vec(&body) {
         Ok(body) => ChatFailure::Route(ChatError::Provider {
             response: Box::new(UpstreamResponse {

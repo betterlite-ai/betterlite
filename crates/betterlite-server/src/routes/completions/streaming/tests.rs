@@ -9,7 +9,7 @@ use betterlite_core::operation::text_stream::TextStreamResult;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -43,7 +43,7 @@ fn chunk(text: &str) -> Json {
 
 fn result(items: Vec<Result<Json, StreamError>>) -> TextStreamResult {
     TextStreamResult {
-        body: futures_util::stream::iter(items).boxed(),
+        body: stream::iter(items).boxed(),
         upstream_headers: HeaderMap::new(),
         upstream_time: Duration::from_millis(2),
     }
@@ -65,62 +65,70 @@ enum Scenario {
 #[tokio::test]
 async fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::NullsDropped => {
-            let answer = result(vec![Ok(chunk(
-                r#"{"id":"cmpl-1","object":"text_completion","created":1,"model":"text-model","choices":[{"finish_reason":null,"index":0,"text":" Hel","logprobs":null}],"usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0}}"#,
-            ))]);
-            let response = render(answer, &deployment(), "call", Instant::now());
-            let body = to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body");
-            let text = String::from_utf8(body.to_vec()).expect("utf8");
-            assert!(text.starts_with("data: "), "{text}");
-            assert!(text.ends_with("\n\n"), "{text}");
-            let event: Json =
-                serde_json::from_str(text.trim_start_matches("data: ").trim_end()).expect("event");
-            assert_eq!(
-                event,
-                chunk(
-                    r#"{"id":"cmpl-1","object":"text_completion","created":1,"model":"text-model","choices":[{"index":0,"text":" Hel"}],"usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0}}"#
-                )
-            );
-        }
-        Scenario::DoneLast => {
-            let response = render(result(Vec::new()), &deployment(), "call", Instant::now());
-            let body = to_bytes(response.into_body(), usize::MAX)
-                .await
-                .expect("body");
-            // the whole body of an empty stream is the closing frame the route takes from DONE_FRAME
-            assert_eq!(String::from_utf8(body.to_vec()).expect("utf8"), DONE_FRAME);
-        }
-        Scenario::ErrorTruncates => {
-            let answer = result(vec![Err(StreamError::MissingChunk)]);
-            let response = render(answer, &deployment(), "call", Instant::now());
-            assert!(to_bytes(response.into_body(), usize::MAX).await.is_err());
-        }
-        Scenario::StreamHeaders => {
-            let response = render(result(Vec::new()), &deployment(), "call", Instant::now());
-            let headers = response.headers();
-            assert_eq!(
-                headers
-                    .get("content-type")
-                    .and_then(|value| value.to_str().ok()),
-                Some("text/event-stream; charset=utf-8")
-            );
-            assert_eq!(
-                headers
-                    .get("cache-control")
-                    .and_then(|value| value.to_str().ok()),
-                Some("no-cache")
-            );
-            assert_eq!(
-                headers
-                    .get("x-accel-buffering")
-                    .and_then(|value| value.to_str().ok()),
-                Some("no")
-            );
-        }
+        Scenario::NullsDropped => nulls_dropped().await,
+        Scenario::DoneLast => done_last().await,
+        Scenario::ErrorTruncates => error_truncates().await,
+        Scenario::StreamHeaders => stream_headers().await,
     }
+}
+
+async fn nulls_dropped() {
+    let answer = result(vec![Ok(chunk(
+        r#"{"id":"cmpl-1","object":"text_completion","created":1,"model":"text-model","choices":[{"finish_reason":null,"index":0,"text":" Hello","logprobs":null}],"usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0}}"#,
+    ))]);
+    let response = render(answer, &deployment(), "call", Instant::now());
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let text = String::from_utf8(body.to_vec()).expect("utf8");
+    assert!(text.starts_with("data: "), "{text}");
+    assert!(text.ends_with("\n\n"), "{text}");
+    let event: Json =
+        serde_json::from_str(text.trim_start_matches("data: ").trim_end()).expect("event");
+    assert_eq!(
+        event,
+        chunk(
+            r#"{"id":"cmpl-1","object":"text_completion","created":1,"model":"text-model","choices":[{"index":0,"text":" Hello"}],"usage":{"completion_tokens":0,"prompt_tokens":0,"total_tokens":0}}"#
+        )
+    );
+}
+
+async fn done_last() {
+    let response = render(result(Vec::new()), &deployment(), "call", Instant::now());
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    // the whole body of an empty stream is the closing frame the route takes from DONE_FRAME
+    assert_eq!(String::from_utf8(body.to_vec()).expect("utf8"), DONE_FRAME);
+}
+
+async fn error_truncates() {
+    let answer = result(vec![Err(StreamError::MissingChunk)]);
+    let response = render(answer, &deployment(), "call", Instant::now());
+    assert!(to_bytes(response.into_body(), usize::MAX).await.is_err());
+}
+
+async fn stream_headers() {
+    let response = render(result(Vec::new()), &deployment(), "call", Instant::now());
+    let headers = response.headers();
+    assert_eq!(
+        headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream; charset=utf-8")
+    );
+    assert_eq!(
+        headers
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-cache")
+    );
+    assert_eq!(
+        headers
+            .get("x-accel-buffering")
+            .and_then(|value| value.to_str().ok()),
+        Some("no")
+    );
 }
 
 #[test]

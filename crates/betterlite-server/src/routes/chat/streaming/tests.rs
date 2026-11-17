@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -13,6 +14,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::{StreamExt as _, stream};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -314,7 +316,7 @@ async fn provider_framework_tests_behavior(#[case] failure: ChatFailure) {
     assert_eq!(reply.error.litellm_call_id.as_deref(), Some("call-7"));
 }
 
-fn text_chunk(body: &str) -> betterlite_streaming::stream_chunk_shaping::records::StreamChunk {
+fn text_chunk(body: &str) -> StreamChunk {
     serde_json::from_str(body).expect("text chunk")
 }
 
@@ -337,9 +339,31 @@ async fn bridged(chunks: Vec<&str>, include_usage: bool) -> Vec<Result<Bytes, Ht
     frames
 }
 
-fn payload(frame: &Result<Bytes, HttpError>) -> serde_json::Value {
+// A frame the text bridge wrote, read as the chat chunk the client parses
+#[derive(serde::Deserialize)]
+struct BridgedFrame {
+    object: String,
+    model: String,
+    choices: Vec<FrameChoice>,
+    #[serde(default)]
+    usage: Option<BridgedUsage>,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgedUsage {
+    total_tokens: u64,
+    #[serde(default)]
+    completion_tokens_details: Option<BridgedDetails>,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgedDetails {
+    text_tokens: u64,
+}
+
+fn payload(frame: &Result<Bytes, HttpError>) -> BridgedFrame {
     let bytes = frame.as_ref().expect("frame");
-    let text = std::str::from_utf8(bytes).expect("utf8");
+    let text = from_utf8(bytes).expect("utf8");
     let body = text.strip_prefix("data: ").expect("data event").trim_end();
     serde_json::from_str(body).expect("frame json")
 }
@@ -348,7 +372,7 @@ fn payload(frame: &Result<Bytes, HttpError>) -> serde_json::Value {
 async fn a_text_stream_becomes_chat_chunks_with_a_done_event() {
     let frames = bridged(
         vec![
-            r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"}}]}"#,
+            r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"}}]}"#,
             r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
         ],
         false,
@@ -356,28 +380,14 @@ async fn a_text_stream_becomes_chat_chunks_with_a_done_event() {
     .await;
     assert_eq!(frames.len(), 3);
     let first = payload(&frames[0]);
-    assert_eq!(
-        first.get("object"),
-        Some(&serde_json::json!("chat.completion.chunk"))
-    );
-    assert_eq!(first.get("model"), Some(&serde_json::json!("client")));
-    assert_eq!(
-        first.pointer("/choices/0/delta/content"),
-        Some(&serde_json::json!("Hel"))
-    );
-    assert_eq!(
-        first.pointer("/choices/0/delta/role"),
-        Some(&serde_json::json!("assistant"))
-    );
+    assert_eq!(first.object, "chat.completion.chunk");
+    assert_eq!(first.model, "client");
+    assert_eq!(first.choices[0].delta.content.as_deref(), Some("Hello"));
+    assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
     let second = payload(&frames[1]);
-    assert_eq!(
-        second.pointer("/choices/0/finish_reason"),
-        Some(&serde_json::json!("stop"))
-    );
-    assert_eq!(
-        second.pointer("/choices/0/delta"),
-        Some(&serde_json::json!({}))
-    );
+    assert_eq!(second.choices[0].finish_reason.as_deref(), Some("stop"));
+    assert_eq!(second.choices[0].delta.role, None);
+    assert_eq!(second.choices[0].delta.content, None);
     assert_eq!(
         frames[2].as_ref().expect("done").as_ref(),
         b"data: [DONE]\n\n"
@@ -391,14 +401,10 @@ async fn a_text_usage_chunk_needs_the_client_usage_choice() {
     assert_eq!(unasked.len(), 1);
     let asked = bridged(vec![usage], true).await;
     let frame = payload(&asked[0]);
-    assert_eq!(
-        frame.pointer("/usage/total_tokens"),
-        Some(&serde_json::json!(5))
-    );
-    assert_eq!(
-        frame.pointer("/usage/completion_tokens_details/text_tokens"),
-        Some(&serde_json::json!(2))
-    );
+    let counted = frame.usage.expect("usage");
+    assert_eq!(counted.total_tokens, 5);
+    let details = counted.completion_tokens_details.expect("details");
+    assert_eq!(details.text_tokens, 2);
 }
 
 #[tokio::test]
@@ -413,13 +419,19 @@ async fn a_text_provider_failure_is_a_chat_provider_failure() {
         panic!("not a provider failure");
     };
     assert_eq!(response.status, 429);
-    let body: serde_json::Value = serde_json::from_slice(&response.body).expect("body");
-    assert_eq!(
-        body.pointer("/error/message"),
-        Some(&serde_json::json!("slow down"))
-    );
-    assert_eq!(
-        body.pointer("/error/type"),
-        Some(&serde_json::json!("rate_limit_error"))
-    );
+    let reply: ProviderReply = serde_json::from_slice(&response.body).expect("body");
+    assert_eq!(reply.error.message, "slow down");
+    assert_eq!(reply.error.error_type, "rate_limit_error");
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderReply {
+    error: ProviderFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
 }

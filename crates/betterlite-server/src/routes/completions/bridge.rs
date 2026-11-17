@@ -2,12 +2,16 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use axum::http::HeaderMap;
+use axum::http::HeaderValue;
+use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::operation::text_completion::{
     TextCompletionCallInput, TextCompletionFailure, TextCompletionResult,
 };
 use betterlite_core::operation::text_stream::TextStreamAnswer;
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::StreamResponse;
+use betterlite_models::decisions::Json;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::completion_chat_bridge::answer::text_completion_response;
 use betterlite_openai::stream::SseParser;
@@ -19,20 +23,21 @@ use betterlite_openai::text_completion_execution::{
 use betterlite_openai::text_completion_stream::{decode_chat_events, shaped_chunk};
 use betterlite_provider::operation::ChatCompletion;
 use futures_util::StreamExt as _;
+use futures_util::stream::{self, BoxStream};
 
 use super::CompletionCalls;
 use crate::server::chat_setup::provider_call::CallError;
+
+const MISMATCHED: &str = "the provider answered a different operation";
 
 pub(super) async fn text_answer(
     calls: &CompletionCalls,
     call: TextCompletionCallInput<'_>,
 ) -> Result<TextCompletionResult, TextCompletionFailure> {
-    let CompletionCallAnswer::Buffered(answer) = text_send(calls, &call, false).await? else {
-        return Err(internal_failure(
-            "the provider answered a different operation",
-        ));
-    };
-    Ok(text_result(answer))
+    match text_send(calls, &call, false).await? {
+        CompletionCallAnswer::Buffered(answer) => Ok(text_result(answer)),
+        CompletionCallAnswer::Streamed(_) => Err(internal_failure(MISMATCHED)),
+    }
 }
 
 // the chat answer as the text completion response the route writes
@@ -42,9 +47,7 @@ pub(super) fn converted(
     upstream_time: Duration,
 ) -> Result<CompletionAnswer, TextCompletionFailure> {
     let ChatCompletion::OpenAi(response) = completion else {
-        return Err(internal_failure(
-            "the provider answered a different operation",
-        ));
+        return Err(internal_failure(MISMATCHED));
     };
     Ok(CompletionAnswer {
         response: Box::new(text_completion_response(*response)),
@@ -57,8 +60,11 @@ pub(super) async fn text_stream(
     calls: &CompletionCalls,
     call: TextCompletionCallInput<'_>,
 ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-    streamed_answer(text_send(calls, &call, true).await)
-        .map(|answer| stream_answer(answer, call.request.model.as_deref()))
+    let CompletionCallAnswer::Streamed(answer) = text_send(calls, &call, true).await? else {
+        return Err(internal_failure(MISMATCHED));
+    };
+    let model = call.request.model.as_deref();
+    Ok(stream_answer(answer, model))
 }
 
 // The text endpoint reached for this deployment, with the stream flag the dropped body loses
@@ -86,17 +92,6 @@ async fn text_send(
         .map_err(bridge_failure)
 }
 
-fn streamed_answer(
-    answered: Result<CompletionCallAnswer, TextCompletionFailure>,
-) -> Result<CompletionStreamAnswer, TextCompletionFailure> {
-    match answered? {
-        CompletionCallAnswer::Streamed(answer) => Ok(answer),
-        CompletionCallAnswer::Buffered(_) => Err(internal_failure(
-            "the provider answered a different operation",
-        )),
-    }
-}
-
 // the provider's buffered answer as the dispatch pipeline's text result
 pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
     TextCompletionResult {
@@ -113,10 +108,9 @@ fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStr
         .stream
         .map(move |item| match item {
             Ok(chunk) => shaped_chunk(chunk, &model)
-                .map_err(stream_failure)
+                .map_err(|source| stream_failure(&source))
                 .and_then(|value| {
-                    serde_json::from_value::<betterlite_models::decisions::Json>(value)
-                        .map_err(stream_failure)
+                    serde_json::from_value::<Json>(value).map_err(|source| stream_failure(&source))
                 }),
             Err(error) => Err(TextCompletionFailure {
                 status: 500,
@@ -150,7 +144,7 @@ pub(super) fn chat_stream_answer(
         finished: false,
     };
     TextStreamAnswer {
-        body: futures_util::stream::unfold(state, next_chat_chunk).boxed(),
+        body: stream::unfold(state, next_chat_chunk).boxed(),
         upstream_headers,
         upstream_time,
     }
@@ -158,23 +152,17 @@ pub(super) fn chat_stream_answer(
 
 // The chat endpoint's SSE bytes read as the chat chunks the text wrapper converts, model restamped.
 struct ChatChunkState {
-    bytes: futures_util::stream::BoxStream<
-        'static,
-        Result<Vec<u8>, betterlite_http::error::HttpError>,
-    >,
+    bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     parser: SseParser,
     model: String,
     include_usage: bool,
-    pending: VecDeque<betterlite_models::decisions::Json>,
+    pending: VecDeque<Json>,
     finished: bool,
 }
 
 async fn next_chat_chunk(
     mut state: ChatChunkState,
-) -> Option<(
-    Result<betterlite_models::decisions::Json, TextCompletionFailure>,
-    ChatChunkState,
-)> {
+) -> Option<(Result<Json, TextCompletionFailure>, ChatChunkState)> {
     loop {
         if let Some(chunk) = state.pending.pop_front() {
             return Some((Ok(chunk), state));
@@ -216,7 +204,7 @@ async fn next_chat_chunk(
 
 fn enqueue(
     state: &mut ChatChunkState,
-    parsed: Result<Vec<betterlite_models::decisions::Json>, TextCompletionFailure>,
+    parsed: Result<Vec<Json>, TextCompletionFailure>,
 ) -> Result<(), TextCompletionFailure> {
     for chunk in parsed? {
         state.pending.push_back(chunk);
@@ -226,10 +214,7 @@ fn enqueue(
 
 // the chat endpoint's text answer is written by the bridge, so the route adds its own content type
 pub(super) fn json_response(mut headers: HeaderMap, body: Vec<u8>) -> Response {
-    headers.insert(
-        axum::http::header::CONTENT_TYPE,
-        axum::http::HeaderValue::from_static("application/json"),
-    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     (headers, body).into_response()
 }
 
@@ -242,7 +227,7 @@ pub(super) fn bridge_failure(failure: CompletionFailure) -> TextCompletionFailur
     }
 }
 
-fn stream_failure(source: serde_json::Error) -> TextCompletionFailure {
+fn stream_failure(source: &serde_json::Error) -> TextCompletionFailure {
     TextCompletionFailure {
         status: 500,
         error_type: None,
@@ -276,6 +261,6 @@ pub(super) fn chat_call_failure(
             }
         }
         CallError::Operation { source } => internal_failure(&source.to_string()),
-        CallError::Mismatched => internal_failure("the provider answered a different operation"),
+        CallError::Mismatched => internal_failure(MISMATCHED),
     }
 }

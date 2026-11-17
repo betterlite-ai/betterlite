@@ -25,7 +25,7 @@ pub(super) struct Pump<Source> {
 }
 
 impl<Source> Pump<Source> {
-    pub(super) fn new(source: Source) -> Self {
+    pub(super) const fn new(source: Source) -> Self {
         Self {
             source,
             pending: VecDeque::new(),
@@ -110,7 +110,6 @@ impl FrameSource<HttpError> for TextSource {
     }
 }
 
-// One text chunk becomes at most one chat event; DONE closes the stream after the provider's last chunk.
 async fn text_frame(
     source: &mut TextSource,
     pending: &mut VecDeque<Bytes>,
@@ -124,20 +123,18 @@ async fn text_frame(
         tracing::warn!(message = %error, "the text provider stream failed");
         HttpError::Timeout
     })?;
-    match chat_chunk(&chunk, &source.model, source.include_usage) {
-        Ok(Some(value)) => {
-            let text = serde_json::to_string(&value).map_err(|error| {
-                tracing::warn!(message = %error, "the text chunk could not be written");
-                HttpError::Timeout
-            })?;
-            pending.push_back(Bytes::from(format!("data: {text}\n\n")));
-        }
-        Ok(None) => {}
-        Err(error) => {
-            tracing::warn!(message = %error, "the text chunk could not be written");
-            return Err(HttpError::Timeout);
-        }
-    }
+    let Some(value) = chat_chunk(&chunk, &source.model, source.include_usage).map_err(|error| {
+        tracing::warn!(message = %error, "the text chunk could not be written");
+        HttpError::Timeout
+    })?
+    else {
+        return Ok(false);
+    };
+    let text = serde_json::to_string(&value).map_err(|error| {
+        tracing::warn!(message = %error, "the text chunk could not be written");
+        HttpError::Timeout
+    })?;
+    pending.push_back(Bytes::from(format!("data: {text}\n\n")));
     Ok(false)
 }
 
@@ -145,14 +142,12 @@ pub(super) fn relay_bytes(
     upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     request: &ChatRequest,
 ) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
+    let options = request.stream_options.as_ref();
     let source = RelaySource {
         upstream,
         parser: SseParser::default(),
         model: request.model.clone().unwrap_or_default(),
-        include_usage: request
-            .stream_options
-            .as_ref()
-            .is_some_and(|options| options.include_usage),
+        include_usage: options.is_some_and(|chosen| chosen.include_usage),
     };
     stream::unfold(Pump::new(source), next_frame)
 }
