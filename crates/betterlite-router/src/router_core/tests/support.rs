@@ -18,14 +18,108 @@ use crate::router_core::attempt::AttemptResult;
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::Response;
 use crate::router_core::pipeline::{HealthyDeployments, StrategyRoute, healthy_deployments, route};
-use crate::router_core::route::{ClientAccess, RouteRequest};
+use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
 use crate::router_core::services::{Cancelled, RouteServices};
-use crate::router_core::test_support::{NoLimits, NoParams, NoServices, route_context};
+use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::static_eligibility::request::RequestFacts;
+use crate::static_eligibility::tokens::TokenLimits;
+use crate::strategy::StrategyContext;
 use crate::strategy_dispatch::groups::{RoutingGroups, RoutingScope};
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
-use crate::strategy_dispatch::types::StrategyOverride;
+use crate::strategy_dispatch::types::{Resolution, StrategyOverride};
+
+// A router that keeps no dynamic state: every insertion point answers its default.
+pub(crate) struct NoServices;
+
+impl RouteServices for NoServices {}
+
+// A model registry that declares no context window.
+pub(crate) struct NoLimits;
+
+impl TokenLimits for NoLimits {
+    fn max_input_tokens(&self, _spec: &DeploymentSpec, _model: &str) -> Option<usize> {
+        None
+    }
+}
+
+// A provider registry that knows no provider.
+pub(crate) struct NoParams;
+
+impl ParamSupport for NoParams {
+    fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
+        false
+    }
+
+    fn resolve_provider(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<ResolvedProvider> {
+        None
+    }
+
+    fn supported_openai_params(
+        &self,
+        _model: &str,
+        _custom_llm_provider: &str,
+        _base_model: Option<&str>,
+    ) -> Option<Vec<String>> {
+        None
+    }
+}
+
+// A request that names one model and asks for nothing else.
+#[must_use]
+pub(crate) fn route_request<'request>(
+    model: &'request str,
+    facts: &'request RequestFacts,
+) -> RouteRequest<'request> {
+    RouteRequest {
+        model,
+        facts,
+        authority: Authority::default(),
+        environment: None,
+        specific_deployment: false,
+        affinity_pinned: false,
+        excluded_deployment_ids: &[],
+        retry_skipped_deployment_ids: &[],
+    }
+}
+
+// A route over the given request and stateless services.
+#[must_use]
+pub(crate) fn route_context<'route>(
+    request: &'route RouteRequest<'route>,
+    services: &'route dyn RouteServices,
+    limits: &'route (dyn TokenLimits + Sync),
+    params: &'route (dyn ParamSupport + Sync),
+) -> RouteContext<'route> {
+    RouteContext {
+        request,
+        services,
+        limits,
+        params,
+        policy: RoutePolicy::default(),
+        clients: None,
+    }
+}
+
+// A strategy call over the given pool and selector state.
+#[must_use]
+pub(crate) fn strategy_context<'context>(
+    deployments: &'context [DeploymentSpec],
+    route: &'context RouteContext<'context>,
+    dispatch: &'context mut StrategyDispatch,
+    resolution: &'context Resolution,
+) -> StrategyContext<'context> {
+    StrategyContext {
+        deployments,
+        route,
+        dispatch,
+        resolution,
+    }
+}
 
 pub(super) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())

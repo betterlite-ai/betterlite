@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::router_core::candidates::CandidateSet;
-use crate::router_core::test_support::{
+use crate::router_core::tests::support::{
     NoLimits, NoParams, NoServices, route_context, route_request,
 };
 use crate::static_eligibility::request::RequestFacts;

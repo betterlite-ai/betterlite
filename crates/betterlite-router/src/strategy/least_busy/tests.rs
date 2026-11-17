@@ -4,7 +4,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::router_core::test_support::{
+use crate::router_core::tests::support::{
     NoLimits, NoParams, NoServices, route_context, route_request, strategy_context,
 };
 use crate::static_eligibility::request::RequestFacts;
