@@ -11,7 +11,7 @@ use super::support::{document, strings};
 fn a_missing_path_is_absent() {
     let response = document(r#"{"email":"user@example.com"}"#);
     assert_eq!(claim_text(&response, "nickname").unwrap(), None);
-    assert_eq!(claim_groups(&response, "nickname").unwrap(), Vec::new());
+    assert!(claim_groups(&response, "nickname").unwrap().is_empty());
     assert_eq!(resolve_role(&response, None, "nickname").unwrap(), None);
 }
 
@@ -19,7 +19,7 @@ fn a_missing_path_is_absent() {
 fn a_null_value_is_absent() {
     let response = document(r#"{"email":null,"groups":null,"role":null}"#);
     assert_eq!(claim_text(&response, "email").unwrap(), None);
-    assert_eq!(claim_groups(&response, "groups").unwrap(), Vec::new());
+    assert!(claim_groups(&response, "groups").unwrap().is_empty());
     assert_eq!(resolve_role(&response, None, "role").unwrap(), None);
 }
 
