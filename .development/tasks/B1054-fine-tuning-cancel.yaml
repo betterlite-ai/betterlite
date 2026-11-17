@@ -6,7 +6,7 @@ description: >-
   handler at endpoints.py:495-638. B003/B732 authenticate; B1021 checks the original managed job id;
   B004 common pre-call runs acancel_fine_tuning_job; B1019 detects encoded ids; B1141 provides ordered
   finetune_settings lookup and cancellation SDK. Supply B004's resolved-model execution seam for the
-  router branch, rather than calling a later API composer. B012 owns hooks/status submission and B2400
+  router branch, rather than calling a later API composer. B8394/B8395 own hooks/status submission and B2400
   handle_exception_on_proxy. No route parses query custom_llm_provider despite the docstring advertising it.
 
   Honor the README no-paid-tier decision: remove only premium_user gating. Preserve MIT managed-id

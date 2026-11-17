@@ -1,0 +1,79 @@
+kind: helper
+name: anthropic-response-prefix-prompt
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    headers: {x-request-id: req-b580}
+    messages:
+      - {role: user, content: say hi}
+      - {role: assistant, content: "Pre ", prefix: true}
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+calls:
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages:
+        - {role: user, content: say hi}
+        - {role: assistant, content: "Pre ", prefix: true}
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: true
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages:
+        - {role: assistant, content: "Early ", prefix: true}
+        - {role: user, content: go}
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Pre world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages:
+        - {role: assistant, content: "Pre ", prefix: true}
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages:
+        - {role: assistant, content: [{type: text, text: "Pre "}], prefix: true}
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}

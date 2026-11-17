@@ -1,0 +1,46 @@
+kind: helper
+name: bedrock-converse-params-parallel-tool-config
+call:
+  bedrock_converse_params:
+    function: parallel_config
+    additional_request_params:
+      tool_choice: {type: tool, name: lookup}
+      thinking: {type: enabled, budget_tokens: 1024}
+    parallel_tool_use_config:
+      tool_choice: {type: auto, disable_parallel_tool_use: true}
+calls:
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params: {}
+      parallel_tool_use_config:
+        tool_choice: {type: auto, disable_parallel_tool_use: false}
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params: {thinking: {type: enabled, budget_tokens: 2048}}
+      parallel_tool_use_config:
+        tool_choice: {type: auto, disable_parallel_tool_use: true}
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params: {tool_choice: auto, temperature: 1}
+      parallel_tool_use_config:
+        tool_choice: {type: auto, disable_parallel_tool_use: true}
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params:
+        tool_choice: {type: auto, name: lookup, disable_parallel_tool_use: true}
+      parallel_tool_use_config: {}
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params:
+        tool_choice: {type: tool, name: lookup}
+        other: 1
+      parallel_tool_use_config:
+        tool_choice: {type: any, disable_parallel_tool_use: false, name: generated}
+        top_k: 5
+  - bedrock_converse_params:
+      function: parallel_config
+      additional_request_params: {tool_choice: {name: lookup}}
+      parallel_tool_use_config:
+        tool_choice: {disable_parallel_tool_use: true}
+env: {}
+compare: {ignore: []}

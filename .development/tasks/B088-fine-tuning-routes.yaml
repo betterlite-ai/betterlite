@@ -4,7 +4,7 @@ description: >-
   Register POST and GET /v1/fine_tuning/jobs and /fine_tuning/jobs, plus GET
   /v1/fine_tuning/jobs/{fine_tuning_job_id:path} and /fine_tuning/jobs/{fine_tuning_job_id:path} in
   server::api::fine_tuning_routes. Own all three complete handlers at endpoints.py:62-492. B003 authenticates,
-  B004 supplies common pre-call, resolved-model execution and custom headers, B012 hooks/status work,
+  B004 supplies common pre-call, resolved-model execution and custom headers, B8394/B8395/B8399 hooks/status work,
   B1021 managed-id validation, B1019 unified-id detection, B1141 finetune_settings lookup and B1052/B1053
   SDK execution. B2400 converts caught errors. Inject a typed resolved-model executor for Router calls;
   its catalog/credential services remain B302/B303, not a dependency on a later family composer.
