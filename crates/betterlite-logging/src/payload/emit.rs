@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Error as IoError, Write, stdout};
 
 use thiserror::Error;
 
@@ -31,7 +31,7 @@ pub enum EmitError {
     #[error("the standard logging payload could not be written: {source}")]
     Write {
         #[source]
-        source: std::io::Error,
+        source: IoError,
     },
 }
 
@@ -62,7 +62,7 @@ pub struct StdoutEmitter {
 
 impl PayloadEmitter for StdoutEmitter {
     fn emit(&self, payload: &StandardLoggingPayload) -> Result<(), EmitError> {
-        let mut stdout = std::io::stdout().lock();
-        emit_standard_logging_payload(payload, &self.settings, &mut stdout)
+        let mut output = stdout().lock();
+        emit_standard_logging_payload(payload, &self.settings, &mut output)
     }
 }

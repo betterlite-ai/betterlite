@@ -47,11 +47,9 @@ pub(crate) fn optional_text(
     }
 }
 
-pub(crate) fn extracted_response(
-    request: &PayloadRequest<'_>,
-) -> Result<ExtractedResponse, PayloadError> {
-    Ok(extract(
+pub(crate) fn extracted_response(request: &PayloadRequest<'_>) -> ExtractedResponse {
+    extract(
         init_response_object(request.init_response_obj),
-        super::error_info::exception_headers(request.original_exception)?,
-    ))
+        super::error_info::exception_headers(request.original_exception),
+    )
 }

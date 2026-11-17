@@ -14,25 +14,23 @@ use crate::payload::compose::{PayloadComposition, PayloadRequest};
 use crate::payload::error::PayloadError;
 
 // _get_response_headers: exception.headers, then response.headers, then the litellm response headers
-pub(crate) fn exception_headers(
-    exception: Option<&ExceptionFacts>,
-) -> Result<Option<AdditionalHeaders>, PayloadError> {
-    let Some(exception) = exception else {
-        return Ok(None);
+pub(crate) fn exception_headers(exception: Option<&ExceptionFacts>) -> Option<AdditionalHeaders> {
+    let Some(facts) = exception else {
+        return None;
     };
-    let headers = exception
+    let candidates = facts
         .headers
         .as_ref()
-        .or(exception.response_headers.as_ref())
-        .or(exception.litellm_response_headers.as_ref());
-    let Some(headers) = headers else {
-        return Ok(None);
+        .or(facts.response_headers.as_ref())
+        .or(facts.litellm_response_headers.as_ref());
+    let Some(headers) = candidates else {
+        return None;
     };
     let record: IndexMap<String, Json> = headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
         .collect();
-    Ok(get_additional_headers(Some(&record)))
+    get_additional_headers(Some(&record))
 }
 
 // The proxy's own 4xx is an expected client error; anything the provider originated is not.

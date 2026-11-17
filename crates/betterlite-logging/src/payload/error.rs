@@ -1,4 +1,7 @@
+use betterlite_models::cost_breakdown::CostBreakdownError;
 use betterlite_models::decisions::Json;
+use betterlite_models::guardrail_pricing::GuardrailPricingError;
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use thiserror::Error;
 
 use crate::fields::payload::records::GuardrailInformation;
@@ -31,19 +34,19 @@ pub enum PayloadError {
     #[error("the request cost is not a number: {source}")]
     ResponseCost {
         #[source]
-        source: betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError,
+        source: DecimalLexemeError,
     },
     #[error("the request cost arithmetic overflowed Decimal's range")]
     CostOverflow,
     #[error("the guardrail cost could not be read: {source}")]
     GuardrailCost {
         #[source]
-        source: betterlite_models::guardrail_pricing::GuardrailPricingError,
+        source: GuardrailPricingError,
     },
     #[error("the cost breakdown could not be merged: {source}")]
     CostBreakdown {
         #[source]
-        source: betterlite_models::cost_breakdown::CostBreakdownError,
+        source: CostBreakdownError,
     },
     #[error("the timestamps could not be cleaned: {source}")]
     Timestamps {
@@ -89,18 +92,18 @@ pub enum PayloadError {
 pub(crate) fn guardrail_information(
     value: Option<&Json>,
 ) -> Result<Option<Vec<GuardrailInformation>>, PayloadError> {
-    let Some(value) = value else {
+    let Some(stored) = value else {
         return Ok(None);
     };
-    if matches!(value, Json::Null) {
+    if matches!(stored, Json::Null) {
         return Ok(None);
     }
-    let Json::List(_) = value else {
+    let Json::List(_) = stored else {
         return Err(PayloadError::FieldType {
             field: "standard_logging_guardrail_information",
         });
     };
-    let encoded = serde_json::to_vec(value).map_err(|source| PayloadError::Json { source })?;
+    let encoded = serde_json::to_vec(stored).map_err(|source| PayloadError::Json { source })?;
     serde_json::from_slice(&encoded)
         .map(Some)
         .map_err(|source| PayloadError::GuardrailInformation {

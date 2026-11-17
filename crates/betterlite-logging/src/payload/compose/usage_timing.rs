@@ -112,10 +112,10 @@ fn token_count(value: Option<&Json>, field: &'static str) -> Result<i64, Payload
 }
 
 pub(crate) struct Timing {
-    pub start_time: Decimal,
-    pub end_time: Decimal,
-    pub completion_start_time: Decimal,
-    pub response_time: Decimal,
+    pub start: Decimal,
+    pub end: Decimal,
+    pub completion_start: Decimal,
+    pub response: Decimal,
 }
 
 pub(crate) fn timing(request: &PayloadRequest<'_>) -> Result<Timing, PayloadError> {
@@ -132,9 +132,9 @@ pub(crate) fn timing(request: &PayloadRequest<'_>) -> Result<Timing, PayloadErro
         .checked_sub(stamps.start_time)
         .ok_or(TimestampError::ResponseTimeOverflow)?;
     Ok(Timing {
-        start_time: stamps.start_time,
-        end_time: stamps.end_time,
-        completion_start_time: stamps.completion_start_time,
-        response_time,
+        start: stamps.start_time,
+        end: stamps.end_time,
+        completion_start: stamps.completion_start_time,
+        response: response_time,
     })
 }

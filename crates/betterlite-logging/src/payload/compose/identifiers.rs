@@ -37,16 +37,8 @@ impl Identifiers {
         let call_id = call_id(request.state, details)?;
         let response_id = response_id(request.init_response_obj, &call_id)?;
         let cache_hit = cache_hit(details)?;
-        let id = if cache_hit == Some(true) {
-            format!(
-                "{response_id}_cache_hit{}",
-                seconds_text(composition.sources.clock.now_epoch_seconds())
-            )
-        } else {
-            response_id.clone()
-        };
         Ok(Self {
-            id,
+            id: payload_id(&response_id, cache_hit, composition),
             response_id,
             call_id,
             trace_id: logging_payload_trace_id(
@@ -67,24 +59,42 @@ impl Identifiers {
             model_id: model_id(metadata)?,
             model_group: optional_text(metadata.get("model_group"), "model_group")?
                 .unwrap_or_default(),
-            api_base: strip_trailing_slash(
-                optional_text(
-                    request.state.litellm_params.get("api_base"),
-                    "litellm_params.api_base",
-                )?
-                .as_deref(),
-            )
-            .unwrap_or_default(),
+            api_base: request_api_base(request)?,
             cache_hit,
             stream: stream(request.state, details),
         })
     }
 }
 
+fn payload_id(
+    response_id: &str,
+    cache_hit: Option<bool>,
+    composition: &PayloadComposition<'_>,
+) -> String {
+    if cache_hit == Some(true) {
+        return format!(
+            "{response_id}_cache_hit{}",
+            seconds_text(composition.sources.clock.now_epoch_seconds())
+        );
+    }
+    response_id.to_owned()
+}
+
+fn request_api_base(request: &PayloadRequest<'_>) -> Result<String, PayloadError> {
+    Ok(strip_trailing_slash(
+        optional_text(
+            request.state.litellm_params.get("api_base"),
+            "litellm_params.api_base",
+        )?
+        .as_deref(),
+    )
+    .unwrap_or_default())
+}
+
 // LiteLLM formats time.time() with Python's str(float), which keeps the ".0" an integral value loses
 fn seconds_text(value: f64) -> String {
     let text = value.to_string();
-    if value.is_finite() && value.fract() == 0.0 {
+    if value.is_finite() && value.fract() == 0.0_f64 {
         return format!("{text}.0");
     }
     text

@@ -63,18 +63,18 @@ impl Costs {
         )
         .map_err(|source| PayloadError::CostBreakdown { source })?;
         let baseline_observation = composition.sources.autorouter.baseline_observation();
-        let savings = savings(input, &cost_breakdown, composition)?;
+        let savings = savings(input, cost_breakdown.as_ref(), composition);
         Ok(Self {
             response_cost,
             autorouter_savings_estimate: savings_estimate(
                 input.metadata,
-                &savings,
-                &baseline_observation,
+                savings.as_ref(),
+                baseline_observation.as_ref(),
             ),
             autorouter_savings: savings,
             cost_breakdown,
             baseline_observation,
-            saved_cache_cost: saved_cache_cost(input, composition)?,
+            saved_cache_cost: saved_cache_cost(input, composition),
             model_map_information: model_map_information(input, composition)?,
             raw_response_cost,
         })
@@ -92,10 +92,10 @@ fn response_cost(value: Option<&Json>) -> Result<Option<Decimal>, PayloadError> 
 }
 
 fn guardrail_cost(value: Option<&Json>) -> Result<Decimal, PayloadError> {
-    let Some(value) = value else {
+    let Some(stored) = value else {
         return Ok(Decimal::ZERO);
     };
-    let encoded = serde_json::to_vec(value).map_err(|source| PayloadError::Json { source })?;
+    let encoded = serde_json::to_vec(stored).map_err(|source| PayloadError::Json { source })?;
     let information: PricedGuardrailInformation =
         serde_json::from_slice(&encoded).map_err(|source| PayloadError::GuardrailInformation {
             field: "standard_logging_guardrail_information",
@@ -107,17 +107,17 @@ fn guardrail_cost(value: Option<&Json>) -> Result<Decimal, PayloadError> {
 
 fn savings(
     input: &CostsInput<'_>,
-    cost_breakdown: &Option<CostBreakdown>,
+    cost_breakdown: Option<&CostBreakdown>,
     composition: &PayloadComposition<'_>,
-) -> Result<Option<Decimal>, PayloadError> {
+) -> Option<Decimal> {
     let cache_hit = input.identifiers.cache_hit == Some(true);
     if input.request.status != LoggingStatus::Success
         || cache_hit
         || composition.sources.autorouter.baseline_context_active()
     {
-        return Ok(None);
+        return None;
     }
-    Ok(composition
+    composition
         .sources
         .autorouter
         .savings(&SavingsRequest {
@@ -126,15 +126,15 @@ fn savings(
             custom_llm_provider: input.request.state.custom_llm_provider.as_deref(),
             model_id: &input.identifiers.model_id,
             usage_object: input.usage,
-            cost_breakdown: cost_breakdown.as_ref(),
+            cost_breakdown,
         })
-        .map(with_fraction))
+        .map(with_fraction)
 }
 
 fn savings_estimate(
     metadata: &MetadataMap,
-    savings: &Option<Decimal>,
-    baseline_observation: &Option<String>,
+    savings: Option<&Decimal>,
+    baseline_observation: Option<&String>,
 ) -> Option<IndexMap<String, Json>> {
     if baseline_observation.is_some() {
         return Some(estimate(3, "unknown", "pending_projection"));
@@ -159,20 +159,17 @@ fn estimate(version: i64, status: &str, reason: &str) -> IndexMap<String, Json> 
     ])
 }
 
-fn saved_cache_cost(
-    input: &CostsInput<'_>,
-    composition: &PayloadComposition<'_>,
-) -> Result<Decimal, PayloadError> {
+fn saved_cache_cost(input: &CostsInput<'_>, composition: &PayloadComposition<'_>) -> Decimal {
     if input.identifiers.cache_hit != Some(true) {
-        return Ok(with_fraction(Decimal::ZERO));
+        return with_fraction(Decimal::ZERO);
     }
-    Ok(with_fraction(
+    with_fraction(
         composition
             .sources
             .saved_cache_cost
             .saved_cache_cost(input.request.init_response_obj)
             .unwrap_or(Decimal::ZERO),
-    ))
+    )
 }
 
 fn model_map_information(

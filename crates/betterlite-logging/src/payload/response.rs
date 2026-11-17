@@ -28,10 +28,10 @@ pub fn init_response_object(response: &Json) -> InitResponseObject {
 
 // record_served_output_texts: the texts the client actually received replace that choice's message content.
 pub fn record_served_output_texts(state: &mut LoggingState, texts: Option<ServedTexts>) {
-    let Some(texts) = texts else {
+    let Some(served) = texts else {
         return;
     };
-    let encoded = texts
+    let encoded = served
         .into_iter()
         .map(|text| text.map_or(Json::Null, Json::Text))
         .collect();
