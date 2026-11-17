@@ -25,11 +25,16 @@ struct RawDeployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
-    auto_router_config_path: Option<String>,
-    auto_router_config: Option<String>,
-    auto_router_default_model: Option<String>,
-    auto_router_embedding_model: Option<String>,
-    auto_router_max_input_chars: Option<RawNumber>,
+    #[serde(rename = "auto_router_config_path")]
+    config_path: Option<String>,
+    #[serde(rename = "auto_router_config")]
+    config_json: Option<String>,
+    #[serde(rename = "auto_router_default_model")]
+    default_model: Option<String>,
+    #[serde(rename = "auto_router_embedding_model")]
+    embedding_model: Option<String>,
+    #[serde(rename = "auto_router_max_input_chars")]
+    max_input_chars: Option<RawNumber>,
 }
 
 // every declared key stays optional: LiteLLM's router reports what is missing when it builds the strategy
@@ -71,11 +76,11 @@ fn configured<L>(
 where
     L: EnvironmentLookup,
 {
-    if params.auto_router_config_path.is_none()
-        && params.auto_router_config.is_none()
-        && params.auto_router_default_model.is_none()
-        && params.auto_router_embedding_model.is_none()
-        && params.auto_router_max_input_chars.is_none()
+    if params.config_path.is_none()
+        && params.config_json.is_none()
+        && params.default_model.is_none()
+        && params.embedding_model.is_none()
+        && params.max_input_chars.is_none()
     {
         return Ok(None);
     }
@@ -91,24 +96,17 @@ where
     L: EnvironmentLookup,
 {
     let path = |key: &str| format!("model_list.{index}.{PATH_ROOT}.{key}");
-    let config_path = resolve_optional(
-        params.auto_router_config_path,
-        &path("auto_router_config_path"),
-        lookup,
-    )?
-    .map(PathBuf::from);
-    let config_json = resolve_optional(
-        params.auto_router_config,
-        &path("auto_router_config"),
-        lookup,
-    )?;
+    let config_path =
+        resolve_optional(params.config_path, &path("auto_router_config_path"), lookup)?
+            .map(PathBuf::from);
+    let config_json = resolve_optional(params.config_json, &path("auto_router_config"), lookup)?;
     let default_model = resolve_optional(
-        params.auto_router_default_model,
+        params.default_model,
         &path("auto_router_default_model"),
         lookup,
     )?;
     let embedding_model = resolve_optional(
-        params.auto_router_embedding_model,
+        params.embedding_model,
         &path("auto_router_embedding_model"),
         lookup,
     )?;
@@ -117,7 +115,7 @@ where
         config_json,
         default_model,
         embedding_model,
-        max_input_chars: resolve_limit(params.auto_router_max_input_chars, index, lookup)?,
+        max_input_chars: resolve_limit(params.max_input_chars, index, lookup)?,
     })
 }
 

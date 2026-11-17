@@ -124,7 +124,7 @@ fn a_missing_environment_reference_is_a_load_error() {
     let error = ConfigLoader { lookup }
         .load(source)
         .expect_err("a missing reference is a load error");
-    assert_eq!(error.code(), "missing_environment");
+    assert_eq!(error.category(), "missing_environment");
     assert!(error.to_string().contains("ROUTES"));
 }
 
