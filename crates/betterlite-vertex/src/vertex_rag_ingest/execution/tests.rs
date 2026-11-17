@@ -100,6 +100,23 @@ fn settings_fall_back_to_the_vertex_environment() {
 }
 
 #[test]
+fn empty_record_values_fall_back_to_the_environment() {
+    let mut record = corpus_record();
+    record.gcs_bucket = Some(String::new());
+    record.vertex_project = Some(String::new());
+    record.vertex_location = Some(String::new());
+    let settings = RagIngestSettings::resolve(
+        &options(record, None),
+        &vertex_settings(Some(PROJECT), Some("europe-west4")),
+        Some(BUCKET),
+    )
+    .unwrap();
+    assert_eq!(settings.bucket, BUCKET);
+    assert_eq!(settings.project, PROJECT);
+    assert_eq!(settings.location, "europe-west4");
+}
+
+#[test]
 fn the_location_defaults_to_us_central_one() {
     let settings = resolve(&options(corpus_record(), None)).unwrap();
     assert_eq!(settings.location, DEFAULT_LOCATION);
