@@ -374,14 +374,9 @@ fn the_resolved_config_carries_the_pinned_defaults() {
         ),
         (15, 400)
     );
-    assert_eq!(
-        (
-            fixed(config.tier_boundaries.simple_medium),
-            fixed(config.tier_boundaries.medium_complex),
-            fixed(config.tier_boundaries.complex_reasoning),
-        ),
-        ("0.150000", "0.350000", "0.600000")
-    );
+    assert_eq!(fixed(config.tier_boundaries.simple_medium), "0.150000");
+    assert_eq!(fixed(config.tier_boundaries.medium_complex), "0.350000");
+    assert_eq!(fixed(config.tier_boundaries.complex_reasoning), "0.600000");
     assert_eq!(fixed(config.reasoning_override_min_score), "0.150000");
     assert_eq!(
         config.dimension_weights,
@@ -418,7 +413,12 @@ fn the_resolved_config_carries_the_pinned_defaults() {
 #[case::custom("PREMIUM", false)]
 fn a_built_in_name_is_recognised_exactly(#[case] name: &str, #[case] built_in: bool) {
     assert_eq!(ComplexityTier::built_in(name).is_some(), built_in);
-    assert_eq!(Tier::from_name(name).name(), name);
+}
+
+#[test]
+fn a_pipeline_tier_name_is_the_plain_name() {
+    assert_eq!(Tier::BuiltIn(ComplexityTier::Complex).name(), "COMPLEX");
+    assert_eq!(Tier::Named("PREMIUM".to_owned()).name(), "PREMIUM");
 }
 
 #[test]
@@ -445,15 +445,15 @@ fn the_severity_order_lists_every_built_in_tier() {
 }
 
 #[rstest]
-#[case::simple("SIMPLE", "gpt-4o-mini")]
-#[case::medium("MEDIUM", "gpt-4o")]
-#[case::complex("COMPLEX", "claude-sonnet-4-20250514")]
-#[case::reasoning("REASONING", "claude-sonnet-4-20250514")]
-#[case::non_reasoning_falls_to_medium("NON_REASONING", "gpt-4o")]
-fn the_default_tier_models_are_the_pinned_ones(#[case] tier: &str, #[case] model: &str) {
+#[case::simple(ComplexityTier::Simple, "gpt-4o-mini")]
+#[case::medium(ComplexityTier::Medium, "gpt-4o")]
+#[case::complex(ComplexityTier::Complex, "claude-sonnet-4-20250514")]
+#[case::reasoning(ComplexityTier::Reasoning, "claude-sonnet-4-20250514")]
+#[case::non_reasoning_falls_to_medium(ComplexityTier::NonReasoning, "gpt-4o")]
+fn the_default_tier_models_are_the_pinned_ones(#[case] tier: ComplexityTier, #[case] model: &str) {
     let config = resolved(&blank());
     let selected = config
-        .single_model_for_tier(&Tier::from_name(tier))
+        .single_model_for_tier(&Tier::BuiltIn(tier))
         .expect("the default tier map answers every tier");
     assert_eq!(selected, model);
 }
@@ -465,11 +465,11 @@ fn a_configured_tier_map_replaces_the_defaults() {
     let config = resolved(&input);
     assert_eq!(
         config
-            .single_model_for_tier(&Tier::from_name("SIMPLE"))
+            .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Simple))
             .unwrap(),
         "small-model"
     );
-    let missing = config.single_model_for_tier(&Tier::from_name("COMPLEX"));
+    let missing = config.single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Complex));
     assert!(matches!(missing, Err(ScoringError::NoTierModel { .. })));
     assert!(missing.unwrap_err().to_string().contains("COMPLEX"));
 }
@@ -485,13 +485,13 @@ fn the_default_model_answers_a_tier_with_no_model() {
     let config = resolved(&input);
     assert_eq!(
         config
-            .single_model_for_tier(&Tier::from_name("COMPLEX"))
+            .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Complex))
             .unwrap(),
         "fallback-model"
     );
     assert_eq!(
         config
-            .single_model_for_tier(&Tier::from_name("MEDIUM"))
+            .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Medium))
             .unwrap(),
         "medium-model"
     );
@@ -503,7 +503,7 @@ fn a_missing_tier_model_is_an_error() {
     input.tier_models = Some(tiers(&[]));
     let config = resolved(&input);
     let error = config
-        .single_model_for_tier(&Tier::from_name("COMPLEX"))
+        .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Complex))
         .unwrap_err();
     assert!(error.to_string().contains("COMPLEX"), "got {error}");
 }
@@ -518,7 +518,7 @@ fn a_pool_of_one_answers_like_a_bare_name() {
     let config = resolved(&input);
     assert_eq!(
         config
-            .single_model_for_tier(&Tier::from_name("SIMPLE"))
+            .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Simple))
             .unwrap(),
         "only-model"
     );
@@ -530,7 +530,7 @@ fn a_pool_of_several_has_no_single_answer() {
     input.tier_models = Some(tiers(&[("SIMPLE", &["first-model", "second-model"])]));
     let config = resolved(&input);
     let error = config
-        .single_model_for_tier(&Tier::from_name("SIMPLE"))
+        .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Simple))
         .unwrap_err();
     assert!(
         matches!(error, ScoringError::TierPool { .. }),
@@ -861,7 +861,7 @@ fn the_valid_corpus_seed_loads_and_the_invalid_one_is_refused() {
     let config = corpus_config(CONFIG_VALID).expect("the valid seed loads");
     assert_eq!(
         config
-            .single_model_for_tier(&Tier::from_name("SIMPLE"))
+            .single_model_for_tier(&Tier::BuiltIn(ComplexityTier::Simple))
             .unwrap(),
         "gpt-4o-mini"
     );

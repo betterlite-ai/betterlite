@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_router::complexity_scoring::classify::{PromptInput, Scorer};
 use betterlite_router::complexity_scoring::config::Config;
 use betterlite_router::complexity_scoring::decision::RoutingDecisionCause;
-use betterlite_router::complexity_scoring::tier::Tier;
+use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use serde::{Deserialize, Serialize};
 
 use crate::router_probes::ProbeOutput;
@@ -105,11 +105,14 @@ fn tier_model_fields(config: &Config, tier: Option<&str>) -> Result<Fields, Oper
     let tier_name = tier.ok_or_else(|| OperationError::InvalidRequest {
         message: "tier is required for tier_model".to_owned(),
     })?;
-    let model = config
-        .single_model_for_tier(&Tier::from_name(tier_name))
-        .map_err(|source| OperationError::InvalidRequest {
-            message: source.to_string(),
-        })?;
+    let tier = ComplexityTier::built_in(tier_name)
+        .map_or_else(|| Tier::Named(tier_name.to_owned()), Tier::BuiltIn);
+    let model =
+        config
+            .single_model_for_tier(&tier)
+            .map_err(|source| OperationError::InvalidRequest {
+                message: source.to_string(),
+            })?;
     Ok(Fields {
         tier: None,
         score: None,

@@ -90,17 +90,27 @@ impl Config {
                     .unwrap_or(tier_boundaries.simple_medium),
                 "reasoning_override_min_score",
             )?,
-            code_keywords: keywords(input.code_keywords.as_deref(), &defaults.code_keywords),
-            reasoning_keywords: keywords(
-                input.reasoning_keywords.as_deref(),
-                &defaults.reasoning_keywords,
-            ),
-            technical_keywords: keywords(
-                input.technical_keywords.as_deref(),
-                &defaults.technical_keywords,
-            ),
+            code_keywords: input
+                .code_keywords
+                .as_deref()
+                .unwrap_or(&defaults.code_keywords)
+                .to_vec(),
+            reasoning_keywords: input
+                .reasoning_keywords
+                .as_deref()
+                .unwrap_or(&defaults.reasoning_keywords)
+                .to_vec(),
+            technical_keywords: input
+                .technical_keywords
+                .as_deref()
+                .unwrap_or(&defaults.technical_keywords)
+                .to_vec(),
             custom_technical_keywords: input.custom_technical_keywords.clone().unwrap_or_default(),
-            simple_keywords: keywords(input.simple_keywords.as_deref(), &defaults.simple_keywords),
+            simple_keywords: input
+                .simple_keywords
+                .as_deref()
+                .unwrap_or(&defaults.simple_keywords)
+                .to_vec(),
             default_model: input.default_model.clone(),
             multi_step_patterns: defaults.multi_step_patterns.clone(),
             custom_dimensions: Vec::new(),
@@ -129,11 +139,7 @@ impl Config {
     }
 }
 
-// a keyword list the deployment sets replaces the default one, and an unset list keeps it
-fn keywords(configured: Option<&[String]>, default: &[String]) -> Vec<String> {
-    configured.map_or_else(|| default.to_vec(), <[String]>::to_vec)
-}
-
+// a configured tier map replaces the pinned default map entirely
 fn tier_models(
     configured: Option<&BTreeMap<String, section::TierModelValue>>,
     defaults: &Defaults,
