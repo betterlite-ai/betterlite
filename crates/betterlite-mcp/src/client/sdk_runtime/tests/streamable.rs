@@ -130,7 +130,10 @@ async fn a_tool_call_forwards_every_progress_update() {
     ))
     .await
     .unwrap();
-    assert_eq!(host.seen(), vec![(25.0, Some(100.0)), (75.0, Some(100.0))]);
+    assert_eq!(
+        host.seen(),
+        vec![(25.0_f64, Some(100.0_f64)), (75.0_f64, Some(100.0_f64))]
+    );
     assert_eq!(text_of(&result), "progressed");
 }
 

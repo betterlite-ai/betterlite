@@ -123,7 +123,7 @@ pub fn request_error(method: &str, error: ServiceError) -> SdkError {
             serde_json::to_value(TIMEOUT_MARKER).ok(),
         ));
     }
-    if let ServiceError::TransportClosed = error {
+    if matches!(error, ServiceError::TransportClosed) {
         return SdkError::JsonRpc(ErrorData::new(
             ErrorCode(CONNECTION_CLOSED_CODE),
             CONNECTION_CLOSED_MESSAGE,
