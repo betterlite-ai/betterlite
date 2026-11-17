@@ -149,6 +149,21 @@ async fn unverified_first() {
     .await
     .unwrap();
     assert_eq!(id.as_deref(), Some("cloud-smart-1"));
+    // the evidence list is searched, not only its first entry, and the type matches a deployment
+    // that is not the first healthy one
+    let pool = vec![
+        spec("local-1", Some("local")),
+        spec("cloud-smart-1", Some("cloud-smart")),
+    ];
+    let contained = selected(
+        &Lar1Strategy::default(),
+        Some(&Group(pool)),
+        Some(br#"{"confidence":0.99,"evidence":["SYNTH","UNVERIFIED"]}"#),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(contained.as_deref(), Some("cloud-smart-1"));
 }
 
 async fn memory_second() {
@@ -256,6 +271,13 @@ async fn fallback_log() {
     let messages = captured.messages();
     assert!(messages.contains("classified=local"));
     assert!(messages.contains("actual=cloud-smart"));
+    // a deployment that declares no type reports "unknown" in the fallback warning
+    let untyped = vec![spec("untyped-1", None)];
+    let missing = selected(&Lar1Strategy::default(), Some(&Group(untyped)), None, false)
+        .await
+        .unwrap();
+    assert_eq!(missing.as_deref(), Some("untyped-1"));
+    assert!(captured.messages().contains("actual=unknown"));
 }
 
 async fn async_only() {
