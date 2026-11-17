@@ -7,7 +7,7 @@ use super::support::{
     snapshot, unhealthy, unhealthy_ids,
 };
 use crate::cooldown_state::cooldown::{ActiveCooldown, CooldownCache};
-use crate::cooldown_state::health::extract_unhealthy;
+use crate::cooldown_state::health::{HealthSnapshotError, extract_unhealthy};
 use crate::routing_read_batch::{RequestReads, RoutingReadBatch};
 use crate::routing_value_store::{MAX_KEY_BYTES, StoreError};
 
@@ -26,6 +26,7 @@ pub(crate) async fn run(name: &str) {
         "a_re_add_at_the_exact_expiry_takes_the_new_ttl" => a_re_add_at_the_expiry().await,
         "set_states_replaces_a_local_ttl_ending_exactly_now" => set_states_at_the_expiry().await,
         "the_minimum_cooldown_of_a_zero_entry_is_zero" => a_zero_cooldown_stays_zero(),
+        "an_unstorable_expiry_is_an_error" => an_unstorable_expiry_is_an_error(),
         _ => panic!("unknown case {name}"),
     }
 }
@@ -239,4 +240,16 @@ fn a_zero_cooldown_stays_zero() {
         cache.minimum_cooldown(&results).to_bits(),
         0.0_f64.to_bits()
     );
+}
+
+fn an_unstorable_expiry_is_an_error() {
+    // where LiteLLM logs and drops an update it cannot store, the failure reaches the caller that owns the health cycle
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryHealth::default());
+    let cache = health(&clock, Arc::clone(&shared), f64::NAN);
+    assert!(matches!(
+        cache.set_states(&snapshot(&[("a", unhealthy(0.0))])),
+        Err(HealthSnapshotError::Expiry { .. })
+    ));
+    assert!(shared.writes().is_empty());
 }

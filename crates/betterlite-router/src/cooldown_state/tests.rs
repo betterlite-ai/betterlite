@@ -115,6 +115,7 @@ fn cooldown_state_behaviors(#[case] name: &str) {
 #[case::the_minimum_cooldown_of_a_zero_entry_is_zero(
     "the_minimum_cooldown_of_a_zero_entry_is_zero"
 )]
+#[case::an_unstorable_expiry_is_an_error("an_unstorable_expiry_is_an_error")]
 fn cooldown_state_boundaries(#[case] name: &str) {
     runtime().block_on(boundaries::run(name));
 }
