@@ -12,8 +12,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use url::Url;
 
+use crate::speech::result::read_error_body;
 use crate::text_completion_transport::sdk::{
     ClientConstructor, ClientKind, RawCompletion, SdkArguments, SdkError, TextCompletionSdk,
+    status_error,
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -185,6 +187,11 @@ async fn streamed_completion(
     let status = response.response.status().as_u16();
     let headers = response.response.headers().clone();
     record_facts(facts, &headers, elapsed);
+    if status >= 400 {
+        // the SDK reads a failed response before it raises, so its exception keeps the provider's error object
+        let body = read_error_body(response.body_stream()).await;
+        return Err(status_error(status, headers, &body));
+    }
     let body = response.body_stream().map_err(sdk_other).boxed();
     Ok(RawCompletion::Stream {
         status,

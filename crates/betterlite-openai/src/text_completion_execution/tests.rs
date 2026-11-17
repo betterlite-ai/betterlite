@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
+use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
@@ -27,18 +28,16 @@ use super::failure::{CompletionFailure, wrapped_failure};
 use super::http::{HttpCompletionConstructor, HttpCompletionSdk};
 use super::log::TracingCompletionLog;
 use super::transport_request;
-use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend, raised_failure};
+use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend, answered, status_failure};
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
-use crate::text_completion_transport::error::{
-    ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure,
-};
+use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
 use crate::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
 };
 use crate::text_completion_transport::sdk::{
     ClientConstructor as _, ClientKind, HttpClientSource, RawCompletion, SdkArguments, SdkError,
-    StatusError, TextCompletionSdk as _,
+    StatusError, TextCompletionSdk as _, status_error,
 };
 
 fn deployment(model: &str) -> ChatDeployment {
@@ -256,22 +255,79 @@ fn configured_destination_scenario() {
     assert!(built.acompletion);
 }
 
+fn status_of(error: SdkError) -> StatusError {
+    let SdkError::Status(status) = error else {
+        panic!("a status error");
+    };
+    *status
+}
+
 // the streamed async path lets the SDK's own status error through, so its class names the wire type
 #[test]
 fn a_raw_sdk_status_error_answers_the_class_type() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
-    let status = SdkError::Status(Box::new(StatusError {
-        status: Some(500),
-        message: String::from("Error code: 500 - "),
-        headers: HeaderMap::new(),
-        error_type: None,
-        param: None,
-        code: None,
-    }));
-    let failure = raised_failure(TextCompletionFailure::Raw(status), &redactor);
+    let failure = status_failure(
+        &StatusError {
+            status: Some(500),
+            message: String::from("Error code: 500 - "),
+            headers: HeaderMap::new(),
+            error_type: None,
+            param: None,
+            code: None,
+        },
+        &redactor,
+    );
     assert_eq!(failure.status, 500);
     assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
     assert_eq!(failure.param, None);
+}
+
+// _map_openai_exception forwards the SDK error's body to 400, 422, 429 and 500, so the route answers its type and param
+#[test]
+fn a_streamed_status_error_answers_the_provider_type_and_param() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
+    let prompt_error = status_of(status_error(
+        400,
+        HeaderMap::new(),
+        br#"{"error":{"type":"invalid_request_error","param":"prompt","code":"invalid"}}"#,
+    ));
+    let refused = status_failure(&prompt_error, &redactor);
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(refused.param.as_deref(), Some("prompt"));
+
+    // InternalServerError and RateLimitError overwrite self.type with their literal after openai.APIError reads the body
+    let server_error = status_of(status_error(
+        500,
+        HeaderMap::new(),
+        br#"{"error":{"type":"server_error","param":"model"}}"#,
+    ));
+    let internal = status_failure(&server_error, &redactor);
+    assert_eq!(internal.status, 500);
+    assert_eq!(
+        internal.error_type.as_deref(),
+        Some("internal_server_error")
+    );
+    assert_eq!(internal.param.as_deref(), Some("model"));
+
+    let rate_error = status_of(status_error(
+        429,
+        HeaderMap::new(),
+        br#"{"error":{"type":"requests","param":"messages"}}"#,
+    ));
+    let limited = status_failure(&rate_error, &redactor);
+    assert_eq!(limited.status, 429);
+    assert_eq!(limited.error_type.as_deref(), Some("throttling_error"));
+    assert_eq!(limited.param.as_deref(), Some("messages"));
+}
+
+// getattr(e, field, "None") keeps a null field null, hands a missing one the literal "None" and passes text through
+#[test]
+fn a_missing_exception_field_answers_the_literal_none() {
+    let answered_text = answered(WireField::Text(String::from("prompt")));
+    assert_eq!(answered_text.as_deref(), Some("prompt"));
+    assert_eq!(answered(WireField::Null), None);
+    assert_eq!(answered(WireField::MISSING).as_deref(), Some("None"));
 }
 
 fn unsupported_provider_scenario() {
@@ -393,7 +449,7 @@ async fn read_completion_head(stream: &mut TcpStream) -> String {
 }
 
 // a provider that takes the whole request before it answers, so a buffered client never sees a reset while writing
-async fn serve_text_completion(listener: TcpListener) -> String {
+async fn serve(listener: &TcpListener, response: &str) -> String {
     let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(5), listener.accept()).await else {
         return String::new();
     };
@@ -405,13 +461,37 @@ async fn serve_text_completion(listener: TcpListener) -> String {
         .unwrap_or_default();
     let mut body = vec![0_u8; length];
     let _filled = stream.read_exact(&mut body).await;
-    let answer = "{}";
-    let response = format!(
-        "HTTP/1.1 200 X\r\ncontent-length: {}\r\nx-upstream: kept\r\nconnection: close\r\n\r\n{answer}",
-        answer.len()
-    );
     let _written = stream.write_all(response.as_bytes()).await;
     head
+}
+
+fn text_completion_response() -> String {
+    let answer = "{}";
+    format!(
+        "HTTP/1.1 200 X\r\ncontent-length: {}\r\nx-upstream: kept\r\nconnection: close\r\n\r\n{answer}",
+        answer.len()
+    )
+}
+
+async fn serve_text_completion(listener: TcpListener) -> String {
+    serve(&listener, &text_completion_response()).await
+}
+
+const REFUSED_PROMPT: &str = r#"{"error":{"message":"invalid prompt","type":"invalid_request_error","param":"prompt","code":"invalid"}}"#;
+
+const REFUSED_SERVER: &str = r#"{"error":{"message":"the server failed","type":"server_error","param":"model","code":null}}"#;
+
+// the error object a refusing provider answers with
+fn refusal_response(status: u16, answer: &str) -> String {
+    format!(
+        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+        answer.len()
+    )
+}
+
+// a provider that refuses the request with the error object it answers
+async fn serve_refusal(listener: &TcpListener, status: u16, answer: &str) -> String {
+    serve(listener, &refusal_response(status, answer)).await
 }
 
 #[tokio::test]
@@ -521,6 +601,73 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
     );
 }
 
+// the SDK reads a refused stream's body, so the exception keeps the error object the provider sent
+#[tokio::test]
+async fn a_refused_stream_answers_the_provider_error_object() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
+    let arguments = SdkArguments {
+        api_key: None,
+        base_url: Some(format!("http://{address}/v1")),
+        timeout: 5.0,
+        max_retries: None,
+        organization: None,
+        http_client: HttpClientSource::AsyncHttpClient,
+    };
+    let constructor = HttpCompletionConstructor {
+        client,
+        authorization: Some(SecretString::from("Bearer sk-deployment")),
+        facts: Arc::new(Mutex::new(None)),
+    };
+    let sdk = constructor
+        .construct(&arguments, ClientKind::Async)
+        .expect("sdk")
+        .expect("a credential builds the sdk");
+    let mut data = Map::new();
+    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
+    data.insert(String::from("prompt"), Value::from("hi"));
+    data.insert(String::from("stream"), Value::Bool(true));
+    let ((refused, internal), _served) = tokio::join!(
+        async {
+            let refused = sdk
+                .create(&data)
+                .await
+                .err()
+                .expect("the provider refused the call");
+            let internal = sdk
+                .create(&data)
+                .await
+                .err()
+                .expect("the provider refused the call");
+            (refused, internal)
+        },
+        async {
+            let first = serve_refusal(&listener, 400, REFUSED_PROMPT).await;
+            let second = serve_refusal(&listener, 500, REFUSED_SERVER).await;
+            (first, second)
+        }
+    );
+    let SdkError::Status(refusal) = refused else {
+        panic!("a status error");
+    };
+    assert_eq!(refusal.status, Some(400));
+    assert_eq!(refusal.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(refusal.param.as_deref(), Some("prompt"));
+    assert!(
+        refusal.message.contains("invalid prompt"),
+        "{}",
+        refusal.message
+    );
+    let SdkError::Status(server) = internal else {
+        panic!("a status error");
+    };
+    assert_eq!(server.status, Some(500));
+    assert_eq!(server.error_type.as_deref(), Some("server_error"));
+    assert_eq!(server.param.as_deref(), Some("model"));
+}
+
 // The client half of the streaming test: the first event arrives while the provider still waits.
 async fn read_streamed_completion(
     sdk: &HttpCompletionSdk,
@@ -574,10 +721,11 @@ enum Shape {
     Streamed,
 }
 
-// a send whose transport was built for one shape and whose executor was asked for the other
+// a send whose transport was built for one shape and whose executor was asked for another, answered by the given provider response
 async fn crossed_send(
     transport_shape: Shape,
     send_shape: Shape,
+    served: &str,
 ) -> Result<CompletionCallAnswer, CompletionFailure> {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -605,16 +753,20 @@ async fn crossed_send(
             redactor: &redactor,
             logger: &mut logger,
         }),
-        serve_text_completion(listener)
+        serve(&listener, served)
     );
     answer
 }
 
 #[tokio::test]
 async fn a_buffered_completion_keeps_the_provider_headers() {
-    let answer = crossed_send(Shape::Buffered, Shape::Buffered)
-        .await
-        .expect("completion answer");
+    let answer = crossed_send(
+        Shape::Buffered,
+        Shape::Buffered,
+        &text_completion_response(),
+    )
+    .await
+    .expect("completion answer");
     let CompletionCallAnswer::Buffered(buffered) = answer else {
         panic!("a buffered request never streams");
     };
@@ -629,7 +781,13 @@ async fn a_buffered_completion_keeps_the_provider_headers() {
 
 #[tokio::test]
 async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
-    let Err(stream_sent) = crossed_send(Shape::Buffered, Shape::Streamed).await else {
+    let Err(stream_sent) = crossed_send(
+        Shape::Buffered,
+        Shape::Streamed,
+        &text_completion_response(),
+    )
+    .await
+    else {
         panic!("a buffered answer cannot fill a stream");
     };
     assert_eq!(stream_sent.status, 500);
@@ -642,7 +800,13 @@ async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
         "{}",
         stream_sent.message
     );
-    let Err(buffer_sent) = crossed_send(Shape::Streamed, Shape::Buffered).await else {
+    let Err(buffer_sent) = crossed_send(
+        Shape::Streamed,
+        Shape::Buffered,
+        &text_completion_response(),
+    )
+    .await
+    else {
         panic!("a stream cannot fill a buffered answer");
     };
     assert_eq!(buffer_sent.status, 500);
@@ -655,4 +819,21 @@ async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
         "{}",
         buffer_sent.message
     );
+}
+
+// a streamed provider refusal reaches the route's failure with the provider's own type and param
+#[tokio::test]
+async fn a_streamed_provider_refusal_answers_its_body_through_the_executor() {
+    let Err(refused) = crossed_send(
+        Shape::Streamed,
+        Shape::Streamed,
+        &refusal_response(400, REFUSED_PROMPT),
+    )
+    .await
+    else {
+        panic!("a refused stream never answers with frames");
+    };
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(refused.param.as_deref(), Some("prompt"));
 }

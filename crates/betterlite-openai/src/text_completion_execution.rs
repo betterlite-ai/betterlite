@@ -2,6 +2,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use ::http::HeaderMap;
+use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
+use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
@@ -18,16 +20,14 @@ use crate::text_completion_response::CompletionResponse;
 use crate::text_completion_transport::call::{
     TextCompletionOutcome, TextCompletionReply, TextCompletionRequest as TransportRequest,
 };
-use crate::text_completion_transport::error::{
-    ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure,
-};
+use crate::text_completion_transport::error::TextCompletionFailure;
 use crate::text_completion_transport::logging::CompletionLogger;
-use crate::text_completion_transport::sdk::SdkError;
+use crate::text_completion_transport::sdk::{SdkError, StatusError};
 use crate::text_completion_transport::stream::CompletionStream;
 use crate::text_completion_transport::{TextCompletionConfigs, TextCompletionTransport};
 
 use self::catalog::{CompletionCatalog, CompletionRoute, route_for};
-use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure, wrapped_failure};
+use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure};
 use self::http::{HttpCompletionConstructor, UpstreamFacts};
 
 pub mod catalog;
@@ -40,10 +40,6 @@ const MISSING_PROMPT: &str =
     "Unmapped prompt format. The prompt must be a string, a list of strings or token ids.";
 
 const INVALID_REQUEST_ERROR: &str = "invalid_request_error";
-
-const NO_STREAM: &str = "the provider answered a buffered request with a byte stream";
-
-const NO_BUFFER: &str = "the provider answered a stream request with a buffered completion";
 
 // main.py's text completion switch reaches these four provider tags, all sharing the one transform
 const TRANSFORMS: TextCompletionConfigs = TextCompletionConfigs {
@@ -150,12 +146,12 @@ impl CompletionExecutor {
             TextCompletionOutcome::Buffered(_) => Err(CompletionFailure::new(
                 500,
                 Some(INTERNAL_ERROR),
-                String::from(NO_BUFFER),
+                String::from("the provider answered a stream request with a buffered completion"),
             )),
             TextCompletionOutcome::Stream(_) => Err(CompletionFailure::new(
                 500,
                 Some(INTERNAL_ERROR),
-                String::from(NO_STREAM),
+                String::from("the provider answered a buffered request with a byte stream"),
             )),
         }
     }
@@ -231,32 +227,56 @@ async fn drive(
     let begun = transport
         .begin(request, ProviderId::TextCompletionOpenai, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))?;
+    // atext_completion re-raises a raw status error through exception_type, which forwards the error object the SDK parsed
     let sent = transport
         .send(&begun, None)
         .await
-        .map_err(|failure| raised_failure(failure, redactor))?;
+        .map_err(|failure| match failure {
+            TextCompletionFailure::Raw(SdkError::Status(status)) => {
+                status_failure(&status, redactor)
+            }
+            other => transport_failure(other, redactor),
+        })?;
     transport
         .finish(&begun, sent, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))
 }
 
-// atext_completion re-raises a raw SDK error through exception_type, so the route answers the class's own type
-fn raised_failure(failure: TextCompletionFailure, redactor: &Redactor) -> CompletionFailure {
-    match failure {
-        TextCompletionFailure::Raw(error) => {
-            let status = if let SdkError::Status(status) = &error {
-                status.status.map_or(ErrorStatus::Null, ErrorStatus::Code)
-            } else {
-                ErrorStatus::Missing
-            };
-            let wrapped = TextCompletionError {
-                status,
-                message: error.to_string(),
-                headers: None,
-                source: Box::new(ErrorSource::Sdk(Box::new(error))),
-            };
-            wrapped_failure(&wrapped, redactor)
-        }
-        TextCompletionFailure::Wrapped(error) => wrapped_failure(&error, redactor),
+// _map_openai_exception hands getattr(original_exception, "body", None) to 400, 422, 429 and 500, so their type and param follow it
+fn status_failure(status: &StatusError, redactor: &Redactor) -> CompletionFailure {
+    let class = dispatch(
+        &DispatchInput::Raw(Box::new(RawException {
+            model: String::new(),
+            custom_llm_provider: String::from("openai"),
+            error_str: status.message.clone(),
+            status_code: status.status,
+            status_code_is_synthesized: false,
+            message: None,
+            body: Some(RawExceptionBody {
+                kind: status.error_type.clone(),
+                param: status.param.clone(),
+                code: status.code.clone(),
+                message: None,
+                error: None,
+            }),
+            exception_type: String::new(),
+        })),
+        redactor,
+    );
+    let metadata = class.metadata();
+    CompletionFailure {
+        status: metadata.status_code,
+        error_type: answered(metadata.error_type),
+        param: answered(metadata.param),
+        message: status.message.clone(),
+    }
+}
+
+// getattr(e, "type", "None") in the completion route's stream generator: a null field stays null, a missing one is the literal "None"
+fn answered(field: WireField) -> Option<String> {
+    match field {
+        WireField::Text(text) => Some(text),
+        WireField::Null => None,
+        WireField::Missing(_) => Some(String::from("None")),
     }
 }
