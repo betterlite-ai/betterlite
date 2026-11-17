@@ -30,10 +30,16 @@ fn event_type(event: &Json) -> Json {
     field(event, "type")
 }
 
-#[test]
-fn driver_primed_identity_and_text_order() {
-    let source = Scripted::from_texts(&[CONTENT_HI, FINISH_STOP]);
-    let pulls = Arc::clone(&source.pulls);
+fn text_deltas(events: &[Json]) -> Vec<Json> {
+    events
+        .iter()
+        .filter(|event| event_type(event) == Json::Text(String::from("response.output_text.delta")))
+        .map(|event| field(event, "delta"))
+        .collect()
+}
+
+// The created event must wait for the primed chunk, so the first pull is asserted inside the loop
+fn primed_events(source: Scripted, pulls: &Arc<AtomicUsize>) -> Vec<Json> {
     let (mut stream, _received) =
         driver_with_source(source, Reply::Text, "{}", &["u1", "u2", "u3"]);
     let mut events = Vec::new();
@@ -49,6 +55,27 @@ fn driver_primed_identity_and_text_order() {
         }
         assert!(events.len() < 32, "the stream ends");
     }
+    events
+}
+
+#[test]
+fn driver_primed_identity_waits_for_the_first_chunk() {
+    let source = Scripted::from_texts(&[CONTENT_HI, FINISH_STOP]);
+    let pulls = Arc::clone(&source.pulls);
+    let events = primed_events(source, &pulls);
+    assert_eq!(decoded_response_id(&events[1]), "chat_a");
+    assert_eq!(
+        decoded_response_id(&events[8]),
+        "chat_a",
+        "a later chunk id never wins"
+    );
+}
+
+#[test]
+fn driver_text_order_reaches_the_completed_response() {
+    let source = Scripted::from_texts(&[CONTENT_HI, FINISH_STOP]);
+    let pulls = Arc::clone(&source.pulls);
+    let events = primed_events(source, &pulls);
     assert_eq!(
         kinds(&events),
         [
@@ -79,18 +106,7 @@ fn driver_primed_identity_and_text_order() {
         ],
         "the ensured output item takes a sequence no event carries"
     );
-    assert_eq!(decoded_response_id(&events[1]), "chat_a");
-    assert_eq!(
-        decoded_response_id(&events[8]),
-        "chat_a",
-        "a later chunk id never wins"
-    );
-    let deltas: Vec<Json> = events
-        .iter()
-        .filter(|event| event_type(event) == Json::Text(String::from("response.output_text.delta")))
-        .map(|event| field(event, "delta"))
-        .collect();
-    assert_eq!(deltas, [Json::Text(String::from("hi"))]);
+    assert_eq!(text_deltas(&events), [Json::Text(String::from("hi"))]);
 }
 
 #[test]
@@ -105,13 +121,8 @@ fn driver_reads_only_the_first_choice_delta() {
         &["u1", "u2", "u3"],
     );
     let events = drain(&mut stream);
-    let deltas: Vec<Json> = events
-        .iter()
-        .filter(|event| event_type(event) == Json::Text(String::from("response.output_text.delta")))
-        .map(|event| field(event, "delta"))
-        .collect();
     assert_eq!(
-        deltas,
+        text_deltas(&events),
         [Json::Text(String::from("first"))],
         "only the first choice of a chunk reaches the stream"
     );

@@ -10,6 +10,7 @@ const TEXT_HI: &str =
     r#"{"id":"chat_a","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
 const FINISH_STOP: &str =
     r#"{"id":"chat_a","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+const REASONING_AND_TEXT: &str = r#"{"id":"chat_a","choices":[{"index":0,"delta":{"reasoning_content":"x","content":"y"},"finish_reason":null}]}"#;
 
 fn event_type(event: &Json) -> Json {
     field(event, "type")
@@ -22,15 +23,19 @@ fn reasoning_chunks() -> Vec<Result<Json, StreamFailure>> {
         .collect()
 }
 
-#[tokio::test]
-async fn driver_async_reasoning_closes_before_the_new_content() {
+async fn reasoning_events() -> Vec<Json> {
     let (mut stream, _received) = driver(
         reasoning_chunks(),
         Reply::Text,
         "{}",
         &["r1", "u1", "u2", "u3"],
     );
-    let events = drain_async(&mut stream).await;
+    drain_async(&mut stream).await
+}
+
+#[tokio::test]
+async fn driver_async_reasoning_closes_before_the_new_content() {
+    let events = reasoning_events().await;
     assert_eq!(
         kinds(&events),
         [
@@ -51,6 +56,22 @@ async fn driver_async_reasoning_closes_before_the_new_content() {
             "response.completed",
         ]
     );
+    assert_eq!(field(&events[3], "delta"), Json::Text(String::from("a")));
+    assert_eq!(field(&events[5], "text"), Json::Text(String::from("ab")));
+    assert_eq!(
+        field(&field(&events[6], "part"), "text"),
+        Json::Text(String::from("ab")),
+        "the summary part joins the fragments without a separator"
+    );
+    assert_eq!(
+        field(&field(&events[2], "item"), "type"),
+        Json::Text(String::from("reasoning"))
+    );
+}
+
+#[tokio::test]
+async fn driver_async_reasoning_sequences_and_item_payloads() {
+    let events = reasoning_events().await;
     let sequences: Vec<Option<i64>> = events.iter().map(sequence).collect();
     assert_eq!(
         sequences,
@@ -72,17 +93,6 @@ async fn driver_async_reasoning_closes_before_the_new_content() {
             None,
         ]
     );
-    assert_eq!(field(&events[3], "delta"), Json::Text(String::from("a")));
-    assert_eq!(field(&events[5], "text"), Json::Text(String::from("ab")));
-    assert_eq!(
-        field(&field(&events[6], "part"), "text"),
-        Json::Text(String::from("ab")),
-        "the summary part joins the fragments without a separator"
-    );
-    assert_eq!(
-        field(&field(&events[2], "item"), "type"),
-        Json::Text(String::from("reasoning"))
-    );
     assert_eq!(
         field(&field(&events[2], "item"), "id"),
         Json::Text(String::from("rs_r1")),
@@ -98,6 +108,11 @@ async fn driver_async_reasoning_closes_before_the_new_content() {
         Json::Null,
         "the item starts without a summary"
     );
+}
+
+#[tokio::test]
+async fn driver_async_reasoning_item_precedes_the_message() {
+    let events = reasoning_events().await;
     assert_eq!(
         field(&events[8], "output_index"),
         json("1"),
@@ -218,13 +233,8 @@ fn driver_unsigned_thinking_block_is_not_reasoning() {
 
 #[test]
 fn driver_reasoning_wins_over_text() {
-    let (mut stream, received) = driver(
-        vec![
-            Ok(json(
-                r#"{"id":"chat_a","choices":[{"index":0,"delta":{"reasoning_content":"x","content":"y"},"finish_reason":null}]}"#,
-            )),
-            Ok(json(FINISH_STOP)),
-        ],
+    let (mut stream, _received) = driver(
+        vec![Ok(json(REASONING_AND_TEXT)), Ok(json(FINISH_STOP))],
         Reply::Text,
         "{}",
         &["r1", "u1", "u2", "u3"],
@@ -239,11 +249,20 @@ fn driver_reasoning_wins_over_text() {
         .collect();
     assert_eq!(deltas, [Json::Text(String::from("x"))]);
     assert!(
-        !events.iter().any(|event| {
-            event_type(event) == Json::Text(String::from("response.output_text.delta"))
-        }),
+        !kinds(&events).contains(&String::from("response.output_text.delta")),
         "the text of the same chunk waits for a later chunk"
     );
+}
+
+#[test]
+fn driver_reasoning_keeps_the_text_in_the_snapshot() {
+    let (mut stream, received) = driver(
+        vec![Ok(json(REASONING_AND_TEXT)), Ok(json(FINISH_STOP))],
+        Reply::Text,
+        "{}",
+        &["r1", "u1", "u2", "u3"],
+    );
+    drain(&mut stream);
     let chunks = received.lock().expect("the calls lock").clone();
     let Some(Json::List(choices)) = chunks[0][0].get("choices") else {
         panic!("the snapshot keeps the choices");
@@ -254,10 +273,12 @@ fn driver_reasoning_wins_over_text() {
     let Some(Json::Object(delta)) = choice.get("delta") else {
         panic!("the snapshot keeps the delta");
     };
-    assert_eq!(delta.get("content"), Some(&Json::Text(String::from("y"))));
     assert_eq!(
-        delta.get("reasoning_content"),
-        Some(&Json::Text(String::from("x")))
+        (delta.get("content"), delta.get("reasoning_content")),
+        (
+            Some(&Json::Text(String::from("y"))),
+            Some(&Json::Text(String::from("x")))
+        )
     );
 }
 

@@ -4,10 +4,11 @@ use std::sync::atomic::Ordering;
 use betterlite_models::decisions::Json;
 
 use crate::api::messages_stream_split::errors::StreamFailure;
+use crate::api::response_id_codecs::response::decode_response_id;
 
 use super::super::error::ChatResponseStreamError;
 use super::fixtures::{
-    Reply, Scripted, drain, drain_async, driver, driver_with_source, json, kinds,
+    Reply, Scripted, drain, drain_async, driver, driver_with_source, field, json, kinds,
 };
 
 const CONTENT_HI: &str = r#"{"id":"chat_a","created":0,"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
@@ -23,7 +24,7 @@ fn driver_stream_failure_sets_finished_and_stops() {
     let source = Scripted::new(vec![Ok(json(CONTENT_HI)), Err(failure.clone())]);
     let pulls = Arc::clone(&source.pulls);
     let (mut stream, _received) = driver_with_source(source, Reply::Text, "{}", &["u1", "u2"]);
-    let mut seen = 0;
+    let mut seen: u32 = 0;
     let error = loop {
         match stream.next_event() {
             Ok(Some(_event)) => seen += 1,
@@ -61,7 +62,7 @@ async fn driver_async_stream_failure_sets_finished_and_stops() {
         "{}",
         &["u1", "u2"],
     );
-    let mut seen = 0;
+    let mut seen: u32 = 0;
     let error = loop {
         match stream.next_event_async().await {
             Ok(Some(_event)) => seen += 1,
@@ -108,16 +109,12 @@ async fn driver_async_priming_skips_a_null_chunk() {
         &["u1", "u2", "u3"],
     );
     let events = drain_async(&mut stream).await;
-    let response = super::fixtures::field(&events[0], "response");
+    let response = field(&events[0], "response");
+    let Json::Text(id) = field(&response, "id") else {
+        panic!("the created response id is text");
+    };
     assert_eq!(
-        crate::api::response_id_codecs::response::decode_response_id(
-            &match super::fixtures::field(&response, "id") {
-                Json::Text(id) => id,
-                other => panic!("the created response id is text, not {other:?}"),
-            },
-        )
-        .response_id
-        .as_deref(),
+        decode_response_id(&id).response_id.as_deref(),
         Some("chat_a")
     );
 }

@@ -42,8 +42,7 @@ fn citation_chunk(citations: &[&str], content: Option<&str>) -> Json {
     ))
 }
 
-#[test]
-fn driver_annotation_batch_waits_for_an_idle_chunk() {
+fn cited_events() -> Vec<Json> {
     let (mut stream, _received) = driver(
         vec![
             Ok(citation_chunk(&[CITATION], Some("hi"))),
@@ -56,9 +55,13 @@ fn driver_annotation_batch_waits_for_an_idle_chunk() {
         "{}",
         &["u1", "u2", "u3"],
     );
-    let events = drain(&mut stream);
+    drain(&mut stream)
+}
+
+#[test]
+fn driver_annotation_batch_waits_for_an_idle_chunk() {
     assert_eq!(
-        kinds(&events),
+        kinds(&cited_events()),
         [
             "response.created",
             "response.in_progress",
@@ -73,6 +76,11 @@ fn driver_annotation_batch_waits_for_an_idle_chunk() {
         ],
         "the annotation drains on the chunk after the text that outranked it"
     );
+}
+
+#[test]
+fn driver_annotation_fields_follow_the_batch() {
+    let events = cited_events();
     let annotation = field(&events[5], "annotation");
     assert_eq!(
         field(&annotation, "type"),
