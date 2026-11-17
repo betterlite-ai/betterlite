@@ -1,0 +1,23 @@
+kind: helper
+name: soniox-pipeline-both-references
+call:
+  soniox_pipeline:
+    pipeline:
+      model: soniox/stt-async-v4
+      timeout_millis: 2500
+      api_key: sk-local
+      api_base: https://api.soniox.test
+      optional_params:
+        file_id: caller-file
+        audio_url: https://audio.test/a.mp3
+      answers:
+      - status: 200
+        body: '{"id": "tr_1"}'
+      - status: 200
+        body: '{"status": "completed", "audio_duration_ms": 1500}'
+      - status: 200
+        body: '{"text": "hello"}'
+      - status: 200
+        body: '{"id": "tr_1"}'
+compare: {ignore: []}
+env: {}
