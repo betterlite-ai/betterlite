@@ -21,4 +21,16 @@ deviations:
       betterlite's router loads its catalog rules from config.yaml rather than a remote cost map, so the same
       rule document needs a configured home; a config without the block keeps the cost map's own rules.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L537-L544
+  - what: >-
+      At route selection the router fills each candidate deployment's model_info from the matching capability
+      and fill rules, the deployment's own keys and explicit nulls winning, and writes a missing
+      litellm_provider from the first matching routing rule, where LiteLLM instead resolves a request's model
+      through get_llm_provider and get_model_info before a call.
+    why: >-
+      betterlite selects among configured deployments, so the rule document reaches a deployment's entry at
+      selection: a deployment without a provider or capability metadata gets it there, and both the filters and
+      the chosen deployment see what a LiteLLM call would have resolved. A router without rules leaves every
+      deployment unchanged; a deployment whose model prefix names its provider is not re-inferred at selection,
+      so a routing rule may supply a provider its records leave out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
 kept_bugs: []
