@@ -128,6 +128,25 @@ fn base_field_explicit_nulls() {
 }
 
 #[test]
+fn explicit_reset_at_null() {
+    let request = GenerateRequestBase::read(&value(
+        r#"{"budget_limits": [{"budget_duration": "1d", "max_budget": 2.5, "reset_at": null}]}"#,
+    ))
+    .expect("a window with an explicit null reset");
+    let projection = request.project().expect("the projection");
+    assert_field(
+        &projection.supplied,
+        "budget_limits",
+        r#"[{"budget_duration": "1d", "max_budget": 2.5}]"#,
+    );
+    assert_field(
+        &projection.resolved,
+        "budget_limits",
+        r#"[{"budget_duration": "1d", "max_budget": 2.5, "reset_at": null}]"#,
+    );
+}
+
+#[test]
 fn blank_max_budget() {
     let request =
         GenerateKeyRequest::read(&value(r#"{"max_budget": ""}"#)).expect("a blank budget");
@@ -259,6 +278,25 @@ fn key_field_defaults() {
             "router_settings",
             "access_group_ids",
         ],
+    );
+}
+
+#[test]
+fn router_settings_raw() {
+    let request = KeyRequestBase::read(&value(
+        r#"{"router_settings": {"num_retries": "untyped", "cache": {"ttl": 5}}}"#,
+    ))
+    .expect("an untyped router settings object");
+    let projection = request.project().expect("the projection");
+    assert_field(
+        &projection.supplied,
+        "router_settings",
+        r#"{"cache": {"ttl": 5}, "num_retries": "untyped"}"#,
+    );
+    assert_field(
+        &projection.resolved,
+        "router_settings",
+        r#"{"cache": {"ttl": 5}, "num_retries": "untyped"}"#,
     );
 }
 
@@ -532,6 +570,20 @@ fn temporary_budget_expiry() {
         &projection.resolved,
         "temp_budget_expiry",
         r#""2030-01-01T00:00:00""#,
+    );
+}
+
+#[test]
+fn millisecond_timestamp() {
+    let request = UpdateKeyRequest::read(&value(
+        r#"{"key": "k", "temp_budget_increase": 2.5, "temp_budget_expiry": "2030-01-01T00:00:00.500"}"#,
+    ))
+    .expect("a millisecond expiry");
+    let projection = request.project().expect("the projection");
+    assert_field(
+        &projection.resolved,
+        "temp_budget_expiry",
+        r#""2030-01-01T00:00:00.500""#,
     );
 }
 
