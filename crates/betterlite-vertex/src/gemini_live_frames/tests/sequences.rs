@@ -16,6 +16,37 @@ const USAGE_MEMBER: &str = r#""usageMetadata": {"promptTokenCount": 10, "candida
 const TOOL_ONLY: &str =
     r#"{"toolCall": {"functionCalls": [{"name": "lookup", "args": {"city": "Paris"}}]}}"#;
 const MODEL_TURN: &str = r#"{"serverContent": {"modelTurn": {"parts": [{"text": "hi"}]}}}"#;
+const AUDIO_TURN: &str = r#"{"serverContent": {"modelTurn": {"parts": [{"inlineData": {"mimeType": "audio/pcm", "data": "AAA"}}]}}}"#;
+const STORED_SETUP: &str = r#"{"setup": {"model": "models/gemini-3-pro", "generationConfig": {"responseModalities": ["TEXT"], "temperature": 0.7, "maxOutputTokens": 100}}}"#;
+const TRANSCRIPT_TOOL_TYPES: [&str; 8] = [
+    "conversation.item.input_audio_transcription.completed",
+    "response.created",
+    "response.output_item.added",
+    "conversation.item.added",
+    "response.function_call_arguments.delta",
+    "response.function_call_arguments.done",
+    "response.output_item.done",
+    "response.done",
+];
+const OUTPUT_TRANSCRIPT_TYPES: [&str; 5] = [
+    "response.created",
+    "response.output_item.added",
+    "conversation.item.added",
+    "response.content_part.added",
+    "response.output_audio_transcript.delta",
+];
+const OUTPUT_AUDIO_TYPES: [&str; 5] = [
+    "response.created",
+    "response.output_item.added",
+    "conversation.item.added",
+    "response.content_part.added",
+    "response.output_audio.delta",
+];
+const AUDIO_DONE_TYPES: [&str; 3] = [
+    "response.output_audio.done",
+    "response.content_part.done",
+    "response.output_item.done",
+];
 
 #[test]
 fn standalone_usage_waits_for_the_next_response_done() {
@@ -44,19 +75,7 @@ fn input_transcription_runs_before_a_tool_sibling() {
         draw(2)
     );
     assert_eq!(events.first(), Some(&json(&expected)));
-    assert_eq!(
-        types(&events),
-        [
-            "conversation.item.input_audio_transcription.completed",
-            "response.created",
-            "response.output_item.added",
-            "conversation.item.added",
-            "response.function_call_arguments.delta",
-            "response.function_call_arguments.done",
-            "response.output_item.done",
-            "response.done",
-        ]
-    );
+    assert_eq!(types(&events), TRANSCRIPT_TOOL_TYPES);
     assert_eq!(
         lookup(field(&events, 1, "response"), &["id"]),
         &text(format!("resp_{}", draw(4)))
@@ -82,16 +101,7 @@ fn output_transcription_starts_one_audio_item() {
     let events = live
         .frame(r#"{"serverContent": {"outputTranscription": {"text": "hi"}}}"#)
         .expect("the frame is known");
-    assert_eq!(
-        types(&events),
-        [
-            "response.created",
-            "response.output_item.added",
-            "conversation.item.added",
-            "response.content_part.added",
-            "response.output_audio_transcript.delta",
-        ]
-    );
+    assert_eq!(types(&events), OUTPUT_TRANSCRIPT_TYPES);
     assert_eq!(
         lookup(field(&events, 3, "part"), &["type"]),
         &text("audio".to_owned())
@@ -113,12 +123,15 @@ fn output_transcription_starts_one_audio_item() {
         Some(format!("conv_{}", draw(3)))
     );
     assert_eq!(live.caller.delta_type, None);
-    let events = live
+    let follow_up = live
         .frame(r#"{"serverContent": {"outputTranscription": {"text": "there"}}}"#)
         .expect("the frame is known");
-    assert_eq!(types(&events), ["response.output_audio_transcript.delta"]);
     assert_eq!(
-        lookup(&events[0], &["item_id"]),
+        types(&follow_up),
+        ["response.output_audio_transcript.delta"]
+    );
+    assert_eq!(
+        lookup(&follow_up[0], &["item_id"]),
         &text(format!("item_{}", draw(2)))
     );
 }
@@ -218,8 +231,8 @@ fn a_trailing_turn_close_after_a_tool_is_suppressed() {
     assert_eq!(types(&events).last(), Some(&"response.done"));
     assert_eq!(live.caller.response_id, None);
     let source = format!("{{{TURN_MEMBER}, {USAGE_MEMBER}}}");
-    let events = live.frame(&source).expect("the trailing frame is known");
-    assert!(events.is_empty());
+    let trailing_events = live.frame(&source).expect("the trailing frame is known");
+    assert!(trailing_events.is_empty());
     assert_eq!(
         live.session.pending_usage_metadata,
         Some(object(
@@ -252,12 +265,15 @@ fn content_after_a_tool_turn_opens_a_response_and_bills_the_buffer() {
         live.caller.output_item_id,
         Some(format!("item_{}", draw(13)))
     );
-    let events = live
+    let close_events = live
         .frame(r#"{"serverContent": {"turnComplete": true}}"#)
         .expect("the turn close is known");
-    assert_eq!(types(&events), ["response.done"]);
+    assert_eq!(types(&close_events), ["response.done"]);
     assert_eq!(
-        lookup(field(&events, 0, "response"), &["usage", "total_tokens"]),
+        lookup(
+            field(&close_events, 0, "response"),
+            &["usage", "total_tokens"]
+        ),
         &number(15)
     );
     assert_eq!(live.session.pending_usage_metadata, None);
@@ -274,10 +290,10 @@ fn unknown_siblings_are_ignored_beside_a_usage_frame() {
         live.session.pending_usage_metadata,
         Some(object(r#"{"promptTokenCount": 2}"#))
     );
-    let events = live
+    let later = live
         .frame(r#"{"goAway": {"timeLeft": "1s"}}"#)
         .expect("the frame is known");
-    assert!(events.is_empty());
+    assert!(later.is_empty());
     assert_eq!(live.caller, CallerState::default());
 }
 
@@ -289,13 +305,13 @@ fn generation_complete_without_a_delta_emits_nothing() {
         .expect("the frame is known");
     assert!(events.is_empty());
     assert_eq!(live.caller.delta_type, None);
-    let events = live.frame(MODEL_TURN).expect("the model turn is known");
-    assert_eq!(types(&events).last(), Some(&"response.output_text.delta"));
-    let events = live
+    let opened = live.frame(MODEL_TURN).expect("the model turn is known");
+    assert_eq!(types(&opened).last(), Some(&"response.output_text.delta"));
+    let closed = live
         .frame(r#"{"serverContent": {"generationComplete": true}}"#)
         .expect("the close is known");
     assert_eq!(
-        types(&events),
+        types(&closed),
         [
             "response.output_text.done",
             "response.content_part.done",
@@ -356,6 +372,76 @@ fn an_existing_conversation_id_survives_an_output_transcript() {
         live.caller.output_item_id,
         Some(format!("item_{}", draw(2)))
     );
+}
+
+#[test]
+fn an_interrupted_turn_closes_the_response() {
+    let mut live = Live::new(LIVE_MODEL);
+    let events = live
+        .frame(r#"{"serverContent": {"interrupted": true}}"#)
+        .expect("the interrupted frame is known");
+    assert_eq!(types(&events), ["response.done"]);
+    assert_eq!(
+        lookup(field(&events, 0, "response"), &["id"]),
+        &text(format!("resp_{}", draw(2)))
+    );
+    assert_eq!(
+        lookup(field(&events, 0, "response"), &["conversation_id"]),
+        &text(format!("conv_{}", draw(1)))
+    );
+    assert_eq!(live.caller.response_id, None);
+    assert_eq!(live.caller.output_item_id, None);
+}
+
+#[test]
+fn an_audio_model_turn_emits_audio_events() {
+    let mut live = Live::new(LIVE_MODEL);
+    let events = live.frame(AUDIO_TURN).expect("the audio turn is known");
+    assert_eq!(types(&events), OUTPUT_AUDIO_TYPES);
+    assert_eq!(field(&events, 4, "delta"), &text("AAA".to_owned()));
+    assert_eq!(live.caller.delta_type, Some(AllDeltaType::Audio));
+    let closed = live
+        .frame(r#"{"serverContent": {"generationComplete": true}}"#)
+        .expect("the audio close is known");
+    assert_eq!(types(&closed), AUDIO_DONE_TYPES);
+}
+
+#[test]
+fn a_stored_setup_shapes_the_session_and_transcript_response() {
+    let mut live = Live::new(LIVE_MODEL);
+    live.caller.session_configuration_request = Some(STORED_SETUP.to_owned());
+    let events = live
+        .frame(r#"{"setupComplete": {}}"#)
+        .expect("the setup frame is known");
+    let expected = format!(
+        r#"[{{"type":"session.created","session":{{"id":"session-log","modalities":["text"],"model":"gemini-3-pro"}},"event_id":"{}"}}]"#,
+        draw(1)
+    );
+    assert_eq!(events, list(&expected));
+    let transcript = live
+        .frame(r#"{"serverContent": {"outputTranscription": {"text": "hi"}}}"#)
+        .expect("the transcript frame is known");
+    let created = format!(
+        r#"{{"object":"realtime.response","id":"resp_{}","status":"in_progress","status_details":null,"output":[],"conversation_id":"conv_{}","modalities":["text"],"temperature":0.7,"max_output_tokens":100}}"#,
+        draw(2),
+        draw(4)
+    );
+    assert_eq!(field(&transcript, 0, "response"), &json(&created));
+}
+
+#[test]
+fn a_stored_setup_shapes_the_turn_close() {
+    let mut live = Live::new(LIVE_MODEL);
+    live.caller.session_configuration_request = Some(STORED_SETUP.to_owned());
+    live.caller.response_id = Some("resp_given".to_owned());
+    live.caller.conversation_id = Some("conv_given".to_owned());
+    let events = live
+        .frame(r#"{"serverContent": {"turnComplete": true}}"#)
+        .expect("the turn close is known");
+    let done = field(&events, 0, "response");
+    assert_eq!(lookup(done, &["temperature"]), &json("0.7"));
+    assert_eq!(lookup(done, &["max_output_tokens"]), &number(100));
+    assert_eq!(lookup(done, &["modalities"]), &json(r#"["text"]"#));
 }
 
 #[rstest]

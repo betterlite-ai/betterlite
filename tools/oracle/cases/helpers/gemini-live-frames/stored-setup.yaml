@@ -1,0 +1,12 @@
+kind: helper
+name: stored-setup
+call:
+  gemini_live_frames:
+    state:
+      session_configuration_request: '{"setup": {"model": "models/gemini-3-pro", "generationConfig": {"responseModalities": ["TEXT"], "temperature": 0.7, "maxOutputTokens": 100}}}'
+    frames:
+      - '{"setupComplete": {}}'
+      - '{"serverContent": {"outputTranscription": {"text": "hi"}}}'
+      - '{"serverContent": {"turnComplete": true}}'
+env: {}
+compare: {ignore: []}
