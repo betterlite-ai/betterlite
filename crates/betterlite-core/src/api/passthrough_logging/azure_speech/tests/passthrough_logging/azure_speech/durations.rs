@@ -128,30 +128,18 @@ fn an_upload_that_is_not_audio_bills_nothing() {
 fn a_foreign_container_upload_bills_nothing() {
     let unrecognized = br#"{"RecognitionStatus":"Success"}"#;
     assert_eq!(
-        billed_audio_seconds(
-            SpeechRoute::ShortAudio,
-            Some(VALID_FLAC.as_slice()),
-            unrecognized
-        )
-        .expect("a FLAC upload is no duration"),
+        billed_audio_seconds(SpeechRoute::ShortAudio, Some(VALID_FLAC), unrecognized)
+            .expect("a FLAC upload is no duration"),
         Decimal::ZERO
     );
     assert_eq!(
-        billed_audio_seconds(
-            SpeechRoute::ShortAudio,
-            Some(VALID_OGG.as_slice()),
-            unrecognized
-        )
-        .expect("an OGG upload is no duration"),
+        billed_audio_seconds(SpeechRoute::ShortAudio, Some(VALID_OGG), unrecognized)
+            .expect("an OGG upload is no duration"),
         Decimal::ZERO
     );
     assert_eq!(
-        billed_audio_seconds(
-            SpeechRoute::ShortAudio,
-            Some(VALID_MP3.as_slice()),
-            unrecognized
-        )
-        .expect("an MP3 upload is no duration"),
+        billed_audio_seconds(SpeechRoute::ShortAudio, Some(VALID_MP3), unrecognized)
+            .expect("an MP3 upload is no duration"),
         Decimal::ZERO
     );
 }
