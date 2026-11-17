@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-discovery-search-empty-chunk-precedence
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: find policy
+        api_base: https://host/v1
+        litellm_params: {}
+        response:
+          status: 200
+          body: '{"results":[{"id":"doc-3","document":{"derivedStructData":{"title":"Doc Title"}},"chunk":{}}]}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: soniox-pipeline-invalid-duration-after-log
+call:
+  soniox_pipeline:
+    pipeline:
+      model: soniox/stt-async-v4
+      timeout_millis: 2500
+      api_key: sk-local
+      api_base: https://api.soniox.test
+      optional_params: {}
+      audio:
+        filename: audio.mp3
+        content: RIFF-data
+      answers:
+      - status: 200
+        body: '{"id": "file_1"}'
+      - status: 200
+        body: '{"id": "tr_1"}'
+      - status: 200
+        body: '{"status": "completed", "audio_duration_ms": "nope"}'
+      - status: 200
+        body: '{"text": "hello"}'
+      - status: 200
+        body: '{"id": "tr_1"}'
+      - status: 200
+        body: '{"id": "file_1"}'
+compare: {ignore: []}
+env: {}

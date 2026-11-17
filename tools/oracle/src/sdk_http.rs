@@ -13,6 +13,7 @@ use error::SdkHttpError;
 use file_azure_storage::FileAzureStorageCall;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;
+use messages_sync_stream::call;
 use responses_agentic_continuation::AgenticContinuationCall;
 use result::SdkResult;
 
@@ -24,6 +25,7 @@ pub mod error;
 pub mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
+pub mod messages_sync_stream;
 pub(crate) mod native;
 pub(crate) mod python;
 pub mod responses_agentic_continuation;
@@ -75,6 +77,7 @@ pub enum SdkHttpCall {
     MessagesHeaderStream(MessagesHeaderStreamCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
+    MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
     FileAzureStorage(FileAzureStorageCall),
 }
@@ -253,6 +256,7 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 ));
             }
         }
+        SdkHttpCall::MessagesSyncStream(stream) => call::validate(stream, limits)?,
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)
