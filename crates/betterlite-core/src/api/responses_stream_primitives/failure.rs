@@ -10,6 +10,7 @@ use super::error_fields::{
 };
 
 // mirrors BaseLLMException(status_code, message, body) handed to litellm.exception_type
+#[must_use]
 pub fn map_stream_error_to_exception(
     object: StreamErrorObject<'_>,
     model: &str,
@@ -31,7 +32,7 @@ pub fn map_stream_error_to_exception(
             kind: fields.error_type.clone(),
             param: None,
             code: fields.code.clone(),
-            message: Some(fields.message.clone()),
+            message: Some(fields.message),
             error: None,
         }),
         exception_type: "BaseLLMException".to_owned(),
@@ -40,6 +41,7 @@ pub fn map_stream_error_to_exception(
 }
 
 // the source's f-string embeds str(body), so the message carries Python's dict repr, not JSON
+#[must_use]
 pub fn provider_error_message(fields: &StreamErrorFields, status_code: u16) -> String {
     let body = error_body_text(fields);
     format!("Error code: {status_code} - {{'error': {body}}}")
@@ -62,6 +64,7 @@ fn error_body_text(fields: &StreamErrorFields) -> String {
 }
 
 // getattr(mapped_exception, "status_code", None) with a missing or non-integer status read as None
+#[must_use]
 pub fn mid_stream_fallback_eligible(class: &ErrorClass, status_code: Option<u16>) -> bool {
     matches!(class, ErrorClass::ContentPolicyViolation(_))
         || status_code.is_none_or(|status| status >= 500 || status == 429)

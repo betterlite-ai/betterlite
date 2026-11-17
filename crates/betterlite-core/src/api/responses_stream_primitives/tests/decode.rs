@@ -5,7 +5,7 @@ use serde_json::Number;
 
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_stream_primitives::decode::{
-    JsonShape, StreamDecodeError, decode_responses_stream_value,
+    JsonShape as _, StreamDecodeError, decode_responses_stream_value,
 };
 
 fn decode(payload: &str) -> Json {
@@ -23,7 +23,7 @@ fn one(key: &str, value: Json) -> IndexMap<String, Json> {
 #[case::an_array("[]", Json::List(Vec::new()))]
 #[case::null("null", Json::Null)]
 #[case::a_string("\"x\"", Json::Text("x".to_owned()))]
-#[case::a_number("1", Json::Number(Number::from(1)))]
+#[case::a_number("1", Json::Number(Number::from(1_i32)))]
 fn decode_keeps_the_payloads_shape(#[case] payload: &str, #[case] expected: Json) {
     assert_eq!(decode(payload), expected);
 }
@@ -37,7 +37,7 @@ fn decode_keeps_nested_arrays_and_objects() {
     assert_eq!(
         fields.get("a"),
         Some(&Json::List(vec![
-            Json::Number(Number::from(1)),
+            Json::Number(Number::from(1_i32)),
             Json::Null,
             Json::Object(one("b", Json::Text("c".to_owned()))),
         ]))
@@ -81,7 +81,7 @@ fn decode_rejects_a_payload_over_the_event_limit() {
 #[case::an_array(Json::List(Vec::new()), false)]
 #[case::null(Json::Null, false)]
 #[case::a_string(Json::Text(String::new()), false)]
-#[case::a_number(Json::Number(Number::from(1)), false)]
+#[case::a_number(Json::Number(Number::from(1_i32)), false)]
 #[case::a_bool(Json::Bool(true), false)]
 fn is_json_object_accepts_only_an_object(#[case] value: Json, #[case] expected: bool) {
     assert_eq!(value.is_json_object(), expected);
@@ -99,7 +99,7 @@ fn is_json_array_accepts_only_an_array(#[case] value: Json, #[case] expected: bo
 #[rstest]
 #[case::a_string(Json::Text("x".to_owned()), Some("x"))]
 #[case::an_empty_string(Json::Text(String::new()), Some(""))]
-#[case::a_number(Json::Number(Number::from(1)), None)]
+#[case::a_number(Json::Number(Number::from(1_i32)), None)]
 #[case::null(Json::Null, None)]
 #[case::an_object(Json::Object(IndexMap::new()), None)]
 fn optional_str_keeps_only_a_string(#[case] value: Json, #[case] expected: Option<&str>) {
@@ -124,7 +124,7 @@ fn json_array_or_empty_yields_items_only_for_an_array(
     Json::Object(one("a", Json::Text("b".to_owned()))),
     true
 )]
-#[case::a_number_value(Json::Object(one("a", Json::Number(Number::from(1)))), false)]
+#[case::a_number_value(Json::Object(one("a", Json::Number(Number::from(1_i32)))), false)]
 #[case::an_array(Json::List(Vec::new()), false)]
 fn is_str_mapping_checks_every_value(#[case] value: Json, #[case] expected: bool) {
     assert_eq!(value.is_str_mapping(), expected);

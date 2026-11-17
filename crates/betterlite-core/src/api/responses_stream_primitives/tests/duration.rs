@@ -30,18 +30,22 @@ fn state_with_limit(
 #[test]
 fn an_unset_limit_never_times_out() {
     let state = state_with_limit("gpt-4o", None, None);
-    assert!(state.check_max_streaming_duration(1e12).is_ok());
+    state
+        .check_max_streaming_duration(1e12)
+        .expect("an unset limit never times out");
 }
 
 #[test]
 fn a_limit_equal_to_the_elapsed_time_still_streams() {
-    let state = state_with_limit("gpt-4o", None, Some(2.5));
-    assert!(state.check_max_streaming_duration(2.5).is_ok());
+    let state = state_with_limit("gpt-4o", None, Some(2.5_f64));
+    state
+        .check_max_streaming_duration(2.5)
+        .expect("a limit equal to the elapsed time still streams");
 }
 
 #[test]
 fn a_limit_over_the_elapsed_time_times_out() {
-    let state = state_with_limit("gpt-4o", None, Some(2.5));
+    let state = state_with_limit("gpt-4o", None, Some(2.5_f64));
     let timeout = state
         .check_max_streaming_duration(2.6)
         .expect_err("the stream ran past the limit");
@@ -71,9 +75,11 @@ fn a_timeout_counts_from_the_created_timestamp() {
             now: moment(),
             created_timestamp: 10.0,
         },
-        max_streaming_duration_seconds: Some(2.5),
+        max_streaming_duration_seconds: Some(2.5_f64),
     });
-    assert!(state.check_max_streaming_duration(12.5).is_ok());
+    state
+        .check_max_streaming_duration(12.5)
+        .expect("the stream is under the limit");
     let timeout = state
         .check_max_streaming_duration(12.6)
         .expect_err("the stream ran 2.6s past its created time");
@@ -85,7 +91,7 @@ fn a_timeout_counts_from_the_created_timestamp() {
 
 #[test]
 fn a_timeout_keeps_the_model_and_provider() {
-    let state = state_with_limit("claude-3", Some("anthropic"), Some(1.0));
+    let state = state_with_limit("claude-3", Some("anthropic"), Some(1.0_f64));
     let timeout = state
         .check_max_streaming_duration(1.5)
         .expect_err("the stream ran past the limit");
@@ -99,8 +105,10 @@ fn a_timeout_keeps_the_model_and_provider() {
 
 #[test]
 fn a_zero_limit_allows_a_zero_elapsed_time() {
-    let state = state_with_limit("gpt-4o", None, Some(0.0));
-    assert!(state.check_max_streaming_duration(0.0).is_ok());
+    let state = state_with_limit("gpt-4o", None, Some(0.0_f64));
+    state
+        .check_max_streaming_duration(0.0)
+        .expect("a zero elapsed time stays under a zero limit");
     let timeout = state
         .check_max_streaming_duration(0.1)
         .expect_err("any elapsed time exceeds zero");
@@ -109,7 +117,7 @@ fn a_zero_limit_allows_a_zero_elapsed_time() {
 
 #[test]
 fn a_negative_limit_fails_at_a_zero_elapsed_time() {
-    let state = state_with_limit("gpt-4o", None, Some(-1.0));
+    let state = state_with_limit("gpt-4o", None, Some(-1.0_f64));
     let timeout = state
         .check_max_streaming_duration(0.0)
         .expect_err("zero is greater than a negative limit");
@@ -122,7 +130,9 @@ fn a_negative_limit_fails_at_a_zero_elapsed_time() {
 #[test]
 fn a_nan_limit_never_times_out() {
     let state = state_with_limit("gpt-4o", None, Some(f64::NAN));
-    assert!(state.check_max_streaming_duration(1e12).is_ok());
+    state
+        .check_max_streaming_duration(1e12)
+        .expect("a nan limit never times out");
 }
 
 #[rstest::rstest]

@@ -41,16 +41,17 @@ pub struct StreamErrorFields {
 }
 
 // an in-stream error arrives either as the decoded payload or as a provider object with attributes
-pub enum StreamErrorObject<'a> {
-    Mapping(&'a IndexMap<String, Json>),
-    Attributes(StreamErrorAttributes<'a>),
+#[derive(Debug, Clone, Copy)]
+pub enum StreamErrorObject<'value> {
+    Mapping(&'value IndexMap<String, Json>),
+    Attributes(StreamErrorAttributes<'value>),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct StreamErrorAttributes<'a> {
-    pub message: Option<&'a Json>,
-    pub error_type: Option<&'a Json>,
-    pub code: Option<&'a Json>,
+pub struct StreamErrorAttributes<'value> {
+    pub message: Option<&'value Json>,
+    pub error_type: Option<&'value Json>,
+    pub code: Option<&'value Json>,
 }
 
 pub fn error_event_fields(object: StreamErrorObject<'_>) -> StreamErrorFields {
@@ -75,7 +76,7 @@ pub fn error_event_fields(object: StreamErrorObject<'_>) -> StreamErrorFields {
     }
 }
 
-fn present(value: Option<&Json>) -> Option<&Json> {
+const fn present(value: Option<&Json>) -> Option<&Json> {
     match value {
         Some(Json::Null) | None => None,
         Some(other) => Some(other),
@@ -99,12 +100,14 @@ fn integer_text(number: &Number) -> Option<String> {
     Some(if text == "-0" { "0".to_owned() } else { text })
 }
 
+#[must_use]
 pub fn error_status_and_message(object: StreamErrorObject<'_>) -> (u16, String) {
     let fields = error_event_fields(object);
     let status = status_code_for_error_fields(fields.error_type.as_deref(), fields.code.as_deref());
     (status, fields.message)
 }
 
+#[must_use]
 pub fn status_code_for_error_fields(error_type: Option<&str>, error_code: Option<&str>) -> u16 {
     let fields = [error_code, error_type];
     let rate_limited = fields
@@ -122,6 +125,7 @@ pub fn status_code_for_error_fields(error_type: Option<&str>, error_code: Option
 }
 
 // code is read before type, and only an ASCII decimal in 400..=599 counts as a status
+#[must_use]
 pub fn status_code_for_error_field(field: &str) -> Option<u16> {
     let decimal = !field.is_empty() && field.bytes().all(|byte| byte.is_ascii_digit());
     if decimal {

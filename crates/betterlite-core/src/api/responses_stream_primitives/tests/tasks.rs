@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::{Notify, oneshot};
@@ -101,7 +102,7 @@ async fn spawned_work_outlives_its_handle_and_leaves_the_pending_set() {
     let held = Arc::clone(&release);
     let spawned = spawn_logging_task(&pending, "probe", async move {
         held.notified().await;
-        let _ = done.send(());
+        done.send(()).expect("the test keeps the receiver");
         Ok::<(), &str>(())
     });
     assert!(spawned.is_some());
@@ -117,17 +118,13 @@ async fn spawned_work_outlives_its_handle_and_leaves_the_pending_set() {
 #[tokio::test]
 async fn a_cancelled_task_logs_nothing() {
     let (captured, _guard) = capture();
-    let pending = TaskTracker::new();
-    let spawned = spawn_logging_task(
-        &pending,
-        "probe",
-        std::future::pending::<Result<(), &str>>(),
-    );
+    let tracker = TaskTracker::new();
+    let spawned = spawn_logging_task(&tracker, "probe", pending::<Result<(), &str>>());
     let Some(handle) = spawned else {
         panic!("the runtime is running");
     };
     handle.abort();
-    pending.close();
-    pending.wait().await;
+    tracker.close();
+    tracker.wait().await;
     assert!(captured.events().is_empty());
 }

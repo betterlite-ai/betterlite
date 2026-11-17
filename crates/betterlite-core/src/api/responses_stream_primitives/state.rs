@@ -67,6 +67,10 @@ pub struct BaseStreamStateInput<'input> {
     pub max_streaming_duration_seconds: Option<f64>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one independent LiteLLM iterator latch, never a bit in a shared mode"
+)]
 pub struct ResponsesStreamBaseState {
     pub model: String,
     pub custom_llm_provider: Option<String>,

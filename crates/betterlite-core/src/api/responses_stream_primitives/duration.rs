@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use betterlite_logging::analytics::python::float_text;
 use thiserror::Error;
 
@@ -25,10 +27,7 @@ impl ResponsesStreamBaseState {
         };
         // the subtraction spelled as a fused step keeps it out of arithmetic_side_effects, and -1.0*x is exact
         let elapsed = self.created_timestamp.mul_add(-1.0_f64, now_timestamp);
-        let exceeded = matches!(
-            elapsed.partial_cmp(&limit),
-            Some(std::cmp::Ordering::Greater)
-        );
+        let exceeded = matches!(elapsed.partial_cmp(&limit), Some(Ordering::Greater));
         if !exceeded {
             return Ok(());
         }

@@ -42,8 +42,8 @@ fn base_stream_state_starts_with_the_source_defaults() {
     });
     assert_eq!(state.model, "gpt-4o");
     assert_eq!(state.custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(state.litellm_metadata, None);
-    assert_eq!(state.call_type, None);
+    assert!(state.litellm_metadata.is_none());
+    assert!(state.call_type.is_none());
     assert!(!state.finished);
     assert!(!state.failure_handled);
     assert!(!state.yielded_first_chunk);
@@ -52,6 +52,23 @@ fn base_stream_state_starts_with_the_source_defaults() {
     assert!(!state.completed_response_cached);
     assert!(!state.completed_response_logged);
     assert_eq!(state.completed_response_cache_hit, None);
+}
+
+#[test]
+fn base_stream_state_starts_with_an_empty_output_and_hidden_defaults() {
+    let headers = IndexMap::new();
+    let state = base_stream_state(&BaseStreamStateInput {
+        model: "gpt-4o",
+        custom_llm_provider: Some("openai"),
+        litellm_metadata: None,
+        request_data: None,
+        call_type: None,
+        logging: snapshot(IndexMap::new()),
+        headers: &headers,
+        api_base: &NoApiBase,
+        times: times(),
+        max_streaming_duration_seconds: None,
+    });
     assert!(state.persist_before_logging);
     assert_eq!(state.generated_content, "");
     assert_eq!(state.generated_tool_arguments, "");
@@ -92,11 +109,11 @@ fn base_stream_state_turns_null_request_data_into_an_empty_object() {
         headers: &headers,
         api_base: &NoApiBase,
         times: times(),
-        max_streaming_duration_seconds: Some(2.5),
+        max_streaming_duration_seconds: Some(2.5_f64),
     });
     assert_eq!(kept.request_data.get("stream"), Some(&Json::Bool(true)));
     assert_eq!(kept.call_type.as_deref(), Some("responses"));
-    assert_eq!(kept.max_streaming_duration_seconds, Some(2.5));
+    assert_eq!(kept.max_streaming_duration_seconds, Some(2.5_f64));
 }
 
 #[test]
@@ -119,7 +136,7 @@ fn base_stream_state_keeps_the_logging_start_time() {
         max_streaming_duration_seconds: None,
     });
     assert_eq!(state.start_time, logged);
-    assert_eq!(state.created_timestamp, 0.0);
+    assert_eq!(state.created_timestamp.to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
@@ -145,7 +162,7 @@ fn base_stream_state_falls_back_to_now_without_a_logging_start_time() {
         max_streaming_duration_seconds: None,
     });
     assert_eq!(state.start_time, later);
-    assert_eq!(state.created_timestamp, 12.5);
+    assert_eq!(state.created_timestamp.to_bits(), 12.5_f64.to_bits());
 }
 
 #[test]
@@ -184,7 +201,7 @@ fn base_stream_state_reads_the_logging_snapshot() {
 #[case::a_numeric_id_vanishes(
     Some(metadata(&[(
         "model_info",
-        Json::Object(metadata(&[("id", Json::Number(Number::from(7)))]))
+        Json::Object(metadata(&[("id", Json::Number(Number::from(7_i32)))]))
     )])),
     None
 )]
