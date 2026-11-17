@@ -55,11 +55,11 @@ fn a_falsy_duration_is_the_configured_default(#[case] duration: Json) {
 }
 
 #[rstest]
-#[case::integer(number(6), 6.0)]
-#[case::negative(number(-3), -3.0)]
-#[case::decimal(Json::Number(Number::from_f64(6.5).unwrap()), 6.5)]
-#[case::decimal_text(text("6.5"), 6.5)]
-#[case::padded_text(text(" 12 "), 12.0)]
+#[case::integer(number(6), 6.0_f64)]
+#[case::negative(number(-3), -3.0_f64)]
+#[case::decimal(Json::Number(Number::from_f64(6.5).unwrap()), 6.5_f64)]
+#[case::decimal_text(text("6.5"), 6.5_f64)]
+#[case::padded_text(text(" 12 "), 12.0_f64)]
 fn a_readable_duration_is_a_float(#[case] duration: Json, #[case] seconds: f64) {
     let parameters = object([("durationSeconds", duration)]);
     let usage =
