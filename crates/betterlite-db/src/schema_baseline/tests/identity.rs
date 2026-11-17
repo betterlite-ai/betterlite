@@ -1,4 +1,5 @@
 use crate::schema_baseline::{BASELINE_MIGRATION, MIGRATION_CATALOG};
+use betterlite_postgres_fixture::sql::BASELINE;
 use sha2::{Digest as _, Sha256};
 
 const PINNED_SHA256: &str = "35afca4826335f8bd2bc2b733c0540de51c6a199d39c27a2d1910c53e1a02647";
@@ -22,7 +23,7 @@ fn baseline_sql_identity() {
 
 #[test]
 fn pinned_bytes_and_checksum() {
-    let upstream = include_bytes!("../../../../../tools/postgres-fixture/fixtures/baseline.sql");
+    let upstream = BASELINE.as_bytes();
     assert_eq!(BASELINE_MIGRATION.bytes, upstream);
     assert_eq!(
         hex::encode(Sha256::digest(upstream)),

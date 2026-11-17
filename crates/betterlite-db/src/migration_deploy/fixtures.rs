@@ -17,6 +17,8 @@ use tokio::time::{Instant, sleep, timeout};
 use tokio_postgres::{Config, NoTls};
 use uuid::Uuid;
 
+use crate::migration_ledger::fixtures::LEDGER_DDL;
+
 use super::catalog::Migration;
 use super::{DeployError, MigrationDeploy};
 
@@ -25,6 +27,8 @@ struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
     url: Option<String>,
 }
+
+const EFFECTS_TABLE: &str = "CREATE TABLE effects (value text)";
 
 pub(super) struct Database {
     pub pool: Pool,
@@ -42,7 +46,8 @@ where
     let url = Environment::parse_from(["migration-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let statements = vec![LEDGER_DDL.to_owned(), EFFECTS_TABLE.to_owned()];
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
@@ -51,12 +56,10 @@ where
         .max_size(5)
         .build()
         .unwrap();
-    let context = context(pool.clone()).await;
-    let custom = format!("{}\"';--", context.schema);
-    let cleanup_sql = format!(
-        "DROP SCHEMA IF EXISTS \"{}\" CASCADE",
-        custom.replace('"', "\"\"")
-    );
+    let context = Database {
+        pool: pool.clone(),
+        schema: "public".to_owned(),
+    };
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         timeout(Duration::from_secs(20), test(context))
@@ -65,10 +68,8 @@ where
     });
     let result = tasks.join_next().await.unwrap();
     clear_deployment_lock(&pool).await;
-    let cleanup = pool.get().await.unwrap().batch_execute(&cleanup_sql).await;
     pool.close();
     fixture.close_async().await.unwrap();
-    cleanup.unwrap();
     result.unwrap();
 }
 
@@ -113,21 +114,6 @@ async fn clear_deployment_lock(pool: &Pool) {
     })
     .await;
     result.unwrap();
-}
-
-async fn context(pool: Pool) -> Database {
-    let client = pool.get().await.unwrap();
-    let schema = client
-        .query_one("SELECT current_schema()", &[])
-        .await
-        .unwrap()
-        .get(0);
-    client
-        .batch_execute(include_str!("fixtures/ledger.sql"))
-        .await
-        .unwrap();
-    drop(client);
-    Database { pool, schema }
 }
 
 impl Database {

@@ -7,6 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use betterlite_postgres_fixture::sql::BASELINE;
 use deadpool_postgres::{Client, ClientWrapper, Pool};
 use rstest::rstest;
 use secrecy::SecretString;
@@ -17,14 +18,16 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
-use super::baseline::{BaselineError, BaselineInputs, baseline_current_schema};
+use super::baseline::{
+    BaselineError, BaselineInputs, PACKAGED_CATALOGS, baseline_current_schema, catalog_statements,
+};
 use super::budget::{MAX_MIGRATE_DEPLOY_ATTEMPTS, MigrateAttemptBudget};
 use super::catalog::{get_migration_names, max_migration_timestamp, migration_timestamp};
 use super::environment::{migration_environment, prisma_schema_param};
 use super::fixtures::{
-    DrawingJitter, HistorySource, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase,
-    acquired_coordinator, apply_history, exists, harness, insert_row, ledger_rows, migration,
-    pinned_manifest, read_contract, runtime_catalog, schema_prisma_bytes,
+    DrawingJitter, LEDGER_DDL, LedgerRow, PUBLIC_SCHEMA, TestDatabase, acquired_coordinator,
+    exists, harness, insert_row, ledger_rows, migration, pinned_manifest, read_contract,
+    runtime_catalog, schema_prisma_bytes,
 };
 use super::inert::{InertError, is_inert_migration, rollback_inert_migration};
 use super::ledger_reads::{FailedLookup, FailedMigration, look_up_failed_migration};
@@ -40,25 +43,35 @@ use super::timeouts::{
 };
 use crate::migration_deploy::catalog::Migration;
 use crate::schema_contract::SchemaContract;
+use crate::schema_contract::history::litellm_statements;
 
-async fn database<F, Fut>(test: F)
+async fn database<F, Fut>(statements: Vec<String>, test: F)
 where
     F: FnOnce(TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    harness(1, move |mut databases| test(databases.remove(0))).await;
+    harness(vec![statements], move |mut databases| {
+        test(databases.remove(0))
+    })
+    .await;
 }
 
 // The live database and the independently initialized reference database a baseline verifies against
-async fn database_pair<F, Fut>(test: F)
-where
+async fn database_pair<F, Fut>(
+    live_statements: Vec<String>,
+    reference_statements: Vec<String>,
+    test: F,
+) where
     F: FnOnce(TestDatabase, TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    harness(2, move |mut databases| {
-        let reference = databases.remove(1);
-        test(databases.remove(0), reference)
-    })
+    harness(
+        vec![live_statements, reference_statements],
+        move |mut databases| {
+            let reference = databases.remove(1);
+            test(databases.remove(0), reference)
+        },
+    )
     .await;
 }
 

@@ -1,6 +1,6 @@
 use super::catalog::Attribute;
 use super::history::litellm_statements;
-use crate::migration_ledger::baseline::packaged_statements;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
@@ -32,7 +32,10 @@ where
         .map(SecretString::from);
     let mut resources = Vec::new();
     let outcome = AssertUnwindSafe(async {
-        for statements in [litellm_statements(), packaged_statements().unwrap()] {
+        let mut pinned = litellm_statements();
+        // LiteLLM's files match the packaged ones byte for byte, so one more statement gives the reference its own template and OIDs
+        pinned.push("SELECT 1".to_owned());
+        for statements in [pinned, catalog_statements(&PACKAGED_CATALOGS).unwrap()] {
             let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
                 .resolve()
                 .await

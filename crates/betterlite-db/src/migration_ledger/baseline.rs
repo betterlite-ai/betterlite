@@ -35,8 +35,8 @@ pub const PACKAGED_CATALOGS: [MigrationCatalog; 8] = [
     AGENT_IDENTITY,
 ];
 
-pub fn packaged_statements() -> Result<Vec<String>, Utf8Error> {
-    PACKAGED_CATALOGS
+pub fn catalog_statements(catalogs: &[MigrationCatalog]) -> Result<Vec<String>, Utf8Error> {
+    catalogs
         .iter()
         .flat_map(|catalog| catalog.files)
         .map(|file| str::from_utf8(file.bytes).map(str::to_owned))
