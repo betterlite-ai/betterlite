@@ -1,0 +1,17 @@
+kind: helper
+name: custom-http-scheme
+call:
+  vertex_live:
+    calls:
+      - op: endpoint
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        api_base: https://gateway.example.com/vertex///
+      - op: endpoint
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        api_base: http://localhost:8080/
+      - op: endpoint
+        session: {project: my-project, location: global, access_token: ya29.token}
+        api_base: wss://edge.example.com
+        api_key: sk-123
+env: {}
+compare: {ignore: []}
