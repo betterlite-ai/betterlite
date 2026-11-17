@@ -409,6 +409,7 @@ fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
         ("openai/e", "{}"),
         ("e", r#"{"reasoning_effort_levels": ["max"]}"#),
         ("openai/s", r#""nope""#),
+        ("s", r#"{"reasoning_effort_levels": ["low"]}"#),
         ("openai/n", "null"),
         ("n", r#"{"reasoning_effort_levels": ["minimal"]}"#),
     ]);
@@ -621,7 +622,7 @@ fn classifier_detection_reads_both_metadata_keys() {
 }
 
 fn a_classifier_effort_follows_the_target() {
-    let deployment = deployment("m", "m1");
+    let rejected = deployment("m", "m1");
     let mut kwargs = info(&[
         ("reasoning_effort", text("high")),
         (
@@ -636,7 +637,7 @@ fn a_classifier_effort_follows_the_target() {
             )]),
         ),
     ]);
-    let warning = drop_classifier_effort(&deployment, "m", &mut kwargs, &SUPPORTS_SEED);
+    let warning = drop_classifier_effort(&rejected, "m", &mut kwargs, &SUPPORTS_SEED);
     assert_eq!(
         warning.as_deref(),
         Some(
@@ -648,8 +649,8 @@ fn a_classifier_effort_follows_the_target() {
         kwargs.get("proxy_server_request"),
         Some(&object(&[("body", object(&[("model", text("m"))]))]))
     );
-    let mut deployment = deployment("m", "m1");
-    deployment.litellm_params.insert(
+    let mut allowed = deployment("m", "m1");
+    allowed.litellm_params.insert(
         "allowed_openai_params".to_owned(),
         Json::List(vec![text("reasoning_effort")]),
     );
@@ -661,7 +662,7 @@ fn a_classifier_effort_follows_the_target() {
         ),
     ]);
     assert_eq!(
-        drop_classifier_effort(&deployment, "m", &mut kwargs, &SUPPORTS_SEED),
+        drop_classifier_effort(&allowed, "m", &mut kwargs, &SUPPORTS_SEED),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&text("high")));
@@ -697,14 +698,14 @@ fn tier_params_drop_what_no_deployment_takes() {
 
 fn a_tier_drop_warns_with_the_sorted_names() {
     let (logs, _guard) = capture_logs();
-    let tier = info(&[("temperature", number(1)), ("top_k", number(3))]);
+    let tier = info(&[("top_p", number(3)), ("temperature", number(1))]);
     let deployments = vec![deployment("m", "m1")];
     let _accepted =
         tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &SUPPORTS_SEED);
     let logged = logs.text();
     assert!(
         logged.contains(
-            "litellm.router.py: dropping tier params temperature, top_k for model=m, no deployment behind it declares them"
+            "litellm.router.py: dropping tier params temperature, top_p for model=m, no deployment behind it declares them"
         ),
         "{logged}"
     );

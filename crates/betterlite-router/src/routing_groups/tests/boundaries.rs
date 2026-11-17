@@ -286,7 +286,7 @@ fn a_priority_outside_the_bounds_is_rejected() {
 
 fn field_types_name_the_field_and_the_expected_shape() {
     let mut missing_name = raw("cheap", &["a"], "simple-shuffle");
-    missing_name.remove("group_name");
+    let _ = missing_name.shift_remove("group_name");
     assert_eq!(
         parse_error(&[missing_name], &[]),
         "routing_groups.group_name must be a string"

@@ -162,6 +162,7 @@ impl RouteServices for GroupServices {
 }
 
 // The log lines a call writes, through a subscriber only this thread sees.
+#[derive(Clone)]
 pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
