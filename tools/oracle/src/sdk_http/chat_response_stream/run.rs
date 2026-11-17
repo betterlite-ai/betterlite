@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::chat_response_stream::driver::ChatResponseStream;
+use betterlite_core::api::chat_response_stream::error::ChatResponseStreamError;
 use betterlite_core::api::chat_response_stream_items::sources::EventSources;
 use betterlite_core::api::chat_response_stream_tools::state::StreamSetup;
 use betterlite_models::decisions::Json;
@@ -20,6 +21,10 @@ use crate::sdk_http::result::{
 use crate::sdk_http::wrapper_stream::{self, Prepared};
 
 const NORMALIZED_ID: &str = "00000000-0000-0000-0000-000000000000";
+
+type ChatStream = ChatResponseStream<Payloads, AssemblyContext>;
+type StepResult = Result<ChatResponseStreamStepOutcome, SdkHttpError>;
+type EventResult = Result<Option<KnownResponseEvent>, ChatResponseStreamError>;
 
 // What one run's POST left: the SSE payloads to drive, or the failure the provider raised before any event
 pub(super) enum Opened {
@@ -73,7 +78,7 @@ pub(super) async fn run(
 fn build(
     call: &ChatResponseStreamCall,
     payloads: VecDeque<Vec<u8>>,
-) -> Result<ChatResponseStream<Payloads, AssemblyContext>, SdkHttpError> {
+) -> Result<ChatStream, SdkHttpError> {
     let params = call.params_json()?;
     let input = Json::Text(call.request_input.clone());
     ChatResponseStream::new(
@@ -100,55 +105,48 @@ fn sources() -> EventSources {
     }
 }
 
-fn step_sync(
-    stream: &mut ChatResponseStream<Payloads, AssemblyContext>,
-    step: ChatRunStep,
-) -> Result<ChatResponseStreamStepOutcome, SdkHttpError> {
-    let mut events = Vec::new();
-    let mut end = false;
-    loop {
-        match stream
-            .next_event()
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?
-        {
-            Some(event) => events.push(event_json(&event)?),
-            None => {
-                end = true;
-                break;
-            }
-        }
-        if step == ChatRunStep::Next {
-            break;
-        }
-    }
-    Ok(ChatResponseStreamStepOutcome { events, end })
+// The events one step stacks up, and whether the provider ended the stream under it
+#[derive(Default)]
+struct StepEvents {
+    events: Vec<serde_json::Value>,
+    end: bool,
 }
 
-async fn step_async(
-    stream: &mut ChatResponseStream<Payloads, AssemblyContext>,
-    step: ChatRunStep,
-) -> Result<ChatResponseStreamStepOutcome, SdkHttpError> {
-    let mut events = Vec::new();
-    let mut end = false;
-    loop {
-        match stream
-            .next_event_async()
-            .await
-            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?
-        {
-            Some(event) => events.push(event_json(&event)?),
-            None => {
-                end = true;
-                break;
+impl StepEvents {
+    fn push(&mut self, next: EventResult) -> Result<(), SdkHttpError> {
+        match next {
+            Ok(Some(event)) => {
+                let value = serde_json::to_value(&event).map_err(SdkHttpError::Serialize)?;
+                self.events.push(value);
             }
+            Ok(None) => self.end = true,
+            Err(error) => return Err(SdkHttpError::Invalid(error.to_string())),
         }
-        if step == ChatRunStep::Next {
-            break;
-        }
+        Ok(())
     }
-    Ok(ChatResponseStreamStepOutcome { events, end })
 }
 
-fn event_json(event: &KnownResponseEvent) -> Result<serde_json::Value, SdkHttpError> {
-    serde_json::to_value(event).map_err(SdkHttpError::Serialize)
+impl From<StepEvents> for ChatResponseStreamStepOutcome {
+    fn from(events: StepEvents) -> Self {
+        Self {
+            events: events.events,
+            end: events.end,
+        }
+    }
+}
+
+fn step_sync(stream: &mut ChatStream, step: ChatRunStep) -> StepResult {
+    let mut outcome = StepEvents::default();
+    while !outcome.end && (step != ChatRunStep::Next || outcome.events.is_empty()) {
+        outcome.push(stream.next_event())?;
+    }
+    Ok(ChatResponseStreamStepOutcome::from(outcome))
+}
+
+async fn step_async(stream: &mut ChatStream, step: ChatRunStep) -> StepResult {
+    let mut outcome = StepEvents::default();
+    while !outcome.end && (step != ChatRunStep::Next || outcome.events.is_empty()) {
+        outcome.push(stream.next_event_async().await)?;
+    }
+    Ok(ChatResponseStreamStepOutcome::from(outcome))
 }

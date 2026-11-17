@@ -157,7 +157,9 @@ pub(crate) async fn send(
         Ok(outcome) => Ok(SdkResult::Success {
             value: completion(outcome.response),
         }),
-        Err(ChatError::Provider { response }) => project_failure(&chat.model, &response),
+        Err(ChatError::Provider { response }) => {
+            failure(&chat.model, &response).map(SdkResult::Failure)
+        }
         Err(other) => Err(SdkHttpError::Chat(Box::new(other))),
     }
 }
@@ -177,10 +179,6 @@ fn completion(response: ChatResponse) -> ChatCompletion {
             })
             .collect(),
     }
-}
-
-fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult, SdkHttpError> {
-    failure(model, response).map(SdkResult::Failure)
 }
 
 // the OpenAI SDK reads type/param/code from `body["error"]` when it is a mapping, else from the body itself

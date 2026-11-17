@@ -74,8 +74,7 @@ impl StreamAssembly for AssemblyContext {
     }
 }
 
-// The builder only awaits the token counter and the cost calculator, and both of this context's are ready
-// on their first poll; polling here keeps the assembly synchronous without nesting a second runtime.
+// The builder's awaited futures are ready on first poll, so polling here needs no second runtime
 fn block_on<F>(future: F) -> F::Output
 where
     F: Future,

@@ -2,10 +2,9 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::sdk_http::call_checks::validate_timeout;
+use crate::sdk_http::ChatMessage;
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::wrapper_stream::WireCall;
-use crate::sdk_http::{ChatMessage, OracleLimits};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,13 +53,6 @@ pub enum ChatRunMode {
 pub enum ChatRunStep {
     Next,
     Drain,
-}
-
-pub(crate) fn validate(
-    call: &ChatResponseStreamCall,
-    limits: &OracleLimits,
-) -> Result<(), SdkHttpError> {
-    validate_timeout(call.timeout_seconds, limits)
 }
 
 impl ChatResponseStreamCall {
