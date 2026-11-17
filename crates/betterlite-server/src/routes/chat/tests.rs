@@ -242,21 +242,23 @@ async fn mock_calls_behavior_tests_behavior() {
 }
 
 async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8>, HeaderMap) {
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(source)
-    .unwrap();
-    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
-    let request = Request::post(path)
-        .header("content-type", "application/json")
-        .body(Body::from(body.to_owned()))
+    // a loaded Config is large, so it drops here instead of sitting in this future across the await
+    let call = {
+        let config = ConfigLoader {
+            lookup: BTreeMap::new(),
+        }
+        .load(source)
         .unwrap();
-    let response = chat_routes_with_call_id(Arc::new(executor), false)
-        .unwrap()
-        .oneshot(request)
-        .await
-        .unwrap();
+        let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+        let request = Request::post(path)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_owned()))
+            .unwrap();
+        chat_routes_with_call_id(Arc::new(executor), false)
+            .unwrap()
+            .oneshot(request)
+    };
+    let response = call.await.unwrap();
     let status = response.status();
     let headers = response.headers().clone();
     let collected = to_bytes(response.into_body(), 1 << 20).await.unwrap();
