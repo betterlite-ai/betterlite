@@ -40,13 +40,7 @@ where
         .ok_or(ResponseError::MissingChoice)?;
     choice.message = message;
     choice.finish_reason = Some(finish_reason(&body.fields)?);
-    envelope.usage = Some(usage_of(
-        &body,
-        &parsed,
-        &completion,
-        speed.as_deref(),
-        counter,
-    )?);
+    envelope.usage = Some(usage_of(&body, &parsed, &completion, speed, counter)?);
     envelope.created = request.now;
     envelope.model = model_of(&body.fields)?;
     envelope.hidden_params = hidden_params(additional_headers, parsed.provider_specific_fields);
@@ -104,8 +98,8 @@ where
 {
     let reverse = reverse_map_of(request.litellm_params)?;
     let mut calls = parsed.tool_calls.clone();
-    if let Some(reverse) = reverse.as_ref() {
-        apply_reverse_map(&mut calls, reverse);
+    if let Some(renames) = reverse.as_ref() {
+        apply_reverse_map(&mut calls, renames);
     }
     let selection = select(body, request.json_mode, &calls, reverse.as_ref())?;
     if selection.message.is_some() {
@@ -148,14 +142,14 @@ fn composed_message(
     tool_calls: &[AnthropicToolCall],
 ) -> ChatMessage {
     let mut text = parsed.content.clone();
-    if let Some(prefix) = prefix
-        && !text.starts_with(prefix)
+    if let Some(requested) = prefix
+        && !text.starts_with(requested)
         && !disabled
     {
-        text = format!("{prefix}{text}");
+        text = format!("{requested}{text}");
     }
-    if let Some(extra) = extra {
-        text.push_str(extra);
+    if let Some(tail) = extra {
+        text.push_str(tail);
     }
     ChatMessage {
         role: "assistant".to_owned(),
@@ -176,20 +170,20 @@ where
     let Some(value) = fields.get("stop_reason") else {
         return Err(ResponseError::MissingField("stop_reason"));
     };
-    match value {
-        Json::Text(raw) => Ok(mapped_finish_reason(raw)),
-        Json::List(_) | Json::Object(_) => Err(ResponseError::FieldType {
-            field: "stop_reason",
-        }),
-        Json::Null | Json::Bool(_) | Json::Number(_) => {
-            // LiteLLM looks the value up, misses, warns with it and falls back to stop
-            tracing::warn!(
-                "Unmapped finish_reason '{}', defaulting to 'stop'",
-                python_json::dumps(value)
-            );
-            Ok("stop".to_owned())
-        }
+    if let Json::Text(raw) = value {
+        return Ok(mapped_finish_reason(raw));
     }
+    if matches!(value, Json::List(_) | Json::Object(_)) {
+        return Err(ResponseError::FieldType {
+            field: "stop_reason",
+        });
+    }
+    // LiteLLM looks the value up, misses, warns with it and falls back to stop
+    tracing::warn!(
+        "Unmapped finish_reason '{}', defaulting to 'stop'",
+        python_json::dumps(value)
+    );
+    Ok("stop".to_owned())
 }
 
 fn mapped_finish_reason(raw: &str) -> String {

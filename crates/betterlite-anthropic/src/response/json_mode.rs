@@ -1,9 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::response_content::wire::{
-    AnthropicCompletionResponse, AnthropicToolCall, get, json_text,
-};
+use crate::response_content::wire::{AnthropicCompletionResponse, AnthropicToolCall, json_text};
 use crate::response_content::{ResponseContentError, project_response};
 
 const RESPONSE_FORMAT_TOOL_NAME: &str = "json_tool_call";
@@ -33,8 +31,8 @@ pub(super) fn select(
         && tool_calls
             .first()
             .is_some_and(|call| call.function.arguments.is_some());
-    if let Some(reverse) = reverse {
-        reverse_content_names(body, reverse);
+    if let Some(renames) = reverse {
+        reverse_content_names(body, renames);
     }
     let mut detailed = project_response(body, json_mode)?;
     let message = if replace {

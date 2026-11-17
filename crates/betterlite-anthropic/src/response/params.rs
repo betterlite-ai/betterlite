@@ -24,12 +24,12 @@ where
     };
     let mut reverse = IndexMap::with_capacity(fields.len());
     for (sanitized, original) in fields {
-        let Some(original) = json_text(original) else {
+        let Some(target) = json_text(original) else {
             return Err(ResponseError::Parameter {
                 field: REVERSE_MAP_KEY,
             });
         };
-        reverse.insert(sanitized.clone(), original.to_owned());
+        reverse.insert(sanitized.clone(), target.to_owned());
     }
     Ok(Some(reverse))
 }
