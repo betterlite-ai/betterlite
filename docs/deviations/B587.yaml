@@ -1,19 +1,6 @@
 task: B587
 deviations:
   - what: >-
-      A created_at, ended_at, expires_at, cancel_initiated_at or archived_at
-      string is read with strict ISO 8601 rules, so a value Python's
-      datetime.fromisoformat accepts but RFC 3339 does not, such as
-      "2024-01-01T00:00:00." with a trailing dot, is treated as absent and the
-      field keeps its default instead of becoming the parsed instant.
-    why: >-
-      docs/compatibility.md allows the runtime that parses a declared string
-      field to be ours, and the accepted forms are the same for every value
-      both parsers understand, including epochs, naive date-times read as UTC,
-      fractional seconds, comma fractions and +0200 / +02 offsets. Only the
-      trailing-dot form differs, and it is not a form Anthropic sends.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L210-L228
-  - what: >-
       A retrieval body that is not JSON fails with betterlite's parse error
       over serde's message text, keeping LiteLLM's "Failed to parse Anthropic
       batch response: " prefix, where LiteLLM interpolates Python's json

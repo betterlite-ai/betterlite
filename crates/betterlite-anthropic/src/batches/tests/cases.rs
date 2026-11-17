@@ -604,77 +604,55 @@ fn text(value: &str) -> Json {
 }
 
 fn batch_timestamps() {
-    utc_forms();
-    local_forms();
+    parsed_forms();
     rejected_forms();
     status_timestamps();
 }
 
-fn utc_forms() {
-    for form in [
-        "2024-01-01T00:00:00Z",
-        "2024-01-01T00:00:00+00:00",
-        "2024-01-01T00:00:00.123456Z",
-        "2024-01-01T00:00:00,5Z",
-        "2024-01-01T00:00:00.1234567Z",
-        "2024-01-01T00:00Z",
-    ] {
+fn parsed_forms() {
+    let forms = [
+        ("2024-01-01T00:00:00Z", ZONE_SECONDS, 1_704_067_200),
+        ("2024-01-01T00:00:00+00:00", ZONE_SECONDS, 1_704_067_200),
+        ("2024-01-01T00:00:00.1234567Z", ZONE_SECONDS, 1_704_067_200),
+        ("2024-01-01T00:00:00,5Z", ZONE_SECONDS, 1_704_067_200),
+        ("2024-01-01T00:00Z", ZONE_SECONDS, 1_704_067_200),
+        ("20240301T100000", ZONE_SECONDS, 1_709_280_000),
+        ("2024-01-01T10", ZONE_SECONDS, 1_704_096_000),
+        ("2024-01-01T00:00:00+0200", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01T00:00:00+02", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01T00:00:00+02:00:30", ZONE_SECONDS, 1_704_059_970),
+        ("2024-01-01T00:00:00+00:60", ZONE_SECONDS, 1_704_063_600),
+        ("2024-01-01T00:00:00+23:00", ZONE_SECONDS, 1_703_984_400),
+        ("2024-01-01T00:00:00-02:00", ZONE_SECONDS, 1_704_074_400),
+        ("2024-01-01T00:00:00", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01", ZONE_SECONDS, 1_704_060_000),
+        ("20240101", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01 00:00:00", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01+00:00:00", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01-00:00:00", ZONE_SECONDS, 1_704_060_000),
+        ("2024-01-01T00:00:00", -18_000, 1_704_085_200),
+        ("2024-W09-05:30", ZONE_SECONDS, 1_708_918_200),
+        ("2024-W09-05", ZONE_SECONDS, 1_708_916_400),
+        ("2024-W09-5-10:00:00", ZONE_SECONDS, 1_709_280_000),
+        ("2024-W09-5+00:00:00", ZONE_SECONDS, 1_709_244_000),
+        ("2024-W09T10:00:00", ZONE_SECONDS, 1_708_934_400),
+        ("2024W09+10:00:00", ZONE_SECONDS, 1_708_934_400),
+        ("2024W09123:45", ZONE_SECONDS, 1_708_983_900),
+        ("2024W095123:45", ZONE_SECONDS, 1_709_329_500),
+        ("2024W095T10:00:00", ZONE_SECONDS, 1_709_280_000),
+        ("1969-12-31T23:59:59.5Z", ZONE_SECONDS, 0),
+        ("1970-01-01T00:00:00.5Z", ZONE_SECONDS, 0),
+        ("1969-12-31T23:59:59.5", ZONE_SECONDS, -7_200),
+        ("1969-12-31T23:59:59.0Z", ZONE_SECONDS, -1),
+        ("1969-12-31T23:59:59Z", ZONE_SECONDS, -1),
+    ];
+    for (form, zone_seconds, expected) in forms {
         assert_eq!(
-            timestamp(text(form), ZONE_SECONDS),
-            Some(1_704_067_200),
+            timestamp(text(form), zone_seconds),
+            Some(expected),
             "{form}"
         );
     }
-    assert_eq!(
-        timestamp(text("1969-12-31T23:59:59.5Z"), ZONE_SECONDS),
-        Some(0)
-    );
-    assert_eq!(
-        timestamp(text("1970-01-01T00:00:00.5Z"), ZONE_SECONDS),
-        Some(0)
-    );
-    assert_eq!(
-        timestamp(text("1969-12-31T23:59:59Z"), ZONE_SECONDS),
-        Some(-1)
-    );
-    assert_eq!(
-        timestamp(text("1969-12-31T23:59:59.0Z"), ZONE_SECONDS),
-        Some(-1)
-    );
-}
-
-fn local_forms() {
-    for form in [
-        "2024-01-01T00:00:00+02:00",
-        "2024-01-01T00:00:00+0200",
-        "2024-01-01T00:00:00+02",
-        "2024-01-01T00:00:00",
-        "2024-01-01",
-        "2024-01-01 00:00:00",
-        "20240101",
-    ] {
-        assert_eq!(
-            timestamp(text(form), ZONE_SECONDS),
-            Some(1_704_060_000),
-            "{form}"
-        );
-    }
-    assert_eq!(
-        timestamp(text("2024-01-01T00:00:00+23:00"), ZONE_SECONDS),
-        Some(1_703_984_400)
-    );
-    assert_eq!(
-        timestamp(text("2024-01-01T00:00:00+00:59"), ZONE_SECONDS),
-        Some(1_704_063_660)
-    );
-    assert_eq!(
-        timestamp(text("2024-01-01T00:00:00-02:00"), ZONE_SECONDS),
-        Some(1_704_074_400)
-    );
-    assert_eq!(
-        timestamp(text("2024-01-01T00:00:00"), -18_000),
-        Some(1_704_085_200)
-    );
 }
 
 fn rejected_forms() {
@@ -684,9 +662,11 @@ fn rejected_forms() {
         "2024-02-30T00:00:00Z",
         "2024-01-01T24:00:00Z",
         "2024-01-01T00:00:00+24:00",
-        "2024-01-01T00:00:00+00:60",
         "2024-01-01T00:00:00.",
         "2024-01-01T",
+        "2024W09T",
+        "2024W091T",
+        "2024-W09T",
         "2024-01-011T00:00:00Z",
         "202401011T00:00:00Z",
         "2024/01-01T00:00:00Z",
