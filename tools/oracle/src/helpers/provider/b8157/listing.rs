@@ -1,4 +1,5 @@
 use std::future::{Future, ready};
+use std::marker::PhantomData;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -18,10 +19,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
-use super::fixtures::{answer, environment, substituted, upstream_mapped};
+use super::fixtures::{ORACLE_UPSTREAM, answer, environment};
 use super::input::Case;
 use super::input_failure;
-use super::wire::request_view;
 
 const AUTHORIZATION: &str = "Authorization";
 const LEMONADE_API_BASE: &str = "LEMONADE_API_BASE";
@@ -30,36 +30,61 @@ const OLLAMA_API_BASE: &str = "OLLAMA_API_BASE";
 const OLLAMA_API_KEY: &str = "OLLAMA_API_KEY";
 const MODEL_TIMEOUT: Duration = Duration::from_secs(600);
 
-struct ModelClient {
-    requests: Mutex<Vec<ModelInfoRequest>>,
-    status: u16,
-    body: Vec<u8>,
+// the request a listing sent, as both listings answer with it
+#[derive(Clone)]
+struct Recorded {
+    url: String,
+    headers: Vec<(&'static str, SecretString)>,
 }
 
-impl ModelClient {
-    fn first(&self) -> Result<ModelInfoRequest, Box<HelperError>> {
+// the upstream both listings call, answering every request with the case's reply and keeping what it was sent
+struct Recorder<Request> {
+    requests: Mutex<Vec<Recorded>>,
+    status: u16,
+    body: Vec<u8>,
+    request: PhantomData<Request>,
+}
+
+impl<Request> Recorder<Request> {
+    // the case's own answer, which the recorder sends to every request the lookup makes
+    fn for_case(case: &Case) -> Result<Self, Box<HelperError>> {
+        let reply = answer(case)?;
+        Ok(Self {
+            requests: Mutex::new(Vec::new()),
+            status: reply.status,
+            body: reply.body.clone().into_bytes(),
+            request: PhantomData,
+        })
+    }
+
+    fn push(&self, url: &str, headers: &[(&'static str, SecretString)]) {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Recorded {
+                url: url.to_owned(),
+                headers: headers.to_vec(),
+            });
+    }
+
+    fn first(&self, missing: &'static str) -> Result<Recorded, Box<HelperError>> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .first()
             .cloned()
-            .ok_or_else(|| {
-                input_failure(String::from("the lemonade models lookup sent no request"))
-            })
+            .ok_or_else(|| input_failure(String::from(missing)))
     }
 }
 
-impl ModelInfoClient for ModelClient {
+impl ModelInfoClient for Recorder<ModelInfoRequest> {
     type Error = std::io::Error;
 
     fn get(
         &self,
         request: &ModelInfoRequest,
     ) -> impl Future<Output = Result<FetchResponse, Self::Error>> + Send {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request.clone());
+        self.push(&request.url, &request.headers);
         ready(Ok(FetchResponse::new(
             self.status,
             Vec::new(),
@@ -68,77 +93,11 @@ impl ModelInfoClient for ModelClient {
     }
 }
 
-pub(super) fn lemonade_models(runtime: &Runtime, case: &Case) -> HelperResult {
-    let env = environment(case);
-    let reply = answer(case)?;
-    let client = ModelClient {
-        requests: Mutex::new(Vec::new()),
-        status: reply.status,
-        body: reply.body.clone().into_bytes(),
-    };
-    let credentials = LemonadeCredentials {
-        api_base: env.get(LEMONADE_API_BASE).cloned(),
-        api_key: env.get(LEMONADE_API_KEY).map(SecretString::from),
-        lemonade_key: case.globals.lemonade_key.as_deref().map(SecretString::from),
-    };
-    let passed_base = case.api_base.as_deref().map(substituted);
-    let passed_key = case.api_key.as_deref().map(SecretString::from);
-    let deployment = DeploymentCredentials {
-        api_base: passed_base.as_deref(),
-        api_key: passed_key.as_ref(),
-    };
-    let models = runtime
-        .block_on(get_models(&client, &credentials, deployment, MODEL_TIMEOUT))
-        .map_err(|error| input_failure(format!("the lemonade models lookup failed: {error}")))?;
-    let recorded = client.first()?;
-    Ok(json!({
-        "models": models,
-        "request": request_view(
-            &upstream_mapped(&recorded.url),
-            authorization(&recorded.headers),
-        ),
-    }))
-}
-
-pub(super) fn lemonade_reply(case: &Case) -> HelperResult {
-    let reply = answer(case)?;
-    let options = ReplyOptions {
-        json_mode: false,
-        provider: None,
-        base_model: None,
-        identifier: NEW_ID,
-        clock: system_clock,
-    };
-    let decoded = transform_response(reply.body.as_bytes(), &case.model, &options)
-        .map_err(|error| input_failure(format!("the lemonade reply could not be read: {error}")))?;
-    Ok(json!({"model": decoded.response.model}))
-}
-
-struct TagsRecorder {
-    requests: Mutex<Vec<TagsRequest>>,
-    status: u16,
-    body: Vec<u8>,
-}
-
-impl TagsRecorder {
-    fn first(&self) -> Result<TagsRequest, Box<HelperError>> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .first()
-            .cloned()
-            .ok_or_else(|| input_failure(String::from("the ollama models lookup sent no request")))
-    }
-}
-
-impl TagsTransport for TagsRecorder {
+impl TagsTransport for Recorder<TagsRequest> {
     type Error = std::io::Error;
 
     fn get_tags(&self, request: &TagsRequest) -> Result<TagsResponse, Self::Error> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request.clone());
+        self.push(&request.url, &request.headers);
         Ok(TagsResponse {
             status: self.status,
             body: self.body.clone(),
@@ -146,16 +105,74 @@ impl TagsTransport for TagsRecorder {
     }
 }
 
-pub(super) fn ollama_models(case: &Case) -> HelperResult {
+// the base and key the case passed, with the placeholder mapped back to the socket the case names
+fn passed(case: &Case) -> (Option<String>, Option<SecretString>) {
+    let base = case
+        .api_base
+        .as_deref()
+        .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM));
+    (base, case.api_key.as_deref().map(SecretString::from))
+}
+
+fn lemonade_credentials(case: &Case) -> LemonadeCredentials {
     let env = environment(case);
+    LemonadeCredentials {
+        api_base: env.get(LEMONADE_API_BASE).cloned(),
+        api_key: env.get(LEMONADE_API_KEY).cloned().map(SecretString::from),
+        lemonade_key: case.globals.lemonade_key.as_deref().map(SecretString::from),
+    }
+}
+
+pub(super) fn lemonade_models(runtime: &Runtime, case: &Case) -> HelperResult {
+    let client = Recorder::<ModelInfoRequest>::for_case(case)?;
+    let (passed_base, passed_key) = passed(case);
+    let models = runtime
+        .block_on(get_models(
+            &client,
+            &lemonade_credentials(case),
+            DeploymentCredentials {
+                api_base: passed_base.as_deref(),
+                api_key: passed_key.as_ref(),
+            },
+            MODEL_TIMEOUT,
+        ))
+        .map_err(|error| input_failure(format!("the lemonade models lookup failed: {error}")))?;
+    Ok(listed(
+        models,
+        client.first("the lemonade models lookup sent no request")?,
+    ))
+}
+
+fn reply_options() -> ReplyOptions<'static> {
+    ReplyOptions {
+        json_mode: false,
+        provider: None,
+        base_model: None,
+        identifier: NEW_ID,
+        clock: system_clock,
+    }
+}
+
+pub(super) fn lemonade_reply(case: &Case) -> HelperResult {
     let reply = answer(case)?;
-    let transport = TagsRecorder {
-        requests: Mutex::new(Vec::new()),
-        status: reply.status,
-        body: reply.body.clone().into_bytes(),
-    };
+    let decoded = transform_response(reply.body.as_bytes(), &case.model, &reply_options())
+        .map_err(|error| input_failure(format!("the lemonade reply could not be read: {error}")))?;
+    Ok(json!({"model": decoded.response.model}))
+}
+
+pub(super) fn ollama_models(case: &Case) -> HelperResult {
+    let transport = Recorder::<TagsRequest>::for_case(case)?;
+    let models = ollama_names(case, &transport);
+    Ok(listed(
+        models,
+        transport.first("the ollama models lookup sent no request")?,
+    ))
+}
+
+fn ollama_names(case: &Case, transport: &Recorder<TagsRequest>) -> Vec<String> {
+    let env = environment(case);
     let settings = OllamaSettings {
-        api_key: env.get(OLLAMA_API_KEY).map(SecretString::from),
+        api_key: env.get(OLLAMA_API_KEY).cloned().map(SecretString::from),
         api_base: env.get(OLLAMA_API_BASE).cloned(),
     };
     let globals = LiteLlmGlobals {
@@ -167,23 +184,25 @@ pub(super) fn ollama_models(case: &Case) -> HelperResult {
             .as_deref()
             .map(SecretString::from),
     };
-    let passed_base = case.api_base.as_deref().map(substituted);
-    let passed_key = case.api_key.as_deref().map(SecretString::from);
-    let models = OllamaModels {
+    let (passed_base, passed_key) = passed(case);
+    OllamaModels {
         settings: &settings,
         globals: &globals,
         catalog: &case.catalog,
-        transport: &transport,
+        transport,
     }
-    .get_models(passed_base.as_deref(), passed_key.as_ref());
-    let recorded = transport.first()?;
-    Ok(json!({
+    .get_models(passed_base.as_deref(), passed_key.as_ref())
+}
+
+// a listing answer names the socket the case wrote, since the python side only knows its own
+fn listed(models: Vec<String>, recorded: Recorded) -> Value {
+    json!({
         "models": models,
-        "request": request_view(
-            &upstream_mapped(&recorded.url),
-            authorization(&recorded.headers),
-        ),
-    }))
+        "request": {
+            "url": recorded.url.replace(ORACLE_UPSTREAM, "{{upstream}}"),
+            "headers": authorization(&recorded.headers),
+        },
+    })
 }
 
 // the only header either listing prepares itself; its value already carries the bearer prefix

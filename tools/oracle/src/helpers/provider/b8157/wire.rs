@@ -16,10 +16,6 @@ pub(super) fn kept_authorization(headers: &HeaderMap) -> Value {
     Value::Object(kept)
 }
 
-pub(super) fn request_view(url: &str, headers: Value) -> Value {
-    json!({"url": url, "headers": headers})
-}
-
 // the status LiteLLM's provider exception carries for this failure
 pub(super) fn error_or_null<T>(outcome: &Result<T, DispatchError>) -> Value {
     match outcome {

@@ -68,19 +68,10 @@ pub(super) fn logging(
     Ok((state, env))
 }
 
-pub(super) fn substituted(value: &str) -> String {
-    value.replace("{{upstream}}", ORACLE_UPSTREAM)
-}
-
-// a listing answer names the upstream the way the case wrote it, since the python side only knows its own socket
-pub(super) fn upstream_mapped(value: &str) -> String {
-    value.replace(ORACLE_UPSTREAM, "{{upstream}}")
-}
-
 pub(super) fn environment(case: &Case) -> BTreeMap<String, String> {
     case.env
         .iter()
-        .map(|(name, value)| (name.clone(), substituted(value)))
+        .map(|(name, value)| (name.clone(), value.replace("{{upstream}}", ORACLE_UPSTREAM)))
         .collect()
 }
 
@@ -88,10 +79,13 @@ pub(super) fn environment(case: &Case) -> BTreeMap<String, String> {
 pub(super) fn section_settings(case: &Case, env: &BTreeMap<String, String>) -> SectionSettings {
     SectionSettings {
         hosted_vllm_api_base: env.get("HOSTED_VLLM_API_BASE").cloned(),
-        hosted_vllm_api_key: env.get("HOSTED_VLLM_API_KEY").map(SecretString::from),
+        hosted_vllm_api_key: env
+            .get("HOSTED_VLLM_API_KEY")
+            .cloned()
+            .map(SecretString::from),
         ollama_api_base: env.get("OLLAMA_API_BASE").cloned(),
-        ollama_api_key: env.get("OLLAMA_API_KEY").map(SecretString::from),
-        lemonade_api_key: env.get("LEMONADE_API_KEY").map(SecretString::from),
+        ollama_api_key: env.get("OLLAMA_API_KEY").cloned().map(SecretString::from),
+        lemonade_api_key: env.get("LEMONADE_API_KEY").cloned().map(SecretString::from),
         api_base: case.globals.api_base.clone(),
         api_key: case.globals.api_key.as_deref().map(SecretString::from),
         ollama_key: case.globals.ollama_key.as_deref().map(SecretString::from),

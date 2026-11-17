@@ -21,6 +21,12 @@ deviations:
   - what: An ollama embedding input that is not a string or a list of strings fails with "Invalid input for ollama embeddings. input must be a string or a list of strings".
     why: LiteLLM raises BadRequestError with the same intent but interpolates the whole input list into the message. The status, type and param match; the text names the accepted shapes instead of echoing the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6941-L6960
+  - what: A lemonade listing answer with a status other than 200 whose body is not UTF-8 fails with "the {status} Lemonade models answer is not UTF-8 text: ..." rather than naming the status and the decoded body.
+    why: LiteLLM interpolates httpx's response.text, which decodes invalid bytes with replacement characters, into the status message. betterlite refuses bytes that are not UTF-8 instead of mangling them, so the error names the encoding; the status a caller reads from it is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L102-L105
+  - what: OllamaModelInfo's validate_environment and get_base_model have no betterlite equivalent; the listing prepares the bearer header itself and a model stands as its own base model.
+    why: LiteLLM's validate_environment answers an empty map whatever headers it was handed, and get_base_model returns its argument unchanged, so both overrides add no behavior. A Rust function that only restates or drops its argument would hide where the value is really used, so the header set is built where the /api/tags request is made and model info reads the model as given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L229-L249
   - what: The lemonade and ollama model listings resolve the key through betterlite's provider metadata functions, and the oracle reaches them through get_valid_models.
     why: LiteLLM's get_valid_models catches every listing failure and returns a copy of the static models_by_provider list, which the oracle cannot set without mutating a private untyped dict. The failure and fallback paths are asserted by self_hosted_dispatch::tests, and the oracle compares the listing request and the listed names on the success path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7835-L7906

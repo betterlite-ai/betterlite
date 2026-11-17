@@ -23,10 +23,10 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
-use super::fixtures::{Recorder, environment, logging, section_settings, substituted};
+use super::fixtures::{ORACLE_UPSTREAM, Recorder, environment, logging, section_settings};
 use super::input::{Case, Globals, Provider};
 use super::input_failure;
-use super::wire::{error_or_null, kept_authorization, request_view};
+use super::wire::{error_or_null, kept_authorization};
 
 const HOSTED_VLLM_API_BASE: &str = "HOSTED_VLLM_API_BASE";
 const HOSTED_VLLM_API_KEY: &str = "HOSTED_VLLM_API_KEY";
@@ -46,7 +46,10 @@ pub(super) fn run(case: &Case) -> HelperResult {
     let empty = Object::new();
     let optional_params = case.optional_params()?;
     let passed_key = case.api_key.as_deref().map(SecretString::from);
-    let passed_base = case.api_base.as_deref().map(substituted);
+    let passed_base = case
+        .api_base
+        .as_deref()
+        .map(|value| value.replace("{{upstream}}", ORACLE_UPSTREAM));
     let resolved = pre_resolved(
         case.provider,
         passed_base.as_deref(),
@@ -87,10 +90,10 @@ pub(super) fn run(case: &Case) -> HelperResult {
     };
     let call = handler.first()?;
     let (url, headers) = chat_request(case.provider, &call)?;
-    let view = request_view(
-        &url,
-        kept_authorization(&header_map(&headers).or_value_error()?),
-    );
+    let view = json!({
+        "url": url,
+        "headers": kept_authorization(&header_map(&headers).or_value_error()?),
+    });
     Ok(json!({"request": view, "error": error_or_null(&outcome)}))
 }
 
@@ -105,7 +108,10 @@ fn pre_resolved(
         Provider::HostedVllm => {
             let environment = ProviderEnvironment {
                 api_base: env.get(HOSTED_VLLM_API_BASE).cloned(),
-                api_key: env.get(HOSTED_VLLM_API_KEY).map(SecretString::from),
+                api_key: env
+                    .get(HOSTED_VLLM_API_KEY)
+                    .cloned()
+                    .map(SecretString::from),
             };
             let info = provider_info(passed_base, passed_key, &environment);
             Ok(PreResolved {
@@ -114,7 +120,8 @@ fn pre_resolved(
             })
         }
         Provider::Ollama => {
-            let api_base = non_empty(passed_base)
+            let api_base = passed_base
+                .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .or_else(|| {
                     env.get(OLLAMA_API_BASE)
@@ -128,7 +135,7 @@ fn pre_resolved(
                 .or_else(|| {
                     env.get(OLLAMA_API_KEY)
                         .filter(|value| !value.is_empty())
-                        .map(SecretString::from)
+                        .map(|value| SecretString::from(value.as_str()))
                 });
             Ok(PreResolved {
                 api_base: Some(api_base),
@@ -144,8 +151,11 @@ fn pre_resolved(
                     input_failure(String::from("the lemonade provider defaults are missing"))
                 })?;
             let credentials = GlobalCredentials {
+                api_key: None,
+                api_base: None,
+                xai_key: None,
+                inception_key: None,
                 lemonade_key: globals.lemonade_key.as_deref().map(SecretString::from),
-                ..GlobalCredentials::default()
             };
             let key = passed_key
                 .filter(|key| !key.expose_secret().is_empty())
@@ -158,7 +168,9 @@ fn pre_resolved(
             })
         }
         Provider::OllamaChat | Provider::Petals => Ok(PreResolved {
-            api_base: non_empty(passed_base).map(str::to_owned),
+            api_base: passed_base
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned),
             api_key: passed_key
                 .filter(|key| !key.expose_secret().is_empty())
                 .cloned(),
@@ -201,8 +213,4 @@ fn chat_request(
             format!("{provider:?} has no chat request to record"),
         )),
     }
-}
-
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
 }

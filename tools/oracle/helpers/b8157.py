@@ -172,57 +172,51 @@ def request_view(
     if not requests:
         return None
     url, recorded = requests[0]
-    headers: dict[str, JsonValue] = {
-        name: value for name, value in recorded.items()
-    }
+    headers: dict[str, JsonValue] = dict[str, JsonValue](recorded.items())
     return {"url": url.replace(upstream, PLACEHOLDER), "headers": headers}
 
 
-def chat_value(case: Case) -> JsonValue:
+def prepared(case: Case, upstream: str) -> tuple[Recorder, HTTPHandler]:
     recorder = Recorder(answered(case))
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
     litellm.module_level_client = client
-    replace_environment(case, PLACEHOLDER)
+    replace_environment(case, upstream)
     apply_globals(case.get("globals"))
+    return recorder, client
+
+
+def completion_created(case: Case, client: HTTPHandler, model: str) -> Created:
+    created: Created = litellm.completion(
+        model=model,
+        messages=case.get("messages"),
+        api_base=substituted_base(case, PLACEHOLDER),
+        api_key=case.get("api_key"),
+        headers=case.get("headers"),
+        stream=case.get("stream"),
+        client=client,
+    )
+    return created
+
+
+def chat_value(case: Case) -> JsonValue:
+    recorder, client = prepared(case, PLACEHOLDER)
     error: JsonValue = None
     try:
-        litellm.completion(
-            model=f"{case['provider']}/{case.get('model', '')}",
-            messages=case.get("messages"),
-            api_base=substituted_base(case, PLACEHOLDER),
-            api_key=case.get("api_key"),
-            headers=case.get("headers"),
-            stream=case.get("stream"),
-            client=client,
-        )
+        completion_created(case, client, f"{case['provider']}/{case['model']}")
     except openai.APIError as raised:
         error = {"status": Raised.model_validate(raised, from_attributes=True).status_code}
     return {"request": request_view(recorder.requests, PLACEHOLDER), "error": error}
 
 
 def lemonade_reply_value(case: Case) -> JsonValue:
-    recorder = Recorder(answered(case))
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
-    litellm.module_level_client = client
-    replace_environment(case, PLACEHOLDER)
-    apply_globals(case.get("globals"))
-    created: Created = litellm.completion(
-        model=f"lemonade/{case.get('model', '')}",
-        messages=case.get("messages"),
-        api_base=substituted_base(case, PLACEHOLDER),
-        api_key=case.get("api_key"),
-        client=client,
-    )
+    _recorder, client = prepared(case, PLACEHOLDER)
+    created = completion_created(case, client, f"lemonade/{case['model']}")
     reply = TypeAdapter(ModelResponse).validate_python(created)
     return {"model": reply.model}
 
 
 def lemonade_models_value(case: Case) -> JsonValue:
-    recorder = Recorder(answered(case))
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
-    litellm.module_level_client = client
-    replace_environment(case, PLACEHOLDER)
-    apply_globals(case.get("globals"))
+    recorder, _client = prepared(case, PLACEHOLDER)
     models = get_valid_models(
         check_provider_endpoint=True,
         custom_llm_provider="lemonade",
