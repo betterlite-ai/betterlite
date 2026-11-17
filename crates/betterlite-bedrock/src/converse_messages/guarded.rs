@@ -60,11 +60,11 @@ fn guarded_message(message: &Message, index: usize) -> Result<Message, ConverseM
             let mut guarded_parts = Vec::with_capacity(parts.len());
             for part in parts {
                 if part.kind == TEXT_PART {
-                    let Some(text) = part.fields.get(TEXT_FIELD) else {
-                        return Err(ConverseMessageError::TextPartWithoutText { message: index });
-                    };
-                    // Bedrock's guarded_text part holds the text alone; cache_control and any other
-                    // part field stay behind.
+                    let text = part
+                        .fields
+                        .get(TEXT_FIELD)
+                        .ok_or(ConverseMessageError::TextPartWithoutText { message: index })?;
+                    // The guarded_text part keeps the text alone; cache_control stays behind.
                     guarded_parts.push(ContentPart {
                         kind: GUARDED_TEXT.to_owned(),
                         fields: Object::from_iter([(TEXT_FIELD.to_owned(), text.clone())]),

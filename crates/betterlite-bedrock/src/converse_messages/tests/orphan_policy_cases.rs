@@ -70,26 +70,12 @@ pub(super) fn orphan_tool_with_modify_params() {
 }
 
 fn modify_params_adds_the_dummy_tools() {
-    let (kept, parameters) = handle(ORPHAN, "{}", MODIFYING);
-    assert_eq!(render(&kept), expected(ORPHAN));
-    assert_eq!(render_params(&parameters), with_dummy_tools());
-
-    let (kept, parameters) = handle(EMPTY_CALLS, "{}", MODIFYING);
-    assert_eq!(render(&kept), expected(EMPTY_CALLS));
-    assert_eq!(
-        render_params(&parameters),
-        with_dummy_tools(),
-        "an empty tool_calls list still counts"
-    );
-
     let user_calls = r#"[{"role": "user", "content": "x", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "n", "arguments": ""}}]}]"#;
-    let (kept, parameters) = handle(user_calls, "{}", MODIFYING);
-    assert_eq!(render(&kept), expected(user_calls));
-    assert_eq!(
-        render_params(&parameters),
-        with_dummy_tools(),
-        "any role may carry the tool calls"
-    );
+    for history in [ORPHAN, EMPTY_CALLS, user_calls] {
+        let (kept, parameters) = handle(history, "{}", MODIFYING);
+        assert_eq!(render(&kept), expected(history), "{history}");
+        assert_eq!(render_params(&parameters), with_dummy_tools(), "{history}");
+    }
 }
 
 fn a_tools_key_skips_the_legacy_check() {
@@ -102,18 +88,14 @@ fn a_tools_key_skips_the_legacy_check() {
 }
 
 fn only_tool_call_blocks_trigger_the_legacy_path() {
-    let null_calls = r#"[{"role": "assistant", "content": "x", "tool_calls": null}]"#;
-    let (kept, parameters) = handle(null_calls, "{}", MODIFYING);
-    assert_eq!(render(&kept), expected(null_calls));
-    assert!(parameters.is_empty(), "a null tool_calls is not a block");
-
-    for plain in [
+    for history in [
+        r#"[{"role": "assistant", "content": "x", "tool_calls": null}]"#,
         r#"[{"role": "tool", "tool_call_id": "c", "content": "r"}]"#,
         r#"[{"role": "function", "name": "f", "content": "r"}]"#,
     ] {
-        let (kept, parameters) = handle(plain, "{}", MODIFYING);
-        assert_eq!(render(&kept), expected(plain));
-        assert!(parameters.is_empty(), "{plain}");
+        let (kept, parameters) = handle(history, "{}", MODIFYING);
+        assert_eq!(render(&kept), expected(history), "{history}");
+        assert!(parameters.is_empty(), "{history}");
     }
 }
 
@@ -128,6 +110,12 @@ fn neutralization_wins_over_modify_params() {
 }
 
 pub(super) fn orphan_tool_error() {
+    the_error_is_a_400_with_the_unsupported_message();
+    a_tools_key_skips_the_rejection();
+    plain_and_neutralized_histories_pass_through();
+}
+
+fn the_error_is_a_400_with_the_unsupported_message() {
     let mut parameters = params("{}");
     let error = handle_orphaned_tool_blocks(&messages(ORPHAN), &mut parameters, LEGACY)
         .expect_err("tool calls without tools are rejected");
@@ -143,21 +131,24 @@ pub(super) fn orphan_tool_error() {
         ),
         "an empty tool_calls list still rejects"
     );
+}
 
+fn a_tools_key_skips_the_rejection() {
     for tools in ["null", "[]", "{}"] {
         let optional = format!(r#"{{"tools": {tools}}}"#);
         let (kept, parameters) = handle(ORPHAN, &optional, LEGACY);
         assert_eq!(render(&kept), expected(ORPHAN), "{tools}");
         assert_eq!(render_params(&parameters), expected(&optional), "{tools}");
     }
+}
 
-    let plain = r#"[{"role": "tool", "content": "result"}]"#;
-    let (kept, _) = handle(plain, "{}", LEGACY);
-    assert_eq!(render(&kept), expected(plain));
-    let (kept, _) = handle("[]", "{}", LEGACY);
-    assert_eq!(render(&kept), expected("[]"));
-    let (kept, _) = handle(ORPHAN, "{}", NEUTRALIZE);
-    assert_eq!(render(&kept), neutralized_orphan());
+fn plain_and_neutralized_histories_pass_through() {
+    for history in [r#"[{"role": "tool", "content": "result"}]"#, "[]"] {
+        let (kept, _) = handle(history, "{}", LEGACY);
+        assert_eq!(render(&kept), expected(history), "{history}");
+    }
+    let (neutralized, _) = handle(ORPHAN, "{}", NEUTRALIZE);
+    assert_eq!(render(&neutralized), neutralized_orphan());
 }
 
 pub(super) fn orphan_neutralization_default() {
@@ -234,11 +225,11 @@ fn a_request_without_orphans_stays_quiet() {
     let quiet = Warnings::default();
     let quiet_guard = quiet.install();
     let plain = r#"[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]"#;
-    let (kept, _) = handle(plain, "{}", NEUTRALIZE);
-    assert_eq!(render(&kept), expected(plain));
     let tools = r#"{"tools": [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}]}"#;
-    let (kept, _) = handle(ORPHAN, tools, NEUTRALIZE);
-    assert_eq!(render(&kept), expected(ORPHAN));
+    for (history, optional) in [(plain, "{}"), (ORPHAN, tools)] {
+        let (kept, _) = handle(history, optional, NEUTRALIZE);
+        assert_eq!(render(&kept), expected(history), "{history}");
+    }
     let captured = quiet.captured();
     assert!(captured.is_empty(), "{captured}");
     drop(quiet_guard);

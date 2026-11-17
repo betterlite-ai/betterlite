@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::message_content::Message;
 use tracing::Level;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
 use crate::model_routes::ParamMap;
@@ -53,7 +53,10 @@ pub(super) fn json_list(entries: &[&str]) -> String {
 }
 
 // The expected order, one message JSON per entry.
-pub(super) fn timeline<S: AsRef<str>>(entries: &[S]) -> Json {
+pub(super) fn timeline<S>(entries: &[S]) -> Json
+where
+    S: AsRef<str>,
+{
     let rendered: Vec<&str> = entries.iter().map(AsRef::as_ref).collect();
     expected(&json_list(&rendered))
 }
@@ -86,22 +89,22 @@ impl Warnings {
             .without_time()
             .with_writer(move || writer.clone())
             .finish();
-        tracing::subscriber::set_default(subscriber)
+        set_default(subscriber)
     }
 
     pub(super) fn captured(&self) -> String {
         let written = self.written.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8_lossy(&written).into_owned()
+        String::from_utf8(written.to_vec()).expect("the warnings are UTF-8")
     }
 }
 
 impl Write for Warnings {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.written
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(bytes);
-        Ok(bytes.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

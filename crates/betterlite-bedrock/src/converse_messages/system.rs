@@ -128,10 +128,10 @@ fn tool_result_placement(messages: &[Message], index: usize, message: &Message) 
     let run_start = tool_run_start(messages, index);
     let run = system_run_before(messages, run_start);
     let previous = run_start.checked_sub(run.len().saturating_add(1));
-    let moves_after_results = previous
-        .filter(|_previous| !run.is_empty())
-        .and_then(|previous| messages.get(previous))
-        .is_some_and(assistant_has_tool_calls);
+    let moves_after_results = !run.is_empty()
+        && previous
+            .and_then(|before| messages.get(before))
+            .is_some_and(assistant_has_tool_calls);
     if !moves_after_results {
         return vec![message.clone()];
     }
@@ -156,7 +156,7 @@ fn system_run_before(messages: &[Message], index: usize) -> Vec<Message> {
     let start = system_run_start(messages, index);
     messages
         .get(start..index)
-        .map_or_else(Vec::new, |run| run.to_vec())
+        .map_or_else(Vec::new, <[Message]>::to_vec)
 }
 
 fn system_run_start(messages: &[Message], index: usize) -> usize {
