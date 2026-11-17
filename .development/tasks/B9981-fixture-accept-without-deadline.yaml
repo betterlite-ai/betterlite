@@ -1,0 +1,280 @@
+id: B9981
+title: Test HTTP fixtures share one server that waits for its client without a deadline
+description: >-
+  Fix the flaky fixture accept. Four tests in api::interactions::lifecycle::tests::delete_calls in betterlite-core
+  failed in a full local nextest run at load average 42 with "the client never connected to the fixture", and their
+  clients saw a connect error to 127.0.0.1. All 13 tests of that module pass alone in under 2 s. The fixture's accept
+  in crates/betterlite-core/src/api/interactions/lifecycle/tests/support.rs (L341-L360) polls a nonblocking listener
+  and panics once TIMEOUT (5 s) has passed since serve started. Each test starts the fixture first and then builds
+  its deps, a Redactor and an HTTP client. Under load that setup took longer than 5 s, so the server thread panicked,
+  the listener closed and the client's connect was refused. The deadline measures the machine's load, not the code
+  under test.
+
+
+  The same one-shot server is copied many times, each copy a little different. In betterlite-core,
+  src/api/agents/item/tests/agent_item_calls.rs and src/api/interactions/get/tests/support.rs read only the request
+  head and build reply(status: u16, body); src/api/interactions/lifecycle/tests/support.rs also reads the body by
+  content-length into Received { head, body }; src/passthrough_stream/tests.rs reads the head under its own
+  SERVER_TIMEOUT and builds http_reply. In betterlite-http, src/interactions/base/tests/support.rs has serve_once and
+  serve_on with an optional pause before the answer, ignores a failed write and builds reply(status: &str, headers,
+  body), and its TLS Authority::answer uses the same polling accept; src/interactions/agents_create_read/tests/support.rs
+  polls 500 times 10 ms instead of reading a clock and hands back the whole request text;
+  src/interactions/create/tests/support.rs and src/interactions/lifecycle/tests/support.rs have serve_with_body, a
+  blocking accept with a copied head and body reader; src/interactions/streaming/tests.rs copies the head reader;
+  src/health_probe/tests.rs has its own serve_once with a 3 s read timeout; src/otlp_client/tests.rs polls for 3 s
+  and watches the client thread; src/tls/tests/local_tls.rs polls with "client did not connect" for its TLS origin
+  and its CONNECT tunnel and runs both inside thread::scope. The B3505 oracle helper,
+  tools/oracle/src/helpers/core_ops/b3505/server.rs, is not test code: its accept returns None after 5 s instead of
+  panicking, and b3505.rs joins the thread whether or not the operation sent a request.
+
+
+  Move the shared part once into a new crate, tools/http-fixture, package betterlite-http-fixture. It depends only on
+  std and thiserror (thiserror.workspace = true), with the package fields and [lints] workspace = true that
+  tools/postgres-fixture/Cargo.toml has. betterlite-core and betterlite-http take it under [dev-dependencies] with a
+  path, as betterlite-core takes betterlite-postgres-fixture. tools/oracle/src/helpers/core_ops/Cargo.toml takes it
+  under [dependencies], as tools/oracle/Cargo.toml takes betterlite-postgres-fixture. The crate depends on no
+  workspace crate, so it cannot close a cycle, and deny.toml's wrappers rules (reqwest, betterlite-router,
+  betterlite-server) do not reach it. Its src is library code to clippy and the hooks, so its functions return
+  Result<_, FixtureError> and the tests that call them unwrap.
+
+
+  The crate has four modules, declared in src/lib.rs. error.rs holds FixtureError: Io (#[from] std::io::Error, "the
+  fixture socket failed"), NotText (#[from] FromUtf8Error, "the request is not UTF-8"), ContentLength (#[from]
+  ParseIntError, "the content-length is not a number"), NoRequest ("the connection closed before a request arrived")
+  and Panicked ("the fixture thread panicked"). reply.rs holds reply(status: &str, headers: &[(&str, &str)], body:
+  &str) -> Vec<u8>, which writes "HTTP/1.1 {status}\r\ncontent-length: {length}\r\nconnection: close\r\n", each
+  header as "{name}: {value}\r\n", an empty line and the body, the same bytes base support's reply writes today.
+  request.rs holds pub struct Request { line, head, body }, all String: the request line, the head up to and
+  including the empty line, and the body. read_request<Stream: Read>(stream: &mut Stream) -> Result<Request,
+  FixtureError> reads the head byte by byte until "\r\n\r\n", returns NoRequest when the stream ends before its first
+  byte, then reads exactly the content-length the head declares (the header name matched without case, 0 when it is
+  absent). server.rs holds pub const READ_TIMEOUT: Duration = 60 s, pub struct Serving { pub address: SocketAddr,
+  listener: Arc<TcpListener>, request: JoinHandle<Result<Request, FixtureError>> }, serve(answer: Vec<u8>, pause:
+  Duration) -> Result<Serving, FixtureError> and Serving::finish(self) -> Result<Request, FixtureError>.
+
+
+  serve binds 127.0.0.1:0, keeps one Arc of the listener in Serving and moves a clone into a named thread. The thread
+  calls listener.accept() once: a plain blocking accept, with no nonblocking mode, no polling and no clock. It sets
+  READ_TIMEOUT on the accepted stream, reads the request with read_request, sleeps for pause with thread::sleep
+  (Duration::ZERO is no pause, and sleep never returns early the way park_timeout can), writes the answer, drops a
+  failed write with a one-line comment (a client that gave up during the pause has closed the socket, and the test
+  asserts the client's own result) and returns the request. finish connects once to self.listener.local_addr(),
+  drops that stream and joins the thread; a join error is Panicked.
+
+
+  Why no accept deadline is safe. nextest runs each test in its own process, so a fixture thread still blocked in
+  accept ends with its test. The tests in the files above assert their client's result before they join the
+  server, so a client that fails ends the test before any join. finish's connect covers a join that runs anyway,
+  like the oracle helper's: a server still waiting in accept takes that empty
+  connection and finish returns NoRequest at once. A client that did connect has finished before finish runs, so
+  its connection is already accepted or first in the accept queue, and the server takes one connection only, so the
+  extra connect never takes its place. Serving holds the listener until the join, so that connect can only reach
+  this fixture and never a port another test bound after this one closed. The one implicit join is thread::scope in
+  local_tls.rs, which joins its threads when the test panics; move its origin and tunnel threads to thread::spawn
+  (mode becomes an owned String) so the test's asserts end it first.
+
+
+  The read timeout stays, at 60 s instead of 5 s. It starts only after the client connected, so setup never counts
+  against it. It ends the one wait nothing else ends before nextest's 10-minute limit in .config/nextest.toml: a
+  client that stops in the middle of its request while the test thread waits on that same client. 60 s is nextest's
+  slow-test period there.
+
+
+  Callers in betterlite-core. agent_item_calls.rs, get/tests/support.rs, lifecycle/tests/support.rs and
+  passthrough_stream/tests.rs delete serve, serve_on, accept, read_head, read_request, content_length, reply,
+  http_reply, Received, their Serving and TIMEOUT, RETRY, SERVER_TIMEOUT and SERVER_RETRY. Tests import from
+  betterlite_http_fixture and call serve(reply("200 fixture", &[], body), Duration::ZERO).unwrap(), which sends the
+  bytes they send today, and serving.finish().unwrap(), whose line, head and body replace head_of, received,
+  request_line and Serving::head. The passthrough tests build their URL from serving.address.
+  delete_forwards_the_caller_timeout in agent_item_calls.rs keeps a bound on its call, at 60 s: it only has to tell
+  the forwarded 20 ms timeout from the 6000 s default, and the old 5 s also counted building the client on a loaded
+  machine.
+
+
+  Callers in betterlite-http. base/tests/support.rs deletes serve_once, serve_on, listener, accept, read_head, its
+  reply and Serving, and re-exports reply with pub(crate) use betterlite_http_fixture::reply::reply, so the many
+  support::reply calls stay as they are. Every serve_once, serve_post and serve_with_body call becomes
+  serve(answer, pause).unwrap(), None becoming Duration::ZERO; every serving.request.join().unwrap() becomes
+  serving.finish().unwrap(), read through .head where the old fixture gave the head and through .head and .body where
+  it gave the whole text or a Received. agents_create_read/tests/support.rs deletes serve_post, connected,
+  read_request and content_length, and its sent_body parses Request.body. create/tests/support.rs and
+  lifecycle/tests/support.rs delete serve_with_body, read_request and their Received. The three proxy tests in
+  base/tests.rs take the proxy address from serving.address instead of binding a listener first. Authority::answer
+  and local_tls.rs call listener.accept() directly, read their heads with read_request and set READ_TIMEOUT on the
+  accepted streams; local_tls.rs keeps TIMEOUT only for the client's request timeout and for protocols.rs, which
+  imports it. streaming/tests.rs keeps broken_body's own server, since it writes a broken body on purpose, and reads
+  its request with read_request. health_probe/tests.rs uses serve. otlp_client/tests.rs uses serve, sends from the
+  test thread, asserts the answer and then finishes the fixture, so its sender thread and is_finished check go.
+
+
+  The B3505 oracle helper. b3505.rs calls serve(reply(&format!("{} fixture", input.status), &[], &input.body),
+  Duration::ZERO) and, after operate, finish: Ok gives request.head, Err(FixtureError::NoRequest) gives an empty head
+  as the old helper did when nothing connected, and any other error returns failed(&error). Delete b3505/server.rs
+  and its mod line. item-unsupported-provider-error.yaml never sends a request, so it now returns at once instead of
+  after 5 s, and under load a case whose client connects late keeps its request head instead of losing it.
+
+
+  Tests in the new crate. src/server/tests.rs: answers_a_client_that_connects_after_the_old_deadline serves "ok",
+  sleeps 6 s on the test thread (one second past the old deadline, and the only sleep in the crate's tests), then
+  connects with a std TcpStream, writes a GET, reads the answer to its end and asserts it ends with "ok", and asserts
+  finish gives that GET's request line. finish_releases_a_fixture_the_client_never_reached never connects and asserts
+  finish returns FixtureError::NoRequest. finish_returns_what_the_client_sent sends a POST with a JSON body and
+  checks line, one header in head, and body. a_client_that_leaves_during_the_pause_still_finishes serves with a
+  200 ms pause, sends a request, closes without reading, and asserts finish still returns the request.
+  src/request/tests.rs: an rstest reads_the_declared_body with cases no_body, lowercase_length and mixed_case_length,
+  and an_empty_stream_is_no_request.
+scope:
+  paths:
+  - tools/http-fixture/**
+  - Cargo.lock
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/api/agents/item/tests/agent_item_calls.rs
+  - crates/betterlite-core/src/api/interactions/get/tests.rs
+  - crates/betterlite-core/src/api/interactions/get/tests/**
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests/**
+  - crates/betterlite-core/src/passthrough_stream/tests.rs
+  - crates/betterlite-core/src/passthrough_stream/async_passthrough_request/tests.rs
+  - crates/betterlite-http/Cargo.toml
+  - crates/betterlite-http/src/interactions/base/tests.rs
+  - crates/betterlite-http/src/interactions/base/tests/**
+  - crates/betterlite-http/src/interactions/agents_create_read/tests/**
+  - crates/betterlite-http/src/interactions/agents_delete_versions/tests/**
+  - crates/betterlite-http/src/interactions/create/tests/**
+  - crates/betterlite-http/src/interactions/get/tests.rs
+  - crates/betterlite-http/src/interactions/lifecycle/tests/**
+  - crates/betterlite-http/src/interactions/streaming/tests.rs
+  - crates/betterlite-http/src/tls/tests/local_tls.rs
+  - crates/betterlite-http/src/health_probe/tests.rs
+  - crates/betterlite-http/src/otlp_client/tests.rs
+  - tools/oracle/src/helpers/core_ops/Cargo.toml
+  - tools/oracle/src/helpers/core_ops/b3505.rs
+  - tools/oracle/src/helpers/core_ops/b3505/**
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/blob/c281c850b6/crates/betterlite-core/src/api/interactions/lifecycle/tests/support.rs#L319-L360
+  why: serve, serve_on and the polling accept that panicked under load; the other copies follow the same shape.
+- url: https://github.com/betterlite-ai/betterlite/blob/c281c850b6/tools/oracle/src/helpers/core_ops/b3505.rs#L60-L86
+  why: The oracle helper joins its fixture after every operation, including the one that never sends a request.
+- url: https://github.com/betterlite-ai/betterlite/blob/c281c850b6/crates/betterlite-http/src/tls/tests/local_tls.rs#L72-L145
+  why: thread::scope joins the origin and tunnel threads on unwind, so a blocking accept there needs spawned threads.
+- url: https://github.com/betterlite-ai/betterlite/blob/c281c850b6/.config/nextest.toml#L4-L5
+  why: The 10-minute limit that ends a hung test, and the 60 s slow-test period the read timeout matches.
+- url: https://github.com/betterlite-ai/betterlite/blob/c281c850b6/tools/postgres-fixture/Cargo.toml
+  why: The test-support crate the new one copies its manifest from, taken as a dev-dependency by crates and as a dependency by tools.
+dod:
+- text: >-
+    A fixture whose client connects 6 s after serve still answers it, and nothing in tools/http-fixture polls the
+    listener or reads a clock.
+  proof: [late-client, clock-free]
+- text: >-
+    finish returns the request the client sent, and returns FixtureError::NoRequest at once for a fixture the client
+    never reached.
+  proof: [fixture-behavior]
+- text: >-
+    The copied servers, readers, reply builders and polling accepts are gone from the files the description lists,
+    and tools/oracle/src/helpers/core_ops/b3505/server.rs is deleted.
+  proof: [no-copies]
+- text: >-
+    betterlite-core's agent item, interactions get and lifecycle, and passthrough stream tests pass on the shared
+    fixture.
+  proof: [core-tests]
+- text: >-
+    delete_forwards_the_caller_timeout no longer bounds its call at 5 s.
+  proof: [timeout-bound]
+- text: >-
+    betterlite-http's interactions, local TLS, health probe and OTLP client tests pass on the shared fixture, and
+    local_tls starts its origin and tunnel on spawned threads instead of scoped ones.
+  proof: [http-tests, local-tls-threads]
+- text: >-
+    The twelve agent item oracle cases answer as before, including item-unsupported-provider-error, which never
+    reaches the fixture.
+  proof: [oracle]
+checks:
+  optional: []
+  commands:
+  - id: late-client
+    why: The shared fixture still gives up on a client that connects after the old 5 s deadline.
+    run: >-
+      cargo nextest run --locked -p betterlite-http-fixture --no-tests=fail
+      -E 'test(/^server::tests::answers_a_client_that_connects_after_the_old_deadline$/)'
+  - id: clock-free
+    why: The shared fixture polls a nonblocking listener or measures elapsed time again.
+    run: >-
+      test -f tools/http-fixture/src/server.rs
+      && ! grep -r -n -E 'Instant|elapsed\(|set_nonblocking|park_timeout|WouldBlock' tools/http-fixture/src
+  - id: fixture-behavior
+    why: finish hangs or loses the request, or the reader misreads the head or the body.
+    run: >-
+      cargo nextest run --locked -p betterlite-http-fixture --no-tests=fail
+      -E 'test(/^(server|request)::tests::/) - test(/^server::tests::answers_a_client_that_connects_after_the_old_deadline$/)'
+  - id: no-copies
+    why: A copy of the server, its reader, its reply builder or its polling accept is still in a caller.
+    run: >-
+      test ! -e tools/oracle/src/helpers/core_ops/b3505/server.rs
+      && ! git grep -n -E 'never connected to the fixture|client did not connect|client did not reach its configured destination|fn (accept|connected|read_head|read_request|content_length|reply|http_reply|serve_on|serve_once|serve_post|serve_with_body)\('
+      -- crates/betterlite-core/src/api/agents/item crates/betterlite-core/src/api/interactions/get
+      crates/betterlite-core/src/api/interactions/lifecycle crates/betterlite-core/src/passthrough_stream
+      crates/betterlite-http/src/interactions crates/betterlite-http/src/tls/tests crates/betterlite-http/src/health_probe
+      crates/betterlite-http/src/otlp_client tools/oracle/src/helpers/core_ops/b3505.rs
+  - id: core-tests
+    why: A betterlite-core caller broke on the shared fixture.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::agents::item::agent_item_calls::/) | test(/^api::interactions::(get|lifecycle)::tests::/) | test(/^passthrough_stream::/)'
+  - id: timeout-bound
+    why: delete_forwards_the_caller_timeout still fails a call that a loaded machine makes slower than 5 s.
+    run: "! grep -n -F 'Duration::from_secs(5)' crates/betterlite-core/src/api/agents/item/tests/agent_item_calls.rs"
+  - id: http-tests
+    why: A betterlite-http caller broke on the shared fixture.
+    run: >-
+      cargo nextest run --locked -p betterlite-http --no-tests=fail
+      -E 'test(/^interactions::/) | test(/^tls::tests::local_tls::/) | test(/^health_probe::tests::/) | test(/^otlp_client::tests::/)'
+  - id: local-tls-threads
+    why: local_tls still runs its origin or tunnel inside thread::scope, which waits on a blocked accept when the test panics.
+    run: "! grep -n -E 'scope[.]spawn[(]move [|][|] (serve|tunnel)[(]' crates/betterlite-http/src/tls/tests/local_tls.rs"
+oracle_cases:
+- tools/oracle/cases/agents/item-get-basic.yaml
+- tools/oracle/cases/agents/item-get-with-name-metadata.yaml
+- tools/oracle/cases/agents/item-delete-basic.yaml
+- tools/oracle/cases/agents/item-delete-with-name-metadata.yaml
+- tools/oracle/cases/agents/item-list-versions-basic.yaml
+- tools/oracle/cases/agents/item-list-versions-with-pagination.yaml
+- tools/oracle/cases/agents/item-provider-absent-defaults-gemini.yaml
+- tools/oracle/cases/agents/item-unsupported-provider-error.yaml
+- tools/oracle/cases/agents/item-http-error-wrapping.yaml
+- tools/oracle/cases/agents/item-async-get-delegates-to-sync.yaml
+- tools/oracle/cases/agents/item-async-delete-delegates-to-sync.yaml
+- tools/oracle/cases/agents/item-async-list-versions-delegates-to-sync.yaml
+deviations: []
+out_of_scope:
+- >-
+  crates/betterlite-guardrails/src/straiker/delivery/payload_delivery/tests.rs. Its tokio accept runs under
+  tokio::join! with the client, so its 10 s timer starts with the client after setup, and its comment says it keeps
+  join! from waiting forever on a client that never connects.
+- >-
+  The other polling accepts with a deadline: crates/betterlite-guardrails/src/ibm_detector_client/client/tests.rs
+  (TLS_TIMEOUT inside thread::scope), crates/betterlite-cli/src/cli/tests/support.rs and
+  crates/betterlite-cli/src/commands/tests/support.rs (ACCEPT_DEADLINE, about 110 call sites).
+- >-
+  Tests that bind 127.0.0.1:0, drop the listener and expect the port to refuse (dead_address in the http support
+  files, delete_reports_a_transport_failure_through_the_value_error_class, proxied_client_reports_a_failed_connection).
+  Another test can bind that port in between, the race B9959 removed for server ports.
+- >-
+  Server pauses raced against short client timeouts, such as agents_create_read's 200 ms pause against a 20 ms
+  timeout; thread::sleep only removes park_timeout's early wake.
+- Client-side request timeouts, the protocols.rs exchange timeout and the tunnel's connect_timeout in local_tls.
+- The TLS handshake loops in base support, local_tls.rs and ibm_detector_client, which stay where they are.
+- Hand-written servers that run until a stop flag, such as agent_collection_calls support and the oracle runner mock.
+pitfalls:
+- The fixture crate's src is library code to clippy and the hooks, so no unwrap, expect, panic, indexing or one-line function there; only its tests.rs files unwrap.
+- Give Serving no Drop and never finish from a Drop, so a test that panics before finish never blocks on a join.
+- Keep the listener Arc in Serving until finish has joined; closing it first lets finish's connect reach a port another test bound since.
+- finish reads the address from self.listener.local_addr(), which also keeps the listener field from being dead code.
+- Keep "fixture" as the reason phrase in core and b3505 replies ("200 fixture"), so the tests and the oracle cases send the same bytes as before.
+- protocols.rs imports TIMEOUT from local_tls.rs, so the constant stays there for the client timeouts.
+- The sleep test is the only one that waits 6 s; every other test in the crate connects at once and asserts no timing.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

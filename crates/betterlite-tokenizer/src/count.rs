@@ -7,16 +7,12 @@ mod tests;
 pub mod text;
 pub mod wire;
 
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use betterlite_models::catalog::ModelCatalog;
 
-use crate::engine::Engine;
-use crate::engine::fetch::TiktokenFetcher;
-use crate::engine::limits::{BuildJob, CountingService};
+use crate::engine::limits::CountingService;
 use crate::engine::selection::Selector;
-use crate::engine::tiktoken::{Encoding, TiktokenEngine};
 use crate::selection::openai_tokenizer_encoding_name;
 
 use error::CountError;
@@ -26,29 +22,24 @@ use text::{Counted, Texter};
 
 pub struct Counter {
     selector: Arc<Selector>,
-    fetcher: Arc<TiktokenFetcher>,
     service: Arc<CountingService>,
     catalog: Arc<ModelCatalog>,
     settings: Settings,
-    encodings: Mutex<BTreeMap<Encoding, Engine>>,
 }
 
 impl Counter {
     #[must_use]
     pub const fn new(
         selector: Arc<Selector>,
-        fetcher: Arc<TiktokenFetcher>,
         service: Arc<CountingService>,
         catalog: Arc<ModelCatalog>,
         settings: Settings,
     ) -> Self {
         Self {
             selector,
-            fetcher,
             service,
             catalog,
             settings,
-            encodings: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -120,7 +111,7 @@ impl Counter {
             SelectedTokenizer::OpenAi => {
                 let encoding = openai_tokenizer_encoding_name(request.model, &self.catalog);
                 Ok(Counted {
-                    engine: self.encoding_engine(encoding).await?,
+                    engine: self.selector.encoding(encoding).await?,
                     chunks: Some(self.settings.chunk_chars),
                 })
             }
@@ -129,26 +120,5 @@ impl Counter {
                 chunks: None,
             }),
         }
-    }
-
-    async fn encoding_engine(&self, encoding: Encoding) -> Result<Engine, CountError> {
-        if let Some(found) = self
-            .encodings
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&encoding).cloned())
-        {
-            return Ok(found);
-        }
-        let data = self.fetcher.data(encoding).await?;
-        let job: BuildJob = Box::new(move || {
-            let engine = TiktokenEngine::from_bpe_file(encoding, &data)?;
-            Ok(Engine::Tiktoken(Arc::new(engine)))
-        });
-        let engine = self.service.build(job).await?;
-        if let Ok(mut cache) = self.encodings.lock() {
-            cache.insert(encoding, engine.clone());
-        }
-        Ok(engine)
     }
 }
