@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use betterlite_models::decisions::Json;
 
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
