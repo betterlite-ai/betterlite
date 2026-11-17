@@ -105,24 +105,21 @@ class RecordingLogging(Logging):
 
     @override
     def pre_call(self, *_args: JsonValue, **kwargs: JsonValue) -> None:
-        arguments = OBJECT.validate_python(kwargs["additional_args"])
-        effect: dict[str, JsonValue] = {
-            "effect": "pre_call",
-            "url": arguments["api_base"],
-            "body": arguments["complete_input_dict"],
-        }
-        self.effects.append(effect)
+        self.record("pre_call", kwargs)
 
     @override
     def post_call(self, *_args: JsonValue, **kwargs: JsonValue) -> None:
+        self.record("post_call", kwargs)
+
+    def record(self, effect: str, kwargs: dict[str, JsonValue]) -> None:
         arguments = OBJECT.validate_python(kwargs["additional_args"])
-        effect: dict[str, JsonValue] = {
-            "effect": "post_call",
-            "input": kwargs["input"],
-            "original_response": kwargs["original_response"],
-            "body": arguments["complete_input_dict"],
-        }
-        self.effects.append(effect)
+        view: dict[str, JsonValue] = {"effect": effect, "body": arguments["complete_input_dict"]}
+        if effect == "pre_call":
+            view["url"] = arguments["api_base"]
+        else:
+            view["input"] = kwargs["input"]
+            view["original_response"] = kwargs["original_response"]
+        self.effects.append(JSON.validate_python(view))
 
 
 def capture(match: re.Match[str] | None) -> str | None:
@@ -166,13 +163,12 @@ def multipart_view(request: httpx.Request, content_type: str) -> JsonValue:
 
 
 def request_view(request: httpx.Request, names: list[str], timeout_millis: int) -> JsonValue:
+    echoed: dict[str, str | None] = {name: header_text(request, name) for name in names}
     view: dict[str, JsonValue] = {
         "effect": "request",
         "method": request.method,
         "url": str(request.url),
-        "headers": JSON.validate_python(
-            {name: header_text(request, name) for name in names}
-        ),
+        "headers": JSON.validate_python(echoed),
         "timeout_millis": timeout_millis,
     }
     content_type = header_text(request, "content-type")
@@ -249,7 +245,7 @@ def invoke(
     response: TranscriptionResponse,
 ) -> None:
     params: dict[str, JsonValue] = {}
-    pending = HANDLER.audio_transcriptions(
+    pending = HANDLER.audio_transcriptions(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L111-L172
         model=case["model"],
         audio_file=audio_input(case),
         optional_params=case["optional_params"],

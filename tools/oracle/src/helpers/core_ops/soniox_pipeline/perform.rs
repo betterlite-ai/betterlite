@@ -65,7 +65,7 @@ fn run_job(
         AudioFile::Stream(borrowed)
     });
     let call = pipeline_call(case, mode);
-    let files: &dyn AuthorizedAudioFiles = &NO_FILES;
+    let files: &(dyn AuthorizedAudioFiles + Sync) = &NO_FILES;
     let pipeline = SonioxPipeline {
         provider: &recorder,
         sleeper: &recorder,

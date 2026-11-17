@@ -113,19 +113,7 @@ impl Logger<'_> {
             .unwrap_or_else(PoisonError::into_inner)
             .push(effect);
     }
-}
 
-impl SonioxLogger for Logger<'_> {
-    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
-        match event {
-            SonioxEvent::PreCall(record) => self.pre_call(record),
-            SonioxEvent::PostCall(record) => self.post_call(record),
-        }
-        Ok(())
-    }
-}
-
-impl Logger<'_> {
     fn pre_call(&self, record: SonioxPreCall) {
         self.push(json!({
             "effect": "pre_call",
@@ -141,6 +129,16 @@ impl Logger<'_> {
             "original_response": record.original_response,
             "body": record.body,
         }));
+    }
+}
+
+impl SonioxLogger for Logger<'_> {
+    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
+        match event {
+            SonioxEvent::PreCall(record) => self.pre_call(record),
+            SonioxEvent::PostCall(record) => self.post_call(record),
+        }
+        Ok(())
     }
 }
 
