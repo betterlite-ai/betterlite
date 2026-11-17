@@ -28,6 +28,8 @@ use super::{
     leaf_failure, run,
 };
 
+const SPEECH_BODY_LIMIT: usize = 1024 * 1024;
+
 pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
     let operation = speech_operation(case);
     let mut headers = HeaderMap::new();
@@ -169,7 +171,7 @@ async fn speech_answer(response: SpeechResponse, request: &Value) -> HelperResul
     let status = response.status;
     let content_type = response.content_type.clone();
     let body = response
-        .content(1_048_576)
+        .content(SPEECH_BODY_LIMIT)
         .await
         .map_err(|error| failure("SpeechBody", error))?;
     Ok(serde_json::json!({

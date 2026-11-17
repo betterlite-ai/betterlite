@@ -97,21 +97,21 @@ fn lifecycle_call(case: &VideoCase, reply: Vec<u8>) -> Result<VideoCall, Box<Hel
             reply,
         }))),
         VideoOp::Status => Ok(VideoCall::Status(Box::new(VideoStatusCall {
-            video_id: required(&case.video_id, "video_id")?.to_owned(),
+            video_id: required(case.video_id.as_deref(), "video_id")?.to_owned(),
             reply,
         }))),
         VideoOp::Delete => Ok(VideoCall::Delete(Box::new(VideoDeleteCall {
-            video_id: required(&case.video_id, "video_id")?.to_owned(),
+            video_id: required(case.video_id.as_deref(), "video_id")?.to_owned(),
             reply,
         }))),
         VideoOp::Content => Ok(VideoCall::Content(Box::new(VideoContentCall {
-            video_id: required(&case.video_id, "video_id")?.to_owned(),
+            video_id: required(case.video_id.as_deref(), "video_id")?.to_owned(),
             variant: case.variant.clone(),
             reply,
         }))),
         VideoOp::Remix => Ok(VideoCall::Remix(Box::new(VideoRemixCall {
-            video_id: required(&case.video_id, "video_id")?.to_owned(),
-            prompt: required(&case.prompt, "prompt")?.to_owned(),
+            video_id: required(case.video_id.as_deref(), "video_id")?.to_owned(),
+            prompt: required(case.prompt.as_deref(), "prompt")?.to_owned(),
             extra_body: VideoOptions::new(),
             reply,
         }))),
@@ -143,10 +143,11 @@ pub(super) fn upload_value(request: &OpenAiMediaPrepared, reply: &Value) -> Help
 }
 
 pub(super) fn required<'value>(
-    field: &'value Option<String>,
+    field: Option<&'value str>,
     name: &str,
 ) -> Result<&'value str, Box<HelperError>> {
-    field
-        .as_deref()
-        .ok_or_else(|| failure("Input", format!("the case needs {name}")))
+    let Some(value) = field else {
+        return Err(failure("Input", format!("the case needs {name}")));
+    };
+    Ok(value)
 }

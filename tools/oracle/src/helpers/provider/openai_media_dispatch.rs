@@ -197,8 +197,10 @@ fn leaf_status(error: &OpenAiMediaError) -> Option<u16> {
         OpenAiMediaError::ImageGeneration(raised) => raised.status(),
         OpenAiMediaError::ImageVariation(raised) => Some(raised.status_code),
         OpenAiMediaError::ImageEdit(raised) => raised.status(),
-        OpenAiMediaError::Speech(SpeechError::Status(raised)) => Some(raised.status),
-        OpenAiMediaError::Transcription(TranscriptionError::Status(raised)) => Some(raised.status),
+        OpenAiMediaError::Speech(SpeechError::Status(raised))
+        | OpenAiMediaError::Transcription(TranscriptionError::Status(raised)) => {
+            Some(raised.status)
+        }
         OpenAiMediaError::Speech(_)
         | OpenAiMediaError::Transcription(_)
         | OpenAiMediaError::Video(_)
