@@ -120,6 +120,7 @@ pub struct Step {
     pub health_check_probe: bool,
 }
 
+// the reply buffer hands a JSON float to serde's content type as a map under serde_json's arbitrary_precision feature, so seconds travel as fixed-point text
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Output {
     pub steps: Vec<StepOutput>,
@@ -128,10 +129,10 @@ pub struct Output {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepOutput {
     pub kind: StepKind,
-    pub local_expiry: Option<Seconds>,
-    pub local_expiries: Option<Vec<Option<Seconds>>>,
+    pub local_expiry: Option<String>,
+    pub local_expiries: Option<Vec<Option<String>>>,
     pub active: Option<Vec<ActiveView>>,
-    pub minimum: Option<Seconds>,
+    pub minimum: Option<String>,
     pub unhealthy: Option<BTreeSet<String>>,
     pub kept: Option<Vec<String>>,
 }
@@ -139,11 +140,11 @@ pub struct StepOutput {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveView {
     pub model_id: String,
-    pub remaining_seconds: Seconds,
+    pub remaining_seconds: String,
     pub exception_received: String,
     pub status_code: String,
-    pub timestamp: Seconds,
-    pub cooldown_time: Seconds,
+    pub timestamp: String,
+    pub cooldown_time: String,
 }
 
 #[derive(Debug, Error)]

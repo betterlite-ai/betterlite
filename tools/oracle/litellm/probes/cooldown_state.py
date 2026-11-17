@@ -69,19 +69,20 @@ class Step(Strict):
 
 class ActiveView(Strict):
     model_id: str
-    remaining_seconds: float
+    remaining_seconds: str
     exception_received: str
     status_code: str
-    timestamp: float
-    cooldown_time: float
+    timestamp: str
+    cooldown_time: str
 
 
+# fixed-point text: the reply buffer turns a JSON float into a map
 class StepOutput(Strict):
     kind: Literal["add", "read", "minimum", "set_health", "health", "filter"]
-    local_expiry: float | None = None
-    local_expiries: list[float | None] | None = None
+    local_expiry: str | None = None
+    local_expiries: list[str | None] | None = None
     active: list[ActiveView] | None = None
-    minimum: float | None = None
+    minimum: str | None = None
     unhealthy: list[str] | None = None
     kept: list[str] | None = None
 
@@ -176,19 +177,20 @@ def kept_ids(deployments: list[dict[str, JsonValue]] | dict[str, JsonValue]) -> 
     return [entry["model_info"]["id"] for entry in KEPT.validate_python(entries)]
 
 
-async def local_expiry(store: DualCache, key: str) -> float | None:
+async def local_expiry(store: DualCache, key: str) -> str | None:
     expiry = await store.in_memory_cache.async_get_ttl(key)
-    return None if expiry is None else float(expiry)
+    return None if expiry is None else f"{float(expiry):.6f}"
 
 
 def active_view(model_id: str, value: CooldownCacheValue) -> ActiveView:
+    remaining = (value["timestamp"] + value["cooldown_time"]) - time.time()
     return ActiveView(
         model_id=model_id,
-        remaining_seconds=(value["timestamp"] + value["cooldown_time"]) - time.time(),
+        remaining_seconds=f"{remaining:.6f}",
         exception_received=value["exception_received"],
         status_code=value["status_code"],
-        timestamp=value["timestamp"],
-        cooldown_time=value["cooldown_time"],
+        timestamp=f"{value['timestamp']:.6f}",
+        cooldown_time=f"{value['cooldown_time']:.6f}",
     )
 
 
@@ -252,7 +254,8 @@ class Scenario:
                 ],
             )
         if step.kind == "minimum":
-            return StepOutput(kind=step.kind, minimum=self.cooldowns.get_min_cooldown(step.model_ids, None))
+            minimum = self.cooldowns.get_min_cooldown(step.model_ids, None)
+            return StepOutput(kind=step.kind, minimum=f"{minimum:.6f}")
         if step.kind == "set_health":
             states: dict[str, DeploymentHealthStateValue] = {}
             for model_id, state in step.states.items():

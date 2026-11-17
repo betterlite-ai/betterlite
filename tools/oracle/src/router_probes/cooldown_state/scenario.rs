@@ -17,8 +17,8 @@ use tokio::runtime::Builder;
 
 use super::store::{FakeCooldowns, FakeHealth};
 use super::{
-    ActiveView, CooldownInput, DeploymentInput, HealthInput, Input, Output, ScenarioError, Seconds,
-    Step, StepKind, StepOutput,
+    ActiveView, CooldownInput, DeploymentInput, HealthInput, Input, Output, ScenarioError, Step,
+    StepKind, StepOutput,
 };
 
 pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
@@ -138,16 +138,20 @@ impl<'case> Scenario<'case> {
 
     async fn minimum(&self, step: &Step, output: &mut StepOutput) -> Result<(), ScenarioError> {
         let results = self.fetched(&step.model_ids).await?;
-        output.minimum = Some(Seconds(self.cooldowns.minimum_cooldown(&results)));
+        let minimum = self.cooldowns.minimum_cooldown(&results);
+        output.minimum = Some(format!("{minimum:.6}"));
         Ok(())
     }
 
-    fn set_health(&self, step: &Step) -> Result<Option<Seconds>, ScenarioError> {
+    fn set_health(&self, step: &Step) -> Result<Option<String>, ScenarioError> {
         let states = snapshot(&step.states);
         self.health
             .set_states(&states)
             .map_err(|_error| ScenarioError::HealthState)?;
-        Ok(self.health.local_expiry().map(Seconds))
+        Ok(self
+            .health
+            .local_expiry()
+            .map(|expiry| format!("{expiry:.6}")))
     }
 
     fn filter(&self, step: &Step) -> Vec<String> {
@@ -186,13 +190,13 @@ impl<'case> Scenario<'case> {
             .map_err(|_error| ScenarioError::CooldownKey)
     }
 
-    fn expiries(&self, model_ids: &[String]) -> Result<Vec<Option<Seconds>>, ScenarioError> {
+    fn expiries(&self, model_ids: &[String]) -> Result<Vec<Option<String>>, ScenarioError> {
         Ok(self
             .cooldowns
             .local_expiries(model_ids)
             .map_err(|_error| ScenarioError::CooldownKey)?
             .into_iter()
-            .map(|expiry| expiry.map(Seconds))
+            .map(|expiry| expiry.map(|seconds| format!("{seconds:.6}")))
             .collect())
     }
 }
@@ -207,11 +211,11 @@ fn snapshot(states: &BTreeMap<String, HealthInput>) -> HealthSnapshot {
 fn active_view(cooldown: &ActiveCooldown) -> ActiveView {
     ActiveView {
         model_id: cooldown.model_id.clone(),
-        remaining_seconds: Seconds(cooldown.remaining_seconds),
+        remaining_seconds: format!("{:.6}", cooldown.remaining_seconds),
         exception_received: cooldown.record.exception_received.clone(),
         status_code: cooldown.record.status_code.clone(),
-        timestamp: Seconds(cooldown.record.timestamp),
-        cooldown_time: Seconds(cooldown.record.cooldown_time),
+        timestamp: format!("{:.6}", cooldown.record.timestamp),
+        cooldown_time: format!("{:.6}", cooldown.record.cooldown_time),
     }
 }
 

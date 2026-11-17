@@ -39,7 +39,7 @@ pub(super) struct FakeHealth {
 }
 
 impl SharedHealth for FakeHealth {
-    fn read<'store>(&'store self) -> HealthReadFuture<'store> {
+    fn read(&self) -> HealthReadFuture<'_> {
         Box::pin(async move {
             self.snapshot
                 .lock()
