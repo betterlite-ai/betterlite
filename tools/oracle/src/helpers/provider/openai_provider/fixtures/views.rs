@@ -31,7 +31,7 @@ fn answer_requests(case: &Case, answer: &FixtureAnswer) -> Result<Value, Box<Hel
     let requests = answer.requests();
     let mut rendered = Vec::with_capacity(requests.len());
     for request in &requests {
-        let body =
+        let body: Value =
             serde_json::from_slice(&request.body).map_err(|error| failure("Fixture", error))?;
         let headers: Map<String, Value> = request
             .headers
