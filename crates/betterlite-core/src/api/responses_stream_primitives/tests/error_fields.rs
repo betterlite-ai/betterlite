@@ -160,6 +160,16 @@ fn a_decimal_field_becomes_a_status_only_inside_the_range(
     assert_eq!(status_code_for_error_fields(None, code), expected);
 }
 
+// str.isdecimal() takes the Arabic-Indic digits and int() reads them as 429, which is a documented deviation
+#[test]
+fn a_non_ascii_decimal_code_is_not_a_status() {
+    let code: String = [0x0664_u32, 0x0662, 0x0669]
+        .into_iter()
+        .filter_map(char::from_u32)
+        .collect();
+    assert_eq!(status_code_for_error_fields(None, Some(&code)), 500);
+}
+
 #[test]
 fn every_named_invalid_request_code_maps_to_400() {
     let codes = [

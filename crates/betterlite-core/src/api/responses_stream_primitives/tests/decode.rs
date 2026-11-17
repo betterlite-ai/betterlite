@@ -44,10 +44,14 @@ fn decode_keeps_nested_arrays_and_objects() {
     );
 }
 
+// json.loads accepts these three literals and serde_json does not, which is a documented deviation
 #[rstest]
 #[case::a_truncated_object("{")]
 #[case::an_empty_payload("")]
 #[case::plain_text("not json")]
+#[case::nan_literal("NaN")]
+#[case::infinity_literal("Infinity")]
+#[case::negative_infinity_literal("-Infinity")]
 fn decode_propagates_a_json_error(#[case] payload: &str) {
     let error = decode_responses_stream_value(payload.as_bytes(), &ApiLimits::default())
         .expect_err("the fixture is not JSON");
