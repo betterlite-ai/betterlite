@@ -8,8 +8,8 @@ use betterlite_router::bandit_math::{BanditCell, Candidate, apply_delta, pick_be
 use rust_decimal::Decimal;
 
 use super::wire::{
-    CellOutput, CostOutput, CostScoreOutput, Fields, Payload, RoutingOutput, SnapshotCellOutput,
-    SnapshotOutput, WeightsOutput,
+    CellOutput, CostCheckInput, CostScoreOutput, DeltaInput, Fields, Payload, RoutingOutput,
+    SnapshotOutput,
 };
 use super::{
     cost_map, decimal, number, operation_error, sample_values, selection_error, service, weights,
@@ -17,8 +17,15 @@ use super::{
 use crate::router_probes::error::OperationError;
 
 pub(super) fn apply_delta_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let mut cells = Vec::with_capacity(payload.deltas.len());
-    for input in &payload.deltas {
+    Ok(Fields {
+        cells: Some(updated_cells(&payload.deltas)?),
+        ..Fields::default()
+    })
+}
+
+fn updated_cells(deltas: &[DeltaInput]) -> Result<Vec<CellOutput>, OperationError> {
+    let mut cells = Vec::with_capacity(deltas.len());
+    for input in deltas {
         let cell = BanditCell::new(number(&input.alpha, "alpha")?, number(&input.beta, "beta")?)
             .map_err(operation_error)?;
         let updated = apply_delta(
@@ -35,34 +42,51 @@ pub(super) fn apply_delta_fields(payload: &Payload) -> Result<Fields, OperationE
             samples: updated.total_samples(),
         });
     }
-    Ok(Fields {
-        cells: Some(cells),
-        ..Fields::default()
-    })
+    Ok(cells)
 }
 
 pub(super) fn normalized_cost_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let mut cost_scores = Vec::with_capacity(payload.cost_checks.len());
-    for check in &payload.cost_checks {
-        let amounts = check
-            .all_costs
-            .iter()
-            .map(|text| decimal(text, "all_costs"))
-            .collect::<Result<Vec<_>, _>>()?;
-        let cost_score = normalized_cost(decimal(&check.amount, "amount")?, &amounts)
-            .map_err(selection_error)?;
-        cost_scores.push(CostScoreOutput {
-            model: check.model.clone(),
-            cost_score: format!("{cost_score:.6}"),
-        });
-    }
     Ok(Fields {
-        cost_scores: Some(cost_scores),
+        cost_scores: Some(cost_scores(&payload.cost_checks)?),
         ..Fields::default()
     })
 }
 
+fn cost_scores(checks: &[CostCheckInput]) -> Result<Vec<CostScoreOutput>, OperationError> {
+    let all_amounts = checks
+        .iter()
+        .map(|check| {
+            check
+                .all_costs
+                .iter()
+                .map(|text| decimal(text, "all_costs"))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    checks
+        .iter()
+        .zip(&all_amounts)
+        .map(|(check, amounts)| {
+            Ok(CostScoreOutput {
+                model: check.model.clone(),
+                cost_score: format!(
+                    "{:.6}",
+                    normalized_cost(decimal(&check.amount, "amount")?, amounts)
+                        .map_err(selection_error)?
+                ),
+            })
+        })
+        .collect()
+}
+
 pub(super) fn pick_fields(payload: &Payload) -> Result<Fields, OperationError> {
+    Ok(Fields {
+        selected: Some(selected_candidate(payload)?),
+        ..Fields::default()
+    })
+}
+
+fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
     let weights = weights(payload)?;
     let costs = cost_map(payload)?;
     let all_costs = payload
@@ -83,26 +107,32 @@ pub(super) fn pick_fields(payload: &Payload) -> Result<Fields, OperationError> {
     }
     let samples = sample_values(payload)?;
     let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(samples));
-    let selected = pick_best(&candidates, weights, &mut sampler).map_err(operation_error)?;
-    Ok(Fields {
-        selected: Some(selected),
-        ..Fields::default()
-    })
+    pick_best(&candidates, weights, &mut sampler).map_err(operation_error)
 }
 
 pub(super) fn pick_model_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let mut selection = service(payload)?;
-    let request_type = payload.request_type.unwrap_or(RequestType::General);
-    let selected = selection
-        .pick_model(request_type, payload.min_quality_tier)
-        .map_err(selection_error)?;
     Ok(Fields {
-        selected: Some(selected),
+        selected: Some(selected_model(payload)?),
         ..Fields::default()
     })
 }
 
+fn selected_model(payload: &Payload) -> Result<String, OperationError> {
+    let mut selection = service(payload)?;
+    let request_type = payload.request_type.unwrap_or(RequestType::General);
+    selection
+        .pick_model(request_type, payload.min_quality_tier)
+        .map_err(selection_error)
+}
+
 pub(super) fn pre_routing_fields(payload: &Payload) -> Result<Fields, OperationError> {
+    Ok(Fields {
+        routing: Some(planned_route(payload)?),
+        ..Fields::default()
+    })
+}
+
+fn planned_route(payload: &Payload) -> Result<RoutingOutput, OperationError> {
     let mut selection = service(payload)?;
     let mut metadata = if payload.metadata_present {
         Some(payload.metadata.clone().unwrap_or(Json::Null))
@@ -117,59 +147,21 @@ pub(super) fn pre_routing_fields(payload: &Payload) -> Result<Fields, OperationE
         })
         .map_err(selection_error)?;
     let request_type = response.routing_decision.request_type;
-    let chosen_metadata = metadata.ok_or_else(|| OperationError::InvalidRequest {
-        message: "the adaptive pre-routing hook left no metadata".to_owned(),
-    })?;
-    Ok(Fields {
-        routing: Some(RoutingOutput {
-            model: response.model,
-            messages: response.messages.map(|messages| messages.to_vec()),
-            routing_decision: response.routing_decision,
-            metadata: chosen_metadata,
-            request_type,
-            min_quality_tier: minimum_quality_tier(
-                payload.headers.as_ref(),
-                payload.metadata.as_ref(),
-            ),
-        }),
-        ..Fields::default()
+    Ok(RoutingOutput {
+        model: response.model,
+        messages: response.messages.map(|messages| messages.to_vec()),
+        routing_decision: response.routing_decision,
+        metadata: metadata.ok_or_else(|| OperationError::InvalidRequest {
+            message: "the adaptive pre-routing hook left no metadata".to_owned(),
+        })?,
+        request_type,
+        min_quality_tier: minimum_quality_tier(payload.headers.as_ref(), payload.metadata.as_ref()),
     })
 }
 
 pub(super) fn snapshot_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let selection = service(payload)?;
-    let snapshot = selection.state_snapshot();
-    let cells = snapshot
-        .cells
-        .iter()
-        .map(|cell| SnapshotCellOutput {
-            request_type: cell.request_type,
-            model: cell.model.clone(),
-            alpha: format!("{:.6}", cell.alpha),
-            beta: format!("{:.6}", cell.beta),
-            samples: cell.samples,
-            quality_mean: format!("{:.6}", cell.quality_mean),
-        })
-        .collect();
-    let model_costs = snapshot
-        .model_costs
-        .iter()
-        .map(|(model, amount)| CostOutput {
-            model: model.clone(),
-            amount: format!("{amount:.6}"),
-        })
-        .collect();
     Ok(Fields {
-        snapshot: Some(SnapshotOutput {
-            router_name: snapshot.router_name,
-            available_models: snapshot.available_models,
-            weights: WeightsOutput {
-                quality: format!("{:.6}", snapshot.weights.quality),
-                cost: format!("{:.6}", snapshot.weights.economy),
-            },
-            model_costs,
-            cells,
-        }),
+        snapshot: Some(SnapshotOutput::from(&service(payload)?.state_snapshot())),
         ..Fields::default()
     })
 }

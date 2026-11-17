@@ -2,6 +2,7 @@ use betterlite_config::sections::adaptive_classification as section;
 use betterlite_router::adaptive_classification::config::{
     AdaptiveRouterConfig, AdaptiveRouterPreferences, AdaptiveRouterWeights,
 };
+use betterlite_router::adaptive_classification::error::AdaptiveClassificationError;
 use betterlite_router::adaptive_selection::AdaptiveSelection;
 use betterlite_router::adaptive_selection::error::AdaptiveSelectionError;
 use betterlite_router::bandit_math::error::BanditMathError;
@@ -83,26 +84,28 @@ fn selection_error(error: AdaptiveSelectionError) -> OperationError {
 }
 
 fn weights(payload: &Payload) -> Result<AdaptiveRouterWeights, OperationError> {
-    let input = match payload.weights.as_ref() {
-        Some(raw) => Some(section::Weights {
-            quality: raw
-                .quality
-                .as_deref()
-                .map(|text| number(text, "weights.quality"))
-                .transpose()?,
-            economy: raw
-                .cost
-                .as_deref()
-                .map(|text| number(text, "weights.cost"))
-                .transpose()?,
-        }),
-        None => None,
+    let Some(raw) = payload.weights.as_ref() else {
+        return AdaptiveRouterWeights::resolve(None).map_err(classification_error);
     };
-    AdaptiveRouterWeights::resolve(input.as_ref()).map_err(|source| {
-        OperationError::InvalidRequest {
-            message: source.to_string(),
-        }
-    })
+    let input = section::Weights {
+        quality: raw
+            .quality
+            .as_deref()
+            .map(|text| number(text, "weights.quality"))
+            .transpose()?,
+        economy: raw
+            .cost
+            .as_deref()
+            .map(|text| number(text, "weights.cost"))
+            .transpose()?,
+    };
+    AdaptiveRouterWeights::resolve(Some(&input)).map_err(classification_error)
+}
+
+fn classification_error(error: AdaptiveClassificationError) -> OperationError {
+    OperationError::InvalidRequest {
+        message: error.to_string(),
+    }
 }
 
 fn preference_map(payload: &Payload) -> IndexMap<String, AdaptiveRouterPreferences> {

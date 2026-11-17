@@ -175,17 +175,17 @@ fn the_score_is_the_weighted_sum(
 }
 
 #[rstest]
-#[case::quality_sample(f64::NAN, 0.5, 0.7, 0.3, "quality sample")]
-#[case::cost_score(0.5, f64::INFINITY, 0.7, 0.3, "cost score")]
-#[case::quality_weight(0.5, 0.5, f64::NAN, 0.3, "score weight")]
-#[case::cost_weight(0.5, 0.5, 0.7, f64::NEG_INFINITY, "score weight")]
+#[case::quality_sample((f64::NAN, 0.5), (0.7, 0.3), "quality sample")]
+#[case::cost_score((0.5, f64::INFINITY), (0.7, 0.3), "cost score")]
+#[case::quality_weight((0.5, 0.5), (f64::NAN, 0.3), "score weight")]
+#[case::cost_weight((0.5, 0.5), (0.7, f64::NEG_INFINITY), "score weight")]
 fn a_non_finite_score_names_the_field(
-    #[case] quality_sample: f64,
-    #[case] cost_score: f64,
-    #[case] quality_weight: f64,
-    #[case] cost_weight: f64,
+    #[case] sample: (f64, f64),
+    #[case] weight: (f64, f64),
     #[case] field: &'static str,
 ) {
+    let (quality_sample, cost_score) = sample;
+    let (quality_weight, cost_weight) = weight;
     assert_eq!(
         score(
             quality_sample,

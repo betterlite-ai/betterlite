@@ -20,14 +20,7 @@ from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
-Check = Literal[
-    "apply_delta",
-    "normalized_cost",
-    "pick",
-    "pick_model",
-    "pre_routing",
-    "snapshot",
-]
+Check = Literal["apply_delta", "normalized_cost", "pick", "pick_model", "pre_routing", "snapshot"]
 
 
 class PreferenceInput(Strict):

@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
 use betterlite_router::adaptive_classification::request_type::RequestType;
+use betterlite_router::adaptive_selection::StateSnapshot;
 use betterlite_router::adaptive_selection::pre_routing::RoutingDecision;
 use serde::{Deserialize, Serialize};
 
@@ -31,19 +32,13 @@ pub(super) struct Payload {
     pub(super) costs: Vec<CostInput>,
     #[serde(default)]
     pub(super) cost_checks: Vec<CostCheckInput>,
-    #[serde(default)]
     pub(super) weights: Option<WeightsInput>,
     #[serde(default)]
     pub(super) samples: Vec<String>,
-    #[serde(default)]
     pub(super) min_quality_tier: Option<i64>,
-    #[serde(default)]
     pub(super) request_type: Option<RequestType>,
-    #[serde(default)]
     pub(super) messages: Option<Vec<Message>>,
-    #[serde(default)]
     pub(super) headers: Option<Json>,
-    #[serde(default)]
     pub(super) metadata: Option<Json>,
     #[serde(default)]
     pub(super) metadata_present: bool,
@@ -54,7 +49,6 @@ pub(super) struct Payload {
 pub(super) struct PreferenceInput {
     pub(super) model: String,
     pub(super) quality_tier: u8,
-    #[serde(default)]
     pub(super) strengths: Option<Vec<RequestType>>,
 }
 
@@ -162,4 +156,37 @@ pub(super) struct RoutingOutput {
     pub(super) metadata: Json,
     pub(super) request_type: RequestType,
     pub(super) min_quality_tier: Option<i64>,
+}
+
+impl From<&StateSnapshot> for SnapshotOutput {
+    fn from(snapshot: &StateSnapshot) -> Self {
+        SnapshotOutput {
+            router_name: snapshot.router_name.clone(),
+            available_models: snapshot.available_models.clone(),
+            weights: WeightsOutput {
+                quality: format!("{:.6}", snapshot.weights.quality),
+                cost: format!("{:.6}", snapshot.weights.economy),
+            },
+            model_costs: snapshot
+                .model_costs
+                .iter()
+                .map(|(model, amount)| CostOutput {
+                    model: model.clone(),
+                    amount: format!("{amount:.6}"),
+                })
+                .collect(),
+            cells: snapshot
+                .cells
+                .iter()
+                .map(|cell| SnapshotCellOutput {
+                    request_type: cell.request_type,
+                    model: cell.model.clone(),
+                    alpha: format!("{:.6}", cell.alpha),
+                    beta: format!("{:.6}", cell.beta),
+                    samples: cell.samples,
+                    quality_mean: format!("{:.6}", cell.quality_mean),
+                })
+                .collect(),
+        }
+    }
 }
