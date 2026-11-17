@@ -19,7 +19,7 @@ pub trait RouteServices: Send + Sync {
     // _get_cooldown_deployments, every deployment cooling down right now
     #[must_use]
     fn cooldown_list(&self) -> Vec<String> {
-        Vec::new()
+        vec![]
     }
 
     // async_callback_filter_deployments: each callback replaces the pool, and its failure stops the route
