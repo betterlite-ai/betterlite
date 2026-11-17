@@ -1,0 +1,96 @@
+kind: helper
+name: bedrock-converse-params-context-management
+call:
+  bedrock_converse_params:
+    function: map_params
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+    environment: {}
+    non_default_params:
+      context_management:
+        - {type: compaction, compact_threshold: 100000, keep: true}
+    optional_params: {}
+    global_drop: false
+    call_drop: false
+calls:
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params:
+        context_management:
+          - {type: compaction, compact_threshold: 100000.9}
+          - {type: clear}
+          - plain
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params:
+        context_management:
+          - {type: compaction, compact_threshold: many}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params:
+        context_management: {edits: [{type: compact_20260112, trigger: {type: input_tokens, value: 50000}}]}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params: {context_management: {}}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params:
+        context_management: [{type: clear}]
+      optional_params: {context_management: {edits: [{type: old}]}}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params: {context_management: text}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      environment: {}
+      non_default_params: {context_management: 5, max_tokens: 100}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+env: {}
+compare: {ignore: []}

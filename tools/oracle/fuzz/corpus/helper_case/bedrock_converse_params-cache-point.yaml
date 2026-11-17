@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-converse-params-cache-point
+call:
+  bedrock_converse_params:
+    function: cache_point
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 2.4e-6}
+    message_block:
+      type: text
+      text: cache this prefix
+      cache_control: {type: ephemeral, ttl: 1h}
+    control: {ttl: 5m}
+env: {}
+compare: {ignore: []}

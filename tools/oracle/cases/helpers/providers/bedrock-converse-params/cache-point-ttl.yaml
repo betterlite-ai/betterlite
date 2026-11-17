@@ -1,0 +1,85 @@
+kind: helper
+name: bedrock-converse-params-cache-point-ttl
+call:
+  bedrock_converse_params:
+    function: cache_point
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+    message_block:
+      type: text
+      text: keep this prefix
+      cache_control: {type: ephemeral, ttl: 1h}
+    control: {ttl: 1h}
+calls:
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: {type: ephemeral, ttl: 5m}}
+      control: {ttl: 5m}
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 2h}}
+      control: {ttl: 2h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: true}
+      control: null
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-3-5-sonnet
+      model_cost:
+        anthropic.claude-3-5-sonnet: {litellm_provider: bedrock, supports_prompt_caching: true}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 1h}}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-no-cache
+      model_cost:
+        anthropic.claude-no-cache: {litellm_provider: bedrock, supports_prompt_caching: false}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 1h}}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: null
+      model_cost: {}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 1h}}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 1h}}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: {ttl: 5m}}
+      control: {ttl: 1h}
+  - bedrock_converse_params:
+      function: cache_point
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+      message_block: {type: text, text: keep this prefix, cache_control: null}
+      control: null
+env: {}
+compare: {ignore: []}

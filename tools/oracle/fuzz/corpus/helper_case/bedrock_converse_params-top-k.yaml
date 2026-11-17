@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-converse-params-top-k
+call:
+  bedrock_converse_params:
+    function: top_k
+    model: amazon.nova-pro-v1:0
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock}
+    inference_params: {topK: 20, top_k: 40, temperature: 0.5, maxTokens: 512}
+    global_drop: false
+    call_drop: false
+env: {}
+compare: {ignore: []}

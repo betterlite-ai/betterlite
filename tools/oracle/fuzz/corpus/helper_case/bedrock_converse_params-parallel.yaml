@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-params-parallel
+call:
+  bedrock_converse_params:
+    function: parallel_config
+    additional_request_params:
+      tool_choice: {type: auto, disable_parallel_tool_use: false}
+      thinking: {type: enabled, budget_tokens: 1024}
+    parallel_tool_use_config:
+      tool_choice: {type: auto, disable_parallel_tool_use: true}
+env: {}
+compare: {ignore: []}
