@@ -55,9 +55,7 @@ impl CooldownCache {
         }
     }
 
-    // add_deployment_to_cooldown: the entry lands in both tiers with a TTL equal to its cooldown time, and a local
-    // TTL still running after this moment stays as it is the way InMemoryCache.set_cache keeps it, which prunes a
-    // TTL ending exactly now first, so that one is replaced
+    // both tiers take the TTL, and a running local TTL survives the way set_cache keeps it
     pub fn add(
         &self,
         model_id: &str,

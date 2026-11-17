@@ -72,16 +72,15 @@ pub fn without_unhealthy(
     kept
 }
 
-// _is_deployment_blocked: an admin-paused deployment never serves a request, whichever route asks
-#[must_use]
-pub fn is_blocked(deployment: &DeploymentSpec) -> bool {
-    matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)))
-}
-
 // _are_all_deployments_blocked, and _is_model_fully_blocked over one model's deployments
 #[must_use]
 pub fn all_blocked(deployments: &[DeploymentSpec]) -> bool {
-    !deployments.is_empty() && deployments.iter().all(is_blocked)
+    match deployments {
+        [] => false,
+        _ => deployments.iter().all(|deployment| {
+            matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)))
+        }),
+    }
 }
 
 // get_fully_blocked_model_names: the model names whose every deployment an admin paused
@@ -93,7 +92,7 @@ pub fn fully_blocked_model_names(deployments: &[DeploymentSpec]) -> BTreeSet<Str
         if name.is_empty() {
             continue;
         }
-        let paused = is_blocked(deployment);
+        let paused = matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)));
         blocked
             .entry(name)
             .and_modify(|every| *every = *every && paused)

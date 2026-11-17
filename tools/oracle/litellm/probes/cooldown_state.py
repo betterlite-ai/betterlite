@@ -1,7 +1,3 @@
-# ruff: noqa: SLF001
-# pyright: strict, reportMissingTypeStubs=false
-# pyright: reportPrivateUsage=false, reportUnknownMemberType=false
-
 import asyncio
 import time
 from typing import Final, Literal, final
@@ -21,6 +17,10 @@ from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, Strict
+
+# ruff: noqa: SLF001
+# pyright: strict, reportMissingTypeStubs=false
+# pyright: reportPrivateUsage=false, reportUnknownMemberType=false
 
 API_KEY = "sk-probe"
 COOLDOWN_PREFIX: Final = "deployment:"

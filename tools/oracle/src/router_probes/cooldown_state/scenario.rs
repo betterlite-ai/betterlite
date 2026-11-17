@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 use betterlite_router::cooldown_state::cooldown::{ActiveCooldown, CooldownCache};
@@ -15,7 +15,7 @@ use betterlite_router::routing_value_store::{Clock, RouteKey};
 use rust_decimal::{Decimal, prelude::ToPrimitive as _};
 use tokio::runtime::Builder;
 
-use super::store::{FakeCooldowns, FakeHealth, lock};
+use super::store::{FakeCooldowns, FakeHealth};
 use super::{
     ActiveView, CooldownInput, DeploymentInput, HealthInput, Input, Output, ScenarioError, Seconds,
     Step, StepKind, StepOutput,
@@ -31,11 +31,6 @@ pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
 
 type SharedClock = Arc<Mutex<f64>>;
 
-fn clock_fn(clock: &SharedClock) -> Clock {
-    let clock = Arc::clone(clock);
-    Arc::new(move || *lock(&clock))
-}
-
 struct Scenario<'case> {
     input: &'case Input,
     clock: SharedClock,
@@ -47,6 +42,9 @@ struct Scenario<'case> {
 impl<'case> Scenario<'case> {
     fn new(input: &'case Input) -> Result<Self, ScenarioError> {
         let clock: SharedClock = Arc::new(Mutex::new(0.0_f64));
+        let handle = Arc::clone(&clock);
+        let clock_fn: Clock =
+            Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
         let settings = Settings {
             default_cooldown_time: input.settings.default_cooldown_time.0,
             redis_read_interval_seconds: input.settings.redis_read_interval_seconds.0,
@@ -61,7 +59,7 @@ impl<'case> Scenario<'case> {
         let shared = Arc::new(FakeCooldowns {
             records: Mutex::new(records),
         });
-        let cooldowns = CooldownCache::new(&settings, shared, clock_fn(&clock));
+        let cooldowns = CooldownCache::new(&settings, shared, Arc::clone(&clock_fn));
         let snapshot = snapshot(&input.shared_health);
         let snapshot = (!snapshot.is_empty()).then_some(snapshot);
         let health = DeploymentHealthCache::new(
@@ -69,7 +67,7 @@ impl<'case> Scenario<'case> {
             Arc::new(FakeHealth {
                 snapshot: Mutex::new(snapshot),
             }),
-            clock_fn(&clock),
+            clock_fn,
         )
         .map_err(|_error| ScenarioError::HealthKey)?;
         let deployments = input
@@ -89,7 +87,8 @@ impl<'case> Scenario<'case> {
     async fn run(self) -> Result<Output, ScenarioError> {
         let mut steps = Vec::with_capacity(self.input.steps.len());
         for step in &self.input.steps {
-            *lock(&self.clock) = seconds(step.now_millis)?;
+            let now = seconds(step.now_millis)?;
+            *self.clock.lock().unwrap_or_else(PoisonError::into_inner) = now;
             steps.push(self.run_step(step).await?);
         }
         Ok(Output { steps })
@@ -106,7 +105,17 @@ impl<'case> Scenario<'case> {
             kept: None,
         };
         match step.kind {
-            StepKind::Add => output.local_expiry = self.add(step)?,
+            StepKind::Add => {
+                self.cooldowns
+                    .add(
+                        &step.model_id,
+                        &step.exception,
+                        step.status_code,
+                        step.cooldown_time.map(|time| time.0),
+                    )
+                    .map_err(|_error| ScenarioError::CooldownKey)?;
+                output.local_expiry = self.expiries(&[step.model_id.clone()])?.pop().flatten();
+            }
             StepKind::Read => self.read(step, &mut output).await?,
             StepKind::Minimum => self.minimum(step, &mut output).await?,
             StepKind::SetHealth => output.local_expiry = self.set_health(step)?,
@@ -114,18 +123,6 @@ impl<'case> Scenario<'case> {
             StepKind::Filter => output.kept = Some(self.filter(step)),
         }
         Ok(output)
-    }
-
-    fn add(&self, step: &Step) -> Result<Option<Seconds>, ScenarioError> {
-        self.cooldowns
-            .add(
-                &step.model_id,
-                &step.exception,
-                step.status_code,
-                step.cooldown_time.map(|time| time.0),
-            )
-            .map_err(|_error| ScenarioError::CooldownKey)?;
-        Ok(self.expiries(&[step.model_id.clone()])?.pop().flatten())
     }
 
     async fn read(&self, step: &Step, output: &mut StepOutput) -> Result<(), ScenarioError> {

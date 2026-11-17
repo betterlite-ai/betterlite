@@ -9,9 +9,7 @@ use crate::router_core::route::RouteContext;
 
 pub(super) const CONFIGURED: bool = true;
 
-// Router._async_filter_health_check_unhealthy_deployments and Router._filter_cooldown_deployments: an unhealthy
-// deployment leaves the pool first, then the ones cooling down; a route is never a health probe, so the pool may
-// empty and the no-deployment error reports the retry delay
+// the health filter runs before the cooldown filter, and a route is never a health probe
 pub(super) fn apply(
     candidates: CandidateSet,
     route: &RouteContext<'_>,

@@ -1,15 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_router::cooldown_state::health::HealthSnapshot;
 use betterlite_router::cooldown_state::record::CooldownRecord;
 use betterlite_router::cooldown_state::shared::{HealthReadFuture, SharedCooldowns, SharedHealth};
 use betterlite_router::routing_read_batch::store::{BatchRead, BatchReadFuture};
 use betterlite_router::routing_value_store::RouteKey;
-
-pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 pub(super) struct FakeCooldowns {
     pub(super) records: Mutex<BTreeMap<RouteKey, CooldownRecord>>,
@@ -21,7 +17,7 @@ impl SharedCooldowns for FakeCooldowns {
         keys: &'store [RouteKey],
     ) -> BatchReadFuture<'store, CooldownRecord> {
         Box::pin(async move {
-            let records = lock(&self.records);
+            let records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
             let values = keys.iter().map(|key| records.get(key).cloned()).collect();
             BatchRead {
                 values,
@@ -31,7 +27,10 @@ impl SharedCooldowns for FakeCooldowns {
     }
 
     fn write(&self, key: &RouteKey, record: &CooldownRecord, _ttl_seconds: f64) {
-        lock(&self.records).insert(key.clone(), record.clone());
+        self.records
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone(), record.clone());
     }
 }
 
@@ -41,14 +40,22 @@ pub(super) struct FakeHealth {
 
 impl SharedHealth for FakeHealth {
     fn read<'store>(&'store self) -> HealthReadFuture<'store> {
-        Box::pin(async move { lock(&self.snapshot).clone() })
+        Box::pin(async move {
+            self.snapshot
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        })
     }
 
     fn read_raw(&self) -> Option<HealthSnapshot> {
-        lock(&self.snapshot).clone()
+        self.snapshot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn write(&self, snapshot: &HealthSnapshot, _ttl_seconds: i64) {
-        *lock(&self.snapshot) = Some(snapshot.clone());
+        *self.snapshot.lock().unwrap_or_else(PoisonError::into_inner) = Some(snapshot.clone());
     }
 }

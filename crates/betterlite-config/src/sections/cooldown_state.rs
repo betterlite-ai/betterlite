@@ -76,10 +76,16 @@ impl Section for Raw {
             parse_float,
         )?;
         // LiteLLM reads both environment settings at import, so a malformed one fails whatever the config says
-        let interval = environment_seconds(lookup, INTERVAL_VARIABLE)?
-            .unwrap_or(DEFAULT_HEALTH_CHECK_INTERVAL);
-        let read_interval = environment_seconds(lookup, READ_INTERVAL_VARIABLE)?
-            .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
+        let interval = betterlite_env::number::<f64>(
+            INTERVAL_VARIABLE,
+            &lookup.lookup(INTERVAL_VARIABLE).unwrap_or_default(),
+        )?
+        .unwrap_or(DEFAULT_HEALTH_CHECK_INTERVAL);
+        let read_interval = betterlite_env::number::<f64>(
+            READ_INTERVAL_VARIABLE,
+            &lookup.lookup(READ_INTERVAL_VARIABLE).unwrap_or_default(),
+        )?
+        .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
         Ok(Settings {
             enable_health_check_routing: enable,
             staleness_threshold: configured.unwrap_or(interval.mul_add(STALENESS_MULTIPLIER, 0.0)),
@@ -98,11 +104,4 @@ fn flag(raw: Option<&RawFlag>, path: &str) -> Result<bool, ConfigError> {
         }),
         None => Ok(false),
     }
-}
-
-fn environment_seconds<L>(lookup: &L, variable: &str) -> Result<Option<f64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    betterlite_env::number::<f64>(variable, &lookup.lookup(variable).unwrap_or_default())
 }
