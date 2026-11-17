@@ -107,6 +107,28 @@ impl Fixture {
             packaged: &self.unlisted,
         }
     }
+
+    pub(super) fn environment<'session>(
+        &'session self,
+        resolution: &'session ResolutionContext<'session>,
+        keys: &'session mut ModelCostKeys,
+        dynamic: &'session NoDynamicMetadata,
+    ) -> CapabilityEnvironment<'session, NoDynamicMetadata, NoHfTransport> {
+        CapabilityEnvironment {
+            metadata: MetadataEnvironment {
+                model_cost: &self.entries.entries,
+                vertex: &self.entries.vertex,
+                generalizations: &self.generalizations,
+                resolution,
+                normalizers: NORMALIZERS,
+            },
+            keys,
+            dynamic,
+            hf: &self.hf,
+            provider_catalog: &self.provider_catalog,
+            provider_generation: 0,
+        }
+    }
 }
 
 pub(super) struct Session<'fixture> {
@@ -167,22 +189,10 @@ impl Session<'_> {
         let mut params: IndexMap<String, Json> =
             serde_json::from_str(request.params).expect("the fixture params parse");
         let catalogs = self.fixture.catalogs();
-        let mut environment = CapabilityEnvironment {
-            metadata: MetadataEnvironment {
-                model_cost: &self.fixture.entries.entries,
-                vertex: &self.fixture.entries.vertex,
-                generalizations: &self.fixture.generalizations,
-                resolution: &self.resolution,
-                normalizers: NORMALIZERS,
-            },
-            keys: &mut self.keys,
-            dynamic: &self.dynamic,
-            hf: &self.fixture.hf,
-            provider_catalog: &self.fixture.provider_catalog,
-            provider_generation: 0,
-        };
-        let runtime = runtime();
-        let outcome = runtime.block_on(process_tools_and_beta(
+        let mut environment =
+            self.fixture
+                .environment(&self.resolution, &mut self.keys, &self.dynamic);
+        let outcome = runtime().block_on(process_tools_and_beta(
             ToolsAndBetaRequest {
                 tools: &tools,
                 model: request.model,

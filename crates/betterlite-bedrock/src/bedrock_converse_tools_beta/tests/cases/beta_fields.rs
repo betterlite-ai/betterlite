@@ -94,6 +94,15 @@ pub(super) fn eager_malformed(session: &mut Session<'_>) {
         Err(error) => assert_eq!(error.status_code(), Some(400)),
         Ok(_) => panic!("a malformed eager flag must be refused"),
     }
+
+    let foreign = prepare(
+        session,
+        FOREIGN_MODEL,
+        r#"[{"type": "function", "function": {"name": "f", "eager_input_streaming": "yes"}}]"#,
+        None,
+        "{}",
+    );
+    assert!(foreign.betas.is_empty());
 }
 
 pub(super) fn effort_values(session: &mut Session<'_>) {
