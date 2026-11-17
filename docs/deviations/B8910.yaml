@@ -1,0 +1,81 @@
+task: B8910
+deviations:
+  - what: >-
+      Selection, publication, exclusions and the provider accessor are free functions over one injected
+      LoggerRuntime shared by the catalog and the auth adapter. LiteLLM keeps them in module globals
+      (_published_v2_provider, _registered_v2_logger, _in_memory_loggers) and reads the proxy module.
+    why: >-
+      betterlite keeps no process globals. The runtime holds the same single slot for the registered
+      callback, the remembered published provider and the attach-once fan-out registry, and
+      publish_global_otel_v2_provider takes the provider setter as a parameter, so no test replaces the
+      process-wide OTel provider. The workspace denies clippy::multiple_inherent_impl, so LoggerRuntime's
+      one inherent impl holds new() and every operation is a free function in its own module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L932
+  - what: >-
+      A V2 logger is recognized by the handle the factory keeps for each build, or by pointer equality
+      with B3853's registered V2Callback. LiteLLM uses isinstance(callback, OpenTelemetryV2).
+    why: >-
+      Rust has no isinstance, and the registry only ever holds a V2Callback, so a registered legacy
+      callback is not a V2 candidate, exactly as _registered_v2_logger filters the proxy slot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L873
+  - what: >-
+      The generic fallback logger is built once from B3842's resolved Settings and cached on the runtime;
+      LiteLLM constructs a fresh default OpenTelemetryV2() on every selection that finds no V2 logger.
+    why: >-
+      Each Python construction makes a new tracer provider, and a repeated selection would orphan spans on
+      a provider nobody publishes. The cached logger keeps the same config for the runtime's lifetime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L867-L872
+  - what: >-
+      The factory decides the callback class and forwards config, callback_name, injected tracer, meter
+      and logger providers and the content assembler to an injected V2LoggerConstructor, which returns
+      the callback and its provider. LiteLLM calls _logger_class(config)(...) to instantiate the class.
+    why: >-
+      B3853 owns V2Callback construction and B8250 owns the Langfuse wrappers, both outside this task's
+      scope, and OpenTelemetryV2 exposes no tracer provider for publication; the port lets the factory
+      dispatch to those classes without rebuilding a callback catalog, while the class decision stays
+      testable and oracle-checked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1026
+  - what: >-
+      The top-level callback_settings.otel.excluded_services override is injected as Option<Vec<String>>,
+      where None means the key is absent and Some(empty) is an explicit empty list, and the list is
+      normalized by a copy of B3842's excluded_services function in otel/logger_runtime/select.rs.
+    why: >-
+      B3842 keeps that normalization private in otel/config.rs, which is outside this task's scope. The
+      copy trims and lower-cases each name, keeps the postgresql special case and warns on an unknown
+      service, so the runtime sees the same set and the same log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L392-L394
+  - what: >-
+      The LITELLM_OTEL_V2 gate arrives as an injected v2_enabled flag. LiteLLM calls is_otel_v2_enabled()
+      inside _maybe_construct_otel_v2.
+    why: >-
+      The flag is read once by B3842's config resolution, so the factory takes the resolved value and
+      never reads the environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5191-L5206
+  - what: >-
+      has_operator_exporter uses B3851's is_unconfigured_placeholder, which treats a spec whose values all
+      equal the default console spec as the placeholder. LiteLLM's predicate checks not spec.model_fields_set,
+      so an operator's explicit "kind: console" exporter counts as real there and as the placeholder here.
+    why: >-
+      Betterlite's ExporterSpec keeps values, not which keys were written. B3850 documents the predicate
+      itself; this task adds its consequence for the credential-gated preset gate in _maybe_construct_otel_v2.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/utils.py#L40-L48
+  - what: >-
+      runtime.py's _otel_runtime, phase_span and seed_request_identity become an optional injected
+      RuntimeHooks handle: phase_span runs a supplied body once under the phase guard and returns the
+      body's error after the callback stamps it, and seed_request_identity returns the Baggage Context
+      for the caller to attach.
+    why: >-
+      Rust has no context-manager exception hook and no contextvars; absence is a no-op, the body runs
+      exactly once either way, and no request failure is caught.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/runtime.py#L20-L54
+  - what: >-
+      The legacy request-root span takes the start time as B3854's SpanTime plus the request's now in
+      nanoseconds, and takes the parent from traceparent_from_header, falling back to Context::current()
+      where LiteLLM passes context=get_traceparent_from_header(headers). The span is never activated, and
+      both setters take Option<&LiveSpan> and never end the span or set its status.
+    why: >-
+      LiteLLM's start_span(context=None) reads the current context, and Rust's build_with_context needs
+      that Context explicitly; there is no Span object to accept as a missing value, so absence is the
+      Option, matching the setters' no-op.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3508-L3558
+kept_bugs: []
