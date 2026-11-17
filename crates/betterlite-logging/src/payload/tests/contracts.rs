@@ -67,6 +67,7 @@ enum ContractBehavior {
     StoredOverheadWins,
     UnbilledManagementCalls,
     ModelParameters,
+    PassThroughFields,
     ServedTexts,
     RequestTags,
     ObjectOrEmpty,
@@ -97,6 +98,7 @@ enum ContractBehavior {
 #[case::stored_overhead_is_not_overwritten(ContractBehavior::StoredOverheadWins)]
 #[case::management_calls_are_unbilled(ContractBehavior::UnbilledManagementCalls)]
 #[case::logged_model_parameters_are_kept(ContractBehavior::ModelParameters)]
+#[case::cost_diagnostics_and_cache_key_pass_through(ContractBehavior::PassThroughFields)]
 #[case::served_texts_replace_the_message_content(ContractBehavior::ServedTexts)]
 #[case::request_tags_include_the_user_agent(ContractBehavior::RequestTags)]
 #[case::object_or_empty_copies_only_objects(ContractBehavior::ObjectOrEmpty)]
@@ -407,6 +409,38 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             let payload = built_with(PayloadSources::default(), &state, &chat_response());
             let expected: Json = serde_json::from_str("0.5").unwrap();
             assert_eq!(payload.model_parameters.get("temperature"), Some(&expected));
+        }
+        ContractBehavior::PassThroughFields => {
+            let response: Json = serde_json::from_str(
+                r#"{"id": "chatcmpl-1", "model": "gpt-4o", "choices": [],
+                    "_hidden_params": {"cache_key": "cache-1"}}"#,
+            )
+            .unwrap();
+            let mut state = state(None);
+            state.model_call_details.insert(
+                "response_cost_failure_debug_info".to_owned(),
+                Json::Text("cost-debug".to_owned()),
+            );
+            state.model_call_details.insert(
+                "zero_cost_diagnostic".to_owned(),
+                Json::Text("zero-debug".to_owned()),
+            );
+            state.litellm_params.insert(
+                "api_base".to_owned(),
+                Json::Text("https://api.openai.com/".to_owned()),
+            );
+            let payload = built_with(PayloadSources::default(), &state, &response);
+            assert_eq!(
+                payload.cost_failure_info,
+                Some(Json::Text("cost-debug".to_owned()))
+            );
+            assert_eq!(
+                payload.zero_cost_diagnostic,
+                Some(Json::Text("zero-debug".to_owned()))
+            );
+            assert_eq!(payload.api_base, "https://api.openai.com");
+            assert_eq!(payload.cache_key.as_deref(), Some("cache-1"));
+            assert_eq!(payload.hidden_params.cache_key.as_deref(), Some("cache-1"));
         }
         ContractBehavior::ServedTexts => {
             let mut state = state(None);
