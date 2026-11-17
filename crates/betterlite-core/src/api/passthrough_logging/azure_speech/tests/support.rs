@@ -62,10 +62,10 @@ pub(super) fn run(
     })
 }
 
-pub(super) fn standard_result() -> Option<PassThroughResponse> {
-    Some(PassThroughResponse::Standard(PassThroughResponseObject {
+pub(super) fn standard_result() -> PassThroughResponse {
+    PassThroughResponse::Standard(PassThroughResponseObject {
         response: Json::Text(RESPONSE_TEXT.to_owned()),
-    }))
+    })
 }
 
 pub(super) struct RecordingLookup {
@@ -209,7 +209,7 @@ pub(super) fn logged_model(logging_obj: &StreamLoggingObject) -> String {
 pub(super) fn logged_provider(logging_obj: &StreamLoggingObject) -> Option<String> {
     logging_obj
         .read(&mut |state| state.custom_llm_provider.clone())
-        .expect("the logging state is present")
+        .flatten()
 }
 
 // A 16 kHz mono 16-bit PCM WAV, the container the native decoder measures.

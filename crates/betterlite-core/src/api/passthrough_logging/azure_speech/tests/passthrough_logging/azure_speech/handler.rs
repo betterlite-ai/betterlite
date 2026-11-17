@@ -54,7 +54,7 @@ fn the_handler_forwards_the_response_text_as_the_standard_response() {
     let logging_obj = support::logging_object();
     let lookup = support::RecordingLookup::priced(PRICE);
     let outcome = support::run(&logging_obj, &lookup, SHORT_AUDIO, None, BOTH_ROUTES);
-    assert_eq!(outcome.result, support::standard_result());
+    assert_eq!(outcome.result, Some(support::standard_result()));
 }
 
 #[rstest]
@@ -74,7 +74,7 @@ fn a_body_beyond_the_decimal_range_forwards_the_response_without_costing(
         None,
         response_body.as_bytes(),
     );
-    assert_eq!(outcome.result, support::standard_result());
+    assert_eq!(outcome.result, Some(support::standard_result()));
     assert_eq!(
         outcome.kwargs.entries.len(),
         1,

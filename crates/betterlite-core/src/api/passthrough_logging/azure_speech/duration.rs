@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::decoder::{AudioDecodeLimits, decode_audio_duration};
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
@@ -17,10 +18,11 @@ pub fn billed_audio_seconds(
             let uploaded = request_body
                 .and_then(|audio| decode_audio_duration(audio, &AudioDecodeLimits::default()))
                 .unwrap_or(Decimal::ZERO);
-            Ok(uploaded.max(recognized_audio_seconds(response_body)?))
+            Ok(uploaded.max(reported_audio_seconds(route, response_body)?))
         }
-        SpeechRoute::FastTranscription => fast_audio_seconds(response_body),
-        SpeechRoute::Batch => Ok(Decimal::ZERO),
+        SpeechRoute::FastTranscription | SpeechRoute::Batch => {
+            reported_audio_seconds(route, response_body)
+        }
     }
 }
 
@@ -50,36 +52,50 @@ fn integer_literal(
     }
 }
 
-// Offset and Duration are 100-nanosecond ticks from the start of the audio and its length.
-fn recognized_audio_seconds(response_body: &[u8]) -> Result<Decimal, AzureSpeechLoggingError> {
+// A provider reply is a JSON object; a body of another shape reports no duration.
+fn reply_fields(response_body: &[u8]) -> Option<IndexMap<String, Json>> {
     let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(response_body) else {
-        return Ok(Decimal::ZERO);
+        return None;
     };
-    let (Some(offset), Some(duration)) = (
-        json_integer(fields.get("Offset"), "Offset")?,
-        json_integer(fields.get("Duration"), "Duration")?,
-    ) else {
-        return Ok(Decimal::ZERO);
-    };
-    let ticks = offset
-        .checked_add(duration)
-        .ok_or(AzureSpeechLoggingError::DurationRange)?;
-    ticks
-        .checked_div(Decimal::from(TICKS_PER_SECOND))
-        .ok_or(AzureSpeechLoggingError::DurationRange)
+    Some(fields)
 }
 
-// The fast route reports its length as durationMilliseconds.
-fn fast_audio_seconds(response_body: &[u8]) -> Result<Decimal, AzureSpeechLoggingError> {
-    let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(response_body) else {
-        return Ok(Decimal::ZERO);
-    };
-    let Some(milliseconds) =
-        json_integer(fields.get("durationMilliseconds"), "durationMilliseconds")?
-    else {
-        return Ok(Decimal::ZERO);
-    };
-    milliseconds
-        .checked_div(Decimal::from(MILLISECONDS_PER_SECOND))
-        .ok_or(AzureSpeechLoggingError::DurationRange)
+// Offset and Duration are 100-nanosecond ticks from the start of the audio, and the fast route reports milliseconds.
+fn reported_audio_seconds(
+    route: SpeechRoute,
+    response_body: &[u8],
+) -> Result<Decimal, AzureSpeechLoggingError> {
+    match route {
+        SpeechRoute::ShortAudio => {
+            let Some(fields) = reply_fields(response_body) else {
+                return Ok(Decimal::ZERO);
+            };
+            let (Some(offset), Some(duration)) = (
+                json_integer(fields.get("Offset"), "Offset")?,
+                json_integer(fields.get("Duration"), "Duration")?,
+            ) else {
+                return Ok(Decimal::ZERO);
+            };
+            let ticks = offset
+                .checked_add(duration)
+                .ok_or(AzureSpeechLoggingError::DurationRange)?;
+            ticks
+                .checked_div(Decimal::from(TICKS_PER_SECOND))
+                .ok_or(AzureSpeechLoggingError::DurationRange)
+        }
+        SpeechRoute::FastTranscription => {
+            let Some(fields) = reply_fields(response_body) else {
+                return Ok(Decimal::ZERO);
+            };
+            let Some(milliseconds) =
+                json_integer(fields.get("durationMilliseconds"), "durationMilliseconds")?
+            else {
+                return Ok(Decimal::ZERO);
+            };
+            milliseconds
+                .checked_div(Decimal::from(MILLISECONDS_PER_SECOND))
+                .ok_or(AzureSpeechLoggingError::DurationRange)
+        }
+        SpeechRoute::Batch => Ok(Decimal::ZERO),
+    }
 }
