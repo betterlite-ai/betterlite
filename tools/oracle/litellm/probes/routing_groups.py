@@ -8,14 +8,14 @@ from litellm.router_utils.reasoning_effort_capability import (
     nearest_declared_reasoning_effort,
     resolve_supported_reasoning_efforts,
 )
-from litellm.router_utils.routing_groups import parse_routing_groups
+from litellm.router_utils import routing_groups
 from litellm.types.router import RoutingGroup
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 
 class Group(Strict):
@@ -152,7 +152,7 @@ class RoutingGroups(Operation):
     def parse(self) -> tuple[RoutingGroup, ...]:
         raw = self.groups if self.groups is not None else []
         known = frozenset(deployment.model_name for deployment in self.deployments)
-        return parse_routing_groups(raw, known_model_names=known)
+        return routing_groups.parse_routing_groups(raw, known_model_names=known)
 
     def build(self) -> Router:
         entries: list[dict[str, JsonValue]] = [
