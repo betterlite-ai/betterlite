@@ -73,6 +73,7 @@ async fn router_core_behaviors(#[case] name: &str) {
 #[case::window_keeps_fitting_beside_rejected("window_keeps_fitting_beside_rejected")]
 #[case::environment_filtered_single("environment_filtered_single")]
 #[case::environment_filtered_pool("environment_filtered_pool")]
+#[case::web_search_filtered_pool("web_search_filtered_pool")]
 #[case::pinned_but_empty("pinned_but_empty")]
 #[case::pinned_pool_uses_strategy("pinned_pool_uses_strategy")]
 #[case::provider_budget("provider_budget")]

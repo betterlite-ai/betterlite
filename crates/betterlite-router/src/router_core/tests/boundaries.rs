@@ -73,6 +73,7 @@ pub(super) async fn run(name: &str) {
         "healthy_catalog_error" => healthy_catalog_error().await,
         "environment_filtered_single" => environment_filtered_single().await,
         "environment_filtered_pool" => environment_filtered_pool().await,
+        "web_search_filtered_pool" => web_search_filtered_pool().await,
         "pinned_but_empty" => pinned_but_empty().await,
         "pinned_pool_uses_strategy" => pinned_pool_uses_strategy().await,
         "provider_budget" => provider_budget_has_no_selection().await,
@@ -495,6 +496,21 @@ async fn environment_filtered_pool() {
     };
     assert_eq!(no_deployment.model, "gpt-4o");
     assert_eq!(no_deployment.model_ids, vec![String::from("a")]);
+}
+
+// a request that asks for web search leaves only the deployments that declare support for it
+async fn web_search_filtered_pool() {
+    let unsupported = with_info(
+        "gpt-4o",
+        "a",
+        &[],
+        &[("supports_web_search", Json::Bool(false))],
+    );
+    let fixture = Fixture::plain(vec![unsupported, deployment("gpt-4o", "b", &[])]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.tools = vec![Json::Object(object(&[("type", text("web_search"))]))];
+    let result = run_simple(&fixture, &setup).await.unwrap();
+    assert_eq!(picked(&result), "b");
 }
 
 async fn pinned_but_empty() {
