@@ -82,7 +82,24 @@ fn evaluate_tool_calls_denies_a_tool_the_rules_do_not_name_by_default() {
 }
 
 #[test]
-fn evaluate_tool_calls_names_a_call_without_a_tool_as_unknown_tool() {
+fn evaluate_tool_calls_names_a_kind_only_call_by_its_kind() {
+    let guardrail = rewrite_guardrail(Vec::new());
+    let unnamed = ToolCallInfo {
+        id: "c1".to_owned(),
+        kind: Some("function".to_owned()),
+        name: None,
+        arguments: None,
+    };
+    let denied = evaluate_tool_calls(&guardrail, &[unnamed]).expect("rewrite mode");
+    assert_eq!(denied[0].error.tool_name, "unknown_tool");
+    assert_eq!(
+        denied[0].error.message,
+        "Tool 'function' denied by default action"
+    );
+}
+
+#[test]
+fn evaluate_tool_calls_skips_a_call_without_a_name_or_kind() {
     let guardrail = rewrite_guardrail(Vec::new());
     let unnamed = ToolCallInfo {
         id: "c1".to_owned(),
@@ -91,11 +108,7 @@ fn evaluate_tool_calls_names_a_call_without_a_tool_as_unknown_tool() {
         arguments: None,
     };
     let denied = evaluate_tool_calls(&guardrail, &[unnamed]).expect("rewrite mode");
-    assert_eq!(denied[0].error.tool_name, "unknown_tool");
-    assert_eq!(
-        denied[0].error.message,
-        "Tool 'unknown_tool' denied by default action"
-    );
+    assert!(denied.is_empty());
 }
 
 #[test]
