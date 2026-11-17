@@ -52,13 +52,13 @@ class ConverseParamsConfig(AmazonConverseConfig):
         return cast("dict[str, JsonValue]", self.map_openai_params(call["non_default_params"], call["optional_params"], call["model"], call["call_drop"]))  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1010-L1165
 
     def cache_point_blocks(self, call: CachePoint) -> tuple[JsonValue, JsonValue]:
-        block = cast("OpenAIMessageContentListBlock", call["message_block"])  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1320-L1338
-        system = self.get_cache_point_block(block, "system", call["model"])  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1297-L1306
-        content = self.get_cache_point_block(block, "content_block", call["model"])  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1309-L1318
-        return JSON.validate_python(system), JSON.validate_python(content)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1320-L1338
+        block = cast("OpenAIMessageContentListBlock", call["message_block"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1320-L1338
+        system = self.get_cache_point_block(block, "system", call["model"])  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1297-L1306
+        content = self.get_cache_point_block(block, "content_block", call["model"])  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1309-L1318
+        return JSON.validate_python(system), JSON.validate_python(content)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1320-L1338
 
     def cache_point_built(self, call: CachePoint) -> JsonValue:
-        return JSON.validate_python(self._build_cache_point_block(call["control"], call["model"]))  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1341-L1353
+        return JSON.validate_python(self._build_cache_point_block(call["control"], call["model"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1341-L1353
 
     def top_k_parts(
         self, call: TopK
@@ -73,7 +73,7 @@ class ConverseParamsConfig(AmazonConverseConfig):
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
         merged = cast("dict[str, JsonValue]", self._merge_parallel_tool_use_config(call["additional_request_params"], call["parallel_tool_use_config"]))  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1540-L1553
         dropped = PARAMS.validate_python(merged)
-        self._drop_tool_choice_type_conflicting_with_tool_config(dropped)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1556-L1567
+        self._drop_tool_choice_type_conflicting_with_tool_config(dropped)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1556-L1567
         return merged, dropped
 
 
