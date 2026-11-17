@@ -4,6 +4,7 @@ use super::billing::AsyncRun;
 use super::support::{
     ScriptedReply, dispatch_handle, fixture, json, kwargs, shared_logging_object, start_time,
 };
+use super::tasks::BillingTasks;
 
 const PENDING_BODY: &str = r#"{"run_id": "run-1", "status": "PENDING"}"#;
 const COMPLETED_BODY: &str = r#"{"run_id": "run-1", "status": "COMPLETED", "num_of_steps": 3}"#;
@@ -68,7 +69,11 @@ async fn shutdown_waits_for_a_running_poller() {
         start_time: start_time(),
     });
 
-    fixture.billing.shutdown().await;
+    BillingTasks {
+        tasks: fixture.tasks.clone(),
+    }
+    .shutdown()
+    .await;
 
     assert!(fixture.tasks.is_empty());
     assert_eq!(fixture.dispatch.calls().len(), 1);

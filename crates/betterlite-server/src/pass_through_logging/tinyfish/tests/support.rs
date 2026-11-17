@@ -321,7 +321,7 @@ pub(super) struct ScriptedTransport {
 impl ScriptedTransport {
     pub(super) fn new(replies: Vec<ScriptedReply>) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             repeat: Mutex::new(None),
             requests: Mutex::new(Vec::new()),
         }
@@ -508,7 +508,9 @@ fn build_fixture(
             sleeper: Arc::clone(&sleeper),
             clock: Arc::new(FixedSuccessClock),
             payload,
-            tasks: BillingTasks::new(tasks.clone()),
+            tasks: BillingTasks {
+                tasks: tasks.clone(),
+            },
         },
     );
     Fixture {

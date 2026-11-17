@@ -22,23 +22,12 @@ use super::poll::{PollClock, PollSleeper, Poller};
 use super::records::{TinyfishRun, parse_run};
 use super::sse::{mark_sse_poller_spawned, run_id_from_sse_lines};
 use super::tasks::BillingTasks;
-use super::{resolve_tinyfish_api_base, resolve_tinyfish_cost_per_step};
 
-// LiteLLM resolves the base and the rate per billing call, so a restart of the proxy is not needed to move either.
+// The base and the rate travel with each billing call, so a proxy restart is not needed to move either.
 #[derive(Clone, Debug)]
 pub struct RunSettings {
     pub api_base: String,
     pub cost_per_step: Decimal,
-}
-
-impl RunSettings {
-    #[must_use]
-    pub fn from_environment() -> Self {
-        Self {
-            api_base: resolve_tinyfish_api_base(),
-            cost_per_step: resolve_tinyfish_cost_per_step(),
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -253,11 +242,6 @@ impl TinyfishRunBilling {
         self.deps
             .tasks
             .spawn(async move { poll_and_log(&deps, &settings, poll).await })
-    }
-
-    // The server drains its Trackers at shutdown; a poller still waiting on a run ends here too.
-    pub async fn shutdown(&self) {
-        self.deps.tasks.shutdown().await;
     }
 }
 
