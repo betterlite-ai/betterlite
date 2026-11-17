@@ -37,6 +37,6 @@ pub fn event_json<E>(event: &E) -> Result<Json, LiveFrameError>
 where
     E: Serialize,
 {
-    let value = serde_json::to_value(event).map_err(LiveFrameError::Encode)?;
-    serde_json::from_value(value).map_err(LiveFrameError::Encode)
+    serde_json::from_value(serde_json::to_value(event).map_err(LiveFrameError::Encode)?)
+        .map_err(LiveFrameError::Encode)
 }
