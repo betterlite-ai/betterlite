@@ -50,7 +50,6 @@ pub struct Deployment {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     // index-aligned with model_list; None when the deployment configures none of the five keys
-    // the list lives behind a box so Sections stays small, since betterlite-server holds a Config across an await
     pub deployments: Box<[Option<Deployment>]>,
 }
 
