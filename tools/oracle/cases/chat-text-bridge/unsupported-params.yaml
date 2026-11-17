@@ -1,0 +1,21 @@
+name: chat-text-bridge-unsupported-params
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: "text-completion-openai/oracle-text", api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: text-model
+    messages: [{role: user, content: Say hello.}]
+    max_completion_tokens: 4
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: LiteLLM prefixes its exception class and adds drop_params advice to the message}

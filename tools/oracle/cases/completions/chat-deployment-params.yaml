@@ -1,0 +1,20 @@
+name: completions-chat-deployment-params
+config: |
+  model_list:
+    - model_name: chat-model
+      litellm_params: {model: openai/gpt-4o, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: chat-model, prompt: Once upon a time, logit_bias: {"50256": -100}, logprobs: 2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: provider-call}
+    body: {id: chatcmpl-params, object: chat.completion, created: 1700000000, model: gpt-4o, choices: [{index: 0, message: {role: assistant, content: Hello}, logprobs: null, finish_reason: stop}], usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5}}
+compare:
+  headers: [content-type, llm_provider-x-request-id]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore: []
