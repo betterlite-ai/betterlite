@@ -96,6 +96,14 @@ fn the_override_replaces_the_whole_default_list() {
     assert!(!policy.is_excluded("/health/readiness"));
 }
 
+// LiteLLM's ASGI middleware matches the patterns against scheme://host + path; the policy matches the path alone
+#[test]
+fn an_override_that_spells_out_the_full_url_does_not_match_the_path() {
+    let environment = env(&[(EXCLUDED_URLS_ENV, r"^https://proxy\.example\.com/health$")]);
+    let policy = policy(&environment);
+    assert!(!policy.is_excluded("/health"));
+}
+
 #[test]
 fn an_empty_override_excludes_nothing() {
     let environment = env(&[(EXCLUDED_URLS_ENV, "")]);
