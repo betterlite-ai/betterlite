@@ -206,7 +206,9 @@ fn queue_first_annotations<Context>(
         Some(Json::List(items)) => items,
         Some(value) if !has_value(value) => return Ok(()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(StreamItemsError::AnnotationsNotList.into());
+            return Err(ChatResponseStreamError::Items(
+                StreamItemsError::AnnotationsNotList,
+            ));
         }
     };
     state.progress.sent_annotation_events = true;

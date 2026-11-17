@@ -87,7 +87,7 @@ impl Payloads {
 }
 
 // The decode path's errors all surface as the same unclassified stream failure
-fn failure(error: impl Display) -> StreamFailure {
+fn failure<Error: Display>(error: Error) -> StreamFailure {
     StreamFailure::Unclassified {
         text: error.to_string(),
     }
