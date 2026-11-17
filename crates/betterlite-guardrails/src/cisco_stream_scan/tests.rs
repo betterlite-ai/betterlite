@@ -77,17 +77,7 @@ fn guardrail(
 }
 
 async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result<()>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let router = Router::new().route(
-        "/inspect",
-        post(move || {
-            let reply = body.clone();
-            async move { (status, reply) }
-        }),
-    );
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
+    let (base, _, server) = serve_capturing(status, body).await;
     (base, server)
 }
 
@@ -392,7 +382,7 @@ async fn the_request_messages_lead_the_inspected_conversation() {
         panic!("expected the payload messages");
     };
     assert_eq!(messages.len(), 2);
-    let Json::Object(first) = &messages[0] else {
+    let Json::Object(first) = Json::parse(messages[0].get()) else {
         panic!("expected an object message");
     };
     assert_eq!(first.get("role").map(|raw| raw.get()), Some("\"user\""));

@@ -63,25 +63,19 @@ pub(super) fn content_item(item: &ContentJson) -> Value {
             }
             Value::Object(projected)
         }
-        other @ ContentJson::Null
-        | other @ ContentJson::Bool(_)
-        | other @ ContentJson::Number(_)
-        | other @ ContentJson::Text(_)
-        | other @ ContentJson::List(_) => json_value(other),
+        other @ (ContentJson::Null
+        | ContentJson::Bool(_)
+        | ContentJson::Number(_)
+        | ContentJson::Text(_)
+        | ContentJson::List(_)) => json_value(other),
     }
 }
 
 fn text_field(value: &ContentJson) -> Value {
-    match value {
-        ContentJson::Text(text) => {
-            serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
-        }
-        other @ ContentJson::Null
-        | other @ ContentJson::Bool(_)
-        | other @ ContentJson::Number(_)
-        | other @ ContentJson::List(_)
-        | other @ ContentJson::Object(_) => json_value(other),
-    }
+    let ContentJson::Text(text) = value else {
+        return json_value(value);
+    };
+    serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.clone()))
 }
 
 fn json_value(value: &ContentJson) -> Value {
