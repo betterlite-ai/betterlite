@@ -41,9 +41,7 @@ pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 
 // one entry of a JSON object; an absent option is the null without_nulls drops from the client's JSON
 pub(crate) fn field(name: &str, value: Option<Value>) -> (String, Value) {
-    let Some(item) = value else {
-        return (name.to_owned(), Value::Null);
-    };
+    let item = value.unwrap_or(Value::Null);
     (name.to_owned(), item)
 }
 
