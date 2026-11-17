@@ -76,13 +76,13 @@ pub fn chat_plan(
         // the provider's own model names the reply, exactly as the OpenAI transform leaves it
         client_model: None,
     };
-    let prepared = if call.request.stream {
+    let prepared_request = if call.request.stream {
         PreparedRequest::Stream(Box::new(prepared))
     } else {
         PreparedRequest::Chat(Box::new(prepared))
     };
     Ok(ChatPlan {
-        prepared,
+        prepared: prepared_request,
         api_base: deployment.api_base,
         logged_headers,
     })

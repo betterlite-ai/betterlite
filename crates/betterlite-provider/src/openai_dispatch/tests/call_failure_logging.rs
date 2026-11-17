@@ -131,14 +131,14 @@ pub(super) async fn check_experimental() {
     );
     let mut headers = caller_headers();
     headers.insert(String::from("Content-Type"), String::from("text/plain"));
-    let logger = experimental_failure(Some(headers), None).await;
-    assert_eq!(logger.calls.len(), 1);
+    let content_type_logger = experimental_failure(Some(headers), None).await;
+    assert_eq!(content_type_logger.calls.len(), 1);
     assert_eq!(
-        support::logged_header(&logger.calls[0], "Content-Type"),
+        support::logged_header(&content_type_logger.calls[0], "Content-Type"),
         Some("text/plain")
     );
     assert_eq!(
-        support::logged_header(&logger.calls[0], "content-type"),
+        support::logged_header(&content_type_logger.calls[0], "content-type"),
         None
     );
 }

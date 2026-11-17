@@ -115,17 +115,17 @@ pub(super) fn check_plans() {
     assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
     assert_eq!(sent.header("authorization"), Some("Bearer oracle-key"));
     assert_eq!(sent.header("content-type"), Some("application/json"));
-    let call = ChatCall {
+    let stream_call = ChatCall {
         request: support::chat_request(
             r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
         ),
         ..call(String::from("http://127.0.0.1:9/v1"))
     };
-    let plan = chat_plan(&composition, &call).expect("the chat plan");
-    let sent = RecordedRequest::of(&plan.prepared).expect("a prepared stream");
-    assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
-    assert_eq!(sent.header("accept"), Some("application/json"));
-    let body = support::body_fields(&sent.body);
+    let stream_plan = chat_plan(&composition, &stream_call).expect("the chat plan");
+    let stream_request = RecordedRequest::of(&stream_plan.prepared).expect("a prepared stream");
+    assert_eq!(stream_request.url, "http://127.0.0.1:9/v1/chat/completions");
+    assert_eq!(stream_request.header("accept"), Some("application/json"));
+    let body = support::body_fields(&stream_request.body);
     assert_eq!(
         support::field(&body, "stream"),
         &betterlite_models::controls::json_value::JsonValue::Bool(true)

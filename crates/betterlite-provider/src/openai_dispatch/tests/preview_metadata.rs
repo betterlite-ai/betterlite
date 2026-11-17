@@ -85,11 +85,11 @@ pub(super) async fn check_cleaning() {
         ("team", support::text_value("t-1")),
         ("hidden_params", support::text_value("secret")),
     ]);
-    let fields = sent_body(&preview_composition(), call(BODY, Some(outer_only))).await;
-    let cleaned = support::object_field(&fields, "metadata");
-    assert_eq!(cleaned.len(), 1);
+    let outer_fields = sent_body(&preview_composition(), call(BODY, Some(outer_only))).await;
+    let outer_cleaned = support::object_field(&outer_fields, "metadata");
+    assert_eq!(outer_cleaned.len(), 1);
     assert_eq!(
-        cleaned.get("team").expect("the fallback value"),
+        outer_cleaned.get("team").expect("the fallback value"),
         &support::text_value("t-1")
     );
 }

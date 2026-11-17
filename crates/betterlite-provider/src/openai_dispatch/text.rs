@@ -198,9 +198,9 @@ pub fn project(
     let body = serde_json::to_value(response)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
     let converted = to_chat_model_response(Some(body), Some(target), &identifier, &clock)?;
-    let serialized = serde_json::to_value(converted)
+    let reply_json = serde_json::to_value(converted)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    serde_json::from_value(serialized).map_err(|source| {
+    serde_json::from_value(reply_json).map_err(|source| {
         OpenAiProviderError::Operation(OperationError::Decode {
             operation: "text completion chat projection",
             source,

@@ -103,29 +103,29 @@ pub(super) async fn check_stream_logging() {
 
 // A truthy stream keeps the text reply, a literally false one projects it to chat, and the text-only marker keeps it as text.
 pub(super) async fn check_projection() {
-    let source =
+    let stream_source =
         FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let (streamed, _logger) = dispatch(r#"{"stream":true}"#, SYNC, source).await;
+    let (streamed, _stream_logger) = dispatch(r#"{"stream":true}"#, SYNC, stream_source).await;
     assert!(matches!(
         streamed,
         OperationResult::OpenAi(OpenAiResult::Text(_))
     ));
-    let source =
+    let sync_source =
         FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let (sync, logger) = dispatch("{}", SYNC, source).await;
+    let (sync, sync_logger) = dispatch("{}", SYNC, sync_source).await;
     assert!(matches!(
         sync,
         OperationResult::Chat(ChatCompletion::OpenAi(_))
     ));
-    assert!(logger.calls.is_empty());
-    let source =
+    assert!(sync_logger.calls.is_empty());
+    let text_only_source =
         FixtureTextSource::new(TextReply::new(200, support::TEXT_REPLY.as_bytes().to_vec()));
-    let (text_only, logger) = dispatch("{}", TEXT_ONLY, source).await;
+    let (text_only, text_only_logger) = dispatch("{}", TEXT_ONLY, text_only_source).await;
     assert!(matches!(
         text_only,
         OperationResult::OpenAi(OpenAiResult::Text(_))
     ));
-    assert!(logger.calls.is_empty());
+    assert!(text_only_logger.calls.is_empty());
 }
 
 // An async text call keeps the text reply and logs it with the resolved headers.
