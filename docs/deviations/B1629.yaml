@@ -30,6 +30,9 @@ deviations:
   - what: An OAuth provider document over 16 MiB is refused before JSON parsing. LiteLLM parses whatever length the provider sends.
     why: The bytes come from a provider over the network, and every other document decoder in betterlite-auth bounds its input the same way.
     link: ""
+  - what: The discovery, token and userinfo endpoint URLs must be HTTPS unless the login client turns on allow_insecure_http. LiteLLM posts to the token URL the discovery document names, whatever its scheme.
+    why: A provider answer decides where the client secret and the authorization code go, so plain HTTP there exposes both. The flag carries fastapi-sso's own name for the case a deployment really needs it.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L568-L584
 kept_bugs:
   - what: A callback that supplies state but no sso_state cookie is accepted, because fastapi-sso 0.19.0 requires the cookie only when requires_state is on and GoogleSSO leaves that off.
     why: The task pins the 0.19.0 behavior and rules out B1623's stronger PKCE cookie rule here, and a Google deployment never sends that cookie pair, so rejecting it would break existing logins.

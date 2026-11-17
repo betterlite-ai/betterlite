@@ -228,6 +228,30 @@ async fn the_client_redirect_uri_reaches_the_token_body() {
 }
 
 #[tokio::test]
+async fn the_callback_url_is_the_redirect_uri_fallback() {
+    let provider = provider().await;
+    let mut client = client();
+    client.redirect_uri = None;
+    let discovery = discovery(&client, &provider).await;
+    exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request(
+            "https://proxy.test/sso/callback?code=abc&state=state-1",
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(
+        form_value(&seen[1].body, "redirect_uri"),
+        "https://proxy.test/sso/callback"
+    );
+}
+
+#[tokio::test]
 async fn additional_headers_overlay_the_generated_headers() {
     let provider = provider().await;
     let mut client = client();
