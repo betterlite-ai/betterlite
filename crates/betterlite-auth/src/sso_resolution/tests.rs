@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as _;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -214,7 +215,7 @@ fn an_undecryptable_value_logs_the_failure_and_stays_as_stored() {
     assert_eq!(config.google_client_id.as_deref(), Some("not-a-ciphertext"));
     let recorded = events.0.lock().unwrap().clone();
     assert_eq!(recorded.len(), 1);
-    assert!(recorded[0].contains("Error decrypting value for key: google_client_id"));
+    assert!(recorded[0].contains("Unable to decrypt value for key: google_client_id"));
 }
 
 #[rstest]
@@ -441,15 +442,12 @@ fn invalid_structured_values_name_their_field(#[case] field: &'static str, #[cas
     let database = row(&[(field, serde_json::from_str(stored).unwrap())]);
     let error = resolve_sso_config(Some(&database), &BTreeMap::new(), &cipher()).unwrap_err();
 
-    match &error {
-        SsoResolutionError::Field {
-            field: named,
-            source,
-        } => {
-            assert_eq!(*named, field);
-            assert!(std::error::Error::source(source).is_some());
-        }
-    }
+    let SsoResolutionError::Field {
+        field: named,
+        source,
+    } = &error;
+    assert_eq!(*named, field);
+    assert!(source.source().is_some());
     assert!(error.to_string().contains(field));
 }
 

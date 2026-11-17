@@ -132,9 +132,9 @@ pub const SSO_DESCRIPTORS: [FieldDescriptor; 16] = [
 // role_mappings and team_mappings are JSON sub-objects on the row, never env-backed scalars
 const STRUCTURED_KEYS: [&str; 2] = ["role_mappings", "team_mappings"];
 
-// decrypt_value_helper(return_original_value=True): a stored value that does not decrypt stays as it is
+// decrypt_value_helper(return_original_value=True): a failed decryption logs and keeps the stored value
 const KEEP_ORIGINAL: DecryptPolicy = DecryptPolicy {
-    log: FailureLog::Debug,
+    log: FailureLog::Error,
     value: FailureValue::Original,
 };
 
