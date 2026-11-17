@@ -173,6 +173,6 @@ mod dispatch_chat;
 mod dispatch_embedding;
 mod dispatch_text;
 
-pub use dispatch_chat::dispatch_chat;
-pub use dispatch_embedding::dispatch_embedding;
-pub use dispatch_text::dispatch_text;
+pub(crate) use dispatch_chat::dispatch_chat;
+pub(crate) use dispatch_embedding::dispatch_embedding;
+pub(crate) use dispatch_text::dispatch_text;

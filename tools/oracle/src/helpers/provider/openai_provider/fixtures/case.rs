@@ -187,7 +187,10 @@ fn composition(case: &Case) -> Result<Composition, Box<HelperError>> {
     })
 }
 
-fn defaults<T: Default + DeserializeOwned>(fields: Option<&Object>) -> Result<T, Box<HelperError>> {
+fn defaults<T>(fields: Option<&Object>) -> Result<T, Box<HelperError>>
+where
+    T: Default + DeserializeOwned,
+{
     let Some(object) = fields else {
         return Ok(T::default());
     };

@@ -7,7 +7,10 @@ use serde::Serialize;
 
 // serde moves between the wire JSON and the logging tree; a value the tree cannot hold is logged as null
 #[must_use]
-pub fn logged_json<T: Serialize>(value: &T) -> Json {
+pub fn logged_json<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     let Ok(serialized) = serde_json::to_value(value) else {
         return Json::Null;
     };

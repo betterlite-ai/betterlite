@@ -72,12 +72,15 @@ where
 }
 
 // main.py catches every execution failure, logs the error string beside the resolved headers, and rethrows it unchanged.
-fn logged_failure<Logger: OpenAiLogger>(
+fn logged_failure<Logger>(
     logger: &mut Logger,
     call: &ChatCall,
     plan: &ChatPlan,
     error: OperationError,
-) -> OpenAiProviderError {
+) -> OpenAiProviderError
+where
+    Logger: OpenAiLogger,
+{
     logger.post_call(LoggedCall {
         input: logged_json(&call.request.messages),
         original_response: Json::Text(error.to_string()),
@@ -124,7 +127,7 @@ where
             return Ok(OperationResult::OpenAi(OpenAiResult::TextStream(stream)));
         }
     };
-    let (result, logged) = buffered_text(&plan, response, (deps.now)(), (deps.next_id)())?;
+    let (result, reply_log) = buffered_text(&plan, response, (deps.now)(), deps.next_id)?;
     // main.py logs a truthy stream option or an async call; the transport refused every stream value but a bool
     if matches!(
         plan.optional_params.get("stream"),
@@ -133,7 +136,7 @@ where
     {
         logger.post_call(LoggedCall {
             input: logged_json(&plan.messages),
-            original_response: logged,
+            original_response: reply_log,
             headers: logged_headers(plan.headers.as_ref()),
         });
     }
