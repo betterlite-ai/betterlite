@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::sdk_http::call_checks::{validate_held, validate_timeout};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::wrapper_stream::WireCall;
 use crate::sdk_http::{ChatMessage, OracleLimits};
@@ -58,22 +59,12 @@ pub(crate) fn validate(
     call: &MessagesSyncStreamCall,
     limits: &OracleLimits,
 ) -> Result<(), SdkHttpError> {
-    if call.timeout_seconds == 0 || call.timeout_seconds > limits.max_execution.as_secs() {
-        return Err(SdkHttpError::Invalid(
-            "timeout_seconds must be between 1 and the execution limit".to_owned(),
-        ));
-    }
+    validate_timeout(call.timeout_seconds, limits)?;
     for run in &call.runs {
-        for seed in [&run.initial.held, &run.initial.held_stop_reason]
-            .into_iter()
-            .flatten()
-        {
-            if !matches!(seed, Json::Object(_)) {
-                return Err(SdkHttpError::Invalid(
-                    "the initial held chunks must be objects".to_owned(),
-                ));
-            }
-        }
+        validate_held(
+            run.initial.held.as_ref(),
+            run.initial.held_stop_reason.as_ref(),
+        )?;
     }
     Ok(())
 }

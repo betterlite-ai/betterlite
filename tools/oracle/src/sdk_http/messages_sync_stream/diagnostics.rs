@@ -15,13 +15,6 @@ pub(crate) struct Diagnostics {
     pub(crate) entries: Arc<Mutex<Vec<SyncDiagnostic>>>,
 }
 
-impl Diagnostics {
-    // One step's lines, cleared so the next step reports only its own
-    pub(crate) fn take(&self) -> Vec<SyncDiagnostic> {
-        std::mem::take(&mut *self.entries.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-}
-
 #[derive(Default)]
 struct PrefixVisitor(Option<String>);
 

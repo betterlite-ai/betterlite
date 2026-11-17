@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_anthropic::stream_state::state::UuidV4;
 use betterlite_core::api::messages_stream_usage::state::{BlockKind, StreamSetup, StreamState};
@@ -78,7 +78,12 @@ fn run_step(
         events,
         end,
         state: observed(&stream.state),
-        diagnostics: diagnostics.take(),
+        diagnostics: std::mem::take(
+            &mut *diagnostics
+                .entries
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        ),
     })
 }
 

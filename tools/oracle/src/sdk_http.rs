@@ -9,6 +9,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
+use call_checks::validate_timeout;
 use error::SdkHttpError;
 use file_azure_storage::FileAzureStorageCall;
 use messages_chat_stream::call::MessagesChatStreamCall;
@@ -19,6 +20,7 @@ use responses_agentic_continuation::AgenticContinuationCall;
 use result::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
+pub(crate) mod call_checks;
 pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
@@ -230,13 +232,7 @@ fn reserved_environment(name: &str) -> bool {
 
 fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHttpError> {
     match call {
-        SdkHttpCall::OpenaiChat(chat) => {
-            if chat.timeout_seconds == 0 || chat.timeout_seconds > limits.max_execution.as_secs() {
-                return Err(SdkHttpError::Invalid(
-                    "timeout_seconds must be between 1 and the execution limit".to_owned(),
-                ));
-            }
-        }
+        SdkHttpCall::OpenaiChat(chat) => validate_timeout(chat.timeout_seconds, limits)?,
         SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
             for deployment in embedding.router.iter().flatten() {
                 if !deployment.litellm_params.model.starts_with("openai/") {
@@ -262,7 +258,7 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
         }
         SdkHttpCall::MessagesSyncStream(stream) => call::validate(stream, limits)?,
         SdkHttpCall::MessagesChatStream(stream) => {
-            messages_chat_stream::call::validate(stream, limits)?;
+            messages_chat_stream::call::validate(stream, limits)?
         }
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
