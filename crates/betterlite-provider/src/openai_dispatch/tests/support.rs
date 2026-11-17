@@ -138,20 +138,6 @@ pub(crate) fn field<'body>(
         .unwrap_or_else(|| panic!("the body has {name}"))
 }
 
-pub(crate) fn object_field<'body>(
-    fields: &'body IndexMap<String, JsonValue>,
-    name: &str,
-) -> &'body IndexMap<String, JsonValue> {
-    match field(fields, name) {
-        JsonValue::Object(nested) => nested,
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Text(_)
-        | JsonValue::Array(_) => panic!("{name} is an object"),
-    }
-}
-
 // The clock a projected text reply stamps its created field with, fixed so a test can compare it
 pub(crate) fn fixed_now() -> StreamInstant {
     StreamInstant {

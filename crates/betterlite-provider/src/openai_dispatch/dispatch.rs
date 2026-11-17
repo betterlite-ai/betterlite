@@ -109,6 +109,7 @@ async fn text<Answer, Source, Logger>(
     logger: &mut Logger,
 ) -> Result<OperationResult, OpenAiProviderError>
 where
+    Answer: Sync,
     Source: TextClientSource,
     <Source::Constructor as ClientConstructor>::Client: Clone,
     Logger: OpenAiLogger + Send,

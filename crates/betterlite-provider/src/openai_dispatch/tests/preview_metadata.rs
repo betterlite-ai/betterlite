@@ -71,7 +71,9 @@ pub(super) async fn check_disabled() {
 // Enabled: the cleaned nested map becomes the body metadata, or the whole map when cleaning it leaves nothing.
 pub(super) async fn check_cleaning() {
     let fields = sent_body(&preview_composition(), call(BODY, Some(nested()))).await;
-    let cleaned = support::object_field(&fields, "metadata");
+    let JsonValue::Object(cleaned) = support::field(&fields, "metadata") else {
+        panic!("the body metadata is an object");
+    };
     assert_eq!(cleaned.len(), 1);
     assert_eq!(
         cleaned.get("user_id").expect("the string value"),
@@ -86,7 +88,9 @@ pub(super) async fn check_cleaning() {
         ("hidden_params", support::text_value("secret")),
     ]);
     let outer_fields = sent_body(&preview_composition(), call(BODY, Some(outer_only))).await;
-    let outer_cleaned = support::object_field(&outer_fields, "metadata");
+    let JsonValue::Object(outer_cleaned) = support::field(&outer_fields, "metadata") else {
+        panic!("the fallback metadata is an object");
+    };
     assert_eq!(outer_cleaned.len(), 1);
     assert_eq!(
         outer_cleaned.get("team").expect("the fallback value"),
@@ -117,7 +121,9 @@ pub(super) async fn check_limits_to_sixteen() {
         )])),
     );
     let sent = sent_body(&preview_composition(), call).await;
-    let cleaned = support::object_field(&sent, "metadata");
+    let JsonValue::Object(cleaned) = support::field(&sent, "metadata") else {
+        panic!("the limited metadata is an object");
+    };
     assert_eq!(cleaned.len(), 16);
     assert!(cleaned.contains_key("key-15"));
     assert!(!cleaned.contains_key("key-16"));
