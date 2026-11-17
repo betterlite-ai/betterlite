@@ -197,7 +197,7 @@ def answer_value(call: Input, recorder: Recorder) -> JsonValue:
     kwargs: dict[str, JsonValue] = {}
     if call["operation"] == "embed_content":
         request_body = REQUEST_BODY.validate_python(call["request_body"])
-        outcome = VertexHandler._handle_embed_content_response(  # noqa: SLF001  # type: ignore[misc]  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L496-L503
+        outcome = VertexHandler._handle_embed_content_response(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L496-L503
             httpx_response=response,
             logging_obj=logging_obj,
             url_route=call["url_route"],
