@@ -1,0 +1,32 @@
+kind: probe
+name: lar1-specific-deployment
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: openai/deep-2
+        specific_deployment: true
+        deployments:
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-2
+            model: openai/deep-2
+            kind: deep
+        metadata: '{"confidence": 0.1}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: deep-2
+        deployments:
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-2
+            model: openai/deep-2
+            kind: deep
+        metadata: '{"confidence": 0.1}'
+compare:
+  ignore: []
