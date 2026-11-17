@@ -101,13 +101,13 @@ pub(super) fn write_event_rewrites(
 ) {
     let mut delivered: BTreeSet<String> = BTreeSet::new();
     for (event, call_id) in earlier.iter_mut().zip(event_call_ids) {
-        let Some(call_id) = call_id.as_deref() else {
+        let Some(id) = call_id.as_deref() else {
             continue;
         };
-        let Some(rewrite) = rewrites.get(call_id) else {
+        let Some(rewrite) = rewrites.get(id) else {
             continue;
         };
-        write_rewrite_into_event(event, call_id, rewrite, &mut delivered);
+        write_rewrite_into_event(event, id, rewrite, &mut delivered);
     }
 }
 

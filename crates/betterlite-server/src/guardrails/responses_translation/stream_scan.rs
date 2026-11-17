@@ -46,11 +46,10 @@ pub const OUTPUT_ITEM_EVENT_TYPES: [&str; 2] =
 pub const OUTPUT_TEXT_EVENT_TYPES: [&str; 2] =
     ["response.output_text.delta", "response.output_text.done"];
 
+// ast-grep-ignore: no-padded-one-line-functions - three event readers ask this, and clippy's return-and-then forbids the one-chain body
 pub(crate) fn integer_field(event: &Value, field: &str) -> Option<usize> {
-    event
-        .get(field)
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
+    let value = event.get(field).and_then(Value::as_u64)?;
+    usize::try_from(value).ok()
 }
 
 // ast-grep-ignore: no-padded-one-line-functions, no-one-line-functions - nine readers convert a buffered event through this one conversion
@@ -100,22 +99,22 @@ fn accumulate_part(parts: &mut Vec<(PartPosition, PartText)>, item: &StreamItem)
         return;
     }
     let position = part_position(item);
-    let index = match parts.iter().position(|(existing, _)| *existing == position) {
-        Some(index) => index,
-        None => {
+    let index = parts
+        .iter()
+        .position(|(existing, _)| *existing == position)
+        .unwrap_or_else(|| {
             let index = parts.len();
             parts.push((position, PartText::default()));
             index
-        }
-    };
+        });
     let Some((_, part)) = parts.get_mut(index) else {
         return;
     };
-    if let Some(text) = text {
-        part.done = Some(text.to_owned());
+    if let Some(done_text) = text {
+        part.done = Some(done_text.to_owned());
     }
-    if let Some(delta) = delta {
-        part.deltas.push_str(delta);
+    if let Some(delta_text) = delta {
+        part.deltas.push_str(delta_text);
     }
 }
 

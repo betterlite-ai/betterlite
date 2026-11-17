@@ -56,7 +56,7 @@ pub(super) fn scanned_text_positions(
             return Err(spread_undeliverable(guardrail_name));
         }
         let position = text_position(&item);
-        if !positions.iter().any(|existing| *existing == position) {
+        if !positions.contains(&position) {
             positions.push(position);
         }
     }
@@ -69,9 +69,9 @@ pub(super) fn placeable_positions(
 ) -> Result<Vec<(usize, usize)>, StreamSyncError> {
     let mut placeable = Vec::with_capacity(positions.len());
     for position in positions {
-        let output_index = unsigned(position.output_index.as_ref());
-        let content_index = unsigned(position.content_index.as_ref());
-        let (Some(output_index), Some(content_index)) = (output_index, content_index) else {
+        let output = unsigned(position.output_index.as_ref());
+        let content = unsigned(position.content_index.as_ref());
+        let (Some(output_index), Some(content_index)) = (output, content) else {
             return Err(spread_undeliverable(guardrail_name));
         };
         placeable.push((output_index, content_index));
