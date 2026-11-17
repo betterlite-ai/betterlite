@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::vertex_batch_download::records::{ConversionContext, transform_file_content_response};
 use crate::vertex_batch_download::streaming::{
-    DownloadDecoder, DownloadMode, decode_vertex_batch_download_chunk, finish_vertex_batch_download,
+    DownloadDecoder, DownloadMode, decode_download_chunk, finish_download,
 };
 
 const URL: &str = "https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl";
@@ -50,16 +50,15 @@ fn replays_the_vertex_batch_download_corpus(
         DownloadDecoder::new(headers.clone(), None, usize::from(*peek_limit), context());
     let mut output = Vec::new();
     for chunk in content.chunks(usize::from(*chunk_size).max(1)) {
-        let (next, produced) = decode_vertex_batch_download_chunk(decoder, chunk);
-        decoder = next;
+        let produced = decode_download_chunk(&mut decoder, chunk);
         output.extend_from_slice(&produced);
     }
-    let (decoder, produced) = finish_vertex_batch_download(decoder);
+    let produced = finish_download(&mut decoder);
     output.extend_from_slice(&produced);
-    match decoder.mode() {
+    match decoder.mode {
         DownloadMode::Passthrough => assert_eq!(output, content),
         DownloadMode::Lines => assert_eq!(lines(&output), lines(content)),
-        DownloadMode::Embeddings | DownloadMode::Undecided | DownloadMode::Finished => {}
+        DownloadMode::Embeddings | DownloadMode::Undecided => {}
     }
     drop(transform_file_content_response(
         content,

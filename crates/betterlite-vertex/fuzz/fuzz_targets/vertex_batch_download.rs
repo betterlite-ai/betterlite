@@ -1,11 +1,9 @@
 #![no_main]
 
-use betterlite_vertex::vertex_batch_download::records::{
-    ConversionContext, transform_file_content_response,
-};
-use betterlite_vertex::vertex_batch_download::streaming::{
-    DownloadDecoder, decode_vertex_batch_download_chunk, finish_vertex_batch_download,
-};
+use betterlite_vertex::vertex_batch_download::records::ConversionContext;
+use betterlite_vertex::vertex_batch_download::records::transform_file_content_response; // ast-grep-ignore: no-long-names
+use betterlite_vertex::vertex_batch_download::streaming::decode_download_chunk;
+use betterlite_vertex::vertex_batch_download::streaming::{DownloadDecoder, finish_download};
 use http::header::{CONTENT_LENGTH, HeaderMap, HeaderValue};
 use libfuzzer_sys::fuzz_target;
 use uuid::Uuid;
@@ -36,12 +34,12 @@ fuzz_target!(|bytes: &[u8]| {
         DownloadDecoder::new(headers.clone(), None, usize::from(*peek_limit), context());
     let mut output = Vec::new();
     for chunk in content.chunks(usize::from(*chunk_size).max(1)) {
-        let (next, produced) = decode_vertex_batch_download_chunk(decoder, chunk);
-        decoder = next;
+        let produced = decode_download_chunk(&mut decoder, chunk);
         output.extend_from_slice(&produced);
     }
-    let (_, produced) = finish_vertex_batch_download(decoder);
+    let produced = finish_download(&mut decoder);
     output.extend_from_slice(&produced);
+    // ast-grep-ignore: no-long-names
     drop(transform_file_content_response(
         content,
         URL,

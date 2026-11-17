@@ -4,16 +4,18 @@ use std::ops::Range;
 
 use betterlite_http::error::HttpError;
 use futures_util::StreamExt as _;
-use futures_util::stream::{self, BoxStream, try_unfold};
+use futures_util::stream::{BoxStream, try_unfold};
 use http::header::{CONTENT_LENGTH, HeaderMap, HeaderValue};
 
 use crate::vertex_batch_download::policy::{DownloadPolicy, download_policy};
 use crate::vertex_batch_download::records::row::transform_line;
 use crate::vertex_batch_download::records::{ConversionContext, embeddings_content};
+
 use crate::vertex_batch_rows::decode::{
     decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
 };
 use crate::vertex_batch_rows::paths::model_from_managed_gcs_url;
+use driver::{DownloadStream, embeddings_result, first_row, next_output, peek};
 
 // LiteLLM stops looking for a first row once this much prefix holds no completed line
 pub const PEEK_LIMIT_BYTES: usize = 0x0200_0000;
@@ -44,9 +46,9 @@ enum Phase {
 }
 
 pub struct DownloadDecoder {
-    mode: DownloadMode,
+    pub(crate) mode: DownloadMode,
     phase: Phase,
-    headers: HeaderMap,
+    pub(crate) headers: HeaderMap,
     model: Option<String>,
     peek_limit: usize,
     context: ConversionContext,
@@ -69,53 +71,6 @@ impl DownloadDecoder {
             model,
             peek_limit: peek_limit_bytes,
             context,
-        }
-    }
-
-    #[must_use]
-    pub const fn mode(&self) -> DownloadMode {
-        self.mode
-    }
-
-    #[must_use]
-    pub const fn headers(&self) -> &HeaderMap {
-        &self.headers
-    }
-
-    fn push(&mut self, chunk: &[u8]) -> Vec<u8> {
-        match mem::take(&mut self.phase) {
-            Phase::Peek { mut buffered } => {
-                buffered.extend_from_slice(chunk);
-                self.decide(Phase::Peek { buffered }, false)
-            }
-            Phase::Lines {
-                mut pending,
-                emitted,
-            } => {
-                pending.extend_from_slice(chunk);
-                self.split_lines(Phase::Lines { pending, emitted }, false)
-            }
-            Phase::Collect { mut buffered } => {
-                buffered.extend_from_slice(chunk);
-                self.phase = Phase::Collect { buffered };
-                Vec::new()
-            }
-            Phase::Passthrough => {
-                self.phase = Phase::Passthrough;
-                chunk.to_vec()
-            }
-            Phase::Finished => Vec::new(),
-        }
-    }
-
-    fn finish_input(&mut self) -> Vec<u8> {
-        match mem::take(&mut self.phase) {
-            Phase::Peek { buffered } => self.decide(Phase::Peek { buffered }, true),
-            Phase::Lines { pending, emitted } => {
-                self.split_lines(Phase::Lines { pending, emitted }, true)
-            }
-            Phase::Collect { buffered } => self.collect(buffered),
-            Phase::Passthrough | Phase::Finished => Vec::new(),
         }
     }
 
@@ -211,8 +166,7 @@ impl DownloadDecoder {
         *emitted = true;
     }
 
-    // streamed embeddings read the whole file, so the one chunk carries a recalculated length even
-    // when the conversion falls back to the original bytes
+    // streamed embeddings read the whole file, so the one chunk carries a recalculated length on fallback too
     fn collect(&mut self, buffered: Vec<u8>) -> Vec<u8> {
         let transformed = embeddings_content(&buffered, self.model.as_deref(), &mut self.context);
         let content = transformed.unwrap_or(buffered);
@@ -220,43 +174,55 @@ impl DownloadDecoder {
             .insert(CONTENT_LENGTH, HeaderValue::from(content.len()));
         content
     }
-}
 
-#[must_use]
-pub fn decode_vertex_batch_download_chunk(
-    mut decoder: DownloadDecoder,
-    chunk: &[u8],
-) -> (DownloadDecoder, Vec<u8>) {
-    let output = decoder.push(chunk);
-    (decoder, output)
-}
-
-#[must_use]
-pub fn finish_vertex_batch_download(mut decoder: DownloadDecoder) -> (DownloadDecoder, Vec<u8>) {
-    let output = decoder.finish_input();
-    (decoder, output)
-}
-
-// LiteLLM re-reads the whole prefix after every chunk, and an empty line never counts as the first
-fn first_row(buffered: &[u8], at_eof: bool) -> Option<Range<usize>> {
-    let mut start = 0;
-    loop {
-        let rest = buffered.get(start..).unwrap_or_default();
-        let Some(offset) = rest.iter().position(|byte| *byte == b'\n') else {
-            let tail = rest.trim_ascii();
-            return (at_eof && !tail.is_empty()).then_some(start..buffered.len());
-        };
-        let end = start.saturating_add(offset);
-        if !buffered
-            .get(start..end)
-            .unwrap_or_default()
-            .trim_ascii()
-            .is_empty()
-        {
-            return Some(start..end);
+    // network bytes feed the phase the last chunk left behind, and no chunk at all means end of input
+    fn advance(&mut self, chunk: Option<&[u8]>) -> Vec<u8> {
+        match mem::take(&mut self.phase) {
+            Phase::Peek { mut buffered } => {
+                if let Some(bytes) = chunk {
+                    buffered.extend_from_slice(bytes);
+                }
+                self.decide(Phase::Peek { buffered }, chunk.is_none())
+            }
+            Phase::Lines {
+                mut pending,
+                emitted,
+            } => {
+                if let Some(bytes) = chunk {
+                    pending.extend_from_slice(bytes);
+                }
+                self.split_lines(Phase::Lines { pending, emitted }, chunk.is_none())
+            }
+            Phase::Collect { mut buffered } => match chunk {
+                Some(bytes) => {
+                    buffered.extend_from_slice(bytes);
+                    self.phase = Phase::Collect { buffered };
+                    Vec::new()
+                }
+                None => self.collect(buffered),
+            },
+            Phase::Passthrough => {
+                self.phase = Phase::Passthrough;
+                chunk.map_or_else(Vec::new, <[u8]>::to_vec)
+            }
+            Phase::Finished => Vec::new(),
         }
-        start = end.saturating_add(1);
     }
+}
+
+#[must_use]
+pub fn decode_download_chunk(decoder: &mut DownloadDecoder, chunk: &[u8]) -> Vec<u8> {
+    if chunk.is_empty() {
+        return Vec::new();
+    }
+    decoder.advance(Some(chunk))
+}
+
+#[must_use]
+pub fn finish_download(decoder: &mut DownloadDecoder) -> Vec<u8> {
+    let output = decoder.advance(None);
+    decoder.phase = Phase::Finished;
+    output
 }
 
 pub struct FileContentStreamingResult {
@@ -264,8 +230,7 @@ pub struct FileContentStreamingResult {
     pub headers: HeaderMap,
 }
 
-// the first row decides the mode before a byte leaves, and the owned source moves into the result
-// stream so dropping it closes the upstream iterator in every phase
+// the first row decides the mode before a byte leaves, and dropping the result stream closes the owned source
 pub async fn transform_file_content_stream(
     chunks: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     request_url: &str,
@@ -285,124 +250,23 @@ pub async fn transform_file_content_stream(
         PEEK_LIMIT_BYTES,
         context,
     );
-    let peeked = peek(Peeked {
+    let stream = peek(DownloadStream {
         chunks,
         decoder,
         pending: VecDeque::new(),
         ended: false,
     })
     .await?;
-    if peeked.decoder.mode() == DownloadMode::Embeddings {
-        return embeddings_result(peeked).await;
+    if stream.decoder.mode == DownloadMode::Embeddings {
+        return embeddings_result(stream).await;
     }
-    let Peeked {
-        chunks: source,
-        decoder,
-        pending,
-        ended,
-    } = peeked;
-    let headers = decoder.headers().clone();
-    let stream = try_unfold(
-        StreamState {
-            chunks: source,
-            decoder,
-            pending,
-            ended,
-        },
-        next_output,
-    )
-    .boxed();
-    Ok(FileContentStreamingResult { stream, headers })
-}
-
-struct Peeked {
-    chunks: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    decoder: DownloadDecoder,
-    pending: VecDeque<Vec<u8>>,
-    ended: bool,
-}
-
-// reads until the first row decides the mode, keeping every byte read for the replay
-async fn peek(mut peeked: Peeked) -> Result<Peeked, HttpError> {
-    while peeked.decoder.mode() == DownloadMode::Undecided {
-        match peeked.chunks.next().await {
-            Some(Ok(chunk)) => {
-                let (decoder, output) = decode_vertex_batch_download_chunk(peeked.decoder, &chunk);
-                peeked.decoder = decoder;
-                if !output.is_empty() {
-                    peeked.pending.push_back(output);
-                }
-            }
-            Some(Err(error)) => return Err(error),
-            None => {
-                let (decoder, output) = finish_vertex_batch_download(peeked.decoder);
-                peeked.decoder = decoder;
-                if !output.is_empty() {
-                    peeked.pending.push_back(output);
-                }
-                peeked.ended = true;
-            }
-        }
-    }
-    Ok(peeked)
-}
-
-// streamed embeddings need the whole file, and LiteLLM answers them in one chunk with a new length
-async fn embeddings_result(mut peeked: Peeked) -> Result<FileContentStreamingResult, HttpError> {
-    if !peeked.ended {
-        while let Some(chunk) = peeked.chunks.next().await {
-            let chunk = chunk?;
-            let (decoder, _output) = decode_vertex_batch_download_chunk(peeked.decoder, &chunk);
-            peeked.decoder = decoder;
-        }
-        let (decoder, output) = finish_vertex_batch_download(peeked.decoder);
-        peeked.decoder = decoder;
-        if !output.is_empty() {
-            peeked.pending.push_back(output);
-        }
-    }
-    let headers = peeked.decoder.headers().clone();
-    let single: Vec<Result<Vec<u8>, HttpError>> = peeked.pending.into_iter().map(Ok).collect();
+    let headers = stream.decoder.headers.clone();
+    let output = try_unfold(stream, next_output).boxed();
     Ok(FileContentStreamingResult {
-        stream: stream::iter(single).boxed(),
+        stream: output,
         headers,
     })
 }
 
-struct StreamState {
-    chunks: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    decoder: DownloadDecoder,
-    pending: VecDeque<Vec<u8>>,
-    ended: bool,
-}
-
-async fn next_output(mut state: StreamState) -> Result<Option<(Vec<u8>, StreamState)>, HttpError> {
-    loop {
-        if let Some(bytes) = state.pending.pop_front() {
-            return Ok(Some((bytes, state)));
-        }
-        if state.ended {
-            return Ok(None);
-        }
-        match state.chunks.next().await {
-            Some(Ok(chunk)) => {
-                let (decoder, output) = decode_vertex_batch_download_chunk(state.decoder, &chunk);
-                state.decoder = decoder;
-                if !output.is_empty() {
-                    return Ok(Some((output, state)));
-                }
-            }
-            Some(Err(error)) => return Err(error),
-            None => {
-                let (decoder, output) = finish_vertex_batch_download(state.decoder);
-                state.decoder = decoder;
-                state.ended = true;
-                if !output.is_empty() {
-                    return Ok(Some((output, state)));
-                }
-            }
-        }
-    }
-}
-
+mod driver;
 mod tests;

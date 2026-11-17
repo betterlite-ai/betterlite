@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::vertex_batch_download::records::ConversionContext;
 use crate::vertex_batch_download::streaming::{
-    DownloadDecoder, DownloadMode, PEEK_LIMIT_BYTES, decode_vertex_batch_download_chunk,
-    finish_vertex_batch_download, transform_file_content_stream,
+    DownloadDecoder, DownloadMode, PEEK_LIMIT_BYTES, decode_download_chunk, finish_download,
+    transform_file_content_stream,
 };
 
 const NOW: i64 = 1_700_000_000;
@@ -67,11 +67,10 @@ fn source(chunks: &[&[u8]]) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
 fn drain(mut decoder: DownloadDecoder, chunks: &[&[u8]]) -> (DownloadDecoder, Vec<u8>) {
     let mut output = Vec::new();
     for chunk in chunks {
-        let (next, bytes) = decode_vertex_batch_download_chunk(decoder, chunk);
-        decoder = next;
+        let bytes = decode_download_chunk(&mut decoder, chunk);
         output.extend_from_slice(&bytes);
     }
-    let (decoder, bytes) = finish_vertex_batch_download(decoder);
+    let bytes = finish_download(&mut decoder);
     output.extend_from_slice(&bytes);
     (decoder, output)
 }
@@ -83,21 +82,23 @@ fn lines(output: &[u8]) -> Vec<&str> {
 #[test]
 fn peek_limit_replay() {
     let (decoder, output) = drain(decoder(4), &[b"ab", b"cde"]);
-    assert_eq!(decoder.mode(), DownloadMode::Passthrough);
+    assert_eq!(decoder.mode, DownloadMode::Passthrough);
     assert_eq!(output.as_slice(), b"abcde");
-    assert!(decoder.headers().get(CONTENT_LENGTH).is_none());
+    assert!(decoder.headers.get(CONTENT_LENGTH).is_none());
 
-    let (at_the_limit, output) = decode_vertex_batch_download_chunk(decoder(2), b"{}");
+    let mut at_the_limit = decoder(2);
+    let output = decode_download_chunk(&mut at_the_limit, b"{}");
     assert!(output.is_empty());
-    assert_eq!(at_the_limit.mode(), DownloadMode::Undecided);
+    assert_eq!(at_the_limit.mode, DownloadMode::Undecided);
 }
 
 #[test]
 fn newline_before_limit() {
     let content = format!("{ROW}\n");
-    let (decoder, output) = decode_vertex_batch_download_chunk(decoder(2), content.as_bytes());
+    let mut decoder = decoder(2);
+    let output = decode_download_chunk(&mut decoder, content.as_bytes());
     assert!(content.len() > 2);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output).len(), 1);
     assert!(lines(&output)[0].starts_with(r#"{"id":"batch_req_"#));
 }
@@ -109,16 +110,16 @@ fn split_utf8() {
     let mut completed = tail.to_vec();
     completed.push(b'\n');
     let (decoder, output) = drain(decoder(1), &[head, completed.as_slice()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert!(from_utf8(&output).unwrap().contains("café"));
 }
 
 #[test]
 fn malformed_middle_row() {
     let content = format!("{ROW}\nnot json\n{OTHER_ROW}\n");
-    let (decoder, output) =
-        decode_vertex_batch_download_chunk(decoder(PEEK_LIMIT_BYTES), content.as_bytes());
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    let mut decoder = decoder(PEEK_LIMIT_BYTES);
+    let output = decode_download_chunk(&mut decoder, content.as_bytes());
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     let lines = lines(&output);
     assert_eq!(lines.len(), 3);
     assert_eq!(lines[1], "not json");
@@ -128,7 +129,7 @@ fn malformed_middle_row() {
 
 #[test]
 fn case_insensitive_length_removal() {
-    let decoder = DownloadDecoder::new(
+    let mut decoder = DownloadDecoder::new(
         headers(&[
             ("Content-Length", "123"),
             ("Content-Type", "application/json"),
@@ -138,11 +139,11 @@ fn case_insensitive_length_removal() {
         context(),
     );
     let content = format!("{ROW}\n");
-    let (decoder, output) = decode_vertex_batch_download_chunk(decoder, content.as_bytes());
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
-    assert!(decoder.headers().get(CONTENT_LENGTH).is_none());
+    let output = decode_download_chunk(&mut decoder, content.as_bytes());
+    assert_eq!(decoder.mode, DownloadMode::Lines);
+    assert!(decoder.headers.get(CONTENT_LENGTH).is_none());
     assert_eq!(
-        decoder.headers().get(CONTENT_TYPE).unwrap(),
+        decoder.headers.get(CONTENT_TYPE).unwrap(),
         "application/json"
     );
     assert!(!output.is_empty());
@@ -170,16 +171,16 @@ async fn a_blank_download_passes_through() {
 fn an_unknown_first_row_replays_the_prefix() {
     let content = format!("{{\"custom_id\":\"x\"}}\n{ROW}\n");
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Passthrough);
+    assert_eq!(decoder.mode, DownloadMode::Passthrough);
     assert_eq!(output.as_slice(), content.as_bytes());
-    assert!(decoder.headers().get(CONTENT_LENGTH).is_none());
+    assert!(decoder.headers.get(CONTENT_LENGTH).is_none());
 }
 
 #[test]
 fn blank_lines_never_decide() {
     let completed = format!("{ROW}\n");
     let (decoder, output) = drain(decoder(4), &[b"\n\n", completed.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output).len(), 1);
     assert!(lines(&output)[0].starts_with(r#"{"id":"batch_req_"#));
 }
@@ -187,7 +188,7 @@ fn blank_lines_never_decide() {
 #[test]
 fn a_trailing_row_without_a_newline_is_converted() {
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[ROW.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert!(
         from_utf8(&output)
             .unwrap()
@@ -198,9 +199,9 @@ fn a_trailing_row_without_a_newline_is_converted() {
 #[test]
 fn rows_are_newline_joined() {
     let content = format!("{ROW}\n{OTHER_ROW}\n");
-    let (decoder, output) =
-        decode_vertex_batch_download_chunk(decoder(PEEK_LIMIT_BYTES), content.as_bytes());
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    let mut decoder = decoder(PEEK_LIMIT_BYTES);
+    let output = decode_download_chunk(&mut decoder, content.as_bytes());
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     let lines = lines(&output);
     assert_eq!(lines.len(), 2);
     assert!(lines[0].starts_with(r#"{"id":"batch_req_00000000-0000-0000-0000-000000000002""#));
@@ -212,7 +213,7 @@ fn a_failing_row_keeps_its_bytes() {
     let labels = ROW.replace(r#""request":{}"#, r#""request":{"labels":"nope"}"#);
     let content = format!("{ROW}\n{labels}\n");
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output)[1], labels);
 
     let response = ROW.replace(
@@ -221,19 +222,19 @@ fn a_failing_row_keeps_its_bytes() {
     );
     let content = format!("{ROW}\n{response}\n");
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output)[1], response);
 
     let version = ROW.replace(r#""candidates""#, r#""modelVersion":5,"candidates""#);
     let content = format!("{ROW}\n{version}\n");
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output)[1], version);
 
     let null_version = ROW.replace(r#""candidates""#, r#""modelVersion":null,"candidates""#);
     let content = format!("{ROW}\n{null_version}\n");
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
     assert_eq!(lines(&output)[1], null_version);
 }
 
