@@ -16,7 +16,6 @@ use super::support::{
 };
 
 async fn run_exchange(
-    provider: &LocalProvider,
     request: &TokenExchangeRequest,
 ) -> Result<ProviderClaims, OidcTokenExchangeError> {
     exchange_pkce_code(&client(), request).await
@@ -27,9 +26,7 @@ async fn sends_the_pinned_form_body_and_headers_with_basic_auth() {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(None)));
     provider.reply("/userinfo", Reply::json(r#"{"sub":"user-1"}"#));
-    let claims = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap();
+    let claims = run_exchange(&base_request(&provider)).await.unwrap();
     let token = &provider.requests()[0];
     assert_eq!(token.method, "POST");
     assert_eq!(token.path, "/token");
@@ -66,9 +63,7 @@ async fn fetches_userinfo_with_the_issued_bearer_token() {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(None)));
     provider.reply("/userinfo", Reply::json(r#"{"sub":"user-1"}"#));
-    let claims = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap();
+    let claims = run_exchange(&base_request(&provider)).await.unwrap();
     let requests = provider.requests();
     assert_eq!(requests.len(), 2);
     let userinfo = &requests[1];
@@ -86,7 +81,7 @@ async fn puts_client_id_in_the_body_for_a_public_client() {
     let mut request = base_request(&provider);
     request.client_secret = None;
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let token = &provider.requests()[0];
     assert_eq!(token.header("authorization"), "");
     let fields = form(&token.body);
@@ -104,7 +99,7 @@ async fn treats_an_empty_client_secret_as_absent() {
     let mut request = base_request(&provider);
     request.client_secret = Some(SecretString::from(String::new()));
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let token = &provider.requests()[0];
     assert_eq!(token.header("authorization"), "");
     assert_eq!(
@@ -120,7 +115,7 @@ async fn puts_client_credentials_in_the_body_when_include_client_id_is_set() {
     let mut request = base_request(&provider);
     request.include_client_id = true;
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let token = &provider.requests()[0];
     assert_eq!(token.header("authorization"), "");
     let fields = form(&token.body);
@@ -142,7 +137,7 @@ async fn include_client_id_without_a_secret_sends_only_the_client_id() {
     request.include_client_id = true;
     request.client_secret = None;
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let fields = form(&provider.requests()[0].body);
     assert_eq!(
         fields.get("client_id").map(String::as_str),
@@ -161,7 +156,7 @@ async fn omits_an_absent_or_empty_redirect_uri(#[case] redirect_url: Option<&str
     let mut request = base_request(&provider);
     request.redirect_url = redirect_url.map(str::to_owned);
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     assert!(!form(&provider.requests()[0].body).contains_key("redirect_uri"));
 }
 
@@ -172,7 +167,7 @@ async fn encodes_the_form_like_urllib() {
     let mut request = base_request(&provider);
     request.authorization_code = "code 1~*&=+".to_owned();
     request.userinfo_endpoint = None;
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     assert_eq!(
         provider.requests()[0].body,
         "grant_type=authorization_code&code=code+1~%2A%26%3D%2B&code_verifier=verifier-1&redirect_uri=https%3A%2F%2Fproxy.example%2Fsso%2Fcallback"
@@ -190,7 +185,7 @@ async fn pins_content_type_and_accept_over_additional_headers() {
         ("accept".to_owned(), "text/html".to_owned()),
         ("x-provider".to_owned(), "sso".to_owned()),
     ];
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let requests = provider.requests();
     assert_eq!(
         requests[0].header("content-type"),
@@ -210,7 +205,7 @@ async fn userinfo_bearer_overrides_an_additional_authorization_header() {
     let mut request = base_request(&provider);
     request.additional_headers =
         vec![("Authorization".to_owned(), "Bearer stale-header".to_owned())];
-    run_exchange(&provider, &request).await.unwrap();
+    run_exchange(&request).await.unwrap();
     let requests = provider.requests();
     assert_eq!(requests[1].header("authorization"), "Bearer access-1");
     assert_eq!(
@@ -229,7 +224,7 @@ async fn follows_a_redirected_token_endpoint() {
     provider.reply("/token-final", Reply::json(&token_reply(None)));
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
-    let claims = run_exchange(&provider, &request).await.unwrap();
+    let claims = run_exchange(&request).await.unwrap();
     assert_eq!(text(&claims, "access_token"), Some("access-1"));
     let paths = provider
         .requests()
@@ -253,7 +248,7 @@ async fn maps_a_refused_connection_to_token_exchange_401() {
     drop(listener);
     let mut request = base_request(&provider);
     request.token_endpoint = format!("http://{address}/token");
-    let error = run_exchange(&provider, &request).await.unwrap_err();
+    let error = run_exchange(&request).await.unwrap_err();
     assert_token_failure(&error);
 }
 
@@ -271,9 +266,7 @@ async fn maps_token_endpoint_failures_to_token_exchange_401(
 ) {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::status(status, body));
-    let error = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap_err();
+    let error = run_exchange(&base_request(&provider)).await.unwrap_err();
     assert_token_failure(&error);
     assert_eq!(provider.requests().len(), 1);
 }
@@ -283,7 +276,7 @@ async fn rejects_a_token_endpoint_url_that_does_not_parse() {
     let provider = LocalProvider::start().await;
     let mut request = base_request(&provider);
     request.token_endpoint = "not a url".to_owned();
-    let error = run_exchange(&provider, &request).await.unwrap_err();
+    let error = run_exchange(&request).await.unwrap_err();
     assert_token_failure(&error);
 }
 
@@ -302,9 +295,7 @@ async fn falls_back_to_the_id_token_when_userinfo_carries_no_claims(
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     provider.reply("/userinfo", Reply::status(status, body));
-    let claims = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap();
+    let claims = run_exchange(&base_request(&provider)).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(text(&claims, "email"), Some("u@example.com"));
     assert_eq!(text(&claims, "access_token"), Some("access-1"));
@@ -317,7 +308,7 @@ async fn falls_back_to_the_id_token_without_a_userinfo_endpoint() {
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
-    let claims = run_exchange(&provider, &request).await.unwrap();
+    let claims = run_exchange(&request).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(provider.requests().len(), 1);
 }
@@ -330,9 +321,7 @@ async fn keeps_userinfo_claims_when_the_token_response_carries_no_id_token() {
         "/userinfo",
         Reply::json(r#"{"sub":"user-1","roles":["admin"]}"#),
     );
-    let claims = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap();
+    let claims = run_exchange(&base_request(&provider)).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(text(&claims, "access_token"), Some("access-1"));
     assert!(claims.contains_key("roles"));
@@ -350,9 +339,7 @@ async fn fails_with_userinfo_401_when_the_id_token_cannot_supply_claims(#[case] 
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(token_body));
     provider.reply("/userinfo", Reply::status(500, "provider exploded"));
-    let error = run_exchange(&provider, &base_request(&provider))
-        .await
-        .unwrap_err();
+    let error = run_exchange(&base_request(&provider)).await.unwrap_err();
     let response = error.response();
     assert_eq!(response.status, 401);
     assert_eq!(response.error_type, ProxyErrorTypes::AuthError);
@@ -366,7 +353,7 @@ async fn fails_with_userinfo_401_without_a_userinfo_endpoint_or_id_token() {
     provider.reply("/token", Reply::json(&token_reply(None)));
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
-    let error = run_exchange(&provider, &request).await.unwrap_err();
+    let error = run_exchange(&request).await.unwrap_err();
     assert_eq!(error.response().param, Some(USERINFO_PARAM));
     assert_eq!(error.response().status, 401);
 }
