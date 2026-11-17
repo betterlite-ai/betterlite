@@ -140,7 +140,7 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
         let authorization = if suppressed {
             None
         } else {
-            self.selected_key(api_key)
+            selected_key(self.settings, self.globals, api_key)
         };
         let headers = authorization.map_or_else(Vec::new, |key| {
             vec![(
@@ -149,45 +149,12 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
             )]
         });
         ShowRequest {
-            url: format!("{}{SHOW_PATH}", self.server_api_base(api_base)),
+            url: format!("{}{SHOW_PATH}", server_api_base(self.settings, api_base)),
             body: ShowBody {
                 name: model.to_owned(),
             },
             headers,
         }
-    }
-
-    fn selected_key(&self, explicit: Option<&SecretString>) -> Option<SecretString> {
-        let candidates = [
-            explicit,
-            self.settings.api_key.as_ref(),
-            self.globals.api_key.as_ref(),
-            self.globals.openai_key.as_ref(),
-            self.globals.secret_manager_api_key.as_ref(),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find(|key| !key.expose_secret().is_empty())
-            .cloned()
-    }
-
-    fn server_api_base(&self, explicit: Option<&str>) -> String {
-        let configured = [
-            explicit.unwrap_or_default(),
-            self.settings.api_base.as_deref().unwrap_or_default(),
-        ];
-        let base = configured
-            .into_iter()
-            .find(|base| !base.is_empty())
-            .unwrap_or(DEFAULT_API_BASE);
-        let trimmed = base.trim_end_matches('/');
-        for suffix in SERVER_SUFFIXES {
-            if let Some(stripped) = trimmed.strip_suffix(suffix) {
-                return stripped.to_owned();
-            }
-        }
-        trimmed.to_owned()
     }
 
     fn is_static_ollama_model(&self, model: &str) -> bool {
@@ -208,6 +175,47 @@ impl<Transport: OllamaTransport> OllamaModelInfo<'_, Transport> {
             .iter()
             .any(|candidate| keys.contains(&candidate.to_lowercase()))
     }
+}
+
+// get_server_api_base: the passed base, OLLAMA_API_BASE, the local server, without a known endpoint suffix
+#[must_use]
+pub fn server_api_base(settings: &OllamaSettings, api_base: Option<&str>) -> String {
+    let configured = [
+        api_base.unwrap_or_default(),
+        settings.api_base.as_deref().unwrap_or_default(),
+    ];
+    let base = configured
+        .into_iter()
+        .find(|base| !base.is_empty())
+        .unwrap_or(DEFAULT_API_BASE);
+    let trimmed = base.trim_end_matches('/');
+    for suffix in SERVER_SUFFIXES {
+        if let Some(stripped) = trimmed.strip_suffix(suffix) {
+            return stripped.to_owned();
+        }
+    }
+    trimmed.to_owned()
+}
+
+// get_api_key: the passed key, OLLAMA_API_KEY, litellm.api_key, litellm.openai_key, then the secret manager
+#[must_use]
+pub fn selected_key(
+    settings: &OllamaSettings,
+    globals: &LiteLlmGlobals,
+    explicit: Option<&SecretString>,
+) -> Option<SecretString> {
+    let candidates = [
+        explicit,
+        settings.api_key.as_ref(),
+        globals.api_key.as_ref(),
+        globals.openai_key.as_ref(),
+        globals.secret_manager_api_key.as_ref(),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|key| !key.expose_secret().is_empty())
+        .cloned()
 }
 
 fn runtime_info(key: String, reply: &ShowReply) -> RuntimeModelInfo {
