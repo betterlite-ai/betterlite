@@ -203,7 +203,7 @@ def reply_outcome(call: ReplyCall) -> JsonValue:
                 function_id="rerank-function",
             ),
         )
-    except BaseLLMException as error:
+    except BaseLLMException as error:  # type: ignore[misc]  # LiteLLM's class annotates headers and body as bare dicts, so the type carries Any  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L51
         return {"error": {"status": error.status_code}}
     except (TypeError, ValidationError):
         return {"error": {"status": None}}
