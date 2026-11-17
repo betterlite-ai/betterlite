@@ -287,6 +287,27 @@ fn splitlines_keeps_python_line_endings() {
         splitlines_keepends("one\n\ntwo"),
         vec!["one\n", "\n", "two"]
     );
+    assert_eq!(splitlines_keepends("one\n"), vec!["one\n"]);
+}
+
+#[rstest]
+#[case::non_breaking_space("\u{a0}")]
+#[case::em_space("\u{2003}")]
+#[case::ideographic_space("\u{3000}")]
+fn padded_data_line_strips_like_python(#[case] padding: &str) {
+    let frame = format!("{padding}data: {}\n\n", start_event_text("upstream-model"));
+    let input = MessagesStreamRestampInput {
+        requested_model: REQUESTED_MODEL.to_owned(),
+        chunks: vec![text(&frame)],
+    };
+    let result = restamp_messages_stream(&input);
+    assert_eq!(
+        result.chunks,
+        vec![bytes(
+            format!("data: {}\n\n", start_event_text(REQUESTED_MODEL)).as_bytes()
+        )],
+        "{padding:?} counts as whitespace for str.strip"
+    );
 }
 
 #[test]

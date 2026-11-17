@@ -453,6 +453,22 @@ async fn replay_logging_stamps_cache_hit_and_bills() {
     assert_eq!(routed[0].raw_bytes, expected);
 }
 
+#[tokio::test]
+async fn replay_iterator_ends_after_the_last_event() {
+    let events = vec![cache_stream_frames()[0].clone()];
+    let CachedMessagesResult::Stream(mut iterator) =
+        convert_cached_messages_result(cached_events_dict(&events), RecordingLogging::default())
+            .expect("the cached events replay")
+    else {
+        panic!("the cached events replay as a stream");
+    };
+    assert_eq!(
+        iterator.next_chunk().await.expect("the replay never fails"),
+        Some(events[0].clone().into_bytes())
+    );
+    assert_eq!(iterator.next_chunk().await.expect("the replay ends"), None);
+}
+
 #[test]
 fn flush_disarms_the_stream() {
     let mut restamper = StreamModelRestamper::new(REQUESTED_MODEL.to_owned());
