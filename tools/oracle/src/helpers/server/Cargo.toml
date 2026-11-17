@@ -39,10 +39,12 @@ betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
 betterlite-tracing = { path = "../../../../../crates/betterlite-tracing" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
+betterlite-vertex = { path = "../../../../../crates/betterlite-vertex" }
 chrono.workspace = true
 flate2 = "1.1.5"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
+http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 quick-xml.workspace = true
