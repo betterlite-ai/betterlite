@@ -2,7 +2,7 @@ id: B1065
 title: Vector-store SDK retrieve and list
 description: >-
   Implement complete retrieve/aretrieve/list/alist in core::api::vector_store_read. B174 resolves provider
-  names, B010 selects config, B2485 performs the HTTP read, B012 logs and B011 maps failures. Register VectorStoreRead in
+  names, B010 selects config, B2485 performs the HTTP read, B247 logs and B011 maps failures. Register VectorStoreRead in
   B2401, with real SDK calls against OpenAI mock HTTP. Retrieve requires vector_store_id. List defaults
   after/before=null,limit=20,order=desc; extras, timeout and provider default null. Only null provider uses
   openai. A slash invokes get_llm_provider and passes its api_type into provider config selection.
