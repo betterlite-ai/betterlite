@@ -1,0 +1,37 @@
+kind: helper
+name: titan-v2-registry-schema
+call:
+  bedrock_services_batch_embeddings:
+    function: registry_schema
+    model_cost:
+      "amazon.titan-embed-text-v2:0":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      "amazon.titan-embed-text-v2:9":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      "amazon.titan-embed-text-v2:1":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: ""}}
+      "amazon.titan-embed-text-v2:2":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: 3}}
+      "amazon.titan-embed-text-v2:3": {litellm_provider: bedrock, mode: embedding}
+      "amazon.titan-embed-text-v2:5":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: flat}
+      "cohere.embed-multilingual-v3":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: null}
+    models:
+      - "amazon.titan-embed-text-v2:0"
+      - "amazon.titan-embed-text-v2:9"
+      - "amazon.titan-embed-text-v2:1"
+      - "amazon.titan-embed-text-v2:2"
+      - "amazon.titan-embed-text-v2:3"
+      - "amazon.titan-embed-text-v2:5"
+      - "cohere.embed-multilingual-v3"
+      - "amazon.titan-embed-text-v4:0"
+      - "amazon.titan-embed-text-v1"
+calls:
+  - bedrock_services_batch_embeddings:
+      function: registry_schema
+      model_cost: {}
+      models: ["us.amazon.titan-embed-text-v2:0", "bedrock/amazon.titan-embed-text-v2:0"]
+env: {}
+compare:
+  ignore: []
