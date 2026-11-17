@@ -72,7 +72,7 @@ impl Brackets {
         }
     }
 
-    fn collect(self, items: Vec<Literal>) -> Literal {
+    const fn collect(self, items: Vec<Literal>) -> Literal {
         match self {
             Self::List => Literal::List(items),
             Self::Tuple => Literal::Tuple(items),
@@ -82,9 +82,9 @@ impl Brackets {
 
 impl Cursor<'_> {
     fn parse_document(&mut self) -> Result<Literal, LiteralError> {
-        self.skip_trivia(0)?;
+        scanner::skip_trivia(self, 0)?;
         let value = self.parse_value(0)?;
-        self.skip_trivia(0)?;
+        scanner::skip_trivia(self, 0)?;
         if self.bytes.get(self.at).is_some() {
             return Err(LiteralError::Syntax);
         }
@@ -92,12 +92,12 @@ impl Cursor<'_> {
     }
 
     fn parse_value(&mut self, depth: usize) -> Result<Literal, LiteralError> {
-        self.skip_trivia(depth)?;
+        scanner::skip_trivia(self, depth)?;
         let Some(byte) = self.bytes.get(self.at).copied() else {
             return Err(LiteralError::Syntax);
         };
         match byte {
-            b'{' => self.parse_brace(depth),
+            b'{' => brace::parse_brace(self, depth),
             b'[' => self.parse_sequence(depth, Brackets::List),
             b'(' => self.parse_sequence(depth, Brackets::Tuple),
             b'+' | b'-' => self.parse_signed(depth),
@@ -106,11 +106,11 @@ impl Cursor<'_> {
     }
 
     fn parse_scalar(&mut self, depth: usize) -> Result<Literal, LiteralError> {
-        if self.text_start().is_some() {
-            return self.parse_text(depth);
+        if text::text_start(self).is_some() {
+            return text::parse_text(self, depth);
         }
-        if self.number_start() {
-            return self.parse_number();
+        if number::number_start(self) {
+            return number::parse_number(self);
         }
         if self.take_ellipsis() {
             return Ok(Literal::Ellipsis);
@@ -120,7 +120,7 @@ impl Cursor<'_> {
 
     fn parse_signed(&mut self, depth: usize) -> Result<Literal, LiteralError> {
         self.at = self.at.saturating_add(1);
-        if self.skip_trivia(depth)? {
+        if scanner::skip_trivia(self, depth)? {
             return Err(LiteralError::Syntax);
         }
         if self.bytes.get(self.at).copied() == Some(b'(') {
@@ -130,10 +130,10 @@ impl Cursor<'_> {
             }
             return Err(LiteralError::NotLiteral);
         }
-        if !self.number_start() {
+        if !number::number_start(self) {
             return Err(LiteralError::NotLiteral);
         }
-        self.parse_number()
+        number::parse_number(self)
     }
 
     fn parse_sequence(
@@ -141,7 +141,7 @@ impl Cursor<'_> {
         depth: usize,
         brackets: Brackets,
     ) -> Result<Literal, LiteralError> {
-        if self.open(depth, brackets.close())? {
+        if scanner::open(self, depth, brackets.close())? {
             return Ok(brackets.collect(Vec::new()));
         }
         let first = self.first_element(depth)?;
@@ -158,7 +158,7 @@ impl Cursor<'_> {
             return Err(LiteralError::NotLiteral);
         }
         let first = self.parse_value(depth.saturating_add(1))?;
-        self.skip_trivia(depth.saturating_add(1))?;
+        scanner::skip_trivia(self, depth.saturating_add(1))?;
         Ok(first)
     }
 
@@ -169,7 +169,7 @@ impl Cursor<'_> {
         mut items: Vec<Literal>,
     ) -> Result<Vec<Literal>, LiteralError> {
         loop {
-            if !self.close_or_comma(depth, close)? {
+            if !scanner::close_or_comma(self, depth, close)? {
                 return Ok(items);
             }
             if self.bytes.get(self.at).copied() == Some(b'*') {
@@ -211,15 +211,29 @@ impl Cursor<'_> {
     }
 
     fn parse_empty_set(&mut self) -> Result<Literal, LiteralError> {
-        self.skip_trivia(1)?;
+        scanner::skip_trivia(self, 1)?;
         if !self.take(b'(') {
             return Err(LiteralError::NotLiteral);
         }
-        self.skip_trivia(1)?;
+        scanner::skip_trivia(self, 1)?;
         if !self.take(b')') {
             return Err(LiteralError::NotLiteral);
         }
         Ok(Literal::Set(Vec::new()))
+    }
+
+    fn skip_newline_of(&self, at: usize) -> usize {
+        if self.bytes.get(at).copied() == Some(b'\n') {
+            return at.saturating_add(1);
+        }
+        at
+    }
+
+    fn character(&self, at: usize) -> Option<char> {
+        if let Some(rest) = self.text.get(at..) {
+            return rest.chars().next();
+        }
+        None
     }
 
     fn take(&mut self, expected: u8) -> bool {

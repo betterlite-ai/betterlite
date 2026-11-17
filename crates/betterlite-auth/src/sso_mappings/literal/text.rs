@@ -1,5 +1,6 @@
 mod escape;
 
+use super::scanner::skip_trivia;
 use super::{Cursor, Literal, LiteralError};
 
 #[derive(Clone, Copy)]
@@ -10,6 +11,7 @@ enum TextPrefix {
     RawBytes,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct TextStart {
     prefix: TextPrefix,
     quote_at: usize,
@@ -25,99 +27,96 @@ fn text_prefix(letters: &str) -> Option<TextPrefix> {
     }
 }
 
-impl Cursor<'_> {
-    pub(super) fn text_start(&self) -> Option<TextStart> {
-        let rest = self.text.get(self.at..)?;
-        let quote = rest.find(['\'', '"'])?;
-        let prefix = rest.get(..quote)?;
-        Some(TextStart {
-            prefix: text_prefix(prefix)?,
-            quote_at: self.at.saturating_add(quote),
-        })
-    }
+pub(super) fn text_start(cursor: &Cursor<'_>) -> Option<TextStart> {
+    let rest = cursor.text.get(cursor.at..)?;
+    let quote = rest.find(['\'', '"'])?;
+    let prefix = rest.get(..quote)?;
+    Some(TextStart {
+        prefix: text_prefix(prefix)?,
+        quote_at: cursor.at.saturating_add(quote),
+    })
+}
 
-    // implicit concatenation joins adjacent literals, but only within the expression's brackets
-    pub(super) fn parse_text(&mut self, depth: usize) -> Result<Literal, LiteralError> {
-        let Some(mut start) = self.text_start() else {
+// implicit concatenation joins adjacent literals, but only within the expression's brackets
+pub(super) fn parse_text(cursor: &mut Cursor<'_>, depth: usize) -> Result<Literal, LiteralError> {
+    let Some(mut start) = text_start(cursor) else {
+        return Err(LiteralError::Syntax);
+    };
+    let mut value = String::new();
+    let bytes = matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
+    loop {
+        let piece = scan_text(cursor, start)?;
+        if !bytes {
+            value.push_str(&piece);
+        }
+        if skip_trivia(cursor, depth)? {
+            break;
+        }
+        let Some(next) = text_start(cursor) else {
+            break;
+        };
+        let next_bytes = matches!(next.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
+        if next_bytes != bytes {
+            return Err(LiteralError::Syntax);
+        }
+        start = next;
+    }
+    if bytes {
+        return Ok(Literal::Bytes);
+    }
+    Ok(Literal::Str(value))
+}
+
+fn scan_text(cursor: &mut Cursor<'_>, start: TextStart) -> Result<String, LiteralError> {
+    let Some(quote) = cursor.bytes.get(start.quote_at).copied() else {
+        return Err(LiteralError::Syntax);
+    };
+    let triple = triple_quote(cursor, start.quote_at);
+    let width = if triple { 3 } else { 1 };
+    let mut at = start.quote_at.saturating_add(width);
+    let mut value = String::new();
+    loop {
+        let Some(character) = cursor.character(at) else {
             return Err(LiteralError::Syntax);
         };
-        let mut value = String::new();
-        let bytes = matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
-        loop {
-            let piece = self.scan_text(start)?;
-            if !bytes {
-                value.push_str(&piece);
-            }
-            if self.skip_trivia(depth)? {
-                break;
-            }
-            let Some(next) = self.text_start() else {
-                break;
-            };
-            let next_bytes = matches!(next.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
-            if next_bytes != bytes {
-                return Err(LiteralError::Syntax);
-            }
-            start = next;
+        if closes_text(cursor, at, triple, quote) {
+            cursor.at = at.saturating_add(width);
+            return Ok(value);
         }
-        if bytes {
-            return Ok(Literal::Bytes);
+        if character == '\\' {
+            at = escape::scan_escape(cursor, at, start.prefix, &mut value)?;
+            continue;
         }
-        Ok(Literal::Str(value))
-    }
-
-    fn scan_text(&mut self, start: TextStart) -> Result<String, LiteralError> {
-        let Some(quote) = self.bytes.get(start.quote_at).copied() else {
+        if !triple && matches!(character, '\n' | '\r') {
             return Err(LiteralError::Syntax);
-        };
-        let triple = self.triple_quote(start.quote_at);
-        let width = if triple { 3 } else { 1 };
-        let mut at = start.quote_at.saturating_add(width);
-        let mut value = String::new();
-        loop {
-            let Some(character) = self.character(at) else {
-                return Err(LiteralError::Syntax);
-            };
-            if self.closes_text(at, triple, quote) {
-                self.at = at.saturating_add(width);
-                return Ok(value);
-            }
-            if character == '\\' {
-                at = self.scan_escape(at, start.prefix, &mut value)?;
-                continue;
-            }
-            if !triple && matches!(character, '\n' | '\r') {
-                return Err(LiteralError::Syntax);
-            }
-            if character == '\r' {
-                value.push('\n');
-                at = self.skip_newline_of(at.saturating_add(1));
-                continue;
-            }
-            if matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes)
-                && !character.is_ascii()
-            {
-                return Err(LiteralError::Syntax);
-            }
-            value.push(character);
-            at = at.saturating_add(character.len_utf8());
         }
+        if character == '\r' {
+            value.push('\n');
+            at = cursor.skip_newline_of(at.saturating_add(1));
+            continue;
+        }
+        if matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes) && !character.is_ascii()
+        {
+            return Err(LiteralError::Syntax);
+        }
+        value.push(character);
+        at = at.saturating_add(character.len_utf8());
     }
+}
 
-    fn triple_quote(&self, quote_at: usize) -> bool {
-        let Some(quote) = self.bytes.get(quote_at).copied() else {
-            return false;
-        };
-        if self.bytes.get(quote_at.saturating_add(1)).copied() != Some(quote) {
-            return false;
-        }
-        self.bytes.get(quote_at.saturating_add(2)).copied() == Some(quote)
+fn triple_quote(cursor: &Cursor<'_>, quote_at: usize) -> bool {
+    let Some(quote) = cursor.bytes.get(quote_at).copied() else {
+        return false;
+    };
+    if cursor.bytes.get(quote_at.saturating_add(1)).copied() != Some(quote) {
+        return false;
     }
+    cursor.bytes.get(quote_at.saturating_add(2)).copied() == Some(quote)
+}
 
-    fn closes_text(&self, at: usize, triple: bool, quote: u8) -> bool {
-        if self.bytes.get(at).copied() != Some(quote) {
-            return false;
-        }
-        !triple || self.triple_quote(at)
+fn closes_text(cursor: &Cursor<'_>, at: usize, triple: bool, quote: u8) -> bool {
+    if cursor.bytes.get(at).copied() != Some(quote) {
+        return false;
     }
+    !triple || triple_quote(cursor, at)
 }
