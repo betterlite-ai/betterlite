@@ -188,6 +188,24 @@ fn ceiling_below_equal_above(#[case] window: &str, #[case] passes: bool) {
     }
 }
 
+// LiteLLM compares floats, where this text parses to the same double as 0.1; the decimal comparison keeps them apart.
+#[test]
+fn exact_decimal_ceiling_comparison() {
+    let windows = [amount("0.10000000000000001")];
+    assert_eq!(
+        check_budget_ceilings(Some(&windows), Some(amount("0.1")), user(), false),
+        Err(DelegationError::AboveCeiling {
+            amount: "0.10000000000000001".to_owned(),
+            ceiling: "0.1".to_owned(),
+        })
+    );
+    let equal = [amount("0.1")];
+    assert_eq!(
+        check_budget_ceilings(Some(&equal), Some(amount("0.1")), user(), false),
+        Ok(())
+    );
+}
+
 #[test]
 fn first_offending_window() {
     let windows = [amount("5"), amount("15"), amount("20")];
