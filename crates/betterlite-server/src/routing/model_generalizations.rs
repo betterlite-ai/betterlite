@@ -13,15 +13,6 @@ pub struct GeneralizationServices {
 }
 
 impl GeneralizationServices {
-    pub fn build(section: &config::Settings) -> Result<Self, GeneralizationError> {
-        Self::install(&serde_json::to_vec(&section.rules)?)
-    }
-
-    // the loaded cost map's own rule block, which LiteLLM installs at startup when the config names none
-    pub fn from_cost_map(cost_map: &CatalogGeneralizations) -> Result<Self, GeneralizationError> {
-        Self::install(&serde_json::to_vec(&cost_map.rules)?)
-    }
-
     fn install(rules: &[u8]) -> Result<Self, GeneralizationError> {
         let installed = ModelGeneralizations::install(rules)?;
         for warning in &installed.warnings {
@@ -39,7 +30,7 @@ impl GeneralizationServices {
 
     // A section that fails to install leaves the rules the router already serves untouched.
     pub fn reload(&mut self, section: &config::Settings) -> Result<(), GeneralizationError> {
-        *self = Self::build(section)?;
+        *self = Self::install(&serde_json::to_vec(&section.rules)?)?;
         Ok(())
     }
 
@@ -48,7 +39,7 @@ impl GeneralizationServices {
         &mut self,
         cost_map: &CatalogGeneralizations,
     ) -> Result<(), GeneralizationError> {
-        *self = Self::from_cost_map(cost_map)?;
+        *self = Self::install(&serde_json::to_vec(&cost_map.rules)?)?;
         Ok(())
     }
 }
