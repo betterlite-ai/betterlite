@@ -14,7 +14,8 @@ deviations:
       a URL out of a value of another type.
     why: >-
       The created object is decoded into a typed record, and docs/compatibility.md leaves provider output outside its
-      declared type to betterlite. The fuzz corpus and the decode unit tests pin both outcomes.
+      declared type to betterlite. The fuzz corpus pins the accepted and rejected shapes, and the Rust test
+      nonexpected_status pins the typed error and the one request before it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L363-L394
   - what: >-
       A run status or message list body that is not a JSON object of the declared shape, such as a status or
@@ -22,7 +23,8 @@ deviations:
       and re-raises json.JSONDecodeError, TypeError or AttributeError that is not an AzureAIAgentsError.
     why: >-
       Every polled body is decoded into a typed record, so a malformed body fails the run with a typed error instead
-      of an exception of an unrelated class. The fuzz corpus pins the accepted and rejected shapes.
+      of an exception of an unrelated class. The fuzz corpus pins the accepted and rejected shapes, and the Rust test
+      nonexpected_status pins the typed status failure in a polled run.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L396-L417
 kept_bugs:
   - what: >-
