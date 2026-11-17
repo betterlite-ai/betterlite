@@ -164,7 +164,7 @@ fn original_function(name: &str) -> OriginalFunction {
     }
 }
 
-fn dual_settings() -> DualCacheSettings {
+const fn dual_settings() -> DualCacheSettings {
     DualCacheSettings {
         default_in_memory_ttl: None,
         default_redis_ttl: None,

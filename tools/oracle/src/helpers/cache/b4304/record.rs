@@ -104,18 +104,21 @@ impl MemoryCacheOps for RecordingMemory {
         self.recorder.record(Sink::Dual, key, &value);
         let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         stored.insert(key.to_owned(), value);
+        drop(stored);
         Ok(())
     }
 
     fn delete_cache(&self, key: &str) -> CacheResult<()> {
         let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         stored.remove(key);
+        drop(stored);
         Ok(())
     }
 
     fn flush_cache(&self) -> CacheResult<()> {
         let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
         stored.clear();
+        drop(stored);
         Ok(())
     }
 
