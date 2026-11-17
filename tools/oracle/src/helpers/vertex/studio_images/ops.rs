@@ -174,9 +174,13 @@ fn response_value(case: &ResponseCase) -> Result<Value, Box<HelperError>> {
         },
     )
     .or_value_error()?;
+    let usage = match response.usage.as_ref() {
+        Some(usage) => usage_value(usage)?,
+        None => Value::Null,
+    };
     Ok(json!({
         "images": response.data.iter().map(image_value).collect::<Vec<Value>>(),
-        "usage": response.usage.as_ref().map_or(Value::Null, usage_value),
+        "usage": usage,
     }))
 }
 
@@ -190,26 +194,16 @@ fn image_value(image: &GeneratedImage) -> Value {
     })
 }
 
-fn detail_value(tokens: &ImageInputTokens) -> Value {
-    json!({
-        "image_tokens": tokens.image_tokens,
-        "text_tokens": tokens.text_tokens,
-    })
-}
-
-fn usage_value(usage: &ImageGenerationUsage) -> Value {
-    json!({
-        "input_tokens": usage.input_tokens,
-        "input_tokens_details": detail_value(&usage.input_tokens_details),
-        "output_tokens": usage.output_tokens,
-        "total_tokens": usage.total_tokens,
-        "prompt_tokens": usage.prompt_tokens,
-        "prompt_tokens_details": detail_value(&usage.prompt_tokens_details),
-        "completion_tokens": usage.completion_tokens,
-        "completion_tokens_details": detail_value(&usage.completion_tokens_details),
-        "output_tokens_details": detail_value(&usage.output_tokens_details),
-        "web_search_requests": usage.web_search_requests,
-    })
+// The encoded usage skips an absent search count, while the helper's Python dict keeps the key as null.
+fn usage_value(usage: &ImageGenerationUsage) -> Result<Value, Box<HelperError>> {
+    let mut encoded = serde_json::to_value(usage).or_config_error()?;
+    if let Value::Object(fields) = &mut encoded {
+        fields.insert(
+            "web_search_requests".to_owned(),
+            json!(usage.web_search_requests),
+        );
+    }
+    Ok(encoded)
 }
 
 fn priced_cost(case: &CostCase) -> Result<Decimal, Box<HelperError>> {
@@ -230,14 +224,13 @@ fn priced_cost(case: &CostCase) -> Result<Decimal, Box<HelperError>> {
 }
 
 fn image_records(count: usize) -> Vec<GeneratedImage> {
-    (0..count)
-        .map(|_index| GeneratedImage {
-            b64_json: Some("AAA".to_owned()),
-            url: None,
-            revised_prompt: None,
-            provider_specific_fields: None,
-        })
-        .collect()
+    let image = GeneratedImage {
+        b64_json: Some("AAA".to_owned()),
+        url: None,
+        revised_prompt: None,
+        provider_specific_fields: None,
+    };
+    vec![image; count]
 }
 
 // the usage the response would carry: the itemized input details and the images taking the whole output
@@ -268,7 +261,15 @@ fn cost_failure(error: &StudioImageError) -> Box<HelperError> {
     let class = match error {
         StudioImageError::Cost(ImageCostError::NotImageResponse) => "ValueError",
         StudioImageError::Cost(_) => "ImageCostError",
-        _ => "ValueError",
+        StudioImageError::Encode(_)
+        | StudioImageError::FieldType { .. }
+        | StudioImageError::MissingApiKey
+        | StudioImageError::NotJson { .. }
+        | StudioImageError::Policy(_)
+        | StudioImageError::Shape { .. }
+        | StudioImageError::TokenOverflow { .. }
+        | StudioImageError::TooLarge { .. }
+        | StudioImageError::UsageShape => "ValueError",
     };
     Box::new(HelperError {
         class: class.to_owned(),

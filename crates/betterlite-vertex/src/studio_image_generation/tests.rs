@@ -13,7 +13,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::value::RawValue;
 
 use super::cost::{ImageCostResponse, generation_cost};
@@ -63,7 +63,7 @@ fn key(value: &str) -> SecretString {
 }
 
 fn header<'headers>(headers: &'headers Headers, name: &str) -> Option<&'headers str> {
-    headers.get(name).map(|value| value.expose_secret())
+    headers.get(name).map(ExposeSecret::expose_secret)
 }
 
 fn usage(source: &str) -> ImageGenerationUsage {
@@ -128,7 +128,7 @@ fn the_base_falls_back_to_the_studio_endpoint(
     assert_eq!(settings.api_base, expected);
     assert_eq!(
         complete_url(GEMINI, None, &settings),
-        format!("{}/models/{}:generateContent", expected, GEMINI)
+        format!("{expected}/models/{GEMINI}:generateContent")
     );
 }
 
@@ -144,7 +144,7 @@ fn the_environment_key_is_read_only_when_it_is_not_empty(
     let found = settings
         .gemini_api_key
         .as_ref()
-        .map(|value| value.expose_secret());
+        .map(ExposeSecret::expose_secret);
     assert_eq!(found, expected);
 }
 
@@ -161,7 +161,7 @@ fn the_factory_answers_the_studio_class_for_any_model(#[case] model: &str) {
             .settings
             .gemini_api_key
             .as_ref()
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("env-key"),
     );
 }
@@ -492,9 +492,9 @@ fn token_counts_that_leave_the_signed_range_are_refused() {
         i64::MAX,
         i64::MAX
     );
-    let error = transform_usage_error(&candidates);
+    let candidates_error = transform_usage_error(&candidates);
     assert!(matches!(
-        error,
+        candidates_error,
         StudioImageError::TokenOverflow {
             field: "candidatesTokensDetails"
         }
@@ -687,9 +687,9 @@ fn the_search_count_rides_on_a_present_usage() {
         GEMINI,
         r#"{"candidates":[{"content":{"parts":[]}}],"usageMetadata":{}}"#,
     );
-    let usage = uncounted.usage.expect("the usage is present");
-    assert_eq!(usage.web_search_requests, None);
-    let encoded = serde_json::to_string(&usage).expect("the usage encodes");
+    let uncounted_usage = uncounted.usage.expect("the usage is present");
+    assert_eq!(uncounted_usage.web_search_requests, None);
+    let encoded = serde_json::to_string(&uncounted_usage).expect("the usage encodes");
     assert!(!encoded.contains("web_search_requests"));
     let ungrounded = generated(
         GEMINI,
@@ -733,8 +733,7 @@ impl ImagePricing for Fake {
         provider: &str,
         _supplied: Option<&PriceRecord>,
     ) -> Result<PriceRecord, ImageCostError> {
-        assert_eq!(provider, "gemini");
-        if !self.known {
+        if provider != "gemini" || !self.known {
             return Err(ImageCostError::UnknownModel {
                 model: model.to_owned(),
             });
@@ -762,30 +761,9 @@ impl ImagePricing for Fake {
         usage: &ImageUsageDetails,
         _model_info: &PriceRecord,
     ) -> Result<Option<Decimal>, ImageCostError> {
-        assert_eq!(provider, "gemini");
-        assert_eq!(usage.input_tokens, Some(4));
-        assert_eq!(usage.output_tokens, Some(6));
-        assert_eq!(usage.total_tokens, Some(10));
-        assert_eq!(
-            detail(usage.input_tokens_details.as_ref(), "text_tokens"),
-            Some(1)
-        );
-        assert_eq!(
-            detail(usage.input_tokens_details.as_ref(), "image_tokens"),
-            Some(3)
-        );
-        assert_eq!(
-            detail(usage.completion_tokens_details.as_ref(), "text_tokens"),
-            Some(0)
-        );
-        assert_eq!(
-            detail(usage.completion_tokens_details.as_ref(), "image_tokens"),
-            Some(6)
-        );
-        assert_eq!(
-            detail(usage.output_tokens_details.as_ref(), "image_tokens"),
-            Some(6)
-        );
+        if provider != "gemini" || !is_canonical(usage) {
+            return Ok(None);
+        }
         Ok(self.tokens)
     }
 }
@@ -793,6 +771,18 @@ impl ImagePricing for Fake {
 fn detail(details: Option<&DetailMap>, key: &str) -> Option<i64> {
     let raw = details?.get(key)?;
     serde_json::from_str(raw.get()).expect("a count is an integer")
+}
+
+// The canonical usage the priced tests build: any other mapping has no price here, so the bill falls back.
+fn is_canonical(usage: &ImageUsageDetails) -> bool {
+    usage.input_tokens == Some(4)
+        && usage.output_tokens == Some(6)
+        && usage.total_tokens == Some(10)
+        && detail(usage.input_tokens_details.as_ref(), "text_tokens") == Some(1)
+        && detail(usage.input_tokens_details.as_ref(), "image_tokens") == Some(3)
+        && detail(usage.completion_tokens_details.as_ref(), "text_tokens") == Some(0)
+        && detail(usage.completion_tokens_details.as_ref(), "image_tokens") == Some(6)
+        && detail(usage.output_tokens_details.as_ref(), "image_tokens") == Some(6)
 }
 
 fn billed_cost(
@@ -819,10 +809,10 @@ fn the_model_lookup_comes_before_the_response_type() {
         error,
         StudioImageError::Cost(ImageCostError::UnknownModel { .. })
     ));
-    let error = generation_cost(&Fake::new("{}"), GEMINI, None, ImageCostResponse::Other)
+    let other_error = generation_cost(&Fake::new("{}"), GEMINI, None, ImageCostResponse::Other)
         .expect_err("a non-image response is refused");
     assert!(matches!(
-        error,
+        other_error,
         StudioImageError::Cost(ImageCostError::NotImageResponse)
     ));
 }

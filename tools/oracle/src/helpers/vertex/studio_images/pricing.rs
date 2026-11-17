@@ -39,13 +39,6 @@ impl PriceLookup for CatalogPricing<'_> {
     }
 }
 
-struct UsageBilling<'billing> {
-    model: &'billing str,
-    provider: &'billing str,
-    usage: &'billing ImageUsageDetails,
-    model_info: &'billing PriceRecord,
-}
-
 impl ImagePricing for CatalogPricing<'_> {
     fn model_info(
         &self,
@@ -59,10 +52,10 @@ impl ImagePricing for CatalogPricing<'_> {
     fn web_search_cost(
         &self,
         _provider: &str,
-        requests: Option<i64>,
+        web_search_requests: Option<i64>,
         _model_info: &PriceRecord,
     ) -> Decimal {
-        match requests {
+        match web_search_requests {
             Some(count) if count > 0 => SEARCH_FEE,
             Some(_) | None => Decimal::ZERO,
         }
@@ -75,28 +68,13 @@ impl ImagePricing for CatalogPricing<'_> {
         usage: &ImageUsageDetails,
         model_info: &PriceRecord,
     ) -> Result<Option<Decimal>, ImageCostError> {
-        billed_usage(
-            self,
-            UsageBilling {
-                model,
-                provider,
-                usage,
-                model_info,
-            },
-        )
+        let request = ImageUsageCostRequest {
+            model,
+            custom_llm_provider: Some(provider),
+            usage,
+            model_info: Some(model_info),
+            moment: DateTime::UNIX_EPOCH,
+        };
+        image_usage_cost(&request, self, &TimeZoneDatabase::none())
     }
-}
-
-fn billed_usage(
-    lookup: &dyn PriceLookup,
-    billing: UsageBilling<'_>,
-) -> Result<Option<Decimal>, ImageCostError> {
-    let request = ImageUsageCostRequest {
-        model: billing.model,
-        custom_llm_provider: Some(billing.provider),
-        usage: billing.usage,
-        model_info: Some(billing.model_info),
-        moment: DateTime::UNIX_EPOCH,
-    };
-    image_usage_cost(&request, lookup, &TimeZoneDatabase::none())
 }
