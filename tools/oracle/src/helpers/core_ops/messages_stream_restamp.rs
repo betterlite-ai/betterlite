@@ -113,9 +113,10 @@ fn restamp_answer(input: &RestampInput) -> Result<Value, Box<HelperError>> {
 
 fn chunk_from_spec(spec: &ChunkSpec) -> Result<MessagesStreamChunk, Box<HelperError>> {
     match spec {
-        ChunkSpec::Event { value } => serde_json::from_value(value.clone())
-            .or_value_error()
-            .map(MessagesStreamChunk::Event),
+        ChunkSpec::Event { value } => {
+            let event: Json = serde_json::from_value(value.clone()).or_value_error()?;
+            Ok(MessagesStreamChunk::Event(event))
+        }
         ChunkSpec::Bytes { value } => BASE64
             .decode(value)
             .or_value_error()

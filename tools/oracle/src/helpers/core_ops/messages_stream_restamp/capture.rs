@@ -10,7 +10,7 @@ pub(super) struct Capture(pub(super) Arc<Mutex<Vec<Value>>>);
 impl<Inner: Subscriber> Layer<Inner> for Capture {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         let level = *event.metadata().level();
-        if level < Level::WARN {
+        if level > Level::WARN {
             return;
         }
         self.0
