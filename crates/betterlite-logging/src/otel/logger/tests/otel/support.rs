@@ -10,7 +10,7 @@ use betterlite_config::sections::provider_url_destination::pattern::AllowedDesti
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
-use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger, PreCallEvent};
+use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
 use betterlite_logging::otel::config::destination::{
     DestinationFields, OtelDestination, SpanScope,
 };
@@ -91,11 +91,10 @@ const PAYLOAD: &str = r#"{
     "hidden_params": {}
 }"#;
 
-pub(crate) fn payload<T: Serialize>(
-    call_type: &str,
-    status: &str,
-    metadata: T,
-) -> StandardLoggingPayload {
+pub(crate) fn payload<T>(call_type: &str, status: &str, metadata: T) -> StandardLoggingPayload
+where
+    T: Serialize,
+{
     // parsed through the crate's own Json first: the lint table forbids naming serde_json's Value
     let parsed: Json = serde_json::from_str(PAYLOAD).expect("payload fixture");
     let mut value = serde_json::to_value(parsed).expect("payload fixture");
@@ -103,9 +102,13 @@ pub(crate) fn payload<T: Serialize>(
     object.insert("call_type".to_owned(), json!(call_type));
     object.insert("status".to_owned(), json!(status));
     if status == "failure" {
+        let fields = json_object(vec![
+            ("llm_api_status", Json::Text("failure".to_owned())),
+            ("guardrail_status", Json::Text("not_run".to_owned())),
+        ]);
         object.insert(
             "status_fields".to_owned(),
-            json!({"llm_api_status": "failure", "guardrail_status": "not_run"}),
+            serde_json::to_value(fields).expect("status fields"),
         );
     }
     object.insert(
@@ -116,27 +119,19 @@ pub(crate) fn payload<T: Serialize>(
 }
 
 pub(crate) fn inference() -> StandardLoggingPayload {
-    payload("completion", "success", json!({}))
+    payload("completion", "success", json_object(Vec::new()))
 }
 
 pub(crate) fn inference_failure() -> StandardLoggingPayload {
-    payload("completion", "failure", json!({}))
+    payload("completion", "failure", json_object(Vec::new()))
 }
 
 pub(crate) fn mcp_tool() -> StandardLoggingPayload {
-    payload(
-        "call_mcp_tool",
-        "success",
-        json!({"mcp_tool_call_metadata": {"name": "search"}}),
-    )
+    payload("call_mcp_tool", "success", tool_call_metadata())
 }
 
 pub(crate) fn mcp_tool_failure() -> StandardLoggingPayload {
-    payload(
-        "call_mcp_tool",
-        "failure",
-        json!({"mcp_tool_call_metadata": {"name": "search"}}),
-    )
+    payload("call_mcp_tool", "failure", tool_call_metadata())
 }
 
 // the call id the OTel lifecycle keys its carrier and dedup markers on
@@ -192,8 +187,33 @@ pub(crate) fn text_params(pairs: &[(&str, &str)]) -> Json {
     )
 }
 
+// a Json object from its entries, as the proxy writes a preset's dynamic params and metadata
+pub(crate) fn json_object(pairs: Vec<(&str, Json)>) -> Json {
+    Json::Object(
+        pairs
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    )
+}
+
+fn tool_name_metadata() -> Json {
+    json_object(vec![("name", Json::Text("search".to_owned()))])
+}
+
+fn project_name_metadata() -> Json {
+    json_object(vec![(
+        "phoenix_project_name",
+        Json::Text("proj".to_owned()),
+    )])
+}
+
+fn tool_call_metadata() -> Json {
+    json_object(vec![("mcp_tool_call_metadata", tool_name_metadata())])
+}
+
 pub(crate) fn mcp_list() -> StandardLoggingPayload {
-    payload("list_mcp_tools", "success", json!({}))
+    payload("list_mcp_tools", "success", json_object(Vec::new()))
 }
 
 // key/team config a Phoenix route reads; the identity is trusted, never the caller's carrier
@@ -201,10 +221,10 @@ pub(crate) fn mcp_tool_with_auth() -> StandardLoggingPayload {
     payload(
         "call_mcp_tool",
         "success",
-        json!({
-            "mcp_tool_call_metadata": {"name": "search"},
-            "user_api_key_auth_metadata": {"phoenix_project_name": "proj"},
-        }),
+        json_object(vec![
+            ("mcp_tool_call_metadata", tool_name_metadata()),
+            ("user_api_key_auth_metadata", project_name_metadata()),
+        ]),
     )
 }
 
@@ -212,19 +232,25 @@ pub(crate) fn mcp_list_with_auth() -> StandardLoggingPayload {
     payload(
         "list_mcp_tools",
         "success",
-        json!({"user_api_key_auth_metadata": {"phoenix_project_name": "proj"}}),
+        json_object(vec![(
+            "user_api_key_auth_metadata",
+            project_name_metadata(),
+        )]),
     )
 }
 
 pub(crate) fn mcp_list_failure() -> StandardLoggingPayload {
-    payload("list_mcp_tools", "failure", json!({}))
+    payload("list_mcp_tools", "failure", json_object(Vec::new()))
 }
 
 pub(crate) fn team_payload() -> StandardLoggingPayload {
     payload(
         "completion",
         "success",
-        json!({"user_api_key_team_id": "team-a", "user_api_key_hash": "hash"}),
+        json_object(vec![
+            ("user_api_key_team_id", Json::Text("team-a".to_owned())),
+            ("user_api_key_hash", Json::Text("hash".to_owned())),
+        ]),
     )
 }
 
@@ -316,13 +342,16 @@ pub(crate) fn details(
         "litellm_no_upstream_llm_call".to_owned(),
         Json::Bool(no_upstream),
     );
-    if let Some(dynamic) = dynamic {
-        object.insert("standard_callback_dynamic_params".to_owned(), dynamic);
+    if let Some(dynamic_params) = dynamic {
+        object.insert(
+            "standard_callback_dynamic_params".to_owned(),
+            dynamic_params,
+        );
     }
-    if let Some(auth) = auth {
+    if let Some(identity) = auth {
         let metadata = Json::Object(IndexMap::from([(
             "user_api_key_auth_metadata".to_owned(),
-            auth,
+            identity,
         )]));
         object.insert(
             "litellm_params".to_owned(),
@@ -333,9 +362,9 @@ pub(crate) fn details(
 }
 
 // one pre_call boundary as a test states it: the model, whether the proxy tagged a gate rejection, and the request's dynamic params and auth
-pub(crate) struct PreCall<'a> {
-    pub(crate) call_id: &'a str,
-    pub(crate) model: &'a str,
+pub(crate) struct PreCall<'call> {
+    pub(crate) call_id: &'call str,
+    pub(crate) model: &'call str,
     pub(crate) no_upstream: bool,
     pub(crate) dynamic: Option<Json>,
     pub(crate) auth: Option<Json>,
@@ -725,7 +754,7 @@ pub(crate) fn phoenix_http() -> Settings {
 
 pub(crate) fn payload_start() -> SystemTime {
     UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_704_067_200))
+        .checked_add(Duration::from_hours(473_352))
         .expect("payload start")
 }
 
@@ -795,7 +824,7 @@ pub(crate) fn metric_points(
             AggregatedMetrics::F64(MetricData::Histogram(histogram)) => {
                 histogram.data_points().count()
             }
-            _ => 0,
+            AggregatedMetrics::F64(_) | AggregatedMetrics::U64(_) | AggregatedMetrics::I64(_) => 0,
         })
         .sum()
 }
