@@ -1,0 +1,48 @@
+kind: sdk_http
+name: sdk-http-chat-response-stream-chunk-priority
+env: {}
+call:
+  chat_response_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    request_input: hi
+    runs:
+      - {mode: sync, steps: [drain]}
+      - {mode: async, steps: [drain]}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"reasoning_content":"r","content":"x"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"hi","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.test","title":"Example","start_index":0,"end_index":2}}]},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"x\":1}"}}]},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"annotations":[{"type":"url_citation","url_citation":{"url":"https://second.test","title":"Second","start_index":1,"end_index":3}}]},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"hi","annotations":[{"type":"url_citation","url_citation":{"url":"https://example.test/0","title":"Example 0","start_index":0,"end_index":2}},{"type":"url_citation","url_citation":{"url":"https://example.test/1","title":"Example 1","start_index":1,"end_index":3}},{"type":"url_citation","url_citation":{"url":"https://example.test/2","title":"Example 2","start_index":2,"end_index":4}}]},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /chat_response_stream/value/0/steps/0/events/13/part/annotations
+      why: >-
+        LiteLLM's content_part.done builds ContentPartDonePartOutputText from the
+        annotation fields and dumps an empty object for each; betterlite keeps the
+        citation fields the output item carries.
+    - pointer: /chat_response_stream/value/1/steps/0/events/8/part/annotations
+      why: >-
+        LiteLLM's content_part.done builds ContentPartDonePartOutputText from the
+        annotation fields and dumps an empty object for each; betterlite keeps the
+        citation fields the output item carries.

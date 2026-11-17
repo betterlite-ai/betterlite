@@ -14,6 +14,7 @@ use crate::errors::HarnessError;
 use crate::events::Event;
 use crate::options::{ClaudeCodeOptions, HarnessOptions};
 use crate::sandbox::local::LocalSandbox;
+use crate::sandbox::local::process::PROCESS_KILL_GRACE;
 use crate::transformation::{
     BaseCLIHarnessConfig as _, BaseHarnessConfig as _, PersistedDir, TurnInput,
 };
@@ -21,8 +22,13 @@ use crate::types::{Capability, Harness, JsonObject, PermissionMode};
 
 fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     let root = tempfile::tempdir().expect("tempdir");
-    let sandbox = LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf())
-        .expect("sandbox");
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .expect("sandbox");
     let settings = SessionSettings {
         model: None,
         gateway: Some(GatewayTarget {

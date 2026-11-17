@@ -1,0 +1,15 @@
+# sso_resolution: descriptor defaults, database precedence and structured mappings
+kind: helper
+name: sso-resolution-seed
+call:
+  b4141:
+    salt_key: salt-one
+    db:
+      generic_scope: db-scope
+      team_mappings:
+        team_ids_jwt_field: teams
+    env:
+      GENERIC_SCOPE: env-scope
+      SAML_ALLOW_UNSOLICITED: "true"
+env: {}
+compare: {ignore: []}

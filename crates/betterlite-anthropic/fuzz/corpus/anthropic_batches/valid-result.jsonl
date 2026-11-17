@@ -1,0 +1,3 @@
+R{"custom_id":"c1","result":{"type":"succeeded","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-x","content":[{"type":"text","text":"one"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":2}}}}
+{not json
+{"custom_id":"c2","result":{"type":"succeeded","message":{"id":"msg_2","type":"message","role":"assistant","model":"claude-y","content":[{"type":"text","text":"two"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":4}}}}

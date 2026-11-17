@@ -1,6 +1,6 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use axum::Json;
@@ -38,7 +38,6 @@ use super::error::LoadFailure;
 use super::error::SandboxLoad;
 use super::run::CallOutcome;
 use super::run::CodeSandbox;
-use super::run::EXECUTION_TIMEOUT;
 use super::run::LoadOutcome;
 use super::run::LoadedCode;
 use super::run::SandboxHost;
@@ -51,6 +50,7 @@ const UNAUTHENTICATED: &str = "the API key is not valid";
 
 pub struct SandboxedCode {
     pub host: Arc<dyn SandboxHost>,
+    pub timeout: Duration,
 }
 
 #[derive(Clone)]
@@ -128,13 +128,13 @@ impl CodeSandbox for SandboxedCode {
                     .map_err(|error| SandboxError::Failed(SandboxLoad::Compile(error)))?;
                 host.load(&program, &globals).map_err(module_error)
             },
-            EXECUTION_TIMEOUT,
+            self.timeout,
             "test:load",
         )
         .await;
         match loaded {
             Ok(module) => LoadOutcome::Loaded(LoadedCode(module)),
-            Err(failure) => LoadOutcome::Failed(match execution_failure(failure) {
+            Err(failure) => LoadOutcome::Failed(match execution_failure(failure, self.timeout) {
                 ExecutionFailure::Timeout(error) => LoadFailure::Timeout(error),
                 ExecutionFailure::Exit(exit) => LoadFailure::Exit(exit),
                 ExecutionFailure::Unexpected(error) => LoadFailure::Unexpected(error),
@@ -152,22 +152,22 @@ impl CodeSandbox for SandboxedCode {
         let input_type = arguments.input_type;
         let output = match call_off_loop_with_timeout(
             move || module.call(inputs, request_data, &input_type),
-            EXECUTION_TIMEOUT,
+            self.timeout,
             "test",
         )
         .await
         {
             Ok(output) => output,
-            Err(error) => return CallOutcome::Failed(call_failure(error)),
+            Err(error) => return CallOutcome::Failed(call_failure(error, self.timeout)),
         };
         let pending = match output {
             CallOutput::Value(value) => return CallOutcome::Result(value),
             CallOutput::Pending(pending) => pending,
         };
-        let remaining = EXECUTION_TIMEOUT.saturating_sub(started.elapsed());
+        let remaining = self.timeout.saturating_sub(started.elapsed());
         match await_with_timeout(pending, remaining, "test").await {
             Ok(value) => CallOutcome::Result(value),
-            Err(error) => CallOutcome::Failed(call_failure(error)),
+            Err(error) => CallOutcome::Failed(call_failure(error, self.timeout)),
         }
     }
 }
@@ -187,7 +187,7 @@ enum ExecutionFailure<E> {
     Unexpected(ExecutionError<E>),
 }
 
-fn execution_failure<E>(source: ExecutionError<E>) -> ExecutionFailure<E>
+fn execution_failure<E>(source: ExecutionError<E>, configured: Duration) -> ExecutionFailure<E>
 where
     E: StdError,
 {
@@ -195,7 +195,7 @@ where
         ExecutionError::Timeout(timeout) => ExecutionFailure::Timeout(timeout),
         ExecutionError::Sandbox(SandboxError::Interrupted(_)) => {
             ExecutionFailure::Timeout(ExecutionTimeoutError {
-                timeout: EXECUTION_TIMEOUT,
+                timeout: configured,
             })
         }
         ExecutionError::Sandbox(SandboxError::Exit(exit)) => ExecutionFailure::Exit(exit),
@@ -214,8 +214,8 @@ fn module_failure(failure: ModuleLoadFailure) -> LoadFailure {
     }
 }
 
-fn call_failure(source: ExecutionError<RuntimeFailure>) -> CallFailure {
-    match execution_failure(source) {
+fn call_failure(source: ExecutionError<RuntimeFailure>, configured: Duration) -> CallFailure {
+    match execution_failure(source, configured) {
         ExecutionFailure::Timeout(timeout) => CallFailure::Timeout(timeout),
         ExecutionFailure::Exit(exit) => CallFailure::Exit(exit),
         ExecutionFailure::Unexpected(error) => CallFailure::Unexpected(error),

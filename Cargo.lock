@@ -1067,6 +1067,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",
@@ -2200,6 +2201,7 @@ dependencies = [
  "md-5",
  "minijinja",
  "minijinja-contrib",
+ "mutants",
  "nix",
  "opentelemetry",
  "opentelemetry-http",
@@ -3677,6 +3679,7 @@ name = "betterlite-oracle-vertex"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -4641,6 +4644,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-cache",
  "betterlite-config",
@@ -4655,6 +4659,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "data-encoding",
  "futures-util",
  "google-cloud-auth",

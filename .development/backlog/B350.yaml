@@ -1,7 +1,7 @@
 id: B350
 milestone: M2 routing
 title: LAR-1 confidence routing
-status: todo
+status: done
 depends_on: [B016, B301, B361, B002]
 file: tasks/B350-lar1-routing.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/lar1.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2288

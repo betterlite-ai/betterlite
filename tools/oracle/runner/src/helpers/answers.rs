@@ -61,6 +61,34 @@ impl Answers {
         })
     }
 
+    fn stored(&self, name: &str) -> Result<Option<HelperOutput>, HelperRunError> {
+        for (layer, folder) in [(Layer::Shared, &self.shared), (Layer::Own, &self.own)] {
+            let path = folder.join(name);
+            let stored = match fs::read(&path) {
+                Ok(stored) => stored,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(source) => return Err(HelperRunError::Filesystem { path, source }),
+            };
+            if layer == Layer::Shared {
+                // CI's oracle answers job keeps a shared answer only while some run reads it, and learns that from these markers
+                let used = self.own.join("used");
+                fs::create_dir_all(&used).map_err(|source| HelperRunError::Filesystem {
+                    path: used.clone(),
+                    source,
+                })?;
+                let marker = used.join(name);
+                fs::write(&marker, b"").map_err(|source| HelperRunError::Filesystem {
+                    path: marker,
+                    source,
+                })?;
+            }
+            return serde_json::from_slice(&stored)
+                .map(Some)
+                .map_err(HelperRunError::HelperJson);
+        }
+        Ok(None)
+    }
+
     pub(super) fn answer(
         &self,
         root: &Path,
@@ -68,15 +96,8 @@ impl Answers {
         case_env: &BTreeMap<String, String>,
     ) -> Result<HelperOutput, HelperRunError> {
         let name = format!("{}.json", key(root, call, case_env)?);
-        for folder in [&self.shared, &self.own] {
-            let path = folder.join(&name);
-            match fs::read(&path) {
-                Ok(stored) => {
-                    return serde_json::from_slice(&stored).map_err(HelperRunError::HelperJson);
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(source) => return Err(HelperRunError::Filesystem { path, source }),
-            }
+        if let Some(stored) = self.stored(&name)? {
+            return Ok(stored);
         }
         sync_litellm(root)?;
         let stdout_output = python_stdout(root, call, case_env, &self.process_env)?;

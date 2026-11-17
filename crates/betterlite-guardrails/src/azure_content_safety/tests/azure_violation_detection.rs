@@ -1,8 +1,9 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use jiff::Timestamp;
 use reqwest::StatusCode;
 use rstest::rstest;
+use tokio::time::Instant;
 
 use super::support::{Reply, legacy, mock, mock_body, mock_slow, mock_with, reply, threshold_map};
 use crate::azure_content_safety::error::{AzureContentSafetyError, VIOLATION_MESSAGE};
@@ -280,7 +281,7 @@ async fn backs_off_between_retryable_server_errors() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn reads_the_injected_clock_for_a_retry_after_date() {
     let throttled = Reply {
         status: 503,
