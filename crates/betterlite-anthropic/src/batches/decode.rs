@@ -41,14 +41,12 @@ pub struct BatchCounts {
 
 impl BatchCounts {
     pub fn total(self) -> Result<i64, DecodeError> {
-        let first = self
-            .processing
+        self.processing
             .checked_add(self.succeeded)
             .and_then(|value| value.checked_add(self.errored))
-            .and_then(|value| value.checked_add(self.canceled));
-        first
+            .and_then(|value| value.checked_add(self.canceled))
             .and_then(|value| value.checked_add(self.expired))
-            .map_or(Err(DecodeError::CountOverflow), Ok)
+            .ok_or(DecodeError::CountOverflow)
     }
 }
 
@@ -122,16 +120,18 @@ fn batch_status(raw_status: Option<&str>) -> BatchStatus {
 }
 
 fn id_field(value: Option<Json>) -> Result<String, DecodeError> {
-    match value {
-        None => Ok(String::new()),
-        Some(raw) => text_field(raw, "id must be a string"),
-    }
+    value.map_or_else(
+        || Ok(String::new()),
+        |raw| text_field(raw, "id must be a string"),
+    )
 }
 
 fn text_field(value: Json, detail: &'static str) -> Result<String, DecodeError> {
     match value {
         Json::Text(text) => Ok(text),
-        _other => Err(DecodeError::Shape { detail }),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(DecodeError::Shape { detail })
+        }
     }
 }
 

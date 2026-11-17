@@ -45,8 +45,15 @@ fn replays_the_anthropic_batches_corpus(#[case] name: &str, #[case] expected: Ex
             assert_eq!(batch.counts.succeeded, 2);
         }
         (Expected::Result, Ok(DecodedBody::Results(rows))) => assert_eq!(rows.len(), 2),
+        // the counts decode, and the total the projected batch reports is what refuses to overflow
+        (Expected::Overflow, Ok(DecodedBody::Lifecycle(batch))) => {
+            assert_eq!(batch.counts.succeeded, i64::MAX);
+            assert!(matches!(
+                batch.counts.total(),
+                Err(DecodeError::CountOverflow)
+            ));
+        }
         (Expected::Parse, Err(DecodeError::Parse { .. }))
-        | (Expected::Overflow, Err(DecodeError::CountOverflow))
         | (Expected::Shape, Err(DecodeError::Shape { .. })) => {}
         (_, decoded) => panic!("{name}: unexpected decode {decoded:?}"),
     }
