@@ -157,10 +157,10 @@ impl RunStream {
                 Ok(None) => Ok(Pulled::End),
                 Err(error) => Ok(Pulled::Failure(error.into_stream_failure())),
             },
-            Self::View { view, .. } => match view.next_frame().await {
-                Some(frame) => Ok(Pulled::Frame(frame)),
-                None => Ok(Pulled::End),
-            },
+            Self::View { view, .. } => view
+                .next_frame()
+                .await
+                .map_or_else(|| Ok(Pulled::End), |frame| Ok(Pulled::Frame(frame))),
         }
     }
 
