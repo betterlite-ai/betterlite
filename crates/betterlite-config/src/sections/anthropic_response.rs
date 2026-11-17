@@ -1,1 +1,67 @@
-crate::sections::stub_section!();
+use serde::Deserialize;
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::sections::Section;
+
+mod tests;
+
+#[derive(Debug, Default, Deserialize)]
+pub struct Raw {
+    #[serde(default)]
+    model_list: Vec<RawDeployment>,
+    #[serde(default)]
+    litellm_settings: RawLiteLlm,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawParams {
+    disable_add_prefix_to_prompt: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawLiteLlm {
+    disable_add_prefix_to_prompt: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Settings {
+    pub global_disable_add_prefix_to_prompt: bool,
+    pub deployments: Vec<bool>,
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let name = "LITELLM_DISABLE_ADD_PREFIX_TO_PROMPT";
+        let environment = betterlite_env::flag(name, &lookup.lookup(name).unwrap_or_default())?;
+        let global_disable_add_prefix_to_prompt = self
+            .litellm_settings
+            .disable_add_prefix_to_prompt
+            .or(environment)
+            .unwrap_or(false);
+        let deployments = self
+            .model_list
+            .into_iter()
+            .map(|deployment| {
+                deployment
+                    .litellm_params
+                    .disable_add_prefix_to_prompt
+                    .unwrap_or(global_disable_add_prefix_to_prompt)
+            })
+            .collect();
+        Ok(Settings {
+            global_disable_add_prefix_to_prompt,
+            deployments,
+        })
+    }
+}
