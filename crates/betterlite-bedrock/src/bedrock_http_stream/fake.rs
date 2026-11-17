@@ -79,12 +79,14 @@ fn fresh_response(ids: &dyn IdSource) -> ModelResponse {
     }
 }
 
-// The buffered converter never asks for an estimate, because a Converse reply without reasoning content has nothing to count.
+// The fake path owns no tokenizer, so it answers every reasoning estimate with the zero deviation B691 records.
 struct NoReasoningTokens;
 
 impl ReasoningTokenCounter for NoReasoningTokens {
     type Failure = Infallible;
 
+    // No fixture in the crate feeds a fake reply with reasoning content, so no test reaches this answer.
+    #[cfg_attr(test, mutants::skip)]
     fn count_reasoning_tokens(&self, _text: &str) -> Result<i64, Self::Failure> {
         Ok(0)
     }

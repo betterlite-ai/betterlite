@@ -15,6 +15,9 @@ deviations:
   - what: A buffered reply body that is not UTF-8 is named by its byte count in the status message, where LiteLLM's response.text decodes it with replacement characters.
     why: The byte count names the actual fault without inventing text the provider did not send, the same choice B607 records for the buffered converter.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L59-L63
+  - what: A buffered fake-stream reply that carries reasoning content counts zero reasoning tokens, where LiteLLM estimates them with the global tokenizer.
+    why: The stream opening helpers own no tokenizer, and B607's converter takes its counter from the caller; the fake replies a working setup sends carry no reasoning content, so their counts stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2236-L2243
   - what: The Invoke catch-all 500 message is betterlite's own wording for the failed operation, where LiteLLM carries str(exception) of the Python KeyError or TypeError the converter raised.
     why: Python's exception text does not exist outside Python; the status and the fact that the conversion failed are the comparable facts, and docs/compatibility.md makes a value of the wrong type an error naming the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L252-L271
