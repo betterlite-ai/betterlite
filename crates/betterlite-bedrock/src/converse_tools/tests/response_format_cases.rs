@@ -111,8 +111,8 @@ fn response_schema_wins(catalogs: &CatalogSources<'_>) {
         "true",
     );
     assert_eq!(
-        translated(catalogs, &null_schema, &mut native),
-        Ok(object(r#"{"json_mode": true}"#))
+        translated(catalogs, &null_schema, &mut native).expect("a null schema sets json mode"),
+        object(r#"{"json_mode": true}"#)
     );
     let null_field = call(
         json(r#"{"type": "json_schema", "json_schema": {"schema": null}}"#),
@@ -121,8 +121,8 @@ fn response_schema_wins(catalogs: &CatalogSources<'_>) {
         "true",
     );
     assert_eq!(
-        translated(catalogs, &null_field, &mut native),
-        Ok(object(r#"{"json_mode": true}"#))
+        translated(catalogs, &null_field, &mut native).expect("a null field sets json mode"),
+        object(r#"{"json_mode": true}"#)
     );
 }
 
@@ -149,29 +149,76 @@ fn format_shapes(catalogs: &CatalogSources<'_>) {
 
 fn format_errors(catalogs: &CatalogSources<'_>) {
     let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
-    let cases = [
-        (json("5"), ConverseToolsError::FormatNotAnObject),
-        (
-            json(r#"{"json_schema": {}}"#),
-            ConverseToolsError::MissingFormatType,
-        ),
-        (
+    rejected_shape(catalogs, &mut native);
+    rejected_envelope(catalogs, &mut native);
+    rejected_name(catalogs, &mut native);
+}
+
+fn rejected_shape(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
+    let not_object = translated(catalogs, &call(json("5"), MODEL, false, "true"), native)
+        .expect_err("a number is not a format");
+    assert!(matches!(not_object, ConverseToolsError::FormatNotAnObject));
+    let missing_type = translated(
+        catalogs,
+        &call(json(r#"{"json_schema": {}}"#), MODEL, false, "true"),
+        native,
+    )
+    .expect_err("the type key is required");
+    assert!(matches!(
+        missing_type,
+        ConverseToolsError::MissingFormatType
+    ));
+}
+
+fn rejected_envelope(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
+    let bad_envelope = translated(
+        catalogs,
+        &call(
             json(r#"{"type": "json_schema", "json_schema": 5}"#),
-            ConverseToolsError::JsonSchemaNotAnObject,
+            MODEL,
+            false,
+            "true",
         ),
-        (
+        native,
+    )
+    .expect_err("the envelope must be an object");
+    assert!(matches!(
+        bad_envelope,
+        ConverseToolsError::JsonSchemaNotAnObject
+    ));
+    let missing_schema = translated(
+        catalogs,
+        &call(
             json(r#"{"type": "json_schema", "json_schema": {}}"#),
-            ConverseToolsError::MissingSchemaField,
+            MODEL,
+            false,
+            "true",
         ),
-        (
+        native,
+    )
+    .expect_err("the schema key is required");
+    assert!(matches!(
+        missing_schema,
+        ConverseToolsError::MissingSchemaField
+    ));
+}
+
+fn rejected_name(catalogs: &CatalogSources<'_>, native: &mut Predicates) {
+    let bad_name = translated(
+        catalogs,
+        &call(
             json(r#"{"type": "json_schema", "json_schema": {"schema": {}, "name": 5}}"#),
-            ConverseToolsError::NotText { field: "name" },
+            MODEL,
+            false,
+            "true",
         ),
-    ];
-    for (value, expected) in cases {
-        let case = call(value, MODEL, false, "true");
-        assert_eq!(translated(catalogs, &case, &mut native), Err(expected));
-    }
+        native,
+    )
+    .expect_err("the name must be a string");
+    assert!(matches!(
+        bad_name,
+        ConverseToolsError::NotText { field: "name" }
+    ));
 }
 
 fn output_config_blocks() {
@@ -183,7 +230,7 @@ fn output_config_blocks() {
     );
     assert_eq!(
         create_output_config(
-            Some(&json(r#"{"type": "object", "note": "é"}"#)),
+            Some(&json("{\"type\": \"object\", \"note\": \"\u{e9}\"}")),
             Some(""),
             Some("")
         ),
@@ -216,13 +263,13 @@ fn fallback_gates(catalogs: &CatalogSources<'_>) {
     let choosable = object(
         r#"{"tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object"}, "description": "why"}}], "tool_choice": {"tool": {"name": "json_tool_call"}}, "json_mode": true}"#,
     );
-    let gates = [
+    let rows = [
         (call(fallback_schema(), MODEL, true, "true"), true, &gated),
         (call(fallback_schema(), MODEL, false, "true"), false, &gated),
         (call(fallback_schema(), NOVA, false, "true"), true, &gated),
         (call(fallback_schema(), LLAMA, false, "1"), true, &choosable),
     ];
-    for (case, tool_choice_supported, expected) in gates {
+    for (case, tool_choice_supported, expected) in rows {
         let mut predicates = if tool_choice_supported {
             Predicates::with(&[NamedCapability::ToolChoice.key()])
         } else {
@@ -237,9 +284,14 @@ fn schemaless_formats(catalogs: &CatalogSources<'_>) {
     let mut supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
     let json_object = call(json(r#"{"type": "json_object"}"#), MODEL, false, "true");
     let builtin = call(json(r#"{"type": "builtin"}"#), MODEL, false, "true");
-    let expected = Ok(object(r#"{"json_mode": true}"#));
-    assert_eq!(translated(catalogs, &json_object, &mut supported), expected);
-    assert_eq!(translated(catalogs, &builtin, &mut supported), expected);
+    assert_eq!(
+        translated(catalogs, &json_object, &mut supported).expect("json_object sets json mode"),
+        object(r#"{"json_mode": true}"#)
+    );
+    assert_eq!(
+        translated(catalogs, &builtin, &mut supported).expect("an unknown format sets json mode"),
+        object(r#"{"json_mode": true}"#)
+    );
 }
 
 fn existing_tools(catalogs: &CatalogSources<'_>) {

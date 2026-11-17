@@ -1,3 +1,5 @@
+use std::slice::from_ref;
+
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::anthropic_capability_catalog::DropParams;
 use betterlite_anthropic::anthropic_capability_catalog::forced_tool::ForcedToolChoiceError;
@@ -53,20 +55,20 @@ fn string_choices(catalogs: &CatalogSources<'_>) {
         call: false,
     };
     assert_eq!(
-        choice(MODEL, r#""auto""#, no_drop, catalogs),
-        Ok(Some(object(r#"{"auto": {}}"#)))
+        choice(MODEL, r#""auto""#, no_drop, catalogs).expect("auto maps"),
+        Some(object(r#"{"auto": {}}"#))
     );
     assert_eq!(
-        choice(MODEL, r#""required""#, no_drop, catalogs),
-        Ok(Some(object(r#"{"any": {}}"#)))
+        choice(MODEL, r#""required""#, no_drop, catalogs).expect("required maps"),
+        Some(object(r#"{"any": {}}"#))
     );
     assert_eq!(
-        choice(NOVA, r#""required""#, drop_call, catalogs),
-        Ok(Some(object(r#"{"auto": {}}"#)))
+        choice(NOVA, r#""required""#, drop_call, catalogs).expect("a dropped required maps"),
+        Some(object(r#"{"auto": {}}"#))
     );
     assert_eq!(
-        choice(NOVA, r#""required""#, drop_global, catalogs),
-        Ok(Some(object(r#"{"auto": {}}"#)))
+        choice(NOVA, r#""required""#, drop_global, catalogs).expect("a globally dropped required"),
+        Some(object(r#"{"auto": {}}"#))
     );
     let downgraded = choice(NOVA, r#""required""#, no_drop, catalogs).expect_err("no drop asked");
     assert!(matches!(
@@ -86,10 +88,16 @@ fn none_choices(catalogs: &CatalogSources<'_>) {
         global: true,
         call: false,
     };
-    assert_eq!(choice(MODEL, r#""none""#, drop_global, catalogs), Ok(None));
-    assert_eq!(choice(MODEL, r#""none""#, drop_call, catalogs), Ok(None));
+    assert_eq!(
+        choice(MODEL, r#""none""#, drop_global, catalogs).expect("a global drop removes none"),
+        None
+    );
+    assert_eq!(
+        choice(MODEL, r#""none""#, drop_call, catalogs).expect("a call drop removes none"),
+        None
+    );
     let kept_none = choice(MODEL, r#""none""#, no_drop, catalogs).expect_err("none is unsupported");
-    assert_eq!(kept_none, ConverseToolsError::UnsupportedNone);
+    assert!(matches!(kept_none, ConverseToolsError::UnsupportedNone));
     assert_eq!(kept_none.status_code(), Some(400));
 }
 
@@ -99,13 +107,11 @@ fn unknown_choices(catalogs: &CatalogSources<'_>) {
         call: false,
     };
     let unknown = choice(MODEL, r#""bogus""#, drop_global, catalogs).expect_err("not dropped");
-    assert_eq!(
-        unknown,
-        ConverseToolsError::UnsupportedChoice {
-            value: "bogus".to_owned()
-        }
-    );
     assert_eq!(unknown.status_code(), Some(400));
+    let ConverseToolsError::UnsupportedChoice { value } = unknown else {
+        panic!("a bogus string is an unsupported choice");
+    };
+    assert_eq!(value, "bogus");
     assert_eq!(
         choice(MODEL, "7", drop_global, catalogs)
             .expect_err("a number is not a tool choice")
@@ -134,8 +140,9 @@ fn dict_choices(catalogs: &CatalogSources<'_>) {
     ];
     for (tool_choice, expected) in cases {
         assert_eq!(
-            choice(MODEL, tool_choice, DropParams::default(), catalogs),
-            Ok(Some(object(expected)))
+            choice(MODEL, tool_choice, DropParams::default(), catalogs)
+                .expect("the dict maps to a tool choice"),
+            Some(object(expected))
         );
     }
 }
@@ -152,8 +159,9 @@ fn downgraded_dict_choices(catalogs: &CatalogSources<'_>) {
             r#"{"function": {"name": "specific"}}"#,
             drop_call,
             catalogs
-        ),
-        Ok(Some(object(r#"{"auto": {}}"#)))
+        )
+        .expect("the downgraded dict maps"),
+        Some(object(r#"{"auto": {}}"#))
     );
     assert_eq!(
         choice(
@@ -170,14 +178,15 @@ fn downgraded_dict_choices(catalogs: &CatalogSources<'_>) {
 
 fn malformed_choices(catalogs: &CatalogSources<'_>) {
     let no_drop = DropParams::default();
-    assert_eq!(
-        choice(MODEL, r#"{"function": 5}"#, no_drop, catalogs),
-        Err(ConverseToolsError::ToolChoiceFunction)
-    );
-    assert_eq!(
-        choice(MODEL, r#"{"function": {"name": 5}}"#, no_drop, catalogs),
-        Err(ConverseToolsError::ToolChoiceName)
-    );
+    let bad_function = choice(MODEL, r#"{"function": 5}"#, no_drop, catalogs)
+        .expect_err("a non-object function is refused");
+    assert!(matches!(
+        bad_function,
+        ConverseToolsError::ToolChoiceFunction
+    ));
+    let bad_name = choice(MODEL, r#"{"function": {"name": 5}}"#, no_drop, catalogs)
+        .expect_err("a non-string name is refused");
+    assert!(matches!(bad_name, ConverseToolsError::ToolChoiceName));
     assert_eq!(
         ConverseToolsError::ToolChoiceName.status_code(),
         None,
@@ -199,32 +208,32 @@ pub(crate) fn computer_use_tool_split() {
             {"name": "nameless"}
         ]"#,
     );
-    let Json::List(tools) = tools else {
+    let Json::List(entries) = tools else {
         panic!("the fixture is a list");
     };
-    detector_answers(&tools);
-    partition_answers(&tools);
-    transform_answers(&tools);
+    detector_answers(&entries);
+    partition_answers(&entries);
+    transform_answers(&entries);
     tool_errors();
 }
 
 fn detector_answers(tools: &[Json]) {
-    assert_eq!(is_computer_use_tool_used(None), Ok(false));
-    assert_eq!(is_computer_use_tool_used(Some(tools)), Ok(true));
-    assert_eq!(
-        is_computer_use_tool_used(Some(&[json(r#"{"name": "plain"}"#)])),
-        Ok(false)
+    assert!(!is_computer_use_tool_used(None).expect("no tools is false"));
+    assert!(is_computer_use_tool_used(Some(tools)).expect("a computer tool is found"));
+    assert!(
+        !is_computer_use_tool_used(Some(&[json(r#"{"name": "plain"}"#)]))
+            .expect("a tool without a type is not a computer tool")
     );
-    assert_eq!(
-        is_computer_use_tool_used(Some(&[json(r#"{"type": "custom_tool"}"#)])),
-        Ok(false)
+    assert!(
+        !is_computer_use_tool_used(Some(&[json(r#"{"type": "custom_tool"}"#)]))
+            .expect("a custom tool is not a computer tool")
     );
-    assert_eq!(
+    assert!(
         is_computer_use_tool_used(Some(&[
             json(r#"{"type": "custom_tool"}"#),
             json(r#"{"type": "bash_20250124"}"#)
-        ])),
-        Ok(true)
+        ]))
+        .expect("a later computer tool is found")
     );
 }
 
@@ -260,34 +269,31 @@ fn transform_answers(tools: &[Json]) {
         ]
     );
     assert_eq!(
-        transform_computer_use_tools(&[json(r#"{"type": "computer_x", "function": {}}"#)]),
-        Ok(vec![json(r#"{"type": "computer_x", "name": "computer"}"#)])
+        transform_computer_use_tools(&[json(r#"{"type": "computer_x", "function": {}}"#)])
+            .expect("the tool transforms cleanly"),
+        vec![json(r#"{"type": "computer_x", "name": "computer"}"#)]
     );
 }
 
 fn tool_errors() {
-    assert_eq!(
-        is_computer_use_tool_used(Some(&[json("5")])),
-        Err(ConverseToolsError::ToolNotAnObject)
-    );
-    assert_eq!(
-        is_computer_use_tool_used(Some(&[json(r#"{"type": 5}"#)])),
-        Err(ConverseToolsError::ToolType)
-    );
-    assert_eq!(
-        transform_computer_use_tools(&[json(r#"{"type": "computer_x", "function": 5}"#)]),
-        Err(ConverseToolsError::ToolFunction)
-    );
-    assert_eq!(
-        transform_computer_use_tools(&[json(
-            r#"{"type": "computer_x", "function": {"parameters": null}}"#
-        )]),
-        Err(ConverseToolsError::ToolParameters)
-    );
-    assert_eq!(
-        transform_computer_use_tools(&[json(r#"{"type": 5}"#)]),
-        Err(ConverseToolsError::ToolType)
-    );
+    let not_object =
+        is_computer_use_tool_used(Some(&[json("5")])).expect_err("a tool must be an object");
+    assert!(matches!(not_object, ConverseToolsError::ToolNotAnObject));
+    let bad_type = is_computer_use_tool_used(Some(&[json(r#"{"type": 5}"#)]))
+        .expect_err("a tool type must be a string");
+    assert!(matches!(bad_type, ConverseToolsError::ToolType));
+    let bad_function =
+        transform_computer_use_tools(&[json(r#"{"type": "computer_x", "function": 5}"#)])
+            .expect_err("a function must be an object");
+    assert!(matches!(bad_function, ConverseToolsError::ToolFunction));
+    let bad_parameters = transform_computer_use_tools(&[json(
+        r#"{"type": "computer_x", "function": {"parameters": null}}"#,
+    )])
+    .expect_err("parameters must be an object");
+    assert!(matches!(bad_parameters, ConverseToolsError::ToolParameters));
+    let non_string_type = transform_computer_use_tools(&[json(r#"{"type": 5}"#)])
+        .expect_err("a tool type must be a string");
+    assert!(matches!(non_string_type, ConverseToolsError::ToolType));
 }
 
 pub(crate) fn json_mode_tool() {
@@ -335,20 +341,19 @@ fn tool_appending() {
     let mut absent = object("{}");
     append_tools(&mut absent, vec![tool.clone()]).expect("an absent key is set");
     assert_eq!(absent.get("tools"), Some(&Json::List(vec![tool.clone()])));
-    assert_eq!(
-        append_tools(&mut object(r#"{"tools": 5}"#), vec![tool.clone()]),
-        Err(ConverseToolsError::ToolsNotList)
-    );
+    let not_list = append_tools(&mut object(r#"{"tools": 5}"#), vec![tool])
+        .expect_err("a non-list tools value is refused");
+    assert!(matches!(not_list, ConverseToolsError::ToolsNotList));
 }
 
 fn fake_stream_flags(tool: &Json) {
     let mut streamed = object("{}");
-    apply_tool_call_transformation(&[tool.clone()], LLAMA, &json("true"), &mut streamed)
+    apply_tool_call_transformation(from_ref(tool), LLAMA, &json("true"), &mut streamed)
         .expect("the tools apply");
     assert_eq!(streamed.get("fake_stream"), Some(&Json::Bool(true)));
     let mut prefixed = object("{}");
     apply_tool_call_transformation(
-        &[tool.clone()],
+        from_ref(tool),
         "us.meta.llama3-3-70b-instruct-v1:0",
         &json("true"),
         &mut prefixed,
@@ -357,7 +362,7 @@ fn fake_stream_flags(tool: &Json) {
     assert_eq!(prefixed.get("fake_stream"), Some(&Json::Bool(true)));
     for stream in ["false", "null", "1", r#""true""#] {
         let mut params = object("{}");
-        apply_tool_call_transformation(&[tool.clone()], LLAMA, &json(stream), &mut params)
+        apply_tool_call_transformation(from_ref(tool), LLAMA, &json(stream), &mut params)
             .expect("the tools apply");
         assert_eq!(
             params.get("fake_stream"),
@@ -367,7 +372,7 @@ fn fake_stream_flags(tool: &Json) {
     }
     let mut other = object("{}");
     apply_tool_call_transformation(
-        &[tool.clone()],
+        from_ref(tool),
         "amazon.nova-pro-v1:0",
         &json("true"),
         &mut other,
@@ -512,10 +517,11 @@ fn plain_blocks() {
             strict: None,
             supports_strict_tools: false,
         }
-        .into_block(),
-        Ok(json(
+        .into_block()
+        .expect("the plain spec builds"),
+        json(
             r#"{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {"a": 1}, "required": ["a"]}}, "name": "tool", "description": "desc"}}"#
-        ))
+        )
     );
     let minimal = json(r#"{"type": "object"}"#);
     assert_eq!(
@@ -526,10 +532,11 @@ fn plain_blocks() {
             strict: None,
             supports_strict_tools: false,
         }
-        .into_block(),
-        Ok(json(
+        .into_block()
+        .expect("the minimal spec builds"),
+        json(
             r#"{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "tool", "description": ""}}"#
-        ))
+        )
     );
 }
 
@@ -543,10 +550,11 @@ fn null_and_extra_blocks() {
             strict: None,
             supports_strict_tools: false,
         }
-        .into_block(),
-        Ok(json(
+        .into_block()
+        .expect("the null spec builds"),
+        json(
             r#"{"toolSpec": {"inputSchema": {"json": {"type": null, "properties": null, "required": null}}, "name": "tool", "description": "d"}}"#
-        ))
+        )
     );
     let extras = json(r#"{"type": "object", "$defs": {"x": 1}, "description": "dropped"}"#);
     assert_eq!(
@@ -557,10 +565,11 @@ fn null_and_extra_blocks() {
             strict: None,
             supports_strict_tools: false,
         }
-        .into_block(),
-        Ok(json(
+        .into_block()
+        .expect("the extra keys are dropped"),
+        json(
             r#"{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "tool", "description": "d"}}"#
-        ))
+        )
     );
 }
 
@@ -597,11 +606,7 @@ fn assert_strict_block(block: &Json, strict: Option<bool>, additional: Option<bo
     let Json::Object(spec) = fields.get("toolSpec").expect("a tool spec") else {
         panic!("the spec is an object");
     };
-    let expected_strict = if strict == Some(true) {
-        Some(Json::Bool(true))
-    } else {
-        None
-    };
+    let expected_strict = (strict == Some(true)).then_some(Json::Bool(true));
     assert_eq!(spec.get("strict"), expected_strict.as_ref(), "{strict:?}");
     let Json::Object(schema) = spec.get("inputSchema").expect("an input schema") else {
         panic!("the input schema is an object");
@@ -626,38 +631,43 @@ fn additional_properties_filtering() {
             strict: Some(true),
             supports_strict_tools: true,
         }
-        .into_block(),
-        Ok(json(
+        .into_block()
+        .expect("the filtered additionalProperties is dropped"),
+        json(
             r#"{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "tool", "description": "d", "strict": true}}"#
-        ))
+        )
     );
 }
 
 fn parameter_errors() {
     let non_object = json("5");
-    assert_eq!(
-        BedrockToolSpec {
-            name: "tool",
-            description: "d",
-            parameters: &non_object,
-            strict: None,
-            supports_strict_tools: false,
-        }
-        .into_block(),
-        Err(ConverseToolsError::ParametersNotAnObject)
-    );
+    let parameters_error = BedrockToolSpec {
+        name: "tool",
+        description: "d",
+        parameters: &non_object,
+        strict: None,
+        supports_strict_tools: false,
+    }
+    .into_block()
+    .expect_err("parameters must be an object");
+    assert!(matches!(
+        parameters_error,
+        ConverseToolsError::ParametersNotAnObject
+    ));
     let missing_type = json(r#"{"properties": {}}"#);
-    assert_eq!(
-        BedrockToolSpec {
-            name: "tool",
-            description: "d",
-            parameters: &missing_type,
-            strict: None,
-            supports_strict_tools: false,
-        }
-        .into_block(),
-        Err(ConverseToolsError::MissingParameterType)
-    );
+    let type_error = BedrockToolSpec {
+        name: "tool",
+        description: "d",
+        parameters: &missing_type,
+        strict: None,
+        supports_strict_tools: false,
+    }
+    .into_block()
+    .expect_err("a parameter type is required");
+    assert!(matches!(
+        type_error,
+        ConverseToolsError::MissingParameterType
+    ));
     assert_eq!(
         ConverseToolsError::MissingParameterType.status_code(),
         None,

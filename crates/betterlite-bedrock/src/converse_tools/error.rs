@@ -3,7 +3,7 @@ use betterlite_openai::error::OpenAiError;
 
 pub const BAD_REQUEST_STATUS: u16 = 400;
 
-#[derive(Debug, Eq, PartialEq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConverseToolsError {
     #[error(
         "Bedrock doesn't support tool_choice=none. To drop it from the call, set `litellm.drop_params = True."
@@ -43,10 +43,10 @@ pub enum ConverseToolsError {
     ToolChoiceName,
     #[error("the existing tools value is not a list")]
     ToolsNotList,
-    #[error("the tools could not be appended: {message}")]
-    Append { message: String },
-    #[error("the optional params could not cross to the base helper: {message}")]
-    Wire { message: String },
+    #[error("the tools could not be appended: {0}")]
+    Append(#[source] OpenAiError),
+    #[error("the optional params could not cross to the base helper: {0}")]
+    Wire(#[source] serde_json::Error),
 }
 
 impl From<OpenAiError> for ConverseToolsError {
@@ -54,17 +54,13 @@ impl From<OpenAiError> for ConverseToolsError {
         if matches!(error, OpenAiError::ToolsNotList) {
             return Self::ToolsNotList;
         }
-        Self::Append {
-            message: error.to_string(),
-        }
+        Self::Append(error)
     }
 }
 
 impl ConverseToolsError {
-    pub(crate) fn wire(error: serde_json::Error) -> Self {
-        Self::Wire {
-            message: error.to_string(),
-        }
+    pub(crate) const fn wire(error: serde_json::Error) -> Self {
+        Self::Wire(error)
     }
 
     #[must_use]
@@ -86,8 +82,8 @@ impl ConverseToolsError {
             | Self::ToolChoiceFunction
             | Self::ToolChoiceName
             | Self::ToolsNotList
-            | Self::Append { .. }
-            | Self::Wire { .. } => None,
+            | Self::Append(_)
+            | Self::Wire(_) => None,
         }
     }
 }
