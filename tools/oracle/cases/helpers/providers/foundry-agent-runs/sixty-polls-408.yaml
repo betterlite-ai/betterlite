@@ -1,0 +1,163 @@
+kind: helper
+name: foundry-agent-runs-sixty-polls-408
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "hello"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "hello"}}]}]}'}
+env: {}
+compare: {ignore: []}
