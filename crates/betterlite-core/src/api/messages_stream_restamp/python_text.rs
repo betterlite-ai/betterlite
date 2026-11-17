@@ -1,21 +1,17 @@
-// CPython's str.strip and str.splitlines: they decide which whitespace a data line drops and where one frame's lines end
-const PYTHON_SPACES: [char; 29] = [
-    '\u{9}', '\u{a}', '\u{b}', '\u{c}', '\u{d}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', '\u{20}',
-    '\u{85}', '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
-    '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}',
-    '\u{202f}', '\u{205f}', '\u{3000}',
-];
-
+// CPython's str.splitlines breaks: they decide where one frame's lines end
 const LINE_BREAKS: [char; 10] = [
     '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
 ];
 
-pub(super) fn strip(text: &str) -> &str {
-    text.trim_matches(is_space)
-}
-
-fn is_space(character: char) -> bool {
-    PYTHON_SPACES.contains(&character)
+// CPython's str.strip whitespace, which char::is_whitespace does not match
+pub(super) const fn is_space(character: char) -> bool {
+    match character {
+        '\u{9}'..='\u{d}' | '\u{1c}'..='\u{20}' => true,
+        '\u{85}' | '\u{a0}' | '\u{1680}' => true,
+        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' => true,
+        '\u{202f}' | '\u{205f}' | '\u{3000}' => true,
+        _ => false,
+    }
 }
 
 pub(super) fn splitlines_keepends(text: &str) -> Vec<&str> {

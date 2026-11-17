@@ -248,7 +248,7 @@ fn split_sse_events(text: &str) -> Vec<String> {
     let mut events = Vec::new();
     let mut start = 0_usize;
     for index in 0..bytes.len() {
-        if boundary_at(bytes, index) {
+        if bytes.get(index.saturating_sub(2)..index) == Some(b"\n\n".as_slice()) {
             if let Some(event) = text.get(start..index) {
                 events.push(event.to_owned());
             }
@@ -261,8 +261,4 @@ fn split_sse_events(text: &str) -> Vec<String> {
         events.push(event.to_owned());
     }
     events
-}
-
-fn boundary_at(bytes: &[u8], end: usize) -> bool {
-    bytes.get(end.saturating_sub(2)..end) == Some(b"\n\n".as_slice())
 }

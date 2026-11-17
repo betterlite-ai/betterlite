@@ -3,7 +3,7 @@ use std::mem::take;
 use betterlite_models::decisions::Json;
 
 use super::MessagesStreamChunk;
-use super::python_text::{decode_utf8_ignore, splitlines_keepends, strip};
+use super::python_text::{decode_utf8_ignore, is_space, splitlines_keepends};
 
 pub const MESSAGE_START_EVENT: &str = "message_start";
 const MESSAGE_START_MARKER: &[u8] = b"message_start";
@@ -189,7 +189,10 @@ fn restamped_event(event: &Json, requested_model: &str) -> Option<Json> {
 }
 
 fn restamped_data_line(line: &str, requested_model: &str) -> Option<String> {
-    let payload = strip(strip(line).strip_prefix(SSE_DATA_FIELD)?);
+    let payload = line
+        .trim_matches(is_space)
+        .strip_prefix(SSE_DATA_FIELD)?
+        .trim_matches(is_space);
     if matches!(payload, "" | SSE_DONE_PAYLOAD) {
         return None;
     }

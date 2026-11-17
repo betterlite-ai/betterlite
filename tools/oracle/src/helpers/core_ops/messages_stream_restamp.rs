@@ -191,10 +191,13 @@ async fn write_stream(
     );
     let yielded = drain(&mut writer).await?;
     tracker.wait_idle().await;
-    let writes = cache.writes();
+    let writes = take(&mut *cache.writes.lock().unwrap_or_else(PoisonError::into_inner));
     let (replayed, cache_hit) = replay_written(input.replay, &writes).await?;
     Ok(Recorded {
-        yielded: texts(yielded)?,
+        yielded: yielded
+            .into_iter()
+            .map(|chunk| String::from_utf8(chunk).or_value_error())
+            .collect::<Result<Vec<_>, _>>()?,
         writes,
         replayed,
         cache_hit,
@@ -225,21 +228,13 @@ async fn replay_written(
     let logging = RecordingLogging::default();
     let converted = convert_cached_messages_result(cached, logging.clone()).or_value_error()?;
     let CachedMessagesResult::Stream(mut iterator) = converted else {
-        return Ok((None, logging.stamped()));
+        return Ok((None, logging.stamped.load(Ordering::SeqCst)));
     };
     let mut events = Vec::new();
     while let Some(chunk) = iterator.next_chunk().await.or_value_error()? {
-        events.push(text_of(chunk)?);
+        events.push(String::from_utf8(chunk).or_value_error()?);
     }
-    Ok((Some(events), logging.stamped()))
-}
-
-fn text_of(bytes: Vec<u8>) -> Result<String, Box<HelperError>> {
-    String::from_utf8(bytes).or_value_error()
-}
-
-fn texts(chunks: Vec<Vec<u8>>) -> Result<Vec<String>, Box<HelperError>> {
-    chunks.into_iter().map(text_of).collect()
+    Ok((Some(events), logging.stamped.load(Ordering::SeqCst)))
 }
 
 fn writes_value(writes: &[(Value, KeyObject)]) -> Value {
@@ -335,10 +330,6 @@ impl RecordingCache {
             failure,
         }
     }
-
-    fn writes(&self) -> Vec<(Value, KeyObject)> {
-        take(&mut *self.writes.lock().unwrap_or_else(PoisonError::into_inner))
-    }
 }
 
 #[async_trait]
@@ -365,12 +356,6 @@ impl MessagesStreamCacheTarget for RecordingCache {
 #[derive(Clone, Default)]
 struct RecordingLogging {
     stamped: Arc<AtomicBool>,
-}
-
-impl RecordingLogging {
-    fn stamped(&self) -> bool {
-        self.stamped.load(Ordering::SeqCst)
-    }
 }
 
 impl CachedStreamLogging for RecordingLogging {
