@@ -1,0 +1,13 @@
+task: B3852
+deviations:
+  - what: >-
+      upstream_started for a close with no pre_call carrier is read from the payload's own start time.
+      LiteLLM reads a separate api_call_start_time stamp that its proxy and SDK set at the provider
+      handoff, and betterlite's typed logging event carries no such stamp. A payload-carrying failure
+      that never reached a provider, and is not flagged litellm_no_upstream_llm_call, therefore emits a
+      deferred span here, where LiteLLM's guard emits none.
+    why: >-
+      The payload start is the only affirmative signal in the typed event that the call ran. A payload
+      with a zero start time still emits nothing, a synthetic gate rejection is flagged no-upstream and
+      skips in both, and every call that reached a provider carries a non-zero payload start.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L512
