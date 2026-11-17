@@ -1,0 +1,17 @@
+kind: helper
+name: foundry-agent-runs-runs-seed
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/seed
+        messages: [{role: user, content: hi}]
+        optional_params: {thread_id: thread-seed}
+        litellm_params: {ssl_verify: false}
+        headers: {}
+        api_base: "https://seed.example"
+        api_key: seed-key
+        mode: async
+        supplied: true
+        steps: [{status: 201, body: '{"id": "run-seed"}'}]
+env: {}
+compare: {ignore: []}

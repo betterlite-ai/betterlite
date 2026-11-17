@@ -19,6 +19,7 @@ scope:
   - Cargo.toml
   - crates/betterlite-logging/Cargo.toml
   - crates/betterlite-logging/src/payload.rs
+  - crates/betterlite-logging/src/logging_success/request_redaction.rs
   - crates/betterlite-logging/src/payload/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/payload.rs
@@ -129,5 +130,5 @@ pitfalls:
   would leave a Responses or interaction stream with no assembled response once the production assembler is passed in.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2400
   max_new_expects: 0

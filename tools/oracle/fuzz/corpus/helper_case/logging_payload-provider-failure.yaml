@@ -1,0 +1,33 @@
+kind: helper
+name: logging-payload-provider-failure
+call:
+  logging_payload:
+    init:
+      model: gpt-4o
+      call_type: completion
+      start_time: "2024-01-01T00:00:00+00:00"
+      litellm_call_id: call-2
+      function_id: fn-2
+      messages:
+        - role: user
+          content: "Hello"
+      stream: false
+      litellm_trace_id: trace-2
+      kwargs:
+        litellm_session_id: session-2
+      litellm_params:
+        api_base: https://api.openai.com/
+    model_call_details:
+      custom_llm_provider: openai
+      optional_params:
+        temperature: 0.5
+    response: {}
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:02+00:00"
+    status: failure
+    error_str: "litellm.APIError: provider exploded"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/model_map_information
+      why: B068's model cost source fills this map, and this task only passes that source through
