@@ -60,7 +60,8 @@ fn reads_every_declared_field() {
             "soft_budget": 2,
             "tpd_limit": 7,
             "budget_duration": "1d",
-            "model_max_budget": {"gpt-4o": {"max_budget": "1"}}
+            "model_max_budget": {"gpt-4o": {"max_budget": "1"}},
+            "object_permission": {"models": ["gpt-4o"]}
         }"#,
     ))
     .expect("a full customer");
@@ -75,6 +76,7 @@ fn reads_every_declared_field() {
     assert_eq!(request.budget.tpd_limit, Some(7));
     assert_eq!(request.budget.budget_duration.as_deref(), Some("1d"));
     assert!(request.budget.model_max_budget.is_some());
+    assert!(request.object_permission.is_some());
 }
 
 #[test]
