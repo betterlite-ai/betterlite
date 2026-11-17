@@ -26,6 +26,8 @@ description: >-
   125 oracle, 80 fuzz and 55 config lines; ceiling 800.
 scope:
   paths:
+    - "crates/betterlite-core/src/vertex_embedding_dispatch/tests.rs"
+    - "crates/betterlite-provider/src/vertex_embedding_binding/tests.rs"
     - "crates/betterlite-vertex/src/vertex_discovery_search/authorization/tests.rs"
     - "crates/betterlite-vertex"
     - "tools/oracle/src/helpers/vertex/credentials.rs"
