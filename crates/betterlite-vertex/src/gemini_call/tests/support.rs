@@ -470,7 +470,7 @@ fn hub_settings() -> HubSettings {
     }
 }
 
-fn counter() -> Counter {
+fn counter(catalog: &Arc<ModelCatalog>) -> Counter {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -486,8 +486,6 @@ fn counter() -> Counter {
         None,
         Arc::clone(&service),
     ));
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
     let hub = hub_settings();
     let clock = Arc::new(SystemHubClock::default());
     let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
@@ -504,13 +502,13 @@ fn counter() -> Counter {
         Arc::new(Instant::now),
     ));
     let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
+        fetcher,
         downloader,
-        Arc::clone(&catalog),
+        Arc::clone(catalog),
         Arc::clone(&service),
         true,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, Arc::clone(catalog), settings)
 }
 
 #[derive(Clone, Copy)]
@@ -597,6 +595,7 @@ impl Fixture {
             TaskTracker::new(),
         ));
         let (clients, caller) = clients(&recorder, supplied);
+        let catalog = BundledCatalog::default().get();
         Self {
             runtime: Builder::new_current_thread()
                 .enable_all()
@@ -606,8 +605,8 @@ impl Fixture {
             clients,
             caller,
             executor,
-            catalog: BundledCatalog::default().get(),
-            counter: counter(),
+            counter: counter(&catalog),
+            catalog,
             hooks: hooks(),
             fetcher: NoFetch::default(),
             transport: NoTransport::default(),

@@ -1,0 +1,14 @@
+kind: helper
+name: prefix_hash
+call:
+  key_fields:
+    calls:
+      - {function: token, token: "sk-abc"}
+      - {function: token, token: "sk-"}
+      - {function: token, token: "sk-0123456789abcdef"}
+      - {function: token, token: "SK-abc"}
+      - {function: token, token: "Bearer sk-abc"}
+      - {function: token, token: "jwt.header.payload"}
+      - {function: token, token: ""}
+env: {}
+compare: {ignore: []}

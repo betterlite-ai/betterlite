@@ -1,0 +1,11 @@
+kind: helper
+name: foundry_rerank-auths-seed
+call:
+  foundry_rerank:
+    auths:
+    - {api_key: key-explicit}
+    - {environment: {AZURE_AI_API_KEY: env-key}}
+    - {api_key: ""}
+    - {params: {azure_ad_token: tok}, headers: {accept: text/plain}}
+env: {}
+compare: {ignore: []}
