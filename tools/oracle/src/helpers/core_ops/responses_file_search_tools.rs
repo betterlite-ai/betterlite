@@ -78,10 +78,8 @@ fn replacement_answer(case: &ToolReplacementCase) -> Result<Value, Failure> {
 fn rendering_answer(case: &ResultRenderingCase) -> Result<Value, Failure> {
     let call = build_file_search_call_output("fs_rendered", &[], Some(&case.results), true)
         .map_err(|error| failure(error.to_string()))?;
-    Ok(json!({
-        "output": format_results_as_tool_output(&case.results),
-        "include": serde_json::to_value(call.search_results)?,
-    }))
+    let output = format_results_as_tool_output(&case.results);
+    Ok(json!({"include": serde_json::to_value(call.search_results)?, "output": output}))
 }
 
 fn build_outputs(
