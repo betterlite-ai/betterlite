@@ -776,6 +776,24 @@ fn gcs_request_resolves_metadata(#[case] asynchronous: bool) {
     assert_no_io(&harness);
 }
 
+#[rstest]
+#[case::vertex_ai(VertexCapabilityProvider::VertexAi)]
+#[case::vertex_ai_beta(VertexCapabilityProvider::VertexAiBeta)]
+#[case::studio(VertexCapabilityProvider::Gemini)]
+fn gcs_request_resolves_metadata_on_every_provider(#[case] provider: VertexCapabilityProvider) {
+    let harness = Harness::new().with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY);
+    let input = media_input(provider, &gcs_messages(GCS_PHOTO));
+    let transformed = harness
+        .run(&input)
+        .expect("the object answers its content type");
+    assert_body(&transformed, GCS_PHOTO_CONTENTS);
+    assert_eq!(
+        harness.gcs.requested(),
+        vec![(GCS_PHOTO_METADATA.to_owned(), None)]
+    );
+    assert_no_io(&harness);
+}
+
 #[test]
 fn gcs_request_mints_with_explicit_project() {
     let harness = Harness::new().with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY);
