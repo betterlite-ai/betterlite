@@ -19,7 +19,9 @@ call:
       max_tokens: 16
       messages:
         - role: user
-          content: hi
+          content:
+            - type: text
+              text: hi
     transform_failure: null
     beta_matrix:
       anthropic: {}

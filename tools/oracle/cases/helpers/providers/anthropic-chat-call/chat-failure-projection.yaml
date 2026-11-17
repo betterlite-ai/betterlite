@@ -62,4 +62,4 @@ calls:
       response_header_names: []
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
-compare: {ignore: []}
+compare: {ignore: [{pointer: /error/message, why: "both raise the same class and status, and betterlite writes its own error text"}]}

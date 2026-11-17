@@ -13,6 +13,9 @@ call:
       stream: null
       json_mode: false
       vertex_count_tokens_location: us-east5
+      anthropic_beta:
+        - context-1m-2025-08-07
+        - bash_20241022
     litellm_params: {}
     caller_headers: {}
     api_key: sk-ant-api03-fixture
@@ -22,7 +25,9 @@ call:
       max_tokens: 16
       messages:
         - role: user
-          content: hi
+          content:
+            - type: text
+              text: hi
       anthropic_beta:
         - context-1m-2025-08-07
         - bash_20241022
