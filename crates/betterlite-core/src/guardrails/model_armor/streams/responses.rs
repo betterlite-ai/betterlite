@@ -26,7 +26,10 @@ const FIELD_ATTRS: [&str; 5] = [
 
 // LiteLLM's _responses_api_response_text: every output item's text first, then every tool call the turn carries.
 #[must_use]
-pub fn response_text<W: StreamWire>(wire: &W, body: &GuardrailValue) -> String {
+pub fn response_text<W>(wire: &W, body: &GuardrailValue) -> String
+where
+    W: StreamWire,
+{
     let Some(GuardrailValue::Array(items)) = field(body, "output") else {
         return String::new();
     };
@@ -69,12 +72,15 @@ pub fn delta_field_texts(chunks: &[Chunk]) -> Vec<String> {
 }
 
 // LiteLLM's _streaming_content_to_scan: on a Responses stream the body is scanned first, then every delta field it never repeats.
-pub fn content_to_scan<W: StreamWire>(
+pub fn content_to_scan<W>(
     wire: &W,
     surface: Surface,
     assembled: &Assembly,
     chunks: &[Chunk],
-) -> Result<String, W::Failure> {
+) -> Result<String, W::Failure>
+where
+    W: StreamWire,
+{
     let content = match assembled {
         Assembly::Responses(body) => response_text(wire, body),
         Assembly::Model(body) => wire.model_text(body)?,

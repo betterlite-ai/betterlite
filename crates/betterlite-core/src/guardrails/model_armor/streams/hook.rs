@@ -38,9 +38,12 @@ pub struct StreamHook<'hook, W: StreamWire> {
 }
 
 // LiteLLM's async_post_call_streaming_iterator_hook: buffer the whole stream, scan it, then yield it whole or refuse it.
-pub async fn buffered_stream<W: StreamWire>(
+pub async fn buffered_stream<W>(
     hook: StreamHook<'_, W>,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     if hook.chunks.is_empty() || is_terminal_error(hook.wire, &hook.chunks) {
         return Ok(hook.chunks);
     }
@@ -57,13 +60,16 @@ pub async fn buffered_stream<W: StreamWire>(
         Ok(armor) => armor,
         Err(failure) => return scan_failure(hook, surface, failure),
     };
-    finish_scan(hook, surface, assembled, &content, &armor)
+    finish_scan(hook, surface, &assembled, &content, &armor)
 }
 
-fn assembly_failure<W: StreamWire>(
+fn assembly_failure<W>(
     hook: StreamHook<'_, W>,
     surface: Surface,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     if !hook.settings.fail_on_error {
         tracing::warn!(
             "Model Armor: streamed response could not be assembled for scanning, forwarding it unscanned because fail_on_error is disabled"
@@ -80,11 +86,14 @@ fn assembly_failure<W: StreamWire>(
     frame_error(hook.wire, surface, &error)
 }
 
-fn scan_failure<W: StreamWire>(
+fn scan_failure<W>(
     hook: StreamHook<'_, W>,
     surface: Surface,
     failure: ScanFailure<W::Failure>,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     match failure {
         ScanFailure::Api { detail } if hook.settings.fail_on_error => {
             let error = HttpError {
@@ -94,9 +103,9 @@ fn scan_failure<W: StreamWire>(
             frame_error(hook.wire, surface, &error)
         }
         ScanFailure::Api { .. } => Ok(hook.chunks),
-        ScanFailure::Unexpected(failure) => {
+        ScanFailure::Unexpected(unexpected) => {
             if hook.settings.fail_on_error {
-                Err(StreamError::Wiring(failure))
+                Err(StreamError::Wiring(unexpected))
             } else {
                 Ok(hook.chunks)
             }
@@ -104,18 +113,21 @@ fn scan_failure<W: StreamWire>(
     }
 }
 
-fn finish_scan<W: StreamWire>(
+fn finish_scan<W>(
     hook: StreamHook<'_, W>,
     surface: Surface,
-    assembled: Assembly,
+    assembled: &Assembly,
     content: &str,
     armor: &GuardrailValue,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     let outcome = resolve_outcome(
         hook.wire,
         hook.settings.mask_response_content,
         content,
-        &assembled,
+        assembled,
         armor,
     );
     record_metadata(
@@ -139,15 +151,18 @@ fn finish_scan<W: StreamWire>(
     let Some(sanitized) = outcome.sanitized.as_deref() else {
         return Ok(hook.chunks);
     };
-    rewritten_stream(hook, surface, &assembled, sanitized)
+    rewritten_stream(hook, surface, assembled, sanitized)
 }
 
-fn rewritten_stream<W: StreamWire>(
+fn rewritten_stream<W>(
     hook: StreamHook<'_, W>,
     surface: Surface,
     assembled: &Assembly,
     sanitized: &str,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     let Assembly::Model(body) = assembled else {
         return Ok(hook.chunks);
     };

@@ -30,15 +30,26 @@ where
 pub fn error_payload(error: &HttpError) -> Result<GuardrailValue, serde_json::Error> {
     let mut payload = match &error.detail {
         GuardrailValue::Object(fields) => fields.clone(),
-        other => message_fields(other)?,
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)) => message_fields(other)?,
     };
-    let error_value = match payload.remove("error") {
-        Some(value) => value,
-        None => GuardrailValue::Object(payload),
-    };
+    let error_value = payload
+        .remove("error")
+        .unwrap_or(GuardrailValue::Object(payload));
     let mut fields = match error_value {
         GuardrailValue::Object(fields) => fields,
-        other => message_fields(&other)?,
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)) => message_fields(&other)?,
     };
     fields.insert(
         "code".to_owned(),
@@ -52,7 +63,13 @@ fn message_fields(
 ) -> Result<BTreeMap<String, GuardrailValue>, serde_json::Error> {
     let text = match detail {
         GuardrailValue::Text(text) => text.clone(),
-        other => serde_json::to_string(other)?,
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_)) => serde_json::to_string(other)?,
     };
     let mut fields = BTreeMap::new();
     fields.insert("message".to_owned(), GuardrailValue::Text(text));
@@ -60,11 +77,14 @@ fn message_fields(
 }
 
 // LiteLLM's _stream_error_items: the endpoint's own error wire format, and plain SSE frames where it has none.
-pub fn frame_error<W: StreamWire>(
+pub fn frame_error<W>(
     wire: &W,
     surface: Surface,
     error: &HttpError,
-) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
+) -> Result<Vec<Chunk>, StreamError<W::Failure>>
+where
+    W: StreamWire,
+{
     let payload = error_payload(error).map_err(StreamError::Encode)?;
     match surface {
         Surface::AnthropicMessages => {

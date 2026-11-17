@@ -17,10 +17,7 @@ pub fn field<'value>(value: &'value GuardrailValue, name: &str) -> Option<&'valu
         .filter(|found| !matches!(found, GuardrailValue::Null))
 }
 
-pub fn field_mut<'value>(
-    value: &'value mut GuardrailValue,
-    name: &str,
-) -> Option<&'value mut GuardrailValue> {
+pub fn field_mut<'v>(value: &'v mut GuardrailValue, name: &str) -> Option<&'v mut GuardrailValue> {
     let GuardrailValue::Object(fields) = value else {
         return None;
     };

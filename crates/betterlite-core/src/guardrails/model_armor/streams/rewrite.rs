@@ -17,7 +17,7 @@ pub fn apply_sanitized(body: &mut GuardrailValue, sanitized: &str) {
         if let GuardrailValue::Text(text) = content
             && !text.is_empty()
         {
-            *text = sanitized.to_owned();
+            sanitized.clone_into(text);
         }
     }
 }

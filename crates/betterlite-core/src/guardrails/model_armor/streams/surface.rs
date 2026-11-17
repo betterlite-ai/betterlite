@@ -12,7 +12,10 @@ pub enum Surface {
 
 // LiteLLM's _classify_stream: raw frames are decoded before any event type is read.
 #[must_use]
-pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
+pub fn classify<W>(wire: &W, chunks: &[Chunk]) -> Surface
+where
+    W: StreamWire,
+{
     if chunks.iter().any(|chunk| matches!(chunk, Chunk::Bytes(_))) {
         return if wire.is_anthropic_sse(chunks) {
             Surface::AnthropicMessages
@@ -36,7 +39,10 @@ pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
 
 // LiteLLM's _is_terminal_error_stream: the refusal a preceding guardrail already produced.
 #[must_use]
-pub fn is_terminal_error<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> bool {
+pub fn is_terminal_error<W>(wire: &W, chunks: &[Chunk]) -> bool
+where
+    W: StreamWire,
+{
     chunks.iter().all(|chunk| {
         chunk
             .payload()

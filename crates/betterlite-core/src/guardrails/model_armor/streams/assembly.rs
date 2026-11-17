@@ -19,11 +19,10 @@ pub enum Assembly {
 }
 
 // LiteLLM's _assemble_stream: one builder per wire format, and none for frames it cannot read.
-pub async fn assemble<W: StreamWire>(
-    wire: &W,
-    surface: Surface,
-    chunks: &[Chunk],
-) -> Option<Assembly> {
+pub async fn assemble<W>(wire: &W, surface: Surface, chunks: &[Chunk]) -> Option<Assembly>
+where
+    W: StreamWire,
+{
     match surface {
         Surface::AnthropicMessages => wire.assemble_anthropic(chunks).await,
         Surface::Responses => terminal_body(chunks).map(Assembly::Responses),

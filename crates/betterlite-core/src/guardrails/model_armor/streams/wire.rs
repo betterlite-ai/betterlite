@@ -11,7 +11,7 @@ use super::errors::HttpError;
 use super::surface::Surface;
 
 // The parts of a Responses output item the scan reads: its texts and its tool calls, each call already encoded as JSON.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OutputParts {
     pub texts: Vec<String>,
     pub encoded_calls: Vec<String>,

@@ -11,13 +11,16 @@ pub struct Outcome {
 }
 
 #[must_use]
-pub fn resolve_outcome<W: StreamWire>(
+pub fn resolve_outcome<W>(
     wire: &W,
     mask: bool,
     content: &str,
     assembled: &Assembly,
     armor: &GuardrailValue,
-) -> Outcome {
+) -> Outcome
+where
+    W: StreamWire,
+{
     if wire.should_block(armor, mask) {
         return Outcome {
             blocked: true,
