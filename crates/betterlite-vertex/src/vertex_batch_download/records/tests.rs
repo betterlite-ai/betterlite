@@ -87,6 +87,11 @@ fn rows(response: &ContentResponse) -> Vec<Json> {
     text.split('\n').map(json).collect()
 }
 
+// a converted line is an OpenAI batch row, and the completion sits under response.body
+fn completion(row: &Json) -> &Json {
+    field(field(row, "response"), "body")
+}
+
 fn convert(content: &str, url: &str) -> ContentResponse {
     let mut state = context();
     let length = content.len().to_string();
@@ -151,16 +156,23 @@ fn unknown_formats_pass_through_exactly() {
 #[test]
 fn a_generation_row_becomes_a_chat_completion() {
     let response = convert(ROW, URL);
-    let body = json(&String::from_utf8(response.content.clone()).unwrap());
+    let row = json(&String::from_utf8(response.content.clone()).unwrap());
     assert_eq!(
-        field(&body, "id"),
+        field(&row, "id"),
+        &json(r#""batch_req_00000000-0000-0000-0000-000000000002""#)
+    );
+    assert_eq!(field(&row, "custom_id"), &json(r#""unknown""#));
+    assert_eq!(field(&row, "error"), &Json::Null);
+    let body = completion(&row);
+    assert_eq!(
+        field(body, "id"),
         &json(r#""chatcmpl-00000000-0000-0000-0000-000000000001""#)
     );
-    assert_eq!(field(&body, "created"), &json("1700000000"));
-    assert_eq!(field(&body, "model"), &json(r#""gemini-1.5-flash-001""#));
-    assert_eq!(field(&body, "object"), &json(r#""chat.completion""#));
-    assert_eq!(field(&body, "system_fingerprint"), &Json::Null);
-    let Json::List(choices) = field(&body, "choices") else {
+    assert_eq!(field(body, "created"), &json("1700000000"));
+    assert_eq!(field(body, "model"), &json(r#""gemini-1.5-flash-001""#));
+    assert_eq!(field(body, "object"), &json(r#""chat.completion""#));
+    assert_eq!(field(body, "system_fingerprint"), &Json::Null);
+    let Json::List(choices) = field(body, "choices") else {
         panic!("choices is not a list");
     };
     assert_eq!(choices.len(), 1);
@@ -176,8 +188,8 @@ fn a_generation_row_becomes_a_chat_completion() {
 #[test]
 fn a_generation_row_carries_the_message_fields() {
     let response = convert(ROW, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
-    let Json::List(choices) = field(&body, "choices") else {
+    let row = json(&String::from_utf8(response.content).unwrap());
+    let Json::List(choices) = field(completion(&row), "choices") else {
         panic!("choices is not a list");
     };
     assert_eq!(
@@ -203,8 +215,9 @@ fn a_generation_row_carries_the_message_fields() {
 #[test]
 fn a_generation_row_carries_the_usage_and_metadata() {
     let response = convert(ROW, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
-    let usage = field(&body, "usage");
+    let row = json(&String::from_utf8(response.content).unwrap());
+    let body = completion(&row);
+    let usage = field(body, "usage");
     assert_eq!(field(usage, "prompt_tokens"), &json("1"));
     assert_eq!(field(usage, "completion_tokens"), &json("1"));
     assert_eq!(field(usage, "total_tokens"), &json("2"));
@@ -229,7 +242,7 @@ fn a_generation_row_carries_the_usage_and_metadata() {
         "vertex_ai_safety_results",
         "vertex_ai_citation_metadata",
     ] {
-        assert_eq!(field(&body, name), &Json::List(Vec::new()));
+        assert_eq!(field(body, name), &Json::List(Vec::new()));
     }
 }
 
@@ -240,8 +253,11 @@ fn a_present_model_version_wins_and_loses_its_suffix() {
         r#""modelVersion":"gemini-2.5-pro@001","candidates""#,
     );
     let response = convert(&row, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
-    assert_eq!(field(&body, "model"), &json(r#""gemini-2.5-pro""#));
+    let converted = json(&String::from_utf8(response.content).unwrap());
+    assert_eq!(
+        field(completion(&converted), "model"),
+        &json(r#""gemini-2.5-pro""#)
+    );
 }
 
 #[test]
@@ -272,8 +288,9 @@ fn a_provider_status_becomes_a_vertex_ai_error_row() {
 #[test]
 fn a_blocked_prompt_keeps_the_raw_counters() {
     let response = convert(BLOCKED_ROW, URL);
-    let body = json(&String::from_utf8(response.content.clone()).unwrap());
-    let Json::List(choices) = field(&body, "choices") else {
+    let row = json(&String::from_utf8(response.content.clone()).unwrap());
+    let body = completion(&row);
+    let Json::List(choices) = field(body, "choices") else {
         panic!("choices is not a list");
     };
     assert_eq!(
@@ -286,13 +303,13 @@ fn a_blocked_prompt_keeps_the_raw_counters() {
         ["content", "function_call", "role", "tool_calls"]
     );
     assert_eq!(field(message, "content"), &Json::Null);
-    let usage = field(&body, "usage");
+    let usage = field(body, "usage");
     assert_eq!(field(usage, "prompt_tokens"), &json("4"));
     assert_eq!(field(usage, "completion_tokens"), &json("0"));
     assert_eq!(field(usage, "prompt_tokens_details"), &Json::Null);
     assert_eq!(field(usage, "completion_tokens_details"), &Json::Null);
     assert!(!keys(usage).contains(&"cache_read_input_tokens"));
-    assert!(!keys(&body).contains(&"vertex_ai_grounding_metadata"));
+    assert!(!keys(body).contains(&"vertex_ai_grounding_metadata"));
 }
 
 #[test]
@@ -328,7 +345,7 @@ fn blank_lines_between_rows_are_skipped() {
     let response = convert(&content, URL);
     let body = rows(&response);
     assert_eq!(body.len(), 2);
-    assert_eq!(field(&body[1], "created"), &json("1700000000"));
+    assert_eq!(field(completion(&body[1]), "created"), &json("1700000000"));
 }
 
 #[test]
@@ -339,6 +356,10 @@ fn generation_rows_are_newline_joined() {
     assert_eq!(body.len(), 2);
     assert_eq!(
         field(&body[1], "id"),
+        &json(r#""batch_req_00000000-0000-0000-0000-000000000004""#)
+    );
+    assert_eq!(
+        field(completion(&body[1]), "id"),
         &json(r#""chatcmpl-00000000-0000-0000-0000-000000000003""#)
     );
     assert_eq!(
