@@ -9,9 +9,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::error::TranscribeLoggingError;
-use super::{
-    TRANSCRIBE_CUSTOM_LLM_PROVIDER, TranscribeHandlerInput, operation_from_target, request_target,
-};
+use super::{TRANSCRIBE_CUSTOM_LLM_PROVIDER, TranscribeHandlerInput, operation_from_headers};
 use crate::media_relay_logging::write_spend;
 
 pub(super) fn outcome(input: TranscribeHandlerInput<'_>) -> HandlerOutcome {
@@ -34,7 +32,7 @@ pub(super) fn outcome(input: TranscribeHandlerInput<'_>) -> HandlerOutcome {
 fn logged(
     input: &TranscribeHandlerInput<'_>,
 ) -> Result<PassThroughLoggingKwargs, TranscribeLoggingError> {
-    let operation = operation_from_target(request_target(input.request_headers));
+    let operation = operation_from_headers(input.request_headers);
     let spend = MediaSpend {
         model: format!("{TRANSCRIBE_CUSTOM_LLM_PROVIDER}/{operation}"),
         custom_llm_provider: TRANSCRIBE_CUSTOM_LLM_PROVIDER,

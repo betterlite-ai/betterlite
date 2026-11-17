@@ -48,7 +48,7 @@ pub struct TranscribeHandlerInput<'input> {
 #[must_use]
 // ast-grep-ignore: no-one-line-functions - the fixed public predicate B3607 calls
 pub fn is_priced_job_start(request_headers: &HeaderMap) -> bool {
-    operation_from_target(request_target(request_headers)) == TRANSCRIBE_PRICED_OPERATION
+    operation_from_headers(request_headers) == TRANSCRIBE_PRICED_OPERATION
 }
 
 #[must_use]
@@ -61,9 +61,11 @@ pub fn operation_from_target(target: Option<&str>) -> &str {
         .map_or(value, |(_prefix, operation)| operation)
 }
 
-fn request_target(request_headers: &HeaderMap) -> Option<&str> {
-    let value = request_headers.get("x-amz-target")?;
-    value.to_str().ok()
+fn operation_from_headers(request_headers: &HeaderMap) -> &str {
+    let Some(value) = request_headers.get("x-amz-target") else {
+        return "";
+    };
+    operation_from_target(value.to_str().ok())
 }
 
 #[must_use]
