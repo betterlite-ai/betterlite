@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use tokio::sync::oneshot;
 
 use super::support::capture_logs;
@@ -56,7 +58,7 @@ async fn a_finished_poller_warns_about_nothing() {
 }
 
 #[tokio::test]
-async fn shutdown_finishes_the_pending_pollers() {
+async fn shutdown_waits_for_the_pending_pollers() {
     let tasks = BillingTasks::default();
     let (sender, receiver) = oneshot::channel::<()>();
     let (done, done_receiver) = oneshot::channel::<()>();
@@ -65,8 +67,11 @@ async fn shutdown_finishes_the_pending_pollers() {
         drop(done.send(()));
     });
 
+    let mut shutdown = std::pin::pin!(tasks.shutdown());
+    let early = tokio::time::timeout(Duration::from_millis(10), &mut shutdown).await;
+    assert!(early.is_err());
     drop(sender);
-    tasks.shutdown().await;
+    shutdown.await;
     done_receiver
         .await
         .expect("the poller recorded its completion");

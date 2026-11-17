@@ -1,8 +1,12 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::sse::{run_id_from_sse_frames, run_id_from_sse_lines};
+use super::sse::{
+    mark_sse_poller_spawned, run_id_from_sse_frames, run_id_from_sse_lines, sse_poller_spawned,
+};
+use super::support::logging_object;
 
 const FIRST_WINS: &[u8] = include_bytes!("../../../../fuzz/corpus/tinyfish_sse_frames/first-wins");
 const INVALID_JSON: &[u8] =
@@ -40,6 +44,10 @@ const VALID_RUN_ID: &[u8] =
     Some("a")
 )]
 #[case::crlf_frames(b"data: {\"run_id\": \"crlf\"}\r\n", Some("crlf"))]
+#[case::a_carriage_return_splits_frames(
+    b"data: {\"status\": \"PENDING\"}\rdata: {\"run_id\": \"after_cr\"}",
+    Some("after_cr")
+)]
 #[case::surrounding_spaces_are_trimmed(b"data:   {\"run_id\": \"trimmed\"}  \n", Some("trimmed"))]
 #[case::a_bare_data_line(b"data:\n", None)]
 #[case::no_frames(b"", None)]
@@ -76,4 +84,35 @@ fn replays_the_tinyfish_sse_frames_corpus() {
         run_id_from_sse_frames(VALID_RUN_ID).as_deref(),
         Some("run-1")
     );
+}
+
+#[test]
+fn marks_and_reads_a_spawned_sse_poller() {
+    let logging_obj = logging_object();
+    assert!(!sse_poller_spawned(&logging_obj));
+    mark_sse_poller_spawned(&logging_obj);
+    assert!(sse_poller_spawned(&logging_obj));
+}
+
+#[test]
+fn reads_the_marker_litellm_writes_on_the_logging_details() {
+    let logging_obj = logging_object();
+    logging_obj.edit(&mut |state| {
+        state
+            .model_call_details
+            .insert("tinyfish_sse_poller_spawned".to_owned(), Json::Bool(true));
+    });
+    assert!(sse_poller_spawned(&logging_obj));
+}
+
+#[test]
+fn a_truthy_detail_other_than_true_is_not_a_spawned_poller() {
+    let logging_obj = logging_object();
+    logging_obj.edit(&mut |state| {
+        state.model_call_details.insert(
+            "tinyfish_sse_poller_spawned".to_owned(),
+            Json::Text("yes".to_owned()),
+        );
+    });
+    assert!(!sse_poller_spawned(&logging_obj));
 }

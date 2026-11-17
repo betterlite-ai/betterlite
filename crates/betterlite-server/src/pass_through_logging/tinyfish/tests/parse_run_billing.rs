@@ -144,6 +144,12 @@ fn keeps_the_callers_kwargs_beside_the_spend() {
 #[test]
 fn keeps_a_callers_attribution_params() {
     let logging_obj = logging_object();
+    logging_obj.edit(&mut |state| {
+        state.model_call_details.insert(
+            "litellm_params".to_owned(),
+            json(r#"{"metadata": {"user_api_key_alias": "stored-key"}}"#),
+        );
+    });
     let caller = kwargs(&[(
         "litellm_params",
         json(r#"{"metadata": {"user_api_key_alias": "team-key"}}"#),
@@ -167,6 +173,12 @@ fn keeps_a_callers_attribution_params() {
 #[test]
 fn falls_back_to_the_stored_params_for_an_empty_caller_value() {
     let logging_obj = logging_object();
+    logging_obj.edit(&mut |state| {
+        state.model_call_details.insert(
+            "litellm_params".to_owned(),
+            json(r#"{"metadata": {"team_id": "team-1"}}"#),
+        );
+    });
     let caller = kwargs(&[("litellm_params", json("{}"))]);
     let submitted = run(r#"{"status": "COMPLETED", "num_of_steps": 2}"#);
     let outcome = build_logging_payload(
@@ -180,7 +192,7 @@ fn falls_back_to_the_stored_params_for_an_empty_caller_value() {
 
     assert_eq!(
         outcome.kwargs.entries.get("litellm_params"),
-        Some(&json("{}"))
+        Some(&json(r#"{"metadata": {"team_id": "team-1"}}"#))
     );
 }
 
