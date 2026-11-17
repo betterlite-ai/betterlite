@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::otel::model::payloads::service::{ServiceLoggerPayload, ServiceType};
@@ -9,7 +9,7 @@ use betterlite_logging::otel::plumbing::context::post_response::ServiceSpanTimin
 use betterlite_logging::otel::v2_callback::registered;
 use betterlite_logging::otel::v2_callback::registry::{CallbackList, V2Registry};
 use betterlite_logging::otel::v2_callback::service::ServiceHook;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use opentelemetry::trace::{SpanId, Status};
 use opentelemetry_sdk::trace::SpanData as SdkSpanData;
@@ -52,8 +52,8 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
-            Function::Init => init(),
-            Function::Registration => registration(),
+            Function::Init => construction(1),
+            Function::Registration => construction(2),
             Function::Service => service(input),
             Function::Guardrail => guardrail(),
             Function::Precall => precall(input),
@@ -62,16 +62,11 @@ impl Helper for Op {
     }
 }
 
-fn init() -> HelperResult {
+fn construction(times: usize) -> HelperResult {
     let registry = V2Registry::default();
-    let _built = build(&registry)?;
-    Ok(answer(&registry, false, false, &[]))
-}
-
-fn registration() -> HelperResult {
-    let registry = V2Registry::default();
-    let _first = build(&registry)?;
-    let _second = build(&registry)?;
+    for _ in 0..times {
+        build(&registry)?;
+    }
     Ok(answer(&registry, false, false, &[]))
 }
 
@@ -92,11 +87,10 @@ fn service(input: &Input) -> HelperResult {
     let hook = ServiceHook {
         payload: &payload,
         parent_otel_span: Some(&root.context),
-        start_time: Some(at(START)?),
+        start_time: Some(UNIX_EPOCH + Duration::from_secs_f64(START)),
         timing: ServiceSpanTiming {
-            end_time: Some(at(END)?),
-            parent_end_time: None,
-            post_response: false,
+            end_time: Some(UNIX_EPOCH + Duration::from_secs_f64(END)),
+            ..ServiceSpanTiming::default()
         },
         event_metadata: None,
     };
@@ -104,13 +98,8 @@ fn service(input: &Input) -> HelperResult {
         Some(text) => built.callback.async_service_failure_hook(&hook, Some(text)),
         None => built.callback.async_service_success_hook(&hook),
     }
-    let spans = built.finished()?;
-    Ok(answer(
-        &registry,
-        false,
-        false,
-        &records(&spans, root.context.span_id()),
-    ))
+    let spans = records(&built.finished()?, root.context.span_id());
+    Ok(answer(&registry, false, false, &spans))
 }
 
 fn guardrail() -> HelperResult {
@@ -119,17 +108,18 @@ fn guardrail() -> HelperResult {
     let _second = build(&registry)?;
     let root = first.span("root");
     let mut trace = RequestTraceContext::default();
-    first
-        .callback
-        .mark_request_root_span(&root, None, &mut trace);
-    registered::emit_guardrail_span(&registry, &entry()?, &trace);
-    let spans = first.finished()?;
-    Ok(answer(
-        &registry,
-        false,
-        false,
-        &records(&spans, root.context.span_id()),
-    ))
+    let callback = &first.callback;
+    callback.mark_request_root_span(&root, None, &mut trace);
+    let entry: BTreeMap<String, OtelModelValue> = serde_json::from_value(json!({
+        "guardrail_name": "pii",
+        "guardrail_status": "success",
+        "start_time": START,
+        "end_time": END,
+    }))
+    .or_value_error()?;
+    registered::emit_guardrail_span(&registry, &entry, &trace);
+    let spans = records(&first.finished()?, root.context.span_id());
+    Ok(answer(&registry, false, false, &spans))
 }
 
 fn precall(input: &Input) -> HelperResult {
@@ -143,24 +133,14 @@ fn precall(input: &Input) -> HelperResult {
         llm_provider: Some("openai".to_owned()),
         ..ExceptionFacts::default()
     };
-    built
-        .callback
-        .record_error_attributes_on_span(Some(&root), Some(&facts), input.status);
+    let callback = &built.callback;
+    callback.record_error_attributes_on_span(Some(&root), Some(&facts), input.status);
     if input.second_status > 0 {
-        built.callback.record_error_attributes_on_span(
-            Some(&root),
-            Some(&facts),
-            input.second_status,
-        );
+        callback.record_error_attributes_on_span(Some(&root), Some(&facts), input.second_status);
     }
     root.end();
-    let spans = built.finished()?;
-    Ok(answer(
-        &registry,
-        false,
-        false,
-        &records(&spans, root.context.span_id()),
-    ))
+    let spans = records(&built.finished()?, root.context.span_id());
+    Ok(answer(&registry, false, false, &spans))
 }
 
 fn phase() -> HelperResult {
@@ -168,18 +148,12 @@ fn phase() -> HelperResult {
     let before = registered::phase_span(&registry, "auth").is_some();
     let built = build(&registry)?;
     let routed = registered::phase_span(&registry, "auth").is_some();
-    let spans = built.finished()?;
-    Ok(answer(
-        &registry,
-        before,
-        routed,
-        &records(&spans, SpanId::INVALID),
-    ))
+    let spans = records(&built.finished()?, SpanId::INVALID);
+    Ok(answer(&registry, before, routed, &spans))
 }
 
 fn answer(registry: &V2Registry, phase_before: bool, phase_routed: bool, spans: &[Value]) -> Value {
     json!({
-        "constructed": true,
         "service_callbacks": registry.entries(CallbackList::Service).len(),
         "input_callbacks": registry.entries(CallbackList::Input).len(),
         "phase_before": phase_before,
@@ -193,12 +167,10 @@ fn records(spans: &[SdkSpanData], root: SpanId) -> Vec<Value> {
 }
 
 fn record(span: &SdkSpanData, root: SpanId) -> Value {
-    let parent = if span.parent_span_id == SpanId::INVALID {
-        "none"
-    } else if span.parent_span_id == root {
-        "root"
-    } else {
-        "other"
+    let parent = match span.parent_span_id {
+        SpanId::INVALID => "none",
+        id if id == root => "root",
+        _ => "other",
     };
     json!({
         "name": span.name.as_ref(),
@@ -210,34 +182,14 @@ fn record(span: &SdkSpanData, root: SpanId) -> Value {
         },
         "events": span.events.len(),
         "error_type": attribute(span, "error.type"),
-        "error_message": attribute(span, "error.message"),
         "error_code": attribute(span, "litellm.provider.error.code"),
-        "service": attribute(span, "litellm.service.name"),
-        "guardrail": attribute(span, "litellm.guardrail.name"),
     })
 }
 
 fn attribute(span: &SdkSpanData, key: &str) -> Option<String> {
-    span.attributes
+    let pair = span
+        .attributes
         .iter()
-        .find(|pair| pair.key.as_str() == key)
-        .map(|pair| pair.value.to_string())
-}
-
-fn entry() -> Result<BTreeMap<String, OtelModelValue>, Box<HelperError>> {
-    let value = json!({
-        "guardrail_name": "pii",
-        "guardrail_status": "success",
-        "start_time": START,
-        "end_time": END,
-    });
-    serde_json::from_value(value).or_value_error()
-}
-
-fn at(seconds: f64) -> Result<SystemTime, Box<HelperError>> {
-    let elapsed = Duration::try_from_secs_f64(seconds).or_value_error()?;
-    UNIX_EPOCH
-        .checked_add(elapsed)
-        .ok_or("the instant is outside the representable range")
-        .or_value_error()
+        .find(|pair| pair.key.as_str() == key)?;
+    Some(pair.value.to_string())
 }

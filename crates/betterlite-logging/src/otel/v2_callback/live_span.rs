@@ -1,9 +1,7 @@
-use std::borrow::Cow;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::SystemTime;
 
 use opentelemetry::KeyValue;
-use opentelemetry::trace::{Span, SpanContext, SpanId, Status};
+use opentelemetry::trace::{Span as _, SpanContext, SpanId};
 use opentelemetry_sdk::trace::Span as SdkSpan;
 
 use crate::otel::emitter::error_stamping::{ErrorStamp, stamp_error};
@@ -76,51 +74,6 @@ impl LiveSpan {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }
-    }
-}
-
-impl Span for LiveSpan {
-    fn add_event_with_timestamp<T>(
-        &mut self,
-        name: T,
-        timestamp: SystemTime,
-        attributes: Vec<KeyValue>,
-    ) where
-        T: Into<Cow<'static, str>>,
-    {
-        self.lock()
-            .add_event_with_timestamp(name, timestamp, attributes);
-    }
-
-    fn span_context(&self) -> &SpanContext {
-        &self.context
-    }
-
-    fn is_recording(&self) -> bool {
-        self.lock().is_recording()
-    }
-
-    fn set_attribute(&mut self, attribute: KeyValue) {
-        self.lock().set_attribute(attribute);
-    }
-
-    fn set_status(&mut self, status: Status) {
-        self.lock().set_status(status);
-    }
-
-    fn update_name<T>(&mut self, new_name: T)
-    where
-        T: Into<Cow<'static, str>>,
-    {
-        self.lock().update_name(new_name);
-    }
-
-    fn add_link(&mut self, span_context: SpanContext, attributes: Vec<KeyValue>) {
-        self.lock().add_link(span_context, attributes);
-    }
-
-    fn end_with_timestamp(&mut self, timestamp: SystemTime) {
-        self.lock().end_with_timestamp(timestamp);
     }
 }
 

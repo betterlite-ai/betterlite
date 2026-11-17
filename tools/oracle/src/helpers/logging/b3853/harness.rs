@@ -4,19 +4,15 @@ use std::sync::Arc;
 use betterlite_config::sections::otel_settings;
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_error::normalize::Normalizer;
-use betterlite_logging::otel::config::destination::SpanScope;
-use betterlite_logging::otel::config::{CaptureMessageContent, Settings};
+use betterlite_logging::otel::config::{CaptureMessageContent, Settings, destination::SpanScope};
 use betterlite_logging::otel::emitter::span_emission::MapperKind;
 use betterlite_logging::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
 use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
 use betterlite_logging::otel::logger::v2::RequestTraceSource;
-use betterlite_logging::otel::mappers::genai::GenAIMapper;
-use betterlite_logging::otel::mappers::utils::tool_attr_budget;
+use betterlite_logging::otel::mappers::{genai::GenAIMapper, utils::tool_attr_budget};
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
-use betterlite_logging::otel::plumbing::exporters::{
-    ExporterFactories, ExporterFactory, HttpClients,
-};
+use betterlite_logging::otel::plumbing::exporters::{ExporterFactories, HttpClients};
 use betterlite_logging::otel::plumbing::providers::ProviderState;
 use betterlite_logging::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
 use betterlite_logging::otel::v2_callback::callback::{
@@ -34,21 +30,19 @@ use opentelemetry_sdk::trace::{
     SpanData as SdkSpanData,
 };
 
-const LITELLM_TRACER_NAME: &str = "litellm";
-
 pub(super) struct Harness {
     pub(super) callback: Arc<V2Callback>,
     pub(super) spans: InMemorySpanExporter,
     tracer: SdkTracer,
 }
 
-// a callback whose provider exports into the in-memory sink the case reads back
+// a callback whose tracer provider exports into the in-memory sink the case reads back
 pub(super) fn build(registry: &V2Registry) -> Result<Harness, Box<HelperError>> {
     let spans = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_span_processor(SimpleSpanProcessor::new(spans.clone()))
         .build();
-    let tracer = provider.tracer(LITELLM_TRACER_NAME);
+    let tracer = provider.tracer("litellm");
     let callback = V2Callback::new(parts(provider)?, registry).or_config_error()?;
     Ok(Harness {
         callback,
@@ -69,23 +63,51 @@ impl Harness {
 
 fn parts(provider: SdkTracerProvider) -> Result<CallbackParts, Box<HelperError>> {
     let config = settings();
-    let factories = factories();
-    let scope_source: Arc<dyn RequestScopeSource> = Arc::new(Inert);
     Ok(CallbackParts {
         callback_name: Some("b3853".to_owned()),
-        tenants: tenants(&config, &factories, &scope_source),
+        tenants: TenantTracerCache::new(
+            config.clone(),
+            Some("b3853".to_owned()),
+            "litellm",
+            TenantSources {
+                factories: Arc::new(ExporterFactories::new(clients(), BTreeMap::new())),
+                scope_source: Arc::new(Inert),
+                allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
+            },
+        ),
         config,
         raw_config: otel_settings::Settings::default(),
         trace: Arc::new(Inert),
-        providers: providers(provider),
+        providers: ProviderSources {
+            tracer_provider: Some(provider),
+            meter_provider: None,
+            logger_provider: None,
+            meter_state: ProviderState::Unset,
+            logger_state: ProviderState::Unset,
+            metrics: None,
+            events: None,
+        },
         build: ProviderBuild {
-            factories: Arc::clone(&factories),
-            scope_source,
+            factories: Arc::new(ExporterFactories::new(clients(), BTreeMap::new())),
+            scope_source: Arc::new(Inert),
             clients: clients(),
         },
-        metric: metric(),
-        emitter: emitter(),
-        error_info: error_info()?,
+        metric: MetricSettings {
+            callback_settings: Arc::new(Inert),
+            utc_offset: Utc.fix(),
+        },
+        emitter: EmitterParts {
+            mappers: vec![MapperKind::GenAI(GenAIMapper {
+                tool_attr_budget: tool_attr_budget(1),
+            })],
+            environment: Arc::new(BTreeMap::<String, String>::new()),
+            attribute_limit: None,
+        },
+        error_info: ErrorInformationConfig {
+            normalizer: Normalizer::new().or_config_error()?,
+            redactor: None,
+            log_client_error_tracebacks: false,
+        },
     })
 }
 
@@ -108,73 +130,11 @@ fn settings() -> Settings {
     }
 }
 
-fn factories() -> Arc<ExporterFactories> {
-    Arc::new(ExporterFactories::new(
-        clients(),
-        BTreeMap::<String, ExporterFactory>::new(),
-    ))
-}
-
-fn tenants(
-    config: &Settings,
-    factories: &Arc<ExporterFactories>,
-    scope_source: &Arc<dyn RequestScopeSource>,
-) -> TenantTracerCache {
-    TenantTracerCache::new(
-        config.clone(),
-        Some("b3853".to_owned()),
-        LITELLM_TRACER_NAME,
-        TenantSources {
-            factories: Arc::clone(factories),
-            scope_source: Arc::clone(scope_source),
-            allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
-        },
-    )
-}
-
-fn providers(provider: SdkTracerProvider) -> ProviderSources {
-    ProviderSources {
-        tracer_provider: Some(provider),
-        meter_provider: None,
-        logger_provider: None,
-        meter_state: ProviderState::Unset,
-        logger_state: ProviderState::Unset,
-        metrics: None,
-        events: None,
-    }
-}
-
-fn metric() -> MetricSettings {
-    MetricSettings {
-        callback_settings: Arc::new(Inert),
-        utc_offset: Utc.fix(),
-    }
-}
-
-fn emitter() -> EmitterParts {
-    EmitterParts {
-        mappers: vec![MapperKind::GenAI(GenAIMapper {
-            tool_attr_budget: tool_attr_budget(1),
-        })],
-        environment: Arc::new(BTreeMap::<String, String>::new()),
-        attribute_limit: None,
-    }
-}
-
-fn error_info() -> Result<ErrorInformationConfig, Box<HelperError>> {
-    Ok(ErrorInformationConfig {
-        normalizer: Normalizer::new().or_config_error()?,
-        redactor: None,
-        log_client_error_tracebacks: false,
-    })
-}
-
 fn clients() -> HttpClients {
-    let client: Arc<dyn HttpClient> = Arc::new(Inert);
     HttpClients {
-        traces: Arc::clone(&client),
-        metrics: Arc::clone(&client),
-        logs: client,
+        traces: Arc::new(Inert),
+        metrics: Arc::new(Inert),
+        logs: Arc::new(Inert),
     }
 }
 

@@ -31,14 +31,10 @@ class SpanRecord(TypedDict):
     status: Literal["unset", "ok", "error"]
     events: int
     error_type: str | None
-    error_message: str | None
     error_code: str | None
-    service: str | None
-    guardrail: str | None
 
 
 class Answer(TypedDict):
-    constructed: bool
     service_callbacks: int
     input_callbacks: int
     phase_before: bool
@@ -46,30 +42,19 @@ class Answer(TypedDict):
     spans: list[SpanRecord]
 
 
-class Built(TypedDict):
-    logger: OpenTelemetryV2
-    exporter: InMemorySpanExporter
-    tracer: Tracer
-
-
 class AuthenticationError(Exception):
-    message: str
-    status_code: int
-    llm_provider: str
-
-    def __init__(self) -> None:
-        self.message = "litellm.AuthenticationError: bad credentials"
-        self.status_code = 401
-        self.llm_provider = "openai"
-        super().__init__(self.message)
+    message: str = "litellm.AuthenticationError: bad credentials"
+    status_code: int = 401
+    llm_provider: str = "openai"
 
 
 def run(input_value: Input) -> Answer:
     function = input_value["function"]
-    if function == "init":
-        return run_init()
-    if function == "registration":
-        return run_registration()
+    if function in ("init", "registration"):
+        _, exporter, _ = build()
+        if function == "registration":
+            build()
+        return answer(exporter, INVALID_SPAN_ID, False, False)
     if function == "service":
         return run_service(input_value)
     if function == "guardrail":
@@ -79,52 +64,42 @@ def run(input_value: Input) -> Answer:
     return run_phase()
 
 
-def build() -> Built:
+def build() -> tuple[OpenTelemetryV2, InMemorySpanExporter, Tracer]:
     config = OpenTelemetryV2Config()
     exporter = InMemorySpanExporter()
     provider = build_tracer_provider(config, exporter=exporter, use_simple_processor=True)
     logger = OpenTelemetryV2(config, tracer_provider=provider)
-    return {"logger": logger, "exporter": exporter, "tracer": provider.get_tracer("litellm")}
+    return logger, exporter, provider.get_tracer("litellm")
 
 
-def answer(spans: list[SpanRecord], phase_before: bool, phase_routed: bool) -> Answer:
+def answer(
+    exporter: InMemorySpanExporter, root_id: int, phase_before: bool, phase_routed: bool
+) -> Answer:
     return {
-        "constructed": True,
         "service_callbacks": len(litellm.service_callback),
         "input_callbacks": len(litellm.input_callback),
         "phase_before": phase_before,
         "phase_routed": phase_routed,
-        "spans": spans,
+        "spans": [record(span, root_id) for span in exporter.get_finished_spans()],
     }
-
-
-def records(exporter: InMemorySpanExporter, root_id: int) -> list[SpanRecord]:
-    return [record(span, root_id) for span in exporter.get_finished_spans()]
 
 
 def record(span: ReadableSpan, root_id: int) -> SpanRecord:
     parent: Literal["root", "none", "other"] = "none"
     if span.parent is not None and span.parent.span_id != INVALID_SPAN_ID:
         parent = "root" if span.parent.span_id == root_id else "other"
+    code = span.status.status_code
+    status: Literal["unset", "ok", "error"] = (
+        "error" if code == StatusCode.ERROR else "ok" if code == StatusCode.OK else "unset"
+    )
     return {
         "name": span.name,
         "parent": parent,
-        "status": status_label(span.status.status_code),
+        "status": status,
         "events": len(span.events),
         "error_type": attribute(span, "error.type"),
-        "error_message": attribute(span, "error.message"),
         "error_code": attribute(span, "litellm.provider.error.code"),
-        "service": attribute(span, "litellm.service.name"),
-        "guardrail": attribute(span, "litellm.guardrail.name"),
     }
-
-
-def status_label(code: StatusCode) -> Literal["unset", "ok", "error"]:
-    if code == StatusCode.ERROR:
-        return "error"
-    if code == StatusCode.OK:
-        return "ok"
-    return "unset"
 
 
 def attribute(span: ReadableSpan, key: str) -> str | None:
@@ -132,48 +107,34 @@ def attribute(span: ReadableSpan, key: str) -> str | None:
     return None if value is None else str(value)
 
 
-def run_init() -> Answer:
-    build()
-    return answer([], False, False)
-
-
-def run_registration() -> Answer:
-    build()
-    build()
-    return answer([], False, False)
-
-
 def run_service(input_value: Input) -> Answer:
-    built = build()
-    root = built["tracer"].start_span("root")
+    logger, exporter, tracer = build()
+    root = tracer.start_span("root")
+    error = input_value["error"]
     payload = ServiceLoggerPayload(
-        is_error=input_value["error"] is not None,
+        is_error=error is not None,
         service=ServiceTypes.LITELLM if input_value["metrics_only"] else ServiceTypes.REDIS,
         duration=1.5,
         call_type=input_value["call_type"],
         caller="test",
         event_metadata=None,
     )
-    error = input_value["error"]
     if error is None:
-        asyncio.run(
-            built["logger"].async_service_success_hook(
-                payload, parent_otel_span=root, start_time=START, end_time=END
-            )
+        coroutine = logger.async_service_success_hook(
+            payload, parent_otel_span=root, start_time=START, end_time=END
         )
     else:
-        asyncio.run(
-            built["logger"].async_service_failure_hook(
-                payload, error, parent_otel_span=root, start_time=START, end_time=END
-            )
+        coroutine = logger.async_service_failure_hook(
+            payload, error, parent_otel_span=root, start_time=START, end_time=END
         )
-    return answer(records(built["exporter"], root.get_span_context().span_id), False, False)
+    asyncio.run(coroutine)
+    return answer(exporter, root.get_span_context().span_id, False, False)
 
 
 def run_guardrail() -> Answer:
-    first = build()
+    _, exporter, tracer = build()
     build()
-    root = first["tracer"].start_span("root")
+    root = tracer.start_span("root")
     set_request_root_span(root)
     entry: StandardLoggingGuardrailInformation = {
         "guardrail_name": "pii",
@@ -182,24 +143,24 @@ def run_guardrail() -> Answer:
         "end_time": END,
     }
     emit_guardrail_span(entry)
-    return answer(records(first["exporter"], root.get_span_context().span_id), False, False)
+    return answer(exporter, root.get_span_context().span_id, False, False)
 
 
 def run_precall(input_value: Input) -> Answer:
-    built = build()
-    root = built["tracer"].start_span("root")
+    logger, exporter, tracer = build()
+    root = tracer.start_span("root")
     error = AuthenticationError()
-    built["logger"].record_error_attributes_on_span(root, error, input_value["status"])
+    logger.record_error_attributes_on_span(root, error, input_value["status"])
     if input_value["second_status"] > 0:
-        built["logger"].record_error_attributes_on_span(root, error, input_value["second_status"])
+        logger.record_error_attributes_on_span(root, error, input_value["second_status"])
     root.end()
-    return answer(records(built["exporter"], root.get_span_context().span_id), False, False)
+    return answer(exporter, root.get_span_context().span_id, False, False)
 
 
 def run_phase() -> Answer:
     with phase_span("auth") as before:
         routed_before = before is not None
-    built = build()
+    _, exporter, _ = build()
     with phase_span("auth") as after:
         routed_after = after is not None
-    return answer(records(built["exporter"], INVALID_SPAN_ID), routed_before, routed_after)
+    return answer(exporter, INVALID_SPAN_ID, routed_before, routed_after)

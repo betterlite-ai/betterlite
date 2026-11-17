@@ -132,12 +132,7 @@ impl V2Callback {
 
     #[must_use]
     pub fn open_call_ids(&self) -> Vec<String> {
-        let calls = self.logger.open_calls();
-        let mut ids: Vec<String> = Vec::with_capacity(calls.calls.len());
-        for id in calls.calls.keys() {
-            ids.push(id.clone());
-        }
-        ids
+        self.logger.open_calls().calls.keys().cloned().collect()
     }
 }
 
