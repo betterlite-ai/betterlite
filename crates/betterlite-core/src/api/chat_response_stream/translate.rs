@@ -184,11 +184,11 @@ fn text_delta_event<Context>(
 }
 
 fn pop_tool_event<Context>(state: &mut ChatStreamState<Context>) -> Option<KnownResponseEvent> {
-    state
-        .progress
-        .pending_tool_events
-        .pop_front()
-        .map(|queued| queued.event)
+    let queue = &mut state.progress.pending_tool_events;
+    if queue.is_empty() {
+        return None;
+    }
+    Some(queue.remove(0).event)
 }
 
 fn queue_first_annotations<Context>(

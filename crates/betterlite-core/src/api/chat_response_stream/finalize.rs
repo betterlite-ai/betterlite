@@ -39,8 +39,8 @@ where
         return Ok(None);
     };
     queue_final_tool_completion(state, &completion)?;
-    if let Some(queued) = state.progress.pending_tool_events.pop_front() {
-        return Ok(Some(queued.event));
+    if !state.progress.pending_tool_events.is_empty() {
+        return Ok(Some(state.progress.pending_tool_events.remove(0).event));
     }
     if let Some(done) = return_default_done_events(state, sources, &completion)? {
         return Ok(Some(done));

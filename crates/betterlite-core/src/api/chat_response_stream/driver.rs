@@ -49,11 +49,13 @@ impl<C, Context> ChatResponseStream<C, Context> {
             return Ok(Some(event));
         }
         let progress = &mut self.state.progress;
-        if let Some(event) = progress.pending_response_events.pop_front() {
-            return Ok(Some(event));
+        if !progress.pending_response_events.is_empty() {
+            return Ok(Some(progress.pending_response_events.remove(0)));
         }
-        let tool = progress.pending_tool_events.pop_front();
-        Ok(tool.map(|queued| queued.event))
+        if progress.pending_tool_events.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(progress.pending_tool_events.remove(0).event))
     }
 
     fn begin_chunk(&mut self, chunk: &Json) -> Result<(), ChatResponseStreamError> {
@@ -77,7 +79,10 @@ impl<C, Context> ChatResponseStream<C, Context> {
             translate::transform(&mut self.state, &self.sources, chunk, &mut self.annotations)?;
         let progress = &mut self.state.progress;
         progress.pending_response_events.extend(event);
-        Ok(progress.pending_response_events.pop_front())
+        if progress.pending_response_events.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(progress.pending_response_events.remove(0)))
     }
 
     // The assembly is the iteration's last step; a null one ends the stream without a completed event
