@@ -194,19 +194,19 @@ fn tier_map<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(values) = values else {
+    let Some(configured) = values else {
         return Ok(None);
     };
     let mut resolved = BTreeMap::new();
-    for (tier, value) in values {
+    for (tier, value) in configured {
         let path = format!("{prefix}.{field}.{tier}");
-        let value = match value {
+        let entry = match value {
             TierModelValue::Single(model) => {
                 TierModelValue::Single(resolve_string(model, &path, lookup)?)
             }
             pool @ TierModelValue::Pool(_) => pool,
         };
-        resolved.insert(tier, value);
+        resolved.insert(tier, entry);
     }
     Ok(Some(resolved))
 }
@@ -222,11 +222,11 @@ where
     L: EnvironmentLookup,
     T: FromStr,
 {
-    let Some(values) = values else {
+    let Some(configured) = values else {
         return Ok(None);
     };
     let mut resolved = BTreeMap::new();
-    for (name, value) in values {
+    for (name, value) in configured {
         let path = format!("{prefix}.{field}.{name}");
         reject_quoted(&value, &path)?;
         // an empty environment value is unset, so the entry stays absent
@@ -246,8 +246,8 @@ fn optional_number<L>(
 where
     L: EnvironmentLookup,
 {
-    if let Some(value) = &value {
-        reject_quoted(value, path)?;
+    if let Some(declared) = &value {
+        reject_quoted(declared, path)?;
     }
     resolve_number(value, path, lookup, parse_float)
 }
