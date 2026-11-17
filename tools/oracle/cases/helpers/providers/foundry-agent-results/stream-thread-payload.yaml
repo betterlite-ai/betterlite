@@ -1,0 +1,57 @@
+kind: helper
+name: foundry-agent-results-stream-thread-payload
+call:
+  foundry_agent_results:
+    requests:
+      - model: azure_ai/agents/asst_1
+        messages:
+          - {role: user, content: hi}
+          - {role: system, content: sys}
+          - {role: assistant, content: skip}
+          - {content: no-role}
+          - {role: tool, content: skip}
+          - {role: user}
+        optional_params: {instructions: "be brief"}
+        litellm_params: {ssl_verify: false}
+        headers: {X-Extra: one}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 200
+        body: "data: [DONE]\n\n"
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: [{role: user, content: hi}]
+        optional_params: {thread_id: thread-7}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 201
+        body: "event: thread.created\ndata: {\"id\": \"thread_8\"}\n\ndata: [DONE]"
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {thread_id: "", instructions: null}
+        litellm_params: {ssl_verify: null}
+        headers: {Content-Type: text/plain}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 200
+        body: ""
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {api_version: "2025-05-15-preview"}
+        litellm_params: {}
+        headers: {Authorization: "Bearer explicit", X-Extra: two}
+        api_base: "https://base.example/api/projects/p"
+        api_key: ""
+        status: 200
+        body: "data: [DONE]\n\n"
+        id: chatcmpl-00000000
+        created: 1700000000
+env: {}
+compare: {ignore: []}

@@ -117,6 +117,7 @@ fn a_bare_corpus_id_expands_under_the_configured_project_and_location(
         location: setting_location.map(str::to_owned),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let mut logging = BTreeMap::new();
     let optional_params = optional("{}");

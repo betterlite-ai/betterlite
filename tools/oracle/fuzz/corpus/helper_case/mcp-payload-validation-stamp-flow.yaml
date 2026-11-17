@@ -1,0 +1,25 @@
+kind: helper
+name: mcp-payload-validation-stamp-flow
+call:
+  b4716:
+    function: stamp_flow
+    payload:
+      auth_type: oauth2
+      token_url: https://token.example
+      credentials:
+        client_id: test-client
+        client_secret: test-secret
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        authorization_url: https://authorize.example
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload: {auth_type: api_key}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

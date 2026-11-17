@@ -1,0 +1,34 @@
+kind: helper
+name: azure-passthrough-passthrough-auth-inputs
+call:
+  azure_passthrough:
+    function: passthrough_auth_inputs
+    key_steps:
+      - {api_key: explicit-key, env_key: null}
+      - {api_key: null, env_key: env-key}
+      - {api_key: "", env_key: env-key}
+      - {api_key: null, env_key: null}
+      - {api_key: explicit-key, env_key: env-key}
+    validation_steps:
+      - headers: {}
+        api_key: positional-key
+        params_key: params-key
+        configured_key: configured-key
+      - headers: {}
+        api_key: null
+        params_key: params-key
+        configured_key: configured-key
+      - headers: {api-key: header-key}
+        api_key: positional-key
+        params_key: null
+        configured_key: null
+      - headers: {x-other: kept}
+        api_key: null
+        params_key: params-key
+        configured_key: configured-key
+      - headers: {}
+        api_key: ""
+        params_key: null
+        configured_key: configured-key
+env: {}
+compare: {ignore: []}

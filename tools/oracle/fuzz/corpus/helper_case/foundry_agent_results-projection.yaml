@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-agent-results-projection-seed
+call:
+  foundry_agent_results:
+    extractions:
+      - messages:
+          data:
+            - {role: assistant, content: [{type: text, text: {value: seeded, annotations: [{type: url_citation, start_index: 1, end_index: 2, url_citation: {url: "https://seed"}}]}}]}
+    annotations:
+      - annotations:
+          - {type: url_citation, start_index: 3, url_citation: {url: "https://seed", start_index: 0}}
+          - {type: file_citation, file_id: seeded}
+env: {}
+compare: {ignore: []}

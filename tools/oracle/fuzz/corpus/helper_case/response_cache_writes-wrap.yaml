@@ -1,0 +1,26 @@
+kind: helper
+name: response-cache-writes-wrap-seed
+call:
+  b4304:
+    function: wrap
+    scenarios:
+      - function_name: anthropic_messages
+        call_type: anthropic_messages
+        supported_call_types: [anthropic_messages]
+        cache_configured: true
+        result_kind: async_stream
+        kwargs: {model: gpt-4}
+      - function_name: anthropic_messages
+        call_type: anthropic_messages
+        supported_call_types: [anthropic_messages]
+        cache_configured: true
+        result_kind: sync_stream
+        kwargs: {model: gpt-4}
+      - function_name: acompletion
+        call_type: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: false
+        result_kind: response
+        kwargs: {model: gpt-4}
+env: {}
+compare: {ignore: []}

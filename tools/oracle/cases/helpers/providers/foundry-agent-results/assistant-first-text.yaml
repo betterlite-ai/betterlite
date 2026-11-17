@@ -1,0 +1,27 @@
+kind: helper
+name: foundry-agent-results-assistant-first-text
+call:
+  foundry_agent_results:
+    extractions:
+      - messages:
+          data:
+            - {role: user, content: [{type: text, text: {value: ignored}}]}
+            - {role: assistant, content: [{type: text, text: {value: answer, annotations: [{type: url_citation, start_index: 0, end_index: 5, url_citation: {url: "https://a"}}]}}]}
+            - {role: assistant, content: [{type: text, text: {value: later}}]}
+      - messages:
+          data:
+            - {role: assistant, content: [{type: image_url}, {type: text, text: {value: found}}]}
+      - messages:
+          data:
+            - {role: assistant, content: []}
+            - {role: assistant, content: [{type: text, text: {value: second}}]}
+      - messages:
+          data:
+            - {role: assistant, content: [{type: text, text: {value: "", annotations: []}}]}
+            - {role: assistant, content: [{type: text, text: {value: unreachable}}]}
+      - messages:
+          data:
+            - {role: user, content: [{type: text, text: {value: only-user}}]}
+      - messages: {}
+env: {}
+compare: {ignore: []}

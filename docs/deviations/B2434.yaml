@@ -1,0 +1,6 @@
+task: B2434
+deviations:
+  - what: A swallowed stream failure logs one error line under the "Anthropic Adapter - " prefix, carrying the tracing field kind=stream_failure and only the failure text, where LiteLLM appends the Python traceback after a newline.
+    why: Rust has no Python traceback, and betterlite's logs carry structured fields; the error level and the message prefix stay the same, and the oracle compares exactly those two.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L780-L781
+kept_bugs: []

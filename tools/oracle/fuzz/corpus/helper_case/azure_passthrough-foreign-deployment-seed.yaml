@@ -1,0 +1,23 @@
+kind: helper
+name: azure_passthrough-foreign-deployment-seed
+call:
+  azure_passthrough:
+    function: foreign_deployment
+    deployment_steps:
+      - endpoint: openai/deployments/foreign-d/chat/completions
+        model_group: my-group
+        served_models: [served-a]
+      - endpoint: openai/deployments/my-group/chat/completions
+        model_group: my-group
+        served_models: []
+      - endpoint: openai/deployments/SQL-DB/embeddings
+        model_group: my-group
+        served_models: [sql-db]
+      - endpoint: openai/deployments/STRASSE/embeddings
+        model_group: my-group
+        served_models: [straße]
+      - endpoint: chat/completions
+        model_group: my-group
+        served_models: [served-a]
+env: {}
+compare: {ignore: []}

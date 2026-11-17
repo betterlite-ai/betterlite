@@ -1,0 +1,20 @@
+kind: helper
+name: azure_passthrough-router-model-in-path-seed
+call:
+  azure_passthrough:
+    function: router_model_in_path
+    router_steps:
+      - endpoint: gpt-4o/chat/completions
+        router_models: [gpt-4o]
+      - endpoint: deployments/gpt-4o
+        router_models: [other, gpt-4o]
+      - endpoint: GPT-4O/chat
+        router_models: [gpt-4o]
+      - endpoint: gpt-4o
+        router_models: [gpt-4o]
+      - endpoint: /gpt-4o/chat
+        router_models: [gpt-4o]
+      - endpoint: chat/completions
+        router_models: []
+env: {}
+compare: {ignore: []}

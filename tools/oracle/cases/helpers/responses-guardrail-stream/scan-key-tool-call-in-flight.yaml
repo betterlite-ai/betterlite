@@ -1,0 +1,6 @@
+kind: helper
+name: responses-stream-scan-key-tool-call-in-flight
+call:
+  b3672: {"function": "scan_key", "scenarios": [{"events": [{"type": "response.output_item.added", "output_index": 1, "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": ""}}, {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "hi"}]}, {"events": [{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "hi"}]}, {"events": [{"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 1, "delta": "{"}, {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "hi"}]}, {"events": [{"type": "response.output_item.added", "output_index": 0, "item": {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_2", "name": "g", "input": ""}}, {"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "content": []}}, {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 1, "content_index": 0, "delta": "done"}]}]}
+env: {}
+compare: {ignore: []}

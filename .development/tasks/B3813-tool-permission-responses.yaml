@@ -147,6 +147,7 @@ out_of_scope:
   - "base_model_iterator.MockResponseIterator constructor and async iteration are owned by the lower model iterator task."
   - "stream_chunk_builder from B2227 (betterlite-streaming::streamed_response_assembly) is used as-is; do not reimplement."
 pitfalls:
+  - "Anthropic SSE assembly and re-encoding come from betterlite_guardrails::anthropic_sse (B9976 moves B3669's module there): call assemble_anthropic_sse_stream and the chunks-from-response helper, and keep no decoder or encoder of your own."
   - "Evaluate all tool calls before selecting the first denial to raise; _evaluate_tool_calls collects all denials without stopping, and only the first denial is raised in block mode."
   - "Legacy function calls need synthetic IDs derived from choice index; the same ID must be used when looking up the error result to avoid mismatches."
   - "Anthropic tool_use blocks are removed by ID match; a tool_use block without an id field (falsey) never matches an error result and stays in the response."
@@ -157,5 +158,5 @@ pitfalls:
   - "Raw SSE streams that cannot be parsed are blocked immediately with GuardrailRaisedException, not passed through or partially processed."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0

@@ -1,0 +1,28 @@
+kind: helper
+name: mcp-payload-validation-alias-defaults-from-name
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test_srv
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        alias: my alias
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        alias: ""
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: ""
+        alias: ""
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

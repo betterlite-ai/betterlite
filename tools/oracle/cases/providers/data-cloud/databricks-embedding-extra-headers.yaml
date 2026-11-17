@@ -1,0 +1,18 @@
+kind: helper
+name: databricks-embedding-extra-headers
+call:
+  b8330:
+    op: embedding
+    provider: databricks
+    model: databricks-bge-large-en
+    input: hello
+    api_base: "{{upstream}}/serving-endpoints"
+    api_key: oracle-databricks-key
+    headers:
+      x-oracle-extra: leaked
+    answer:
+      status: 200
+      body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"databricks-bge-large-en","usage":{"prompt_tokens":2,"total_tokens":2}}'
+env: {}
+compare:
+  ignore: []

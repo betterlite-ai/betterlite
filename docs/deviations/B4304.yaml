@@ -1,0 +1,9 @@
+task: B4304
+deviations:
+  - what: A pending cache write is interrupted by a cancellation token and rerun from its factory, not by asyncio.CancelledError.
+    why: betterlite has no asyncio; CacheWriteTracker keeps one token for all writes, and the write that ran is rebuilt from its captured request so the flush starts from scratch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L148-L158
+  - what: The typed response is serialized with serde instead of model_dump_json, and the parent span is stored as a W3C traceparent string instead of the span object.
+    why: betterlite carries JSON and an OpenTelemetry trace context, not pydantic models or Python span objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1032-L1099
+kept_bugs: []
