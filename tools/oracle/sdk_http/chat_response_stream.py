@@ -7,14 +7,16 @@ import litellm
 import openai
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.responses.litellm_completion_transformation.streaming_iterator import (
-    LiteLLMCompletionStreamingIterator,
+    LiteLLMCompletionStreamingIterator as ResponsesIterator,
 )
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
-from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams
-from messages_sync_stream import Message
-from openai_chat import Failure, project_failure
+from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
+from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
+
+from messages_sync_stream import Message
+from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
 EVENT: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
@@ -72,8 +74,18 @@ class ChatResponseStreamCall(BaseModel):
     runs: list[ChatRunSpec]
 
 
-def request_params(request: ResponsesRequest) -> ResponsesAPIOptionalRequestParams:
-    params: ResponsesAPIOptionalRequestParams = {}
+# The iterator writes sequence_number into __dict__, so it only comes back as an attribute
+class Sequenced(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence_number: int | None = None
+
+
+SEQUENCE: Final[TypeAdapter[Sequenced]] = TypeAdapter(Sequenced)
+
+
+def request_params(request: ResponsesRequest) -> RequestParams:
+    params: RequestParams = {}
     if request.instructions is not None:
         params["instructions"] = request.instructions
     if request.temperature is not None:
@@ -121,53 +133,42 @@ def normalized_encoded_id(value: str) -> str:
     return f"resp_{base64.b64encode(assembled.encode()).decode()}"
 
 
-def normalized_id(value: str) -> Json:
-    if value.startswith("resp_"):
-        return normalized_encoded_id(value)
-    return normalized_uuid_id(value)
-
-
 def normalized_field(key: str, value: Json) -> Json:
-    if key == "created_at" and isinstance(value, int):
-        return 0
-    if key in ("id", "item_id") and isinstance(value, str):
-        return normalized_id(value)
-    return normalized(value)
-
-
-def normalized(value: Json) -> Json:
-    if isinstance(value, list):
-        return [normalized(child) for child in value]
-    if isinstance(value, dict):
-        return {key: normalized_field(key, child) for key, child in value.items()}
-    return value
+    match value:
+        case int() if key == "created_at":
+            return 0
+        case str() if key in ("id", "item_id"):
+            if value.startswith("resp_"):
+                return normalized_encoded_id(value)
+            return normalized_uuid_id(value)
+        case list():
+            return [normalized_field(key, child) for child in value]
+        case dict():
+            return {name: normalized_field(name, child) for name, child in value.items()}
+        case bool() | float() | str() | int() | None:
+            return value
 
 
 def event_view(event: BaseResponse) -> dict[str, Json]:
     view = EVENT.validate_json(event.model_dump_json())
-    attributes: dict[str, object] = vars(event)
-    sequence = attributes.get("sequence_number")
-    if isinstance(sequence, int):
+    sequence = SEQUENCE.validate_python(event).sequence_number
+    if sequence is not None:
         view["sequence_number"] = sequence
     return {key: normalized_field(key, value) for key, value in view.items()}
 
 
-def build_iterator(
-    call: ChatResponseStreamCall,
-    params: ResponsesAPIOptionalRequestParams,
-    stream: CustomStreamWrapper,
-) -> LiteLLMCompletionStreamingIterator:
-    return LiteLLMCompletionStreamingIterator(
+def build_iterator(call: ChatResponseStreamCall, stream: CustomStreamWrapper) -> ResponsesIterator:
+    return ResponsesIterator(
         model=call.model,
         litellm_custom_stream_wrapper=stream,
         request_input=call.request_input,
-        responses_api_request=params,
+        responses_api_request=request_params(call.responses_api_request),
         custom_llm_provider="openai",
     )
 
 
 def sync_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStreamWrapper:
-    stream = litellm.completion(
+    stream: ModelResponse | CustomStreamWrapper = litellm.completion(
         model=call.model,
         messages=[
             {"role": message["role"], "content": message["content"]}
@@ -181,13 +182,15 @@ def sync_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStreamWrap
         custom_llm_provider="openai",
         num_retries=0,
     )
-    if not isinstance(stream, CustomStreamWrapper):
-        raise StreamedResponseError
-    return stream
+    match stream:
+        case CustomStreamWrapper():
+            return stream
+        case ModelResponse():
+            raise StreamedResponseError
 
 
 async def async_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStreamWrapper:
-    stream = await litellm.acompletion(
+    stream: ModelResponse | CustomStreamWrapper = await litellm.acompletion(
         model=call.model,
         messages=[
             {"role": message["role"], "content": message["content"]}
@@ -201,14 +204,14 @@ async def async_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStr
         custom_llm_provider="openai",
         num_retries=0,
     )
-    if not isinstance(stream, CustomStreamWrapper):
-        raise StreamedResponseError
-    return stream
+    match stream:
+        case CustomStreamWrapper():
+            return stream
+        case ModelResponse():
+            raise StreamedResponseError
 
 
-def sync_step(
-    iterator: LiteLLMCompletionStreamingIterator, step: Literal["next", "drain"]
-) -> StepOutcome:
+def sync_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
     events: list[dict[str, Json]] = []
     end = False
     while True:
@@ -222,9 +225,7 @@ def sync_step(
     return StepOutcome(events=events, end=end)
 
 
-async def async_step(
-    iterator: LiteLLMCompletionStreamingIterator, step: Literal["next", "drain"]
-) -> StepOutcome:
+async def async_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
     events: list[dict[str, Json]] = []
     end = False
     while True:
@@ -239,50 +240,44 @@ async def async_step(
     return StepOutcome(events=events, end=end)
 
 
-def sync_run(
-    call: ChatResponseStreamCall,
-    spec: ChatRunSpec,
-    params: ResponsesAPIOptionalRequestParams,
-    api_base: str,
+def run_sync(
+    call: ChatResponseStreamCall, spec: ChatRunSpec, stream: CustomStreamWrapper
 ) -> RunOutcome:
+    iterator = build_iterator(call, stream)
+    return RunOutcome(steps=[sync_step(iterator, step) for step in spec.steps], failure=None)
+
+
+async def run_async(
+    call: ChatResponseStreamCall, spec: ChatRunSpec, stream: CustomStreamWrapper
+) -> RunOutcome:
+    iterator = build_iterator(call, stream)
+    return RunOutcome(steps=[await async_step(iterator, step) for step in spec.steps], failure=None)
+
+
+def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
         stream = sync_stream(call, api_base)
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=failure_of(error))
-    iterator = build_iterator(call, params, stream)
-    return RunOutcome(
-        steps=[sync_step(iterator, step) for step in spec.steps], failure=None
-    )
+    return run_sync(call, spec, stream)
 
 
-async def async_run(
-    call: ChatResponseStreamCall,
-    spec: ChatRunSpec,
-    params: ResponsesAPIOptionalRequestParams,
-    api_base: str,
-) -> RunOutcome:
+async def async_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
         stream = await async_stream(call, api_base)
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=failure_of(error))
-    iterator = build_iterator(call, params, stream)
-    return RunOutcome(
-        steps=[await async_step(iterator, step) for step in spec.steps],
-        failure=None,
-    )
+    return await run_async(call, spec, stream)
+
+
+def run_spec(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
+    if spec.mode == "sync":
+        return sync_run(call, spec, api_base)
+    return asyncio.run(async_run(call, spec, api_base))
 
 
 def run_chat_response_stream(call: ChatResponseStreamCall, api_base: str) -> str:
-    params = request_params(call.responses_api_request)
-    runs = [
-        sync_run(call, spec, params, api_base)
-        if spec.mode == "sync"
-        else asyncio.run(async_run(call, spec, params, api_base))
-        for spec in call.runs
-    ]
+    runs = [run_spec(call, spec, api_base) for spec in call.runs]
     outcome: Outcome = {"chat_response_stream": {"value": {"runs": runs}}}
-    return (
-        TypeAdapter(Outcome)
-        .dump_json(outcome, by_alias=True, exclude_unset=True)
-        .decode()
-    )
+    dumped = TypeAdapter(Outcome).dump_json(outcome, by_alias=True, exclude_unset=True)
+    return dumped.decode()
