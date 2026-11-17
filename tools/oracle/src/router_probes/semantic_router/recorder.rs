@@ -32,24 +32,56 @@ impl Recorder {
         }
     }
 
-    fn answer(&self, texts: &[String]) -> Result<Vec<Vec<f64>>, io::Error> {
-        let mut vectors = Vec::with_capacity(texts.len());
-        for text in texts {
-            let Some(vector) = self.vectors.get(text) else {
-                return Err(io::Error::other(format!("no probe vector for {text:?}")));
-            };
-            vectors.push(vector.clone());
-        }
-        Ok(vectors)
+    fn document_vectors(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f64>>, io::Error> {
+        begin(
+            &self.documents,
+            DocumentCall {
+                model: model.to_owned(),
+                input: texts.to_vec(),
+            },
+            &self.document_failures,
+            "the probe failed the document embedding",
+        )?;
+        lookup_vectors(&self.vectors, texts)
     }
+}
 
-    fn take_failure(counter: &AtomicUsize) -> bool {
-        counter
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                remaining.checked_sub(1)
-            })
-            .is_ok()
+fn lookup_vectors(
+    vectors: &IndexMap<String, Vec<f64>>,
+    texts: &[String],
+) -> Result<Vec<Vec<f64>>, io::Error> {
+    let mut found = Vec::with_capacity(texts.len());
+    for text in texts {
+        let Some(vector) = vectors.get(text) else {
+            return Err(io::Error::other(format!("no probe vector for {text:?}")));
+        };
+        found.push(vector.clone());
     }
+    Ok(found)
+}
+
+fn take_failure(counter: &AtomicUsize) -> bool {
+    counter
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+}
+
+fn begin<T>(
+    calls: &Mutex<Vec<T>>,
+    call: T,
+    failures: &AtomicUsize,
+    message: &str,
+) -> Result<(), io::Error> {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
+    if take_failure(failures) {
+        return Err(io::Error::other(message));
+    }
+    Ok(())
 }
 
 impl RouteEmbedder for Recorder {
@@ -60,20 +92,7 @@ impl RouteEmbedder for Recorder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        let call = DocumentCall {
-            model: model.to_owned(),
-            input: texts.clone(),
-        };
-        async move {
-            self.documents
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(call);
-            if Self::take_failure(&self.document_failures) {
-                return Err(io::Error::other("the probe failed the document embedding"));
-            }
-            self.answer(&texts)
-        }
+        async move { self.document_vectors(model, &texts) }
     }
 
     fn embed_query(
@@ -94,14 +113,13 @@ impl RouteEmbedder for Recorder {
             litellm_trace_id: caller.litellm_trace_id.clone(),
         };
         async move {
-            self.queries
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(call);
-            if Self::take_failure(&self.query_failures) {
-                return Err(io::Error::other("the probe failed the query embedding"));
-            }
-            self.answer(std::slice::from_ref(&text))
+            begin(
+                &self.queries,
+                call,
+                &self.query_failures,
+                "the probe failed the query embedding",
+            )?;
+            lookup_vectors(&self.vectors, std::slice::from_ref(&text))
         }
     }
 }

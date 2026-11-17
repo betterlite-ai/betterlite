@@ -134,10 +134,49 @@ impl FakeEmbedder {
                 text: text.to_owned(),
             })
     }
+
+    async fn wait_and_fail(&self, counter: &AtomicUsize) -> Result<(), FakeError> {
+        tokio::time::sleep(self.delay).await;
+        if take_failure(counter) {
+            return Err(FakeError::Injected);
+        }
+        Ok(())
+    }
+
+    async fn document_vectors(
+        &self,
+        model: &str,
+        texts: Vec<String>,
+    ) -> Result<Vec<Vec<f64>>, FakeError> {
+        record(
+            &self.documents,
+            DocumentCall {
+                model: model.to_owned(),
+                texts: texts.clone(),
+            },
+        );
+        self.wait_and_fail(&self.document_failures).await?;
+        let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
+        if let Some(vectors) = self.document_answers.get(&batch_signature(&borrowed)) {
+            return Ok(vectors.clone());
+        }
+        let mut vectors = Vec::with_capacity(texts.len());
+        for text in texts {
+            vectors.push(self.vector(&text)?);
+        }
+        Ok(vectors)
+    }
 }
 
 fn batch_signature(texts: &[&str]) -> String {
     texts.join(&BATCH_SEPARATOR.to_string())
+}
+
+fn record<T>(calls: &Mutex<Vec<T>>, call: T) {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
 }
 
 impl RouteEmbedder for FakeEmbedder {
@@ -148,28 +187,7 @@ impl RouteEmbedder for FakeEmbedder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move {
-            self.documents
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(DocumentCall {
-                    model: model.to_owned(),
-                    texts: texts.clone(),
-                });
-            tokio::time::sleep(self.delay).await;
-            if take_failure(&self.document_failures) {
-                return Err(FakeError::Injected);
-            }
-            let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
-            if let Some(vectors) = self.document_answers.get(&batch_signature(&borrowed)) {
-                return Ok(vectors.clone());
-            }
-            let mut vectors = Vec::with_capacity(texts.len());
-            for text in &texts {
-                vectors.push(self.vector(text)?);
-            }
-            Ok(vectors)
-        }
+        self.document_vectors(model, texts)
     }
 
     fn embed_query(
@@ -180,19 +198,16 @@ impl RouteEmbedder for FakeEmbedder {
         caller: &CallerContext,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
         async move {
-            self.queries
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(QueryCall {
+            record(
+                &self.queries,
+                QueryCall {
                     model: model.to_owned(),
                     text: text.clone(),
                     raw_text: raw_text.to_owned(),
                     caller: caller.clone(),
-                });
-            tokio::time::sleep(self.delay).await;
-            if take_failure(&self.query_failures) {
-                return Err(FakeError::Injected);
-            }
+                },
+            );
+            self.wait_and_fail(&self.query_failures).await?;
             if let Some(vectors) = self.query_answers.get(&text) {
                 return Ok(vectors.clone());
             }
