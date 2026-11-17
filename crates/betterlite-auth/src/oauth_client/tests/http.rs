@@ -621,3 +621,56 @@ async fn a_repeated_callback_parameter_keeps_the_last_value() {
         "access-second"
     );
 }
+
+#[tokio::test]
+async fn a_discovery_transport_failure_is_a_provider_failure() {
+    let error = fetch_discovery(
+        &client(),
+        &transport(),
+        &DiscoverySource::WellKnown("http://127.0.0.1:1/discovery".to_owned()),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(matches!(&error, OAuthClientError::Discovery(_)));
+    assert_eq!(error.response().status, 503);
+}
+
+#[tokio::test]
+async fn a_token_transport_failure_is_an_auth_failure() {
+    let discovery = OAuthDiscoveryDocument {
+        authorization_endpoint: "https://provider.test/authorize".to_owned(),
+        token_endpoint: "http://127.0.0.1:1/token".to_owned(),
+        userinfo_endpoint: "https://provider.test/userinfo".to_owned(),
+    };
+    let error = exchange(
+        &client(),
+        &transport(),
+        &discovery,
+        &exchange_request("https://proxy.test/sso/callback?code=abc", true),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(matches!(&error, OAuthClientError::Token(_)));
+    assert_eq!(error.response().status, 401);
+}
+
+#[tokio::test]
+async fn a_userinfo_transport_failure_is_an_auth_failure() {
+    let provider = provider().await;
+    let client = client();
+    let mut discovery = discovery(&client, &provider).await;
+    discovery.userinfo_endpoint = "http://127.0.0.1:1/userinfo".to_owned();
+    let error = exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request("https://proxy.test/sso/callback?code=abc", true),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert!(matches!(&error, OAuthClientError::Userinfo(_)));
+    assert_eq!(error.response().status, 401);
+}

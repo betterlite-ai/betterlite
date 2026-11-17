@@ -15,6 +15,9 @@ deviations:
   - what: A userinfo answer that is not a 2xx or is not a JSON object answers 401 auth_error. LiteLLM parses the body without a status check and passes it to the converter, so a rejected or non-object answer ends in an unhandled exception.
     why: The userinfo call fails only when the provider refuses the access token or answers garbage, and both are authentication failures at this boundary.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L590-L601
+  - what: A provider request that fails before an answer arrives answers 503 for discovery and 401 for the token and userinfo calls. LiteLLM lets the same httpx exception surface as an unhandled 500.
+    why: The provider is unreachable or refused the connection, and the typed error names the step that failed instead of turning it into a server error.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L568-L601
   - what: A Google userinfo claim of the wrong JSON type (email_verified that is not a boolean, or a profile claim that is not a string) answers 503 auth_provider_unavailable with the claim name as param. LiteLLM passes the value to pydantic, whose ValidationError is not caught and surfaces as a 500.
     why: The provider broke the documented userinfo shape, and naming the claim tells an operator what to look at where a 500 hides it.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L17-L29
@@ -39,8 +42,8 @@ deviations:
   - what: An authorization request whose redirect_uri and configured redirect are both empty answers 500 MissingRedirectUri. fastapi-sso treats the empty value as absent in its fallback chain, then builds a URL without the redirect_uri parameter.
     why: An empty redirect cannot complete a login, and the configuration rule treats an empty configured string as unset; the 500 names the misconfiguration instead of redirecting to a URL the provider will refuse.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L294-L318
-  - what: The discovery, token and userinfo endpoint URLs must be HTTPS unless the login client turns on allow_insecure_http. LiteLLM posts to the token URL the discovery document names, whatever its scheme.
-    why: A provider answer decides where the client secret and the authorization code go, so plain HTTP there exposes both. The flag carries fastapi-sso's own name for the case a deployment really needs it.
+  - what: The authorization, discovery, token and userinfo endpoint URLs must be HTTPS unless the login client turns on allow_insecure_http. oauthlib refuses a non-HTTPS authorization URI with no opt-out, and LiteLLM posts to the token and userinfo URLs the discovery document names, whatever their scheme.
+    why: A provider answer decides where the client secret and the authorization code go, so plain HTTP there exposes both. The flag carries fastapi-sso's own name for the case a deployment really needs it, and it also allows the authorization URL oauthlib would refuse.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L568-L584
   - what: The authorization URL and the token request are built from the typed OAuthClient over betterlite-http, not from oauth2's Client and AsyncHttpClient, although the task names oauth2 as existing request construction.
     why: oauth2 pins the token URL at construction, its BasicClient sends the client_id only in the Authorization header so the include_client_id option the task requires cannot add it to the body, it has no hook where an additional Authorization header must replace Basic, its parameter order differs from oauthlib's prepare_grant_uri and prepare_token_request, and its error types cannot carry the pinned 400 missing-code and 401 state-cookie answers. The typed OAuthClient with betterlite-http's OutboundRequest keeps every pinned behavior and still runs over the B173 transport.
