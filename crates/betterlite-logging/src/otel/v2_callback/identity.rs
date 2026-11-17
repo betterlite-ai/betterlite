@@ -72,8 +72,9 @@ fn stamp_identity(
     trace: &mut RequestTraceContext,
     ambient: Option<&LiveSpan>,
 ) {
-    let root = proxy::request_root_span(callback, trace);
-    let Some(span) = root.as_ref().or(ambient) else {
+    let anchor = trace.root.as_ref().map(|root| root.context.span_id());
+    let root_span = anchor.and_then(|id| callback.roots.get(id));
+    let Some(span) = root_span.as_ref().or(ambient) else {
         return;
     };
     if !span.context.is_valid() {

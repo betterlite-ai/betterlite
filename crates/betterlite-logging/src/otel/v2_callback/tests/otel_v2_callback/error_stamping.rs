@@ -187,7 +187,10 @@ fn an_anchored_root_is_found_among_several() {
     let mut second_trace = RequestTraceContext::default();
     proxy::mark_request_root_span(&harness.callback, &first, None, &mut first_trace);
     proxy::mark_request_root_span(&harness.callback, &second, None, &mut second_trace);
-    let found = proxy::request_root_span(&harness.callback, &second_trace);
+    let found = second_trace
+        .root
+        .as_ref()
+        .and_then(|root| harness.callback.roots.get(root.context.span_id()));
     assert_eq!(
         found.map(|span| span.context.span_id()),
         Some(second.context.span_id())
@@ -201,7 +204,13 @@ fn an_ended_root_is_not_handed_back() {
     root.lock().end();
     let mut trace = RequestTraceContext::default();
     proxy::mark_request_root_span(&harness.callback, &root, None, &mut trace);
-    assert!(proxy::request_root_span(&harness.callback, &trace).is_none());
+    assert!(
+        trace
+            .root
+            .as_ref()
+            .and_then(|anchored| harness.callback.roots.get(anchored.context.span_id()))
+            .is_none()
+    );
 }
 
 #[test]

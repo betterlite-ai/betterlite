@@ -28,6 +28,7 @@ class SpanRecord(TypedDict):
     name: str
     parent: Literal["root", "none", "other"]
     status: Literal["unset", "ok", "error"]
+    provider_error_code: str | None
     events: int
     kind: str
     start: int | None
@@ -37,6 +38,8 @@ class SpanRecord(TypedDict):
 class Answer(TypedDict):
     service_callbacks: int
     input_callbacks: int
+    success_callbacks: int
+    failure_callbacks: int
     phase_before: bool
     phase_routed: bool
     spans: list[SpanRecord]
@@ -78,6 +81,8 @@ def answer(
     return {
         "service_callbacks": len(litellm.service_callback),  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L118
         "input_callbacks": len(litellm.input_callback),  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L115
+        "success_callbacks": len(litellm._async_success_callback),  # type: ignore[misc]  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L200
+        "failure_callbacks": len(litellm._async_failure_callback),  # type: ignore[misc]  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L203
         "phase_before": phase_before,
         "phase_routed": phase_routed,
         "spans": [record(span, root_id) for span in exporter.get_finished_spans()],
@@ -92,10 +97,12 @@ def record(span: ReadableSpan, root_id: int) -> SpanRecord:
     status: Literal["unset", "ok", "error"] = (
         "error" if code == StatusCode.ERROR else "ok" if code == StatusCode.OK else "unset"
     )
+    provider_code = span.attributes.get("litellm.provider.error.code")
     return {
         "name": span.name,
         "parent": parent,
         "status": status,
+        "provider_error_code": None if provider_code is None else str(provider_code),
         "events": len(span.events),
         "kind": span.kind.name.lower(),
         "start": span.start_time if parent == "root" else None,

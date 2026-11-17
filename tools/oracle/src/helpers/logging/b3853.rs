@@ -169,6 +169,8 @@ fn answer(
     json!({
         "service_callbacks": registry.entries(CallbackList::Service).len(),
         "input_callbacks": registry.entries(CallbackList::Input).len(),
+        "success_callbacks": registry.entries(CallbackList::Success).len(),
+        "failure_callbacks": registry.entries(CallbackList::Failure).len(),
         "phase_before": phase_before,
         "phase_routed": phase_routed,
         "spans": spans.iter().map(|span| record(span, root)).collect::<Vec<Value>>(),
@@ -181,6 +183,12 @@ fn record(span: &SdkSpanData, root: SpanId) -> Value {
         id if id == root => "root",
         _ => "other",
     };
+    let code = span
+        .attributes
+        .iter()
+        .rev()
+        .find(|pair| pair.key.as_str() == "litellm.provider.error.code")
+        .map(|pair| pair.value.to_string());
     json!({
         "name": span.name.as_ref(),
         "parent": parent,
@@ -189,6 +197,7 @@ fn record(span: &SdkSpanData, root: SpanId) -> Value {
             Status::Ok => "ok",
             Status::Error { .. } => "error",
         },
+        "provider_error_code": code,
         "events": span.events.len(),
         "kind": format!("{:?}", span.span_kind).to_ascii_lowercase(),
         "start": nanos(span.start_time).filter(|_| parent == "root"),

@@ -28,9 +28,9 @@ pub fn seed_request_identity(
     seed: &IdentitySeed<'_>,
     trace: &mut RequestTraceContext,
 ) -> Option<Context> {
-    let logger = registry.registered_v2_logger()?;
-    let seeded = identity::seed_request_identity(&logger, seed, trace);
-    Some(seeded)
+    registry
+        .registered_v2_logger()
+        .map(|logger| identity::seed_request_identity(&logger, seed, trace))
 }
 
 // litellm.integrations.otel.logger.phase_span, None without a logger so callers check the span
@@ -40,7 +40,7 @@ pub fn phase_span(
     name: &str,
     trace: &RequestTraceContext,
 ) -> Option<PhaseSpan> {
-    let logger = registry.registered_v2_logger()?;
-    let span = phase::start_phase_span(&logger, name, trace);
-    Some(span)
+    registry
+        .registered_v2_logger()
+        .map(|logger| phase::start_phase_span(&logger, name, trace))
 }

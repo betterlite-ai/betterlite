@@ -6,6 +6,7 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSp
 
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
 use betterlite_logging::otel::v2_callback::registry::{CALLBACK_LISTS, CallbackEntry, V2Registry};
+use betterlite_logging::registry::phases::CallbackList;
 
 use super::support::{construction_parts, settings};
 
@@ -20,6 +21,19 @@ fn list_entries(registry: &V2Registry) -> Vec<Vec<CallbackEntry>> {
         .iter()
         .map(|list| registry.entries(*list))
         .collect()
+}
+
+#[test]
+fn the_four_proxy_lists_are_pinned() {
+    assert_eq!(
+        CALLBACK_LISTS,
+        [
+            CallbackList::Service,
+            CallbackList::Input,
+            CallbackList::Success,
+            CallbackList::Failure,
+        ]
+    );
 }
 
 #[test]

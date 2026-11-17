@@ -28,14 +28,6 @@ pub fn mark_request_root_span(
     });
 }
 
-// litellm.integrations.otel.plumbing.context.request_root_span, read through the handle mark recorded
-#[must_use]
-pub fn request_root_span(callback: &V2Callback, trace: &RequestTraceContext) -> Option<LiveSpan> {
-    let root = trace.root.as_ref()?;
-    let id = root.context.span_id();
-    callback.roots.get(id)
-}
-
 // litellm.integrations.otel.logger.OpenTelemetryV2.record_error_attributes_on_span
 pub fn record_error_on_span(
     callback: &V2Callback,
@@ -65,8 +57,9 @@ pub fn async_post_call_failure_hook(
     let transport = trace
         .mcp_message_transport_span()
         .and_then(|context| callback.roots.get(context.span_id()));
-    let root = request_root_span(callback, trace);
-    let target = transport.or(root).or(parent_span.cloned());
+    let anchor = trace.root.as_ref().map(|root| root.context.span_id());
+    let root_span = anchor.and_then(|id| callback.roots.get(id));
+    let target = transport.or(root_span).or_else(|| parent_span.cloned());
     let Some(live) = target.filter(|live| live.lock().is_recording()) else {
         return;
     };

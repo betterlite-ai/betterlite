@@ -33,7 +33,6 @@ impl LiveSpan {
     }
 
     // callers hold the guard for one read, stamp or end; a poisoned lock still answers
-    #[must_use]
     pub fn lock(&self) -> MutexGuard<'_, SdkSpan> {
         match self.span.lock() {
             Ok(guard) => guard,
@@ -61,13 +60,10 @@ impl RootSpans {
     // the recording prune is betterlite's own, so a stamp falls through to a live span (docs/deviations/B3853.yaml)
     #[must_use]
     pub fn get(&self, id: SpanId) -> Option<LiveSpan> {
-        let spans = self.lock();
-        let found = spans
+        self.lock()
             .iter()
             .find(|(candidate, live)| *candidate == id && live.lock().is_recording())
-            .map(|(_, live)| live.clone());
-        drop(spans);
-        found
+            .map(|(_, live)| live.clone())
     }
 
     fn lock(&self) -> MutexGuard<'_, Vec<(SpanId, LiveSpan)>> {

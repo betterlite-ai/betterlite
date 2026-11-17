@@ -43,6 +43,8 @@ const LITELLM_TRACER_NAME: &str = "litellm";
 type Recorders = (
     Option<Arc<GenAiMetricRecorder>>,
     Option<Arc<GenAIEventRecorder>>,
+    Option<SdkMeterProvider>,
+    Option<SdkLoggerProvider>,
 );
 
 pub struct CallbackParts {
@@ -88,6 +90,8 @@ pub struct EmitterParts {
 // litellm.integrations.otel.logger.OpenTelemetryV2 as the proxy's CustomLogger callback
 pub struct V2Callback {
     pub tracer_provider: SdkTracerProvider,
+    // the providers the recorders' instruments read: an SDK provider shuts its readers down when its last handle drops
+    pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
     pub logger: OpenTelemetryV2,
     pub roots: RootSpans,
     pub error_info: ErrorInformationConfig,
@@ -102,7 +106,7 @@ impl V2Callback {
         let tracer = provider.tracer_with_scope(scope);
         // every mapper name is validated once here, even though the chain itself is injected
         let _validated = resolve_mappers(&parts.config.mapper_names)?;
-        let (metrics, events) = resolve_recorders(&parts)?;
+        let (metrics, events, meter_provider, logger_provider) = resolve_recorders(&parts)?;
         let emitter = SpanEmitter {
             tracer: tracer.clone(),
             environment: parts.emitter.environment,
@@ -123,28 +127,12 @@ impl V2Callback {
         let callback = Arc::new(Self {
             logger,
             tracer_provider: provider,
+            recorder_providers: (meter_provider, logger_provider),
             roots: RootSpans::default(),
             error_info: parts.error_info,
         });
         registry.register(&callback);
         Ok(callback)
-    }
-
-    #[must_use]
-    pub const fn recorders_enabled(&self) -> (bool, bool) {
-        (
-            self.logger.metrics.is_some(),
-            self.logger.emitter.event_recorder.is_some(),
-        )
-    }
-
-    // the in-flight call ids, as LiteLLM's _open_llm_calls keys read back
-    #[must_use]
-    pub fn open_call_ids(&self) -> Vec<String> {
-        let calls = self.logger.open_calls();
-        let ids: Vec<String> = calls.calls.keys().cloned().collect();
-        drop(calls);
-        ids
     }
 }
 
@@ -169,6 +157,7 @@ fn resolve_tracer_provider(parts: &CallbackParts) -> Result<SdkTracerProvider, C
 fn resolve_recorder<T, P, R, M>(
     enabled: bool,
     injected: Option<&Arc<T>>,
+    held: &mut Option<P>,
     resolve: R,
     make: M,
 ) -> Result<Option<Arc<T>>, CallbackError>
@@ -179,21 +168,26 @@ where
     if !enabled {
         return Ok(None);
     }
-    if let Some(injected) = injected {
-        return Ok(Some(Arc::clone(injected)));
+    if let Some(existing) = injected {
+        return Ok(Some(Arc::clone(existing)));
     }
     match resolve()? {
         Resolved::Reuse(provider) | Resolved::Publish(provider) => {
-            Ok(Some(Arc::new(make(&provider)?)))
+            let recorder = Arc::new(make(&provider)?);
+            *held = Some(provider);
+            Ok(Some(recorder))
         }
         Resolved::Disabled => Ok(None),
     }
 }
 
 fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> {
+    let mut meter_provider = None;
+    let mut logger_provider = None;
     let metrics = resolve_recorder(
         parts.config.enable_metrics,
         parts.providers.metrics.as_ref(),
+        &mut meter_provider,
         || {
             resolve_meter_provider(
                 &parts.raw_config,
@@ -214,6 +208,7 @@ fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> 
     let events = resolve_recorder(
         parts.config.enable_events,
         parts.providers.events.as_ref(),
+        &mut logger_provider,
         || {
             resolve_logger_provider(
                 &parts.raw_config,
@@ -229,7 +224,7 @@ fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> 
             })
         },
     )?;
-    Ok((metrics, events))
+    Ok((metrics, events, meter_provider, logger_provider))
 }
 
 #[async_trait]
