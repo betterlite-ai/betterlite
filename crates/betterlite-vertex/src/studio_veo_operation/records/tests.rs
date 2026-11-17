@@ -220,8 +220,8 @@ fn a_whitespace_only_resolution_is_retained_as_an_empty_string() {
 fn an_absent_resolution_is_omitted(#[case] resolution: Option<Json>) {
     let body = object([("name", text(OPERATION))]);
     let mut parameters = object([("durationSeconds", number(6))]);
-    if let Some(resolution) = resolution {
-        parameters.insert("resolution".to_owned(), resolution);
+    if let Some(value) = resolution {
+        parameters.insert("resolution".to_owned(), value);
     }
     let data = request_data(parameters);
     let video = create_response(

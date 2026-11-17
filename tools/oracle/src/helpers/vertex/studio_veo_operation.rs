@@ -84,7 +84,10 @@ fn resolve(call: &Call, settings: &VertexSettings) -> HelperResult {
     match call {
         Call::CreateResponse(create) => create_answer(create, settings),
         Call::StatusResponse(status) => status_answer(status),
-        Call::StatusRequest(request) => status_request_answer(request),
+        Call::StatusRequest(request) => {
+            let polled = status_request(&request.video_id, &request.api_base);
+            Ok(json!({ "url": polled.url, "params": polled.params }))
+        }
         Call::ContentTarget(target) => content_target_answer(target),
     }
 }
@@ -104,11 +107,6 @@ fn status_answer(call: &StatusCall) -> HelperResult {
     let body = serde_json::to_vec(&call.body).or_value_error()?;
     let video = status_response(&body, call.provider.as_deref()).or_value_error()?;
     serde_json::to_value(video).or_value_error()
-}
-
-fn status_request_answer(call: &StatusRequestCall) -> HelperResult {
-    let request = status_request(&call.video_id, &call.api_base);
-    Ok(json!({ "url": request.url, "params": request.params }))
 }
 
 fn content_target_answer(call: &ContentTargetCall) -> HelperResult {

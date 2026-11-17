@@ -149,6 +149,16 @@ fn headers() -> HeaderMap {
     headers
 }
 
+fn assert_sent(sent: &Recorded) {
+    assert_eq!(
+        sent.headers.get("x-goog-api-key"),
+        Some(&HeaderValue::from_static("test-key"))
+    );
+    assert!(sent.query.is_empty());
+    assert!(sent.empty_body);
+    assert_eq!(sent.deadline, Duration::from_secs(30));
+}
+
 fn lookup(headers: &HeaderMap) -> ContentLookup<'_> {
     ContentLookup {
         video_id: OPERATION,
@@ -184,15 +194,8 @@ async fn lookup_then_download() {
     assert_eq!(requests[0].url, STATUS_URL);
     assert_eq!(requests[1].method, Method::GET);
     assert_eq!(requests[1].url, VIDEO);
-    for request in &requests {
-        assert_eq!(
-            request.headers.get("x-goog-api-key"),
-            Some(&HeaderValue::from_static("test-key"))
-        );
-        assert!(request.query.is_empty());
-        assert!(request.empty_body);
-        assert_eq!(request.deadline, Duration::from_secs(30));
-    }
+    assert_sent(&requests[0]);
+    assert_sent(&requests[1]);
 }
 
 #[rstest]
