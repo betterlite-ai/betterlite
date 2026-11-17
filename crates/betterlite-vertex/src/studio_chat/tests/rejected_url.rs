@@ -63,7 +63,7 @@ fn convert(fetcher: &CountingFetch, source: &str, model: &str) -> Result<History
     Some("unsupported_remote_media")
 )]
 #[case::https_file_without_mime(
-    r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "https://example.com/doc.pdf"}}]}]"#,
+    r#"[{"role": "user", "content": [{"type": "file", "file": {"file_id": "https://example.com/doc"}}]}]"#,
     Some("invalid_request_error"),
     Some("file"),
     Some("unsupported_remote_media")
