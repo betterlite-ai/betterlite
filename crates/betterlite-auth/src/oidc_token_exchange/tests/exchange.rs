@@ -318,12 +318,17 @@ async fn falls_back_to_the_id_token_when_userinfo_carries_no_claims(
     assert_eq!(text(&claims, "id_token"), Some(VALID_ID_TOKEN));
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
 #[tokio::test]
-async fn falls_back_to_the_id_token_without_a_userinfo_endpoint() {
+async fn falls_back_to_the_id_token_without_a_userinfo_endpoint(
+    #[case] userinfo_endpoint: Option<&str>,
+) {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
-    request.userinfo_endpoint = None;
+    request.userinfo_endpoint = userinfo_endpoint.map(str::to_owned);
     let claims = run_exchange(&request).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(provider.requests().len(), 1);
