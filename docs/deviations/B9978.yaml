@@ -11,9 +11,10 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1215-L1226
   - what: >-
-      A malformed tool (not an object, no function, parameters not an object or without a type, a type
-      that is not a string) or tool_choice (a function that is not an object, a name that is not a
-      string) answers 400, where LiteLLM raises KeyError, TypeError or AttributeError and answers 500.
+      A malformed tool (not an object, a function that is not an object, parameters not an object or
+      without a type, a type that is not a string) or tool_choice (a function that is not an object,
+      a name that is not a string) answers 400, where LiteLLM raises KeyError, TypeError or
+      AttributeError and answers 500.
     why: >-
       The same reason: the request is at fault, and no setup relies on the 500.
     link: >-
