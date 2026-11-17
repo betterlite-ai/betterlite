@@ -174,7 +174,8 @@ class ScriptedRandom(random.Random):
         self.position = 0
 
     @override
-    def betavariate(self, _alpha: float, _beta: float) -> float:
+    def betavariate(self, alpha: float, beta: float) -> float:
+        _ = (alpha, beta)
         if self.position >= len(self.values):
             raise ProbeError("samples_exhausted", "the request has no scripted bandit sample left")
         value = self.values[self.position]
