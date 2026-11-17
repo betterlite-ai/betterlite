@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
 
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
@@ -13,7 +13,7 @@ use betterlite_vertex::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
@@ -85,13 +85,18 @@ impl ModelCapabilityLookup for Input {
     }
 }
 
-// the case's url map stands in for the network: a url it omits is a download that fails
+// the case's url map stands in for the network: a url it omits is a download that fails, and every lookup is recorded so the case compares what prepare fetched
 struct MapFetch {
     data_urls: BTreeMap<String, String>,
+    attempted: Mutex<Vec<String>>,
 }
 
 impl MapFetch {
     fn lookup(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.attempted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(url.to_owned());
         self.data_urls.get(url).map_or_else(
             || {
                 Err(ImageFetchError::Attempts {
@@ -101,6 +106,13 @@ impl MapFetch {
             |data_url| Ok(data_url.clone()),
         )
     }
+
+    fn attempted(&self) -> Vec<String> {
+        self.attempted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl RemoteMediaFetcher for MapFetch {
@@ -108,11 +120,16 @@ impl RemoteMediaFetcher for MapFetch {
         ready(self.lookup(url))
     }
 
+    // every url is looked up, as the real fetcher starts every request, and the first failure is the one it reports
     fn convert_urls(
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(urls.iter().map(|url| self.lookup(url)).collect())
+        let mut results = Vec::with_capacity(urls.len());
+        for url in urls {
+            results.push(self.lookup(url));
+        }
+        ready(results.into_iter().collect())
     }
 }
 
@@ -138,16 +155,20 @@ impl RemoteMediaFetcher for NoFetch {
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread().build()?;
     let provider = input.provider.capability_provider();
-    let messages = runtime
-        .block_on(prepare(
-            &input.messages,
-            provider,
-            &MapFetch {
-                data_urls: input.data_urls.clone(),
-            },
-            input.mode.fetch_mode(),
-        ))
-        .map_err(|error| bad_request("ImageFetchError", &error.to_string()))?;
+    let fetcher = MapFetch {
+        data_urls: input.data_urls.clone(),
+        attempted: Mutex::new(Vec::new()),
+    };
+    let prepared = runtime.block_on(prepare(
+        &input.messages,
+        provider,
+        &fetcher,
+        input.mode.fetch_mode(),
+    ));
+    let messages = match prepared {
+        Ok(messages) => messages,
+        Err(_) => return Ok(failure(&fetcher, "prepare")),
+    };
     let body_input = BodyInput {
         provider,
         model: &input.model,
@@ -162,19 +183,17 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Ok(transformed) => Ok(json!({
             "body": transformed.body,
             "litellm_params": transformed.litellm_params,
+            "fetched": fetcher.attempted(),
         })),
-        Err(error) => Err(bad_request("BadRequestError", &error.to_string())),
+        Err(_) => Ok(failure(&fetcher, "convert")),
     }
 }
 
-// LiteLLM's download failures are BadRequestError subclasses and its conversion failures are BadRequestError; neither names a type, param or code
-fn bad_request(class: &str, message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: Some(400),
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message: message.to_owned(),
+// LiteLLM's download failures are BadRequestError subclasses and its conversion failures are BadRequestError, so both report 400 with no type, param or code; the stage and the attempted urls are what shows prepare ran
+fn failure(fetcher: &MapFetch, stage: &str) -> Value {
+    json!({
+        "failure": {"status": 400, "type": null, "param": null, "code": null},
+        "stage": stage,
+        "fetched": fetcher.attempted(),
     })
 }

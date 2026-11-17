@@ -3,7 +3,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import litellm
-from litellm.exceptions import ImageFetchError
+from litellm.exceptions import BadRequestError, ImageFetchError
 from litellm.litellm_core_utils.prompt_templates import factory, image_handling
 from litellm.litellm_core_utils.prompt_templates.image_handling import (
     RemoteMedia,
@@ -23,6 +23,7 @@ from pydantic import TypeAdapter
 JsonObject: TypeAlias = dict[str, Json]
 Provider: TypeAlias = Literal["vertex_ai", "vertex_ai_beta", "gemini"]
 Mode: TypeAlias = Literal["sequential", "concurrent"]
+Stage: TypeAlias = Literal["prepare", "convert"]
 Predicate: TypeAlias = Callable[[RemoteMedia], bool]
 SyncInline: TypeAlias = Callable[[list[JsonObject], Predicate], list[JsonObject]]
 AsyncInline: TypeAlias = Callable[
@@ -66,10 +67,12 @@ class Case(TypedDict):
 
 
 class MappedConvert:
-    def __init__(self, data_urls: dict[str, str]) -> None:
+    def __init__(self, data_urls: dict[str, str], attempted: list[Json]) -> None:
         self.data_urls = data_urls
+        self.attempted = attempted
 
     def __call__(self, url: str) -> str:
+        self.attempted.append(url)
         if url not in self.data_urls:
             message = f"Error: Unable to fetch image from URL after 3 attempts. url={url}"
             raise ImageFetchError(message)
@@ -77,10 +80,12 @@ class MappedConvert:
 
 
 class AsyncMappedConvert:
-    def __init__(self, data_urls: dict[str, str]) -> None:
+    def __init__(self, data_urls: dict[str, str], attempted: list[Json]) -> None:
         self.data_urls = data_urls
+        self.attempted = attempted
 
     async def __call__(self, url: str) -> str:
+        self.attempted.append(url)
         if url not in self.data_urls:
             message = f"Error: Unable to fetch image from URL after 3 attempts. url={url}"
             raise ImageFetchError(message)
@@ -96,13 +101,15 @@ def _no_gcs_metadata(
     raise RuntimeError(message)
 
 
-def _install_fetches(data_urls: dict[str, str]) -> None:
-    mapped = MappedConvert(data_urls)
+def _install_fetches(data_urls: dict[str, str]) -> list[Json]:
+    attempted: list[Json] = []
+    mapped = MappedConvert(data_urls, attempted)
     image_handling.convert_url_to_base64 = mapped
-    image_handling.async_convert_url_to_base64 = AsyncMappedConvert(data_urls)
+    image_handling.async_convert_url_to_base64 = AsyncMappedConvert(data_urls, attempted)
     factory.convert_url_to_base64 = mapped  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L59
     studio_transformation.convert_url_to_base64 = mapped  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L9
     transformation._get_gcs_object_content_type = _no_gcs_metadata  # type: ignore[assignment]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAssignmentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L333
+    return attempted
 
 
 def _predicate(provider: Provider) -> Predicate:
@@ -118,20 +125,35 @@ def _inline(input_value: Case) -> list[JsonObject]:
     return asyncio.run(ASYNC_INLINE(input_value["messages"], predicate))
 
 
+def _failure(stage: Stage, attempted: list[Json], status: int) -> JsonObject:
+    return {
+        "failure": {"status": status, "type": None, "param": None, "code": None},
+        "stage": stage,
+        "fetched": attempted,
+    }
+
+
 def run(input_value: Case) -> JsonObject:
-    _install_fetches(input_value["data_urls"])
-    messages = _inline(input_value)
+    attempted = _install_fetches(input_value["data_urls"])
+    try:
+        messages = _inline(input_value)
+    except BadRequestError as error:
+        return _failure("prepare", attempted, error.status_code)
     optional_params = dict(input_value["optional_params"])
     litellm_params = dict(input_value["litellm_params"])
-    request = TRANSFORM(
-        messages=messages,
-        model=input_value["model"],
-        optional_params=optional_params,
-        custom_llm_provider=input_value["provider"],
-        litellm_params=litellm_params,
-        cached_content=None,
-    )
+    try:
+        request = TRANSFORM(
+            messages=messages,
+            model=input_value["model"],
+            optional_params=optional_params,
+            custom_llm_provider=input_value["provider"],
+            litellm_params=litellm_params,
+            cached_content=None,
+        )
+    except BadRequestError as error:
+        return _failure("convert", attempted, error.status_code)
     return {
         "body": JSON_OBJECT.validate_python(request),
         "litellm_params": JSON_OBJECT.validate_python(litellm_params),
+        "fetched": attempted,
     }
