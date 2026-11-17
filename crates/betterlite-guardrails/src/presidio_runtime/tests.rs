@@ -3,6 +3,8 @@
 mod apply;
 mod construction;
 mod masking;
+mod response;
+mod streaming;
 mod support;
 
 use rstest::rstest;
@@ -54,6 +56,11 @@ enum Case {
     MasksRolelessCallbackThatMasksOutput,
     MasksOnRequestInput,
     BlockedEntityFailsApply,
+    HookWideningKeepsPostCallHook,
+    PostCallUnmasksResponse,
+    LoggingHookMasksRequest,
+    AsyncLoggingHookMasksRequest,
+    StreamingIteratorRelaysEvents,
 }
 
 #[rstest]
@@ -106,6 +113,11 @@ enum Case {
 #[case::masks_roleless_callback_that_masks_output(Case::MasksRolelessCallbackThatMasksOutput)]
 #[case::masks_on_request_input(Case::MasksOnRequestInput)]
 #[case::blocked_entity_fails_apply(Case::BlockedEntityFailsApply)]
+#[case::hook_widening_keeps_a_post_call_hook(Case::HookWideningKeepsPostCallHook)]
+#[case::post_call_unmasks_the_response(Case::PostCallUnmasksResponse)]
+#[case::logging_hook_masks_the_request(Case::LoggingHookMasksRequest)]
+#[case::async_logging_hook_masks_the_request(Case::AsyncLoggingHookMasksRequest)]
+#[case::streaming_iterator_relays_events(Case::StreamingIteratorRelaysEvents)]
 #[tokio::test]
 async fn presidio_runtime_cases(#[case] case: Case) {
     match case {
@@ -180,5 +192,14 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         }
         Case::MasksOnRequestInput => apply::masks_on_a_request_input().await,
         Case::BlockedEntityFailsApply => apply::blocked_entity_fails_apply().await,
+        Case::HookWideningKeepsPostCallHook => {
+            construction::hook_widening_keeps_a_post_call_hook();
+        }
+        Case::PostCallUnmasksResponse => response::post_call_unmasks_the_response().await,
+        Case::LoggingHookMasksRequest => response::logging_hook_masks_the_request().await,
+        Case::AsyncLoggingHookMasksRequest => {
+            response::async_logging_hook_masks_the_request().await
+        }
+        Case::StreamingIteratorRelaysEvents => streaming::streaming_iterator_relays_events().await,
     }
 }

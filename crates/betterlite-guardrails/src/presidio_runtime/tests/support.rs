@@ -12,6 +12,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::presidio_runtime::Settings as RuntimeSettings;
 use betterlite_http::proxy::base_builder;
+use serde_json::value::RawValue;
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 
@@ -19,6 +20,7 @@ use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_initializers::presidio::{PresidioArgs, PresidioRole};
+use crate::presidio_response::wire::{Content, ResponseBody};
 use crate::presidio_runtime::error::PresidioRuntimeError;
 use crate::presidio_runtime::{PresidioDefaults, PresidioGuard, PresidioGuardParams};
 
@@ -323,4 +325,28 @@ pub(super) fn example_recognizers_path() -> String {
         "{}/src/presidio_runtime/tests/example_presidio_ad_hoc_recognizer.json",
         env!("CARGO_MANIFEST_DIR")
     )
+}
+
+pub(super) fn response_body(json: &str) -> ResponseBody {
+    ResponseBody::from_raw(RawValue::from_string(json.to_owned()).expect("the raw response"))
+        .expect("the response body")
+}
+
+pub(super) fn response_content(response: &ResponseBody) -> Option<String> {
+    let ResponseBody::Chat(chat) = response else {
+        return None;
+    };
+    let choice = chat.choices.as_ref()?.first()?;
+    let message = choice.message.as_ref()?;
+    match message.content.as_ref()? {
+        Content::Text(text) => Some(text.clone()),
+        Content::Blocks(_) | Content::Other(_) => None,
+    }
+}
+
+pub(super) fn mask_with_mock(args: &mut PresidioArgs) {
+    args.mock_redacted_text = Some(BTreeMap::from([(
+        "text".to_owned(),
+        GuardrailValue::Text("MASKED".to_owned()),
+    )]));
 }

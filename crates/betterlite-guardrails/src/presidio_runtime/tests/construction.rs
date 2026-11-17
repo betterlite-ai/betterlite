@@ -369,6 +369,25 @@ pub(super) fn an_explicit_base_wins_over_the_default() {
     );
 }
 
+pub(super) fn hook_widening_keeps_a_post_call_hook() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.event_hook = LitellmParamsMode::One("post_call".to_owned());
+    let guard = build(
+        &args,
+        PresidioDefaults::default(),
+        &RuntimeSettings::default(),
+        false,
+        None,
+    )
+    .expect("the roleless guard");
+    assert_eq!(
+        guard.base.settings.event_hook,
+        Some(LitellmParamsMode::One("post_call".to_owned()))
+    );
+}
+
 pub(super) fn unrepresentable_timeout() {
     let server = quiet();
     let mut args = guard_args(&server);
