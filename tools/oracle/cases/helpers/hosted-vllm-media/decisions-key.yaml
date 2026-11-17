@@ -1,0 +1,12 @@
+kind: helper
+name: hosted-vllm-media-decisions-key
+call:
+  b8151:
+    function: "decisions_key"
+    calls:
+      - {api_key: "explicit", env: {}}
+      - {api_key: null, env: {}}
+      - {api_key: "fake-api-key", env: {}}
+      - {api_key: "", env: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: sdk_http
+name: messages-chat-async-byte-view-metadata
+env: {}
+call:
+  messages_chat_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - mode: view
+        steps: [next, next, next, close, close, next, drain]
+      - mode: view
+        steps: [drain]
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"lookup","arguments":"{\"x\":1}"}}]},"finish_reason":null}]}'
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
