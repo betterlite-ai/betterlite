@@ -16,6 +16,9 @@ use tokio_util::task::TaskTracker;
 
 use super::{CallerRequest, caller_context, decide, proxy_server_request};
 
+// the fake answers both trait methods with a batch of one vector per text
+type EmbeddingBatch = Result<Vec<Vec<f64>>, io::Error>;
+
 struct FakeEmbedder;
 
 impl RouteEmbedder for FakeEmbedder {
@@ -25,7 +28,7 @@ impl RouteEmbedder for FakeEmbedder {
         &self,
         _model: &str,
         texts: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
+    ) -> impl Future<Output = EmbeddingBatch> + Send {
         ready(Ok(texts
             .iter()
             .map(|_text| vec![1.0_f64, 0.0_f64])
@@ -34,12 +37,12 @@ impl RouteEmbedder for FakeEmbedder {
 
     fn embed_query(
         &self,
-        _model: &str,
-        _text: String,
+        model: &str,
+        text: String,
         _raw_text: &str,
         _caller: &CallerContext,
-    ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        ready(Ok(vec![vec![1.0_f64, 0.0_f64]]))
+    ) -> impl Future<Output = EmbeddingBatch> + Send {
+        self.embed_documents(model, vec![text])
     }
 }
 
