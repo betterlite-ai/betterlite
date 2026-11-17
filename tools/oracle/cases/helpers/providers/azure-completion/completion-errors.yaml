@@ -1,0 +1,46 @@
+kind: helper
+name: completion-errors
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        answer:
+          status: 429
+          headers: {content-type: application/json, retry-after: "7"}
+          body: slow down
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        acompletion: true
+        answer:
+          status: 429
+          headers: {content-type: application/json, retry-after: "7"}
+          body: slow down
+calls:
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          acompletion: true
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, stream: true}
+          answer:
+            status: 429
+            headers: {content-type: application/json, retry-after: "7"}
+            body: slow down
+env: {}
+compare: {ignore: []}

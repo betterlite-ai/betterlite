@@ -1,0 +1,24 @@
+kind: helper
+name: streaming-invalid-sse
+call:
+  b3813:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: post_call
+    default_on: true
+    mode: streaming
+    format: anthropic
+    data: {}
+    chunks: []
+    raw_chunks:
+      - |-
+        event: message_start
+        data: {not json}
+
+        event: content_block_start
+        data: {"type":"content_block_start","index":0,"content_block"
+env: {}
+compare: {ignore: []}

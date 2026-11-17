@@ -1,15 +1,6 @@
 task: B503
 deviations:
   - what: >-
-      Request file/PDF URLs are never fetched: a file content part whose file_id starts with https://,
-      http:// or www. fails the request with ImageFetchError status 400 at the injected download seam,
-      before any provider transport. Inline file_data and provider-forwardable image_url descriptors
-      continue unchanged.
-    why: >-
-      B5083's downloader is not wired into this path yet, so a caller whose LiteLLM setup relies on
-      fetching a PDF URL gets this 400 until an R2 fix task wires it in (decision 2026-10-31).
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
-  - what: >-
       A file content part whose "file" field is present but not an object raises the same typed
       missing-file 400 error instead of crashing, and a non-string file_id is treated as not a URL
       instead of crashing in startswith.

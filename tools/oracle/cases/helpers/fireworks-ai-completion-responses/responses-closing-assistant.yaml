@@ -1,0 +1,88 @@
+kind: helper
+name: fireworks-ai-responses-closing-assistant
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: system, content: "s"}
+          - {role: developer, content: "d"}
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a"}
+          - {role: developer, content: "tail"}
+        optional_params: {instructions: "i"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: assistant, content: "a"}
+          - {role: developer, content: "d"}
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a2"}
+          - {role: system, content: "late"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a"}
+          - {role: system, content: "s"}
+          - {role: developer, content: "d"}
+        optional_params: {instructions: "i"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: system, content: "s"}
+          - {role: assistant, content: "a"}
+          - {role: developer, content: "d"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: developer, content: "d"}
+          - {role: assistant, content: "a"}
+          - {role: user, content: "u"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: assistant, content: "a"}
+          - {role: user, content: "u"}
+          - {role: developer, content: "d"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: system, content: "s"}
+          - {role: developer, content: "d"}
+        optional_params: {instructions: "i"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: system, content: "s"}
+          - {role: assistant, content: [{type: input_text, text: "a"}]}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: developer, content: "d"}
+          - {role: system, content: "s"}
+          - {role: developer, content: [{type: input_text, text: "e"}]}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a"}
+          - {role: system, content: "s"}
+      - op: transform
+        model: "accounts/fireworks/models/fold"
+        input:
+          - {role: system, content: "s"}
+          - {role: user, content: "u"}
+          - {role: assistant, content: "a"}
+          - {role: developer, content: "d1"}
+          - {role: developer, content: "d2"}
+        optional_params: {instructions: "i"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,42 @@
+kind: helper
+name: mcp-connector-import-alias-spellings
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        camel:
+          url: https://camel.example/mcp
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcp_servers:
+          snake:
+            url: https://snake.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcp_servers:
+          snake:
+            url: https://snake.example/mcp
+        mcpServers:
+          camel:
+            url: https://camel.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          - name: listed
+            url: https://listed.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers: {}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

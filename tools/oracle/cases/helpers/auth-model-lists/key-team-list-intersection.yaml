@@ -1,0 +1,115 @@
+kind: helper
+name: auth-model-lists-key-team-list-intersection
+call:
+  auth_model_lists:
+    function: key_models
+    key_models: [team-a, all-team-models]
+    team_models: [team-a, team-b, team-a]
+    proxy_model_list: [proxy-a, proxy-b]
+    model_access_groups: {}
+    include_model_access_groups: true
+calls:
+  - auth_model_lists:
+      function: key_models
+      key_models: [all-team-models]
+      team_models: [team-a, all-team-models]
+      proxy_model_list: [proxy-a, proxy-b]
+      model_access_groups:
+        beta: [gpt-x, proxy-a]
+      include_model_access_groups: true
+  - auth_model_lists:
+      function: key_models
+      key_models: [all-proxy-models, zz]
+      team_models: []
+      proxy_model_list: [proxy-a, proxy-b]
+      model_access_groups:
+        beta: [m1]
+      include_model_access_groups: true
+  - auth_model_lists:
+      function: key_models
+      key_models: [all-proxy-models]
+      team_models: []
+      proxy_model_list: [proxy-a]
+      model_access_groups:
+        beta: [m1]
+      include_model_access_groups: false
+  - auth_model_lists:
+      function: team_models
+      key_models: []
+      team_models: [all-team-models, z-model]
+      proxy_model_list: [p1, p2]
+      model_access_groups:
+        beta: [b1, p1]
+      include_model_access_groups: true
+  - auth_model_lists:
+      function: team_models
+      key_models: []
+      team_models: [all-proxy-models, a]
+      proxy_model_list: [p1]
+      model_access_groups: {}
+      include_model_access_groups: false
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: [key-a]
+      team_models: [team-a]
+      proxy_model_list: [proxy-a]
+      user_model: user-a
+      infer_model_from_keys: true
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments: []
+      catalog: {}
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: [team-a]
+      proxy_model_list: [proxy-a]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments: []
+      catalog: {}
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [proxy-a, no-default-models]
+      user_model: user-a
+      infer_model_from_keys: true
+      return_wildcard_routes: false
+      model_access_groups:
+        beta: [m1]
+      include_model_access_groups: true
+      only_model_access_groups: false
+      team_id: null
+      deployments: []
+      catalog: {}
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [proxy-a, beta, openai/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups:
+        beta: [m1]
+      include_model_access_groups: true
+      only_model_access_groups: true
+      team_id: null
+      deployments: []
+      catalog:
+        openai: [openai/ignored]
+      credentials: []
+env: {}
+compare: {ignore: []}

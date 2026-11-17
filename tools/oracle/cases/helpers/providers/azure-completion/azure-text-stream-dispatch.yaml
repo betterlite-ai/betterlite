@@ -1,0 +1,82 @@
+kind: helper
+name: azure-text-stream-dispatch
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {stream: true}
+        answer:
+          events:
+            - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+            - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"lo\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {stream: false}
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        acompletion: true
+        optional_params: {stream: true}
+        answer:
+          events:
+            - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+            - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"lo\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        acompletion: true
+        optional_params: {stream: false}
+calls:
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, stream: true}
+          answer:
+            events:
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"lo\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+              - "data: [DONE]\n\n"
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          acompletion: true
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, stream: true}
+          answer:
+            events:
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"lo\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+              - "data: [DONE]\n\n"
+env: {}
+compare: {ignore: []}

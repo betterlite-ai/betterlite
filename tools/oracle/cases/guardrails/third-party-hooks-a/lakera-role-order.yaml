@@ -1,0 +1,23 @@
+kind: helper
+name: lakera-role-order
+call:
+  b9451:
+    vendor: lakera
+    hook: pre_call
+    gate: null
+    api_key: lakera-key
+    moderation_check: pre_call
+    enabled_roles: null
+    add_function_to_prompt: false
+    data:
+      messages:
+        - {role: assistant, content: first answer}
+        - {role: user, content: first question}
+        - {role: system, content: be brief}
+        - {role: user, content: second question}
+    answers:
+      - status: 200
+        headers: {}
+        body: {results: [{flagged: false}]}
+env: {}
+compare: {ignore: []}

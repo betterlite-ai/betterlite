@@ -15,6 +15,7 @@ aws-smithy-types = "=1.9.1"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.23.1"
 betterlite = { path = "../../../../../crates/betterlite" }
+betterlite-analytics = { path = "../../../../../crates/betterlite-analytics" }
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-backend = { path = "../../../../../crates/betterlite-backend" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }

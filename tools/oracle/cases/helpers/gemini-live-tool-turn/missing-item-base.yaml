@@ -1,0 +1,11 @@
+kind: helper
+name: missing-item-base
+call:
+  gemini_live_tool_turn:
+    ids: {response_id: resp_given}
+    tool_call:
+      functionCalls:
+        - {id: call_a, name: lookup}
+        - {id: call_b, name: other, args: {n: 2}}
+env: {}
+compare: {ignore: []}

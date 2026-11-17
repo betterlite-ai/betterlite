@@ -1,0 +1,21 @@
+kind: helper
+name: akto-malformed-answer
+call:
+  b9451:
+    vendor: akto
+    akto_api_key: akto-key
+    unreachable_fallback: fail_open
+    event_hook: pre_call
+    texts: [hello there]
+    request_data:
+      messages:
+        - {role: user, content: hello there}
+      model: gpt-4o
+    input_type: request
+    answers:
+      - status: 200
+        headers: {}
+        body: null
+        events: [not json]
+env: {}
+compare: {ignore: []}

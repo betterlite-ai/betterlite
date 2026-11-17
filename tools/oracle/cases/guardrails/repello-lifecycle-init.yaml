@@ -1,0 +1,17 @@
+kind: helper
+name: repello-lifecycle-init
+call:
+  b3794:
+    mode: init
+    env:
+      ARGUS_API_KEY: argus-env-key
+      REPELLOAI_API_KEY: repello-env-key
+      REPELLOAI_API_BASE: https://argus.example.test/sdk/v1
+    api_key: null
+    api_base: null
+    asset_id: asset-1
+    unreachable_fallback: fail_closed
+    data: {}
+    answer: null
+env: {}
+compare: {ignore: []}
