@@ -394,3 +394,10 @@ path = "fuzz_targets/fal_video_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "azure_speech_reply"
+path = "fuzz_targets/azure_speech_reply.rs"
+test = false
+doc = false
+bench = false

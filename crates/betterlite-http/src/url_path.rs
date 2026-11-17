@@ -9,9 +9,15 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
+#[must_use]
+pub fn quote_segment(value: &str) -> String {
+    // a GCS object name may hold a dot segment, so this quoting cannot go through encode_segment's checks
+    utf8_percent_encode(value, PATH_SEGMENT).to_string()
+}
+
 pub fn encode_segment(value: &str, field_name: &str) -> Result<String, HttpError> {
     validate_segment(value, field_name)?;
-    Ok(utf8_percent_encode(value, PATH_SEGMENT).to_string())
+    Ok(quote_segment(value))
 }
 
 pub fn encode_segments(value: &str, field_name: &str) -> Result<String, HttpError> {
