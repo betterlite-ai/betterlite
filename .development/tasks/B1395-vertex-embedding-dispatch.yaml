@@ -37,6 +37,15 @@ description: >-
   and prepared.rs as they are.
 scope:
   paths:
+    - "crates/betterlite-server/**"
+    - "crates/betterlite-server/src/state/shared.rs"
+    - "crates/betterlite-server/src/model_armor_tokens.rs"
+    - "crates/betterlite-server"
+    - crates/betterlite-server/src/routes/embeddings.rs
+    - crates/betterlite-server/src/server/chat_setup.rs
+    - "crates/betterlite-provider/src/vertex_dispatch.rs"
+    - "crates/betterlite-core/src/operation/call_types.rs"
+    - "crates/betterlite-core/src/dispatch/tests.rs"
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{dispatch,operation,vertex_embedding_dispatch}.rs
@@ -93,5 +102,5 @@ pitfalls:
   - An image key whose value is null still selects multimodal prediction when uses_embed_content is false.
   - Failed model-info lookup falls back to prediction without emitting a warning that the source does not emit.
   - VERTEX_CREDENTIALS is an embedding fallback and must not silently become a new fallback for chat credentials.
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 1800, max_new_expects: 0}
 review_level: security

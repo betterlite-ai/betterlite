@@ -1,0 +1,10 @@
+kind: helper
+name: pcm-rate
+call:
+  vertex_live:
+    calls:
+      - op: mime
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        formats: [pcm16, g711_ulaw, g711_alaw, opus, ""]
+env: {}
+compare: {ignore: []}

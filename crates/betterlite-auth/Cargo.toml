@@ -9,6 +9,7 @@ publish.workspace = true
 async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-cache = { path = "../betterlite-cache" }
+betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
