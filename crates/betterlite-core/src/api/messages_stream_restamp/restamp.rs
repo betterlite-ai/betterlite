@@ -90,6 +90,9 @@ impl StreamModelRestamper {
     pub fn flush(&mut self) -> MessagesStreamChunk {
         let held = take(&mut self.held);
         self.armed = false;
+        if !contains_marker(&held, MESSAGE_START_MARKER) {
+            return MessagesStreamChunk::Bytes(held);
+        }
         MessagesStreamChunk::Bytes(restamp_bytes(&held, &self.requested_model))
     }
 

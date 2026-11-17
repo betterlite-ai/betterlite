@@ -1,4 +1,3 @@
-// CPython's str.splitlines breaks: they decide where one frame's lines end
 const LINE_BREAKS: [char; 10] = [
     '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
 ];

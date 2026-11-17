@@ -53,6 +53,12 @@ pub(super) fn start_frame(model: &str) -> String {
     )
 }
 
+fn spaced_start_frame(model: &str) -> String {
+    format!(
+        "event: message_start\ndata: {{\"type\": \"message_start\", \"message\": {{\"id\": \"msg_1\", \"model\": \"{model}\"}}}}\n\n"
+    )
+}
+
 pub(super) fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("the fixture is JSON")
 }
@@ -139,8 +145,8 @@ fn indented_data_line() -> RestampCase {
 ))]
 #[case::split_across_chunks(split_across_chunks())]
 #[case::already_the_requested_model(restamp_case(
-    vec![text(&start_frame(REQUESTED_MODEL))],
-    vec![bytes(start_frame(REQUESTED_MODEL).as_bytes())],
+    vec![text(&spaced_start_frame(REQUESTED_MODEL))],
+    vec![bytes(spaced_start_frame(REQUESTED_MODEL).as_bytes())],
     bytes(b""),
 ))]
 #[case::event_without_a_model(without_a_model())]
@@ -151,6 +157,13 @@ fn indented_data_line() -> RestampCase {
     bytes(b""),
 ))]
 #[case::data_line_with_leading_whitespace(indented_data_line())]
+#[case::two_frames_in_one_read(restamp_case(
+    vec![text(&format!("{}{}", ping_frame(), start_frame("upstream-model")))],
+    vec![bytes(
+        format!("{}{}", ping_frame(), start_frame(REQUESTED_MODEL)).as_bytes()
+    )],
+    bytes(b""),
+))]
 fn split_message_start_model(#[case] case: RestampCase) {
     let input = MessagesStreamRestampInput {
         requested_model: REQUESTED_MODEL.to_owned(),
@@ -317,7 +330,7 @@ fn crlf_and_cr_frame_ends_restamp(#[case] line_end: &str) {
 
 #[test]
 fn splitlines_keeps_python_line_endings() {
-    let source = "one\r\ntwo\nthree\rfour\u{b}five\u{2028}six";
+    let source = "one\r\ntwo\nthree\rfour\u{b}five\u{c}six\u{1c}seven\u{1d}eight\u{1e}nine\u{85}ten\u{2028}eleven\u{2029}twelve";
     assert_eq!(
         splitlines_keepends(source),
         vec![
@@ -325,8 +338,14 @@ fn splitlines_keeps_python_line_endings() {
             "two\n",
             "three\r",
             "four\u{b}",
-            "five\u{2028}",
-            "six",
+            "five\u{c}",
+            "six\u{1c}",
+            "seven\u{1d}",
+            "eight\u{1e}",
+            "nine\u{85}",
+            "ten\u{2028}",
+            "eleven\u{2029}",
+            "twelve",
         ]
     );
     assert_eq!(
@@ -340,6 +359,7 @@ fn splitlines_keeps_python_line_endings() {
 #[case::non_breaking_space("\u{a0}")]
 #[case::em_space("\u{2003}")]
 #[case::ideographic_space("\u{3000}")]
+#[case::unit_separator("\u{1f}")]
 fn padded_data_line_strips_like_python(#[case] padding: &str) {
     let frame = format!("{padding}data: {}\n\n", start_event_text("upstream-model"));
     let input = MessagesStreamRestampInput {
@@ -406,6 +426,15 @@ fn oversized_filler() -> RestampCase {
 #[case::the_limit_is_held(filler(MAX_HELD_BYTES))]
 #[case::past_the_limit_is_emitted(oversized_filler())]
 #[case::nothing_was_held(restamp_case(Vec::new(), Vec::new(), bytes(b"")))]
+#[case::held_tail_without_the_marker_is_unchanged(restamp_case(
+    vec![text(
+        "data: {\"type\":\"message\\u005fstart\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}"
+    )],
+    vec![bytes(b"")],
+    bytes(
+        b"data: {\"type\":\"message\\u005fstart\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}"
+    ),
+))]
 fn partial_final_frame_flush(#[case] case: RestampCase) {
     let input = MessagesStreamRestampInput {
         requested_model: REQUESTED_MODEL.to_owned(),
