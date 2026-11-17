@@ -1,0 +1,16 @@
+kind: helper
+name: studio-images-absent-details-image
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: gemini-2.5-flash-image
+        body:
+          usageMetadata:
+            promptTokenCount: 4
+            candidatesTokenCount: 6
+            totalTokenCount: 10
+    costs: []
+env: {}
+compare: {ignore: []}
