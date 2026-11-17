@@ -1,7 +1,9 @@
+use std::fmt::Display;
 use std::time::Duration;
 
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_error::normalize::Normalizer;
+use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::fields::status::LoggingStatus;
 use betterlite_logging::logging_metadata::base64::Base64Truncator;
 use betterlite_logging::logging_state::correlation::{
@@ -21,6 +23,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_json::Value;
 
 pub(crate) struct Op;
 
@@ -78,43 +81,53 @@ impl Helper for Op {
         )
         .map_err(invalid)?;
         apply(&mut state, input)?;
-        let sources = PayloadSources::default();
-        let payload_settings = PayloadSettings {
-            tag_config: TagConfig::default(),
-            request_correlation_in_logs: input.settings.request_correlation_in_logs,
-            log_client_error_tracebacks: input.settings.log_client_error_tracebacks,
-        };
-        let privacy = Settings {
-            turn_off_message_logging: input.settings.turn_off_message_logging,
-            redact_user_api_key_info: false,
-        };
-        let composition = PayloadComposition {
-            sources: &sources,
-            settings: &payload_settings,
-            redactor: &redactor,
-            normalizer: &normalizer,
-            truncator: &truncator,
-            privacy,
-        };
-        let request = PayloadRequest {
-            state: &state,
-            init_response_obj: &input.response,
-            start_time: input.start_time,
-            end_time: input.end_time,
-            status: input.status,
-            error_str: input.error_str.as_deref(),
-            original_exception: None,
-            standard_built_in_tools_params: input.standard_built_in_tools_params.as_ref(),
-        };
-        match standard_logging_payload(&request, &composition) {
+        match build_payload(&state, input, &redactor, &normalizer, &truncator) {
             // LiteLLM's catch-all turns any failure into no payload at all
-            Err(_) => Ok(serde_json::Value::Null),
-            Ok(payload) if input.redact_standard_payload => {
+            None => Ok(Value::Null),
+            Some(payload) if input.redact_standard_payload => {
                 serde_json::to_value(redact_standard_payload(&payload)).map_err(invalid)
             }
-            Ok(payload) => serde_json::to_value(payload).map_err(invalid),
+            Some(payload) => serde_json::to_value(payload).map_err(invalid),
         }
     }
+}
+
+fn build_payload(
+    state: &LoggingState,
+    input: &Input,
+    redactor: &Redactor,
+    normalizer: &Normalizer,
+    truncator: &Base64Truncator,
+) -> Option<StandardLoggingPayload> {
+    let sources = PayloadSources::default();
+    let payload_settings = PayloadSettings {
+        tag_config: TagConfig::default(),
+        request_correlation_in_logs: input.settings.request_correlation_in_logs,
+        log_client_error_tracebacks: input.settings.log_client_error_tracebacks,
+    };
+    let privacy = Settings {
+        turn_off_message_logging: input.settings.turn_off_message_logging,
+        redact_user_api_key_info: false,
+    };
+    let composition = PayloadComposition {
+        sources: &sources,
+        settings: &payload_settings,
+        redactor,
+        normalizer,
+        truncator,
+        privacy,
+    };
+    let request = PayloadRequest {
+        state,
+        init_response_obj: &input.response,
+        start_time: input.start_time,
+        end_time: input.end_time,
+        status: input.status,
+        error_str: input.error_str.as_deref(),
+        original_exception: None,
+        standard_built_in_tools_params: input.standard_built_in_tools_params.as_ref(),
+    };
+    standard_logging_payload(&request, &composition).ok()
 }
 
 fn apply(state: &mut LoggingState, input: &Input) -> Result<(), Box<HelperError>> {
@@ -141,7 +154,7 @@ fn apply(state: &mut LoggingState, input: &Input) -> Result<(), Box<HelperError>
 
 fn invalid<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "InvalidInput".to_owned(),
