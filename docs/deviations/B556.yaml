@@ -8,7 +8,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L107-L109
   - what: A base URL the URL parser rejects (an invalid port, a host that is not a valid IDNA name, a control character, or a path that decodes to a '?' or '#') fails with betterlite's own message and keeps the parser failure as the error's source, while LiteLLM lets httpx's InvalidURL message through unchanged.
     why: Both refuse the request; betterlite's error enum is the typed form of that refusal and carries the parser text one level down instead of copying it into the top-level message.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L32
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L34-L56
 kept_bugs:
   - what: A JSON error object from the provider, whatever its HTTP status, decodes as a successful reply with no results, because RerankResponse ignores unknown fields and treats results as optional.
     why: LiteLLM's Cohere rerank conversion builds RerankResponse from any JSON body without looking at the status, and a setup whose Azure AI rerank endpoint answers errors as JSON gets that empty success today, so the rerank-error oracle case keeps it.
