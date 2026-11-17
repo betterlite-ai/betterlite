@@ -8,6 +8,7 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
@@ -199,7 +200,7 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
             );
         }
         Scenario::BundledCatalog => {
-            let bundled = CompletionCatalog::bundled();
+            let bundled = CompletionCatalog::new(&BundledCatalog::default().get());
             assert!(bundled.chat_models.contains("gpt-4o"));
             assert!(bundled.text_models.contains("gpt-3.5-turbo-instruct"));
             assert!(!bundled.text_models.contains("gpt-4o"));
