@@ -105,6 +105,15 @@ fn a_verified_userinfo_without_an_email_has_no_email() {
 }
 
 #[test]
+fn a_verified_google_email_is_kept_as_the_provider_sent_it() {
+    let identity = google_open_id(&userinfo(
+        r#"{"email": "Ann@Example.COM", "email_verified": true}"#,
+    ))
+    .unwrap();
+    assert_eq!(identity.email.as_deref(), Some("Ann@Example.COM"));
+}
+
+#[test]
 fn an_unverified_google_userinfo_does_not_need_typed_profile_fields() {
     let error = google_open_id(&userinfo(r#"{"email": 7, "email_verified": false}"#)).unwrap_err();
     assert!(matches!(&error, GoogleIdentityError::Unverified { .. }));

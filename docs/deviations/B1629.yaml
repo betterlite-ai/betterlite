@@ -18,6 +18,9 @@ deviations:
   - what: A Google userinfo claim of the wrong JSON type (email_verified that is not a boolean, or a profile claim that is not a string) answers 503 auth_provider_unavailable with the claim name as param. LiteLLM passes the value to pydantic, whose ValidationError is not caught and surfaces as a 500.
     why: The provider broke the documented userinfo shape, and naming the claim tells an operator what to look at where a 500 hides it.
     link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L17-L29
+  - what: The verified userinfo email is carried exactly as the provider sent it. fastapi-sso types OpenID.email as pydantic's EmailStr, which refuses a value that is not an address and lowercases the domain it accepts.
+    why: Google only reports an address it has verified, and B1608's OpenIdIdentity keeps the email as a plain string shared with the other SSO providers, so the identity carries the provider's bytes instead of a normalized copy.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L20-L21
   - what: A callback that carries error= together with a code answers 401 auth_error. LiteLLM reaches oauthlib's raise_from_error inside the token request and the resulting OAuth2Error is not caught, so it surfaces as a 500.
     why: The provider refused the login, and 401 says that instead of a server error.
     link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/parameters.py#L278-L279
