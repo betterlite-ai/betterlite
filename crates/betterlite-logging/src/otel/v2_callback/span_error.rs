@@ -34,17 +34,14 @@ pub fn span_error_from_exception(
         },
         traceback_str,
     );
-    let error_code = text(info.error_code);
-    let code = match status_code {
-        Some(status) => Some(status.to_string()),
-        None => error_code.clone(),
-    };
+    let error_code = text(info.error_code.flatten());
+    let code = status_code.map_or_else(|| error_code.clone(), |status| Some(status.to_string()));
     SpanError {
-        error_type: text(info.error_class).or_else(|| error_code.clone()),
-        message: text(info.error_message),
+        error_type: text(info.error_class.flatten()).or_else(|| error_code.clone()),
+        message: text(info.error_message.flatten()),
         code,
-        stack_trace: text(info.traceback),
-        llm_provider: text(info.llm_provider),
+        stack_trace: text(info.traceback.flatten()),
+        llm_provider: text(info.llm_provider.flatten()),
     }
 }
 
@@ -66,8 +63,8 @@ fn expected_client_error(exception: Option<&ExceptionFacts>) -> bool {
     is_expected_client_error(Some(&facts))
 }
 
-fn text(value: Option<Option<String>>) -> Option<String> {
-    match value.flatten() {
+fn text(value: Option<String>) -> Option<String> {
+    match value {
         Some(content) if !content.is_empty() => Some(content),
         Some(_) | None => None,
     }

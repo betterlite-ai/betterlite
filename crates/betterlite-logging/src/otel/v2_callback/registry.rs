@@ -2,19 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::otel::v2_callback::callback::V2Callback;
+use crate::registry::phases::CallbackList;
 
-// the four module callback lists LiteLLM registers the logger in
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CallbackList {
-    Service,
-    Input,
-    Success,
-    Failure,
-}
-
-impl CallbackList {
-    pub const ALL: [Self; 4] = [Self::Service, Self::Input, Self::Success, Self::Failure];
-}
+// the four proxy lists LiteLLM registers the callback in, named by the server's own callback registry
+pub const CALLBACK_LISTS: [CallbackList; 4] = [
+    CallbackList::Service,
+    CallbackList::Input,
+    CallbackList::Success,
+    CallbackList::Failure,
+];
 
 const OTEL_MODULE_PREFIXES: [&str; 2] = [
     "litellm.integrations.otel",
@@ -39,7 +35,7 @@ impl CallbackEntry {
     }
 }
 
-// the proxy's callback lists and open_telemetry_logger slot, injected because Rust keeps no module globals
+// the proxy's callback lists and open_telemetry_logger slot, injected rather than module globals (docs/deviations/B3853.yaml)
 #[derive(Default)]
 pub struct V2Registry {
     lists: Mutex<BTreeMap<CallbackList, Vec<CallbackEntry>>>,
@@ -48,7 +44,7 @@ pub struct V2Registry {
 
 impl V2Registry {
     pub fn register(&self, callback: &Arc<V2Callback>) {
-        for list in CallbackList::ALL {
+        for list in CALLBACK_LISTS {
             self.register_once(list, callback);
         }
         let mut slot = self.slot();
@@ -59,7 +55,7 @@ impl V2Registry {
 
     // another callback the proxy already had; a named OTel-module entry blocks this registration too
     pub fn add_named_callback(&self, module: &str) {
-        for list in CallbackList::ALL {
+        for list in CALLBACK_LISTS {
             self.lists()
                 .entry(list)
                 .or_default()
@@ -69,10 +65,10 @@ impl V2Registry {
 
     #[must_use]
     pub fn entries(&self, list: CallbackList) -> Vec<CallbackEntry> {
-        match self.lists().get(&list) {
-            Some(entries) => entries.clone(),
-            None => Vec::new(),
-        }
+        let lists = self.lists();
+        let entries = lists.get(&list).map_or_else(Vec::new, Clone::clone);
+        drop(lists);
+        entries
     }
 
     // the first logger to register keeps the slot, so later instances are not reachable through it
@@ -90,6 +86,7 @@ impl V2Registry {
         if !entries.iter().any(CallbackEntry::is_open_telemetry) {
             entries.push(CallbackEntry::OpenTelemetry(Arc::clone(callback)));
         }
+        drop(lists);
     }
 
     fn lists(&self) -> MutexGuard<'_, BTreeMap<CallbackList, Vec<CallbackEntry>>> {

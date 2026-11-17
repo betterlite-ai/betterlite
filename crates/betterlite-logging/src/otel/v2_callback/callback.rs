@@ -8,7 +8,7 @@ use opentelemetry::InstrumentationScope;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
-use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
@@ -19,12 +19,10 @@ use crate::otel::config::Settings;
 use crate::otel::emitter::span_emission::{DedupCache, MapperKind, SpanEmitter};
 use crate::otel::fan_out::scope::RequestScopeSource;
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
-use crate::otel::logger::v2::{
-    OpenCall, OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource,
-};
+use crate::otel::logger::v2::{OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource};
 use crate::otel::mappers::registry::resolve_mappers;
 use crate::otel::plumbing::events::{GenAIEventRecorder, SystemClock};
-use crate::otel::plumbing::exporters::{ExporterFactories, HttpClients};
+use crate::otel::plumbing::exporters::{ExporterError, ExporterFactories, HttpClients};
 use crate::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
 use crate::otel::plumbing::providers::{
     ProviderState, Resolved, get_event_logger, get_meter, resolve_logger_provider,
@@ -41,6 +39,11 @@ use crate::otel_provider_assembly::tracer_provider_assembly::{
 };
 
 const LITELLM_TRACER_NAME: &str = "litellm";
+
+type Recorders = (
+    Option<Arc<GenAiMetricRecorder>>,
+    Option<Arc<GenAIEventRecorder>>,
+);
 
 pub struct CallbackParts {
     pub callback_name: Option<String>,
@@ -85,19 +88,21 @@ pub struct EmitterParts {
 // litellm.integrations.otel.logger.OpenTelemetryV2 as the proxy's CustomLogger callback
 pub struct V2Callback {
     pub tracer_provider: SdkTracerProvider,
-    pub(crate) logger: OpenTelemetryV2,
-    pub(crate) roots: RootSpans,
-    pub(crate) error_info: ErrorInformationConfig,
+    pub logger: OpenTelemetryV2,
+    pub roots: RootSpans,
+    pub error_info: ErrorInformationConfig,
 }
 
 impl V2Callback {
     pub fn new(parts: CallbackParts, registry: &V2Registry) -> Result<Arc<Self>, CallbackError> {
         let provider = resolve_tracer_provider(&parts)?;
-        let tracer = tracer_for(&provider);
-        let metrics = resolve_metrics(&parts)?;
+        let scope = InstrumentationScope::builder(LITELLM_TRACER_NAME)
+            .with_version(env!("CARGO_PKG_VERSION"))
+            .build();
+        let tracer = provider.tracer_with_scope(scope);
         // every mapper name is validated once here, even though the chain itself is injected
         let _validated = resolve_mappers(&parts.config.mapper_names)?;
-        let events = resolve_events(&parts)?;
+        let (metrics, events) = resolve_recorders(&parts)?;
         let emitter = SpanEmitter {
             tracer: tracer.clone(),
             environment: parts.emitter.environment,
@@ -125,22 +130,21 @@ impl V2Callback {
         Ok(callback)
     }
 
-    // litellm.integrations.otel.logger._OPEN_CALLS_MAX bounds the carrier map through B3852's OpenCalls
-    pub fn store_open_call(&self, call_id: String, call: OpenCall) {
-        self.logger.store_open_call(call_id, call);
-    }
-
     #[must_use]
-    pub fn open_call_ids(&self) -> Vec<String> {
-        self.logger.open_calls().calls.keys().cloned().collect()
-    }
-
-    #[must_use]
-    pub fn recorders_enabled(&self) -> (bool, bool) {
+    pub const fn recorders_enabled(&self) -> (bool, bool) {
         (
             self.logger.metrics.is_some(),
             self.logger.emitter.event_recorder.is_some(),
         )
+    }
+
+    // the in-flight call ids, as LiteLLM's _open_llm_calls keys read back
+    #[must_use]
+    pub fn open_call_ids(&self) -> Vec<String> {
+        let calls = self.logger.open_calls();
+        let ids: Vec<String> = calls.calls.keys().cloned().collect();
+        drop(calls);
+        ids
     }
 }
 
@@ -161,63 +165,71 @@ fn resolve_tracer_provider(parts: &CallbackParts) -> Result<SdkTracerProvider, C
     }
 }
 
-fn tracer_for(provider: &SdkTracerProvider) -> SdkTracer {
-    let scope = InstrumentationScope::builder(LITELLM_TRACER_NAME)
-        .with_version(env!("CARGO_PKG_VERSION"))
-        .build();
-    provider.tracer_with_scope(scope)
-}
-
-fn resolve_metrics(
-    parts: &CallbackParts,
-) -> Result<Option<Arc<GenAiMetricRecorder>>, CallbackError> {
-    if !parts.config.enable_metrics {
+// both recorders: absent when disabled, an injected one wins, and only an unset process builds one
+fn resolve_recorder<T, P, R, M>(
+    enabled: bool,
+    injected: Option<&Arc<T>>,
+    resolve: R,
+    make: M,
+) -> Result<Option<Arc<T>>, CallbackError>
+where
+    R: FnOnce() -> Result<Resolved<P>, ExporterError>,
+    M: FnOnce(&P) -> Result<T, CallbackError>,
+{
+    if !enabled {
         return Ok(None);
     }
-    if let Some(injected) = parts.providers.metrics.as_ref() {
+    if let Some(injected) = injected {
         return Ok(Some(Arc::clone(injected)));
     }
-    let resolved = resolve_meter_provider(
-        &parts.raw_config,
-        &parts.build.clients,
-        parts.providers.meter_provider.clone(),
-        parts.providers.meter_state.clone(),
-    )?;
-    let provider = match resolved {
-        Resolved::Reuse(provider) | Resolved::Publish(provider) => provider,
-        Resolved::Disabled => return Ok(None),
-    };
-    let recorder = GenAiMetricRecorder::new(
-        create_instruments(&get_meter(&provider, LITELLM_TRACER_NAME)),
-        parts.callback_name.clone(),
-        Arc::clone(&parts.metric.callback_settings),
-        parts.metric.utc_offset,
-    )?;
-    Ok(Some(Arc::new(recorder)))
+    match resolve()? {
+        Resolved::Reuse(provider) | Resolved::Publish(provider) => {
+            Ok(Some(Arc::new(make(&provider)?)))
+        }
+        Resolved::Disabled => Ok(None),
+    }
 }
 
-fn resolve_events(parts: &CallbackParts) -> Result<Option<Arc<GenAIEventRecorder>>, CallbackError> {
-    if !parts.config.enable_events {
-        return Ok(None);
-    }
-    if let Some(injected) = parts.providers.events.as_ref() {
-        return Ok(Some(Arc::clone(injected)));
-    }
-    let resolved = resolve_logger_provider(
-        &parts.raw_config,
-        &parts.build.clients,
-        parts.providers.logger_provider.clone(),
-        parts.providers.logger_state.clone(),
+fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> {
+    let metrics = resolve_recorder(
+        parts.config.enable_metrics,
+        parts.providers.metrics.as_ref(),
+        || {
+            resolve_meter_provider(
+                &parts.raw_config,
+                &parts.build.clients,
+                parts.providers.meter_provider.clone(),
+                parts.providers.meter_state.clone(),
+            )
+        },
+        |provider: &SdkMeterProvider| -> Result<GenAiMetricRecorder, CallbackError> {
+            Ok(GenAiMetricRecorder::new(
+                create_instruments(&get_meter(provider, LITELLM_TRACER_NAME)),
+                parts.callback_name.clone(),
+                Arc::clone(&parts.metric.callback_settings),
+                parts.metric.utc_offset,
+            )?)
+        },
     )?;
-    let provider = match resolved {
-        Resolved::Reuse(provider) | Resolved::Publish(provider) => provider,
-        Resolved::Disabled => return Ok(None),
-    };
-    let recorder = GenAIEventRecorder {
-        event_logger: get_event_logger(&provider, LITELLM_TRACER_NAME),
-        clock: Box::new(SystemClock),
-    };
-    Ok(Some(Arc::new(recorder)))
+    let events = resolve_recorder(
+        parts.config.enable_events,
+        parts.providers.events.as_ref(),
+        || {
+            resolve_logger_provider(
+                &parts.raw_config,
+                &parts.build.clients,
+                parts.providers.logger_provider.clone(),
+                parts.providers.logger_state.clone(),
+            )
+        },
+        |provider: &SdkLoggerProvider| -> Result<GenAIEventRecorder, CallbackError> {
+            Ok(GenAIEventRecorder {
+                event_logger: get_event_logger(provider, LITELLM_TRACER_NAME),
+                clock: Box::new(SystemClock),
+            })
+        },
+    )?;
+    Ok((metrics, events))
 }
 
 #[async_trait]
