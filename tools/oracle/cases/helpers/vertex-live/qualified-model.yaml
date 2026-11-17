@@ -1,0 +1,13 @@
+kind: helper
+name: qualified-model
+call:
+  vertex_live:
+    calls:
+      - op: automatic
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+      - op: automatic
+        session: {project: my-project, location: global, access_token: ya29.token}
+        model: gemini-2.5-flash
+env: {}
+compare: {ignore: []}

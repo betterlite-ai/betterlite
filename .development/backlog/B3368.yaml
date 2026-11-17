@@ -1,7 +1,7 @@
 id: B3368
 milestone: M5 api families
 title: Generated container file operations and exports
-status: todo
+status: done
 depends_on: [B3360, B3361, B3363, B010, B247, B185]
 file: tasks/B3368-container-file-endpoints.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/containers/main.py"
 parent: B094
 split_from: B094
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2210

@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-live-seed
+call:
+  vertex_live:
+    calls:
+      - op: endpoint
+        session: {project: seed-project, location: us-central1, access_token: seed-token}
+      - op: mime
+        session: {project: seed-project, location: us-central1, access_token: seed-token}
+        formats: [pcm16, g711_ulaw]
+      - op: automatic
+        session: {project: seed-project, location: us-central1, access_token: seed-token}
+        model: gemini-2.5-flash
+      - op: transform
+        session: {project: seed-project, location: us-central1, access_token: seed-token}
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad, create_response: false}
+env: {}
+compare: {ignore: []}

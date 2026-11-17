@@ -1,0 +1,14 @@
+kind: helper
+name: runway-video-lifecycle-unsupported-calls
+call:
+  runway_video_lifecycle:
+    operation: unsupported
+    params:
+      - remix
+      - list
+      - create_character
+      - get_character
+      - edit
+      - extension
+env: {}
+compare: {ignore: []}

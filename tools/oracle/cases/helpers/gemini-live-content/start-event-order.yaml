@@ -1,0 +1,30 @@
+kind: helper
+name: start-event-order
+call:
+  gemini_live_content:
+    calls:
+      - op: start
+        response_id: resp-fixed
+        output_item_id: item-fixed
+        conversation_id: conv-fixed
+        delta_type: audio
+        session_configuration_request: '{"setup":{"generationConfig":{"responseModalities":["AUDIO","TEXT"],"temperature":0.5,"maxOutputTokens":256}}}'
+      - op: start
+        response_id: resp-text
+        output_item_id: item-text
+        conversation_id: conv-text
+        delta_type: text
+      - op: start
+        response_id: resp-empty
+        output_item_id: item-empty
+        conversation_id: conv-empty
+        delta_type: text
+        session_configuration_request: '{"setup":{}}'
+      - op: start
+        response_id: resp-bad
+        output_item_id: item-bad
+        conversation_id: conv-bad
+        delta_type: audio
+        session_configuration_request: not-json
+env: {}
+compare: {ignore: []}
