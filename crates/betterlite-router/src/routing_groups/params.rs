@@ -48,7 +48,7 @@ pub fn params_with_reasoning_override(
     ) {
         return sanitized;
     }
-    sanitized.pop("thinking");
+    let _ = sanitized.shift_remove("thinking");
     for carrier in NESTED_EFFORT_CARRIERS {
         pop_effort_from_nested_carrier(&mut sanitized, carrier);
     }
@@ -59,13 +59,13 @@ pub fn params_with_reasoning_override(
         return sanitized;
     };
     let mut extra_body = extra_body.clone();
-    extra_body.pop(REASONING_EFFORT);
-    extra_body.pop("thinking");
+    let _ = extra_body.shift_remove(REASONING_EFFORT);
+    let _ = extra_body.shift_remove("thinking");
     for carrier in NESTED_EFFORT_CARRIERS {
         pop_effort_from_nested_carrier(&mut extra_body, carrier);
     }
     if extra_body.is_empty() {
-        sanitized.pop("extra_body");
+        let _ = sanitized.shift_remove("extra_body");
     } else {
         sanitized.insert("extra_body".to_owned(), Json::Object(extra_body));
     }
@@ -78,9 +78,9 @@ fn pop_effort_from_nested_carrier(params: &mut JsonMap, carrier: &str) {
         return;
     };
     let mut sanitized = nested.clone();
-    sanitized.pop("effort");
+    let _ = sanitized.shift_remove("effort");
     if sanitized.is_empty() {
-        params.pop(carrier);
+        let _ = params.shift_remove(carrier);
     } else {
         params.insert(carrier.to_owned(), Json::Object(sanitized));
     }
@@ -121,11 +121,11 @@ where
     if deployment_accepts_param(&deployment.to_json(), model, REASONING_EFFORT, support) {
         return None;
     }
-    kwargs.pop(REASONING_EFFORT);
+    let _ = kwargs.shift_remove(REASONING_EFFORT);
     if let Some(Json::Object(request)) = kwargs.get_mut("proxy_server_request")
         && let Some(Json::Object(body)) = request.get_mut("body")
     {
-        body.pop(REASONING_EFFORT);
+        let _ = body.shift_remove(REASONING_EFFORT);
     }
     Some(format!(
         "litellm.router.py: dropping classifier reasoning_effort for model={model} because the selected deployment does not support it"

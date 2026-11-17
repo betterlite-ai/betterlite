@@ -17,7 +17,7 @@ fn field<'map>(
     }
 }
 
-fn text_field(map: &JsonMap, key: &'static str) -> Result<String, RoutingGroupError> {
+pub(super) fn text_field(map: &JsonMap, key: &'static str) -> Result<String, RoutingGroupError> {
     match field(map, key, "a string")? {
         Json::Text(text) => Ok(text.clone()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
@@ -36,7 +36,7 @@ fn models_shape() -> RoutingGroupError {
     }
 }
 
-fn models_field(map: &JsonMap) -> Result<Vec<String>, RoutingGroupError> {
+pub(super) fn models_field(map: &JsonMap) -> Result<Vec<String>, RoutingGroupError> {
     let Json::List(entries) = field(map, "models", "a list of strings")? else {
         return Err(models_shape());
     };
@@ -50,7 +50,7 @@ fn models_field(map: &JsonMap) -> Result<Vec<String>, RoutingGroupError> {
     Ok(models)
 }
 
-fn args_field(map: &JsonMap) -> Result<Option<JsonMap>, RoutingGroupError> {
+pub(super) fn args_field(map: &JsonMap) -> Result<Option<JsonMap>, RoutingGroupError> {
     match map.get("routing_strategy_args") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(args)) => Ok(Some(args.clone())),
@@ -61,7 +61,9 @@ fn args_field(map: &JsonMap) -> Result<Option<JsonMap>, RoutingGroupError> {
     }
 }
 
-fn priorities_field(map: &JsonMap) -> Result<Option<BTreeMap<String, u64>>, RoutingGroupError> {
+pub(super) fn priorities_field(
+    map: &JsonMap,
+) -> Result<Option<BTreeMap<String, u64>>, RoutingGroupError> {
     let raw = match map.get("model_priorities") {
         None | Some(Json::Null) => return Ok(None),
         Some(Json::Object(priorities)) => priorities,

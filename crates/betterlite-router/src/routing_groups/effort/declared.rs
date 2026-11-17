@@ -33,9 +33,7 @@ impl EffortFlag {
             None | Some(Json::Null) => Self::Absent,
             Some(Json::Bool(true)) => Self::True,
             Some(Json::Bool(false)) => Self::False,
-            Some(
-                Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
-            ) => Self::Other,
+            Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => Self::Other,
         }
     }
 }

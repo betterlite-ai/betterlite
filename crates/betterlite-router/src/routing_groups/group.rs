@@ -9,7 +9,7 @@ use crate::strategy_dispatch::strategy::RoutingStrategy;
 mod fields;
 
 // RoutingGroup.model_priorities' bound, pydantic's le=2**53-1.
-pub const MAX_MODEL_PRIORITY: u64 = 9_007_199_254_740_991;
+pub const MAX_MODEL_PRIORITY: u64 = 0x001F_FFFF_FFFF_FFFF;
 pub const PRIORITY_STRATEGY: &str = "priority";
 const RESERVED_GROUP_NAME: &str = "default";
 

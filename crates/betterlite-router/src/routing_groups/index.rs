@@ -36,7 +36,7 @@ impl RoutingGroupIndex {
         let mut index = Self {
             groups: IndexMap::new(),
             model_to_group: BTreeMap::new(),
-            shadowing: aliases.keys().chain(&known_model_names).cloned().collect(),
+            shadowing: aliases.keys().chain(known_model_names).cloned().collect(),
             aliases: aliases.clone(),
         };
         let mut warnings = Vec::new();

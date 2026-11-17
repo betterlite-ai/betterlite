@@ -29,6 +29,6 @@ pub fn prioritized(group: &RoutingGroup, deployment: &DeploymentSpec) -> Deploym
 pub fn group_row(group_name: &str, deployment: &DeploymentSpec) -> DeploymentSpec {
     let mut row = deployment.clone();
     row.model_name = group_name.to_owned();
-    row.model_info.remove("access_groups");
+    let _ = row.model_info.shift_remove("access_groups");
     row
 }
