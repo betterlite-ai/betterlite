@@ -84,7 +84,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B1079 owns the entire synchronous rerank function and all its settings, branches and generic HTTP calls.
-- B209 owns declared_authenticating_provider, B174 fallback resolution, B011 exception mapping and B012 logging context.
+- B209 owns declared_authenticating_provider, B174 fallback resolution, B011 exception mapping and B247 logging context.
 pitfalls:
 - arerank explicitly passes return_documents=None, so allowing the sync callee to apply True changes the request.
 - A non-coroutine result is returned directly; copying the aspeech retry-on-immediate-result behavior would double bill rerank.

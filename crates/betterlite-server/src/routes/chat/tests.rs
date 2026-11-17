@@ -923,7 +923,7 @@ async fn error_normalization_tests_behavior(
     #[case] expected: (u16, bool),
 ) {
     let (status, include_id) = expected;
-    let (client, url, mut tasks) = normalization_gateway(enabled).await;
+    let (client, url, mut tasks) = Box::pin(normalization_gateway(enabled)).await;
     let response = client
         .client
         .post(url)

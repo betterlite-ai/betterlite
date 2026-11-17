@@ -1,0 +1,5 @@
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      anthropic_reply_extra: true
