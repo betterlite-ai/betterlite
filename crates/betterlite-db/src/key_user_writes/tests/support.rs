@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
 use std::pin::Pin;
@@ -26,8 +27,7 @@ use crate::tool_spend::RetryPause;
 pub(crate) const BASELINE: &str =
     include_str!("../../../../../tools/postgres-fixture/fixtures/baseline.sql");
 
-// token columns the baseline schema lacks, the permission table a key update includes, and a
-// second user foreign key, so a failure on another constraint proves the organization translation
+// extra token columns, the permission table, and a second user foreign key for the FK translation
 pub(crate) const SCHEMA: &str = r#"
 ALTER TABLE "LiteLLM_VerificationToken"
     ADD COLUMN IF NOT EXISTS object_permission_id TEXT,
@@ -289,14 +289,10 @@ pub(crate) fn alias_update(alias: &str) -> TokenWrite {
 }
 
 pub(crate) fn user_write(user_id: &str, alias: &str) -> UserWrite {
-    let mut fields = UserWrite::default();
-    fields
-        .0
-        .insert(UserColumn::UserId, TokenValue::Text(user_id.to_owned()));
-    fields
-        .0
-        .insert(UserColumn::UserAlias, TokenValue::Text(alias.to_owned()));
-    fields
+    UserWrite(BTreeMap::from([
+        (UserColumn::UserId, TokenValue::Text(user_id.to_owned())),
+        (UserColumn::UserAlias, TokenValue::Text(alias.to_owned())),
+    ]))
 }
 
 pub(crate) fn user_column(user_id: &str, column: UserColumn, value: TokenValue) -> UserWrite {

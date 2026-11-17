@@ -47,14 +47,9 @@ async fn column_is_null(client: &Client, column: &str, token: &str) -> bool {
     row.get(0)
 }
 
-async fn token_rows(client: &Client, token: &str) -> i64 {
-    let row = client
-        .query_one(
-            "SELECT count(*) FROM \"LiteLLM_VerificationToken\" WHERE \"token\" = $1",
-            &[&token],
-        )
-        .await
-        .unwrap();
+async fn row_count(client: &Client, table: &str, key: &str, value: &str) -> i64 {
+    let sql = format!("SELECT count(*) FROM \"{table}\" WHERE \"{key}\" = $1");
+    let row = client.query_one(sql.as_str(), &[&value]).await.unwrap();
     row.get(0)
 }
 
@@ -67,17 +62,6 @@ async fn user_alias(client: &Client, user_id: &str) -> Option<String> {
         .await
         .unwrap()?;
     row.try_get::<_, Option<String>>(0).unwrap()
-}
-
-async fn user_rows(client: &Client, user_id: &str) -> i64 {
-    let row = client
-        .query_one(
-            "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = $1",
-            &[&user_id],
-        )
-        .await
-        .unwrap();
-    row.get(0)
 }
 
 #[tokio::test]
@@ -98,12 +82,18 @@ async fn key_conflict_no_update() {
     assert_eq!(first.key_alias.as_deref(), Some("first"));
     assert_eq!(second.key_alias.as_deref(), Some("first"));
     assert_eq!(first.token.as_ref().unwrap().expose_secret(), &stored);
-    assert_eq!(token_rows(&client, &stored).await, 1);
+    assert_eq!(
+        row_count(&client, "LiteLLM_VerificationToken", "token", &stored).await,
+        1
+    );
     assert_eq!(
         column_text(&client, "key_alias", &stored).await.as_deref(),
         Some("first")
     );
-    assert_eq!(token_rows(&client, "sk-abc").await, 0);
+    assert_eq!(
+        row_count(&client, "LiteLLM_VerificationToken", "token", "sk-abc").await,
+        0
+    );
     harness.close().await;
 }
 
@@ -209,7 +199,10 @@ async fn user_conflict_no_update() {
         .unwrap();
     assert_eq!(first.user_alias.as_deref(), Some("first"));
     assert_eq!(second.user_alias.as_deref(), Some("first"));
-    assert_eq!(user_rows(&client, "user-a").await, 1);
+    assert_eq!(
+        row_count(&client, "LiteLLM_UserTable", "user_id", "user-a").await,
+        1
+    );
     assert_eq!(
         user_alias(&client, "user-a").await.as_deref(),
         Some("first")
@@ -238,7 +231,10 @@ async fn user_organization_fk_400() {
         error.to_string(),
         "Foreign Key Constraint failed. Organization ID=missing-org does not exist in LiteLLM_OrganizationTable. Create via `/organization/new`."
     );
-    assert_eq!(user_rows(&client, "user-orphan").await, 0);
+    assert_eq!(
+        row_count(&client, "LiteLLM_UserTable", "user_id", "user-orphan").await,
+        0
+    );
     harness.close().await;
 }
 
@@ -283,7 +279,10 @@ async fn user_other_fk_failures_keep_their_type() {
     assert_eq!(code, &SqlState::FOREIGN_KEY_VIOLATION);
     assert_eq!(constraint.as_deref(), Some("B2362_UserTable_team_id_fkey"));
     assert_eq!(error.http_status(), None);
-    assert_eq!(user_rows(&client, "user-team").await, 0);
+    assert_eq!(
+        row_count(&client, "LiteLLM_UserTable", "user_id", "user-team").await,
+        0
+    );
     harness.close().await;
 }
 
@@ -552,7 +551,10 @@ async fn user_id_dispatch_precedence() {
         Some("explicit")
     );
     assert_eq!(user_alias(&client, "user-b").await.as_deref(), Some("b"));
-    assert_eq!(user_rows(&client, "user-b").await, 1);
+    assert_eq!(
+        row_count(&client, "LiteLLM_UserTable", "user_id", "user-b").await,
+        1
+    );
     let selector = UpdateSelector {
         token: None,
         user_id: Some("user-a"),
@@ -738,14 +740,17 @@ async fn insert_logs_redact_token_and_name_the_table() {
     let captured = logs.contents();
     assert!(!captured.contains("sk-secret"), "{captured}");
     assert!(captured.contains(&hash_token("sk-secret")), "{captured}");
-    for message in [
-        "Data Inserted into Keys Table",
-        "Data Inserted into User Table",
-        "DB Token Table update succeeded",
-        "DB User Table - update succeeded",
-    ] {
-        assert!(captured.contains(message), "{captured}");
-    }
+    assert!(
+        [
+            "Data Inserted into Keys Table",
+            "Data Inserted into User Table",
+            "DB Token Table update succeeded",
+            "DB User Table - update succeeded",
+        ]
+        .into_iter()
+        .all(|message| captured.contains(message)),
+        "{captured}"
+    );
     harness.close().await;
 }
 
@@ -766,14 +771,16 @@ async fn retry_update_events_use_update_heading() {
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
     let events = ports.sink.events();
     assert_eq!(events.len(), 3);
-    for event in &events {
-        assert_eq!(event.call_type, CallType::UpdateData);
-        assert!(
-            event
-                .traceback
-                .starts_with("LiteLLM Prisma Client Exception - update_data: ")
-        );
-    }
+    assert!(
+        events
+            .iter()
+            .all(|event| event.call_type == CallType::UpdateData)
+    );
+    assert!(events.iter().all(|event| {
+        event
+            .traceback
+            .starts_with("LiteLLM Prisma Client Exception - update_data: ")
+    }));
     assert_eq!(
         column_text(&client, "key_alias", &hash_token("sk-seed"))
             .await
@@ -801,7 +808,10 @@ async fn earlier_write_survives_next_failure() {
     let error = writes.insert_user(&broken).await.unwrap_err();
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
     assert_eq!(user_alias(&client, "user-a").await.as_deref(), Some("kept"));
-    assert_eq!(user_rows(&client, "user-b").await, 0);
+    assert_eq!(
+        row_count(&client, "LiteLLM_UserTable", "user_id", "user-b").await,
+        0
+    );
     writes
         .insert_user(&user_write("user-c", "after"))
         .await
