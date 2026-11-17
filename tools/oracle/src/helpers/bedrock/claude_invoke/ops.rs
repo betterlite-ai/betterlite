@@ -105,9 +105,9 @@ fn responses(calls: &[ResponseCall]) -> HelperResult {
     for call in calls {
         let envelope = response(
             &call.raw_text,
-            call.messages.clone(),
-            call.optional_params.clone(),
-            call.litellm_params.clone(),
+            &call.messages,
+            &call.optional_params,
+            &call.litellm_params,
             call.now,
         )?;
         let choice = envelope.choices.first();

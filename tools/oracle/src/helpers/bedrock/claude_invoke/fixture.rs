@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
+use std::io;
 use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
@@ -60,7 +62,7 @@ pub(super) enum FixtureError {
     #[error("candidate patterns: {0}")]
     Patterns(#[from] CatalogLookupError),
     #[error("runtime: {0}")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
 }
 
 pub(super) struct Fixture {
@@ -172,7 +174,7 @@ impl<'fixture> Session<'fixture> {
         request: &ClaudeInvokeRequest<'_>,
         fetcher: &MapFetcher,
         inline: bool,
-    ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<std::convert::Infallible>> {
+    ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Infallible>> {
         let catalogs = self.fixture.catalogs();
         let blocks = NoFileBlocks;
         let new_id: fn() -> String = || "generated".to_owned();

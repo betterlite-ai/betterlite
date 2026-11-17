@@ -116,17 +116,19 @@ impl MapFetcher {
 }
 
 impl RemoteMediaFetcher for MapFetcher {
-    async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(url.to_owned());
-        let Some(data_url) = self.urls.get(url) else {
-            return Err(ImageFetchError::Attempts {
+        let answer = self
+            .urls
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Attempts {
                 url: url.to_owned(),
             });
-        };
-        Ok(data_url.clone())
+        ready(answer)
     }
 
     async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {

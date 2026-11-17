@@ -30,7 +30,7 @@ fn log_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
         },
         redactor,
         || "generated".to_owned(),
-        || Duration::default(),
+        Duration::default,
     )
     .or_config_error()?;
     Ok(state)
@@ -58,9 +58,9 @@ fn pre_post_env<'env>(
 
 pub(super) fn response(
     raw: &str,
-    messages: Vec<Json>,
-    optional_params: IndexMap<String, Json>,
-    litellm_params: IndexMap<String, Json>,
+    messages: &[Json],
+    optional_params: &IndexMap<String, Json>,
+    litellm_params: &IndexMap<String, Json>,
     now: i64,
 ) -> Result<ResponseEnvelope, Box<HelperError>> {
     let headers = HeaderMap::new();
@@ -71,9 +71,9 @@ pub(super) fn response(
     };
     let request_data = IndexMap::new();
     let request = ResponseRequest {
-        messages: &messages,
-        optional_params: &optional_params,
-        litellm_params: &litellm_params,
+        messages,
+        optional_params,
+        litellm_params,
         request_data: &request_data,
         json_mode: None,
         now,
