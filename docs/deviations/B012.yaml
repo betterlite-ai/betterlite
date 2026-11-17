@@ -1,9 +1,9 @@
 task: B012
 deviations:
   - what: >-
-      Gateway stderr stays structured JSON even when JSON_LOGS is false; the setting is parsed and
-      carried on the logging wiring for compatible service and callback formatting, but it does not
-      switch B003's stderr format.
+      Gateway stderr keeps B003's JSON format and level whatever JSON_LOGS and LITELLM_LOG say; both
+      settings are parsed and carried on the logging wiring for compatible service and callback
+      formatting, but they do not switch B003's stderr format or raise its level.
     why: >-
       B003 makes machine-readable stderr the gateway format, and a proxy that changes its log format
       based on an environment flag loses the record shape the rest of the pipeline parses.
