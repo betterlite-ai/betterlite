@@ -169,7 +169,7 @@ def transform(request: Request) -> JsonValue:
     return JSON.validate_python(body)
 
 
-def outcome(request: Request) -> JsonValue:
+def outcome(request: Request) -> dict[str, JsonValue]:
     try:
         return {"ok": True, "value": transform(request)}
     except REJECTION as error:
@@ -180,5 +180,7 @@ def outcome(request: Request) -> JsonValue:
 def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     requests = parsed["transform_requests"]["requests"]
-    outcomes: list[JsonValue] = [outcome(request) for request in requests]
+    outcomes: list[JsonValue] = []
+    for request in requests:
+        outcomes.append(outcome(request))
     return JSON.validate_python(outcomes)
