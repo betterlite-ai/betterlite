@@ -16,6 +16,8 @@ use crate::worker::WorkerSettings;
 pub struct LoggingWiring {
     pub pipeline: Arc<ServicePipeline>,
     pub stream_assembler: Arc<dyn StreamAssembler>,
+    // the limits the worker was started with, resolved from the config and the environment
+    pub worker_settings: WorkerSettings,
     pub log_level: LogLevel,
     pub json_logs: bool,
 }
@@ -29,13 +31,14 @@ impl LoggingWiring {
         stream_assembler: Arc<dyn StreamAssembler>,
     ) -> Result<Self, PipelineError> {
         register_service_callbacks(&mut registry, &settings.service_callbacks);
+        let worker_settings = WorkerSettings {
+            max_queue_size: settings.max_queue_size,
+            concurrency: settings.concurrency,
+            event_timeout: settings.event_timeout,
+            ..WorkerSettings::default()
+        };
         let pipeline = ServicePipeline::start(PipelineConfig {
-            settings: WorkerSettings {
-                max_queue_size: settings.max_queue_size,
-                concurrency: settings.concurrency,
-                event_timeout: settings.event_timeout,
-                ..WorkerSettings::default()
-            },
+            settings: worker_settings,
             clock,
             sink,
             registry: Arc::new(registry),
@@ -43,6 +46,7 @@ impl LoggingWiring {
         Ok(Self {
             pipeline: Arc::new(pipeline),
             stream_assembler,
+            worker_settings,
             log_level: settings.log_level,
             json_logs: settings.json_logs,
         })
