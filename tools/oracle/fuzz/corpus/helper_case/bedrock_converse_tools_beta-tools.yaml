@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-converse-tools-beta-tools
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.fixture-plain
+    model_cost:
+      anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+    tools:
+      - {systemTool: null}
+      - type: function
+        function:
+          name: get weather!
+          parameters: {type: object, properties: {city: {type: string}}, required: [city]}
+      - {type: tool_search_tool_regex_20251119, function: {name: regex_tool}}
+    headers: null
+    params: {output_config: {effort: high}}
+env: {}
+compare: {ignore: []}

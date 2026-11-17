@@ -1,0 +1,124 @@
+kind: helper
+name: bedrock-converse-tools-beta-anthropic-beta-fields
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.fixture-plain
+    model_cost:
+      anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    tools: []
+    headers: null
+    params: {}
+calls:
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools: []
+      headers: {anthropic-beta: [beta-a, beta-b, beta-a]}
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools: []
+      headers: {anthropic-beta: "beta-a, beta-b"}
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-adaptive
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools:
+        - type: function
+          function: {name: weather, eager_input_streaming: true}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-adaptive
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools:
+        - type: function
+          function: {name: weather, eager_input_streaming: true}
+      headers: {anthropic-beta: "fine-grained-tool-streaming-2025-05-14,beta-x"}
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: meta.llama3-v1:0
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools:
+        - type: function
+          function: {name: weather, eager_input_streaming: true}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      model_cost: {}
+      tools:
+        - type: computer_20241022
+          name: computer
+          display_width_px: 1024
+      headers: {anthropic-beta: [computer-use-2024-10-22]}
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {output_config: {effort: high}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-adaptive
+      model_cost:
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools: []
+      headers: null
+      params: {output_config: {effort: high}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: {anthropic-beta: effort-2025-11-24}
+      params: {output_config: {effort: high}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {output_config: {effort: banana}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {output_config: {effort: null}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: {anthropic-beta: [beta-a]}
+      params: {anthropic_beta: [kept]}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {anthropic_beta: [kept]}
+  - bedrock_converse_tools_beta:
+      model: meta.llama3-v1:0
+      model_cost: {}
+      tools: []
+      headers: {anthropic-beta: [beta-a]}
+      params: {anthropic_beta: [kept]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,64 @@
+kind: helper
+name: bedrock-converse-tools-beta-output-config-tools
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.fixture-plain
+    model_cost:
+      anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    tools: []
+    headers: null
+    params:
+      output_config:
+        effort: high
+        format:
+          type: json_schema
+          schema: {type: object}
+calls:
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-adaptive
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools: []
+      headers: null
+      params:
+        output_config:
+          effort: high
+          format:
+            type: json_schema
+            schema: {type: object}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-adaptive
+      model_cost:
+        anthropic.fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      tools: []
+      headers: null
+      params: {output_config: {format: {type: json_schema}}}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {output_config: null}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params: {output_config: [1, 2]}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools: []
+      headers: null
+      params:
+        tool_choice: auto
+        parallel_tool_calls: false
+        toolConfig: {tools: [], toolChoice: {auto: {}}}
+        output_config: {format: {type: json_schema, name: reply}}
+env: {}
+compare: {ignore: []}

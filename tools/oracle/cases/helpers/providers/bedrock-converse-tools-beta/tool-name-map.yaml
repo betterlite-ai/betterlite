@@ -1,0 +1,81 @@
+kind: helper
+name: bedrock-converse-tools-beta-tool-name-map
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.fixture-plain
+    model_cost:
+      anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+    tools:
+      - {systemTool: null}
+      - type: function
+        function:
+          name: lookup
+          parameters: {type: object, properties: {}}
+    headers: null
+    params: {}
+calls:
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - {systemTool: {name: grounding}}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - type: tool_search_tool_regex_20251119
+          function: {name: regex_tool}
+        - type: tool_search_tool_bm25_20251119
+          function: {name: bm25_tool}
+        - type: tool_search_tool_regex_20250101
+          function:
+            name: search
+            parameters: {type: object, properties: {}}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - type: function
+          function: {name: "get weather!", description: Read it}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - type: function
+          function: {name: "  "}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - name: anthropic-tool
+          input_schema:
+            type: object
+            properties:
+              x: {type: number}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.fixture-plain
+      model_cost:
+        anthropic.fixture-plain: {litellm_provider: bedrock, supports_adaptive_thinking: false}
+      tools:
+        - toolSpec: {name: ready, description: d, inputSchema: {json: {}}}
+        - type: function
+          function: {name: later}
+      headers: null
+      params: {}
+env: {}
+compare: {ignore: []}
