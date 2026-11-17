@@ -121,24 +121,6 @@ pub struct ConnectionSetup {
     pub backend_uses_beta_protocol: Option<bool>,
 }
 
-impl fmt::Debug for ConnectionSetup {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ConnectionSetup")
-            .field("model", &self.model)
-            .field(
-                "logged_real_time_event_types",
-                &self.logged_real_time_event_types,
-            )
-            .field("client_wants_beta", &self.client_wants_beta)
-            .field(
-                "backend_uses_beta_protocol",
-                &self.backend_uses_beta_protocol,
-            )
-            .finish_non_exhaustive()
-    }
-}
-
 impl fmt::Debug for RealtimeStreaming {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

@@ -34,12 +34,16 @@ impl RealtimeStreaming {
     }
 
     pub fn collect_backend_input(&mut self, event: &IndexMap<String, Json>) {
-        if event_type(event) != Some(TRANSCRIPTION_COMPLETED) {
+        let Some(Json::Text(kind)) = event.get("type") else {
+            return;
+        };
+        if kind != TRANSCRIPTION_COMPLETED {
             return;
         }
-        if let Some(Json::Text(transcript)) = event.get("transcript") {
-            push_text_message(&mut self.input_messages, "user", transcript);
-        }
+        let Some(Json::Text(transcript)) = event.get("transcript") else {
+            return;
+        };
+        push_text_message(&mut self.input_messages, "user", transcript);
     }
 
     pub fn detect_transcription_session(&mut self, event: &IndexMap<String, Json>) {
