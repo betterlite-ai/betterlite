@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-batches-status-counts
+call:
+  anthropic_batches:
+    lifecycle:
+      now: 1704067200
+      bodies:
+        - '{"id":"b1"}'
+        - '{}'
+        - '{"processing_status":null,"created_at":"1970-01-01T00:00:00Z"}'
+        - '{"processing_status":"in_progress"}'
+        - '{"processing_status":"canceling"}'
+        - '{"processing_status":"ended"}'
+        - '{"processing_status":"archived"}'
+        - '{"processing_status":""}'
+        - '{"request_counts":{"processing":1,"succeeded":2,"errored":3,"canceled":4,"expired":5}}'
+        - '{"request_counts":{"succeeded":2,"errored":3}}'
+env: {}
+compare: {ignore: []}
