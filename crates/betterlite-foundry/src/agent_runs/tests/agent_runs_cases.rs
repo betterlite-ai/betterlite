@@ -417,6 +417,26 @@ fn nonexpected_status() {
     create_and_message_failures();
     run_and_status_failures();
     messages_and_binary_failures();
+    decode_failures_are_typed();
+}
+
+fn decode_failures_are_typed() {
+    let bodies = [
+        (r#""thread-1""#, "the agent response is not a JSON object"),
+        (r#"{"id": "#, "the agent response is not valid JSON"),
+        (r#"{"id": 7}"#, "the agent response is not valid JSON"),
+    ];
+    for (body, expected) in bodies {
+        let outcome = execute(&Run::sync(vec![step(201, body)]));
+        let error = failure_of(&outcome);
+        assert_eq!(error.status(), None);
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            outcome.transport.state().requests().len(),
+            1,
+            "a decoded body that is not a created object ends the run"
+        );
+    }
 }
 
 fn assert_upstream_failure(
