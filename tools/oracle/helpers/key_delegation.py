@@ -122,18 +122,35 @@ def rejection(error: HTTPException) -> JsonValue:
             }
 
 
-def ownership_answer(call: OwnershipCall) -> JsonValue:
+def row_check(call: OwnershipCall | RoutesUpdateCall, row: LiteLLM_VerificationToken) -> JsonValue:
     data = UPDATE.validate_python(call["body"])
-    row = LiteLLM_VerificationToken(user_id=call["existing_user_id"])
+    user_api_key_dict = caller_record(call["caller"])
     try:
-        key_management_endpoints._validate_caller_can_change_key_ownership(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L873-L916
-            data=data,
-            existing_key_row=row,
-            user_api_key_dict=caller_record(call["caller"]),
-        )
+        if call["check"] == "ownership":
+            key_management_endpoints._validate_caller_can_change_key_ownership(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L873-L916
+                data=data,
+                existing_key_row=row,
+                user_api_key_dict=user_api_key_dict,
+            )
+        else:
+            key_management_endpoints._enforce_allowed_routes_update_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L984-L998
+                data=data,
+                existing_key_row=row,
+                user_api_key_dict=user_api_key_dict,
+            )
     except HTTPException as error:
         return rejection(error)
     return {"ok": True}
+
+
+def ownership_answer(call: OwnershipCall) -> JsonValue:
+    row = LiteLLM_VerificationToken(user_id=call["existing_user_id"])
+    return row_check(call, row)
+
+
+def routes_update_answer(call: RoutesUpdateCall) -> JsonValue:
+    row = LiteLLM_VerificationToken(allowed_routes=call["existing_allowed_routes"])
+    return row_check(call, row)
 
 
 def routes_answer(call: RoutesCall) -> JsonValue:
@@ -155,20 +172,6 @@ def transition_answer(call: TransitionCall) -> JsonValue:
         existing_allowed_routes=call["existing"],
     )
     return {"ok": True, "value": safe}
-
-
-def routes_update_answer(call: RoutesUpdateCall) -> JsonValue:
-    data = UPDATE.validate_python(call["body"])
-    row = LiteLLM_VerificationToken(allowed_routes=call["existing_allowed_routes"])
-    try:
-        key_management_endpoints._enforce_allowed_routes_update_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L984-L998
-            data=data,
-            existing_key_row=row,
-            user_api_key_dict=caller_record(call["caller"]),
-        )
-    except HTTPException as error:
-        return rejection(error)
-    return {"ok": True}
 
 
 def permissions_answer(call: PermissionsCall) -> JsonValue:
