@@ -44,17 +44,17 @@ pub struct StepOutput {
     pub cooldown_time: Option<String>,
 }
 
-struct Scenario<'a> {
-    payload: &'a Payload,
+struct Scenario<'payload> {
+    payload: &'payload Payload,
     counters: ProbeCounters,
     cooldowns: ProbeCooldowns,
-    request: RequestFacts<'a>,
+    request: RequestFacts<'payload>,
     usage: DeploymentUsage,
     now: DateTime<Utc>,
 }
 
-impl<'a> Scenario<'a> {
-    fn new(payload: &'a Payload) -> Result<Self, OperationError> {
+impl<'payload> Scenario<'payload> {
+    fn new(payload: &'payload Payload) -> Result<Self, OperationError> {
         let now = DateTime::from_timestamp_millis(payload.now_millis)
             .ok_or_else(|| invalid("the probe clock is out of range"))?;
         Ok(Self {
@@ -149,7 +149,7 @@ impl<'a> Scenario<'a> {
             retry_after: retry_after(failure),
         };
         self.observations()
-            .on_failure(&event, self.payload.now_millis, self.now)
+            .on_failure(&event, self.payload.now_millis)
             .map_err(|error| invalid(&error.to_string()))
     }
 

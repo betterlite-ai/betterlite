@@ -2,7 +2,6 @@ use betterlite_core::api::responses_usage::Usage;
 use chrono::{DateTime, Utc};
 
 use super::RouterObservations;
-use super::counter::CounterSink;
 use super::keys::{ROUTER_COUNTER_TTL, outcome_keys};
 use super::usage::{DeploymentUsage, UsageIncrement};
 
@@ -14,46 +13,48 @@ pub struct ObservationMetadata {
 
 // metadata and litellm_params.model_info as the success callbacks read them
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RequestFacts<'a> {
-    pub model_group: Option<&'a str>,
-    pub deployment_name: &'a str,
-    pub deployment_id: Option<&'a str>,
+pub struct RequestFacts<'request> {
+    pub model_group: Option<&'request str>,
+    pub deployment_name: &'request str,
+    pub deployment_id: Option<&'request str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SuccessEvent<'a> {
-    pub call_type: Option<&'a str>,
+pub struct SuccessEvent<'event> {
+    pub call_type: Option<&'event str>,
     // standard_logging_object.total_tokens, with None standing for a missing standard_logging_object
     pub total_tokens: Option<i64>,
-    pub request: RequestFacts<'a>,
-    pub deployment: Option<&'a DeploymentUsage>,
+    pub request: RequestFacts<'event>,
+    pub deployment: Option<&'event DeploymentUsage>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ResponseEvent<'a> {
-    pub usage: &'a Usage,
-    pub request: RequestFacts<'a>,
-    pub deployment: Option<&'a DeploymentUsage>,
+pub struct ResponseEvent<'response> {
+    pub usage: &'response Usage,
+    pub request: RequestFacts<'response>,
+    pub deployment: Option<&'response DeploymentUsage>,
 }
 
 // the wrappers that hand a whole session's usage to the per-turn callbacks must not count it again
-fn skips_usage(call_type: Option<&str>) -> bool {
-    call_type.is_some_and(|kind| {
-        matches!(
-            kind,
-            "_aresponses_websocket" | "_arealtime" | "retrieve_batch" | "aretrieve_batch"
-        )
-    })
-}
+const SKIPPED_CALL_TYPES: [&str; 4] = [
+    "_aresponses_websocket",
+    "_arealtime",
+    "retrieve_batch",
+    "aretrieve_batch",
+];
 
 impl RouterObservations<'_> {
+    #[must_use]
     pub fn on_success(
         &self,
         event: &SuccessEvent<'_>,
         metadata: &ObservationMetadata,
         now: DateTime<Utc>,
     ) -> Option<String> {
-        if skips_usage(event.call_type) {
+        if event
+            .call_type
+            .is_some_and(|kind| SKIPPED_CALL_TYPES.contains(&kind))
+        {
             return None;
         }
         let total_tokens = event.total_tokens?;
@@ -87,6 +88,7 @@ impl RouterObservations<'_> {
             .flatten()
     }
 
+    #[must_use]
     pub fn count_response_usage(
         &self,
         event: &ResponseEvent<'_>,

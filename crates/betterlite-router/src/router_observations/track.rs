@@ -1,5 +1,4 @@
 use super::RouterObservations;
-use super::counter::CounterSink;
 use super::keys::ROUTER_COUNTER_TTL;
 
 impl RouterObservations<'_> {

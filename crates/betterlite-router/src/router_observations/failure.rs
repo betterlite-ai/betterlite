@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use thiserror::Error;
 
 use crate::cooldown_decisions::decision::MinuteSamples;
@@ -9,14 +10,14 @@ use crate::cooldown_decisions::failure::{
 use crate::retry_policy::retry_after::RetryAfter;
 
 use super::RouterObservations;
-use super::counter::{CounterError, CounterSink};
+use super::counter::CounterError;
 use super::keys::{OutcomeKeys, ROUTER_COUNTER_TTL, outcome_keys, usage_keys};
 
 #[derive(Debug, Clone, Copy)]
-pub struct FailureEvent<'a> {
-    pub deployment_id: Option<&'a str>,
-    pub failure: &'a FailureFacts,
-    pub requested_model_group: Option<&'a str>,
+pub struct FailureEvent<'event> {
+    pub deployment_id: Option<&'event str>,
+    pub failure: &'event FailureFacts,
+    pub requested_model_group: Option<&'event str>,
     pub model_info_cooldown_time: Option<Seconds>,
     pub litellm_params_cooldown_time: Option<Seconds>,
     pub retry_after: Option<RetryAfter>,
@@ -24,10 +25,10 @@ pub struct FailureEvent<'a> {
 
 // what _set_cooldown_deployments reads once the failure was counted into this minute
 #[derive(Debug, Clone, Copy)]
-pub struct FailureObservation<'a> {
-    pub deployment_id: &'a str,
-    pub failure: &'a FailureFacts,
-    pub requested_model_group: Option<&'a str>,
+pub struct FailureObservation<'observation> {
+    pub deployment_id: &'observation str,
+    pub failure: &'observation FailureFacts,
+    pub requested_model_group: Option<&'observation str>,
     pub time_to_cooldown: Seconds,
     pub minute: MinuteSamples,
 }
@@ -55,11 +56,11 @@ pub enum FailureError {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct AsyncFailureEvent<'a> {
-    pub call_type: Option<&'a str>,
-    pub model_group: Option<&'a str>,
-    pub deployment_name: &'a str,
-    pub deployment_id: Option<&'a str>,
+pub struct AsyncFailureEvent<'event> {
+    pub call_type: Option<&'event str>,
+    pub model_group: Option<&'event str>,
+    pub deployment_name: &'event str,
+    pub deployment_id: Option<&'event str>,
 }
 
 // the failures that belong to another layer: an advisor run, the background cost poll, or the caller's own timeout
@@ -86,11 +87,11 @@ fn cooldown_time(event: &FailureEvent<'_>, default: Seconds, now_unix_millis: i6
 }
 
 impl RouterObservations<'_> {
+    #[must_use]
     pub fn on_failure(
         &self,
         event: &FailureEvent<'_>,
         now_unix_millis: i64,
-        now: DateTime<Utc>,
     ) -> Result<bool, FailureError> {
         if skips(event.failure) {
             return Ok(false);
@@ -115,6 +116,7 @@ impl RouterObservations<'_> {
             .map_err(FailureError::Cooldown)
     }
 
+    #[must_use]
     pub fn on_async_failure(
         &self,
         event: &AsyncFailureEvent<'_>,

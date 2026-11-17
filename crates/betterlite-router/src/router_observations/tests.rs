@@ -237,6 +237,11 @@ fn assert_counter_ttl(harness: &Harness, key: &str) {
     }
 }
 
+fn assert_usage_ttls(harness: &Harness) {
+    assert_counter_ttl(harness, &tpm_key("22-13"));
+    assert_counter_ttl(harness, "global_router:dep-1:openai/gpt-4o:rpm:22-13");
+}
+
 fn now() -> DateTime<Utc> {
     at(NOW_MILLIS)
 }
@@ -292,6 +297,7 @@ fn case_success(harness: &Harness, event: &SuccessEvent<'_>, unix_millis: i64) -
             .observations()
             .on_success(event, &ObservationMetadata::default(), at(unix_millis));
     assert_counter_ttl(harness, "dep-1:successes");
+    assert_usage_ttls(harness);
     harness.evidence(key)
 }
 
@@ -313,6 +319,7 @@ fn case_response(
         .observations()
         .count_response_usage(&event, &mut metadata, now());
     assert_eq!(metadata.counted_tokens, counted);
+    assert_usage_ttls(harness);
     harness.evidence(key)
 }
 
@@ -371,7 +378,7 @@ fn case_failure(
         litellm_params_cooldown_time: cooldown_times.1,
         retry_after: cooldown_times.2,
     };
-    let outcome = harness.observations().on_failure(&event, NOW_MILLIS, now());
+    let outcome = harness.observations().on_failure(&event, NOW_MILLIS);
     let mut evidence = harness.evidence(None);
     match outcome {
         Ok(cooldown) => evidence.cooldown = Some(cooldown),

@@ -288,7 +288,7 @@ class RouterObservations(Operation):
         outputs: list[StepOutput] = []
         for step in self.steps:
             key, cooldown = await self.run_step(router, metadata, step)
-            outputs.append(await self.observe(router, key, cooldown))
+            outputs.append(await self.observe(router, key, cooldown=cooldown))
         return Output(steps=outputs)
 
     def entry(self, index: int) -> dict[str, object]:
@@ -321,18 +321,19 @@ class RouterObservations(Operation):
 
     def build_router(self) -> Router:
         entries = [self.entry(index) for index in range(self.catalog.group_size)]
-        for index in range(self.catalog.alternatives):
-            entries.append(
-                {
-                    "model_name": f"{self.catalog.model_group}-alternative",
-                    "litellm_params": {"model": self.catalog.model, "api_key": "sk-probe"},
-                    "model_info": {
-                        "id": f"{self.catalog.target_id}-alternative-{index}",
-                        "team_id": "probe-team",
-                        "team_public_model_name": "probe-public-model",
-                    },
-                }
-            )
+        alternatives: list[dict[str, object]] = [
+            {
+                "model_name": f"{self.catalog.model_group}-alternative",
+                "litellm_params": {"model": self.catalog.model, "api_key": "sk-probe"},
+                "model_info": {
+                    "id": f"{self.catalog.target_id}-alternative-{index}",
+                    "team_id": "probe-team",
+                    "team_public_model_name": "probe-public-model",
+                },
+            }
+            for index in range(self.catalog.alternatives)
+        ]
+        entries.extend(alternatives)
         router = Router(
             model_list=entries,
             allowed_fails=self.router.allowed_fails,
@@ -416,7 +417,7 @@ class RouterObservations(Operation):
         return kwargs
 
     async def observe(
-        self, router: Router, key: str | None, cooldown: bool | None
+        self, router: Router, key: str | None, *, cooldown: bool | None
     ) -> StepOutput:
         target = self.catalog.target_id
         tpm, rpm = await router.get_model_group_usage(self.catalog.model_group)

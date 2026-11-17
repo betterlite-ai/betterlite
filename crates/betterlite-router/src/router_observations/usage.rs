@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use super::RouterObservations;
-use super::counter::{CounterError, CounterSink, Increment};
+use super::counter::{CounterError, Increment};
 use super::keys::{ROUTER_COUNTER_TTL, usage_keys};
 
 // the deployment's configured limits, folded from the deployment, its litellm_params and its model_info by the catalog lookup
@@ -18,9 +18,9 @@ pub struct DeploymentUsage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UsageIncrement<'a> {
-    pub deployment_id: &'a str,
-    pub deployment_name: &'a str,
+pub struct UsageIncrement<'increment> {
+    pub deployment_id: &'increment str,
+    pub deployment_name: &'increment str,
     pub total_tokens: i64,
     pub rpm_increment: i64,
 }
@@ -39,6 +39,7 @@ fn tracked(deployment: &DeploymentUsage) -> bool {
 }
 
 impl RouterObservations<'_> {
+    #[must_use]
     pub fn increment_deployment_usage(
         &self,
         increment: &UsageIncrement<'_>,
