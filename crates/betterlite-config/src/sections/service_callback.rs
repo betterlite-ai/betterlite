@@ -91,10 +91,10 @@ impl Section for Raw {
     }
 }
 
-fn resolve_names<L>(names: Vec<String>, lookup: &L) -> Result<Vec<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn resolve_names(
+    names: Vec<String>,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Vec<String>, ConfigError> {
     names
         .into_iter()
         .enumerate()
@@ -132,10 +132,9 @@ where
         .is_some_and(|text| text.to_lowercase() == "true")
 }
 
-fn variable<T, L>(lookup: &L, name: &str) -> Result<Option<T>, ConfigError>
+fn variable<T>(lookup: &dyn EnvironmentLookup, name: &str) -> Result<Option<T>, ConfigError>
 where
     T: FromStr,
-    L: EnvironmentLookup,
 {
     let Some(text) = lookup.lookup(name) else {
         return Ok(None);
@@ -143,11 +142,8 @@ where
     Ok(betterlite_env::number::<T>(name, &text)?)
 }
 
-fn event_timeout<L>(lookup: &L) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(seconds) = variable::<f64, _>(lookup, EVENT_TIMEOUT_VARIABLE)? else {
+fn event_timeout(lookup: &dyn EnvironmentLookup) -> Result<Duration, ConfigError> {
+    let Some(seconds) = variable::<f64>(lookup, EVENT_TIMEOUT_VARIABLE)? else {
         return Ok(DEFAULT_EVENT_TIMEOUT);
     };
     Duration::try_from_secs_f64(seconds).map_err(|_source| ConfigError::InvalidScalar {

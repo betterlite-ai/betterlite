@@ -17,6 +17,14 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
+fn load_error(environment: &[(&str, &str)]) -> ConfigError {
+    ConfigLoader {
+        lookup: lookup(environment),
+    }
+    .load("{}")
+    .unwrap_err()
+}
+
 #[rstest]
 #[case::defaults("{}", &[])]
 #[case::list(
@@ -69,7 +77,7 @@ fn service_callback_untouched_fields_keep_the_defaults_tests_behavior() {
 #[case::environment_reference(
     "litellm_settings: {service_callback: [os.environ/SERVICE]}",
     &[("SERVICE", "datadog")],
-    Some(&["datadog"])
+    Some(&["datadog"][..])
 )]
 #[case::missing_environment(
     "litellm_settings: {service_callback: [os.environ/ABSENT]}",
@@ -86,9 +94,9 @@ fn service_callback_environment_tests_behavior(
     }
     .load(yaml);
     match names {
-        Some(names) => assert_eq!(
+        Some(expected) => assert_eq!(
             result.unwrap().sections.service_callback.service_callbacks,
-            names
+            expected
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect::<Vec<_>>()
@@ -132,14 +140,11 @@ fn service_callback_log_level_tests_behavior(
 #[case::untrimmed(&[("LITELLM_LOG", " info ")])]
 #[case::space_only(&[("LITELLM_LOG", " ")])]
 fn service_callback_unknown_log_level_tests_behavior(#[case] environment: &[(&str, &str)]) {
-    assert!(matches!(
-        ConfigLoader {
-            lookup: lookup(environment),
-        }
-        .load("{}")
-        .unwrap_err(),
-        ConfigError::InvalidScalar { path, .. } if path == "LITELLM_LOG"
-    ));
+    let named = match load_error(environment) {
+        ConfigError::InvalidScalar { path, .. } => path,
+        other => other.to_string(),
+    };
+    assert_eq!(named, "LITELLM_LOG");
 }
 
 #[rstest]
@@ -224,14 +229,13 @@ fn service_callback_worker_limits_tests_behavior(
 #[case::timeout_text(&[("LOGGING_WORKER_MAX_TIME_PER_COROUTINE", "soon")])]
 #[case::timeout_negative(&[("LOGGING_WORKER_MAX_TIME_PER_COROUTINE", "-2")])]
 fn service_callback_invalid_worker_limits_tests_behavior(#[case] environment: &[(&str, &str)]) {
-    assert!(matches!(
-        ConfigLoader {
-            lookup: lookup(environment),
-        }
-        .load("{}")
-        .unwrap_err(),
-        ConfigError::Environment { .. } | ConfigError::InvalidScalar { .. }
-    ));
+    assert!(
+        matches!(
+            load_error(environment),
+            ConfigError::Environment { .. } | ConfigError::InvalidScalar { .. }
+        ),
+        "the load accepted a worker limit"
+    );
 }
 
 #[test]
