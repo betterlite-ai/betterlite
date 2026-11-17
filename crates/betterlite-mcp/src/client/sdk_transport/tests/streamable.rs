@@ -387,7 +387,7 @@ async fn the_protocol_version_header_is_cleared_for_initialize() {
     assert_eq!(note_header(&requests[1], &VERSION_HEADER), None);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn an_sse_response_rewrites_the_id_and_reconnects_with_last_event_id() {
     let server = TestServer::start(|request| {
         if request.method == Method::POST {
@@ -565,7 +565,7 @@ async fn the_session_id_is_kept_and_the_delete_is_sent_on_close() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_get_stream_failure_reaches_the_handler() {
     let server = TestServer::start(initializing_server(|request| {
         if request.method == Method::POST {
@@ -677,7 +677,7 @@ async fn a_get_stream_parse_error_is_a_value_error() {
     assert_eq!(server.count(&Method::GET), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_get_stream_with_a_non_sse_body_is_retried() {
     let server = TestServer::start(initializing_server(|request| {
         if request.method == Method::POST {
@@ -697,7 +697,7 @@ async fn a_get_stream_with_a_non_sse_body_is_retried() {
     assert_eq!(server.count(&Method::GET), 2);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_redirected_get_stream_is_not_opened() {
     let server = TestServer::start(initializing_server(|request| {
         if request.method == Method::POST {

@@ -142,7 +142,7 @@ async fn a_refused_probe_connection_keeps_the_completed_status() {
     assert!(video.error.is_none());
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_stalled_probe_connection_fails_with_the_read_limit() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -157,7 +157,7 @@ async fn a_stalled_probe_connection_fails_with_the_read_limit() {
     ));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_probe_past_the_read_limit_keeps_the_completed_status() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
