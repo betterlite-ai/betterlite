@@ -69,8 +69,26 @@ fn string_so_far_skips_text_and_delta_values_that_are_not_strings() {
 #[test]
 fn string_so_far_reads_a_missing_index_and_a_null_index_as_the_same_part() {
     let events = [
-        json!({"type": "response.output_text.delta", "delta": "a"}),
+        json!({"type": "response.output_text.done", "text": "a"}),
         json!({"type": "response.output_text.delta", "item_id": null, "output_index": null, "content_index": null, "delta": "b"}),
+    ];
+    assert_eq!(streaming_string_so_far(&events), "a");
+}
+
+#[test]
+fn string_so_far_keeps_two_item_ids_at_one_position_apart() {
+    let events = [
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "a"}),
+        json!({"type": "response.output_text.done", "item_id": "m2", "output_index": 0, "content_index": 0, "text": "b"}),
+    ];
+    assert_eq!(streaming_string_so_far(&events), "ab");
+}
+
+#[test]
+fn string_so_far_keeps_one_item_id_at_two_output_indexes_apart() {
+    let events = [
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "a"}),
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 1, "content_index": 0, "text": "b"}),
     ];
     assert_eq!(streaming_string_so_far(&events), "ab");
 }

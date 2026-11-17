@@ -90,11 +90,11 @@ async fn process(
     user_api_key_dict: Option<Value>,
     deliver: bool,
 ) -> Processed {
-    let mut events: Vec<Value> = serde_json::from_value(events).unwrap();
+    let mut event_values: Vec<Value> = serde_json::from_value(events).unwrap();
     let mut stored: Option<Object> = request_data.map(|data| serde_json::from_value(data).unwrap());
     let user: Option<Object> = user_api_key_dict.map(|user| serde_json::from_value(user).unwrap());
     let result = process_output_streaming_response(
-        &mut events,
+        &mut event_values,
         guardrail,
         Some("guard"),
         None,
@@ -103,9 +103,9 @@ async fn process(
         deliver,
     )
     .await;
-    let events = serde_json::to_value(events).unwrap();
-    let stored = stored.map(|data| serde_json::to_value(data).unwrap());
-    (result, events, stored)
+    let events_json = serde_json::to_value(event_values).unwrap();
+    let stored_json = stored.map(|data| serde_json::to_value(data).unwrap());
+    (result, events_json, stored_json)
 }
 
 fn strings(items: &[&str]) -> Vec<String> {

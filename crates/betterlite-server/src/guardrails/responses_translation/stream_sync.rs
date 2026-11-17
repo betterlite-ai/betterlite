@@ -19,12 +19,14 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_field;
 use serde_json::Value;
 
 use crate::guardrails::responses_translation::input_provenance::is_tool_call_output_item;
 use crate::guardrails::responses_translation::stream_scan::{
     OUTPUT_ITEM_EVENT_TYPES, TOOL_PAYLOAD_EVENT_TYPES, event_item, integer_field,
-    is_tool_call_stream_item, item_text, output_item,
+    is_tool_call_stream_item, item_text,
 };
 use crate::guardrails::tool_call_identity::ToolCallShape;
 // ast-grep-ignore: no-long-names
@@ -165,7 +167,10 @@ pub fn tool_call_ids_by_item_id(events: &[Value]) -> BTreeMap<String, String> {
         if !is_output_item_event {
             continue;
         }
-        let Some(inner) = output_item(&item) else {
+        let Some(inner) = stream_item_field(&item, "item")
+            .cloned()
+            .map(StreamItem::Json)
+        else {
             continue;
         };
         if !is_tool_call_stream_item(&inner) {
@@ -195,7 +200,9 @@ pub fn tool_call_event_call_id(
     if !OUTPUT_ITEM_EVENT_TYPES.contains(&event_type) {
         return None;
     }
-    let inner = output_item(&item)?;
+    let inner = stream_item_field(&item, "item")
+        .cloned()
+        .map(StreamItem::Json)?;
     if !is_tool_call_stream_item(&inner) {
         return None;
     }

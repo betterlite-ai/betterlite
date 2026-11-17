@@ -75,14 +75,6 @@ fn shapes(input: &[ShapeInput]) -> Vec<ToolCallShape> {
         .collect()
 }
 
-fn string_so_far_answer(scenario: &EventScenario) -> Value {
-    json!({"string": streaming_string_so_far(&scenario.events)})
-}
-
-fn scan_key_answer(scenario: &EventScenario) -> Value {
-    json!({"scan_key": streaming_scan_key(&scenario.events)})
-}
-
 fn sync_answer(scenario: &SyncScenario) -> Value {
     let mut events = scenario.events.clone();
     let mut rewrites = BTreeMap::new();
@@ -134,8 +126,14 @@ fn deliver_answer(scenario: &DeliverScenario) -> Value {
 
 fn answers(input: &Function) -> Vec<Value> {
     match input {
-        Function::StringSoFar { scenarios } => scenarios.iter().map(string_so_far_answer).collect(),
-        Function::ScanKey { scenarios } => scenarios.iter().map(scan_key_answer).collect(),
+        Function::StringSoFar { scenarios } => scenarios
+            .iter()
+            .map(|scenario| json!({"string": streaming_string_so_far(&scenario.events)}))
+            .collect(),
+        Function::ScanKey { scenarios } => scenarios
+            .iter()
+            .map(|scenario| json!({"scan_key": streaming_scan_key(&scenario.events)}))
+            .collect(),
         Function::Sync { scenarios } => scenarios.iter().map(sync_answer).collect(),
         Function::Spread { scenarios } => scenarios.iter().map(spread_answer).collect(),
         Function::Deliver { scenarios } => scenarios.iter().map(deliver_answer).collect(),

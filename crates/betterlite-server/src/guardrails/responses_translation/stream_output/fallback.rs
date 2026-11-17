@@ -10,11 +10,6 @@ use crate::guardrails::responses_translation::stream_sync;
 use super::StreamContext;
 use super::error::StreamOutputError;
 
-fn response_model(events: &[Value]) -> Option<String> {
-    let response = events.last()?.get("response")?;
-    super::model_of(response)
-}
-
 fn fallback_inputs(text: String, model: Option<String>) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(vec![text]),
@@ -49,7 +44,11 @@ where
     if string_so_far.is_empty() {
         return Ok(());
     }
-    let inputs = fallback_inputs(string_so_far.clone(), response_model(events));
+    let model = events
+        .last()
+        .and_then(|event| event.get("response"))
+        .and_then(super::model_of);
+    let inputs = fallback_inputs(string_so_far.clone(), model);
     let mut fresh = Object::new();
     let prepared = request_data.unwrap_or(&mut fresh);
     let answer = guardrail

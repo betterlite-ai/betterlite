@@ -80,9 +80,9 @@ where
     Source: Serialize,
     Target: DeserializeOwned,
 {
-    let value = serde_json::to_value(value)
+    let json = serde_json::to_value(value)
         .map_err(|source| StreamOutputError::Convert { target, source })?;
-    serde_json::from_value(value).map_err(|source| StreamOutputError::Convert { target, source })
+    serde_json::from_value(json).map_err(|source| StreamOutputError::Convert { target, source })
 }
 
 fn post_shapes(
