@@ -177,6 +177,25 @@ fn explicit_credentials() {
 }
 
 #[test]
+fn falsy_argument_credentials() {
+    let environment = environment_of(None, None, Some("/env/sa.json"));
+    let empty_dictionary_argument = Json::Object(IndexMap::new());
+    let empty_dictionary = vertex_file_read_settings(
+        &deployment_of(None, None, None),
+        Some(&empty_dictionary_argument),
+        &environment,
+    );
+    assert_eq!(service_account(&empty_dictionary), Some("{}"));
+    let empty_text_argument = Json::Text(String::new());
+    let empty_text = vertex_file_read_settings(
+        &deployment_of(None, None, None),
+        Some(&empty_text_argument),
+        &environment,
+    );
+    assert_eq!(service_account(&empty_text), Some(""));
+}
+
+#[test]
 fn service_account_fallback() {
     let environment = environment_of(None, None, Some("/env/sa.json"));
     let from_environment =

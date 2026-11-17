@@ -69,11 +69,12 @@ pub fn vertex_file_read_settings(
         | None => environment_text(environment.batch_bucket_name.as_ref())
             .or_else(|| environment_text(environment.bucket_name.as_ref())),
     };
+    // the `or` guards only the deployment value: once it is falsy, LiteLLM uses the argument as given
     let credentials = deployment
         .vertex_credentials
         .as_ref()
         .filter(|value| has_value(value))
-        .or_else(|| argument.filter(|value| has_value(value)));
+        .or(argument);
     let service_account = match credentials {
         Some(Json::Object(fields)) => Some(SecretString::from(dumps_object(fields))),
         Some(Json::Text(text)) => Some(SecretString::from(text.clone())),
