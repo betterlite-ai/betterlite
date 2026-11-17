@@ -1,5 +1,6 @@
 import asyncio
 import os
+import warnings
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -294,6 +295,7 @@ class RouterObservations(Operation):
 
     async def execute(self) -> Output:
         dump_diagnostic("payload", self.model_dump_json())
+        warnings.warn("B397 diagnostic: the probe payload and output are dumped", stacklevel=2)
         router = self.build_router()
         metadata = self.metadata()
         outputs: list[StepOutput] = []

@@ -212,9 +212,9 @@ pub(crate) fn run(
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(".git/betterlite/B397/gate");
-    let _created = std::fs::create_dir_all(&directory);
+    drop(std::fs::create_dir_all(&directory));
     let dump = directory.join(format!("b397-native-{}.json", std::process::id()));
-    let _written = std::fs::write(dump, format!("{input:#?}"));
+    drop(std::fs::write(dump, format!("{input:#?}")));
     let scenario = Scenario::new(&input.0)?;
     let mut metadata = ObservationMetadata::default();
     let mut steps = Vec::with_capacity(scenario.payload.steps.len());
