@@ -62,19 +62,55 @@ fn a_reload_replaces_the_rules_the_server_serves() {
 }
 
 #[test]
-fn an_uninstallable_rule_document_is_logged_and_serves_no_rules() {
-    let pattern = "a".repeat(MAX_RULES_BYTES);
-    let document = format!(
-        "fallback_generalizations:\n  rules:\n    - pattern: \"{pattern}\"\n      model_info: {{}}\n"
+fn a_config_without_rules_installs_the_shipped_cost_maps_rules() {
+    let state = RoutingState::new(&config("model_list: []\n"));
+    let installed = state.model_generalizations().unwrap();
+    assert_eq!(
+        installed.routing("claude-sonnet-4").answer.as_deref(),
+        Some("anthropic")
     );
-    let (state, log) = logged(|| RoutingState::new(&config(&document)));
-    assert!(
-        state
-            .model_generalizations()
-            .unwrap()
-            .routing("acme-1")
+    assert_eq!(
+        installed
+            .routing("anthropic.claude-sonnet-4")
             .answer
-            .is_none()
+            .as_deref(),
+        Some("bedrock")
     );
+}
+
+#[test]
+fn a_reload_to_a_config_without_rules_restores_the_shipped_rules() {
+    let mut state = RoutingState::new(&config(ACME));
+    state.reload(&config("model_list: []\n")).unwrap();
+    let installed = state.model_generalizations().unwrap();
+    assert_eq!(installed.routing("acme-1").answer, None);
+    assert_eq!(
+        installed.routing("claude-sonnet-4").answer.as_deref(),
+        Some("anthropic")
+    );
+}
+
+#[test]
+fn a_reload_that_cannot_install_keeps_the_rules_the_server_serves() {
+    let mut state = RoutingState::new(&config(ACME));
+    assert!(state.reload(&config(&oversized_rules())).is_err());
+    let installed = state.model_generalizations().unwrap();
+    assert_eq!(installed.routing("acme-1").answer.as_deref(), Some("acme"));
+}
+
+fn oversized_rules() -> String {
+    let pattern = "a".repeat(MAX_RULES_BYTES);
+    format!(
+        "fallback_generalizations:\n  rules:\n    - pattern: \"{pattern}\"\n      model_info: {{}}\n"
+    )
+}
+
+#[test]
+fn an_uninstallable_rule_document_is_logged_and_serves_no_rules() {
+    let document = oversized_rules();
+    let (state, log) = logged(|| RoutingState::new(&config(&document)));
+    let installed = state.model_generalizations().unwrap();
+    assert!(installed.routing("acme-1").answer.is_none());
+    assert!(installed.routing("claude-sonnet-4").answer.is_none());
     assert!(log.contains("unreadable"), "{log}");
 }

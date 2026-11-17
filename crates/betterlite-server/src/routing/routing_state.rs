@@ -1,4 +1,5 @@
 use betterlite_config::types::Config;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_router::generalization_integration::error::GeneralizationError;
 use betterlite_router::generalization_integration::model_generalizations::ModelGeneralizations;
 use betterlite_router::router_core::services::RouteServices;
@@ -17,19 +18,24 @@ impl RoutingState {
     // a rule document that cannot be installed is logged, and the server serves no rules instead of failing to start
     #[must_use]
     pub fn new(config: &Config) -> Self {
-        match GeneralizationServices::build(&config.sections.model_generalizations) {
-            Ok(generalizations) => Self { generalizations },
-            Err(error) => {
-                tracing::error!(%error, "the configured fallback_generalizations rules are unreadable");
-                Self::default()
-            }
+        let mut state = Self::default();
+        if let Err(error) = state.reload(config) {
+            tracing::error!(%error, "the configured fallback_generalizations rules are unreadable");
+            return Self::default();
         }
+        state
     }
 
-    // A config reload that fails to install leaves the rules the server already serves untouched.
+    // A failed reload leaves the served rules untouched, and a config naming none takes the loaded cost map's own.
     pub fn reload(&mut self, config: &Config) -> Result<(), GeneralizationError> {
-        self.generalizations
-            .reload(&config.sections.model_generalizations)
+        let section = &config.sections.model_generalizations;
+        if section.rules.is_empty() {
+            let cost_map = BundledCatalog::default().get();
+            return self
+                .generalizations
+                .reload_cost_map(&cost_map.generalizations);
+        }
+        self.generalizations.reload(section)
     }
 }
 

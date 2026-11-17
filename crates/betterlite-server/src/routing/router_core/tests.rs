@@ -103,9 +103,9 @@ fn config(source: &str) -> Config {
     .unwrap()
 }
 
-fn spec() -> DeploymentSpec {
+fn spec(model: &str) -> DeploymentSpec {
     let mut params = JsonObject::new();
-    params.insert(String::from("model"), Json::Text(String::from("acme-1")));
+    params.insert(String::from("model"), Json::Text(model.to_owned()));
     let mut info = JsonObject::new();
     info.insert(String::from("id"), Json::Text(String::from("dep-1")));
     DeploymentSpec::new(
@@ -182,9 +182,9 @@ fn prepare_route<'route>(
     pipeline::prepare(resolver, &context, routing)
 }
 
-async fn selected(config: &Config) -> DeploymentSpec {
+async fn selected(config: &Config, model: &str) -> DeploymentSpec {
     let state = RoutingState::new(config);
-    let deployment = spec();
+    let deployment = spec(model);
     let index = catalog(&deployment);
     let aliases = BTreeMap::new();
     let view = OpenView;
@@ -218,7 +218,7 @@ async fn selected(config: &Config) -> DeploymentSpec {
 
 #[tokio::test]
 async fn a_configured_rule_fills_the_deployment_the_route_selects() {
-    let deployment = selected(&config(RULES)).await;
+    let deployment = selected(&config(RULES), "acme-1").await;
     assert_eq!(
         deployment.model_info.get("litellm_provider"),
         Some(&Json::Text(String::from("acme")))
@@ -230,8 +230,21 @@ async fn a_configured_rule_fills_the_deployment_the_route_selects() {
 }
 
 #[tokio::test]
-async fn a_config_without_rules_leaves_the_selected_deployment_alone() {
-    let deployment = selected(&config("model_list: []\n")).await;
+async fn a_config_without_rules_fills_from_the_shipped_cost_maps_rules() {
+    let deployment = selected(&config("model_list: []\n"), "claude-sonnet-4").await;
+    assert_eq!(
+        deployment.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("anthropic")))
+    );
+    assert_eq!(
+        deployment.model_info.get("supports_vision"),
+        Some(&Json::Bool(true))
+    );
+}
+
+#[tokio::test]
+async fn a_deployment_no_shipped_rule_matches_is_left_alone() {
+    let deployment = selected(&config("model_list: []\n"), "acme-1").await;
     assert!(deployment.model_info.get("litellm_provider").is_none());
     assert!(deployment.model_info.get("supports_vision").is_none());
 }
