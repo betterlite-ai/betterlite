@@ -1,3 +1,4 @@
+use std::iter::repeat_with;
 use std::sync::Arc;
 
 use betterlite_logging::logging_privacy::PrivacyContext;
@@ -29,17 +30,17 @@ pub struct Input {
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
-    pub metadata: Option<Json>,
+    pub metadata: Option<Box<Json>>,
     #[serde(default)]
-    pub litellm_metadata: Option<Json>,
+    pub litellm_metadata: Option<Box<Json>>,
     #[serde(default)]
-    pub litellm_params_metadata: Option<Json>,
+    pub litellm_params_metadata: Option<Box<Json>>,
     #[serde(default)]
-    pub litellm_session_id: Option<Json>,
+    pub litellm_session_id: Option<Box<Json>>,
     #[serde(default)]
-    pub litellm_trace_id: Option<Json>,
+    pub litellm_trace_id: Option<Box<Json>>,
     #[serde(default)]
-    pub turn_off_message_logging: Option<Json>,
+    pub turn_off_message_logging: Option<Box<Json>>,
     #[serde(default)]
     pub vectors: IndexMap<String, Vec<Json>>,
     #[serde(default)]
@@ -137,10 +138,10 @@ fn vectors(
             let Json::Number(number) = value else {
                 return Err(invalid("a probe vector holds a value that is not a number"));
             };
-            let Some(number) = number.as_f64() else {
+            let Some(float) = number.as_f64() else {
                 return Err(invalid("a probe vector holds a value that is not a number"));
             };
-            vector.push(number);
+            vector.push(float);
         }
         vectors.insert(text.clone(), vector);
     }
@@ -166,12 +167,12 @@ async fn run_rounds(
 
 fn caller_request(input: &Input) -> CallerRequest<'_> {
     CallerRequest {
-        metadata: input.metadata.as_ref(),
-        litellm_metadata: input.litellm_metadata.as_ref(),
-        litellm_params_metadata: input.litellm_params_metadata.as_ref(),
-        litellm_session_id: input.litellm_session_id.as_ref(),
-        litellm_trace_id: input.litellm_trace_id.as_ref(),
-        turn_off_message_logging: input.turn_off_message_logging.as_ref(),
+        metadata: input.metadata.as_deref(),
+        litellm_metadata: input.litellm_metadata.as_deref(),
+        litellm_params_metadata: input.litellm_params_metadata.as_deref(),
+        litellm_session_id: input.litellm_session_id.as_deref(),
+        litellm_trace_id: input.litellm_trace_id.as_deref(),
+        turn_off_message_logging: input.turn_off_message_logging.as_deref(),
     }
 }
 
@@ -182,16 +183,17 @@ async fn run_round(
     request: &CallerRequest<'_>,
 ) -> Round {
     let (documents, queries) = call_counts(recorder);
-    let calls = (0..input.concurrent).map(|_caller| {
+    let calls = repeat_with(|| {
         decide(
             router,
             Some(&input.messages),
             request,
             PrivacyContext::default(),
         )
-    });
+    })
+    .take(input.concurrent);
     let outcomes = join_all(calls).await;
-    let failed = outcomes.iter().any(|outcome| outcome.is_err());
+    let failed = outcomes.iter().any(Result::is_err);
     let model = outcomes
         .iter()
         .find_map(|outcome| outcome.as_ref().ok()?.as_ref())

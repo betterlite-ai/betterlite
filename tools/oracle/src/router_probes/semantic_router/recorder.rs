@@ -1,5 +1,6 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::io;
+use std::slice;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -18,7 +19,7 @@ pub(super) struct Recorder {
 }
 
 impl Recorder {
-    pub(super) fn new(
+    pub(super) const fn new(
         vectors: IndexMap<String, Vec<f64>>,
         document_failures: usize,
         query_failures: usize,
@@ -92,7 +93,7 @@ impl RouteEmbedder for Recorder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        async move { self.document_vectors(model, &texts) }
+        ready(self.document_vectors(model, &texts))
     }
 
     fn embed_query(
@@ -119,7 +120,7 @@ impl RouteEmbedder for Recorder {
                 &self.query_failures,
                 "the probe failed the query embedding",
             )?;
-            lookup_vectors(&self.vectors, std::slice::from_ref(&text))
+            lookup_vectors(&self.vectors, slice::from_ref(&text))
         }
     }
 }
@@ -136,7 +137,10 @@ pub(super) fn call_counts(recorder: &Recorder) -> (usize, usize) {
     (documents.len(), queries.len())
 }
 
-pub(super) fn delta<T: Clone>(calls: &Mutex<Vec<T>>, start: usize) -> Vec<T> {
+pub(super) fn delta<T>(calls: &Mutex<Vec<T>>, start: usize) -> Vec<T>
+where
+    T: Clone,
+{
     calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
