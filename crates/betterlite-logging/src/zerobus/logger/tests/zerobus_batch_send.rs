@@ -10,14 +10,14 @@ use crate::zerobus::logger::connection::SecretSource;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    Buffer, FakeIngest, connection, connection_secrets, deps, expected_ids, logger, params,
-    proxied_client, push, queued_ids, row, subscribe,
+    Buffer, FakeIngest, as_row_ingest, as_secret_source, connection, connection_secrets, deps,
+    expected_ids, logger, params, proxied_client, push, queued_ids, row, subscribe,
 };
 
 #[tokio::test]
 async fn zerobus_batch_send_sends_the_queued_rows_in_one_insert() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(10, 3600, false), client);
     assert_eq!(push(&logger, "a"), 1);
     assert_eq!(push(&logger, "b"), 2);
@@ -36,9 +36,9 @@ async fn zerobus_batch_send_reports_the_client_failure() {
         timeout: Duration::from_secs(1),
         token: AsyncMutex::new(None),
     };
-    let ingest: &dyn RowIngest = &client;
-    let failure = ingest
-        .insert(&[row("a")])
+    let row_ingest: &dyn RowIngest = &client;
+    let failure = row_ingest
+        .ingest(&[row("a")])
         .await
         .expect_err("the token form rejects a table that is not fully qualified");
     assert!(!failure.retryable);
@@ -48,7 +48,7 @@ async fn zerobus_batch_send_reports_the_client_failure() {
 #[tokio::test]
 async fn zerobus_batch_send_sends_nothing_for_an_empty_queue() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(10, 3600, false), client);
     logger.inner.flush_queue(false).await;
     assert_eq!(ingest.inserted(), 0);
@@ -60,7 +60,7 @@ async fn zerobus_batch_send_keeps_the_rows_on_a_retryable_failure() {
         detail: "503".to_owned(),
         retryable: true,
     });
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(10, 3600, false), client);
     assert_eq!(push(&logger, "a"), 1);
     logger.inner.flush_queue(false).await;
@@ -74,7 +74,7 @@ async fn zerobus_batch_send_drops_the_rows_on_a_permanent_failure() {
         detail: "400".to_owned(),
         retryable: false,
     });
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(10, 3600, false), client);
     let buffer = Buffer::default();
     let guard = subscribe(&buffer);
@@ -93,7 +93,7 @@ async fn zerobus_batch_send_drops_the_rows_on_a_permanent_failure() {
 #[tokio::test]
 async fn zerobus_batch_send_keeps_the_rows_when_the_connection_cannot_be_resolved() {
     let secrets = Arc::new(connection_secrets());
-    let source: Arc<dyn SecretSource> = Arc::clone(&secrets);
+    let source: Arc<dyn SecretSource> = as_secret_source(&secrets);
     let mut configured = deps(params(10, 3600, false), None);
     configured.secrets = source;
     let logger = ZerobusLogger::new(configured).expect("the connection resolves");

@@ -18,8 +18,8 @@ async fn callback_logger_reports_the_message_logging_setting() {
     let client: Arc<dyn RowIngest> = FakeIngest::table("main.litellm.traces");
     let redacting = logger(params(100, 3600, true), client);
     assert!(redacting.turn_off_message_logging());
-    let client: Arc<dyn RowIngest> = FakeIngest::table("main.litellm.traces");
-    let plain = logger(params(100, 3600, false), client);
+    let plain_client: Arc<dyn RowIngest> = FakeIngest::table("main.litellm.traces");
+    let plain = logger(params(100, 3600, false), plain_client);
     assert!(!plain.turn_off_message_logging());
 }
 

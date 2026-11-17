@@ -7,8 +7,8 @@ use crate::callback_logger::CallbackLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    Buffer, FakeIngest, event, event_with, expected_ids, logger, params, payload, queued_ids,
-    settle, subscribe,
+    Buffer, FakeIngest, as_row_ingest, event, event_with, expected_ids, logger, params, payload,
+    queued_ids, settle, subscribe,
 };
 
 fn deep_json(depth: usize) -> Json {
@@ -38,7 +38,7 @@ async fn zerobus_enqueue_appends_a_row_per_event() {
 #[tokio::test]
 async fn zerobus_enqueue_starts_the_batch_flush_at_the_batch_size() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(2, 3600, false), client);
     logger
         .async_log_success_event(event("chatcmpl-a"))
@@ -58,7 +58,7 @@ async fn zerobus_enqueue_starts_the_batch_flush_at_the_batch_size() {
 #[tokio::test]
 async fn zerobus_enqueue_holds_rows_below_the_batch_size() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(3, 3600, false), client);
     logger
         .async_log_success_event(event("chatcmpl-a"))

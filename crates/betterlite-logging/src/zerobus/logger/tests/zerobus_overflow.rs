@@ -5,13 +5,14 @@ use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    Buffer, FakeIngest, deps, event, expected_ids, params, queued_ids, settle, subscribe, until,
+    Buffer, FakeIngest, as_row_ingest, deps, event, expected_ids, params, queued_ids, settle,
+    subscribe, until,
 };
 
 #[tokio::test]
 async fn zerobus_overflow_trims_the_oldest_rows_between_flushes() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let mut configured = deps(params(10, 3600, false), Some(client));
     configured.max_queue_size = Some(2);
     let logger = ZerobusLogger::new(configured).expect("the logger builds");
@@ -43,7 +44,7 @@ async fn zerobus_overflow_trims_the_oldest_rows_between_flushes() {
 async fn zerobus_overflow_keeps_rows_that_arrive_during_a_flush() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let gate = ingest.block();
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let mut configured = deps(params(1, 3600, false), Some(client));
     configured.max_queue_size = Some(2);
     let logger = ZerobusLogger::new(configured).expect("the logger builds");

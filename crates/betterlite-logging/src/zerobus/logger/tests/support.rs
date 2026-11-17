@@ -169,6 +169,18 @@ pub(super) fn logger(params: ZerobusInitParams, client: Arc<dyn RowIngest>) -> Z
     ZerobusLogger::new(deps(params, Some(client))).expect("the logger builds")
 }
 
+pub(super) fn as_row_ingest(ingest: &Arc<FakeIngest>) -> Arc<dyn RowIngest> {
+    let clone = Arc::clone(ingest);
+    let shared: Arc<dyn RowIngest> = clone;
+    shared
+}
+
+pub(super) fn as_secret_source(secrets: &Arc<MapSecrets>) -> Arc<dyn SecretSource> {
+    let clone = Arc::clone(secrets);
+    let shared: Arc<dyn SecretSource> = clone;
+    shared
+}
+
 pub(super) fn row(request_id: &str) -> TraceRow {
     let map = payload_to_map(&payload(request_id)).expect("the payload maps to JSON");
     trace_row(&map).expect("the payload builds a row")
@@ -176,6 +188,13 @@ pub(super) fn row(request_id: &str) -> TraceRow {
 
 pub(super) fn push(logger: &ZerobusLogger, request_id: &str) -> usize {
     logger.inner.queue.enqueue(row(request_id)).depth
+}
+
+pub(super) async fn log_event(logger: &ZerobusLogger, request_id: &str) {
+    logger
+        .async_log_success_event(event(request_id))
+        .await
+        .expect("the event is accepted");
 }
 
 pub(super) async fn until<F>(check: F) -> bool
@@ -326,7 +345,7 @@ impl RowIngest for FakeIngest {
         &self.connection
     }
 
-    async fn insert(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure> {
+    async fn ingest(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure> {
         self.batches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

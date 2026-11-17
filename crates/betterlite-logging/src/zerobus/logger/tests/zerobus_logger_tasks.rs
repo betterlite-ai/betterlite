@@ -11,7 +11,8 @@ use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    FakeIngest, deps, event, expected_ids, logger, params, queued_ids, settle, task_alive, until,
+    FakeIngest, as_row_ingest, deps, event, expected_ids, logger, params, queued_ids, settle,
+    task_alive, until,
 };
 
 fn periodic_id(logger: &ZerobusLogger) -> Option<Id> {
@@ -110,7 +111,7 @@ async fn zerobus_logger_tasks_keeps_the_running_periodic_task() {
 #[tokio::test]
 async fn zerobus_logger_tasks_starts_the_batch_flush_at_the_batch_size() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(2, 3600, false), client);
     logger
         .async_log_success_event(event("chatcmpl-a"))
@@ -129,7 +130,7 @@ async fn zerobus_logger_tasks_starts_the_batch_flush_at_the_batch_size() {
 async fn zerobus_logger_tasks_keeps_one_batch_flush_running() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let gate = ingest.block();
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(1, 3600, false), client);
     logger
         .async_log_success_event(event("chatcmpl-a"))
@@ -155,7 +156,7 @@ async fn zerobus_logger_tasks_keeps_one_batch_flush_running() {
 async fn zerobus_logger_tasks_keeps_the_running_batch_task() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let gate = ingest.block();
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(1, 3600, false), client);
     logger
         .async_log_success_event(event("chatcmpl-a"))

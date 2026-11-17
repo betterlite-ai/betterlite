@@ -10,7 +10,9 @@ use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 use crate::zerobus::logger::params::configured_params;
 
-use super::support::{FakeIngest, deps, event, expected_ids, logger, params, until_within};
+use super::support::{
+    FakeIngest, as_row_ingest, deps, event, expected_ids, logger, params, until_within,
+};
 
 #[test]
 fn zerobus_defaults_match_litellm() {
@@ -57,7 +59,7 @@ fn zerobus_defaults_convert_the_message_logging_flag() {
 #[tokio::test]
 async fn zerobus_defaults_flush_on_the_interval() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let mut configured = deps(params(100, 1, false), Some(client));
     configured.start_periodic_flush = true;
     let logger = ZerobusLogger::new(configured).expect("the logger builds");

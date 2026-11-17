@@ -7,12 +7,13 @@ use crate::zerobus::logger::connection::{ConnectionError, SecretSource};
 use crate::zerobus::logger::delivery::{RowIngest, same_connection};
 
 use super::support::{
-    FakeIngest, MapSecrets, connection, connection_secrets, deps, logger, params,
+    FakeIngest, MapSecrets, as_row_ingest, as_secret_source, connection, connection_secrets, deps,
+    logger, params,
 };
 
 fn cached_logger() -> (ZerobusLogger, Arc<MapSecrets>) {
     let secrets = Arc::new(connection_secrets());
-    let source: Arc<dyn SecretSource> = Arc::clone(&secrets);
+    let source: Arc<dyn SecretSource> = as_secret_source(&secrets);
     let mut configured = deps(params(100, 3600, false), None);
     configured.secrets = source;
     let logger = ZerobusLogger::new(configured).expect("the connection resolves");
@@ -22,7 +23,7 @@ fn cached_logger() -> (ZerobusLogger, Arc<MapSecrets>) {
 #[tokio::test]
 async fn zerobus_client_cache_returns_the_given_client() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let given: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let given: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(100, 3600, false), Arc::clone(&given));
     let returned = logger.inner.client().expect("the given client is returned");
     assert!(Arc::ptr_eq(&returned, &given));
