@@ -97,12 +97,10 @@ async fn enqueued_events_trim_the_queue() {
     let mut params = default_params();
     params.batch_size = 100;
     let mut logger = logger(params, client(&http, 1));
-    {
-        let unshared = Arc::get_mut(&mut logger).expect("the logger is unshared");
-        Arc::get_mut(&mut unshared.core)
-            .expect("the core is unshared")
-            .max_queue_size = 2
-    };
+    let unshared = Arc::get_mut(&mut logger).expect("the logger is unshared");
+    Arc::get_mut(&mut unshared.core)
+        .expect("the core is unshared")
+        .max_queue_size = 2;
     logger
         .async_log_success_event(event(payload("a")))
         .await
