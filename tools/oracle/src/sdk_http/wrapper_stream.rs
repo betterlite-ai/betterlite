@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
+use betterlite_http::proxy::StreamResponse;
 use betterlite_models::decisions;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use serde::Serialize;
@@ -64,11 +65,8 @@ where
     })
 }
 
-// One POST per run, with the body the wrapper would send for the same case
-pub(crate) async fn prefetch<C>(
-    prepared: &Prepared,
-    call: &C,
-) -> Result<VecDeque<Vec<u8>>, SdkHttpError>
+// The body the wrapper sends for a case, parsed the way the native service parses it
+pub(crate) fn wire_request<C>(call: &C) -> Result<ChatRequest, SdkHttpError>
 where
     C: WireCall + Sync,
 {
@@ -78,13 +76,22 @@ where
         stream: true,
     };
     let body = serde_json::to_vec(&wire).map_err(SdkHttpError::Serialize)?;
-    let request =
-        ChatRequest::parse(&body).map_err(|source| SdkHttpError::ChatParse(Box::new(source)))?;
-    let response = prepared
+    ChatRequest::parse(&body).map_err(|source| SdkHttpError::ChatParse(Box::new(source)))
+}
+
+// One POST: the caller decides what a provider answer means to it
+pub(crate) async fn open(
+    prepared: &Prepared,
+    request: &ChatRequest,
+) -> Result<StreamResponse, ChatError> {
+    prepared
         .executor
-        .stream(&prepared.deployment, &request)
+        .stream(&prepared.deployment, request)
         .await
-        .map_err(|error| SdkHttpError::Chat(Box::new(error)))?;
+}
+
+// The SSE data payloads of one provider answer, in the order the provider sent them
+pub(crate) async fn payloads(response: StreamResponse) -> Result<VecDeque<Vec<u8>>, SdkHttpError> {
     let mut stream = response.body_stream();
     let mut parser = SseParser::default();
     let mut payloads = VecDeque::new();
@@ -101,6 +108,21 @@ where
         payloads.push_back(event);
     }
     Ok(payloads)
+}
+
+// One POST per run, with the body the wrapper would send for the same case
+pub(crate) async fn prefetch<C>(
+    prepared: &Prepared,
+    call: &C,
+) -> Result<VecDeque<Vec<u8>>, SdkHttpError>
+where
+    C: WireCall + Sync,
+{
+    let request = wire_request(call)?;
+    let response = open(prepared, &request)
+        .await
+        .map_err(|error| SdkHttpError::Chat(Box::new(error)))?;
+    payloads(response).await
 }
 
 // The uuid is fresh per stream, so both sides replace it with one value before comparing
