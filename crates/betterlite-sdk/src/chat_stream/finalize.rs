@@ -2,17 +2,19 @@ use betterlite_logging::fields::usage::Usage as LogUsage;
 use betterlite_logging::fields::usage::project::usage_json;
 use betterlite_logging::logging_streams::assembly::StreamBuild;
 use betterlite_models::decisions::Json;
+use betterlite_streaming::stream_chunk_shaping::StreamShapeError;
 use betterlite_streaming::stream_chunk_shaping::creation::{
     model_response_creator, stamp_served_service_tier,
 };
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamChunk};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
 use betterlite_streaming::stream_chunk_shaping::tokens::finish_reason_handler;
 use betterlite_streaming::stream_chunk_shaping::usage_totals::propagate_usage_cost;
+use serde_json::{from_value, to_value};
 
 use super::ChatStream;
 use super::config::CallMode;
 use super::error::ChatStreamCause;
-use super::{Lifecycle, chunk, json, mcp};
+use super::{Lifecycle, chunk, mcp};
 
 // The three stream_chunk_builder results go through B252, which hands back what it built.
 pub(super) async fn end_of_source<S>(
@@ -36,7 +38,8 @@ fn synthesized_finish<S>(
     let logging =
         matches!(stream.config.mode, CallMode::Blocking) && !stream.config.logging.disable;
     if logging {
-        let logged: Json = json::bridge(&response)?;
+        let serialized = to_value(&response).map_err(StreamShapeError::from)?;
+        let logged: Json = from_value(serialized).map_err(StreamShapeError::from)?;
         stream
             .ports
             .logging
@@ -83,7 +86,8 @@ fn complete_payload<S>(
     complete: Json,
     response: &mut StreamChunk,
 ) -> Result<Json, ChatStreamCause> {
-    let mut view: StreamChunk = json::bridge(&complete)?;
+    let view_serialized = to_value(&complete).map_err(StreamShapeError::from)?;
+    let mut view: StreamChunk = from_value(view_serialized).map_err(StreamShapeError::from)?;
     let before = view.hidden_params.clone();
     let providers = [String::from("openrouter")];
     propagate_usage_cost(&mut view, stream.config.provider.as_deref(), &providers);
@@ -92,7 +96,8 @@ fn complete_payload<S>(
     if view.hidden_params == before {
         return Ok(complete);
     }
-    let hidden: Json = json::bridge(&view.hidden_params)?;
+    let hidden_serialized = to_value(&view.hidden_params).map_err(StreamShapeError::from)?;
+    let hidden: Json = from_value(hidden_serialized).map_err(StreamShapeError::from)?;
     Ok(with_hidden_params(complete, hidden))
 }
 
@@ -103,14 +108,18 @@ fn usage_only_payload<S>(
     response: &mut StreamChunk,
 ) -> Result<Json, ChatStreamCause> {
     let total = usage_json(usage);
+    let total_serialized = to_value(&total).map_err(StreamShapeError::from)?;
+    let encoded: JsonValue = from_value(total_serialized).map_err(StreamShapeError::from)?;
     let mut arguments = JsonObject::new();
-    arguments.insert("usage".to_owned(), json::bridge(&total)?);
+    arguments.insert("usage".to_owned(), encoded);
     let mut fallback = model_response_creator(&mut stream.shaper, Some(&arguments), None)?;
     let providers = [String::from("openrouter")];
     propagate_usage_cost(&mut fallback, stream.config.provider.as_deref(), &providers);
     response.usage.clone_from(&fallback.usage);
     stamp_served_service_tier(response, &fallback);
-    json::bridge(&fallback)
+    let fallback_serialized = to_value(&fallback).map_err(StreamShapeError::from)?;
+    let assembled: Json = from_value(fallback_serialized).map_err(StreamShapeError::from)?;
+    Ok(assembled)
 }
 
 fn with_hidden_params(mut complete: Json, hidden: Json) -> Json {
@@ -143,7 +152,11 @@ fn log_without_assembly<S>(
         return Ok(());
     }
     let logged = match stream.config.mode {
-        CallMode::Blocking => Some(json::bridge(response)?),
+        CallMode::Blocking => {
+            let serialized = to_value(response).map_err(StreamShapeError::from)?;
+            let chunk_json: Json = from_value(serialized).map_err(StreamShapeError::from)?;
+            Some(chunk_json)
+        }
         CallMode::Async => None,
     };
     stream.ports.logging.log_success(logged, stream.cache_hit);
