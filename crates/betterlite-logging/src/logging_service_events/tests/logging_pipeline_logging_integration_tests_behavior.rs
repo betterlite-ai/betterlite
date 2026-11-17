@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
-use futures_util::stream::{self, StreamExt};
+use futures_util::stream::{self, StreamExt as _};
 use http::StatusCode;
 use indexmap::IndexMap;
 use rstest::rstest;
