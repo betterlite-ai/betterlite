@@ -673,6 +673,31 @@ mod open_calls {
     }
 
     #[tokio::test]
+    async fn llm_close_releases_the_carriers_route_lease() {
+        let harness = harness(owned_http(), anchored());
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S0")),
+                auth: None,
+            },
+        );
+        success(
+            &harness.logger,
+            event_with(with_id(inference(), "call-a"), creds("S0"), IndexMap::new()),
+        )
+        .await;
+        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("S{index}")
+        });
+        // the close released S0's lease, so the overflow eviction shuts its provider down at once
+        assert!(harness.built.sink(0).is_shutdown_called());
+    }
+
+    #[tokio::test]
     async fn overflow_eviction_still_emits_the_evicted_call_deferred() {
         let harness = harness(owned_http(), anchored());
         store_carriers(
