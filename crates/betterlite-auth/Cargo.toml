@@ -29,7 +29,7 @@ lru = "0.18.4"
 pcre2 = "0.2.11"
 regex.workspace = true
 regex-syntax = "0.8.11"
-rust_decimal.workspace = true
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
