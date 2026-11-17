@@ -42,4 +42,13 @@ deviations:
       and the reload path that lands is what calls RoutingState::reload. Until then the stage runs only where
       pipeline::route is called.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
+  - what: >-
+      A rule document the server cannot install at startup is logged as an error and the server starts with no
+      generalization rules, where LiteLLM installs whatever rule list it is handed and only warns about
+      individual malformed rules.
+    why: >-
+      betterlite's rule document crosses a parser that can refuse it (the byte bound above), and LiteLLM's
+      startup never fails on a bad rule list; logging the refusal and serving no rules keeps that startup
+      contract while naming the failure. A reload that fails keeps the rules the server already serves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L236-L244
 kept_bugs: []
