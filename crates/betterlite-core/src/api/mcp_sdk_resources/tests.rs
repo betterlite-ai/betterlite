@@ -116,12 +116,13 @@ impl McpRuntime for DuplexRuntime {
         DuplexContext { streams }
     }
 
+    // the duplex runtime serves stdio sessions only, and this test opens no other transport
     fn sse_client(&self, _request: SseRequest) -> DuplexContext {
-        unreachable!("the duplex runtime has no legacy SSE transport")
+        DuplexContext { streams: None }
     }
 
     fn streamable_http_client(&self, _url: String, _client: Arc<NoHttpClient>) -> DuplexContext {
-        unreachable!("the duplex runtime has no streamable HTTP transport")
+        DuplexContext { streams: None }
     }
 
     fn http_client(&self, _config: HttpClientConfig) -> Result<NoHttpClient, SdkError> {
@@ -294,97 +295,10 @@ async fn every_resource_session_method_round_trips_through_the_server() {
     run_with_session(
         &mut client,
         async |session| {
-            let capabilities = session
-                .server_capabilities()
-                .expect("the handshake adopted the capabilities");
-            assert_eq!(
-                capabilities.prompts,
-                Some(Capability {
-                    list_changed: Some(true),
-                })
-            );
-            assert_eq!(
-                capabilities.resources,
-                Some(Capability { list_changed: None })
-            );
-            let first = session
-                .list_prompts(None)
-                .await
-                .expect("the first prompt page");
-            assert_eq!(first.prompts.len(), 1);
-            assert_eq!(first.prompts[0].name, "greet");
-            assert_eq!(first.prompts[0].description.as_deref(), Some("says hello"));
-            assert_eq!(first.next_cursor.as_deref(), Some("more"));
-            let second = session
-                .list_prompts(first.next_cursor.clone())
-                .await
-                .expect("the second prompt page");
-            assert_eq!(second.prompts[0].name, "farewell");
-            assert_eq!(second.next_cursor, None);
-            let mut arguments = BTreeMap::new();
-            arguments.insert("name".to_owned(), "ada".to_owned());
-            let prompt = session
-                .get_prompt(GetPromptRequestParams {
-                    name: "greet".to_owned(),
-                    arguments: Some(arguments),
-                })
-                .await
-                .expect("the greeting prompt");
-            assert_eq!(prompt.description.as_deref(), Some("a greeting"));
-            assert_eq!(prompt.messages[0].role, PromptRole::User);
-            assert_eq!(
-                prompt.messages[0]
-                    .content
-                    .get("text")
-                    .and_then(|text| text.as_str()),
-                Some("hello ada")
-            );
-            let rejected = session
-                .get_prompt(GetPromptRequestParams {
-                    name: "missing".to_owned(),
-                    arguments: None,
-                })
-                .await
-                .expect_err("the server rejects an unknown prompt");
-            let SdkError::JsonRpc(failure) = rejected else {
-                panic!("expected a JSON-RPC failure");
-            };
-            assert_eq!(failure.code.0, -32_602);
-            assert_eq!(failure.message.as_ref(), "no such prompt");
-            let resources = session
-                .list_resources(None)
-                .await
-                .expect("the resource page");
-            assert_eq!(resources.resources.len(), 1);
-            assert_eq!(resources.resources[0].uri, "file:///notes.txt");
-            assert_eq!(resources.resources[0].name, "notes");
-            assert_eq!(
-                resources.resources[0].mime_type.as_deref(),
-                Some("text/plain")
-            );
-            let templates = session
-                .list_resource_templates(None)
-                .await
-                .expect("the template page");
-            assert_eq!(templates.resource_templates.len(), 1);
-            assert_eq!(
-                templates.resource_templates[0].uri_template,
-                "file:///{name}"
-            );
-            assert_eq!(templates.resource_templates[0].name, "file");
-            let contents = session
-                .read_resource(Url::parse("file:///notes.txt").unwrap())
-                .await
-                .expect("the notes resource");
-            assert_eq!(contents.contents[0].uri, "file:///notes.txt");
-            assert_eq!(
-                contents.contents[0].text.as_deref(),
-                Some("the notes' text")
-            );
-            assert_eq!(
-                contents.contents[0].mime_type.as_deref(),
-                Some("text/plain")
-            );
+            check_capabilities(session);
+            check_prompt_pages(session).await;
+            check_prompt_requests(session).await;
+            check_resources(session).await;
             Ok(())
         },
         false,
@@ -392,6 +306,109 @@ async fn every_resource_session_method_round_trips_through_the_server() {
     .await
     .unwrap();
     tasks.shutdown().await;
+}
+
+fn check_capabilities(session: &SdkSession) {
+    let capabilities = session
+        .server_capabilities()
+        .expect("the handshake adopted the capabilities");
+    assert_eq!(
+        capabilities.prompts,
+        Some(Capability {
+            list_changed: Some(true),
+        })
+    );
+    assert_eq!(
+        capabilities.resources,
+        Some(Capability { list_changed: None })
+    );
+}
+
+async fn check_prompt_pages(session: &mut SdkSession) {
+    let first = session
+        .list_prompts(None)
+        .await
+        .expect("the first prompt page");
+    assert_eq!(first.prompts.len(), 1);
+    assert_eq!(first.prompts[0].name, "greet");
+    assert_eq!(first.prompts[0].description.as_deref(), Some("says hello"));
+    assert_eq!(first.next_cursor.as_deref(), Some("more"));
+    let second = session
+        .list_prompts(first.next_cursor.clone())
+        .await
+        .expect("the second prompt page");
+    assert_eq!(second.prompts[0].name, "farewell");
+    assert_eq!(second.next_cursor, None);
+}
+
+async fn check_prompt_requests(session: &mut SdkSession) {
+    let mut arguments = BTreeMap::new();
+    arguments.insert("name".to_owned(), "ada".to_owned());
+    let prompt = session
+        .get_prompt(GetPromptRequestParams {
+            name: "greet".to_owned(),
+            arguments: Some(arguments),
+        })
+        .await
+        .expect("the greeting prompt");
+    assert_eq!(prompt.description.as_deref(), Some("a greeting"));
+    assert_eq!(prompt.messages[0].role, PromptRole::User);
+    assert_eq!(
+        prompt.messages[0]
+            .content
+            .get("text")
+            .and_then(|text| text.as_str()),
+        Some("hello ada")
+    );
+    let rejected = session
+        .get_prompt(GetPromptRequestParams {
+            name: "missing".to_owned(),
+            arguments: None,
+        })
+        .await
+        .expect_err("the server rejects an unknown prompt");
+    let SdkError::JsonRpc(failure) = rejected else {
+        panic!("expected a JSON-RPC failure");
+    };
+    assert_eq!(failure.code.0, -32_602);
+    assert_eq!(failure.message.as_ref(), "no such prompt");
+}
+
+async fn check_resources(session: &mut SdkSession) {
+    let resources = session
+        .list_resources(None)
+        .await
+        .expect("the resource page");
+    assert_eq!(resources.resources.len(), 1);
+    assert_eq!(resources.resources[0].uri, "file:///notes.txt");
+    assert_eq!(resources.resources[0].name, "notes");
+    assert_eq!(
+        resources.resources[0].mime_type.as_deref(),
+        Some("text/plain")
+    );
+    let templates = session
+        .list_resource_templates(None)
+        .await
+        .expect("the template page");
+    assert_eq!(templates.resource_templates.len(), 1);
+    assert_eq!(
+        templates.resource_templates[0].uri_template,
+        "file:///{name}"
+    );
+    assert_eq!(templates.resource_templates[0].name, "file");
+    let contents = session
+        .read_resource(Url::parse("file:///notes.txt").unwrap())
+        .await
+        .expect("the notes resource");
+    assert_eq!(contents.contents[0].uri, "file:///notes.txt");
+    assert_eq!(
+        contents.contents[0].text.as_deref(),
+        Some("the notes' text")
+    );
+    assert_eq!(
+        contents.contents[0].mime_type.as_deref(),
+        Some("text/plain")
+    );
 }
 
 #[test]
