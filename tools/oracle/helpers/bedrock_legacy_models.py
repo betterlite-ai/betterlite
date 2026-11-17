@@ -279,14 +279,22 @@ def mappings(cases: Mappings) -> Json:
     return {"results": results}
 
 
+def construct_row(row: ConstructorRow) -> Json:
+    family = row["family"]
+    reset(family)
+    initial = project(construct(family, {}))
+    after: list[Json] = [project(construct(family, call)) for call in row["calls"]]
+    return {"initial": initial, "after": after}
+
+
 def constructors(cases: Constructors) -> Json:
-    rows: list[Json] = []
-    for row in cases["cases"]:
-        family = row["family"]
-        reset(family)
-        initial = project(construct(family, {}))
-        after: list[Json] = [project(construct(family, call)) for call in row["calls"]]
-        rows.append({"initial": initial, "after": after})
+    # Claude2's class default is the module's litellm.max_tokens, so the input carries it.
+    previous = litellm.max_tokens
+    litellm.max_tokens = cases["default_max_tokens"]
+    try:
+        rows: list[Json] = [construct_row(row) for row in cases["cases"]]
+    finally:
+        litellm.max_tokens = previous
     return {"results": rows}
 
 
