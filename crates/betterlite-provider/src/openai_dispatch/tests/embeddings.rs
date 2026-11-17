@@ -1,4 +1,5 @@
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
 use super::support;
@@ -136,9 +137,26 @@ pub(super) async fn check_format_falls_through() {
     );
 }
 
+// The caller's header map reaches the embedding request over the generated auth and content-type.
+pub(super) async fn check_caller_headers() {
+    let mut call = call();
+    call.headers = Some(Headers::from([(
+        String::from("x-caller"),
+        String::from("1"),
+    )]));
+    let answer = FixtureAnswer::new(200, support::EMBEDDING_REPLY.as_bytes().to_vec());
+    let _result = support::dispatch_embedding(&composition(), call, &answer)
+        .await
+        .expect("the embedding dispatch");
+    let sent = answer.requests();
+    assert_eq!(sent[0].header("x-caller"), Some("1"));
+    assert_eq!(sent[0].header("authorization"), Some("Bearer sk-env"));
+}
+
 pub(super) async fn check_all() {
     check_request().await;
     check_body_and_reply().await;
     check_configured_format().await;
     check_format_falls_through().await;
+    check_caller_headers().await;
 }
