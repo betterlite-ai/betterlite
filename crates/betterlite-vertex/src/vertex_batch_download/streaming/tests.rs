@@ -289,6 +289,36 @@ async fn cancelling_the_stream_closes_the_source() {
 }
 
 #[tokio::test]
+async fn later_rows_stream_in_as_their_chunks_complete() {
+    let third = ROW.replace(r#""hi""#, r#""za""#);
+    let first_chunk = format!("{ROW}\n");
+    let second_chunk = format!("{OTHER_ROW}\n");
+    let result = transform_file_content_stream(
+        source(&[
+            first_chunk.as_bytes(),
+            second_chunk.as_bytes(),
+            third.as_bytes(),
+        ]),
+        URL,
+        HeaderMap::new(),
+        false,
+        context(),
+    )
+    .await
+    .unwrap();
+    let mut stream = result.stream;
+    let first = stream.next().await.unwrap().unwrap();
+    assert!(first.starts_with(b"{\"id\":\"batch_req_"));
+    let second = stream.next().await.unwrap().unwrap();
+    assert!(second.starts_with(b"\n{\"id\":\"batch_req_"));
+    assert!(from_utf8(&second).unwrap().contains(r#""content":"yo""#));
+    let third = stream.next().await.unwrap().unwrap();
+    assert!(third.starts_with(b"\n{\"id\":\"batch_req_"));
+    assert!(from_utf8(&third).unwrap().contains(r#""content":"za""#));
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
 async fn streamed_embeddings_answer_in_one_chunk() {
     let result = transform_file_content_stream(
         source(&[EMBEDDING_ROWS.as_bytes()]),
