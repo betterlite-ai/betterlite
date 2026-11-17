@@ -14,7 +14,7 @@ use betterlite_bedrock::converse_response::wire::ModelResponse;
 use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
@@ -221,7 +221,10 @@ where
     CounterFailure: StdError + Send + Sync + 'static,
 {
     let headers = match error {
-        TransformError::Conversion { error, .. } => json!(error.response_headers),
+        TransformError::Conversion {
+            error: bedrock_error,
+            ..
+        } => json!(bedrock_error.response_headers),
         TransformError::Header(_)
         | TransformError::Clock(_)
         | TransformError::Reply(_)
