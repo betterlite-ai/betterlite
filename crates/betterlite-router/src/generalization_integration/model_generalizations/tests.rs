@@ -25,7 +25,7 @@ const LEGACY_PARENT: &str = r#"[{"name":"base","pattern":"^base-","model_info":{
 const DUPLICATE_PARENT: &str = r#"[{"name":"base","pattern":"^first-","model_info":{"mode":"chat"}},{"name":"base","pattern":"^second-","model_info":{"mode":"embedding"}},{"name":"child","pattern":"^child-","extends":"base","model_info":{"x":1}}]"#;
 const DESCRIPTION: &str = r#"[{"pattern":"^acme-","description":"ignored text","model_info":{"litellm_provider":"acme","mode":"chat"}}]"#;
 const MALFORMED: &str = r#"[{"name":"broken","pattern":"^broken"},{"pattern":"^ok-","model_info":{"litellm_provider":"openai"}}]"#;
-const MALFORMED_WARNING: &str = r#"["LiteLLM: skipping malformed fallback generalization rule broken (needs string 'pattern' and dict 'model_info')."]"#;
+const MALFORMED_WARNING: &str = r#"engine ["LiteLLM: skipping malformed fallback generalization rule broken (needs string 'pattern' and dict 'model_info')."]"#;
 const SLOW_MODEL: &str = "abababababababababababab";
 const SLOW_WARNING: &str = r#"[{"kind":"match_limit_exceeded","pattern":"(?i)(a|b|ab)*(?>c)"}]"#;
 
@@ -335,7 +335,7 @@ fn rules(spec: Spec) -> Vec<u8> {
 
 fn large_pattern_warning() -> String {
     let pattern = "a".repeat(MAX_PATTERN_BYTES.saturating_add(1));
-    format!(r#"[{{"kind":"pattern_too_large","pattern":"{pattern}"}}]"#)
+    format!(r#"warnings [{{"kind":"pattern_too_large","pattern":"{pattern}"}}]"#)
 }
 
 fn slow_warning() -> String {
@@ -492,6 +492,8 @@ fn texts(items: &[&str]) -> Vec<String> {
 #[test]
 fn replays_the_model_rules_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/model_rules");
+    // every seed is replayed below by name, so a new seed has to join them
+    assert_eq!(fs::read_dir(&corpus).unwrap().count(), 2);
     let valid = fs::read(corpus.join("model-generalizations-valid.json")).unwrap();
     let invalid = fs::read(corpus.join("model-generalizations-invalid.json")).unwrap();
     let installed = ModelGeneralizations::install(&valid).unwrap();
@@ -507,8 +509,4 @@ fn replays_the_model_rules_corpus() {
         ModelGeneralizations::install(&invalid),
         Err(GeneralizationError::Rules(ModelsError::RulesJson { .. }))
     ));
-    for entry in fs::read_dir(corpus).unwrap() {
-        let bytes = fs::read(entry.unwrap().path()).unwrap();
-        drop(ModelGeneralizations::install(&bytes));
-    }
 }
