@@ -66,11 +66,9 @@ fn an_unset_base64_limit_keeps_the_placeholder_default() {
 // litellm.constants.MAX_BASE64_LENGTH_FOR_LOGGING is int(os.getenv(...)), so a value that is not a number stops the load
 #[test]
 fn a_base64_limit_that_is_not_a_number_stops_the_load() {
-    let lookup: BTreeMap<String, String> = [(
+    let lookup = BTreeMap::from([(
         "MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(),
         "many".to_owned(),
-    )]
-    .into_iter()
-    .collect();
+    )]);
     assert!(ConfigLoader { lookup }.load("").is_err());
 }
