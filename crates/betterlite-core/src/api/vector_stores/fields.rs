@@ -73,19 +73,19 @@ fn attach(
     index: usize,
     fields: RetrievalFields<'_>,
 ) -> Result<(), VectorStoresError> {
-    let Json::Object(choice) = choice else {
+    let Json::Object(choice_map) = choice else {
         return Ok(());
     };
-    let Some(target) = choice.get_mut(member) else {
+    let Some(target) = choice_map.get_mut(member) else {
         return Ok(());
     };
     if matches!(*target, Json::Null) {
         return Ok(());
     }
-    let Json::Object(target) = target else {
+    let Json::Object(member_object) = target else {
         return Err(VectorStoresError::TargetNotObject { index, member });
     };
-    let mut provider_fields = match target.get(PROVIDER_FIELDS) {
+    let mut provider_fields = match member_object.get(PROVIDER_FIELDS) {
         None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Object(existing)) => existing.clone(),
         Some(_) => return Err(VectorStoresError::ProviderFieldsNotObject { index }),
@@ -102,6 +102,6 @@ fn attach(
             Json::List(fields.failures.to_vec()),
         );
     }
-    target.insert(PROVIDER_FIELDS.to_owned(), Json::Object(provider_fields));
+    member_object.insert(PROVIDER_FIELDS.to_owned(), Json::Object(provider_fields));
     Ok(())
 }

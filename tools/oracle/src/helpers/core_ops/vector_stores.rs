@@ -57,11 +57,7 @@ impl Helper for Op {
             } => {
                 let mut answer = response.clone();
                 let decoration = decorate_answer(request_data, &mut answer);
-                let returned = if decoration.returns_answer {
-                    Some(project(&answer))
-                } else {
-                    None
-                };
+                let returned = decoration.returns_answer.then(|| project(&answer));
                 Ok(json!({
                     "returned": returned,
                     "diagnostics": decoration.diagnostics,
@@ -83,7 +79,7 @@ impl Helper for Op {
 }
 
 fn project(record: &Json) -> Projection<'_> {
-    let Json::Object(record) = record else {
+    let Json::Object(entry) = record else {
         return Projection {
             id: None,
             object: None,
@@ -94,12 +90,12 @@ fn project(record: &Json) -> Projection<'_> {
         };
     };
     Projection {
-        id: record.get(ID),
-        object: record.get(OBJECT),
-        output: record.get(OUTPUT),
-        vector_store_search_failures: record.get(SEARCH_FAILURES),
-        search_results: record.get(SEARCH_RESULTS),
-        choices: projected_choices(record),
+        id: entry.get(ID),
+        object: entry.get(OBJECT),
+        output: entry.get(OUTPUT),
+        vector_store_search_failures: entry.get(SEARCH_FAILURES),
+        search_results: entry.get(SEARCH_RESULTS),
+        choices: projected_choices(entry),
     }
 }
 
@@ -111,15 +107,15 @@ fn projected_choices(record: &IndexMap<String, Json>) -> Vec<ChoiceProjection<'_
 }
 
 fn project_choice(choice: &Json) -> ChoiceProjection<'_> {
-    let Json::Object(choice) = choice else {
+    let Json::Object(entry) = choice else {
         return ChoiceProjection {
             message: None,
             delta: None,
         };
     };
     ChoiceProjection {
-        message: provider_fields(choice, MESSAGE),
-        delta: provider_fields(choice, DELTA),
+        message: provider_fields(entry, MESSAGE),
+        delta: provider_fields(entry, DELTA),
     }
 }
 
