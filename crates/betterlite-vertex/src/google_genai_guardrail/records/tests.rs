@@ -265,6 +265,7 @@ fn a_lone_cr_ends_a_data_line() {
     );
 }
 
+// the frames stay on one line, and the oracle holds the scan to reading both fields of it, as LiteLLM's splitlines did
 #[rstest]
 #[case::vertical_tab(b"\x0b")]
 #[case::form_feed(b"\x0c")]
@@ -277,7 +278,35 @@ fn a_lone_cr_ends_a_data_line() {
 fn other_breaks_keep_two_frames_on_one_line(#[case] separator: &[u8]) {
     assert_eq!(
         decode_google_guardrail_sse(&[&two_frames_split_by(separator)]),
-        Vec::<String>::new()
+        vec!["a".to_owned(), "b".to_owned()]
+    );
+}
+
+#[rstest]
+#[case::plain(r#"see data: here"#, "see data: here")]
+#[case::after_an_escaped_quote(r#"a\"data: b"#, "a\"data: b")]
+#[case::starts_with_an_escaped_quote(r#"\"data: b"#, "\"data: b")]
+fn a_data_mention_inside_a_json_string_does_not_start_a_field(
+    #[case] body: &str,
+    #[case] text: &str,
+) {
+    let chunk = format!(
+        "data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":\"{body}\"}}]}}}}]}}\u{2028}\
+         data: {{\"candidates\":[{{\"content\":{{\"parts\":[{{\"text\":\"b\"}}]}}}}]}}"
+    );
+    assert_eq!(
+        decode_google_guardrail_sse(&[chunk.as_bytes()]),
+        vec![text.to_owned(), "b".to_owned()]
+    );
+}
+
+#[test]
+fn a_broken_field_before_a_valid_one_is_skipped() {
+    let chunk =
+        "data: {oops}\u{2028}data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"b\"}]}}]}";
+    assert_eq!(
+        decode_google_guardrail_sse(&[chunk.as_bytes()]),
+        vec!["b".to_owned()]
     );
 }
 
