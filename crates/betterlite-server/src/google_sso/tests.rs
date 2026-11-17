@@ -119,24 +119,14 @@ impl Drop for Running {
     }
 }
 
-async fn discovery_answer(
-    State(provider): State<Provider>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> Response {
+async fn get_answer(State(provider): State<Provider>, uri: Uri, headers: HeaderMap) -> Response {
     provider.record("GET", uri.path(), &headers, "");
-    match provider.discovery {
-        DiscoveryReply::Document => Json(provider.document()).into_response(),
-        DiscoveryReply::NotFound => StatusCode::NOT_FOUND.into_response(),
+    if uri.path() == "/discovery" {
+        return match provider.discovery {
+            DiscoveryReply::Document => Json(provider.document()).into_response(),
+            DiscoveryReply::NotFound => StatusCode::NOT_FOUND.into_response(),
+        };
     }
-}
-
-async fn userinfo_answer(
-    State(provider): State<Provider>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> Response {
-    provider.record("GET", uri.path(), &headers, "");
     Json(provider.userinfo(bearer(&headers))).into_response()
 }
 
@@ -188,9 +178,9 @@ async fn serve(email_verified: bool, reply: DiscoveryReply) -> Running {
         seen: Arc::new(Mutex::new(Vec::new())),
     };
     let router = Router::new()
-        .route("/discovery", get(discovery_answer))
+        .route("/discovery", get(get_answer))
         .route("/token", post(token_answer))
-        .route("/userinfo", get(userinfo_answer))
+        .route("/userinfo", get(get_answer))
         .with_state(provider.clone());
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { axum::serve(listener, router).await.unwrap() });
