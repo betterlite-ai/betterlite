@@ -1,0 +1,12 @@
+name: auth-model-lists-mcp-grants
+config: |
+  model_list:
+    - {model_name: mcp-model, litellm_params: {model: openai/mcp-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

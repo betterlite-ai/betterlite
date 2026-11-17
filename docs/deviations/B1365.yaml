@@ -1,0 +1,15 @@
+task: B1365
+deviations:
+  - what: The region that becomes the Vertex Live WebSocket host is validated against the lowercase Vertex location token before it is used, and vertex_realtime_config returns an error instead of building a host from it.
+    why: The region is interpolated into {location}-aiplatform.googleapis.com, so a value carrying a slash, a dot or a userinfo marker would move the socket to another host; the factory validates what the region policy selects, as the Chirp path already validates its location.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L66-L72
+  - what: The project id is validated before it is placed in the full model resource path and in x-goog-user-project; an empty id, a parent path or a URL-unsafe character is rejected by vertex_realtime_config.
+    why: LiteLLM interpolates any string into projects/{project}/locations/..., where a slash or .. selects a different resource, and an empty project still produces a path; refusing the value keeps a client-supplied project from choosing the resource.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L127
+  - what: An explicitly empty location reaches the region policy as absent. LiteLLM's get_vertex_region treats "" as a configured value, always falls back to us-central1 when the model lists no supported regions, and otherwise warns before picking the first supported region.
+    why: B1304's select_region returns "" unchanged for an empty configured value when the model lists no supported regions, and an empty region cannot build the host or the model path, so the realtime factory normalizes the empty value to absent and gets the region LiteLLM resolves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L98-L121
+kept_bugs:
+  - what: The default session configuration request asks for the AUDIO response modality even for a text-only Live model, because LiteLLM hardcodes it there and only the session.update path runs the catalog coercion.
+    why: A working setup relies on the exact setup LiteLLM sends for the deferred path, so betterlite keeps the hardcoded AUDIO and only coerces modalities on the client session.update path, where LiteLLM coerces too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L126-L137
