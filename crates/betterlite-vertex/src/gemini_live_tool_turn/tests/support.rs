@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::gemini_live_accounting::tool_calls::ToolCallMessage;
 use crate::gemini_live_client::records::ServerMessage;
 use crate::gemini_live_client::state::{LiveSessionState, ToolCallNames};
-use crate::gemini_live_tool_turn::turn::{ToolTurn, ToolTurnInput, transform_tool_turn};
+use crate::gemini_live_tool_turn::turn::{
+    ToolTurn, ToolTurnContext, ToolTurnInput, transform_tool_turn,
+};
 
 // every identifier repeats one byte, so the first drawn UUID shows the draw count
 pub(crate) fn uuids() -> impl FnMut() -> Uuid {
@@ -53,11 +55,14 @@ pub(crate) fn run_turn(
     tool_call: &ToolCallMessage,
     input: &ToolTurnInput<'_>,
 ) -> ToolTurn {
-    transform_tool_turn(
+    let mut context = ToolTurnContext {
         state,
         frame,
         tool_call,
         input,
+    };
+    transform_tool_turn(
+        &mut context,
         &|usage| usage_details(Some(usage)),
         &mut uuids(),
     )

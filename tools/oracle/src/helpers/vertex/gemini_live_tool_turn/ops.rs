@@ -4,7 +4,9 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_vertex::gemini_live_accounting::tool_calls::ToolCallMessage;
 use betterlite_vertex::gemini_live_client::records::ServerMessage;
 use betterlite_vertex::gemini_live_client::state::{LiveSessionState, ToolCallNames};
-use betterlite_vertex::gemini_live_tool_turn::turn::{ToolTurnInput, transform_tool_turn};
+use betterlite_vertex::gemini_live_tool_turn::turn::{
+    ToolTurnContext, ToolTurnInput, transform_tool_turn,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -48,20 +50,26 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
         drawn = drawn.saturating_add(1);
         Uuid::from_u128(drawn.saturating_mul(UUID_PATTERN))
     };
-    let turn = transform_tool_turn(
-        &mut state,
-        &mut frame,
-        &input.tool_call,
-        &ToolTurnInput {
-            conversation_id: input.ids.conversation_id.as_deref(),
-            response_id: input.ids.response_id.as_deref(),
-            output_item_id: input.ids.output_item_id.as_deref(),
-            session_configuration_request: input.session_configuration_request.as_deref(),
-        },
-        &|usage| usage_details(Some(usage)),
-        &mut uuids,
-    )
-    .or_value_error()?;
+    let turn_input = ToolTurnInput {
+        conversation_id: input.ids.conversation_id.as_deref(),
+        response_id: input.ids.response_id.as_deref(),
+        output_item_id: input.ids.output_item_id.as_deref(),
+        session_configuration_request: input.session_configuration_request.as_deref(),
+    };
+    let turn = {
+        let mut context = ToolTurnContext {
+            state: &mut state,
+            frame: &mut frame,
+            tool_call: &input.tool_call,
+            input: &turn_input,
+        };
+        transform_tool_turn(
+            &mut context,
+            &|usage| usage_details(Some(usage)),
+            &mut uuids,
+        )
+        .or_value_error()?
+    };
     Ok(json!({
         "events": turn.events,
         "ids": {

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::support::{empty_state, frame, given_ids, object, run_turn, tool_call};
 use crate::gemini_live_tool_turn::turn::ToolTurnInput;
@@ -14,25 +14,65 @@ fn two_calls_emit_five_correlated_events_each_then_one_done() {
     );
     let turn = run_turn(&mut state, &mut server_frame, &calls, &given_ids());
     let events = serde_json::to_value(&turn.events).expect("the events serialize");
-    assert_eq!(turn.events.len(), 11);
-    assert_eq!(events[0]["type"], "response.output_item.added");
+    let event_types: Vec<&str> = events
+        .as_array()
+        .expect("the events serialize as an array")
+        .iter()
+        .map(|event| event["type"].as_str().expect("every event carries a type"))
+        .collect();
+    assert_eq!(
+        event_types,
+        [
+            "response.output_item.added",
+            "conversation.item.added",
+            "response.function_call_arguments.delta",
+            "response.function_call_arguments.done",
+            "response.output_item.done",
+            "response.output_item.added",
+            "conversation.item.added",
+            "response.function_call_arguments.delta",
+            "response.function_call_arguments.done",
+            "response.output_item.done",
+            "response.done",
+        ]
+    );
+    assert_eq!(events[0]["item"]["id"], "item_given_tool_0");
     assert_eq!(events[0]["item"]["status"], "in_progress");
     assert_eq!(events[0]["item"]["arguments"], "");
-    assert_eq!(events[0]["item"]["id"], "item_given_tool_0");
-    assert_eq!(events[1]["type"], "conversation.item.added");
-    assert_eq!(events[1]["previous_item_id"], Value::Null);
-    assert_eq!(events[1]["item"]["call_id"], "a");
-    assert_eq!(events[2]["type"], "response.function_call_arguments.delta");
+    assert_eq!(events[1]["previous_item_id"], json!(null));
     assert_eq!(events[2]["delta"], "{\"x\": 1}");
-    assert_eq!(events[3]["type"], "response.function_call_arguments.done");
-    assert_eq!(events[3]["arguments"], "{\"x\": 1}");
     assert_eq!(events[3]["call_id"], "a");
-    assert_eq!(events[4]["type"], "response.output_item.done");
-    assert_eq!(events[4]["item"]["status"], "completed");
-    assert_eq!(events[4]["item"]["arguments"], "{\"x\": 1}");
-    assert_eq!(events[5]["output_index"], 1);
+    assert_eq!(events[3]["arguments"], "{\"x\": 1}");
+}
+
+#[test]
+fn a_following_call_continues_the_output_index_and_own_arguments() {
+    let mut state = empty_state();
+    let mut server_frame = frame("{}");
+    let calls = tool_call(
+        r#"{"functionCalls": [{"id": "a", "name": "first", "args": {"x": 1}}, {"id": "b", "name": "second", "args": {}}]}"#,
+    );
+    let turn = run_turn(&mut state, &mut server_frame, &calls, &given_ids());
+    let events = serde_json::to_value(&turn.events).expect("the events serialize");
+    assert_eq!(events[5]["output_index"], 1_i32);
     assert_eq!(events[5]["item"]["id"], "item_given_tool_1");
-    assert_eq!(events[10]["type"], "response.done");
+    assert_eq!(events[5]["item"]["arguments"], "");
+    assert_eq!(events[6]["item"]["call_id"], "b");
+    assert_eq!(events[7]["call_id"], "b");
+    assert_eq!(events[7]["delta"], "{}");
+    assert_eq!(events[9]["item"]["status"], "completed");
+    assert_eq!(events[9]["item"]["arguments"], "{}");
+}
+
+#[test]
+fn a_tool_turn_keeps_the_conversation_resets_turn_ids_and_records_call_names() {
+    let mut state = empty_state();
+    let mut server_frame = frame("{}");
+    let calls = tool_call(
+        r#"{"functionCalls": [{"id": "a", "name": "first", "args": {"x": 1}}, {"id": "b", "name": "second", "args": {}}]}"#,
+    );
+    let turn = run_turn(&mut state, &mut server_frame, &calls, &given_ids());
+    let events = serde_json::to_value(&turn.events).expect("the events serialize");
     assert_eq!(
         events[10]["response"]["output"].as_array().map(Vec::len),
         Some(2)
@@ -74,8 +114,8 @@ fn a_fresh_turn_creates_response_and_conversation_with_drawn_ids() {
     assert_eq!(created["status"], "in_progress");
     assert_eq!(created["output"], json!([]));
     assert_eq!(created["modalities"], json!(["audio"]));
-    assert_eq!(created["temperature"], Value::Null);
-    assert_eq!(created["max_output_tokens"], Value::Null);
+    assert_eq!(created["temperature"], json!(null));
+    assert_eq!(created["max_output_tokens"], json!(null));
     assert_eq!(
         events[1]["item"]["id"],
         "item_03030303-0303-0303-0303-030303030303_tool_0"
@@ -148,8 +188,8 @@ fn frame_usage_is_billed_once_without_grounding_counters() {
     let turn = run_turn(&mut state, &mut server_frame, &calls, &given_ids());
     let events = serde_json::to_value(&turn.events).expect("the events serialize");
     let usage = &events[5]["response"]["usage"];
-    assert_eq!(usage["input_tokens"], 13);
-    assert_eq!(usage["output_tokens"], 5);
+    assert_eq!(usage["input_tokens"], 13_i32);
+    assert_eq!(usage["output_tokens"], 5_i32);
     assert!(
         usage["input_token_details"]
             .get("web_search_requests")
@@ -169,7 +209,7 @@ fn pending_usage_is_billed_when_the_frame_carries_none() {
     let calls = tool_call(r#"{"functionCalls": [{"id": "a", "name": "first"}]}"#);
     let turn = run_turn(&mut state, &mut server_frame, &calls, &given_ids());
     let events = serde_json::to_value(&turn.events).expect("the events serialize");
-    assert_eq!(events[5]["response"]["usage"]["input_tokens"], 7);
+    assert_eq!(events[5]["response"]["usage"]["input_tokens"], 7_i32);
     assert!(state.pending_usage_metadata.is_none());
 }
 
@@ -192,18 +232,18 @@ fn setup_supplies_lowered_modalities_and_the_limit_pair() {
         events[0]["response"]["modalities"],
         json!(["text", "audio"])
     );
-    assert_eq!(events[0]["response"]["temperature"], 0.7);
-    assert_eq!(events[0]["response"]["max_output_tokens"], 100);
+    assert_eq!(events[0]["response"]["temperature"], 0.7_f64);
+    assert_eq!(events[0]["response"]["max_output_tokens"], 100_i32);
     assert_eq!(
         events[6]["response"]["modalities"],
         json!(["text", "audio"])
     );
-    assert_eq!(events[6]["response"]["temperature"], 0.7);
-    assert_eq!(events[6]["response"]["max_output_tokens"], 100);
+    assert_eq!(events[6]["response"]["temperature"], 0.7_f64);
+    assert_eq!(events[6]["response"]["max_output_tokens"], 100_i32);
 }
 
 #[test]
-fn an_unparseable_setup_falls_back_to_audio_without_limits() {
+fn an_unparsable_setup_falls_back_to_audio_without_limits() {
     let mut state = empty_state();
     let mut server_frame = frame("{}");
     let calls = tool_call(r#"{"functionCalls": [{"id": "a", "name": "first"}]}"#);
@@ -216,6 +256,6 @@ fn an_unparseable_setup_falls_back_to_audio_without_limits() {
     let turn = run_turn(&mut state, &mut server_frame, &calls, &input);
     let events = serde_json::to_value(&turn.events).expect("the events serialize");
     assert_eq!(events[0]["response"]["modalities"], json!(["audio"]));
-    assert_eq!(events[0]["response"]["temperature"], Value::Null);
+    assert_eq!(events[0]["response"]["temperature"], json!(null));
     assert!(events[6]["response"].get("temperature").is_none());
 }
