@@ -27,23 +27,28 @@ const WAIT: Duration = Duration::from_secs(10);
 async fn bedrock_http_stream_body_lifetime() {
     let messages = messages();
     let frame = hex::decode(FIRST).unwrap();
+    eof_phase(&frame, &messages).await;
+    dropped_phase(&frame, &messages).await;
+    short_body_phase(&frame, &messages).await;
+}
 
-    // EOF ends the stream after the tally ran, and the dropped response releases the connection.
+// EOF ends the stream after the tally ran, and the dropped response releases the connection.
+async fn eof_phase(frame: &[u8], messages: &Json) {
     let mut body = format!("{:x}\r\n", frame.len()).into_bytes();
-    body.extend_from_slice(&frame);
+    body.extend_from_slice(frame);
     body.extend_from_slice(b"\r\n0\r\n\r\n");
-    let mut eof_phase = Phase::start(
+    let mut phase = Phase::start(
         format!("{HEAD}transfer-encoding: chunked\r\n\r\n"),
         body,
         false,
     )
     .await;
-    let eof_outcome = eof_phase.run(&messages, Consume::All).await;
-    assert!(eof_outcome.error.is_none());
-    assert!(eof_outcome.failures.is_empty());
-    assert_eq!(eof_outcome.chunks.len(), 1);
+    let outcome = phase.run(messages, Consume::All).await;
+    assert!(outcome.error.is_none());
+    assert!(outcome.failures.is_empty());
+    assert_eq!(outcome.chunks.len(), 1);
     assert_eq!(
-        eof_outcome
+        outcome
             .headers
             .as_ref()
             .unwrap()
@@ -51,39 +56,43 @@ async fn bedrock_http_stream_body_lifetime() {
             .unwrap(),
         "application/vnd.amazon.eventstream"
     );
-    eof_phase.release().await;
-    assert_eq!(eof_phase.posts.load(Ordering::Relaxed), 1);
+    phase.release().await;
+    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
+}
 
-    // A consumer that stops before the body ends drops the response mid-frame, and the server sees the close.
-    let mut partial_body = frame.clone();
+// A consumer that stops before the body ends drops the response mid-frame, and the server sees the close.
+async fn dropped_phase(frame: &[u8], messages: &Json) {
+    let mut partial_body = frame.to_vec();
     partial_body.extend_from_slice(&frame[..20]);
-    let mut dropped_phase = Phase::start(
+    let mut phase = Phase::start(
         format!("{HEAD}content-length: 4096\r\n\r\n"),
         partial_body,
         false,
     )
     .await;
-    let dropped_outcome = dropped_phase.run(&messages, Consume::First).await;
-    assert!(dropped_outcome.error.is_none());
-    assert_eq!(dropped_outcome.chunks.len(), 1);
-    dropped_phase.release().await;
-    assert_eq!(dropped_phase.posts.load(Ordering::Relaxed), 1);
+    let outcome = phase.run(messages, Consume::First).await;
+    assert!(outcome.error.is_none());
+    assert_eq!(outcome.chunks.len(), 1);
+    phase.release().await;
+    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
+}
 
-    // A body that ends early is a read failure, and the stream neither retries it nor reports a frame.
-    let mut short_phase = Phase::start(
+// A body that ends early is a read failure, and the stream neither retries it nor reports a frame.
+async fn short_body_phase(frame: &[u8], messages: &Json) {
+    let mut phase = Phase::start(
         format!("{HEAD}content-length: 4096\r\n\r\n"),
         frame[..20].to_vec(),
         true,
     )
     .await;
-    let short_outcome = short_phase.run(&messages, Consume::All).await;
-    assert!(short_outcome.error.is_none());
-    assert!(short_outcome.chunks.is_empty());
-    assert_eq!(short_outcome.failures.len(), 1);
-    assert!(matches!(&short_outcome.failures[0], StreamFailure::Read(_)));
-    assert_eq!(short_outcome.failure_statuses(), vec![None]);
-    short_phase.release().await;
-    assert_eq!(short_phase.posts.load(Ordering::Relaxed), 1);
+    let outcome = phase.run(messages, Consume::All).await;
+    assert!(outcome.error.is_none());
+    assert!(outcome.chunks.is_empty());
+    assert_eq!(outcome.failures.len(), 1);
+    assert!(matches!(&outcome.failures[0], StreamFailure::Read(_)));
+    assert_eq!(outcome.failure_statuses(), vec![None]);
+    phase.release().await;
+    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
 }
 
 struct Phase {
@@ -98,9 +107,9 @@ impl Phase {
     async fn start(head: String, body: Vec<u8>, hang_up: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_base = format!("http://{}/invoke", listener.local_addr().unwrap());
-        let (closed_tx, closed) = oneshot::channel();
+        let (signal, closed) = oneshot::channel();
         let mut tasks = JoinSet::new();
-        tasks.spawn(serve(listener, head, body, hang_up, closed_tx));
+        tasks.spawn(serve(listener, head, body, hang_up, signal));
         Self {
             api_base,
             client: proxied_client(),
@@ -110,7 +119,7 @@ impl Phase {
         }
     }
 
-    async fn run(&mut self, messages: &Json, consume: Consume) -> Outcome {
+    async fn run(&self, messages: &Json, consume: Consume) -> Outcome {
         let call = invoke(&self.api_base, DATA, messages);
         let handler: Arc<dyn StreamHandler> = Arc::new(Recording {
             client: self.client.clone(),
@@ -121,7 +130,7 @@ impl Phase {
             .expect("the stream call finishes")
     }
 
-    async fn release(mut self) {
+    async fn release(&mut self) {
         self.client
             .drain(WAIT)
             .await

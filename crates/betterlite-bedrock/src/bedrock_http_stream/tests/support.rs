@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -22,7 +23,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
-use futures_util::StreamExt as _;
+use futures_util::{Stream, StreamExt as _};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use tokio::runtime::Builder;
 use uuid::Uuid;
@@ -31,11 +32,13 @@ use crate::agentcore_stream::IdSource;
 use crate::agentcore_stream::transport::{
     Chunks, HandlerKind, PostRequest, StreamHandler, StreamHead,
 };
-use crate::bedrock_http_stream::StreamDeps;
-use crate::bedrock_http_stream::converse::{ConverseCall, make_sync_call};
+use crate::bedrock_http_stream::converse::{
+    ConverseCall, make_sync_call, open_call as open_converse,
+};
 use crate::bedrock_http_stream::error::HttpStreamError;
-use crate::bedrock_http_stream::invoke::{InvokeCall, make_call};
+use crate::bedrock_http_stream::invoke::{InvokeCall, make_call, open_call as open_invoke};
 use crate::bedrock_http_stream::stream::{OpenedStream, StreamFailure};
+use crate::bedrock_http_stream::{PendingOpen, StreamDeps};
 use crate::bedrock_settings::{BedrockError, ResponseBody};
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::{DecoderClock, InvokeChunk};
@@ -171,7 +174,10 @@ impl Reply {
 }
 
 pub(super) struct Handler {
-    reply: Reply,
+    status: u16,
+    headers: Vec<(String, String)>,
+    reads: Mutex<Vec<Result<Vec<u8>, HttpError>>>,
+    refused: Option<Refusal>,
     posts: Mutex<Vec<Recorded>>,
     calls: AtomicUsize,
     polls: Arc<AtomicUsize>,
@@ -179,8 +185,17 @@ pub(super) struct Handler {
 
 impl Handler {
     pub(super) fn new(reply: Reply) -> Self {
+        let Reply {
+            status,
+            headers,
+            reads,
+            refused,
+        } = reply;
         Self {
-            reply,
+            status,
+            headers,
+            reads: Mutex::new(reads),
+            refused,
             posts: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
             polls: Arc::new(AtomicUsize::new(0)),
@@ -254,7 +269,7 @@ impl StreamHandler for Handler {
 
     async fn post(&self, request: PostRequest) -> Result<StreamHead, TransportError> {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        if let Some(refused) = self.reply.refused {
+        if let Some(refused) = self.refused {
             return Err(refused.error());
         }
         self.posts
@@ -267,16 +282,17 @@ impl StreamHandler for Handler {
                 stream: request.stream,
             });
         let mut headers = HeaderMap::new();
-        for (name, value) in &self.reply.headers {
+        for (name, value) in &self.headers {
             headers.append(
                 HeaderName::from_bytes(name.as_bytes()).unwrap(),
                 HeaderValue::from_str(value).unwrap(),
             );
         }
+        let reads = mem::take(&mut *self.reads.lock().unwrap_or_else(PoisonError::into_inner));
         Ok(StreamHead {
-            status: self.reply.status,
+            status: self.status,
             headers,
-            chunks: counted(&self.reply.reads, Arc::clone(&self.polls)),
+            chunks: counted(reads, Arc::clone(&self.polls)),
         })
     }
 }
@@ -286,18 +302,18 @@ struct CountingStream {
     polls: Arc<AtomicUsize>,
 }
 
-impl futures_util::Stream for CountingStream {
+impl Stream for CountingStream {
     type Item = Result<Vec<u8>, HttpError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.polls.fetch_add(1, Ordering::Relaxed);
         Poll::Ready(self.items.pop_front())
     }
 }
 
-fn counted(reads: &[Result<Vec<u8>, HttpError>], polls: Arc<AtomicUsize>) -> Chunks {
+fn counted(reads: Vec<Result<Vec<u8>, HttpError>>, polls: Arc<AtomicUsize>) -> Chunks {
     CountingStream {
-        items: reads.iter().cloned().collect(),
+        items: reads.into_iter().collect(),
         polls,
     }
     .boxed()
@@ -325,17 +341,10 @@ pub(super) struct Outcome {
 
 impl Outcome {
     pub(super) fn provider(&self) -> Option<&BedrockError> {
-        match &self.error {
-            Some(HttpStreamError::Provider { error, .. }) => Some(error.as_ref()),
-            Some(
-                HttpStreamError::Transport(_)
-                | HttpStreamError::Url(_)
-                | HttpStreamError::Body(_)
-                | HttpStreamError::Transform(_)
-                | HttpStreamError::Header(_),
-            )
-            | None => None,
-        }
+        let Some(HttpStreamError::Provider { error, .. }) = &self.error else {
+            return None;
+        };
+        Some(error.as_ref())
     }
 
     pub(super) fn provider_status(&self) -> Option<u16> {
@@ -431,13 +440,18 @@ pub(super) fn converse<'call>(messages: &'call Json) -> ConverseCall<'call> {
 }
 
 pub(super) fn run(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
-    block_on(open(call, handler, consume))
+    let handler: Arc<dyn StreamHandler> = inputs.handler.clone();
+    block_on(open_with(
+        call,
+        Some(Arc::clone(&handler)),
+        handler,
+        consume,
+    ))
 }
 
 // No supplied client: the helper must post through the default handler it was given.
 pub(super) fn run_default(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
+    let handler: Arc<dyn StreamHandler> = inputs.handler.clone();
     block_on(open_with(call, None, handler, consume))
 }
 
@@ -448,8 +462,8 @@ pub(super) fn run_supplied(
     default: &Inputs,
     consume: Consume,
 ) -> Outcome {
-    let supplied_handler: Arc<dyn StreamHandler> = Arc::clone(&supplied.handler);
-    let default_handler: Arc<dyn StreamHandler> = Arc::clone(&default.handler);
+    let supplied_handler: Arc<dyn StreamHandler> = supplied.handler.clone();
+    let default_handler: Arc<dyn StreamHandler> = default.handler.clone();
     block_on(open_with(
         call,
         Some(supplied_handler),
@@ -458,6 +472,7 @@ pub(super) fn run_supplied(
     ))
 }
 
+// The body-lifetime test drives the same call inside its own runtime, so its timeouts cover the whole open.
 pub(super) async fn open(
     call: Call<'_>,
     handler: Arc<dyn StreamHandler>,
@@ -473,26 +488,10 @@ async fn open_with(
     consume: Consume,
 ) -> Outcome {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let mut state = logging_state(&redactor);
-    let sink = Quiet;
-    let logged = Mutex::new(Vec::new());
-    let logger = |details: &Json| -> Result<(), PrePostError> {
-        logged
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(details.clone());
-        Ok(())
-    };
-    let env = log_env(&redactor, &sink, &logger);
     let deps = deps_for(supplied, handler, &redactor);
-    let mut log = LogContext {
-        state: &mut state,
-        env: &env,
-    };
-    let opened = match call {
-        Call::Invoke(call) => make_call(call, &deps, &mut log).await,
-        Call::Converse(call) => make_sync_call(call, &deps, &mut log).await,
-    };
+    let pending = open_pending(&call, &deps).await;
+    let recorded = Mutex::new(Vec::new());
+    let opened = open_logged(&call, &deps, pending, &recorded);
     let mut outcome = Outcome {
         error: None,
         headers: None,
@@ -500,9 +499,75 @@ async fn open_with(
         failures: Vec::new(),
         logs: Vec::new(),
     };
-    drain(opened, consume, &mut outcome).await;
-    outcome.logs = std::mem::take(&mut *logged.lock().unwrap_or_else(PoisonError::into_inner));
+    consume_opened(opened, consume, &mut outcome).await;
+    outcome.logs = mem::take(&mut *recorded.lock().unwrap_or_else(PoisonError::into_inner));
     outcome
+}
+
+async fn open_pending(
+    call: &Call<'_>,
+    deps: &StreamDeps<'_>,
+) -> Result<PendingOpen, HttpStreamError<Infallible>> {
+    match call {
+        Call::Invoke(call) => open_invoke(call, deps).await,
+        Call::Converse(call) => open_converse(call, deps).await,
+    }
+}
+
+// The conversion, its log entry and the fake stream's body all run synchronously, as LiteLLM runs them.
+fn open_logged<'deps>(
+    call: &Call<'_>,
+    deps: &StreamDeps<'deps>,
+    pending: Result<PendingOpen, HttpStreamError<Infallible>>,
+    recorded: &Mutex<Vec<Json>>,
+) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+    let mut state = logging_state(deps.redactor);
+    let sink = Quiet;
+    let logger = |details: &Json| -> Result<(), PrePostError> {
+        recorded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(details.clone());
+        Ok(())
+    };
+    let env = log_env(deps.redactor, &sink, &logger);
+    let pending = pending?;
+    let mut log = LogContext {
+        state: &mut state,
+        env: &env,
+    };
+    match call {
+        Call::Invoke(call) => make_call(call, deps, pending, &mut log),
+        Call::Converse(call) => make_sync_call(call, deps, pending, &mut log),
+    }
+}
+
+async fn consume_opened(
+    opened: Result<OpenedStream<'_>, HttpStreamError<Infallible>>,
+    consume: Consume,
+    outcome: &mut Outcome,
+) {
+    match opened {
+        Ok(stream) => consume_stream(stream, consume, outcome).await,
+        Err(error) => outcome.error = Some(error),
+    }
+}
+
+async fn consume_stream(stream: OpenedStream<'_>, consume: Consume, outcome: &mut Outcome) {
+    outcome.headers = Some(stream.headers);
+    let mut chunks = stream.chunks;
+    if consume == Consume::None {
+        return;
+    }
+    while let Some(item) = chunks.next().await {
+        match item {
+            Ok(parsed) => outcome.chunks.push(parsed),
+            Err(error) => outcome.failures.push(error),
+        }
+        if consume == Consume::First {
+            return;
+        }
+    }
 }
 
 fn log_env<'env>(
@@ -542,33 +607,5 @@ fn deps_for<'deps>(
         redactor,
         timeout: Duration::from_secs(600),
         now: now(),
-    }
-}
-
-async fn drain(
-    opened: Result<OpenedStream<'_>, HttpStreamError<Infallible>>,
-    consume: Consume,
-    outcome: &mut Outcome,
-) {
-    let stream = match opened {
-        Ok(stream) => stream,
-        Err(error) => {
-            outcome.error = Some(error);
-            return;
-        }
-    };
-    outcome.headers = Some(stream.headers);
-    let mut chunks = stream.chunks;
-    if consume == Consume::None {
-        return;
-    }
-    while let Some(item) = chunks.next().await {
-        match item {
-            Ok(chunk) => outcome.chunks.push(chunk),
-            Err(error) => outcome.failures.push(error),
-        }
-        if consume == Consume::First {
-            return;
-        }
     }
 }

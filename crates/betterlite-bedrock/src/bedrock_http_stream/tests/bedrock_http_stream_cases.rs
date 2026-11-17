@@ -1,10 +1,11 @@
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::{GenericChunk, JsonValue};
+use rstest::rstest;
 
 use super::support::{
-    BASE, Call, Consume, DATA, FIRST, Inputs, REPLY, Refusal, Reply, converse, invoke, member,
-    messages, run, run_default, run_supplied, sorted_pairs,
+    BASE, Call, Consume, DATA, FIRST, Inputs, Outcome, REPLY, Refusal, Reply, converse, invoke,
+    member, messages, run, run_default, run_supplied, sorted_pairs,
 };
 use crate::bedrock_http_stream::error::HttpStreamError;
 use crate::bedrock_http_stream::stream::StreamFailure;
@@ -108,13 +109,36 @@ fn assert_status_failure(status: u16, reason: &str, messages: &Json) {
     assert_eq!(outcome.provider_message(), Some(reason));
 }
 
-#[test]
+fn content_of(chunks: &[InvokeChunk]) -> Vec<&str> {
+    chunks
+        .iter()
+        .filter_map(|chunk| chunk_field(chunk, Field::Content))
+        .collect()
+}
+
+#[rstest]
+#[case::case_1_invoke_stream_url(case_1_invoke_stream_url)]
+#[case::case_2_http_error_before_frame(case_2_http_error_before_frame)]
+#[case::case_3_converse_stream_headers(case_3_converse_stream_headers)]
+#[case::case_4_fake_stream_projection(case_4_fake_stream_projection)]
+#[case::case_5_post_call_before_consumption(case_5_post_call_before_consumption)]
+fn bedrock_http_stream_cases(#[case] case: fn()) {
+    case();
+}
+
 fn case_1_invoke_stream_url() {
     let messages = messages();
+    invoke_posts(&messages);
+    supplied_client_wins(&messages);
+    invoke_signed_bodies(&messages);
+    fake_streams_do_not_stream(&messages);
+}
+
+fn invoke_posts(messages: &Json) {
     let api_base = "https://bedrock-runtime.us-east-1.amazonaws.com/custom/invoke?trace=1";
     let inputs = Inputs::new(Reply::frames(&[FIRST]));
     let outcome = run(
-        Call::Invoke(invoke(api_base, DATA, &messages)),
+        Call::Invoke(invoke(api_base, DATA, messages)),
         &inputs,
         Consume::None,
     );
@@ -133,19 +157,22 @@ fn case_1_invoke_stream_url() {
     // With no supplied client the helper posts through the default handler it was handed.
     let default_inputs = Inputs::new(Reply::frames(&[FIRST]));
     let default_outcome = run_default(
-        Call::Invoke(invoke(api_base, DATA, &messages)),
+        Call::Invoke(invoke(api_base, DATA, messages)),
         &default_inputs,
         Consume::None,
     );
     assert!(default_outcome.error.is_none());
     assert_eq!(default_inputs.calls(), 1);
     assert_eq!(default_inputs.posts()[0].url, api_base);
+}
 
+fn supplied_client_wins(messages: &Json) {
     // A supplied client wins over the default handler, which then sees no request.
+    let api_base = "https://bedrock-runtime.us-east-1.amazonaws.com/custom/invoke?trace=1";
     let supplied_inputs = Inputs::new(Reply::frames(&[FIRST]));
     let default = Inputs::new(Reply::refusing(Refusal::Closed));
     let supplied_outcome = run_supplied(
-        Call::Invoke(invoke(api_base, DATA, &messages)),
+        Call::Invoke(invoke(api_base, DATA, messages)),
         &supplied_inputs,
         &default,
         Consume::None,
@@ -153,18 +180,31 @@ fn case_1_invoke_stream_url() {
     assert!(supplied_outcome.error.is_none());
     assert_eq!(supplied_inputs.calls(), 1);
     assert_eq!(default.calls(), 0);
+}
+
+fn invoke_signed_bodies(messages: &Json) {
+    async_ignores_signed_body(messages);
+    sync_sends_signed_body(messages);
+}
+
+fn async_ignores_signed_body(messages: &Json) {
+    let api_base = "https://bedrock-runtime.us-east-1.amazonaws.com/custom/invoke?trace=1";
 
     // The async helper never reads a signed body, even one a caller supplied.
     let async_inputs = Inputs::new(Reply::frames(&[FIRST]));
-    let mut async_call = invoke(api_base, DATA, &messages);
+    let mut async_call = invoke(api_base, DATA, messages);
     async_call.signed_json_body = Some(b"signed-async");
     let async_outcome = run(Call::Invoke(async_call), &async_inputs, Consume::None);
     assert!(async_outcome.error.is_none());
     assert_eq!(async_inputs.posts()[0].body, DATA);
+}
+
+fn sync_sends_signed_body(messages: &Json) {
+    let api_base = "https://bedrock-runtime.us-east-1.amazonaws.com/custom/invoke?trace=1";
 
     // The sync helper sends the signed body whenever one exists, empty bytes included.
     let signed_inputs = Inputs::new(Reply::frames(&[FIRST]));
-    let mut signed_call = invoke(api_base, DATA, &messages);
+    let mut signed_call = invoke(api_base, DATA, messages);
     signed_call.sync = true;
     signed_call.signed_json_body = Some(b"signed-json");
     let signed_outcome = run(Call::Invoke(signed_call), &signed_inputs, Consume::None);
@@ -180,7 +220,7 @@ fn case_1_invoke_stream_url() {
     );
 
     let empty_signed_inputs = Inputs::new(Reply::frames(&[FIRST]));
-    let mut empty_signed_call = invoke(api_base, DATA, &messages);
+    let mut empty_signed_call = invoke(api_base, DATA, messages);
     empty_signed_call.sync = true;
     empty_signed_call.signed_json_body = Some(b"");
     let empty_signed_outcome = run(
@@ -192,15 +232,19 @@ fn case_1_invoke_stream_url() {
     assert_eq!(empty_signed_inputs.posts()[0].body, "");
 
     let plain_inputs = Inputs::new(Reply::frames(&[FIRST]));
-    let mut plain_call = invoke(api_base, DATA, &messages);
+    let mut plain_call = invoke(api_base, DATA, messages);
     plain_call.sync = true;
     let plain_outcome = run(Call::Invoke(plain_call), &plain_inputs, Consume::None);
     assert!(plain_outcome.error.is_none());
     assert_eq!(plain_inputs.posts()[0].body, DATA);
+}
+
+fn fake_streams_do_not_stream(messages: &Json) {
+    let api_base = "https://bedrock-runtime.us-east-1.amazonaws.com/custom/invoke?trace=1";
 
     // A fake stream tells the client not to stream, on every helper.
     let fake_invoke_inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut fake_invoke_call = invoke(api_base, DATA, &messages);
+    let mut fake_invoke_call = invoke(api_base, DATA, messages);
     fake_invoke_call.fake_stream = true;
     let fake_invoke_outcome = run(
         Call::Invoke(fake_invoke_call),
@@ -211,7 +255,7 @@ fn case_1_invoke_stream_url() {
     assert!(!fake_invoke_inputs.posts()[0].stream);
 
     let fake_converse_inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut fake_converse_call = converse(&messages);
+    let mut fake_converse_call = converse(messages);
     fake_converse_call.api_base = api_base;
     fake_converse_call.fake_stream = true;
     let fake_converse_outcome = run(
@@ -223,15 +267,23 @@ fn case_1_invoke_stream_url() {
     assert!(!fake_converse_inputs.posts()[0].stream);
 }
 
-#[test]
 fn case_2_http_error_before_frame() {
     let messages = messages();
+    invoke_status_failure(&messages);
+    fake_body_failures(&messages);
+    fake_read_failures(&messages);
+    transport_refusals(&messages);
+    converse_status_failure(&messages);
+    converse_bytes_repr(&messages);
+    converse_passthrough_failures(&messages);
+}
 
+fn invoke_status_failure(messages: &Json) {
     let mut reply = Reply::frames(&["69676e6f726564"]);
     reply.status = 400;
     let inputs = Inputs::new(reply);
     let outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &inputs,
         Consume::None,
     );
@@ -252,14 +304,16 @@ fn case_2_http_error_before_frame() {
     assert!(outcome.logs.is_empty());
 
     // Any other status is a failure too, named by its reason phrase.
-    assert_status_failure(201, "Created", &messages);
-    assert_status_failure(204, "No Content", &messages);
+    assert_status_failure(201, "Created", messages);
+    assert_status_failure(204, "No Content", messages);
+}
 
+fn fake_body_failures(messages: &Json) {
     // A fake stream has read the body, so the failure carries its text.
     let mut fake_reply = Reply::buffered("boom");
     fake_reply.status = 500;
     let fake_inputs = Inputs::new(fake_reply);
-    let mut fake_call = invoke(BASE, DATA, &messages);
+    let mut fake_call = invoke(BASE, DATA, messages);
     fake_call.fake_stream = true;
     let fake_outcome = run(Call::Invoke(fake_call), &fake_inputs, Consume::None);
     assert_eq!(fake_outcome.provider_status(), Some(500));
@@ -275,7 +329,7 @@ fn case_2_http_error_before_frame() {
         reads: vec![Ok(b"\xff\xfe".to_vec())],
         refused: None,
     });
-    let mut binary_call = invoke(BASE, DATA, &messages);
+    let mut binary_call = invoke(BASE, DATA, messages);
     binary_call.fake_stream = true;
     let binary_outcome = run(Call::Invoke(binary_call), &binary_inputs, Consume::None);
     assert_eq!(binary_outcome.provider_status(), Some(500));
@@ -283,7 +337,9 @@ fn case_2_http_error_before_frame() {
         binary_outcome.provider_message(),
         Some("2 bytes that are not text")
     );
+}
 
+fn fake_read_failures(messages: &Json) {
     let timeout_reply = Reply {
         status: 500,
         headers: Vec::new(),
@@ -291,7 +347,7 @@ fn case_2_http_error_before_frame() {
         refused: None,
     };
     let timeout_inputs = Inputs::new(timeout_reply);
-    let mut timeout_call = invoke(BASE, DATA, &messages);
+    let mut timeout_call = invoke(BASE, DATA, messages);
     timeout_call.fake_stream = true;
     let timeout_outcome = run(Call::Invoke(timeout_call), &timeout_inputs, Consume::None);
     assert_eq!(timeout_outcome.provider_status(), Some(408));
@@ -307,7 +363,7 @@ fn case_2_http_error_before_frame() {
         reads: vec![Err(HttpError::TooLarge { limit: 7 })],
         refused: None,
     });
-    let mut failed_read_call = invoke(BASE, DATA, &messages);
+    let mut failed_read_call = invoke(BASE, DATA, messages);
     failed_read_call.fake_stream = true;
     let failed_read_outcome = run(
         Call::Invoke(failed_read_call),
@@ -320,10 +376,12 @@ fn case_2_http_error_before_frame() {
             .provider_message()
             .is_some_and(|message| message.contains("larger than 7 bytes"))
     );
+}
 
+fn transport_refusals(messages: &Json) {
     let refused_inputs = Inputs::new(Reply::refusing(Refusal::ReadTimeout));
     let refused_outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &refused_inputs,
         Consume::None,
     );
@@ -331,7 +389,7 @@ fn case_2_http_error_before_frame() {
 
     let large_inputs = Inputs::new(Reply::refusing(Refusal::TooLarge(7)));
     let large_outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &large_inputs,
         Consume::None,
     );
@@ -341,14 +399,16 @@ fn case_2_http_error_before_frame() {
             .provider_message()
             .is_some_and(|message| message.contains("larger than 7 bytes"))
     );
+}
 
+fn converse_status_failure(messages: &Json) {
     // Converse has no catch: the status failure carries the bytes repr, and the others pass through.
     let mut converse_reply = Reply::buffered("{\"message\":\"boom\"}\n");
     converse_reply.status = 500;
     converse_reply.headers = vec![("x-amzn-requestid".to_owned(), "req-1".to_owned())];
     let converse_inputs = Inputs::new(converse_reply);
     let converse_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &converse_inputs,
         Consume::None,
     );
@@ -365,7 +425,9 @@ fn case_2_http_error_before_frame() {
         error.response_headers,
         vec![("x-amzn-requestid".to_owned(), "req-1".to_owned())]
     );
+}
 
+fn converse_bytes_repr(messages: &Json) {
     // Python's bytes repr escapes the delimiter, a backslash, controls and non-ASCII bytes.
     let bytes_inputs = Inputs::new(Reply {
         status: 500,
@@ -374,7 +436,7 @@ fn case_2_http_error_before_frame() {
         refused: None,
     });
     let bytes_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &bytes_inputs,
         Consume::None,
     );
@@ -392,16 +454,18 @@ fn case_2_http_error_before_frame() {
         refused: None,
     });
     let apostrophe_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &apostrophe_inputs,
         Consume::None,
     );
     assert_eq!(apostrophe_outcome.provider_status(), Some(500));
     assert_eq!(apostrophe_outcome.provider_message(), Some(r#"b"it's""#));
+}
 
+fn converse_passthrough_failures(messages: &Json) {
     let transport_inputs = Inputs::new(Reply::refusing(Refusal::ReadTimeout));
     let transport_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &transport_inputs,
         Consume::None,
     );
@@ -418,16 +482,22 @@ fn case_2_http_error_before_frame() {
     };
     let body_inputs = Inputs::new(body_reply);
     let body_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &body_inputs,
         Consume::None,
     );
     assert!(matches!(body_outcome.error, Some(HttpStreamError::Body(_))));
 }
 
-#[test]
 fn case_3_converse_stream_headers() {
     let messages = messages();
+    converse_stream_headers(&messages);
+    converse_client_selection(&messages);
+    converse_tally_failures(&messages);
+    converse_json_mode(&messages);
+}
+
+fn converse_stream_headers(messages: &Json) {
     let mut reply = Reply::frames(&[START, HELLO, WORLD, STOP, USAGE]);
     reply
         .headers
@@ -438,19 +508,19 @@ fn case_3_converse_stream_headers() {
         pairs
     };
     let inputs = Inputs::new(reply);
-    let outcome = run(Call::Converse(converse(&messages)), &inputs, Consume::All);
+    let outcome = run(Call::Converse(converse(messages)), &inputs, Consume::All);
     assert!(outcome.error.is_none());
     assert!(outcome.failures.is_empty());
     assert_eq!(
         sorted_pairs(outcome.headers.as_ref().unwrap()),
         expected_headers
     );
-    let text: String = outcome
-        .chunks
-        .iter()
-        .filter_map(|chunk| chunk_field(chunk, Field::Content))
-        .collect();
-    assert_eq!(text, "hello world");
+    assert_eq!(content_of(&outcome.chunks).concat(), "hello world");
+    assert_stream_metadata(&outcome);
+    assert_converse_posts(&inputs, &outcome);
+}
+
+fn assert_stream_metadata(outcome: &Outcome) {
     // Every event chunk carries the model the call passed, which the decoder stores at construction.
     let models: Vec<&str> = outcome
         .chunks
@@ -471,16 +541,21 @@ fn case_3_converse_stream_headers() {
         .filter(|reason| !reason.is_empty())
         .collect();
     assert_eq!(reasons, vec!["stop"]);
+}
+
+fn assert_converse_posts(inputs: &Inputs, outcome: &Outcome) {
     assert_eq!(outcome.chunks.len(), 5);
     assert_eq!(inputs.posts()[0].body, DATA);
     assert!(inputs.posts()[0].stream);
     assert_eq!(outcome.logs.len(), 1);
+}
 
+fn converse_client_selection(messages: &Json) {
     // A supplied client wins over the default handler here too.
     let supplied = Inputs::new(Reply::frames(&[FIRST]));
     let default = Inputs::new(Reply::refusing(Refusal::Closed));
     let supplied_outcome = run_supplied(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &supplied,
         &default,
         Consume::All,
@@ -493,14 +568,16 @@ fn case_3_converse_stream_headers() {
     // With no supplied client the default handler serves the call.
     let default_inputs = Inputs::new(Reply::frames(&[FIRST]));
     let default_outcome = run_default(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &default_inputs,
         Consume::All,
     );
     assert!(default_outcome.error.is_none());
     assert_eq!(default_inputs.calls(), 1);
     assert_eq!(default_outcome.chunks.len(), 1);
+}
 
+fn converse_tally_failures(messages: &Json) {
     // An event stream that decodes to no events fails through the tally with the 502 LiteLLM raises.
     let mut empty_reply = Reply::frames(&[]);
     empty_reply
@@ -508,7 +585,7 @@ fn case_3_converse_stream_headers() {
         .push(("x-amzn-requestid".to_owned(), "req-1".to_owned()));
     let empty_inputs = Inputs::new(empty_reply);
     let empty_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &empty_inputs,
         Consume::All,
     );
@@ -521,7 +598,7 @@ fn case_3_converse_stream_headers() {
     // A body too short to hold a frame is still no events at EOF, so the tally again.
     let short_inputs = Inputs::new(Reply::frames(&["6e6f742061206672616d65"]));
     let short_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &short_inputs,
         Consume::All,
     );
@@ -530,28 +607,26 @@ fn case_3_converse_stream_headers() {
     // A malformed frame fails as it is read, without a status of its own.
     let malformed_inputs = Inputs::new(Reply::frames(&[MALFORMED]));
     let malformed_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &malformed_inputs,
         Consume::All,
     );
     assert_eq!(malformed_outcome.failure_statuses(), vec![None]);
+}
 
+fn converse_json_mode(messages: &Json) {
     // json_mode makes the base decoder read the synthetic response-format tool as content.
     let json_inputs = Inputs::new(Reply::frames(&[
         JSON_TOOL_START,
         JSON_TOOL_DELTA,
         JSON_TOOL_STOP,
     ]));
-    let mut json_call = converse(&messages);
+    let mut json_call = converse(messages);
     json_call.json_mode = Some(true);
     let json_outcome = run(Call::Converse(json_call), &json_inputs, Consume::All);
     assert!(json_outcome.error.is_none());
     assert!(json_outcome.failures.is_empty());
-    let contents: Vec<&str> = json_outcome
-        .chunks
-        .iter()
-        .filter_map(|chunk| chunk_field(chunk, Field::Content))
-        .collect();
+    let contents = content_of(&json_outcome.chunks);
     assert!(
         contents
             .iter()
@@ -565,15 +640,11 @@ fn case_3_converse_stream_headers() {
         JSON_TOOL_STOP,
     ]));
     let plain_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &plain_inputs,
         Consume::All,
     );
-    let plain_contents: Vec<&str> = plain_outcome
-        .chunks
-        .iter()
-        .filter_map(|chunk| chunk_field(chunk, Field::Content))
-        .collect();
+    let plain_contents = content_of(&plain_outcome.chunks);
     assert!(
         !plain_contents
             .iter()
@@ -581,12 +652,19 @@ fn case_3_converse_stream_headers() {
     );
 }
 
-#[test]
 fn case_4_fake_stream_projection() {
     let messages = messages();
+    fake_invoke_projection(&messages);
+    fake_tool_projection(&messages);
+    fake_client_paths(&messages);
+    provider_decoder(&messages);
+    buffered_json_tool(&messages);
+    buffered_conversion_failures(&messages);
+}
 
+fn fake_invoke_projection(messages: &Json) {
     let inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut call = invoke(BASE, DATA, &messages);
+    let mut call = invoke(BASE, DATA, messages);
     call.fake_stream = true;
     let outcome = run(Call::Invoke(call), &inputs, Consume::All);
     assert!(outcome.error.is_none());
@@ -606,10 +684,12 @@ fn case_4_fake_stream_projection() {
         ),
         (10, 5, 15)
     );
+}
 
+fn fake_tool_projection(messages: &Json) {
     // The buffered converter never sees json_mode; the iterator applies it to the tool call afterwards.
     let tool_inputs = Inputs::new(Reply::buffered(TOOL_REPLY));
-    let mut tool_call = invoke(BASE, DATA, &messages);
+    let mut tool_call = invoke(BASE, DATA, messages);
     tool_call.fake_stream = true;
     let tool_outcome = run(Call::Invoke(tool_call), &tool_inputs, Consume::All);
     let tool_chunk = generic(&tool_outcome.chunks[0]);
@@ -626,24 +706,26 @@ fn case_4_fake_stream_projection() {
     assert_eq!(tool_member(tool, "index").as_i64(), Some(0));
 
     let json_inputs = Inputs::new(Reply::buffered(TOOL_REPLY));
-    let mut json_call = invoke(BASE, DATA, &messages);
+    let mut json_call = invoke(BASE, DATA, messages);
     json_call.fake_stream = true;
     json_call.json_mode = Some(true);
     let json_outcome = run(Call::Invoke(json_call), &json_inputs, Consume::All);
     let json_chunk = generic(&json_outcome.chunks[0]);
     assert_eq!(json_chunk.text, r#"{"sign": "WZPZ"}"#);
     assert!(json_chunk.tool_use.is_none());
+}
 
+fn fake_client_paths(messages: &Json) {
     // The sync Invoke helper and the Converse helper convert the same body the same way.
     let sync_inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut sync_call = invoke(BASE, DATA, &messages);
+    let mut sync_call = invoke(BASE, DATA, messages);
     sync_call.fake_stream = true;
     sync_call.sync = true;
     let sync_outcome = run(Call::Invoke(sync_call), &sync_inputs, Consume::All);
     assert_eq!(generic(&sync_outcome.chunks[0]).text, "hello");
 
     let converse_inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut converse_call = converse(&messages);
+    let mut converse_call = converse(messages);
     converse_call.fake_stream = true;
     let converse_outcome = run(
         Call::Converse(converse_call),
@@ -651,10 +733,12 @@ fn case_4_fake_stream_projection() {
         Consume::All,
     );
     assert_eq!(generic(&converse_outcome.chunks[0]).text, "hello");
+}
 
+fn provider_decoder(messages: &Json) {
     // A named provider selects its own decoder instead of the base projection.
     let provider_inputs = Inputs::new(Reply::frames(&[DEEPSEEK_CHUNK]));
-    let mut provider_call = invoke(BASE, DATA, &messages);
+    let mut provider_call = invoke(BASE, DATA, messages);
     provider_call.provider = Some("deepseek_r1");
     let provider_outcome = run(Call::Invoke(provider_call), &provider_inputs, Consume::All);
     assert!(provider_outcome.error.is_none());
@@ -663,10 +747,12 @@ fn case_4_fake_stream_projection() {
         &provider_outcome.chunks[0],
         InvokeChunk::DeepSeek(_)
     ));
+}
 
+fn buffered_json_tool(messages: &Json) {
     // json_mode is not the buffered converter's: there the synthetic tool stays a tool call.
     let synthetic_inputs = Inputs::new(Reply::buffered(JSON_TOOL_REPLY));
-    let mut synthetic_call = invoke(BASE, DATA, &messages);
+    let mut synthetic_call = invoke(BASE, DATA, messages);
     synthetic_call.fake_stream = true;
     synthetic_call.json_mode = Some(true);
     let synthetic_outcome = run(
@@ -680,7 +766,7 @@ fn case_4_fake_stream_projection() {
     assert_eq!(synthetic_chunk.finish_reason, "tool_calls");
 
     let synthetic_converse_inputs = Inputs::new(Reply::buffered(JSON_TOOL_REPLY));
-    let mut synthetic_converse_call = converse(&messages);
+    let mut synthetic_converse_call = converse(messages);
     synthetic_converse_call.fake_stream = true;
     synthetic_converse_call.json_mode = Some(true);
     let synthetic_converse_outcome = run(
@@ -691,10 +777,12 @@ fn case_4_fake_stream_projection() {
     let synthetic_converse_chunk = generic(&synthetic_converse_outcome.chunks[0]);
     assert_eq!(synthetic_converse_chunk.text, r#"{"sign": "WZPZ"}"#);
     assert_eq!(synthetic_converse_chunk.finish_reason, "tool_calls");
+}
 
+fn buffered_conversion_failures(messages: &Json) {
     // A body the converter cannot read is the 422 it raises; a missing output member is the catch-all's 500.
     let bad_inputs = Inputs::new(Reply::buffered("[]"));
-    let mut bad_call = invoke(BASE, DATA, &messages);
+    let mut bad_call = invoke(BASE, DATA, messages);
     bad_call.fake_stream = true;
     let bad_outcome = run(Call::Invoke(bad_call), &bad_inputs, Consume::None);
     assert_eq!(bad_outcome.provider_status(), Some(422));
@@ -705,19 +793,24 @@ fn case_4_fake_stream_projection() {
     );
 
     let missing_inputs = Inputs::new(Reply::buffered("{}"));
-    let mut missing_call = invoke(BASE, DATA, &messages);
+    let mut missing_call = invoke(BASE, DATA, messages);
     missing_call.fake_stream = true;
     let missing_outcome = run(Call::Invoke(missing_call), &missing_inputs, Consume::None);
     assert_eq!(missing_outcome.provider_status(), Some(500));
 }
 
-#[test]
 fn case_5_post_call_before_consumption() {
     let messages = messages();
+    invoke_logs_before_read(&messages);
+    empty_stream_logs(&messages);
+    fake_stream_logs_twice(&messages);
+    converse_logs_before_read(&messages);
+}
 
+fn invoke_logs_before_read(messages: &Json) {
     let inputs = Inputs::new(Reply::frames(&[FIRST]));
     let outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &inputs,
         Consume::None,
     );
@@ -725,7 +818,7 @@ fn case_5_post_call_before_consumption() {
     assert_eq!(inputs.polls(), 0);
     assert_eq!(outcome.logs.len(), 1);
     let logged = outcome.logged(0);
-    assert_eq!(member(logged, "input"), &messages);
+    assert_eq!(member(logged, "input"), messages);
     assert_eq!(
         member(logged, "original_response"),
         &Json::Text("first stream response received".to_owned())
@@ -734,11 +827,13 @@ fn case_5_post_call_before_consumption() {
         member(member(logged, "additional_args"), "complete_input_dict"),
         &Json::Text(DATA.to_owned())
     );
+}
 
+fn empty_stream_logs(messages: &Json) {
     // An empty stream is logged before the tally reports it, and the consumer sees the 502.
     let empty_inputs = Inputs::new(Reply::frames(&[]));
     let empty_outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &empty_inputs,
         Consume::All,
     );
@@ -747,7 +842,7 @@ fn case_5_post_call_before_consumption() {
 
     let short_inputs = Inputs::new(Reply::frames(&["6e6f742061206672616d65"]));
     let short_outcome = run(
-        Call::Invoke(invoke(BASE, DATA, &messages)),
+        Call::Invoke(invoke(BASE, DATA, messages)),
         &short_inputs,
         Consume::All,
     );
@@ -757,10 +852,12 @@ fn case_5_post_call_before_consumption() {
         &short_outcome.failures[0],
         StreamFailure::Decode(_)
     ));
+}
 
+fn fake_stream_logs_twice(messages: &Json) {
     // A fake stream logs the buffered response first and the opened stream second.
     let fake_inputs = Inputs::new(Reply::buffered(REPLY));
-    let mut fake_call = invoke(BASE, DATA, &messages);
+    let mut fake_call = invoke(BASE, DATA, messages);
     fake_call.fake_stream = true;
     let fake_outcome = run(Call::Invoke(fake_call), &fake_inputs, Consume::All);
     assert_eq!(fake_outcome.logs.len(), 2);
@@ -769,7 +866,7 @@ fn case_5_post_call_before_consumption() {
         member(buffered, "original_response"),
         &Json::Text(REPLY.to_owned())
     );
-    assert_eq!(member(buffered, "input"), &messages);
+    assert_eq!(member(buffered, "input"), messages);
     assert_eq!(
         member(member(buffered, "additional_args"), "complete_input_dict"),
         &Json::Text(DATA.to_owned())
@@ -779,10 +876,12 @@ fn case_5_post_call_before_consumption() {
         member(opened, "original_response"),
         &Json::Text("first stream response received".to_owned())
     );
+}
 
+fn converse_logs_before_read(messages: &Json) {
     let converse_inputs = Inputs::new(Reply::frames(&[FIRST]));
     let converse_outcome = run(
-        Call::Converse(converse(&messages)),
+        Call::Converse(converse(messages)),
         &converse_inputs,
         Consume::None,
     );
