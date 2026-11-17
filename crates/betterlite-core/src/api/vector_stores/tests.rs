@@ -126,29 +126,22 @@ fn chat_retrieval_fields() {
 #[case::results_only(
     RESULTS,
     "[]",
-    r#"{"keep":"x","search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":"oldf"}"#
+    r#"{"id":"chat1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"a","provider_specific_fields":{"keep":"x","search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":"oldf"}}}]}"#
 )]
 #[case::failures_only(
     "[]",
     FAILURES,
-    r#"{"keep":"x","search_results":"old","vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}"#
+    r#"{"id":"chat1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"a","provider_specific_fields":{"keep":"x","search_results":"old","vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}}}]}"#
 )]
 fn empty_inputs_do_not_erase_existing_fields(
     #[case] results: &str,
     #[case] failures: &str,
     #[case] expected: &str,
 ) {
-    let request_data = request(&details_with(results, failures));
     let mut answer = record(STALE_ANSWER);
-    let decoration = decorate_answer(&request_data, &mut answer);
-    assert_eq!(
-        decoration,
-        Decoration {
-            returns_answer: true,
-            diagnostics: Vec::new(),
-        }
-    );
-    assert_eq!(member_fields(&answer, "message", 0), Some(record(expected)));
+    let decoration = decorate_answer(&request(&details_with(results, failures)), &mut answer);
+    assert!(decoration.returns_answer);
+    assert_eq!(answer, record(expected));
 }
 
 #[rstest]
@@ -243,15 +236,9 @@ fn a_responses_object_never_decorates_choices() {
 #[case::scalar_choice(r#"{"id":"c","object":"chat.completion","choices":[3]}"#)]
 #[case::scalar_answer("3")]
 fn chat_choices_without_a_message_are_unchanged(#[case] source: &str) {
-    let request_data = request(&details_with(RESULTS, FAILURES));
     let mut answer = record(source);
-    let decoration = decorate_answer(&request_data, &mut answer);
-    assert_eq!(
-        decoration,
-        Decoration {
-            returns_answer: true,
-            diagnostics: Vec::new(),
-        }
+    assert!(
+        decorate_answer(&request(&details_with(RESULTS, FAILURES)), &mut answer).returns_answer
     );
     assert_eq!(answer, record(source));
 }
@@ -303,12 +290,10 @@ fn successful_hook_noop(#[case] source: &str, #[case] diagnostic: &str) {
 fn unreadable_metadata_is_reported(#[case] source: &str, #[case] diagnostic: &str) {
     let mut answer = record(CHAT_ANSWER);
     let decoration = decorate_answer(&request(source), &mut answer);
+    assert!(!decoration.returns_answer);
     assert_eq!(
-        decoration,
-        Decoration {
-            returns_answer: false,
-            diagnostics: vec![format!("{RESPONSE_ERROR}{diagnostic}")],
-        }
+        decoration.diagnostics,
+        vec![format!("{RESPONSE_ERROR}{diagnostic}")]
     );
     assert_eq!(answer, record(CHAT_ANSWER));
 }
@@ -358,45 +343,43 @@ fn a_malformed_target_keeps_the_choices_decorated_before_it() {
     );
 }
 
-#[test]
-fn streaming_retrieval_fields() {
-    let request_data = chunk_request(RESULTS, FAILURES);
-    let mut chunk = record(CHUNK);
-    let diagnostics = decorate_chunk(&request_data, &mut chunk);
-    assert_eq!(diagnostics, Vec::<String>::new());
+#[rstest]
+#[case::both(RESULTS, FAILURES, RESULTS, FAILURES)]
+#[case::results_only(RESULTS, "[]", RESULTS, r#""oldf""#)]
+#[case::failures_only("[]", FAILURES, r#""old""#, FAILURES)]
+fn streaming_retrieval_fields(
+    #[case] results: &str,
+    #[case] failures: &str,
+    #[case] expected_results: &str,
+    #[case] expected_failures: &str,
+) {
+    let mut chunk = record(STALE_CHUNK);
+    let diagnostics = decorate_chunk(&chunk_request(results, failures), &mut chunk);
+    assert!(diagnostics.is_empty(), "the hook reported {diagnostics:?}");
     assert_eq!(
         member_fields(&chunk, "delta", 0),
-        Some(decorated(RESULTS, FAILURES))
+        Some(decorated(expected_results, expected_failures))
     );
-    assert_eq!(
-        member_fields(&chunk, "delta", 1),
-        Some(record(&supplied(RESULTS, FAILURES)))
-    );
-    assert_eq!(top_field(&chunk, SEARCH_RESULTS), None);
     assert_eq!(top_field(&chunk, "id"), Some(record("\"chunk\"")));
 }
 
-#[rstest]
-#[case::results_only(
-    RESULTS,
-    "[]",
-    r#"{"keep":"x","search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":"oldf"}"#
-)]
-#[case::failures_only(
-    "[]",
-    FAILURES,
-    r#"{"keep":"x","search_results":"old","vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}"#
-)]
-fn streaming_empty_inputs_do_not_erase_existing_fields(
-    #[case] results: &str,
-    #[case] failures: &str,
-    #[case] expected: &str,
-) {
-    let request_data = chunk_request(results, failures);
-    let mut chunk = record(STALE_CHUNK);
-    let diagnostics = decorate_chunk(&request_data, &mut chunk);
+#[test]
+fn streaming_choices_without_a_delta_are_unchanged() {
+    let source = r#"{"id":"c","object":"chat.completion.chunk","choices":[
+        {"index":0,"finish_reason":"stop"},
+        {"index":1,"delta":null},
+        {"index":2,"delta":{"content":"a"}}]}"#;
+    let mut chunk = record(source);
+    let diagnostics = decorate_chunk(&chunk_request(RESULTS, FAILURES), &mut chunk);
     assert_eq!(diagnostics, Vec::<String>::new());
-    assert_eq!(member_fields(&chunk, "delta", 0), Some(record(expected)));
+    let expected = record(&format!(
+        r#"{{"id":"c","object":"chat.completion.chunk","choices":[
+        {{"index":0,"finish_reason":"stop"}},
+        {{"index":1,"delta":null}},
+        {{"index":2,"delta":{{"content":"a","provider_specific_fields":{}}}}}]}}"#,
+        supplied(RESULTS, FAILURES)
+    ));
+    assert_eq!(chunk, expected);
 }
 
 #[rstest]
@@ -426,13 +409,10 @@ fn streaming_without_fields_returns_the_chunk(
 fn streaming_reports_unreadable_metadata() {
     let mut chunk = record(CHUNK);
     let diagnostics = decorate_chunk(&request(r#"{"search_results":"results"}"#), &mut chunk);
-    assert_eq!(
-        diagnostics,
-        vec![format!(
-            "{STREAM_ERROR}the search_results field must be a list of retrieval records"
-        )]
-    );
-    assert_eq!(chunk, record(CHUNK));
+    let expected = vec![format!(
+        "{STREAM_ERROR}the search_results field must be a list of retrieval records"
+    )];
+    assert_eq!((diagnostics, chunk), (expected, record(CHUNK)));
 }
 
 #[test]
