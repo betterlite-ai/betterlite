@@ -26,7 +26,7 @@ use tracing::subscriber::with_default;
 
 use super::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use super::failure::{CompletionFailure, wrapped_failure};
-use super::http::{HttpCompletionConstructor, HttpCompletionSdk};
+use super::http::{HttpCompletionConstructor, HttpCompletionSdk, UpstreamFacts};
 use super::log::TracingCompletionLog;
 use super::transport_request;
 use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend, answered, status_failure};
@@ -496,7 +496,7 @@ async fn serve_refusal(listener: &TcpListener, status: u16, answer: &str) -> Str
 }
 
 // the async SDK a deployment builds against the fake provider at this address
-fn async_sdk(address: SocketAddr) -> HttpCompletionSdk {
+fn async_sdk(address: SocketAddr, facts: Arc<Mutex<Option<UpstreamFacts>>>) -> HttpCompletionSdk {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
     let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
     let arguments = SdkArguments {
@@ -509,8 +509,9 @@ fn async_sdk(address: SocketAddr) -> HttpCompletionSdk {
     };
     HttpCompletionConstructor {
         client,
+        // deployment.credential() hands the client a complete header value, bearer prefix included
         authorization: Some(SecretString::from("Bearer sk-deployment")),
-        facts: Arc::new(Mutex::new(None)),
+        facts,
     }
     .construct(&arguments, ClientKind::Async)
     .expect("sdk")
@@ -530,26 +531,7 @@ fn streamed_completion_data() -> Map<String, Value> {
 async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
-    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
-    let arguments = SdkArguments {
-        api_key: None,
-        base_url: Some(format!("http://{address}/v1")),
-        timeout: 5.0,
-        max_retries: None,
-        organization: None,
-        http_client: HttpClientSource::AsyncHttpClient,
-    };
-    let constructor = HttpCompletionConstructor {
-        client,
-        // deployment.credential() hands the client a complete header value, bearer prefix included
-        authorization: Some(SecretString::from("Bearer sk-deployment")),
-        facts: Arc::new(Mutex::new(None)),
-    };
-    let sdk = constructor
-        .construct(&arguments, ClientKind::Async)
-        .expect("sdk")
-        .expect("a credential builds the sdk");
+    let sdk = async_sdk(address, Arc::new(Mutex::new(None)));
     assert_eq!(sdk.kind(), ClientKind::Async);
     let mut data = Map::new();
     data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
@@ -594,26 +576,8 @@ async fn serve_text_stream(listener: TcpListener, released: oneshot::Receiver<()
 async fn the_http_sdk_streams_provider_events_as_they_arrive() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
-    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
-    let arguments = SdkArguments {
-        api_key: None,
-        base_url: Some(format!("http://{address}/v1")),
-        timeout: 5.0,
-        max_retries: None,
-        organization: None,
-        http_client: HttpClientSource::AsyncHttpClient,
-    };
     let facts = Arc::new(Mutex::new(None));
-    let constructor = HttpCompletionConstructor {
-        client,
-        authorization: Some(SecretString::from("Bearer sk-deployment")),
-        facts: Arc::clone(&facts),
-    };
-    let sdk = constructor
-        .construct(&arguments, ClientKind::Async)
-        .expect("sdk")
-        .expect("a credential builds the sdk");
+    let sdk = async_sdk(address, Arc::clone(&facts));
     let data = streamed_completion_data();
     let (release, released) = oneshot::channel();
     tokio::join!(
@@ -635,7 +599,7 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
 async fn a_refused_stream_answers_the_provider_error_object() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
-    let sdk = async_sdk(address);
+    let sdk = async_sdk(address, Arc::new(Mutex::new(None)));
     let data = streamed_completion_data();
     let ((refused, internal), _served) = tokio::join!(
         async {
