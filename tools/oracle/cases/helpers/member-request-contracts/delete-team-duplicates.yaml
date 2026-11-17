@@ -1,0 +1,10 @@
+kind: helper
+name: member-request-contracts-delete-team-duplicates
+call:
+  b8412: {record: DeleteTeamRequest, value: {team_ids: ["t1", "t2", "t1", "t3", "t2"]}}
+calls:
+  - b8412: {record: DeleteTeamRequest, value: {team_ids: []}}
+  - b8412: {record: DeleteTeamRequest, value: {team_ids: ["t1", "t1", "t1"]}}
+  - b8412: {record: DeleteTeamRequest, value: {team_ids: ["t1"]}}
+env: {}
+compare: {ignore: []}
