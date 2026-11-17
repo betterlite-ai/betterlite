@@ -1,0 +1,42 @@
+kind: helper
+name: arm-selection
+call:
+  b8157:
+    op: chat
+    provider: hosted_vllm
+    model: llama
+    messages: [{role: user, content: hi}]
+    api_base: "http://self-hosted.test/v1"
+    api_key: "sk-passed"
+    answer: {status: 404, body: '{"error":{"message":"no such model"}}'}
+calls:
+  - b8157:
+      op: chat
+      provider: ollama
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://self-hosted.test"
+      answer: {status: 500, body: "boom"}
+  - b8157:
+      op: chat
+      provider: ollama_chat
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://self-hosted.test"
+      answer: {status: 401, body: "unauthorized"}
+  - b8157:
+      op: chat
+      provider: lemonade
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://self-hosted.test/api/v1"
+      answer: {status: 404, body: '{"error":{"message":"bad input"}}'}
+  - b8157:
+      op: chat
+      provider: petals
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://self-hosted.test/v1/generate"
+      answer: {status: 400, body: '{"error":"bad request"}'}
+env: {}
+compare: {ignore: []}
