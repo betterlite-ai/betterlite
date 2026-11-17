@@ -1,0 +1,45 @@
+kind: helper
+name: anthropic-response-reverse-tool-name
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"model":"claude-sonnet-4-6","content":[{"type":"text","text":""},{"type":"tool_use","id":"toolu_a","name":"sanitized_name","input":{"q":"x"}},{"type":"tool_use","id":"toolu_b","name":"kept","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
+    headers: {x-request-id: req-b580}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {"_anthropic_tool_name_map": {"sanitized_name": "caller.name"}}
+    request_data: {}
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+calls:
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"toolu_a","name":"sanitized_name","input":{"q":"x"}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {"_anthropic_tool_name_map": {"other": "caller.other"}}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"toolu_a","name":"sanitized_name","input":{"q":"x"}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {"_anthropic_tool_name_map": "caller.name"}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-response-envelope
+call:
+  anthropic_response:
+    id: chatcmpl-seed
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}
+    headers: {x-request-id: seed}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}

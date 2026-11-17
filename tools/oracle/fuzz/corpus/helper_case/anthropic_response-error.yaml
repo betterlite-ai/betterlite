@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-response-error
+call:
+  anthropic_response:
+    id: chatcmpl-seed
+    status: 529
+    now: 1767225600
+    raw_text: |
+      {"error":{"type":"overloaded_error","message":"try later"}}
+    headers: {x-request-id: seed}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}
