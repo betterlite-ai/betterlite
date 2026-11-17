@@ -4,7 +4,6 @@ from typing import Literal, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
-import litellm.llms.vertex_ai.gemini_embeddings.batch_embed_content_transformation as transformation
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import (
     PassThroughEndpointLoggingTypedDict as LoggingOutcome,
@@ -66,17 +65,6 @@ STANDARD: TypeAdapter[StandardView] = TypeAdapter(StandardView)
 REQUEST_BODY: TypeAdapter[dict[str, JsonValue] | None] = TypeAdapter(
     dict[str, JsonValue] | None
 )
-
-
-def standin_counter(model: str = "", text: str | None = None) -> int:
-    del model
-    if text is None:
-        raise ValueError("the standin counter needs a text")
-    return len(text)
-
-
-# the batch reply reads the counter from this module global, its only injection seam
-transformation.token_counter = standin_counter  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L30
 
 
 class Recorder:

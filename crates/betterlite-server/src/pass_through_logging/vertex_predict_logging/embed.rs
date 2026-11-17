@@ -11,24 +11,40 @@ use betterlite_vertex::vertex_relay_metadata::types::{CompletionCost, Completion
 use betterlite_vertex::vertex_relay_metadata::url_models::{
     custom_provider_from_url, extract_model_from_url,
 };
+use serde::Serialize;
 
-use super::counter::CharacterCounter;
+use super::counter::Cl100kCounter;
 use super::input::extract_input;
-use super::wire::{decode_body, json_of, object_fields};
+use super::wire::{json_of, object_fields};
 use super::{VertexEmbedContentInput, VertexPredictError, cost, spend};
 
 const BATCH_ROUTE: &str = "batchEmbedContents";
+const LIST_OBJECT: &str = "list";
+
+// LiteLLM's EmbeddingResponse constructor always sets object to "list"; B1340's reply holds only model, data and usage.
+#[derive(Serialize)]
+struct EmbeddingResult<'reply> {
+    object: &'static str,
+    #[serde(flatten)]
+    reply: &'reply EmbeddingReply,
+}
 
 pub(super) fn embed_content(
     input: &VertexEmbedContentInput<'_>,
     cost_service: &dyn CompletionCost,
+    counter: Option<&Cl100kCounter>,
 ) -> Result<HandlerOutcome, VertexPredictError> {
-    let body = decode_body(input.response_body)?;
+    let body: Json = serde_json::from_slice(input.response_body)
+        .map_err(|source| VertexPredictError::Decode { source })?;
     object_fields(&body)?;
+    let token_counter = counter.ok_or(VertexPredictError::Tokenizer)?;
     let model = extract_model_from_url(input.url_route);
-    let mut reply = build_reply(input, &body, &model)?;
+    let mut reply = build_reply(input, &body, &model, token_counter)?;
     model.clone_into(&mut reply.model);
-    let result = PassThroughResponse::Embedding(json_of(&reply)?);
+    let result = PassThroughResponse::Embedding(json_of(&EmbeddingResult {
+        object: LIST_OBJECT,
+        reply: &reply,
+    })?);
     let provider = custom_provider_from_url(input.url_route);
     let cost_response =
         cost::embedding_response(&model, reply.usage.prompt_tokens, reply.usage.total_tokens);
@@ -55,21 +71,21 @@ pub(super) fn embed_content(
     ))
 }
 
-// Batch is the route substring, and the reply builder counts the joined text with the character counter.
+// Batch is the route substring, and the reply builder counts the joined text with the cl100k engine.
 fn build_reply(
     input: &VertexEmbedContentInput<'_>,
     body: &Json,
     model: &str,
+    counter: &Cl100kCounter,
 ) -> Result<EmbeddingReply, VertexPredictError> {
     let batch = input.url_route.contains(BATCH_ROUTE);
     let embedding_input = EmbeddingInput::Text(extract_input(input.request_body, batch));
-    let counter = CharacterCounter;
     if batch {
-        process_batch_reply(&embedding_input, model, body, &counter)
+        process_batch_reply(&embedding_input, model, body, counter)
             .map_err(VertexPredictError::from)
     } else {
         let files = ResolvedFiles::new();
-        process_embed_content_reply(&embedding_input, model, body, &files, &counter)
+        process_embed_content_reply(&embedding_input, model, body, &files, counter)
             .map_err(VertexPredictError::from)
     }
 }

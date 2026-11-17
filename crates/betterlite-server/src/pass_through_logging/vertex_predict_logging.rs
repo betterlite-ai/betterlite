@@ -13,6 +13,8 @@ use betterlite_vertex::vertex_text_embeddings::error::VertexTextEmbeddingError;
 use http::{HeaderMap, StatusCode};
 use thiserror::Error;
 
+use counter::Cl100kCounter;
+
 mod cost;
 mod counter;
 mod detect;
@@ -59,6 +61,8 @@ pub enum VertexPredictError {
     },
     #[error("the response cost of model {model} could not be resolved")]
     Cost { model: String },
+    #[error("the bundled cl100k tokenizer could not be built")]
+    Tokenizer,
     #[error(transparent)]
     Prediction(#[from] PredictionError),
     #[error(transparent)]
@@ -72,6 +76,7 @@ pub enum VertexPredictError {
 pub struct VertexPredictLogger {
     cost: Arc<dyn CompletionCost>,
     catalog: Arc<ModelCatalog>,
+    counter: Option<Cl100kCounter>,
 }
 
 impl VertexPredictLogger {
@@ -81,9 +86,11 @@ impl VertexPredictLogger {
         Self {
             catalog: bundled.get(),
             cost,
+            counter: Cl100kCounter::bundled(),
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions - B3642 calls this fixed name with the fixed input type
     pub fn handle_predict_response(
         &self,
         input: VertexPredictInput<'_>,
@@ -91,10 +98,11 @@ impl VertexPredictLogger {
         predict::predict(&input, self.cost.as_ref(), &self.catalog)
     }
 
+    // ast-grep-ignore: no-one-line-functions - B3642 calls this fixed name with the fixed input type
     pub fn handle_embed_content_response(
         &self,
         input: VertexEmbedContentInput<'_>,
     ) -> Result<HandlerOutcome, VertexPredictError> {
-        embed::embed_content(&input, self.cost.as_ref())
+        embed::embed_content(&input, self.cost.as_ref(), self.counter.as_ref())
     }
 }
