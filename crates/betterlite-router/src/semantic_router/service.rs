@@ -17,7 +17,7 @@ use super::text::{clamp, last_user_text};
 
 pub const DEFAULT_MAX_INPUT_CHARS: i64 = 2000;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CallerContext {
     pub metadata: IndexMap<String, Json>,
     pub litellm_metadata: IndexMap<String, Json>,
@@ -74,6 +74,16 @@ where
     slot: Arc<Mutex<BuildSlot<E::Error>>>,
 }
 
+// what a caller does with the index build: read a finished one, join a running one, or start the first
+enum BuildPlan<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    Built(Arc<[BuiltEntry]>),
+    Wait(watch::Receiver<BuildState<E>>),
+    Start(watch::Sender<BuildState<E>>, watch::Receiver<BuildState<E>>),
+}
+
 impl<E> AutoRouter<E>
 where
     E: RouteEmbedder + 'static,
@@ -93,8 +103,8 @@ where
             .as_deref()
             .filter(|config| !config.is_empty());
         let index = match (path, config) {
-            (Some(path), _) => load_file(path)?,
-            (None, Some(config)) => parse_inline(config)?,
+            (Some(file), _) => load_file(file)?,
+            (None, Some(inline)) => parse_inline(inline)?,
             (None, None) => return Err(RouteIndexError::MissingConfig),
         };
         let max_input_chars = settings.max_input_chars.unwrap_or(DEFAULT_MAX_INPUT_CHARS);
@@ -120,15 +130,15 @@ where
     where
         C: FnOnce() -> Option<CallerContext>,
     {
-        let Some(messages) = messages else {
+        let Some(conversation) = messages else {
             return Ok(None);
         };
         let built = self.built_index().await?;
-        let text = last_user_text(messages);
-        let Some(caller) = caller() else {
+        let text = last_user_text(conversation);
+        let Some(context) = caller() else {
             return Ok(Some(self.default_decision()));
         };
-        Ok(Some(self.route(&built, &text, &caller).await))
+        Ok(Some(self.route(&built, &text, &context).await))
     }
 
     #[must_use]
@@ -195,23 +205,32 @@ where
         Some(query)
     }
 
-    async fn built_index(&self) -> Result<Arc<Vec<BuiltEntry>>, Arc<RouterError<E::Error>>> {
-        let receiver = {
-            let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(built) = &slot.built {
-                return Ok(Arc::clone(built));
+    async fn built_index(&self) -> Result<Arc<[BuiltEntry]>, Arc<RouterError<E::Error>>> {
+        match self.plan_build() {
+            BuildPlan::Built(built) => Ok(built),
+            BuildPlan::Wait(receiver) => wait_for_build(receiver).await,
+            BuildPlan::Start(sender, receiver) => {
+                self.spawn_build(sender);
+                wait_for_build(receiver).await
             }
-            match slot.waiters.clone() {
-                Some(waiters) => waiters,
-                None => {
-                    let (sender, receiver) = watch::channel(BuildState::Building);
-                    slot.waiters = Some(receiver.clone());
-                    self.spawn_build(sender);
-                    receiver
-                }
+        }
+    }
+
+    fn plan_build(&self) -> BuildPlan<E::Error> {
+        let mut slot = self.slot.lock().unwrap_or_else(PoisonError::into_inner);
+        let done = slot.built.clone();
+        let running = slot.waiters.clone();
+        let plan = match (done, running) {
+            (Some(built), _) => BuildPlan::Built(built),
+            (None, Some(waiters)) => BuildPlan::Wait(waiters),
+            (None, None) => {
+                let (sender, receiver) = watch::channel(BuildState::Building);
+                slot.waiters = Some(receiver.clone());
+                BuildPlan::Start(sender, receiver)
             }
         };
-        wait_for_build(receiver).await
+        drop(slot);
+        plan
     }
 
     fn spawn_build(&self, sender: watch::Sender<BuildState<E::Error>>) {
@@ -224,14 +243,22 @@ where
             let outcome = build_entries(&index, embedder.as_ref(), &model, limit)
                 .await
                 .map_err(Arc::new);
-            {
-                let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Ok(entries) = &outcome {
-                    slot.built = Some(Arc::clone(entries));
-                }
-                slot.waiters = None;
-            }
+            store_outcome(slot.as_ref(), &outcome);
             sender.send_replace(BuildState::Done(outcome));
         });
     }
+}
+
+// the build's outcome reaches every later caller through the slot, so a repeated call never builds twice
+fn store_outcome<E>(
+    state: &Mutex<BuildSlot<E>>,
+    outcome: &Result<Arc<[BuiltEntry]>, Arc<RouterError<E>>>,
+) where
+    E: Error + Send + Sync + 'static,
+{
+    let mut slot = state.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Ok(entries) = outcome {
+        slot.built = Some(Arc::clone(entries));
+    }
+    slot.waiters = None;
 }

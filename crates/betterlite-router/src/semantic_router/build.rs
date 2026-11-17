@@ -18,7 +18,7 @@ where
     E: Error + Send + Sync + 'static,
 {
     Building,
-    Done(Result<Arc<Vec<BuiltEntry>>, Arc<RouterError<E>>>),
+    Done(Result<Arc<[BuiltEntry]>, Arc<RouterError<E>>>),
 }
 
 impl<E> Clone for BuildState<E>
@@ -37,18 +37,19 @@ pub(super) struct BuildSlot<E>
 where
     E: Error + Send + Sync + 'static,
 {
-    pub(super) built: Option<Arc<Vec<BuiltEntry>>>,
+    pub(super) built: Option<Arc<[BuiltEntry]>>,
     pub(super) waiters: Option<watch::Receiver<BuildState<E>>>,
 }
 
 pub(super) async fn wait_for_build<E>(
     mut receiver: watch::Receiver<BuildState<E>>,
-) -> Result<Arc<Vec<BuiltEntry>>, Arc<RouterError<E>>>
+) -> Result<Arc<[BuiltEntry]>, Arc<RouterError<E>>>
 where
     E: Error + Send + Sync + 'static,
 {
     loop {
-        match receiver.borrow_and_update().clone() {
+        let state = receiver.borrow_and_update().clone();
+        match state {
             BuildState::Done(outcome) => return outcome,
             BuildState::Building => {}
         }
@@ -63,7 +64,7 @@ pub(super) async fn build_entries<E>(
     embedder: &E,
     model: &str,
     max_input_chars: i64,
-) -> Result<Arc<Vec<BuiltEntry>>, RouterError<E::Error>>
+) -> Result<Arc<[BuiltEntry]>, RouterError<E::Error>>
 where
     E: RouteEmbedder,
 {
@@ -75,14 +76,14 @@ where
         .map(|row| clamp(&row.text, max_input_chars).to_owned())
         .collect::<Vec<String>>();
     if texts.is_empty() {
-        return Ok(Arc::new(Vec::new()));
+        return Ok(Arc::<[BuiltEntry]>::from(Vec::new()));
     }
     let vectors = embed_batch(embedder, model, texts).await?;
     validate_documents(&vectors).map_err(|source| RouterError::Vectors {
         stage: EmbeddingStage::Documents,
         source,
     })?;
-    Ok(Arc::new(zip_entries(index, vectors)))
+    Ok(Arc::from(zip_entries(index, vectors)))
 }
 
 // one embedding call per batch, refused when the provider answers with a different number of vectors
