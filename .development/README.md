@@ -28,6 +28,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 - litellm.yaml pins the LiteLLM release betterlite follows: repository, version, commit, the folders and files that make up LiteLLM outside its enterprise directory, and the paths left out, each with its reason.
 - litellm-inventory.txt lists every LiteLLM path under those folders at the pinned commit. `cargo gate inventory <checkout>` writes it from a LiteLLM clone; nobody edits it by hand.
 - roles/ holds the rules for the architect, planner, worker, reviewer and parity reviewer.
+- decisions/ holds Max's decisions since 2026-11-17, one file each, next to the older list under Decisions below.
 - schema/ holds the JSON Schemas for every format above plus the report and review answers. `cargo gate schema` generates them from the gate's Rust types, and `cargo gate validate` fails when a file breaks its schema or a schema is out of date.
 - templates/ holds the files B000 copies to the root byte for byte: workspace manifest with the deny-everything lint table, clippy.toml, deny.toml, typos and ast-grep config, prek hooks, LICENSE and THIRD_PARTY_NOTICES.md.
 - gate/ is the gate's source. `cargo gate` runs it from the repository root through the alias in .cargo/config.toml.
@@ -50,7 +51,7 @@ Task checkouts use Git local clones with maintenance.auto off. The gc that commi
 
 ## Decisions
 
-Max's product decisions so far. A task that contradicts one of them is wrong, not the decision.
+Max's product decisions so far. A task that contradicts one of them is wrong, not the decision. Since 2026-11-17 each new one is its own file in decisions/, named <date>-<slug>.md, because dev pull requests that all added a line to this list conflicted in the merge queue. The list below holds the earlier ones, so read both.
 
 - 2026-10-24: betterlite reimplements LiteLLM's proxy without its enterprise directory, from scratch but better, so wire names stay LiteLLM's: x-litellm-* response headers, litellm_params keys, LITELLM_* environment variables.
 - 2026-10-24: config keys betterlite does not support yet stop startup with a list of them (B002).
