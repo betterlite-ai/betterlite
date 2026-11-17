@@ -164,6 +164,21 @@ fn indented_data_line() -> RestampCase {
     )],
     bytes(b""),
 ))]
+#[case::delta_mentioning_message_start_disarms(restamp_case(
+    vec![
+        text(
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"text\":\"message_start\"}\n\n"
+        ),
+        text(&start_frame("upstream-model")),
+    ],
+    vec![
+        bytes(
+            b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"text\":\"message_start\"}\n\n"
+        ),
+        text(&start_frame("upstream-model")),
+    ],
+    bytes(b""),
+))]
 fn split_message_start_model(#[case] case: RestampCase) {
     let input = MessagesStreamRestampInput {
         requested_model: REQUESTED_MODEL.to_owned(),
