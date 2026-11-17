@@ -26,13 +26,13 @@ use crate::payload::deps::{
 fn built(
     sources: PayloadSources,
     configuration: LoggingInit,
-    response: Json,
+    response: &Json,
 ) -> StandardLoggingPayload {
     let state = state_from(configuration);
     StandardPayloadBuilder::build(
         &builder_with(sources, PayloadSettings::default(), Settings::default()),
         &state,
-        &response,
+        response,
         start(),
         end(),
     )
@@ -189,7 +189,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 }"#,
             )
             .unwrap();
-            let payload = built(PayloadSources::default(), init(None), response);
+            let payload = built(PayloadSources::default(), init(None), &response);
             assert_eq!(payload.model, "router-picked");
         }
         BuilderBehavior::AzureRouterDeployment => {
@@ -202,7 +202,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 }"#,
             )
             .unwrap();
-            let payload = built(PayloadSources::default(), init(None), response);
+            let payload = built(PayloadSources::default(), init(None), &response);
             assert_eq!(payload.model, "served-by-router");
         }
         BuilderBehavior::GuardrailInformation => {
@@ -220,7 +220,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 )
                 .unwrap(),
             );
-            let payload = built(PayloadSources::default(), configuration, chat_response());
+            let payload = built(PayloadSources::default(), configuration, &chat_response());
             assert_eq!(payload.response_cost.to_string(), "0.25");
             let breakdown = payload
                 .cost_breakdown
@@ -247,9 +247,11 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             state
                 .model_call_details
                 .insert("cache_hit".to_owned(), Json::Bool(true));
-            let mut sources = PayloadSources::default();
-            sources.clock = Arc::new(FixedClock(1234.0));
-            sources.saved_cache_cost = Arc::new(FixedSavedCost(Decimal::new(25, 2)));
+            let sources = PayloadSources {
+                clock: Arc::new(FixedClock(1234.0)),
+                saved_cache_cost: Arc::new(FixedSavedCost(Decimal::new(25, 2))),
+                ..PayloadSources::default()
+            };
             let payload = StandardPayloadBuilder::build(
                 &builder_with(sources, PayloadSettings::default(), Settings::default()),
                 &state,
@@ -311,7 +313,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             let usage = payload.metadata.usage_object.expect("the usage is logged");
             assert_eq!(
                 object_field(&usage, "total_tokens"),
-                Some(&Json::Number(Number::from(18)))
+                Some(&Json::Number(Number::from(18_i64)))
             );
         }
         BuilderBehavior::AutorouterEstimateShapes => {
@@ -322,13 +324,15 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 serde_json::from_str(r#"{"routing_decision": {"selected_model": "gpt-4o"}}"#)
                     .unwrap(),
             );
-            let mut estimated_sources = PayloadSources::default();
-            estimated_sources.autorouter = Arc::new(FixedAudit {
-                savings: Some(Decimal::new(5, 2)),
-                observation: None,
-                active: false,
-            });
-            let estimated = built(estimated_sources, configuration.clone(), chat_response());
+            let estimated_sources = PayloadSources {
+                autorouter: Arc::new(FixedAudit {
+                    savings: Some(Decimal::new(5, 2)),
+                    observation: None,
+                    active: false,
+                }),
+                ..PayloadSources::default()
+            };
+            let estimated = built(estimated_sources, configuration.clone(), &chat_response());
             assert_eq!(
                 estimated
                     .autorouter_savings
@@ -341,34 +345,38 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                     .autorouter_savings_estimate
                     .as_ref()
                     .and_then(|estimate| estimate.get("version")),
-                Some(&Json::Number(Number::from(1)))
+                Some(&Json::Number(Number::from(1_i64)))
             );
             assert_eq!(
                 estimate_field(&estimated, "status"),
                 Some(Json::Text("estimated".to_owned()))
             );
-            let mut unknown_sources = PayloadSources::default();
-            unknown_sources.autorouter = Arc::new(FixedAudit {
-                savings: None,
-                observation: None,
-                active: false,
-            });
-            let unknown = built(unknown_sources, configuration.clone(), chat_response());
+            let unknown_sources = PayloadSources {
+                autorouter: Arc::new(FixedAudit {
+                    savings: None,
+                    observation: None,
+                    active: false,
+                }),
+                ..PayloadSources::default()
+            };
+            let unknown = built(unknown_sources, configuration.clone(), &chat_response());
             assert!(unknown.autorouter_savings.is_none());
             assert_eq!(
                 estimate_field(&unknown, "reason"),
                 Some(Json::Text("baseline_unavailable".to_owned()))
             );
-            let mut pending_sources = PayloadSources::default();
-            pending_sources.autorouter = Arc::new(FixedAudit {
-                savings: Some(Decimal::new(5, 2)),
-                observation: Some("baseline-1".to_owned()),
-                active: false,
-            });
-            let pending = built(pending_sources, configuration, chat_response());
+            let pending_sources = PayloadSources {
+                autorouter: Arc::new(FixedAudit {
+                    savings: Some(Decimal::new(5, 2)),
+                    observation: Some("baseline-1".to_owned()),
+                    active: false,
+                }),
+                ..PayloadSources::default()
+            };
+            let pending = built(pending_sources, configuration, &chat_response());
             assert_eq!(
                 estimate_field(&pending, "version"),
-                Some(Json::Number(Number::from(3)))
+                Some(Json::Number(Number::from(3_i64)))
             );
             assert_eq!(
                 estimate_field(&pending, "reason"),
@@ -387,12 +395,14 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 serde_json::from_str(r#"{"routing_decision": {"selected_model": "gpt-4o"}}"#)
                     .unwrap(),
             );
-            let mut sources = PayloadSources::default();
-            sources.autorouter = Arc::new(FixedAudit {
-                savings: Some(Decimal::new(5, 2)),
-                observation: None,
-                active: false,
-            });
+            let sources = PayloadSources {
+                autorouter: Arc::new(FixedAudit {
+                    savings: Some(Decimal::new(5, 2)),
+                    observation: None,
+                    active: false,
+                }),
+                ..PayloadSources::default()
+            };
             let mut cached_state = state_from(configuration.clone());
             cached_state
                 .model_call_details
@@ -410,13 +420,15 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 estimate_field(&cached, "reason"),
                 Some(Json::Text("baseline_unavailable".to_owned()))
             );
-            let mut active_sources = PayloadSources::default();
-            active_sources.autorouter = Arc::new(FixedAudit {
-                savings: Some(Decimal::new(5, 2)),
-                observation: None,
-                active: true,
-            });
-            let active = built(active_sources, configuration.clone(), chat_response());
+            let active_sources = PayloadSources {
+                autorouter: Arc::new(FixedAudit {
+                    savings: Some(Decimal::new(5, 2)),
+                    observation: None,
+                    active: true,
+                }),
+                ..PayloadSources::default()
+            };
+            let active = built(active_sources, configuration.clone(), &chat_response());
             assert!(active.autorouter_savings.is_none());
             let exception: ExceptionFacts = serde_json::from_str(r#"{"message": "nope"}"#).unwrap();
             let failed = built_failure(
@@ -511,7 +523,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 Some(&Json::Text("from-litellm".to_owned()))
             );
             assert_eq!(
-                information.traceback.clone().flatten().as_deref(),
+                information.traceback.flatten().as_deref(),
                 Some("line one\nline two\n")
             );
             let proxy: ExceptionFacts = serde_json::from_str(
@@ -564,14 +576,14 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 "proxy_server_request",
                 serde_json::from_str(r#"{"body": {"user": "end-user-1"}}"#).unwrap(),
             );
-            let payload = built(PayloadSources::default(), configuration, chat_response());
+            let payload = built(PayloadSources::default(), configuration, &chat_response());
             assert_eq!(payload.end_user.as_deref(), Some("end-user-1"));
         }
         BuilderBehavior::OverheadTiming => {
             let mut state = state(None);
             state
                 .response_timing_metrics
-                .insert("litellm_overhead_time_ms".to_owned(), 12.5);
+                .insert("litellm_overhead_time_ms".to_owned(), 12.5_f64);
             let payload = StandardPayloadBuilder::build(
                 &builder(Settings::default()),
                 &state,

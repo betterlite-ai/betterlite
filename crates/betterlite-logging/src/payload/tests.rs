@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::io::{Error as IoError, Result as IoResult, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::logging_privacy::Settings;
@@ -171,7 +171,10 @@ impl Recorder {
 
 impl PayloadEmitter for Recorder {
     fn emit(&self, payload: &StandardLoggingPayload) -> Result<(), EmitError> {
-        self.printed.lock().unwrap().push(payload.clone());
+        self.printed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(payload.clone());
         Ok(())
     }
 }
@@ -331,8 +334,10 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             let settings = EmitSettings::from_env(Some("1"));
             let mut sink = Vec::new();
             emit_standard_logging_payload(&payload, &settings, &mut sink).unwrap();
-            assert!(sink.ends_with(b"\n"));
-            let printed: Json = serde_json::from_slice(&sink[..sink.len() - 1]).unwrap();
+            let line = sink
+                .strip_suffix(b"\n")
+                .expect("the emitted line ends with a newline");
+            let printed: Json = serde_json::from_slice(line).unwrap();
             assert_eq!(
                 serde_json::to_string(&printed).unwrap(),
                 serde_json::to_string(&payload).unwrap()
@@ -411,7 +416,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
                 Some(placeholder.clone())
             );
             assert_eq!(
-                redacted_response(Json::Number(Number::from(7))),
+                redacted_response(Json::Number(Number::from(7_i64))),
                 Some(placeholder.clone())
             );
             assert_eq!(

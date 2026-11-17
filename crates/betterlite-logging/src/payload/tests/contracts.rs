@@ -1,10 +1,11 @@
-use std::io::{Read as _, Seek as _, SeekFrom, stdout};
+use std::io::{BufReader, Read as _, Seek as _, SeekFrom, stdout};
 use std::os::fd::AsFd as _;
 use std::sync::Arc;
 
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use nix::unistd::{dup, dup2_stdout};
 use rstest::rstest;
 
 use super::behaviors::FixedClock;
@@ -17,11 +18,12 @@ use crate::logging_success::assembled::{ASYNC_STREAM_RESPONSE_KEY, COMPLETE_STRE
 use crate::logging_success::ports::StandardPayloadBuilder;
 use crate::payload::deps::{
     AbsentAutorouterAudit, AbsentModelCostInformation, AbsentRequestAccessGroups,
-    AbsentSavedCacheCost, AutorouterAudit, MODEL_MAP_KEY, MODEL_MAP_VALUE, ModelCostInformation,
-    ModelCostRequest, PayloadClock, PayloadSettings, PayloadSources, RequestAccessGroups,
-    SavedCacheCost, SavingsRequest, SystemPayloadClock,
+    AbsentSavedCacheCost, AutorouterAudit as _, MODEL_MAP_KEY, MODEL_MAP_VALUE,
+    ModelCostInformation as _, ModelCostRequest, PayloadClock as _, PayloadSettings,
+    PayloadSources, RequestAccessGroups as _, SavedCacheCost as _, SavingsRequest,
+    SystemPayloadClock,
 };
-use crate::payload::emit::{EmitSettings, PayloadEmitter, StdoutEmitter};
+use crate::payload::emit::{EmitSettings, PayloadEmitter as _, StdoutEmitter};
 use crate::payload::response::{object_field, object_or_empty, record_served_output_texts};
 
 fn built_with(
@@ -39,9 +41,9 @@ fn built_with(
     .expect("the payload builds")
 }
 
-fn built(configuration: LoggingInit, response: Json) -> StandardLoggingPayload {
+fn built(configuration: LoggingInit, response: &Json) -> StandardLoggingPayload {
     let state = state_from(configuration);
-    built_with(PayloadSources::default(), &state, &response)
+    built_with(PayloadSources::default(), &state, response)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -185,7 +187,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
         ContractBehavior::WallClockSeconds => {
             let now = SystemPayloadClock.now_epoch_seconds();
             assert!(
-                (1_700_000_000.0..10_000_000_000.0).contains(&now),
+                (1_700_000_000.0_f64..10_000_000_000.0_f64).contains(&now),
                 "the wall clock reads epoch seconds, got {now}"
             );
         }
@@ -216,8 +218,10 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             state
                 .model_call_details
                 .insert("cache_hit".to_owned(), Json::Bool(true));
-            let mut sources = PayloadSources::default();
-            sources.clock = Arc::new(FixedClock(1234.5));
+            let sources = PayloadSources {
+                clock: Arc::new(FixedClock(1234.5)),
+                ..PayloadSources::default()
+            };
             let payload = built_with(sources, &state, &chat_response());
             assert_eq!(payload.id, "chatcmpl-1_cache_hit1234.5");
             assert_eq!(payload.cache_hit, Some(true));
@@ -255,7 +259,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                 "litellm_trace_id".to_owned(),
                 Json::Text("params-trace".to_owned()),
             );
-            let payload = built(configuration, chat_response());
+            let payload = built(configuration, &chat_response());
             assert_eq!(payload.trace_id, "params-trace");
         }
         ContractBehavior::StreamFlagSources => {
@@ -288,7 +292,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             .unwrap();
             let mut configuration = init(None);
             configuration.model = "gpt-4o".to_owned();
-            let payload = built(configuration, response);
+            let payload = built(configuration, &response);
             assert_eq!(payload.model, "gpt-4o");
         }
         ContractBehavior::AzureEmptyResponseModel => {
@@ -297,7 +301,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                     .unwrap();
             let mut configuration = init(None);
             configuration.model = "model_router/gpt-4o".to_owned();
-            let payload = built(configuration, response);
+            let payload = built(configuration, &response);
             assert_eq!(payload.model, "model_router/gpt-4o");
         }
         ContractBehavior::AzureRouterNames => {
@@ -308,7 +312,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             .unwrap();
             let mut configuration = init(None);
             configuration.model = "model_router/gpt-4o".to_owned();
-            let payload = built(configuration, response);
+            let payload = built(configuration, &response);
             assert_eq!(payload.model, "served-by-router");
         }
         ContractBehavior::NonRouterKeepsModel => {
@@ -318,7 +322,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             .unwrap();
             let mut configuration = init(None);
             configuration.model = "gpt-4o".to_owned();
-            let payload = built(configuration, response);
+            let payload = built(configuration, &response);
             assert_eq!(payload.model, "gpt-4o");
         }
         ContractBehavior::DeploymentNamesModel => {
@@ -330,7 +334,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                     Json::Text("azure/gpt-4o".to_owned()),
                 )])),
             );
-            let payload = built(configuration, chat_response());
+            let payload = built(configuration, &chat_response());
             assert_eq!(payload.model, "azure/gpt-4o");
         }
         ContractBehavior::ModelInfoId => {
@@ -348,7 +352,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                     ("model_group".to_owned(), Json::Text("group-1".to_owned())),
                 ])),
             );
-            let payload = built(configuration, chat_response());
+            let payload = built(configuration, &chat_response());
             assert_eq!(payload.model_id.as_deref(), Some("model-id-1"));
             assert_eq!(payload.model_group.as_deref(), Some("group-1"));
         }
@@ -372,7 +376,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             let mut state = state(None);
             state
                 .response_timing_metrics
-                .insert("litellm_overhead_time_ms".to_owned(), 12.5);
+                .insert("litellm_overhead_time_ms".to_owned(), 12.5_f64);
             let payload = built_with(PayloadSources::default(), &state, &response);
             assert_eq!(
                 payload
@@ -385,7 +389,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
         ContractBehavior::UnbilledManagementCalls => {
             let mut plain = init(None);
             plain.call_type = "vector_store_create".to_owned();
-            let payload = built(plain, chat_response());
+            let payload = built(plain, &chat_response());
             assert_eq!(
                 (
                     payload.prompt_tokens,
@@ -396,7 +400,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             );
             let billed = built(
                 management_state("background_response_cost_poll"),
-                chat_response(),
+                &chat_response(),
             );
             assert_eq!(
                 (
@@ -406,7 +410,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                 ),
                 (2, 3, 5)
             );
-            let other = built(management_state("other_call"), chat_response());
+            let other = built(management_state("other_call"), &chat_response());
             assert_eq!(
                 (
                     other.prompt_tokens,
@@ -478,7 +482,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                 "proxy_server_request".to_owned(),
                 serde_json::from_str(r#"{"headers": {"user-agent": "my-client/1.0"}}"#).unwrap(),
             );
-            let payload = built(configuration, chat_response());
+            let payload = built(configuration, &chat_response());
             assert_eq!(
                 payload.request_tags,
                 vec![
@@ -500,23 +504,24 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
         ContractBehavior::StdoutEmitterOutput => {
             let payload = payload_from(BASE_PAYLOAD);
             let file = tempfile::tempfile().expect("a scratch file");
-            let saved = nix::unistd::dup(stdout()).expect("stdout can be duplicated");
-            nix::unistd::dup2_stdout(file.as_fd()).expect("stdout can be redirected");
+            let saved = dup(stdout()).expect("stdout can be duplicated");
+            dup2_stdout(file.as_fd()).expect("stdout can be redirected");
             let emitter = StdoutEmitter {
                 settings: EmitSettings::from_env(Some("1")),
             };
             let emitted = emitter.emit(&payload);
-            nix::unistd::dup2_stdout(saved).expect("stdout can be restored");
+            dup2_stdout(saved).expect("stdout can be restored");
             assert!(emitted.is_ok(), "the stdout emitter writes the payload");
-            let mut reader = &file;
+            let mut reader = BufReader::new(&file);
             reader.seek(SeekFrom::Start(0)).expect("the file rewinds");
             let mut printed_bytes = Vec::new();
             reader
                 .read_to_end(&mut printed_bytes)
                 .expect("the printed line reads back");
-            assert!(printed_bytes.ends_with(b"\n"));
-            let printed: Json = serde_json::from_slice(&printed_bytes[..printed_bytes.len() - 1])
-                .expect("the line is JSON");
+            let line = printed_bytes
+                .strip_suffix(b"\n")
+                .expect("the printed line ends with a newline");
+            let printed: Json = serde_json::from_slice(line).expect("the line is JSON");
             assert_eq!(
                 serde_json::to_string(&printed).unwrap(),
                 serde_json::to_string(&payload).unwrap()
@@ -539,13 +544,13 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                     Json::Null,
                 )])),
             );
-            let payload = built(configuration, chat_response());
+            let payload = built(configuration, &chat_response());
             assert!(payload.autorouter_savings_estimate.is_none());
         }
         ContractBehavior::ResponseIdFallback => {
             let response: Json =
                 serde_json::from_str(r#"{"model": "gpt-4o", "choices": []}"#).unwrap();
-            let payload = built(init(None), response);
+            let payload = built(init(None), &response);
             assert_eq!(payload.id, "call-1");
             let logged = payload.response.expect("the response is logged");
             assert!(object_field(&logged, "id").is_none());

@@ -54,11 +54,14 @@ pub(crate) struct Input {
 }
 
 #[derive(Default, Deserialize)]
+struct Flag(bool);
+
+#[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct InputSettings {
-    turn_off_message_logging: bool,
-    request_correlation_in_logs: bool,
-    log_client_error_tracebacks: bool,
+    turn_off_message_logging: Flag,
+    request_correlation_in_logs: Flag,
+    log_client_error_tracebacks: Flag,
 }
 
 impl Helper for Op {
@@ -102,11 +105,11 @@ fn build_payload(
     let sources = PayloadSources::default();
     let payload_settings = PayloadSettings {
         tag_config: TagConfig::default(),
-        request_correlation_in_logs: input.settings.request_correlation_in_logs,
-        log_client_error_tracebacks: input.settings.log_client_error_tracebacks,
+        request_correlation_in_logs: input.settings.request_correlation_in_logs.0,
+        log_client_error_tracebacks: input.settings.log_client_error_tracebacks.0,
     };
     let privacy = Settings {
-        turn_off_message_logging: input.settings.turn_off_message_logging,
+        turn_off_message_logging: input.settings.turn_off_message_logging.0,
         redact_user_api_key_info: false,
     };
     let composition = PayloadComposition {
@@ -131,7 +134,9 @@ fn build_payload(
 }
 
 fn apply(state: &mut LoggingState, input: &Input) -> Result<(), Box<HelperError>> {
-    state.model_call_details = input.model_call_details.clone();
+    state
+        .model_call_details
+        .clone_from(&input.model_call_details);
     state.optional_params = match state.model_call_details.get("optional_params") {
         Some(Json::Object(params)) => params.clone(),
         Some(_) | None => IndexMap::new(),
@@ -141,7 +146,9 @@ fn apply(state: &mut LoggingState, input: &Input) -> Result<(), Box<HelperError>
         Some(_) | None => None,
     };
     state.completion_start_time = input.completion_start_time;
-    state.response_timing_metrics = input.response_timing_metrics.clone();
+    state
+        .response_timing_metrics
+        .clone_from(&input.response_timing_metrics);
     state.cost_breakdown = match input.cost_breakdown.as_ref() {
         None => None,
         Some(value) => {
