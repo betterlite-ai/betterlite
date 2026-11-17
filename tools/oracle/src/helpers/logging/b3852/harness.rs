@@ -16,7 +16,7 @@ use betterlite_logging::otel::plumbing::context::context_slots::{
 };
 use betterlite_logging::otel::plumbing::exporters::ExporterFactories;
 use betterlite_logging::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
-use betterlite_logging::otel::plumbing::routing::cache::TenantTracerCache;
+use betterlite_logging::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
 use betterlite_logging::otel::plumbing::sinks::SpanSink;
 use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
 use betterlite_logging::otel_provider_assembly::tracer_provider_assembly::{
@@ -83,8 +83,7 @@ pub(super) fn settings(exporters: &[ExporterInput]) -> Result<Settings, Box<Help
     })
 }
 
-// the request's own start stands in for an absent carrier at close, which is exactly what the
-// anchored request context carries when pre_call saw a recordable parent
+// the request's own start stands in for an absent carrier at close, as the anchored request context carries it when pre_call saw a parent
 pub(super) fn trace(anchored: bool) -> RequestTraceContext {
     let root = anchored.then(|| AnchoredSpan {
         context: SpanContext::new(
@@ -98,7 +97,9 @@ pub(super) fn trace(anchored: bool) -> RequestTraceContext {
     });
     RequestTraceContext {
         root,
-        ..RequestTraceContext::default()
+        mcp_carrier: None,
+        mcp_transport: None,
+        destinations: Vec::new(),
     }
 }
 
@@ -115,14 +116,12 @@ pub(super) fn make_harness(
     let sink = SpanSink::InMemory(default.clone());
     let tracer = default_tracer(&settings, &factories, &scope, sink)?;
     let emitter = span_emitter(&tracer);
-    let tenants = TenantTracerCache::new(
-        settings.clone(),
-        callback.clone(),
-        "litellm",
+    let sources = TenantSources {
         factories,
-        Arc::clone(&scope),
-        hosts(),
-    );
+        scope_source: Arc::clone(&scope),
+        allowed_hosts: hosts(),
+    };
+    let tenants = TenantTracerCache::new(settings.clone(), callback.clone(), "litellm", sources);
     Ok(Harness {
         logger: OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
             name: callback.unwrap_or_default(),
@@ -147,8 +146,13 @@ pub(super) fn make_cache(
     let scope: Arc<dyn RequestScopeSource> = Arc::new(FixedScope);
     let sink = SpanSink::InMemory(InMemorySpanExporter::default());
     let default = default_tracer(&settings, &factories, &scope, sink)?;
+    let sources = TenantSources {
+        factories,
+        scope_source: scope,
+        allowed_hosts: hosts(),
+    };
     Ok(CacheHarness {
-        cache: TenantTracerCache::new(settings, callback, "litellm", factories, scope, hosts()),
+        cache: TenantTracerCache::new(settings, callback, "litellm", sources),
         default,
         built,
     })
@@ -167,8 +171,9 @@ fn default_tracer(
         scope,
         AssemblyOptions {
             exporter: Some(sink),
+            baggage_processor: None,
             use_simple_processor: Some(true),
-            ..AssemblyOptions::default()
+            tenant_overrides: false,
         },
     )
     .or_config_error()?;

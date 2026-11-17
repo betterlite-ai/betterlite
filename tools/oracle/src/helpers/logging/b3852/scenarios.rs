@@ -12,8 +12,7 @@ use super::exporters::Captured;
 use super::harness::HarnessError;
 use super::{fixtures, harness, spans};
 
-// the boundary and the close callback of one inference call: a recordable parent opens the routed
-// span at pre_call, while an unanchored request defers every build to the close
+// the boundary and the close callback of one inference call: a recordable parent opens the routed span at pre_call, else the close defers
 pub(super) fn pre_call(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
     let harness = harness::make_harness(
@@ -42,8 +41,7 @@ pub(super) fn pre_call(input: &Input) -> HelperResult {
     }))
 }
 
-// an MCP tool call records its own span on the default backend: it carries no LLM credentials, so
-// nothing routes to a tenant provider
+// an MCP tool call records its own span on the default backend: it carries no LLM credentials, so nothing routes
 pub(super) fn mcp_tool_call(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
     let harness = harness::make_harness(
@@ -98,8 +96,7 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
     Ok(json!({"error_logs": error_logs}))
 }
 
-// the first close pops the carrier and emits; the second close with the same call id finds none and
-// is dropped by the emitter's (call id, role) marker
+// the first close pops the carrier and emits; the second close with the same call id finds none and the emitter's marker drops it
 pub(super) fn close_dedup(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
     let harness = harness::make_harness(
@@ -127,8 +124,7 @@ pub(super) fn close_dedup(input: &Input) -> HelperResult {
     Ok(json!({"names": names, "count": count}))
 }
 
-// the LRU bound holds 256 providers: the 257th space evicts the first, which stays alive while its
-// lease is held, is shut down when the lease goes, and routing the last space again is a cache hit
+// the LRU bound holds 256 providers: the 257th space evicts the first, which drains its held lease, and routing the last space again hits
 pub(super) fn cache_eviction(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
     let cache = harness::make_cache(settings, input.callback_name.clone())?;
@@ -166,8 +162,7 @@ pub(super) fn cache_eviction(input: &Input) -> HelperResult {
     }))
 }
 
-// the routed exporter the tenant cache builds: credentials replace the static headers, a key/team
-// project appends its own percent-encoded header, and both detach the span from the request trace
+// the routed exporter the tenant cache builds: credentials replace the static headers, and a key/team project appends a percent-encoded header
 pub(super) fn project_headers(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
     let cache = harness::make_cache(settings, input.callback_name.clone())?;

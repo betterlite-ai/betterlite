@@ -14,8 +14,7 @@ mod tests;
 
 pub(crate) struct Op;
 
-// the one entry point the failure and success callbacks share, plus the tenant cache calls that do
-// not go through the logger at all
+// the one entry point the failure and success callbacks share, plus the tenant cache calls that bypass the logger
 #[derive(serde::Deserialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 enum Function {

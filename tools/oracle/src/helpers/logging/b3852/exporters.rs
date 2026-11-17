@@ -125,8 +125,7 @@ fn exporter_owner(name: &str) -> Result<ExporterOwner, Box<HelperError>> {
         .or_config_error()
 }
 
-// every provider either side builds routes the custom kind to a fresh in-memory sink, and the
-// recorded spec is what the cases compare the routing decision on
+// every provider either side builds routes the custom kind to a fresh in-memory sink, and the recorded spec is what the cases compare
 pub(super) fn factories(built: &Built) -> Arc<ExporterFactories> {
     let recorder = built.clone();
     let factory: ExporterFactory = Arc::new(move |spec: &ExporterSpec| -> ExportResult<SpanSink> {
