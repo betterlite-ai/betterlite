@@ -216,7 +216,8 @@ fn torn_after_ping() -> RestampCase {
 // The ping leaves the stream armed, so the torn start behind it is held and restamped once it closes
 fn ping_block_then_torn_start() -> RestampCase {
     let frame = start_frame("upstream-model");
-    let (torn, rest) = frame.split_at(frame.len() / 2);
+    let half = frame.len().checked_div(2).expect("2 is nonzero");
+    let (torn, rest) = frame.split_at(half);
     restamp_case(
         vec![text(&format!("{}{torn}", ping_sse_frame())), text(rest)],
         vec![
