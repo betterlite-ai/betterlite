@@ -587,7 +587,7 @@ fn strict_flags() {
     }
     .into_block()
     .expect("the plain spec builds");
-    assert_strict_block(&unsupported, Some(true), None);
+    assert_strict_block(&unsupported, None, None);
 }
 
 fn assert_strict_block(block: &Json, strict: Option<bool>, additional: Option<bool>) {
