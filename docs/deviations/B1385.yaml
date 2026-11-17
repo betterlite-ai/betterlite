@@ -16,7 +16,7 @@ deviations:
       A declared integer under 0 can only mean "no time left"; Duration has no negative value, and failing
       fast here beats an SDK call that cannot succeed.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L204-L210
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L177-L182
   - what: >-
       A chunking_strategy key other than chunk_size, chunk_overlap, separators, type, static and
       white_space_config is refused with a load error that names the field. LiteLLM's
@@ -25,7 +25,7 @@ deviations:
       A misspelled key silently losing its value is the failure the load errors exist to catch, and
       docs/compatibility.md rejects values the declared type cannot hold.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L82-L84
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L88-L89
 kept_bugs:
   - what: >-
       wait_for_import false calls the SDK's async import without awaiting it, so no import request leaves
@@ -35,4 +35,4 @@ kept_bugs:
       A working setup at the pin relies on the store returning after the upload with the corpus id and the
       GCS URI; sending a real background import would change the corpus contents behind its back.
     link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L217-L224
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L184-L191
