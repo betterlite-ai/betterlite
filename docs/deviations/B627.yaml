@@ -1,0 +1,9 @@
+task: B627
+deviations:
+  - what: A reply embedding that is neither a list of numbers nor a string fails with an error naming the reply field; LiteLLM copies any list value into Embedding.embedding and returns it, so a mixed list such as [1.5, "x"] or a nested list comes back unchanged.
+    why: betterlite's shared embedding record holds an exact-decimal number vector or an encoded string, and a mixed or nested list has no vector meaning; docs/compatibility.md makes a value outside the declared record an error that names the field instead of passing it through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283
+  - what: A reply inputTextTokenCount that is not a non-negative integer fails with an error; LiteLLM adds the value into its prompt token total, so a negative integer or a whole float reaches Usage.prompt_tokens while a fractional float or a string fails inside pydantic or the addition.
+    why: betterlite's usage record counts prompt tokens in an unsigned integer, and a negative or fractional token count has no meaning in a usage record; docs/compatibility.md makes a value of the wrong type an error naming the field rather than a coerced total.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py#L76-L117
+kept_bugs: []

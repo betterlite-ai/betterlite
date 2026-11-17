@@ -47,3 +47,10 @@ path = "fuzz_targets/retry_after.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "lar1_meta"
+path = "fuzz_targets/lar1_meta.rs"
+test = false
+doc = false
+bench = false
