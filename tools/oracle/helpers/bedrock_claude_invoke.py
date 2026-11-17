@@ -1,6 +1,6 @@
 import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import partial
 from typing import Final, Literal, Protocol, TypedDict
@@ -175,11 +175,11 @@ class Sink(Logging):
         self.kwargs = kwargs
 
 
-CONFIG: Final[Transformer] = AmazonAnthropicClaudeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L46
+CONFIG: Final[Transformer] = AmazonAnthropicClaudeConfig()  # type: ignore[no-untyped-call,assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L46
 
 
 @contextmanager
-def patched_url_fetchers(fetcher: Fetcher) -> Iterator[None]:
+def patched_url_fetchers(fetcher: Fetcher) -> Generator[None, None, None]:
     saved_url = claude.convert_url_to_base64  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L12
     saved_async = image_handling.async_convert_url_to_base64
     claude.convert_url_to_base64 = fetcher  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L12
@@ -221,9 +221,7 @@ def call_body(call: TransformCall) -> dict[str, JsonValue]:
 
 def transforms(argument: Transform) -> JsonValue:
     litellm.register_model(argument["model_cost"])
-    calls: list[JsonValue] = []
-    for call in argument["calls"]:
-        calls.append(call_body(call))
+    calls: list[JsonValue] = [call_body(call) for call in argument["calls"]]
     return {"calls": calls}
 
 

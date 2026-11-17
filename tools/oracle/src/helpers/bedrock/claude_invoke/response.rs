@@ -30,7 +30,7 @@ fn log_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
         },
         redactor,
         || "generated".to_owned(),
-        Duration::default(),
+        || Duration::default(),
     )
     .or_config_error()?;
     Ok(state)
