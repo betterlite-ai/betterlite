@@ -1,0 +1,4 @@
+model_list: []
+router_settings:
+  routing_strategy: lar1
+  routing_strategy_args: not-a-mapping

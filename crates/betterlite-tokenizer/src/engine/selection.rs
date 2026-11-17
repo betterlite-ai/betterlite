@@ -55,6 +55,7 @@ pub struct Selector {
     counter: Arc<CountingService>,
     disable_hf_tokenizer_download: bool,
     kinds: Mutex<BTreeMap<Kind, Engine>>,
+    encodings: Mutex<BTreeMap<Encoding, Engine>>,
     custom: Mutex<LruCache<CustomKey, Engine>>,
 }
 impl Selector {
@@ -74,6 +75,7 @@ impl Selector {
             counter,
             disable_hf_tokenizer_download,
             kinds: Mutex::new(BTreeMap::new()),
+            encodings: Mutex::new(BTreeMap::new()),
             custom: Mutex::new(LruCache::new(capacity)),
         }
     }
@@ -145,7 +147,7 @@ impl Selector {
             return Ok(found);
         }
         let engine = match kind {
-            Kind::OpenAi => self.build_tiktoken(Encoding::Cl100kBase).await?,
+            Kind::OpenAi => self.encoding(Encoding::Cl100kBase).await?,
             Kind::Anthropic => {
                 let bytes = assets::ANTHROPIC.to_vec();
                 self.build_huggingface(bytes).await?
@@ -159,10 +161,22 @@ impl Selector {
         }
         Ok(engine)
     }
-    async fn build_tiktoken(&self, encoding: Encoding) -> Result<Engine, SelectionError> {
+    // the Counter asks here too, so a counting call builds each encoding once instead of once per side
+    pub async fn encoding(&self, encoding: Encoding) -> Result<Engine, SelectionError> {
+        if let Some(found) = self
+            .encodings
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&encoding).cloned())
+        {
+            return Ok(found);
+        }
         let data = self.fetcher.data(encoding).await?;
         let job = tokenizer_job(encoding, data);
         let engine = self.counter.build(job).await?;
+        if let Ok(mut cache) = self.encodings.lock() {
+            cache.insert(encoding, engine.clone());
+        }
         Ok(engine)
     }
     async fn build_huggingface(&self, bytes: Vec<u8>) -> Result<Engine, SelectionError> {

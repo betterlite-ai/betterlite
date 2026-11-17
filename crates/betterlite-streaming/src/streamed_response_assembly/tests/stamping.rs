@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use rust_decimal::Decimal;
 
 use crate::streamed_response_assembly::AssemblyError;
@@ -5,10 +8,10 @@ use crate::streamed_response_assembly::AssemblyError;
 use super::support::{failing_logging, priced_logging};
 use super::{Harness, chat_of, cost_stream, failed, value};
 
-pub(super) async fn usage_cost_stamping() {
-    stamping_calculator_results().await;
-    stamping_requires_logging().await;
-    stamping_error().await;
+pub(super) async fn usage_cost_stamping(redactor: &Arc<Redactor>) {
+    stamping_calculator_results(redactor).await;
+    stamping_requires_logging(redactor).await;
+    stamping_error(redactor).await;
 }
 
 // The stream's own cost, the logging provider, the calculator's price, the stamped cost, the response cost and the calculator calls.
@@ -54,10 +57,10 @@ fn stamp_cases() -> [StampCase; 6] {
     ]
 }
 
-pub(super) async fn stamping_calculator_results() {
+pub(super) async fn stamping_calculator_results(redactor: &Arc<Redactor>) {
     for (reported, provider, price, stamped, response_cost, calls) in stamp_cases() {
         let logging = priced_logging(provider, Some(price));
-        let mut harness = Harness::new(Some(cost_stream(reported)));
+        let mut harness = Harness::new(Some(cost_stream(reported)), redactor);
         harness.logging = Some(&logging);
         let response = chat_of(&harness).await;
         assert_eq!(response.usage.cost, stamped, "{reported:?} {provider}");
@@ -69,16 +72,16 @@ pub(super) async fn stamping_calculator_results() {
     }
 }
 
-pub(super) async fn stamping_requires_logging() {
-    let harness = Harness::new(Some(cost_stream(None)));
+pub(super) async fn stamping_requires_logging(redactor: &Arc<Redactor>) {
+    let harness = Harness::new(Some(cost_stream(None)), redactor);
     let response = chat_of(&harness).await;
     assert_eq!(response.usage.cost, None);
     assert_eq!(response.hidden_params.get("response_cost"), None);
 }
 
-pub(super) async fn stamping_error() {
+pub(super) async fn stamping_error(redactor: &Arc<Redactor>) {
     let logging = failing_logging("openai");
-    let mut harness = Harness::new(Some(cost_stream(None)));
+    let mut harness = Harness::new(Some(cost_stream(None)), redactor);
     harness.logging = Some(&logging);
     let (result, logs) = harness.run().await;
     assert!(matches!(failed(result), AssemblyError::Cost { .. }));
