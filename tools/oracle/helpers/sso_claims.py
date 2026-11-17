@@ -9,9 +9,9 @@ from litellm.proxy.management_endpoints.ui_sso import (
     _decode_sso_token_claims,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L953-L963
     _merge_sso_token_claims,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L965-L974
     determine_role_from_groups,
-    generic_response_convertor,
+    generic_response_convertor,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1130-L1247
     normalize_email,
-    process_sso_jwt_access_token,
+    process_sso_jwt_access_token,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L854-L951
 )
 from litellm.types.proxy.management_endpoints.ui_sso import RoleMappings, TeamMappings
 from pydantic import JsonValue, TypeAdapter
@@ -115,13 +115,13 @@ def role_name(groups: list[str], mappings: RoleMappings | None) -> str | None:
     role = determine_role_from_groups(groups, mappings)
     if role is None:
         return None
-    return role.value
+    return cast(str, role.value)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L841
 
 
 def process_call(call: ProcessCall) -> Processed:
     result: CustomOpenID | None = None
     if call["identity"] is not None:
-        result = CustomOpenID.model_validate(call["identity"])
+        result = CustomOpenID.model_validate(call["identity"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/types.py#L94-L97
     sso_jwt_handler: JWTHandler | None = None
     if call["sso_settings"] is not None:
         sso_jwt_handler = build_handler(call["sso_settings"])
