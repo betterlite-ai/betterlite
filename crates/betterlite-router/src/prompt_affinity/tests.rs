@@ -51,6 +51,9 @@ fn runtime() -> Runtime {
 #[case::cache_control_markers_never_change_the_digest(
     "cache_control_markers_never_change_the_digest"
 )]
+#[case::a_typed_message_converts_to_the_dict_litellm_hashes(
+    "a_typed_message_converts_to_the_dict_litellm_hashes"
+)]
 #[case::tools_seed_the_prefix_digest("tools_seed_the_prefix_digest")]
 fn prompt_affinity_behaviors(#[case] name: &str) {
     runtime().block_on(behaviors::run(name));

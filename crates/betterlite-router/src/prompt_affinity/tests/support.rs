@@ -19,7 +19,8 @@ use betterlite_logging::logging_metadata::base64::Base64Truncator;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
-use betterlite_prompts::cache_defaults::CacheFacts;
+use betterlite_prompts::cache_defaults::chat::{RouterProjection, messages_with_defaults};
+use betterlite_prompts::cache_defaults::{CacheFacts, CachePolicy};
 use betterlite_prompts::message_content::Message;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::settings::Settings as TokenizerSettings;
@@ -36,6 +37,7 @@ use tokio::time::Instant;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::prompt_affinity::cache::PinCache;
+use crate::prompt_affinity::json::messages_json;
 use crate::prompt_affinity::prefix::{
     PrefixPosition, lookback_keys, prefix_positions, prompt_caching_cache_key,
 };
@@ -45,6 +47,9 @@ use crate::prompt_affinity::service::{
 };
 
 pub(crate) const MARKED_MESSAGES: &str = r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue","cache_control":{"type":"ephemeral"}}]"#;
+
+pub(crate) const PLAIN_MESSAGES: &str =
+    r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue"}]"#;
 
 const CATALOG: &str = r#"{
   "claude-min": {"litellm_provider": "anthropic", "supports_prompt_caching": true, "prompt_cache_min_tokens": 400},
@@ -67,11 +72,11 @@ pub(crate) fn json_messages(source: &str) -> Vec<Json> {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn request_kwargs(source: &str) -> betterlite_prompts::arguments::json::Object {
+pub(crate) fn request_kwargs(source: &str) -> betterlite_prompts::arguments::json::Object {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn deployment(id: &str, model: &str) -> DeploymentSpec {
+pub(crate) fn deployment(id: &str, model: &str) -> DeploymentSpec {
     let mut params = IndexMap::new();
     params.insert("model".to_owned(), Json::Text(model.to_owned()));
     let mut info = IndexMap::new();
@@ -200,7 +205,7 @@ pub(super) fn success<'event>(
     }
 }
 
-pub(super) fn ids(deployments: &[DeploymentSpec]) -> Vec<&str> {
+pub(crate) fn ids(deployments: &[DeploymentSpec]) -> Vec<&str> {
     deployments
         .iter()
         .filter_map(|deployment| deployment.id())
@@ -318,8 +323,51 @@ pub(super) fn tool_result_blocks_source(count: usize) -> String {
     format!(r#"[{{"role":"tool","content":[{}]}}]"#, blocks.join(","))
 }
 
+pub(super) fn tool_use_blocks_source(count: usize) -> String {
+    let mut blocks = Vec::new();
+    for index in 0..count.saturating_sub(1) {
+        let id = format!("call {index}");
+        blocks.push(format!(
+            r#"{{"type":"tool_use","id":"{id}","name":"lookup","input":{{}}}}"#
+        ));
+    }
+    blocks.push(
+        r#"{"type":"tool_use","id":"last","name":"lookup","input":{},"cache_control":{"type":"ephemeral"}}"#
+            .to_owned(),
+    );
+    format!(
+        r#"[{{"role":"assistant","content":[{}]}}]"#,
+        blocks.join(",")
+    )
+}
+
 pub(super) fn image_message_source(payload: &str) -> String {
     format!(
         r#"[{{"role":"user","content":[{{"type":"image_url","image_url":{{"url":"data:image/png;base64,{payload}"}}}},{{"type":"text","text":"last","cache_control":{{"type":"ephemeral"}}}}]}}]"#
     )
+}
+
+// the messages the default breakpoints produce for these request arguments and globals
+pub(crate) fn injected_json(
+    source: &str,
+    request_kwargs: &betterlite_prompts::arguments::json::Object,
+    enable_prompt_caching: Option<bool>,
+    global_enabled: bool,
+) -> Vec<Json> {
+    let typed = messages(source);
+    let models = vec!["claude-min".to_owned()];
+    let aliases = BTreeMap::new();
+    let projection = RouterProjection {
+        messages: &typed,
+        models: &models,
+        tools: None,
+        enable_prompt_caching,
+        request_kwargs,
+        alias_map: &aliases,
+        policy: CachePolicy {
+            global_enabled,
+            ttl: None,
+        },
+    };
+    messages_json(&messages_with_defaults(&projection, &ClaudeFacts))
 }

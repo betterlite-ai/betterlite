@@ -91,6 +91,7 @@ where
 #[case::default_min_cooldown(settled(boundaries::default_min_cooldown))]
 #[case::cancelled_callback(boundaries::cancelled_callback())]
 #[case::prompt_affinity_narrows_the_pool(boundaries::prompt_affinity_narrows_the_pool())]
+#[case::prompt_affinity_before_pre_call_checks(boundaries::prompt_affinity_before_pre_call_checks())]
 #[case::empty_group(boundaries::empty_group())]
 #[case::blocked_deployment(boundaries::blocked_deployment())]
 #[case::blocked_pool(boundaries::blocked_pool())]

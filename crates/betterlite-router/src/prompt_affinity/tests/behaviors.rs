@@ -1,19 +1,13 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::cache_defaults::CachePolicy;
-use betterlite_prompts::cache_defaults::chat::{RouterProjection, messages_with_defaults};
 
 use super::support::{
-    ClaudeFacts, FakePins, MARKED_MESSAGES, cache_key, deployment, ids, json_messages, messages,
-    request, request_kwargs, service, success,
+    FakePins, MARKED_MESSAGES, PLAIN_MESSAGES, cache_key, deployment, ids, injected_json,
+    json_messages, messages, request, request_kwargs, service, success,
 };
 use crate::prompt_affinity::json::messages_json;
-
-const PLAIN_MESSAGES: &str =
-    r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue"}]"#;
 
 pub(super) async fn run(name: &str) {
     match name {
@@ -61,6 +55,9 @@ pub(super) async fn run(name: &str) {
         }
         "cache_control_markers_never_change_the_digest" => {
             cache_control_markers_never_change_the_digest();
+        }
+        "a_typed_message_converts_to_the_dict_litellm_hashes" => {
+            a_typed_message_converts_to_the_dict_litellm_hashes();
         }
         "tools_seed_the_prefix_digest" => tools_seed_the_prefix_digest(),
         _ => panic!("unknown case {name}"),
@@ -329,26 +326,11 @@ fn tools_seed_the_prefix_digest() {
     assert_ne!(cache_key(&raw, None), cache_key(&raw, Some(&no_tools)));
 }
 
-fn injected_json(
-    source: &str,
-    request_kwargs: &Object,
-    enable_prompt_caching: Option<bool>,
-    global_enabled: bool,
-) -> Vec<Json> {
-    let typed = messages(source);
-    let models = vec!["claude-min".to_owned()];
-    let aliases = BTreeMap::new();
-    let projection = RouterProjection {
-        messages: &typed,
-        models: &models,
-        tools: None,
-        enable_prompt_caching,
-        request_kwargs,
-        alias_map: &aliases,
-        policy: CachePolicy {
-            global_enabled,
-            ttl: None,
-        },
-    };
-    messages_json(&messages_with_defaults(&projection, &ClaudeFacts))
+// the typed request message rebuilt as the dict LiteLLM's prefix walk hashes, block content and name included
+fn a_typed_message_converts_to_the_dict_litellm_hashes() {
+    const BLOCKS: &str = r#"[{"role":"assistant","name":"helper","content":[{"type":"text","text":"one"},{"type":"tool_use","id":"call-1","name":"lookup","input":{"q":"x"},"cache_control":{"type":"ephemeral"}}]},{"role":"tool","content":[{"type":"tool_result","tool_use_id":"call-1","content":"42","cache_control":{"type":"ephemeral"}}]}]"#;
+    let converted = messages_json(&messages(BLOCKS));
+    let raw = json_messages(BLOCKS);
+    assert_eq!(converted, raw);
+    assert_eq!(cache_key(&converted, None), cache_key(&raw, None));
 }
