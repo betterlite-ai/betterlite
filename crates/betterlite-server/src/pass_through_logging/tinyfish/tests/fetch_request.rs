@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 
-use super::fetch::{RUN_FETCH_TIMEOUT, fetch_run};
+use super::fetch::{RUN_API_KEY_HEADER, RUN_FETCH_TIMEOUT, fetch_run};
 use super::support::{FixedCredentials, ScriptedReply, capture_logs, fixture, secret};
 
 const COMPLETED_BODY: &str = r#"{"run_id": "run-1", "status": "COMPLETED", "num_of_steps": 3}"#;
@@ -25,6 +27,13 @@ async fn sends_the_key_and_the_screenshots_query() {
     );
     assert_eq!(request.api_key.as_deref(), Some("key-1"));
     assert_eq!(request.timeout, RUN_FETCH_TIMEOUT);
+}
+
+// LiteLLM sends the provider key as X-API-Key on a poll client it builds with a 30-second timeout.
+#[test]
+fn names_the_key_header_and_the_poll_timeout() {
+    assert_eq!(RUN_API_KEY_HEADER, "x-api-key");
+    assert_eq!(RUN_FETCH_TIMEOUT, Duration::from_secs(30));
 }
 
 #[tokio::test]
