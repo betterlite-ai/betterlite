@@ -62,7 +62,7 @@ impl TryFrom<u8> for OidcResponseKind {
         match tag {
             0 => Ok(Self::Token),
             1 => Ok(Self::Userinfo),
-            tag => Err(OidcResponseError::UnknownKind { tag }),
+            unknown => Err(OidcResponseError::UnknownKind { tag: unknown }),
         }
     }
 }
@@ -82,7 +82,7 @@ pub fn decode_oidc_token_response(bytes: &[u8]) -> Result<TokenResponse, OidcRes
     if !document.json.is_object() {
         return Err(OidcResponseError::NotAnObject);
     }
-    let Some(access_token) = document
+    let Some(issued) = document
         .json
         .get(ACCESS_TOKEN_FIELD)
         .and_then(|value| value.as_str())
@@ -90,7 +90,7 @@ pub fn decode_oidc_token_response(bytes: &[u8]) -> Result<TokenResponse, OidcRes
     else {
         return Err(OidcResponseError::MissingAccessToken);
     };
-    let access_token = SecretString::from(access_token.to_owned());
+    let access_token = SecretString::from(issued.to_owned());
     let claims = serde_json::from_value(document.json).map_err(OidcResponseError::Claims)?;
     Ok(TokenResponse {
         claims,
@@ -125,10 +125,18 @@ fn decode_document(bytes: &[u8]) -> Result<TypedValue, OidcResponseError> {
 // Python's falsy test, which decides whether LiteLLM falls back to the id_token
 pub(super) fn is_empty_document(document: &TypedValue) -> bool {
     let json = &document.json;
-    json.is_null()
+    if json.is_null()
         || json.as_bool() == Some(false)
         || json.as_f64() == Some(0.0)
         || json.as_str() == Some("")
-        || json.as_array().is_some_and(|items| items.is_empty())
-        || json.as_object().is_some_and(|fields| fields.is_empty())
+    {
+        return true;
+    }
+    if let Some(items) = json.as_array() {
+        return items.is_empty();
+    }
+    if let Some(fields) = json.as_object() {
+        return fields.is_empty();
+    }
+    false
 }

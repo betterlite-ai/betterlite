@@ -18,10 +18,10 @@ pub(crate) const VALID_ID_TOKEN: &str =
     "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEiLCJlbWFpbCI6InVAZXhhbXBsZS5jb20ifQ.";
 
 pub(crate) fn token_reply(id_token: Option<&str>) -> String {
-    match id_token {
-        Some(id_token) => format!(r#"{{"access_token":"access-1","id_token":"{id_token}"}}"#),
-        None => r#"{"access_token":"access-1"}"#.to_owned(),
-    }
+    id_token.map_or_else(
+        || r#"{"access_token":"access-1"}"#.to_owned(),
+        |issued| format!(r#"{{"access_token":"access-1","id_token":"{issued}"}}"#),
+    )
 }
 
 pub(crate) fn base_request(provider: &LocalProvider) -> TokenExchangeRequest {
@@ -50,7 +50,8 @@ pub(crate) fn form(body: &str) -> BTreeMap<String, String> {
 }
 
 pub(crate) fn text<'claims>(claims: &'claims ProviderClaims, name: &str) -> Option<&'claims str> {
-    claims.get(name).and_then(|value| value.json.as_str())
+    let value = claims.get(name)?;
+    value.json.as_str()
 }
 
 pub(crate) struct Reply {

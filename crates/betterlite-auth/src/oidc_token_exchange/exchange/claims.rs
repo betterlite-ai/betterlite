@@ -9,23 +9,23 @@ use super::{ID_TOKEN_FIELD, OidcTokenExchangeError};
 pub(super) fn fallback_claims(
     token_response: &TokenResponse,
 ) -> Result<ProviderClaims, OidcTokenExchangeError> {
-    let id_token = token_response
+    let issued_id_token = token_response
         .claims
         .get(ID_TOKEN_FIELD)
         .and_then(|value| value.json.as_str())
         .filter(|token| !token.is_empty());
-    let Some(id_token) = id_token else {
+    let Some(id_token) = issued_id_token else {
         return Err(OidcTokenExchangeError::UserinfoUnavailable);
     };
     let Some(document) = unverified_claims(id_token) else {
         tracing::error!("the SSO id_token is not a decodable JWT");
         return Err(OidcTokenExchangeError::IdTokenInvalid);
     };
-    if document
-        .json
-        .as_object()
-        .is_none_or(|fields| fields.is_empty())
-    {
+    let empty_payload = match document.json.as_object() {
+        Some(fields) => fields.is_empty(),
+        None => true,
+    };
+    if empty_payload {
         tracing::warn!("the SSO id_token payload held no identity claims");
         return Err(OidcTokenExchangeError::UserinfoUnavailable);
     }
@@ -45,13 +45,14 @@ pub(super) fn merge_claims(
     for (name, value) in userinfo {
         merged.insert(name, value);
     }
-    for (field, value) in bearer {
-        if let Some(value) = value {
-            if value.json.is_null() {
-                merged.remove(field);
-            } else {
-                merged.insert(field.to_owned(), value);
-            }
+    for (field, bearer_value) in bearer {
+        let Some(token_value) = bearer_value else {
+            continue;
+        };
+        if token_value.json.is_null() {
+            merged.remove(field);
+        } else {
+            merged.insert(field.to_owned(), token_value);
         }
     }
     merged
