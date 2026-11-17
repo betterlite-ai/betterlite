@@ -9,6 +9,7 @@ use betterlite_core::api::chat_response_stream_tools::state::StreamSetup;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
 use betterlite_openai::chat::execution::ChatError;
+use indexmap::IndexMap;
 
 use super::assembly::AssemblyContext;
 use super::call::{ChatResponseStreamCall, ChatRunMode, ChatRunSpec, ChatRunStep};
@@ -23,14 +24,12 @@ use crate::sdk_http::wrapper_stream::{self, Prepared};
 const NORMALIZED_ID: &str = "00000000-0000-0000-0000-000000000000";
 
 type ChatStream = ChatResponseStream<Payloads, AssemblyContext>;
-type StepResult = Result<ChatResponseStreamStepOutcome, SdkHttpError>;
+type Step = ChatResponseStreamStepOutcome;
+type StepResult = Result<Step, SdkHttpError>;
 type EventResult = Result<Option<KnownResponseEvent>, ChatResponseStreamError>;
 
 // What one run's POST left: the SSE payloads to drive, or the failure the provider raised before any event
-pub(super) enum Opened {
-    Payloads(VecDeque<Vec<u8>>),
-    Failure(Failure),
-}
+pub(super) type Opened = Result<VecDeque<Vec<u8>>, Failure>;
 
 pub(super) async fn open(
     prepared: &Prepared,
@@ -38,28 +37,25 @@ pub(super) async fn open(
 ) -> Result<Opened, SdkHttpError> {
     let request = wrapper_stream::wire_request(call)?;
     match wrapper_stream::open(prepared, &request).await {
-        Ok(response) => Ok(Opened::Payloads(wrapper_stream::payloads(response).await?)),
-        Err(ChatError::Provider { response }) => {
-            Ok(Opened::Failure(native::failure(&call.model, &response)?))
-        }
+        Ok(response) => Ok(Ok(wrapper_stream::payloads(response).await?)),
+        Err(ChatError::Provider { response }) => Ok(Err(native::failure(&call.model, &response)?)),
         Err(other) => Err(SdkHttpError::Chat(Box::new(other))),
     }
 }
 
-// One case run: the chosen iterator over one mock stream, driven step by step
 pub(super) async fn run(
     call: &ChatResponseStreamCall,
     spec: &ChatRunSpec,
     opened: Opened,
 ) -> Result<ChatResponseStreamRunOutcome, SdkHttpError> {
     let payloads = match opened {
-        Opened::Failure(failure) => {
+        Ok(payloads) => payloads,
+        Err(failure) => {
             return Ok(ChatResponseStreamRunOutcome {
                 steps: Vec::new(),
                 failure: Some(failure),
             });
         }
-        Opened::Payloads(payloads) => payloads,
     };
     let mut stream = build(call, payloads)?;
     let mut steps = Vec::with_capacity(spec.steps.len());
@@ -79,8 +75,11 @@ fn build(
     call: &ChatResponseStreamCall,
     payloads: VecDeque<Vec<u8>>,
 ) -> Result<ChatStream, SdkHttpError> {
-    let params = call.params_json()?;
     let input = Json::Text(call.request_input.clone());
+    let params = call
+        .responses_api_request
+        .clone()
+        .unwrap_or_else(|| Json::Object(IndexMap::new()));
     ChatResponseStream::new(
         StreamSetup {
             model: &call.model,
@@ -91,62 +90,40 @@ fn build(
             litellm_metadata: None,
             limits: ApiLimits::default(),
         },
-        sources(),
+        EventSources {
+            clock: Arc::new(|| Ok(0)),
+            ids: Arc::new(|| NORMALIZED_ID.to_owned()),
+        },
         Payloads::new(call.model.clone(), payloads),
     )
     .map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
-// The injected ids and time a case may not depend on: every generated id and timestamp is fixed here
-fn sources() -> EventSources {
-    EventSources {
-        clock: Arc::new(|| Ok(0)),
-        ids: Arc::new(|| NORMALIZED_ID.to_owned()),
-    }
-}
-
 // The events one step stacks up, and whether the provider ended the stream under it
-#[derive(Default)]
-struct StepEvents {
-    events: Vec<serde_json::Value>,
-    end: bool,
-}
-
-impl StepEvents {
-    fn push(&mut self, next: EventResult) -> Result<(), SdkHttpError> {
-        match next {
-            Ok(Some(event)) => {
-                let value = serde_json::to_value(&event).map_err(SdkHttpError::Serialize)?;
-                self.events.push(value);
-            }
-            Ok(None) => self.end = true,
-            Err(error) => return Err(SdkHttpError::Invalid(error.to_string())),
+fn push(outcome: &mut Step, next: EventResult) -> Result<(), SdkHttpError> {
+    match next {
+        Ok(Some(event)) => {
+            let encoded = serde_json::to_value(&event).map_err(SdkHttpError::Serialize)?;
+            outcome.events.push(encoded);
         }
-        Ok(())
+        Ok(None) => outcome.end = true,
+        Err(error) => return Err(SdkHttpError::Invalid(error.to_string())),
     }
-}
-
-impl From<StepEvents> for ChatResponseStreamStepOutcome {
-    fn from(events: StepEvents) -> Self {
-        Self {
-            events: events.events,
-            end: events.end,
-        }
-    }
+    Ok(())
 }
 
 fn step_sync(stream: &mut ChatStream, step: ChatRunStep) -> StepResult {
-    let mut outcome = StepEvents::default();
+    let mut outcome = Step::default();
     while !outcome.end && (step != ChatRunStep::Next || outcome.events.is_empty()) {
-        outcome.push(stream.next_event())?;
+        push(&mut outcome, stream.next_event())?;
     }
-    Ok(ChatResponseStreamStepOutcome::from(outcome))
+    Ok(outcome)
 }
 
 async fn step_async(stream: &mut ChatStream, step: ChatRunStep) -> StepResult {
-    let mut outcome = StepEvents::default();
+    let mut outcome = Step::default();
     while !outcome.end && (step != ChatRunStep::Next || outcome.events.is_empty()) {
-        outcome.push(stream.next_event_async().await)?;
+        push(&mut outcome, stream.next_event_async().await)?;
     }
-    Ok(ChatResponseStreamStepOutcome::from(outcome))
+    Ok(outcome)
 }

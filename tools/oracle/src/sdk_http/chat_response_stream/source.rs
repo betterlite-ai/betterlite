@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 
 use async_trait::async_trait;
 use betterlite_core::api::chat_response_stream::chunk::wrapper_view;
@@ -31,7 +32,10 @@ impl Payloads {
             false,
             JsonObject::new(),
         );
-        shaper.now = fixed_instant;
+        shaper.now = || StreamInstant {
+            seconds: 0,
+            timestamp: 0.0,
+        };
         shaper.next_id = Uuid::nil;
         Self {
             payloads,
@@ -64,10 +68,7 @@ impl Payloads {
                 self.payloads.clear();
                 return Ok(None);
             }
-            let value: JsonValue =
-                serde_json::from_slice(&payload).map_err(|error| StreamFailure::Unclassified {
-                    text: error.to_string(),
-                })?;
+            let value: JsonValue = serde_json::from_slice(&payload).map_err(failure)?;
             if value == JsonValue::Null {
                 return Ok(Some(Json::Null));
             }
@@ -76,17 +77,19 @@ impl Payloads {
                 &mut self.state,
                 &ProviderChunk::Json(Box::new(value)),
             )
-            .map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })?
+            .map_err(failure)?
             else {
                 continue;
             };
-            let view = wrapper_view(&chunk).map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })?;
-            return Ok(Some(view));
+            return wrapper_view(&chunk).map(Some).map_err(failure);
         }
+    }
+}
+
+// The decode path's errors all surface as the same unclassified stream failure
+fn failure(error: impl Display) -> StreamFailure {
+    StreamFailure::Unclassified {
+        text: error.to_string(),
     }
 }
 
@@ -100,13 +103,5 @@ impl ChunkStream for Payloads {
 impl AsyncChunkStream for Payloads {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
         self.decode_next()
-    }
-}
-
-// The chunk shaping only reads this clock when a provider chunk leaves created out; the mock always sends it.
-const fn fixed_instant() -> StreamInstant {
-    StreamInstant {
-        seconds: 0,
-        timestamp: 0.0,
     }
 }

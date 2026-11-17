@@ -44,7 +44,7 @@ compare:
   headers_present: []
   upstream_headers: [authorization]
   ignore:
-    - pointer: /chat_response_stream/value/runs/0/failure/message
+    - pointer: /chat_response_stream/value/0/failure/message
       why: LiteLLM prefixes the provider name and betterlite writes its own text
-    - pointer: /chat_response_stream/value/runs/1/failure/message
+    - pointer: /chat_response_stream/value/1/failure/message
       why: LiteLLM prefixes the provider name and betterlite writes its own text

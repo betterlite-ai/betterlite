@@ -25,11 +25,9 @@ use rust_decimal::Decimal;
 
 use super::super::error::SdkHttpError;
 
-type Hooks = VerboseHooks<FixtureLogger, FixtureConsole>;
-
 // The driver hands its end-of-stream snapshots to B914's builder, which the oracle runs with quiet sinks
 pub(super) struct AssemblyContext {
-    hooks: Hooks,
+    hooks: VerboseHooks<Quiet, Quiet>,
 }
 
 impl AssemblyContext {
@@ -37,8 +35,8 @@ impl AssemblyContext {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
         Ok(Self {
             hooks: VerboseHooks {
-                logger: FixtureLogger,
-                console: FixtureConsole,
+                logger: Quiet,
+                console: Quiet,
                 set_verbose: Payload::Bool(false),
                 redactor: Arc::new(redactor),
             },
@@ -58,15 +56,13 @@ impl StreamAssembly for AssemblyContext {
                 serde_json::from_value(value).map_err(AssemblyError::from)
             })
             .collect::<Result<Vec<Chunk>, AssemblyError>>()?;
-        let counter = ZeroCounter;
-        let costs = NoCosts;
         let request = Request {
             chunks: Some(&decoded),
             messages: None,
             count_prompt_tokens: None,
             logging: None,
-            costs: &costs,
-            counter: &counter,
+            costs: &QUIET,
+            counter: &QUIET,
             metadata: None,
             now: 0,
         };
@@ -75,10 +71,7 @@ impl StreamAssembly for AssemblyContext {
 }
 
 // The builder's awaited futures are ready on first poll, so polling here needs no second runtime
-fn block_on<F>(future: F) -> F::Output
-where
-    F: Future,
-{
+fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = std::pin::pin!(future);
     let mut context = Context::from_waker(Waker::noop());
     loop {
@@ -88,9 +81,11 @@ where
     }
 }
 
-pub(super) struct FixtureLogger;
+// Every seam the builder calls is silent and counts nothing: the mock's usage chunk carries the counts and cost
+const QUIET: Quiet = Quiet;
+pub(super) struct Quiet;
 
-impl LoggerSink for FixtureLogger {
+impl LoggerSink for Quiet {
     fn debug(&self, _payload: &Payload) -> bool {
         true
     }
@@ -108,19 +103,14 @@ impl LoggerSink for FixtureLogger {
     }
 }
 
-pub(super) struct FixtureConsole;
-
-impl ConsoleSink for FixtureConsole {
+impl ConsoleSink for Quiet {
     fn print(&self, _payload: &Payload) -> bool {
         true
     }
 }
 
-// The wire usage chunk carries the counts, so the builder never falls back to counting any text
-pub(super) struct ZeroCounter;
-
 #[async_trait]
-impl UsageTokenCounter for ZeroCounter {
+impl UsageTokenCounter for Quiet {
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
     }
@@ -138,10 +128,7 @@ impl UsageTokenCounter for ZeroCounter {
     }
 }
 
-// The mock's usage chunk reports its own cost, so the builder prices nothing itself
-pub(super) struct NoCosts;
-
-impl StreamCostCalculator for NoCosts {
+impl StreamCostCalculator for Quiet {
     fn completion_cost(
         &self,
         _input: &CostInput<'_>,

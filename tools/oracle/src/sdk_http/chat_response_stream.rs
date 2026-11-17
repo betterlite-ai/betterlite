@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::error::SdkHttpError;
-use super::result::{ChatResponseStreamRun, SdkResult};
+use super::result::SdkResult;
 use super::wrapper_stream;
 use call::ChatResponseStreamCall;
 
@@ -25,7 +25,5 @@ pub(crate) async fn send(
     for (spec, opened) in call.runs.iter().zip(opened) {
         runs.push(run::run(call, spec, opened).await?);
     }
-    Ok(SdkResult::ChatResponseStream {
-        value: ChatResponseStreamRun { runs },
-    })
+    Ok(SdkResult::ChatResponseStream { value: runs })
 }

@@ -36,12 +36,12 @@ compare:
   headers_present: []
   upstream_headers: [authorization]
   ignore:
-    - pointer: /chat_response_stream/value/runs/0/steps/0/events/13/part/annotations
+    - pointer: /chat_response_stream/value/0/steps/0/events/13/part/annotations
       why: >-
         LiteLLM's content_part.done builds ContentPartDonePartOutputText from the
         annotation fields and dumps an empty object for each; betterlite keeps the
         citation fields the output item carries.
-    - pointer: /chat_response_stream/value/runs/1/steps/0/events/8/part/annotations
+    - pointer: /chat_response_stream/value/1/steps/0/events/8/part/annotations
       why: >-
         LiteLLM's content_part.done builds ContentPartDonePartOutputText from the
         annotation fields and dumps an empty object for each; betterlite keeps the
