@@ -1,0 +1,11 @@
+model_list:
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      disable_add_prefix_to_prompt: false
+  - model_name: claude-opus
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      disable_add_prefix_to_prompt: true
+litellm_settings:
+  disable_add_prefix_to_prompt: true

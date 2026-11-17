@@ -1,6 +1,6 @@
 id: B397
 title: Router success and failure callback integration
-description: 'Translate B012 success/failure events into B304 counters and B014 normalized usage. Own
+description: 'Translate B8740 success/failure events into B304 counters and B014 normalized usage. Own
   router callback ordering, once-only counted metadata and asynchronous/synchronous observer equivalence.
   Cancellation releases observation ownership without duplicating usage. Pure counter storage and flush
   policy remain B304. Define CounterSink inputs here and inject the implementation from the later B304

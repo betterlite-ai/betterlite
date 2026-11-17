@@ -3,7 +3,7 @@ title: Provider file upload HTTP execution
 description: >-
   Supply the generic upload callee missing from B1028's dependency graph. Implement
   betterlite-core::api::file_http_upload with a closed UploadPlan from B1015, B173 transport,
-  B012 logging and B2402's shared error conversion. Own whole create_file, async_create_file,
+  B249 logging and B2402's shared error conversion. Own whole create_file, async_create_file,
   _extract_upload_url_from_response, _iter_in_blocks, _check_media_upload_response,
   _upload_media, _aupload_media and _mask_presigned_request_headers. Keep sync compatibility
   as a mode of one native service, including the observable byte and result-context differences.
@@ -111,7 +111,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/file-http-upload/upload-diagnostics.yaml
 deviations: []
 out_of_scope:
-- B2402 owns _handle_error whole; B012 owns _get_masked_values and logger callbacks; B173 owns client selection and transport.
+- B2402 owns _handle_error whole; B249 owns _get_masked_values and logger callbacks; B173 owns client selection and transport.
 - Metadata/delete/list handlers are B2462; binary/streaming content handlers are B2463. Other llm_http_handler endpoint methods remain their existing API-family owners, not file upload work.
 - Provider request and response transforms remain B1015's concrete provider implementations; this task executes their plans without recreating those schemas.
 pitfalls:
