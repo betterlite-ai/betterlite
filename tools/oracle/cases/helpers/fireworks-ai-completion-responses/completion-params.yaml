@@ -1,0 +1,32 @@
+kind: helper
+name: fireworks-ai-completion-params
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: supported
+      - op: map_params
+        non_default_params:
+          max_tokens: 10
+          logprobs: true
+          echo: false
+          temperature: 0.2
+          top_p: 0.9
+          top_k: 40
+          frequency_penalty: 0.5
+          presence_penalty: 0.1
+          n: 2
+          stop: ["\n"]
+          response_format: {type: json_object}
+          stream: true
+          user: "u1"
+        optional_params: {existing: 1}
+      - op: map_params
+        non_default_params: {max_tokens: null, temperature: null, unknown_key: 1, seed: 5}
+      - op: map_params
+        optional_params: {temperature: 0.3}
+      - op: map_params
+        non_default_params: {model: "ignored", logprobs: null}
+      - op: capability
+env: {}
+compare: {ignore: []}

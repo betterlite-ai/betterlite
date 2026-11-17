@@ -87,7 +87,7 @@ const COMPARISON_SIGNALS: &[&str] = &[
 const EXPLICIT_COMPETITOR_MARKER: &str = r"\b(airways?|airline|carrier)\b";
 const EXPLICIT_OTHER_MEANING_MARKER: &str =
     r"\b(fly|travel|going|visit|layover|stopover|transit)\b.{0,12}\b(to|in|via|from)\b.{0,8}\b";
-const AIRLINES_JSON: &str = include_str!("competitor_intent/major_airlines.json");
+pub const MAJOR_AIRLINES_JSON: &str = include_str!("competitor_intent/major_airlines.json");
 
 #[derive(Debug, Deserialize)]
 struct AirlineEntry {
@@ -201,7 +201,7 @@ fn compile_explicit_marker(custom: Option<&str>, default_pattern: &str) -> Optio
 
 #[must_use]
 pub fn load_competitors_excl_brand(brand_self: &[String]) -> Vec<String> {
-    let Ok(airlines) = serde_json::from_str::<Vec<AirlineEntry>>(AIRLINES_JSON) else {
+    let Ok(airlines) = serde_json::from_str::<Vec<AirlineEntry>>(MAJOR_AIRLINES_JSON) else {
         return Vec::new();
     };
     let brands: BTreeSet<String> = brand_self

@@ -1,0 +1,12 @@
+task: B153
+deviations:
+  - what: The formula and the README runbook build and checksum the Rust crate crates/betterlite-cli from a GitHub tag archive with one cargo install, so bin/lite comes from cargo and there is no install_symlink; LiteLLM builds the PyPI sdist into a Python 3.13 virtualenv, installs it with pip and symlinks lite into bin.
+    why: betterlite has no Python package and no PyPI release; the tag archive is the only published source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L23-L28
+  - what: The tap is betterlite-ai/homebrew-betterlite, installed with brew install betterlite-ai/betterlite/lite, instead of BerriAI/homebrew-litellm.
+    why: The LiteLLM name and org belong to Berri AI (rules.yaml litellm-boundaries). The tap owner is our assumption and is listed as an open question.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/README.md#L3-L9
+  - what: The formula builds with default cargo features, so the OS keyring support of betterlite-cli is off.
+    why: The Linux keyring feature vendors a D-Bus library and slows the Homebrew build; LiteLLM's formula has no equivalent switch to copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L26-L27
+kept_bugs: []

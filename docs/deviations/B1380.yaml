@@ -1,0 +1,33 @@
+task: B1380
+deviations:
+  - what: A model turn that is not a JSON object, carries no parts, carries a non-list parts field, has no first part, or whose first part is neither text nor inline data fails with a named ContentError, where LiteLLM raises a ValueError or lets AttributeError, KeyError, IndexError or TypeError escape.
+    why: The turn comes from the provider stream, so the caller needs a named failure to answer with a provider error instead of a 500 from an unhandled exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L213-L234
+  - what: A text delta frame that is not a JSON object or carries no serverContent object, or a model turn in it with a non-object value, a non-list parts field, a part that is not an object, or a non-string text or inlineData.data value, fails with a named ContentError, where LiteLLM either skips the malformed value silently or raises a ValueError whose message repeats the frame.
+    why: The named failure says which field is wrong, and a ValueError that echoes the frame would copy Python's repr text, which docs/compatibility.md keeps out of the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L789-L815
+  - what: A completed text or audio event whose stored chunk is not a JSON object, carries no delta key, or carries a non-string delta fails with a named ContentError, where LiteLLM raises KeyError or TypeError from the join and leaves it uncaught.
+    why: The chunk list is the caller's own state, so a named failure says which part is wrong instead of turning a bad entry into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L817-L850
+  - what: A chunk update event that is not a JSON object or carries no string type field is not read as a match, where LiteLLM raises KeyError or TypeError and reports it as a ValueError whose message repeats the event.
+    why: The event comes from our own transform, and repeating its repr text in an error message copies Python's formatting into the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L978-L1032
+  - what: A session configuration request whose parsed envelope or setup is not a JSON object, or whose generationConfig is not an object, fails with a named ContentError, where LiteLLM lets AttributeError escape from the generationConfig lookup.
+    why: The request comes from the client, so the caller can answer with a named provider error that says which field is malformed instead of a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L698-L707
+  - what: An event key outside the ordered mapping fails with a named ContentError that names the key, where LiteLLM raises a ValueError whose message repeats the value.
+    why: The value's repr is Python formatting that docs/compatibility.md keeps out of the contract, and the key is the field that decides the mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1210-L1211
+  - what: A generationComplete value with no prior text or audio delta type fails with a named ContentError, where LiteLLM raises a ValueError naming the missing type.
+    why: The named variant lets the caller treat a state sequencing error as its own failure instead of a generic value error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L236-L242
+kept_bugs:
+  - what: A serverContent value carrying an explicit false, 0 or empty-string generationComplete still maps to response.text.done, because the fallback table matches on the nested key's presence and skips only JSON null.
+    why: A client built on LiteLLM already receives response.text.done for such a frame, so changing it would change the event stream after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1185-L1208
+  - what: A text completion whose joined text is empty emits response.content_part.done and response.output_item.done carrying an audio part with an empty transcript instead of a text part.
+    why: The truthiness check on the done text falls through to the audio part, and a client built on LiteLLM already receives that part for an empty text completion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L879-L912
+  - what: A model turn with other than exactly one part is classified by its first part alone and logs a warning, so a mixed text and inline data turn becomes one text or audio delta according to the first part even though every part's text or data goes into that delta.
+    why: A client built on LiteLLM can depend on the event type a mixed turn produces, so betterlite keeps the first-part choice and the same warning instead of classifying from all parts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L223-L233

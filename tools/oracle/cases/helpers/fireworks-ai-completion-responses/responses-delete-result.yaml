@@ -1,0 +1,23 @@
+kind: helper
+name: fireworks-ai-responses-delete-result
+call:
+  b5832:
+    catalog: []
+    steps:
+      - {op: delete, path: "/inference/v1/responses/resp_abc"}
+      - {op: delete, path: "/x/a%2Fb"}
+      - {op: delete, path: "/x/a%252Fb"}
+      - {op: delete, path: "/x/a%2520b"}
+      - {op: delete, path: "/x/%FF"}
+      - {op: delete, path: "/x/a+b"}
+      - {op: delete, path: "/x/%zz"}
+      - {op: delete, path: "/x/%2541"}
+      - {op: delete, path: "/x/%25zz"}
+      - {op: delete, path: "/x/%252525"}
+      - {op: delete, path: "/x/%E2%82%AC"}
+      - {op: delete, path: "/x/%2f"}
+      - {op: delete, path: "/"}
+      - {op: delete, path: ""}
+      - {op: delete, path: "/x/"}
+env: {}
+compare: {ignore: []}
