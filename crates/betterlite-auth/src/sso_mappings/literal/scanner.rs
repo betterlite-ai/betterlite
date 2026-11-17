@@ -5,7 +5,7 @@ impl Cursor<'_> {
     pub(super) fn skip_trivia(&mut self, depth: usize) -> Result<bool, LiteralError> {
         let mut crossed_line = false;
         loop {
-            match self.byte() {
+            match self.bytes.get(self.at).copied() {
                 Some(b' ' | b'\t' | b'\x0c') => self.at = self.at.saturating_add(1),
                 Some(b'\n' | b'\r') => {
                     crossed_line = crossed_line || depth == 0;
@@ -19,7 +19,7 @@ impl Cursor<'_> {
     }
 
     fn skip_comment(&mut self) {
-        while let Some(byte) = self.byte() {
+        while let Some(byte) = self.bytes.get(self.at).copied() {
             if matches!(byte, b'\n' | b'\r') {
                 return;
             }
@@ -54,20 +54,25 @@ impl Cursor<'_> {
         at
     }
 
-    pub(super) fn open(&mut self, depth: usize) -> Result<(), LiteralError> {
+    fn enter(&self, depth: usize) -> Result<(), LiteralError> {
         if depth >= MAX_LITERAL_DEPTH {
             return Err(LiteralError::TooDeep {
                 limit: MAX_LITERAL_DEPTH,
             });
         }
+        Ok(())
+    }
+
+    pub(super) fn open(&mut self, depth: usize, close: u8) -> Result<bool, LiteralError> {
+        self.enter(depth)?;
         self.at = self.at.saturating_add(1);
         self.skip_trivia(depth.saturating_add(1))?;
-        Ok(())
+        Ok(self.take(close))
     }
 
     pub(super) fn close_or_comma(&mut self, depth: usize, close: u8) -> Result<bool, LiteralError> {
         self.skip_trivia(depth.saturating_add(1))?;
-        let Some(byte) = self.byte() else {
+        let Some(byte) = self.bytes.get(self.at).copied() else {
             return Err(LiteralError::Syntax);
         };
         if byte == close {
@@ -79,8 +84,7 @@ impl Cursor<'_> {
         }
         self.at = self.at.saturating_add(1);
         self.skip_trivia(depth.saturating_add(1))?;
-        if self.byte() == Some(close) {
-            self.at = self.at.saturating_add(1);
+        if self.take(close) {
             return Ok(false);
         }
         Ok(true)

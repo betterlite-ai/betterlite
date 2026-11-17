@@ -7,7 +7,7 @@ struct Digits {
 
 impl Cursor<'_> {
     pub(super) fn number_start(&self) -> bool {
-        match self.byte() {
+        match self.bytes.get(self.at).copied() {
             Some(byte) if byte.is_ascii_digit() => true,
             Some(b'.') => {
                 let Some(next) = self.bytes.get(self.at.saturating_add(1)).copied() else {
@@ -20,7 +20,7 @@ impl Cursor<'_> {
     }
 
     pub(super) fn parse_number(&mut self) -> Result<Literal, LiteralError> {
-        let Some(first) = self.byte() else {
+        let Some(first) = self.bytes.get(self.at).copied() else {
             return Err(LiteralError::Syntax);
         };
         if first == b'0' {
@@ -49,7 +49,7 @@ impl Cursor<'_> {
         let mut digits = 0_usize;
         let mut after_underscore = false;
         loop {
-            let Some(byte) = self.byte() else {
+            let Some(byte) = self.bytes.get(self.at).copied() else {
                 break;
             };
             if byte == b'_' {
@@ -77,7 +77,7 @@ impl Cursor<'_> {
         let start = self.at;
         let integer = self.scan_digits()?;
         let mut is_float = false;
-        if self.byte() == Some(b'.') {
+        if self.bytes.get(self.at).copied() == Some(b'.') {
             is_float = true;
             self.at = self.at.saturating_add(1);
             let fraction = self.scan_digits()?;
@@ -85,10 +85,10 @@ impl Cursor<'_> {
                 return Err(LiteralError::Syntax);
             }
         }
-        if matches!(self.byte(), Some(b'e' | b'E')) {
+        if matches!(self.bytes.get(self.at).copied(), Some(b'e' | b'E')) {
             is_float = true;
             self.at = self.at.saturating_add(1);
-            if matches!(self.byte(), Some(b'+' | b'-')) {
+            if matches!(self.bytes.get(self.at).copied(), Some(b'+' | b'-')) {
                 self.at = self.at.saturating_add(1);
             }
             let exponent = self.scan_digits()?;
@@ -112,7 +112,7 @@ impl Cursor<'_> {
             nonzero: false,
         };
         let mut after_underscore = false;
-        while let Some(byte) = self.byte() {
+        while let Some(byte) = self.bytes.get(self.at).copied() {
             if byte.is_ascii_digit() {
                 if byte != b'0' {
                     digits.nonzero = true;
@@ -138,7 +138,7 @@ impl Cursor<'_> {
     }
 
     fn skip_imaginary(&mut self) {
-        if matches!(self.byte(), Some(b'j' | b'J')) {
+        if matches!(self.bytes.get(self.at).copied(), Some(b'j' | b'J')) {
             self.at = self.at.saturating_add(1);
         }
     }
