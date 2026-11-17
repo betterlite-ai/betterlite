@@ -1,5 +1,4 @@
 pub mod error;
-pub mod input;
 pub mod settings;
 
 mod tests;
@@ -60,6 +59,6 @@ pub async fn transform_messages<Source>(
 where
     Source: RemoteMediaFetcher + Sync,
 {
-    input::reject_remote_media(messages)?;
+    // the shared prepare pass fetches Studio's remote media; conversion only refuses a part that arrives unprepared
     convert_messages_with_history(messages, Some(model), fetcher).await
 }
