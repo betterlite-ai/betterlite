@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_context::call_context::CallContext;
+use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_request::CompletionRequest;
 
 use super::Dispatch;
@@ -47,18 +48,21 @@ where
         .as_deref()
         .unwrap_or(&request.model_id);
     dispatch.evaluate_rules(rules_input(&request.request).as_deref(), model)?;
-    request
-        .calls
-        .complete(TextCompletionCallInput {
-            deployment,
-            request: &request.request,
-        })
-        .await
-        .map_err(rejected)
+    let endpoint = request.calls.endpoint(&deployment).await;
+    let call = TextCompletionCallInput {
+        deployment,
+        request: &request.request,
+    };
+    // a chat-catalog deployment answers through the chat endpoint and converts back
+    match endpoint {
+        CompletionEndpoint::Text => request.calls.complete(call).await,
+        CompletionEndpoint::Chat => request.calls.complete_chat(call).await,
+    }
+    .map_err(rejected)
 }
 
 // LiteLLM's function_setup builds the pre-call text from the messages it made out of the prompt
-fn rules_input(request: &CompletionRequest) -> Option<String> {
+pub(super) fn rules_input(request: &CompletionRequest) -> Option<String> {
     let messages = request.prompt.messages()?;
     let mut buffer = String::new();
     for message in &messages {
@@ -70,7 +74,7 @@ fn rules_input(request: &CompletionRequest) -> Option<String> {
 }
 
 // the shared Rejected variant types error_type as text, so a null type travels to the route as an empty string
-fn rejected(failure: TextCompletionFailure) -> DispatchError {
+pub(super) fn rejected(failure: TextCompletionFailure) -> DispatchError {
     DispatchError::Rejected {
         status: failure.status,
         error_type: failure.error_type.unwrap_or_default(),

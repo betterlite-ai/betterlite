@@ -1,21 +1,25 @@
 #![cfg(test)]
 
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use betterlite_context::call_context::{CallContext, CallInputs};
+use betterlite_models::decisions::Json;
+use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_request::CompletionRequest;
-use uuid::Uuid;
+use futures_util::StreamExt as _;
+use http::HeaderMap;
 
 use crate::dispatch::error::DispatchError;
-use crate::dispatch::log::TracingCallLog;
+use crate::dispatch::tests::support::{MODEL_ID, context, deployment};
 use crate::dispatch::{Dispatch, NoRules};
+use crate::message_utilities::response_streams::StreamError;
 use crate::operation::Operation;
 use crate::operation::text_completion::{
     TextCompletionCall, TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest,
     TextCompletionResult,
 };
+use crate::operation::text_stream::TextStreamAnswer;
 
 struct NeverCalled;
 
@@ -25,45 +29,236 @@ impl TextCompletionCall for NeverCalled {
         &self,
         _call: TextCompletionCallInput<'_>,
     ) -> Result<TextCompletionResult, TextCompletionFailure> {
-        Err(TextCompletionFailure {
-            status: 500,
-            error_type: None,
-            param: None,
-            message: "the stub never reaches the provider".to_owned(),
+        Err(unused())
+    }
+}
+
+struct Streams;
+
+#[async_trait]
+impl TextCompletionCall for Streams {
+    async fn complete(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextCompletionResult, TextCompletionFailure> {
+        Err(unused())
+    }
+
+    async fn stream(
+        &self,
+        call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        // only a string prompt reaches the text endpoint, so the port sees one message
+        assert!(call.request.prompt.messages().is_some());
+        Ok(answer(vec![
+            chunk(
+                r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"hi"}}]}"#,
+            ),
+            chunk(
+                r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
+            ),
+        ]))
+    }
+}
+
+// a chat-catalog deployment answers on the chat endpoint, so dispatch must take the chat branch
+struct Routed;
+
+#[async_trait]
+impl TextCompletionCall for Routed {
+    async fn complete(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextCompletionResult, TextCompletionFailure> {
+        Err(unused())
+    }
+
+    async fn endpoint(
+        &self,
+        _deployment: &betterlite_openai::chat::deployment::ChatDeployment,
+    ) -> CompletionEndpoint {
+        CompletionEndpoint::Chat
+    }
+
+    async fn stream(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        Err(unused())
+    }
+
+    async fn stream_chat(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        Ok(answer(vec![chunk(
+            r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"chat"}}]}"#,
+        )]))
+    }
+}
+
+struct Fails;
+
+#[async_trait]
+impl TextCompletionCall for Fails {
+    async fn complete(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextCompletionResult, TextCompletionFailure> {
+        Err(unused())
+    }
+
+    async fn stream(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        let failed: Result<Json, TextCompletionFailure> = Err(unused());
+        Ok(TextStreamAnswer {
+            body: futures_util::stream::iter([failed]).boxed(),
+            upstream_headers: HeaderMap::new(),
+            upstream_time: Duration::ZERO,
         })
     }
 }
 
-#[tokio::test]
-async fn call_dispatch_tests_behavior() {
+fn answer(chunks: Vec<Json>) -> TextStreamAnswer {
+    TextStreamAnswer {
+        body: futures_util::stream::iter(chunks.into_iter().map(Ok)).boxed(),
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::ZERO,
+    }
+}
+
+fn unused() -> TextCompletionFailure {
+    TextCompletionFailure {
+        status: 500,
+        error_type: None,
+        param: None,
+        message: String::from("the fake never answers this call"),
+    }
+}
+
+fn chunk(text: &str) -> Json {
+    serde_json::from_str(text).expect("chunk")
+}
+
+fn request(
+    calls: Arc<dyn TextCompletionCall>,
+    body: &str,
+) -> (Arc<Dispatch>, TextCompletionRequest) {
     let dispatch = Arc::new(Dispatch::new(
-        Vec::new(),
+        vec![deployment(MODEL_ID, Duration::from_mins(100))],
         Arc::new(NoRules),
-        Arc::new(TracingCallLog),
+        Arc::new(crate::dispatch::log::TracingCallLog),
     ));
-    let context = CallContext::start(CallInputs {
-        now: || SystemTime::UNIX_EPOCH,
-        id: Uuid::nil,
-        deadline: None,
-        privacy: false,
-    });
     let request = TextCompletionRequest {
         call_id: "call".to_owned(),
-        model_id: "model".to_owned(),
-        request: Box::new(
-            CompletionRequest::parse(br#"{"model":"g","prompt":"hello"}"#)
-                .expect("completion request"),
-        ),
+        model_id: MODEL_ID.to_owned(),
+        request: Box::new(CompletionRequest::parse(body.as_bytes()).expect("completion request")),
         dispatch: Arc::clone(&dispatch),
-        calls: Arc::new(NeverCalled),
+        calls,
     };
+    (dispatch, request)
+}
+
+async fn collected(
+    calls: Arc<dyn TextCompletionCall>,
+    body: &str,
+) -> Vec<Result<Json, StreamError>> {
+    let (dispatch, request) = request(calls, body);
     let result = dispatch
-        .execute(Operation::TextStream(request), &context)
+        .execute(
+            Operation::TextStream(request),
+            &context(None, SystemTime::UNIX_EPOCH),
+        )
+        .await
+        .expect("stream");
+    result.body.collect().await
+}
+
+#[tokio::test]
+async fn a_port_without_a_stream_answers_with_its_own_failure() {
+    let (dispatch, request) = request(
+        Arc::new(NeverCalled),
+        r#"{"model":"g","prompt":"hello","stream":true}"#,
+    );
+    let result = dispatch
+        .execute(
+            Operation::TextStream(request),
+            &context(None, SystemTime::UNIX_EPOCH),
+        )
         .await;
     assert!(matches!(
         result,
-        Err(DispatchError::NotBuilt {
-            entry: "text_stream"
-        })
+        Err(DispatchError::Rejected { status: 500, .. })
     ));
+}
+
+#[tokio::test]
+async fn the_stream_is_wrapped_as_text_chunks_with_the_client_usage_choice() {
+    let body = collected(
+        Arc::new(Streams),
+        r#"{"model":"g","prompt":"hello","stream":true,"stream_options":{"include_usage":true}}"#,
+    )
+    .await;
+    assert_eq!(body.len(), 2);
+    let first = body[0].as_ref().expect("first chunk");
+    assert_eq!(
+        json_field(first, "object"),
+        Some(Json::Text(String::from("text_completion")))
+    );
+    assert_eq!(
+        json_field(first, "id"),
+        Some(Json::Text(String::from("cmpl-1")))
+    );
+    assert_eq!(
+        json_field(first, "model"),
+        Some(Json::Text(String::from("client")))
+    );
+    let second = body[1].as_ref().expect("second chunk");
+    assert!(
+        matches!(json_field(second, "usage"), Some(Json::Object(fields)) if fields.contains_key("total_tokens"))
+    );
+}
+
+#[tokio::test]
+async fn a_chat_deployment_streams_through_the_chat_branch() {
+    let body = collected(
+        Arc::new(Routed),
+        r#"{"model":"g","prompt":"hello","stream":true}"#,
+    )
+    .await;
+    let first = body[0].as_ref().expect("first chunk");
+    assert_eq!(
+        json_field(first, "object"),
+        Some(Json::Text(String::from("text_completion")))
+    );
+    let Some(Json::List(choices)) = json_field(first, "choices") else {
+        panic!("no choices");
+    };
+    assert_eq!(
+        json_field(&choices[0], "text"),
+        Some(&Json::Text(String::from("chat")))
+    );
+    assert_eq!(
+        json_field(&choices[0], "index"),
+        Some(&Json::Number(serde_json::Number::from(0_u8)))
+    );
+}
+
+#[tokio::test]
+async fn a_failed_chunk_is_the_wrapper_missing_chunk() {
+    let body = collected(
+        Arc::new(Fails),
+        r#"{"model":"g","prompt":"hello","stream":true}"#,
+    )
+    .await;
+    assert!(matches!(body[0], Err(StreamError::MissingChunk)));
+}
+
+fn json_field<'json>(value: &'json Json, name: &str) -> Option<&'json Json> {
+    match value {
+        Json::Object(fields) => fields.get(name),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    }
 }

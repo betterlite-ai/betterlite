@@ -3,11 +3,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_openai::text_completion_response::CompletionResponse;
 use http::HeaderMap;
 
 use crate::dispatch::Dispatch;
+use crate::operation::text_stream::TextStreamAnswer;
 
 pub struct TextCompletionRequest {
     pub call_id: String,
@@ -30,6 +32,43 @@ pub trait TextCompletionCall: Send + Sync {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextCompletionResult, TextCompletionFailure>;
+
+    // where main.py sends this deployment: the text endpoint, or a chat endpoint whose answer converts
+    async fn endpoint(&self, _deployment: &ChatDeployment) -> CompletionEndpoint {
+        CompletionEndpoint::Text
+    }
+
+    // the text route's chat-deployment branch: the answer converts back to a text completion
+    async fn complete_chat(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextCompletionResult, TextCompletionFailure> {
+        Err(not_built_chat())
+    }
+
+    async fn stream(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        Err(not_built_chat())
+    }
+
+    // the text route's streamed chat-deployment branch: chat chunks for B5366's text wrapper
+    async fn stream_chat(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        Err(not_built_chat())
+    }
+}
+
+fn not_built_chat() -> TextCompletionFailure {
+    TextCompletionFailure {
+        status: 500,
+        error_type: Some(String::from("internal_server_error")),
+        param: None,
+        message: String::from("this completion port has no chat deployment bridge"),
+    }
 }
 
 pub struct TextCompletionResult {

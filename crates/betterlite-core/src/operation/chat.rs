@@ -7,6 +7,7 @@ use betterlite_models::controls::control_options::{ControlOptions, InvalidContro
 use betterlite_openai::chat::ChatRequest as ClientChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
+use betterlite_openai::completion_chat_bridge::ChatEndpoint;
 use futures_util::stream::BoxStream;
 use http::HeaderMap;
 use thiserror::Error;
@@ -36,6 +37,35 @@ pub trait ChatCall: Send + Sync {
         call: ChatCallInput<'_>,
         control: ControlOptions,
     ) -> Result<ChatStreamAnswer, ChatFailure>;
+
+    // the text-completion deployment a chat request may land on, per main.py's dispatch
+    fn endpoint(&self, _deployment: &ChatDeployment) -> ChatEndpoint {
+        ChatEndpoint::Chat
+    }
+
+    // the text endpoint's answer, converted back to chat unless the deployment is a fine-tuned model
+    async fn complete_text(
+        &self,
+        _call: ChatCallInput<'_>,
+        _control: ControlOptions,
+        _convert: bool,
+    ) -> Result<ChatCompletionAnswer, ChatFailure> {
+        Err(no_text_endpoint())
+    }
+
+    async fn stream_text(
+        &self,
+        _call: ChatCallInput<'_>,
+        _control: ControlOptions,
+    ) -> Result<ChatStreamAnswer, ChatFailure> {
+        Err(no_text_endpoint())
+    }
+}
+
+fn no_text_endpoint() -> ChatFailure {
+    ChatFailure::Internal {
+        message: String::from("this chat port has no text completion endpoint"),
+    }
 }
 
 pub struct ChatCallInput<'call> {
