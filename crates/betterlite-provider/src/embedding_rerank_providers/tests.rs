@@ -305,6 +305,42 @@ impl RerankFixture {
     }
 
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
+        let family = self.family()?;
+        let params = self.params(&family)?;
+        let supplied = self
+            .setup
+            .settings
+            .resolve_headers(self.setup.headers.as_ref(), &Headers::new());
+        let headers = family.validate_environment(EnvironmentRequest {
+            headers: &supplied,
+            model: &self.setup.model,
+            api_key: self.setup.api_key.as_ref(),
+            optional_params: Some(&params),
+            litellm_params: None,
+        })?;
+        let endpoint = family.url(self.setup.api_base.as_deref())?;
+        let body = family.transform_rerank_request(&self.setup.model, &params, &headers, None)?;
+        rerank::prepare(family.config, endpoint, headers, &body, TIMEOUT)
+    }
+
+    fn family(&self) -> Result<FamilyRerankConfig<'_>, FamilyError> {
+        let config = betterlite_core::embedding_rerank_providers::rerank_config(
+            self.setup.provider,
+            self.setup.api_base.as_deref(),
+            &self.present_version_params(),
+        )
+        .ok_or(FamilyError::Unsupported {
+            provider: self.setup.provider.to_string(),
+        })?;
+        Ok(FamilyRerankConfig {
+            config,
+            cohere: &self.options.cohere,
+            host: &self.options.host,
+            environment: &self.setup.environment,
+        })
+    }
+
+    fn present_version_params(&self) -> Vec<String> {
         let mut present = Vec::new();
         if self.options.max_chunks_per_doc.is_some() {
             present.push(String::from("max_chunks_per_doc"));
@@ -312,20 +348,10 @@ impl RerankFixture {
         if self.options.max_tokens_per_doc.is_some() {
             present.push(String::from("max_tokens_per_doc"));
         }
-        let config = betterlite_core::embedding_rerank_providers::rerank_config(
-            self.setup.provider,
-            self.setup.api_base.as_deref(),
-            &present,
-        )
-        .ok_or(FamilyError::Unsupported {
-            provider: self.setup.provider.to_string(),
-        })?;
-        let family = FamilyRerankConfig {
-            config,
-            cohere: &self.options.cohere,
-            host: &self.options.host,
-            environment: &self.setup.environment,
-        };
+        present
+    }
+
+    fn params(&self, family: &FamilyRerankConfig<'_>) -> Result<Params, FamilyError> {
         let mut non_default = Params::new();
         if let Some(rank_fields) = self.options.rank_fields.as_deref() {
             non_default.insert(
@@ -339,8 +365,8 @@ impl RerankFixture {
                 ),
             );
         }
-        let params = get_optional_rerank_params(
-            &family,
+        get_optional_rerank_params(
+            family,
             OptionalRerankParams {
                 model: &self.setup.model,
                 drop_params: false,
@@ -358,21 +384,7 @@ impl RerankFixture {
                 instruction: self.options.instruction.as_deref(),
                 non_default_params: Some(&mut non_default),
             },
-        )?;
-        let supplied = self
-            .setup
-            .settings
-            .resolve_headers(self.setup.headers.as_ref(), &Headers::new());
-        let headers = family.validate_environment(EnvironmentRequest {
-            headers: &supplied,
-            model: &self.setup.model,
-            api_key: self.setup.api_key.as_ref(),
-            optional_params: Some(&params),
-            litellm_params: None,
-        })?;
-        let endpoint = family.url(self.setup.api_base.as_deref())?;
-        let body = family.transform_rerank_request(&self.setup.model, &params, &headers, None)?;
-        rerank::prepare(family.config, endpoint, headers, &body, TIMEOUT)
+        )
     }
 
     fn prepared(&self) -> EmbeddingRerankPrepared {

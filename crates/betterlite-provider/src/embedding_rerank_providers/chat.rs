@@ -2,11 +2,16 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_context::chat_config_selection::cohere::{CohereRoute, get_cohere_route};
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat_content::RefuseDownloads;
+use betterlite_openai::cohere_chat_v1::reply::{ReplyInput as V1ReplyInput, decode_cohere_chat_v1};
 use betterlite_openai::cohere_chat_v1::{self, CohereV1ChatConfig};
 use betterlite_openai::cohere_chat_v2;
+use betterlite_openai::cohere_chat_v2::reply::{
+    AssistantReply, ReplyInput as V2ReplyInput, decode_cohere_chat_v2,
+};
 use betterlite_openai::cohere_streams;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
@@ -16,7 +21,7 @@ use uuid::Uuid;
 use super::Common;
 use super::error::FamilyError;
 use super::request::{http_headers, url};
-use super::{Call, CohereChatDecode, Decode, EmbeddingRerankPrepared};
+use super::{Call, CohereChatDecode, Decode, EmbeddingRerankPrepared, EmbeddingRerankResult};
 
 // main.py's two Cohere chat defaults, which differ in host as well as version
 const V1_DEFAULT_URL: &str = "https://api.cohere.ai/v1/chat";
@@ -77,6 +82,39 @@ fn chat_decode(route: CohereRoute, model: String) -> CohereChatDecode {
             .map_or(0, |elapsed| elapsed.as_secs()),
         id: format!("chatcmpl-{}", Uuid::new_v4()),
     }
+}
+
+// the reply arrives as the version's own shape, and each one decodes into the chat answer
+pub(super) fn decode(
+    chat: &CohereChatDecode,
+    response: &UpstreamResponse,
+) -> Result<EmbeddingRerankResult, FamilyError> {
+    let answer = match chat.version {
+        CohereRoute::V1 => {
+            EmbeddingRerankResult::CohereV1Chat(Box::new(decode_cohere_chat_v1(V1ReplyInput {
+                body: &response.body,
+                status: response.status,
+                model: &chat.model,
+                created: chat.created,
+                id: chat.id.clone(),
+                finish_reason: None,
+            })?))
+        }
+        CohereRoute::V2 => {
+            EmbeddingRerankResult::CohereV2Chat(Box::new(decode_cohere_chat_v2(V2ReplyInput {
+                body: &response.body,
+                status: response.status,
+                model: &chat.model,
+                created: chat.created,
+                id: chat.id.clone(),
+                finish_reason: None,
+                message: AssistantReply::default(),
+                // LiteLLM mints an id for a tool call the reply left without one
+                next_id: || Uuid::new_v4().to_string(),
+            })?))
+        }
+    };
+    Ok(answer)
 }
 
 fn body(

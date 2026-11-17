@@ -4,9 +4,7 @@ use betterlite_core::embedding_rerank_providers::{EmbeddingConfig, embedding_con
 use betterlite_openai::cohere_embedding::CohereEmbeddingError;
 use betterlite_openai::cohere_embedding::request as cohere_request;
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingRequest};
-use betterlite_openai::infinity_embedding;
-use betterlite_openai::jina_embedding;
-use betterlite_openai::openai_base_config::{Headers, Object as BaseObject};
+use betterlite_openai::openai_base_config::Object as BaseObject;
 use betterlite_openai::voyage_embedding::{self, VoyageEmbeddingVariant};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::engine::Engine;
@@ -16,8 +14,10 @@ use secrecy::ExposeSecret;
 
 use super::Common;
 use super::error::FamilyError;
-use super::request::{call, host_options, text_headers};
-use super::{Call, CohereEmbeddingDecode, Decode, EmbeddingRerankPrepared, JinaEmbeddingDecode};
+use super::request::{call, text_headers};
+use super::{Call, CohereEmbeddingDecode, Decode, EmbeddingRerankPrepared};
+
+mod host;
 
 pub fn prepare(
     common: &Common<'_>,
@@ -38,8 +38,8 @@ pub fn prepare(
         EmbeddingConfig::Voyage
         | EmbeddingConfig::VoyageContextual
         | EmbeddingConfig::VoyageMultimodal => voyage(&leaf)?,
-        EmbeddingConfig::JinaAi => host(HostKind::Jina, &leaf)?,
-        EmbeddingConfig::Infinity => host(HostKind::Infinity, &leaf)?,
+        EmbeddingConfig::JinaAi => host::prepare(host::Kind::Jina, &leaf)?,
+        EmbeddingConfig::Infinity => host::prepare(host::Kind::Infinity, &leaf)?,
     };
     Ok(EmbeddingRerankPrepared(call))
 }
@@ -53,10 +53,13 @@ struct Leaf<'leaf, 'request> {
 
 fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let key = leaf.common.settings.resolve_api_key(leaf.common.api_key);
-    let headers = cohere_request::validate_environment(
-        merged_headers(leaf.common.headers, leaf.common.extra_headers),
-        key.as_ref(),
-    );
+    // `headers = headers or extra_headers` followed by `headers.update(extra_headers)`, and no globals
+    let mut supplied = match leaf.common.headers.filter(|headers| !headers.is_empty()) {
+        Some(headers) => headers.clone(),
+        None => leaf.common.extra_headers.clone(),
+    };
+    supplied.extend(leaf.common.extra_headers.clone());
+    let headers = cohere_request::validate_environment(supplied, key.as_ref());
     let endpoint = cohere_request::get_complete_url(leaf.common.api_base);
     let mapped = cohere_request::map_openai_params(leaf.non_default, Object::new());
     let body = cohere_request::transform_embedding_request(
@@ -77,7 +80,15 @@ fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
 
 fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let (body, variant) = voyage_body(leaf)?;
-    let headers = voyage_headers(leaf.common);
+    // LiteLLM's Voyage handler receives no caller headers, and its validate_environment clears them
+    let authorization = voyage_embedding::voyage_credentials(
+        leaf.common.api_key.map(ExposeSecret::expose_secret),
+        |name| leaf.common.environment.lookup(name),
+    );
+    let headers = text_headers(voyage_embedding::voyage_headers(
+        BaseObject::new(),
+        authorization,
+    ));
     let endpoint = voyage_embedding::endpoint(leaf.common.api_base, variant);
     call(
         leaf.common,
@@ -94,18 +105,6 @@ fn voyage_body(leaf: &Leaf<'_, '_>) -> Result<(BaseObject, VoyageEmbeddingVarian
     let given = serde_json::to_value(&leaf.request.input)?;
     let body = voyage_embedding::request(leaf.common.model, given, &options, variant);
     Ok((serde_json::from_value(body)?, variant))
-}
-
-// LiteLLM's Voyage handler receives no caller headers, and its validate_environment clears them
-fn voyage_headers(common: &Common<'_>) -> Headers {
-    let authorization = voyage_embedding::voyage_credentials(
-        common.api_key.map(ExposeSecret::expose_secret),
-        |name| common.environment.lookup(name),
-    );
-    text_headers(voyage_embedding::voyage_headers(
-        BaseObject::new(),
-        authorization,
-    ))
 }
 
 // LiteLLM's Voyage builder keeps only the caller's parameters its variant declares
@@ -127,56 +126,6 @@ fn voyage_options(
     })))
 }
 
-// the two host leaves share LiteLLM's shape, and only their credentials, endpoint and reply differ
-fn host(kind: HostKind, leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
-    match kind {
-        HostKind::Jina => {
-            let credentials = jina_embedding::resolve_credentials(
-                leaf.common.api_base,
-                leaf.common.api_key,
-                leaf.common.host,
-            );
-            let endpoint = jina_embedding::get_complete_url(Some(credentials.api_base.as_str()));
-            let mapped = host_options(leaf.non_default, jina_embedding::map_openai_params)?;
-            let given = serde_json::to_value(&leaf.request.input)?;
-            let body =
-                jina_embedding::transform_embedding_request(leaf.common.model, &given, &mapped);
-            let headers =
-                jina_embedding::validate_environment(&Headers::new(), credentials.api_key.as_ref());
-            let decode = Decode::JinaEmbedding(Box::new(JinaEmbeddingDecode {
-                api_key: credentials.api_key,
-                request_data: body.clone(),
-            }));
-            call(leaf.common, ("jina", endpoint), &headers, &body, decode)
-        }
-        HostKind::Infinity => {
-            let endpoint = infinity_embedding::get_complete_url(leaf.common.api_base)?;
-            let mapped = host_options(leaf.non_default, infinity_embedding::map_openai_params)?;
-            let given = serde_json::to_value(&leaf.request.input)?;
-            let body =
-                infinity_embedding::transform_embedding_request(leaf.common.model, &given, &mapped);
-            let headers = infinity_embedding::validate_environment(
-                &Headers::new(),
-                leaf.common.api_key,
-                leaf.common.host,
-            );
-            call(
-                leaf.common,
-                ("infinity", endpoint),
-                &headers,
-                &body,
-                Decode::InfinityEmbedding,
-            )
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum HostKind {
-    Jina,
-    Infinity,
-}
-
 // the Cohere leaf counts the input, so its tokens and token lists have no text to count
 fn texts(input: &EmbeddingInput) -> Result<Vec<String>, FamilyError> {
     match input {
@@ -186,16 +135,6 @@ fn texts(input: &EmbeddingInput) -> Result<Vec<String>, FamilyError> {
             Err(FamilyError::from(CohereEmbeddingError::InputNotText))
         }
     }
-}
-
-// `headers = headers or extra_headers` followed by `headers.update(extra_headers)`, and no globals
-fn merged_headers(supplied: Option<&Headers>, extra: &Headers) -> Headers {
-    let mut merged = match supplied.filter(|headers| !headers.is_empty()) {
-        Some(headers) => headers.clone(),
-        None => extra.clone(),
-    };
-    merged.extend(extra.clone());
-    merged
 }
 
 // LiteLLM counts the input with litellm.encoding when Cohere bills neither input nor image tokens

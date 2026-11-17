@@ -1,5 +1,4 @@
 use betterlite_openai::openai_base_config::{Headers, Object as BaseObject};
-use betterlite_prompts::arguments::json::Object;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Serialize;
 use url::Url;
@@ -24,17 +23,6 @@ pub(super) fn call<T: Serialize>(
         timeout: common.timeout,
         decode,
     })
-}
-
-// the host leaves read the caller's parameters as their own JSON object, then map the same set
-pub(super) fn host_options(
-    non_default: &Object,
-    map: fn(&BaseObject, &mut BaseObject),
-) -> Result<BaseObject, FamilyError> {
-    let supplied: BaseObject = serde_json::from_value(serde_json::to_value(non_default)?)?;
-    let mut mapped = BaseObject::new();
-    map(&supplied, &mut mapped);
-    Ok(mapped)
 }
 
 pub(super) fn url(family: &'static str, value: &str) -> Result<Url, FamilyError> {

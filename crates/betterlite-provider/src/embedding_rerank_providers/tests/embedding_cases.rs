@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use super::*;
 #[test]
-fn cohere_embedding_uses_the_key_chain_and_the_caller_headers() {
+fn cohere_embedding_uses_the_caller_headers_with_the_extras() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
     fixture.setup.api_key = key("explicit");
     fixture.setup.headers = Some(headers(&[
@@ -26,30 +26,33 @@ fn cohere_embedding_uses_the_key_chain_and_the_caller_headers() {
     let body = body_of(&prepared);
     assert_eq!(text_field(&body, "model").as_deref(), Some("embed-v4.0"));
     assert_eq!(items_field(&body, "texts")[0].as_str(), Some("hi"));
+}
 
-    let mut chained = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    chained.setup.api_key = None;
-    chained.setup.settings.cohere_key = key("first");
+#[test]
+fn cohere_embedding_reads_the_key_chain() {
+    let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
+    fixture.setup.api_key = None;
+    fixture.setup.settings.cohere_key = key("first");
     assert_eq!(
-        header_of(&chained.prepared(), "authorization").as_deref(),
+        header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer first")
     );
-    chained.setup.settings.cohere_key = None;
-    chained.setup.settings.cohere_api_key = key("second");
+    fixture.setup.settings.cohere_key = None;
+    fixture.setup.settings.cohere_api_key = key("second");
     assert_eq!(
-        header_of(&chained.prepared(), "authorization").as_deref(),
+        header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer second")
     );
-    chained.setup.settings.cohere_api_key = None;
-    chained.setup.settings.co_api_key = key("third");
+    fixture.setup.settings.cohere_api_key = None;
+    fixture.setup.settings.co_api_key = key("third");
     assert_eq!(
-        header_of(&chained.prepared(), "authorization").as_deref(),
+        header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer third")
     );
-    chained.setup.settings.co_api_key = None;
-    chained.setup.settings.api_key = key("last");
+    fixture.setup.settings.co_api_key = None;
+    fixture.setup.settings.api_key = key("last");
     assert_eq!(
-        header_of(&chained.prepared(), "authorization").as_deref(),
+        header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer last")
     );
 }
