@@ -1,0 +1,7 @@
+kind: helper
+name: priced-start-job
+call:
+  b3646:
+    target: Transcribe.StartTranscriptionJob
+env: {}
+compare: {ignore: []}
