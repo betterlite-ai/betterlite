@@ -158,18 +158,11 @@ fn polyfilled() -> StreamSetup {
         error: None,
         warnings: None,
     }];
-    filled.iterations_usage = Some(vec![
-        UsageIteration {
-            kind: UsageKind::Compaction,
-            input_tokens: Some(4),
-            output_tokens: Some(1),
-        },
-        UsageIteration {
-            kind: UsageKind::Message,
-            input_tokens: Some(5),
-            output_tokens: Some(2),
-        },
-    ]);
+    filled.iterations_usage = Some(vec![UsageIteration {
+        kind: UsageKind::Compaction,
+        input_tokens: Some(4),
+        output_tokens: Some(1),
+    }]);
     filled
 }
 
