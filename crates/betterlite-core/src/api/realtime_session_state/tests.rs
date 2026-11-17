@@ -69,12 +69,17 @@ fn provider(
     requires: bool,
     usage: Option<AudioTranscriptionUsage>,
 ) -> Box<dyn RealtimeProviderConfig> {
-    Box::new(Provider { requires, usage })
+    Box::new(Provider {
+        requires,
+        usage,
+        models: None,
+    })
 }
 
 struct Provider {
     requires: bool,
     usage: Option<AudioTranscriptionUsage>,
+    models: Option<Arc<Mutex<Vec<String>>>>,
 }
 
 impl RealtimeProviderConfig for Provider {
@@ -82,7 +87,13 @@ impl RealtimeProviderConfig for Provider {
         self.requires
     }
 
-    fn unbilled_usage_on_close(&self, _model: &str) -> Option<AudioTranscriptionUsage> {
+    fn unbilled_usage_on_close(&self, model: &str) -> Option<AudioTranscriptionUsage> {
+        if let Some(models) = &self.models {
+            models
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(model.to_owned());
+        }
         self.usage.clone()
     }
 }
@@ -635,8 +646,15 @@ fn realtime_usage_and_logging_ignores_events_without_usage() {
 
 #[test]
 fn realtime_usage_and_logging_flushes_provider_usage_on_close() {
+    let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+    let recording = Provider {
+        requires: true,
+        usage: Some(duration_usage(2)),
+        models: Some(Arc::clone(&asked)),
+    };
     let mut state = state_with(|connection| {
-        connection.provider_config = Some(provider(true, Some(duration_usage(2))));
+        connection.model = "gemini-2.5-flash".to_owned();
+        connection.provider_config = Some(Box::new(recording));
     });
     state
         .flush_unbilled_usage()
@@ -646,6 +664,10 @@ fn realtime_usage_and_logging_flushes_provider_usage_on_close() {
         vec![record(
             r#"{"type":"conversation.item.input_audio_transcription.completed","usage":{"type":"duration","seconds":2}}"#
         )]
+    );
+    assert_eq!(
+        *asked.lock().unwrap_or_else(PoisonError::into_inner),
+        vec!["gemini-2.5-flash".to_owned()]
     );
 
     let mut empty = state_with(|connection| {
@@ -667,22 +689,46 @@ fn realtime_usage_and_logging_copies_details_and_queues_once() {
         connection.logging = Some(Box::new(spy.clone()));
         connection.logging_worker = Some(Box::new(spy.clone()));
     });
-    state
-        .input_messages
-        .push(record(r#"{"role":"user","content":"hello"}"#));
-    state
-        .session_tools
-        .push(record(r#"{"type":"function","name":"lookup"}"#));
-    state.tool_calls.push(record(
+    let message = record(r#"{"role":"user","content":"hello"}"#);
+    let tool = record(r#"{"type":"function","name":"lookup"}"#);
+    let call = record(
         r#"{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}"#,
-    ));
+    );
+    state.input_messages.push(message.clone());
+    state.session_tools.push(tool.clone());
+    state.tool_calls.push(call.clone());
+    state
+        .store_message(SessionMessage::Text(r#"{"type":"response.create"}"#))
+        .expect("the stored event is valid JSON");
     assert!(state.log_messages());
     let details = spy.details();
-    assert_eq!(details[0].0, "messages");
-    assert_eq!(details[1].0, "realtime_tools");
-    assert_eq!(details[2].0, "realtime_tool_calls");
+    assert_eq!(
+        details[0],
+        (
+            "messages".to_owned(),
+            Json::List(vec![Json::Object(message)])
+        )
+    );
+    assert_eq!(
+        details[1],
+        (
+            "realtime_tools".to_owned(),
+            Json::List(vec![Json::Object(tool)])
+        )
+    );
+    assert_eq!(
+        details[2],
+        (
+            "realtime_tool_calls".to_owned(),
+            Json::List(vec![Json::Object(call)])
+        )
+    );
     assert_eq!(spy.flag(), Some(Json::Bool(true)));
     assert_eq!(spy.lock().dispatches.len(), 1);
+    assert_eq!(
+        spy.lock().dispatches[0],
+        vec![record(r#"{"type":"response.create"}"#)]
+    );
     assert_eq!(spy.lock().dispatches[0], state.messages);
     assert_eq!(spy.lock().enqueues, 1);
 }
