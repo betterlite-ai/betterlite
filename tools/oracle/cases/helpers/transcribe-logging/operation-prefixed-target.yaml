@@ -1,0 +1,7 @@
+kind: helper
+name: operation-prefixed-target
+call:
+  b3646:
+    target: Transcribe.StartTranscriptionJob
+env: {}
+compare: {ignore: []}
