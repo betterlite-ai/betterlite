@@ -1,0 +1,41 @@
+kind: helper
+name: foundry-rerank-url-api-version
+call:
+  foundry_rerank:
+    urls:
+    - {api_base: "https://res.services.ai.azure.com"}
+    - {api_base: "https://res.services.ai.azure.com/"}
+    - {api_base: "https://res.services.ai.azure.com/models/"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rerank"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rerank/"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rerank///"}
+    - {api_base: "https://res.services.ai.azure.com/v2/rerank"}
+    - {api_base: "https://res.services.ai.azure.com/providers/cohere/v2/rerank"}
+    - {api_base: "https://res.services.ai.azure.com/providers/cohere/v2/rerank/"}
+    - {api_base: "https://res.services.ai.azure.com/v1"}
+    - {api_base: "https://res.services.ai.azure.com/v2"}
+    - {api_base: "https://res.services.ai.azure.com/providers/cohere/v2"}
+    - {api_base: "https://res.services.ai.azure.com/providers/cohere/v2/"}
+    - {api_base: "https://res.services.ai.azure.com/v1?api-version=2024-05-01"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rerank?api-version=2024-05-01&x=1#frag"}
+    - {api_base: "https://res.services.ai.azure.com/prefix?x=a%20b&x=2#f"}
+    - {api_base: "https://res.services.ai.azure.com/V1"}
+    - {api_base: "https://res.services.ai.azure.com/openai/v1"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rerankX"}
+    - {api_base: "HTTPS://RES.Services.AI.Azure.com/V2/"}
+    - {api_base: "https://res.services.ai.azure.com//v1/rerank//"}
+    - {api_base: "https://res.services.ai.azure.com/v2?api-version=1#f"}
+    - {api_base: "https://res.services.ai.azure.com/a b"}
+    - {api_base: "https://res.services.ai.azure.com/v1/rer%2Fank"}
+    - {api_base: "https://res.services.ai.azure.com/a%41b"}
+    - {api_base: "https://res.services.ai.azure.com/it's%20here"}
+    - {api_base: null}
+    - {}
+    - {api_base: ""}
+    - {api_base: "/v1/rerank"}
+    - {api_base: "res.services.ai.azure.com"}
+    - {api_base: "https://"}
+    - {api_base: "/it's"}
+    - {api_base: "/both'\"kinds"}
+env: {}
+compare: {ignore: []}

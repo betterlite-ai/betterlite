@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-rerank-error
+call:
+  foundry_rerank:
+    replies:
+    - {status: 502, body: upstream unavailable}
+    - {status: 400, body: ""}
+    - {status: 429, body: '{"error":{"message":"rate limited"}}'}
+    - {status: 200, body: '{"results":"wrong"}'}
+    - {status: 200, body: '[]'}
+    - {status: 500, body: '{"id":"rerank-id","results":[]}'}
+env: {}
+compare: {ignore: []}
