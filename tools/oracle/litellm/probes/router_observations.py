@@ -80,8 +80,8 @@ _FACTORIES: dict[FailureClassName, Callable[[httpx.Response | None], Exception]]
     "internal_server": lambda response: InternalServerError(
         message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER, response=response
     ),
-    "api": lambda response: APIError(
-        status_code=500, message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL, response=response
+    "api": lambda _response: APIError(
+        status_code=500, message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL
     ),
     "api_connection": lambda _response: APIConnectionError(
         message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL
@@ -249,7 +249,7 @@ def build_exception(failure: FailureInput) -> Exception:
 
 class FixedClock:
     def __init__(self, now_millis: int) -> None:
-        self.now_millis = now_millis
+        self.now_millis: int = now_millis
 
     def utc_now(self) -> datetime:
         return datetime.fromtimestamp(self.now_millis / 1000, tz=UTC)
