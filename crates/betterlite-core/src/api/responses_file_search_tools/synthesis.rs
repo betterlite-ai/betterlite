@@ -58,7 +58,7 @@ where
     C: FnOnce() -> Decimal,
 {
     let generated_id = uuid();
-    let generated_at = now()
+    let timestamp = now()
         .to_i64()
         .ok_or(FileSearchToolsError::ClockOutOfRange)?;
     let mut response =
@@ -68,7 +68,7 @@ where
         .id
         .clone()
         .unwrap_or_else(|| format!("resp_{generated_id}"));
-    response.created_at = original.created_at.unwrap_or(generated_at);
+    response.created_at = original.created_at.unwrap_or(timestamp);
     response.model = model_value(&original.model);
     response.object = Some("response".to_owned());
     response.status = Some("completed".to_owned());
@@ -92,12 +92,15 @@ fn model_value(model: &OriginalModel) -> Option<String> {
     }
 }
 
-// a missing _hidden_params attribute copies nothing, and a first-response cost is added on top of the current one
+// a missing _hidden_params attribute copies nothing and adds no first-response cost, while a first cost is added on top of the current one
 fn hidden_with_first_cost(
     original: Option<&HiddenParams>,
     first: Option<&HiddenParams>,
 ) -> Result<HiddenParams, FileSearchToolsError> {
-    let mut hidden = original.cloned().unwrap_or_default();
+    let Some(original) = original else {
+        return Ok(HiddenParams::default());
+    };
+    let mut hidden = (*original).clone();
     let Some(first) = first else {
         return Ok(hidden);
     };
