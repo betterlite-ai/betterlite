@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_mcp::client::cleanup::http_client::CleanupScope;
+use betterlite_mcp::client::sdk_runtime::handler::ServerRequestHandlers;
 use betterlite_mcp::client::sessions::client::{SessionClient, SessionSettings};
 use betterlite_mcp::client::sessions::error::ExitFailure;
 use betterlite_mcp::client::sessions::factory::{HttpClientConfig, SseRequest};
@@ -172,6 +173,7 @@ where
             protocol_version: ProtocolVersion::Auto,
             client_version: "1.105.1".to_owned(),
             callbacks: Callbacks::default(),
+            handlers: ServerRequestHandlers::default(),
         },
         tracker: TaskTracker::new(),
         caller_cancelled: cancelled,

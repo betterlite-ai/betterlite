@@ -1,8 +1,5 @@
 task: B1311
 deviations:
-  - what: "An extensionless gs:// reference without an explicit format returns HTTP 400 with type invalid_request_error, param naming the media field and code unsupported_remote_media, because resolving its MIME type needs a GCS object metadata probe; gs:// references with an explicit format or an accepted extension, Gemini Files API URIs and inline data still work."
-    why: "The credentialed GCS metadata probe is not built yet; B9961 adds it, and until then this one reference cannot be resolved without a network and a credential call."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L523-L539
   - what: "A media reference that fits no branch and an inline data string without a data: prefix or with more than one ;base64, marker return HTTP 400 with type invalid_request_error, where LiteLLM raises a bare Exception on the image_url path and answers HTTP 500. A gs:// extension the file-type registry does not know keeps LiteLLM's BadRequest shape of type null, param null and code 400, but answers 400 where the image_url path answers 500."
     why: "A 500 is the wrong answer for input the caller sent wrong; the same input on the file path is already a 400 BadRequestError in LiteLLM, so the image_url path is fixed to match it."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L583-L583

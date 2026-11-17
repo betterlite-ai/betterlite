@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::debug;
 
+use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::credentials;
 
 use super::environment::{safe_stdio_env, sdk_default_env};
@@ -27,6 +28,7 @@ pub struct SessionSettings {
     pub protocol_version: ProtocolVersion,
     pub client_version: String,
     pub callbacks: Callbacks,
+    pub handlers: ServerRequestHandlers,
 }
 
 pub struct SessionClient<Runtime>

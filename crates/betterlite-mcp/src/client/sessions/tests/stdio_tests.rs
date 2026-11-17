@@ -10,6 +10,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::client::sessions::client::{SessionClient, SessionSettings};
 use crate::client::sessions::negotiate::{
     Callbacks, ClientSession, InitializeOutcome, InitializeRequest, ProtocolVersion,
@@ -252,6 +253,7 @@ fn settings(script: String) -> SessionSettings {
         protocol_version: ProtocolVersion::Auto,
         client_version: "1.105.1".to_owned(),
         callbacks: Callbacks::default(),
+        handlers: ServerRequestHandlers::default(),
     }
 }
 

@@ -1,0 +1,64 @@
+task: B3647
+deviations:
+  - what: >-
+      AssemblyAI polling and logging run asynchronously through an injected transport layer, not
+      in the relayed response path: AssemblyAiLogging::log hands the call to a TaskTracker and
+      the response returns before the transcript poll starts.
+    why: >-
+      Blocking on transcript completion would delay the initial relayed response to the client.
+      betterlite matches LiteLLM's executor.submit pattern for non-blocking cost measurement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L71-82
+  - what: >-
+      A response field or transcript field of the wrong type is a typed error naming the field:
+      a non-string id or speech_model fails the log with TextField, a non-number audio_duration
+      with NumberField, and a non-string transcript status stops the poll with TextField.
+    why: >-
+      LiteLLM passes these values through Python's duck typing, so an integer id raises TypeError
+      from the disallowed-character check, a non-string status keeps polling for 180 attempts,
+      and a string duration fails the float multiplication. docs/compatibility.md makes a value
+      of the wrong type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L98
+  - what: >-
+      A transcript answer that is valid JSON but not an object fails the log with TranscriptShape
+      instead of being treated as a transcript.
+    why: >-
+      LiteLLM's response.json() returns the decoded value and transcript.get("status") then
+      raises AttributeError outside the try block that returns None, so the poll thread dies with
+      an unhandled exception. betterlite reports a typed error for the same input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L222
+  - what: >-
+      A transcript cost whose product cannot be represented as a Decimal fails the log with
+      CostOverflow instead of yielding an infinite or rounded cost.
+    why: >-
+      LiteLLM multiplies two Python floats, so an overflowing duration or rate silently becomes
+      inf and the spend is recorded as an infinite cost. betterlite's money rule keeps every cost
+      in rust_decimal::Decimal, which cannot represent that value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L245
+  - what: >-
+      A relay route that urllib rejects (a bracketed host that is not an IP address, or a
+      netloc its NFKC check refuses) reads as no region, so the transcript is polled on the
+      default base and the spend is logged; LiteLLM lets the ValueError escape
+      _get_assembly_region_from_url and logs nothing.
+    why: >-
+      LiteLLM calls urlparse(url) outside any try in _get_assembly_region_from_url, so the
+      executor thread dies before the transcript is polled and a working setup loses the
+      spend. betterlite reuses the same urllib-compatible parser and treats its rejection as
+      an absent host, which keeps the spend on the default base instead of discarding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L289-L297
+kept_bugs:
+  - what: >-
+      The poll sleeps one polling interval after the last allowed attempt too, so giving up after
+      180 attempts waits 180 intervals rather than 179.
+    why: >-
+      LiteLLM's loop calls time.sleep after every non-terminal answer, including the final one
+      before the loop exits, and a working setup sees that total wait. Polling still stops at 180
+      requests, and betterlite keeps the extra wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L226
+  - what: >-
+      A speech model whose price entry is missing, or whose entry has no input_cost_per_second,
+      logs the transcript with no cost instead of reporting a pricing failure.
+    why: >-
+      LiteLLM swallows every get_model_info exception, tries assemblyai/nano, and returns None
+      when neither lookup prices the transcript, so a working setup can log an unpriced
+      transcription. The fallback and the silent None are the documented behavior of this handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L252-L278

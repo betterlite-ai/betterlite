@@ -22,6 +22,7 @@ description: >-
   Tests in client::sdk_runtime::tests run the whole stack (SessionClient, B4744's run_with_session, B4745's list_tools and call_tool) against a local MCP server built with rmcp's server side over streamable HTTP, legacy SSE and an in-process duplex standing in for stdio: initialize negotiation including the legacy fallback, a two-page tool listing, a tool call with progress, an isError result, a JSON-RPC error, a read timeout on paused time, a server sampling request with and without a responder, an elicitation request with and without one, and a stream failure that fails the pending call. api::mcp_sdk_resources::tests covers each ResourceSession method against the same server.
 scope:
   paths:
+    - "crates/betterlite-mcp/src/client/sessions/stdio_runtime.rs"
     - crates/betterlite-mcp/Cargo.toml
     - crates/betterlite-core/Cargo.toml
     - Cargo.lock
@@ -35,6 +36,9 @@ scope:
     - crates/betterlite-core/src/api/mcp_sdk_resources.rs
     - crates/betterlite-core/src/api/mcp_sdk_resources/**
     - crates/betterlite-core/src/api/mcp_client_resources/tests/*.rs
+    - tools/oracle/src/helpers/mcp/b4744/ops.rs
+    - tools/oracle/src/helpers/mcp/b4744/ops/client.rs
+    - tools/oracle/src/helpers/mcp/b4745/fixtures/runtime.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L572-L650
@@ -76,6 +80,7 @@ out_of_scope:
   - "Building SdkRuntime once for the gateway with the real capture: B9654."
   - "LiteLLM never passes a logging_callback from the proxy, so notifications/message has no consumer to wire."
 pitfalls:
+  - "SessionSettings gains the handlers field, so every place that builds one sets it: the oracle helpers b4744 (ops.rs and ops/client.rs) and b4745 (fixtures/runtime.rs) build it too, and clippy fails there until they do."
   - "Do not use rmcp's serve_client: it sends its own initialize from ClientHandler::get_info, which bypasses B4744's version negotiation and its -32022 handling."
   - "The SDK's default answers are JSON-RPC errors with code INVALID_REQUEST (-32600), not METHOD_NOT_FOUND; rmcp's own defaults differ, so override every server-request method."
   - "The read timeout applies to each request, the handshake included, not to the whole session."
