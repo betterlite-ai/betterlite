@@ -1,0 +1,129 @@
+kind: helper
+name: bedrock-converse-params-final-forced-tool-downgrade
+call:
+  bedrock_converse_params:
+    function: map_params
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+    environment: {}
+    non_default_params:
+      tool_choice: required
+      thinking: {type: enabled, budget_tokens: 2048}
+    optional_params: {}
+    global_drop: false
+    call_drop: false
+calls:
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params:
+        tool_choice: {type: function, function: {name: lookup}}
+        thinking: {type: enabled, budget_tokens: 2048}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params:
+        tool_choice: auto
+        thinking: {type: enabled, budget_tokens: 2048}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: required}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params:
+        tool_choice: required
+        reasoning_effort: high
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params:
+        tool_choice: required
+        thinking: {type: adaptive}
+        max_tokens: 500
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: required}
+      optional_params: {thinking: {type: enabled, budget_tokens: 2048}, tool_choice: {any: {}}}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params:
+        tool_choice: required
+        thinking: {type: disabled, budget_tokens: 2048}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: true
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true, supports_tool_choice: true, supports_forced_tool_use: true}
+      environment: {}
+      non_default_params: {tool_choice: none}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+env: {}
+compare: {ignore: []}

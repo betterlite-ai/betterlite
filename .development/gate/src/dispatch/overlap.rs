@@ -22,9 +22,12 @@ pub(crate) fn overlaps(development: &Development, task: &Task) -> Result<Vec<Str
     let journals = coordinator(&development.root)?.join("betterlite");
     let mut clashes = Vec::new();
     for entry in &development.backlog.tasks {
-        // a journal on this machine means a dispatch ran here and its branch is not merged yet
+        // a journal on this machine means a dispatch ran here and its branch is not merged yet, unless its flow parked it
+        let journal = journals.join(&entry.id);
         let running = entry.status == Status::InProgress
-            || (entry.status != Status::Done && journals.join(&entry.id).is_dir());
+            || (entry.status != Status::Done
+                && journal.is_dir()
+                && !journal.join("parked").exists());
         if entry.id == task.id || !running || entry.file.is_none() {
             continue;
         }
