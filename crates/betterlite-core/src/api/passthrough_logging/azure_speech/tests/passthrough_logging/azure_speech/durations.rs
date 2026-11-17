@@ -22,13 +22,21 @@ fn short_audio_bills_the_longer_of_the_uploaded_and_the_recognized_audio() {
     let short_upload = support::wav_seconds(2);
     let long_upload = support::wav_seconds(4);
     assert_eq!(
-        billed_audio_seconds(SpeechRoute::ShortAudio, Some(&short_upload), RECOGNIZED)
-            .expect("the duration derives"),
+        billed_audio_seconds(
+            SpeechRoute::ShortAudio,
+            Some(short_upload.as_slice()),
+            RECOGNIZED
+        )
+        .expect("the duration derives"),
         support::dec("3")
     );
     assert_eq!(
-        billed_audio_seconds(SpeechRoute::ShortAudio, Some(&long_upload), RECOGNIZED)
-            .expect("the duration derives"),
+        billed_audio_seconds(
+            SpeechRoute::ShortAudio,
+            Some(long_upload.as_slice()),
+            RECOGNIZED
+        )
+        .expect("the duration derives"),
         support::dec("4")
     );
 }
@@ -39,7 +47,7 @@ fn short_audio_bills_the_upload_when_nothing_was_recognized() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::ShortAudio,
-            Some(&upload),
+            Some(upload.as_slice()),
             br#"{"RecognitionStatus":"NoMatch"}"#
         )
         .expect("the duration derives"),
@@ -97,7 +105,7 @@ fn an_upload_that_is_not_audio_bills_nothing() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::ShortAudio,
-            Some(b"not audio at all"),
+            Some(b"not audio at all".as_slice()),
             br#"{"RecognitionStatus":"InitialSilenceTimeout"}"#
         )
         .expect("an undecodable upload is no duration"),
@@ -110,7 +118,7 @@ fn a_negative_recognition_result_never_subtracts_from_the_upload() {
     let negative = br#"{"Offset": -25000000, "Duration": 5000000}"#;
     let upload = support::wav_seconds(2);
     assert_eq!(
-        billed_audio_seconds(SpeechRoute::ShortAudio, Some(&upload), negative)
+        billed_audio_seconds(SpeechRoute::ShortAudio, Some(upload.as_slice()), negative)
             .expect("the duration derives"),
         support::dec("2")
     );
@@ -147,7 +155,7 @@ fn fast_transcription_ignores_the_uploaded_audio() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::FastTranscription,
-            Some(&upload),
+            Some(upload.as_slice()),
             br#"{"durationMilliseconds": 5061}"#
         )
         .expect("the duration derives"),
@@ -161,7 +169,7 @@ fn batch_transcription_bills_nothing_from_the_body_or_the_upload() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::Batch,
-            Some(&upload),
+            Some(upload.as_slice()),
             br#"{"durationMilliseconds": 5061, "Offset": 5000000, "Duration": 25000000}"#
         )
         .expect("a batch route has no duration"),
