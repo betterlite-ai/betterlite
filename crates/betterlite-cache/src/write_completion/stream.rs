@@ -14,11 +14,11 @@ use crate::write_completion::store::{
 };
 
 // What LiteLLM hands stream_chunk_builder at end of stream: the handler's start time, now, the request kwargs and the chunks.
-pub struct StreamAssembly<'a> {
+pub struct StreamAssembly<'stream> {
     pub start_time: f64,
     pub end_time: f64,
-    pub request_kwargs: &'a KeyObject,
-    pub chunks: &'a [CacheValue],
+    pub request_kwargs: &'stream KeyObject,
+    pub chunks: &'stream [CacheValue],
     pub is_async: bool,
 }
 
@@ -27,12 +27,12 @@ pub trait CacheStreamAssembler: Send + Sync {
     fn assemble(&self, request: &StreamAssembly<'_>) -> Result<Option<Json>, StreamAssemblyError>;
 }
 
-struct CacheStreamChunks<'a> {
-    chunks: &'a mut Vec<CacheValue>,
-    assembler: &'a dyn CacheStreamAssembler,
+struct CacheStreamChunks<'buffer> {
+    chunks: &'buffer mut Vec<CacheValue>,
+    assembler: &'buffer dyn CacheStreamAssembler,
     start_time: f64,
     end_time: f64,
-    request_kwargs: &'a KeyObject,
+    request_kwargs: &'buffer KeyObject,
     is_async: bool,
 }
 
@@ -63,13 +63,23 @@ fn finish_stream(
     Ok(assemble_complete_stream(result, &chunk, &mut buffer))
 }
 
+// LiteLLM's stream builder returns a TextCompletionResponse for a text completion, which the store writes as a bare JSON string.
+fn assembled_result(body: Json) -> CacheableResult {
+    let text_completion = matches!(&body, Json::Object(fields)
+        if matches!(fields.get("object"), Some(Json::Text(object)) if object == "text_completion"));
+    if text_completion {
+        return CacheableResult::TextCompletion(body);
+    }
+    CacheableResult::Chat(body)
+}
+
 // ast-grep-ignore: no-long-names - LiteLLM's _add_streaming_response_to_cache: only the assembled final chunk is stored.
 pub fn add_streaming_response_to_cache<L, C>(
     result: &SuccessResult,
     handler: &mut CachingHandler,
     assembler: &dyn CacheStreamAssembler,
     now: f64,
-    context: &WriteContext<L, C>,
+    context: &WriteContext<'_, L, C>,
 ) -> Result<(), StoreError>
 where
     L: LoggerSink + Send + Sync + 'static,
@@ -78,7 +88,7 @@ where
     let Some(complete) = finish_stream(result, handler, assembler, now, true)? else {
         return Ok(());
     };
-    let stored = CacheableResult::Chat(complete);
+    let stored = assembled_result(complete);
     let request = StoreRequest {
         result: &stored,
         original_function: &handler.original_function,
@@ -101,7 +111,7 @@ where
 {
     match finish_stream(result, handler, assembler, now, false)? {
         Some(complete) => {
-            let stored = CacheableResult::Chat(complete);
+            let stored = assembled_result(complete);
             store_response_sync(
                 context,
                 &StoreRequest {

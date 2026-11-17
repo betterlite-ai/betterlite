@@ -35,12 +35,10 @@ impl<Memory: MemoryCacheOps> SharedDualCache<Memory> {
             cache: Arc::new(shared),
         }
     }
-}
 
-impl<Memory: MemoryCacheOps> Clone for SharedDualCache<Memory> {
-    fn clone(&self) -> Self {
-        Self {
-            cache: Arc::clone(&self.cache),
+    fn envelope(&self) -> DualCacheEnvelope<'_, Memory> {
+        DualCacheEnvelope {
+            cache: self.cache.as_ref(),
         }
     }
 }
@@ -48,17 +46,11 @@ impl<Memory: MemoryCacheOps> Clone for SharedDualCache<Memory> {
 #[async_trait]
 impl<Memory: MemoryCacheOps> EnvelopeBackend for SharedDualCache<Memory> {
     fn get_cache(&self, key: &str, lookup: &mut CacheLookup) -> CacheResult<Option<CacheValue>> {
-        DualCacheEnvelope {
-            cache: self.cache.as_ref(),
-        }
-        .get_cache(key, lookup)
+        self.envelope().get_cache(key, lookup)
     }
 
     fn set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        DualCacheEnvelope {
-            cache: self.cache.as_ref(),
-        }
-        .set_cache(key, value, ttl)
+        self.envelope().set_cache(key, value, ttl)
     }
 
     async fn async_get_cache(
@@ -66,27 +58,15 @@ impl<Memory: MemoryCacheOps> EnvelopeBackend for SharedDualCache<Memory> {
         key: &str,
         lookup: &mut CacheLookup,
     ) -> CacheResult<Option<CacheValue>> {
-        DualCacheEnvelope {
-            cache: self.cache.as_ref(),
-        }
-        .async_get_cache(key, lookup)
-        .await
+        self.envelope().async_get_cache(key, lookup).await
     }
 
     async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        DualCacheEnvelope {
-            cache: self.cache.as_ref(),
-        }
-        .async_set_cache(key, value, ttl)
-        .await
+        self.envelope().async_set_cache(key, value, ttl).await
     }
 
     async fn batch_cache_write(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        DualCacheEnvelope {
-            cache: self.cache.as_ref(),
-        }
-        .batch_cache_write(key, value, ttl)
-        .await
+        self.envelope().batch_cache_write(key, value, ttl).await
     }
 }
 
@@ -95,17 +75,6 @@ impl<Memory: MemoryCacheOps> EnvelopeBackend for SharedDualCache<Memory> {
 impl<Memory: MemoryCacheOps> CacheBackend for SharedDualCache<Memory> {
     fn default_ttl(&self) -> i64 {
         self.cache.in_memory_cache.default_ttl()
-    }
-
-    async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
-        let json = to_json(&value).ok_or(BackendError::Unsupported("async_set_cache"))?;
-        let options = CacheOptions {
-            ttl,
-            local_only: false,
-            refresh_ttl: false,
-        };
-        self.cache.async_set_cache(key, &json, options).await;
-        Ok(())
     }
 
     async fn async_set_cache_pipeline(

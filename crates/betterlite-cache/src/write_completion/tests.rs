@@ -2,18 +2,23 @@
 
 mod support;
 
+use std::future::pending;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_context::call_context::Phase;
+use betterlite_context::call_context::{CallState, Phase};
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue};
 use rstest::rstest;
 use tokio::sync::Notify;
+use tokio::time::Instant;
+use tracing::subscriber::set_default;
 
 use crate::backend::CacheBackend;
-use crate::cache_key::value::KeyValue;
+use crate::cache_key::value::{KeyObject, KeyValue};
+use crate::dual_cache::DualCache;
 use crate::handler::call_types::call_type_name;
+use crate::handler::state::OriginalFunction;
 use crate::handler::value::to_cache_value;
 use crate::types::cache_type::LiteLlmCacheType;
 use crate::types::call_type::CachingSupportedCallType;
@@ -31,21 +36,21 @@ use crate::write_completion::wrap::{
     ResultKind, StreamCacheHandler, StreamCacheWrap, wrap_streaming_result_for_cache,
 };
 use support::{
-    FakeAssembler, RecordedWrite, Recorder, SilentConsole, SilentLogger, Sink, cache,
-    capture_warnings, captured, chat_json, chat_kwargs, chat_result, chunk, embedding_kwargs,
-    embedding_response, embedding_result, handler, object, original, other_json, other_result,
-    recording_dual, text, tracker, write_context,
+    FakeAssembler, RecordedWrite, Recorder, SilentConsole, SilentLogger, Sink, cache, call,
+    capture_warnings, captured, chat_json, chat_kwargs, chat_result, chunk, dual_settings,
+    embedding_kwargs, embedding_response, embedding_result, handler, memory, object, original,
+    other_json, other_result, recording_dual, text, text_completion_json, tracker, write_context,
 };
 
 #[tokio::test]
 async fn tracker_runs_write_once_when_not_cancelled() {
     let tracker = tracker();
+    let call = call();
     let attempts = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&attempts);
-    let handle = tracker.spawn(move || {
+    let handle = tracker.spawn(&call, move |_call: CallState| -> CacheWriteFuture {
         counter.fetch_add(1, Ordering::SeqCst);
-        let future: CacheWriteFuture = Box::pin(async { Ok::<(), CacheError>(()) });
-        future
+        Box::pin(async { Ok::<(), CacheError>(()) })
     });
     let outcome = handle.task.await.expect("the write task ends");
     assert_eq!(outcome, CacheWriteOutcome::Completed);
@@ -55,20 +60,18 @@ async fn tracker_runs_write_once_when_not_cancelled() {
 #[tokio::test]
 async fn tracker_reruns_write_after_cancel() {
     let tracker = tracker();
+    let call = call();
     let attempts = Arc::new(AtomicUsize::new(0));
     let started = Arc::new(Notify::new());
     let counter = Arc::clone(&attempts);
     let signal = Arc::clone(&started);
-    let handle = tracker.spawn(move || {
+    let handle = tracker.spawn(&call, move |_call: CallState| -> CacheWriteFuture {
         let attempt = counter.fetch_add(1, Ordering::SeqCst);
         if attempt == 0 {
             signal.notify_one();
-            let pending: CacheWriteFuture =
-                Box::pin(std::future::pending::<Result<(), CacheError>>());
-            return pending;
+            return Box::pin(pending::<Result<(), CacheError>>());
         }
-        let done: CacheWriteFuture = Box::pin(async { Ok::<(), CacheError>(()) });
-        done
+        Box::pin(async { Ok::<(), CacheError>(()) })
     });
     started.notified().await;
     assert_eq!(attempts.load(Ordering::SeqCst), 1, "the write started");
@@ -81,15 +84,14 @@ async fn tracker_reruns_write_after_cancel() {
 #[tokio::test]
 async fn tracker_logs_failed_flush_and_ends_cancelled() {
     let (subscriber, bytes) = capture_warnings();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     let tracker = tracker();
+    let call = call();
     let attempts = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&attempts);
-    let handle = tracker.spawn(move || {
+    let handle = tracker.spawn(&call, move |_call: CallState| -> CacheWriteFuture {
         counter.fetch_add(1, Ordering::SeqCst);
-        let future: CacheWriteFuture =
-            Box::pin(async { Err::<(), CacheError>(CacheError::Unavailable) });
-        future
+        Box::pin(async { Err::<(), CacheError>(CacheError::Unavailable) })
     });
     tracker.cancellation.cancel();
     let outcome = handle.task.await.expect("the write task ends");
@@ -105,17 +107,17 @@ async fn tracker_logs_failed_flush_and_ends_cancelled() {
 #[tokio::test(start_paused = true)]
 async fn tracker_flush_times_out_after_five_seconds() {
     let (subscriber, bytes) = capture_warnings();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     let tracker = tracker();
+    let call = call();
     let attempts = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&attempts);
-    let handle = tracker.spawn(move || {
+    let handle = tracker.spawn(&call, move |_call: CallState| -> CacheWriteFuture {
         counter.fetch_add(1, Ordering::SeqCst);
-        let future: CacheWriteFuture = Box::pin(std::future::pending::<Result<(), CacheError>>());
-        future
+        Box::pin(pending::<Result<(), CacheError>>())
     });
     tracker.cancellation.cancel();
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     let outcome = handle.task.await.expect("the write task ends");
     assert_eq!(outcome, CacheWriteOutcome::Cancelled);
     assert_eq!(CACHE_WRITE_FLUSH_TIMEOUT, Duration::from_secs(5));
@@ -134,9 +136,9 @@ async fn tracker_flush_times_out_after_five_seconds() {
 #[tokio::test]
 async fn tracker_forgets_finished_tasks() {
     let tracker = tracker();
-    let handle = tracker.spawn(|| {
-        let future: CacheWriteFuture = Box::pin(async { Ok::<(), CacheError>(()) });
-        future
+    let call = call();
+    let handle = tracker.spawn(&call, |_call: CallState| -> CacheWriteFuture {
+        Box::pin(async { Ok::<(), CacheError>(()) })
     });
     let _outcome = handle.task.await.expect("the write task ends");
     assert!(
@@ -149,24 +151,39 @@ async fn tracker_forgets_finished_tasks() {
 #[tokio::test]
 async fn tracker_runs_write_in_post_response_phase() {
     let tracker = tracker();
-    let handle = tracker.spawn(|| {
-        let future: CacheWriteFuture = Box::pin(async { Ok::<(), CacheError>(()) });
-        future
+    let call = call();
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&observed);
+    let handle = tracker.spawn(&call, move |state: CallState| -> CacheWriteFuture {
+        let reported = Arc::clone(&seen);
+        Box::pin(async move {
+            reported
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(state.phase);
+            Ok::<(), CacheError>(())
+        })
     });
-    assert_eq!(handle.phase, Phase::PostResponse);
     let outcome = handle.task.await.expect("the write task ends");
     assert_eq!(outcome, CacheWriteOutcome::Completed);
+    assert_eq!(
+        *observed.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![Phase::PostResponse],
+        "the write runs in the post-response phase"
+    );
 }
 
 #[tokio::test]
 async fn store_skips_without_cache() {
     let recorder = Arc::new(Recorder::default());
-    let context: WriteContext<SilentLogger, SilentConsole> = WriteContext {
+    let call = call();
+    let context: WriteContext<'_, SilentLogger, SilentConsole> = WriteContext {
         cache: CacheContext {
             cache: None,
             supported_call_types: Some(vec![CachingSupportedCallType::Acompletion]),
         },
         tracker: Arc::new(tracker()),
+        call: &call,
     };
     let dual = recording_dual(&recorder);
     let result = chat_result();
@@ -190,10 +207,12 @@ async fn store_skips_without_cache() {
 #[tokio::test]
 async fn store_skips_unsupported_call_type() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = chat_result();
@@ -220,10 +239,12 @@ async fn store_skips_unsupported_call_type() {
 #[tokio::test]
 async fn store_skips_no_store_control() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = chat_result();
@@ -253,88 +274,25 @@ async fn store_skips_no_store_control() {
 
 #[tokio::test]
 async fn store_merges_positional_args_over_kwargs() {
-    let result = chat_result();
     let function = original("acompletion", &["model", "messages"]);
-
-    let merged_recorder = Arc::new(Recorder::default());
-    let merged_context = write_context(
-        &merged_recorder,
-        LiteLlmCacheType::Local,
-        Some(vec![CachingSupportedCallType::Acompletion]),
-    );
-    let merged_dual = recording_dual(&merged_recorder);
     let original_kwargs = chat_kwargs();
     let args = [text("gpt-4o"), KeyValue::Array(Vec::new())];
-    store_response(
-        &merged_context,
-        Some(&merged_dual),
-        &StoreRequest {
-            result: &result,
-            original_function: &function,
-            kwargs: &original_kwargs,
-            args: &args,
-        },
-    )
-    .expect("the merged write starts");
-    merged_context.tracker.wait_idle().await;
+    let merged = stored_key(&function, &original_kwargs, &args).await;
     assert_eq!(
         original_kwargs.get("model"),
         Some(&text("gpt-4")),
         "the caller's kwargs stay unchanged"
     );
-
-    let control_recorder = Arc::new(Recorder::default());
-    let control_context = write_context(
-        &control_recorder,
-        LiteLlmCacheType::Local,
-        Some(vec![CachingSupportedCallType::Acompletion]),
-    );
-    let control_dual = recording_dual(&control_recorder);
-    let mut control_kwargs = chat_kwargs();
-    control_kwargs.insert("model".to_owned(), text("gpt-4o"));
-    store_response(
-        &control_context,
-        Some(&control_dual),
-        &StoreRequest {
-            result: &result,
-            original_function: &function,
-            kwargs: &control_kwargs,
-            args: &[],
-        },
-    )
-    .expect("the control write starts");
-    control_context.tracker.wait_idle().await;
-
-    let overridden_recorder = Arc::new(Recorder::default());
-    let overridden_context = write_context(
-        &overridden_recorder,
-        LiteLlmCacheType::Local,
-        Some(vec![CachingSupportedCallType::Acompletion]),
-    );
-    let overridden_dual = recording_dual(&overridden_recorder);
-    let overridden_kwargs = chat_kwargs();
-    store_response(
-        &overridden_context,
-        Some(&overridden_dual),
-        &StoreRequest {
-            result: &result,
-            original_function: &function,
-            kwargs: &overridden_kwargs,
-            args: &[],
-        },
-    )
-    .expect("the overridden write starts");
-    overridden_context.tracker.wait_idle().await;
-
-    let merged = single_write(&merged_recorder);
-    let control = single_write(&control_recorder);
-    let overridden = single_write(&overridden_recorder);
+    let mut explicit_kwargs = chat_kwargs();
+    explicit_kwargs.insert("model".to_owned(), text("gpt-4o"));
+    let explicit = stored_key(&function, &explicit_kwargs, &[]).await;
+    let unchanged = stored_key(&function, &chat_kwargs(), &[]).await;
     assert_eq!(
-        merged.key, control.key,
+        merged, explicit,
         "positional arguments replace the kwargs of the same name"
     );
     assert_ne!(
-        merged.key, overridden.key,
+        merged, unchanged,
         "the positional model changes the derived key"
     );
 }
@@ -342,10 +300,12 @@ async fn store_merges_positional_args_over_kwargs() {
 #[tokio::test]
 async fn store_embedding_uses_pipeline() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Aembedding]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = embedding_result(2);
@@ -376,10 +336,12 @@ async fn store_embedding_uses_pipeline() {
 #[tokio::test]
 async fn store_embedding_on_s3_uses_single_write() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::S3,
         Some(vec![CachingSupportedCallType::Aembedding]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = embedding_result(2);
@@ -407,10 +369,12 @@ async fn store_embedding_on_s3_uses_single_write() {
 #[tokio::test]
 async fn store_typed_result_writes_json_string_with_dual_cache() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = chat_result();
@@ -437,10 +401,12 @@ async fn store_typed_result_writes_json_string_with_dual_cache() {
 #[tokio::test]
 async fn store_other_result_writes_raw_without_dual_cache() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let dual = recording_dual(&recorder);
     let result = other_result();
@@ -490,20 +456,23 @@ fn sync_store_writes_directly() {
     .expect("the direct write succeeds");
     let write = single_write(&recorder);
     assert_eq!(write.sink, Sink::Direct);
-    let expected = to_cache_value(&chat_json()).expect("the chat fixture converts");
+    let expected = serde_json::to_string(&chat_json()).expect("the chat fixture serializes");
     assert_eq!(
-        write.response, expected,
-        "the sync write stores the typed object"
+        write.response,
+        CacheValue::Text(expected),
+        "the sync write stores the JSON string"
     );
 }
 
 #[tokio::test]
 async fn stream_chunks_wait_for_final_chunk() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let mut handler = handler(chat_kwargs());
     let assembler = FakeAssembler {
@@ -527,35 +496,53 @@ async fn stream_chunks_wait_for_final_chunk() {
         assembler.calls().is_empty(),
         "no assembly before the final chunk"
     );
+    assert_eq!(
+        handler.async_streaming_chunks.len(),
+        1,
+        "the chunk waits in the buffer"
+    );
+}
+
+#[tokio::test]
+async fn stream_assembly_receives_the_call_times() {
+    let recorder = Arc::new(Recorder::default());
+    let call = call();
+    let context = write_context(
+        &recorder,
+        LiteLlmCacheType::Local,
+        Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
+    );
+    let mut handler = handler(chat_kwargs());
+    let assembler = FakeAssembler {
+        response: Mutex::new(Some(chat_json())),
+        failure: false,
+        calls: Mutex::new(Vec::new()),
+    };
     add_streaming_response_to_cache(
-        &chunk("", Some("stop")),
+        &chunk("done", Some("stop")),
         &mut handler,
         &assembler,
         2.5,
         &context,
     )
-    .expect("the final chunk is written");
-    context.tracker.wait_idle().await;
-    let write = single_write(&recorder);
-    assert_eq!(write.sink, Sink::Direct);
-    let expected = serde_json::to_string(&chat_json()).expect("the chat fixture serializes");
-    assert_eq!(write.response, CacheValue::Text(expected));
+    .expect("the final chunk assembles the stream");
     let calls = assembler.calls();
-    assert_eq!(calls.len(), 1, "the final chunk assembles once");
-    assert_eq!(calls[0].chunks.len(), 2, "both chunks reach the assembler");
+    assert_eq!(calls.len(), 1);
     assert!(calls[0].is_async);
     assert_eq!(calls[0].start_time.to_bits(), 0.0_f64.to_bits());
     assert_eq!(calls[0].end_time.to_bits(), 2.5_f64.to_bits());
-    assert_eq!(handler.async_streaming_chunks.len(), 2);
 }
 
 #[tokio::test]
 async fn stream_writes_assembled_response_once() {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let mut handler = handler(chat_kwargs());
     let assembler = FakeAssembler {
@@ -584,15 +571,55 @@ async fn stream_writes_assembled_response_once() {
     assert_eq!(handler.async_streaming_chunks.len(), 3);
 }
 
+#[tokio::test]
+async fn stream_writes_text_completion_without_dual_cache() {
+    let recorder = Arc::new(Recorder::default());
+    let call = call();
+    let context = write_context(
+        &recorder,
+        LiteLlmCacheType::Local,
+        Some(vec![CachingSupportedCallType::AtextCompletion]),
+        &call,
+    );
+    let mut handler = handler(chat_kwargs());
+    handler.original_function = original("atext_completion", &["model", "prompt"]);
+    handler.dual_cache = Some(DualCache::new(memory(), None, dual_settings()));
+    let assembler = FakeAssembler {
+        response: Mutex::new(Some(text_completion_json())),
+        failure: false,
+        calls: Mutex::new(Vec::new()),
+    };
+    add_streaming_response_to_cache(
+        &chunk("", Some("stop")),
+        &mut handler,
+        &assembler,
+        1.0,
+        &context,
+    )
+    .expect("the final text completion chunk is written");
+    context.tracker.wait_idle().await;
+    let write = single_write(&recorder);
+    assert_eq!(
+        write.sink,
+        Sink::Direct,
+        "a text completion skips the handler's dual cache"
+    );
+    let expected = serde_json::to_string(&text_completion_json())
+        .expect("the text completion fixture serializes");
+    assert_eq!(write.response, CacheValue::Text(expected));
+}
+
 #[rstest]
 #[case::assembler_builds_nothing(false)]
 #[case::assembler_fails(true)]
 fn stream_without_assembly_writes_nothing(#[case] failure: bool) {
     let recorder = Arc::new(Recorder::default());
+    let call = call();
     let context = write_context(
         &recorder,
         LiteLlmCacheType::Local,
         Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
     );
     let mut handler = handler(chat_kwargs());
     let assembler = FakeAssembler {
@@ -638,10 +665,11 @@ fn sync_stream_writes_assembled_response_once() {
     .expect("the final sync chunk is written");
     let write = single_write(&recorder);
     assert_eq!(write.sink, Sink::Direct);
-    let expected = to_cache_value(&chat_json()).expect("the chat fixture converts");
+    let expected = serde_json::to_string(&chat_json()).expect("the chat fixture serializes");
     assert_eq!(
-        write.response, expected,
-        "the sync stream stores the typed object"
+        write.response,
+        CacheValue::Text(expected),
+        "the sync stream stores the JSON string"
     );
     assert_eq!(handler.sync_streaming_chunks.len(), 1);
     assert!(handler.async_streaming_chunks.is_empty());
@@ -738,6 +766,32 @@ fn shared_dual_cache_uses_the_memory_default_ttl() {
         600,
         "the shared tier keeps the memory cache's default ttl"
     );
+}
+
+async fn stored_key(function: &OriginalFunction, kwargs: &KeyObject, args: &[KeyValue]) -> String {
+    let recorder = Arc::new(Recorder::default());
+    let call = call();
+    let context = write_context(
+        &recorder,
+        LiteLlmCacheType::Local,
+        Some(vec![CachingSupportedCallType::Acompletion]),
+        &call,
+    );
+    let dual = recording_dual(&recorder);
+    let result = chat_result();
+    store_response(
+        &context,
+        Some(&dual),
+        &StoreRequest {
+            result: &result,
+            original_function: function,
+            kwargs,
+            args,
+        },
+    )
+    .expect("the key write starts");
+    context.tracker.wait_idle().await;
+    single_write(&recorder).key
 }
 
 fn single_write(recorder: &Recorder) -> RecordedWrite {

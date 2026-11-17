@@ -6,6 +6,7 @@ use crate::embedding::response::EmbeddingResponse;
 #[derive(Clone, Debug, PartialEq)]
 pub enum CacheableResult {
     Chat(Json),
+    TextCompletion(Json),
     Embedding(EmbeddingResponse),
     Transcription(Json),
     Rerank(Json),
@@ -18,6 +19,7 @@ impl CacheableResult {
     pub(crate) fn json_text(&self) -> Result<String, serde_json::Error> {
         match self {
             Self::Chat(response)
+            | Self::TextCompletion(response)
             | Self::Transcription(response)
             | Self::Rerank(response)
             | Self::Responses(response) => serde_json::to_string(response),

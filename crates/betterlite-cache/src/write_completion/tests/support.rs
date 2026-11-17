@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
+use betterlite_context::call_context::{CallContext, CallInputs};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::logging_streams::assembly::StreamAssemblyError;
 use betterlite_logging::logging_success::types::SuccessResult;
@@ -14,6 +16,7 @@ use indexmap::IndexMap;
 use serde_json::Number;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use uuid::Uuid;
 
 use crate::backend::memory::MemoryCacheOps;
 use crate::backend::memory::local::LocalMemoryOps;
@@ -266,17 +269,28 @@ pub(crate) fn cache(recorder: &Arc<Recorder>, cache_type: LiteLlmCacheType) -> A
     })
 }
 
-pub(crate) fn write_context(
+pub(crate) fn call() -> CallContext<'static> {
+    CallContext::start(CallInputs {
+        now: SystemTime::now,
+        id: Uuid::nil,
+        deadline: None,
+        privacy: false,
+    })
+}
+
+pub(crate) fn write_context<'call>(
     recorder: &Arc<Recorder>,
     cache_type: LiteLlmCacheType,
     supported: Option<Vec<CachingSupportedCallType>>,
-) -> WriteContext<SilentLogger, SilentConsole> {
+    call: &'call CallContext<'call>,
+) -> WriteContext<'call, SilentLogger, SilentConsole> {
     WriteContext {
         cache: CacheContext {
             cache: Some(cache(recorder, cache_type)),
             supported_call_types: supported,
         },
         tracker: Arc::new(tracker()),
+        call,
     }
 }
 
@@ -373,6 +387,16 @@ pub(crate) fn other_json() -> Json {
         "custom".to_owned(),
         Json::Text("value".to_owned()),
     )]))
+}
+
+pub(crate) fn text_completion_json() -> Json {
+    Json::Object(IndexMap::from([
+        (
+            "object".to_owned(),
+            Json::Text("text_completion".to_owned()),
+        ),
+        ("choices".to_owned(), Json::List(Vec::new())),
+    ]))
 }
 
 pub(crate) fn other_result() -> CacheableResult {

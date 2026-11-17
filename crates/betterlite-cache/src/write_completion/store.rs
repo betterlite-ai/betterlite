@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use betterlite_context::call_context::{CallContext, CallState};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
-use betterlite_models::decisions::Json;
 use thiserror::Error;
 
 use crate::backend::CacheBackend;
@@ -48,22 +48,23 @@ pub struct CacheContext<L: LoggerSink, C: ConsoleSink> {
     pub supported_call_types: Option<Vec<CachingSupportedCallType>>,
 }
 
-// The async store starts its write on this tracker and returns before the write ends.
-pub struct WriteContext<L: LoggerSink, C: ConsoleSink> {
+// The async store starts its write on this tracker and returns before the write ends; the write keeps the call's post-response phase.
+pub struct WriteContext<'call, L: LoggerSink, C: ConsoleSink> {
     pub cache: CacheContext<L, C>,
     pub tracker: Arc<CacheWriteTracker>,
+    pub call: &'call CallContext<'call>,
 }
 
-pub struct StoreRequest<'a> {
-    pub result: &'a CacheableResult,
-    pub original_function: &'a OriginalFunction,
-    pub kwargs: &'a KeyObject,
-    pub args: &'a [KeyValue],
+pub struct StoreRequest<'request> {
+    pub result: &'request CacheableResult,
+    pub original_function: &'request OriginalFunction,
+    pub kwargs: &'request KeyObject,
+    pub args: &'request [KeyValue],
 }
 
 // LiteLLM's async_set_cache: merge the positional arguments, resolve the parent span, then pick one of the three writes.
 pub fn store_response<L, C, Memory>(
-    context: &WriteContext<L, C>,
+    context: &WriteContext<'_, L, C>,
     dual_cache: Option<&DualCache<Memory>>,
     request: &StoreRequest<'_>,
 ) -> Result<(), StoreError>
@@ -85,43 +86,42 @@ where
         return Ok(());
     }
     let prepared = CacheWriteRequest::prepare(&kwargs)?;
-    match request.result {
-        CacheableResult::Embedding(response)
-            if cache.key_settings.cache_type != LiteLlmCacheType::S3 =>
-        {
-            start_write(
-                cache,
-                &context.tracker,
-                &prepared,
-                WriteTarget::Embedding {
-                    result: response.clone(),
-                    dual: dual_cache.map(SharedDualCache::shared),
-                },
-            );
-        }
-        CacheableResult::Chat(_)
-        | CacheableResult::Embedding(_)
-        | CacheableResult::Transcription(_)
-        | CacheableResult::Rerank(_)
-        | CacheableResult::Responses(_) => {
-            let text = request.result.json_text()?;
-            start_write(
-                cache,
-                &context.tracker,
-                &prepared,
-                WriteTarget::Response {
-                    value: CacheValue::Text(text),
-                    dual: dual_cache.map(SharedDualCache::shared),
-                },
-            );
-        }
-        CacheableResult::Other(response) => {
-            let value = to_cache_value(response).ok_or(StoreError::Unrepresentable)?;
-            let target: WriteTarget<Memory> = WriteTarget::Response { value, dual: None };
-            start_write(cache, &context.tracker, &prepared, target);
-        }
-    }
+    let target = write_target(
+        cache,
+        dual_cache.map(SharedDualCache::shared),
+        request.result,
+    )?;
+    start_write(cache, context, &prepared, target);
     Ok(())
+}
+
+// LiteLLM's async_set_cache routing: an embedding takes the pipeline unless the cache is S3, and anything outside the five response models skips the dual cache.
+fn write_target<L, C, Memory>(
+    cache: &ResponseCache<L, C>,
+    dual: Option<SharedDualCache<Memory>>,
+    result: &CacheableResult,
+) -> Result<WriteTarget<Memory>, StoreError>
+where
+    L: LoggerSink,
+    C: ConsoleSink,
+    Memory: MemoryCacheOps,
+{
+    if let CacheableResult::Embedding(response) = result
+        && cache.key_settings.cache_type != LiteLlmCacheType::S3
+    {
+        return Ok(WriteTarget::Embedding {
+            result: response.clone(),
+            dual,
+        });
+    }
+    let skips_dual = matches!(
+        result,
+        CacheableResult::TextCompletion(_) | CacheableResult::Other(_)
+    );
+    Ok(WriteTarget::Response {
+        value: stored_value(result)?,
+        dual: if skips_dual { None } else { dual },
+    })
 }
 
 // LiteLLM's sync_set_cache: no tracker, no dual cache, no parent span, straight to add_cache.
@@ -145,26 +145,18 @@ where
         return Ok(());
     }
     let prepared = CacheWriteRequest::prepare(&kwargs)?;
-    let value = cache_value(request.result)?;
+    let value = stored_value(request.result)?;
     let mut envelope = prepared.envelope();
     cache.add_cache(&mut envelope, &value);
     Ok(())
 }
 
-// The sync path stores the typed response itself; the async path stores its JSON string instead.
-fn cache_value(result: &CacheableResult) -> Result<CacheValue, StoreError> {
-    let json: Json = match result {
-        CacheableResult::Chat(response)
-        | CacheableResult::Transcription(response)
-        | CacheableResult::Rerank(response)
-        | CacheableResult::Responses(response)
-        | CacheableResult::Other(response) => response.clone(),
-        CacheableResult::Embedding(response) => {
-            let wire = serde_json::to_value(response)?;
-            serde_json::from_value(wire)?
-        }
+// LiteLLM's _add_cache_logic serializes every typed response with model_dump_json; anything else is stored as it is.
+fn stored_value(result: &CacheableResult) -> Result<CacheValue, StoreError> {
+    let CacheableResult::Other(response) = result else {
+        return Ok(CacheValue::Text(result.json_text()?));
     };
-    to_cache_value(&json).ok_or(StoreError::Unrepresentable)
+    to_cache_value(response).ok_or(StoreError::Unrepresentable)
 }
 
 enum WriteTarget<Memory: MemoryCacheOps> {
@@ -180,38 +172,42 @@ enum WriteTarget<Memory: MemoryCacheOps> {
 
 // The write factory can run a second time when the event loop shuts down, so it captures owned copies of everything.
 fn start_write<L, C, Memory>(
-    cache: &Arc<ResponseCache<L, C>>,
-    tracker: &Arc<CacheWriteTracker>,
-    request: &CacheWriteRequest,
-    target: WriteTarget<Memory>,
+    response_cache: &Arc<ResponseCache<L, C>>,
+    context: &WriteContext<'_, L, C>,
+    write_request: &CacheWriteRequest,
+    write_target: WriteTarget<Memory>,
 ) where
     L: LoggerSink + Send + Sync + 'static,
     C: ConsoleSink + Send + Sync + 'static,
     Memory: MemoryCacheOps + 'static,
 {
-    let cache = Arc::clone(cache);
-    let request = request.clone();
-    let target = Arc::new(target);
-    let factory = move || -> CacheWriteFuture {
-        let cache = Arc::clone(&cache);
-        let request = request.clone();
-        let target = Arc::clone(&target);
+    let cache = Arc::clone(response_cache);
+    let call = context.call;
+    let request = write_request.clone();
+    let target = Arc::new(write_target);
+    let factory = move |_call: CallState| -> CacheWriteFuture {
+        let task_cache = Arc::clone(&cache);
+        let task_request = request.clone();
+        let task_target = Arc::clone(&target);
         Box::pin(async move {
-            let mut envelope = request.envelope();
-            match target.as_ref() {
+            let mut envelope = task_request.envelope();
+            match task_target.as_ref() {
                 WriteTarget::Response { value, dual } => {
                     let dynamic: Option<&dyn EnvelopeBackend> =
-                        dual.as_ref().map(|store| store as &dyn EnvelopeBackend);
-                    cache.async_add_cache(dynamic, &mut envelope, value).await;
+                        dual.as_ref().map(|store| -> &dyn EnvelopeBackend { store });
+                    task_cache
+                        .async_add_cache(dynamic, &mut envelope, value)
+                        .await;
                 }
                 WriteTarget::Embedding { result, dual } => {
                     let dynamic: Option<&dyn CacheBackend> =
-                        dual.as_ref().map(|store| store as &dyn CacheBackend);
-                    async_add_cache_pipeline(&cache, dynamic, None, &mut envelope, result).await;
+                        dual.as_ref().map(|store| -> &dyn CacheBackend { store });
+                    async_add_cache_pipeline(&task_cache, dynamic, None, &mut envelope, result)
+                        .await;
                 }
             }
             Ok(())
         })
     };
-    let _write = tracker.spawn(factory);
+    let _write = context.tracker.spawn(call, factory);
 }

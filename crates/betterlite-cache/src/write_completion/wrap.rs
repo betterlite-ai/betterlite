@@ -19,11 +19,11 @@ pub enum StreamCacheWrap {
 }
 
 // The handler's own fields the decision reads, not the call's merged kwargs.
-pub struct StreamCacheHandler<'a> {
+pub struct StreamCacheHandler<'handler> {
     pub cache_configured: bool,
-    pub supported_call_types: Option<&'a [CachingSupportedCallType]>,
-    pub original_function: &'a OriginalFunction,
-    pub request_kwargs: &'a KeyObject,
+    pub supported_call_types: Option<&'handler [CachingSupportedCallType]>,
+    pub original_function: &'handler OriginalFunction,
+    pub request_kwargs: &'handler KeyObject,
 }
 
 // ast-grep-ignore: no-long-names - LiteLLM's wrap_streaming_result_for_cache: only an Anthropic Messages async stream that would be stored gets a writer.
