@@ -18,4 +18,7 @@ deviations:
   - what: The pinned Content-Type, Accept and Authorization headers replace an additional header of the same name whatever its letter case; the pinned dict spread only replaces the exact-case key, so a differently cased duplicate would be sent alongside it.
     why: Sending two conflicting Authorization headers makes the provider pick one by its own rule, which is exactly what the pinned comment says must not happen; betterlite's header map is case-insensitive, so the pinned value wins.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4056-L4059
+  - what: The token POST runs under one 30 s deadline and the userinfo GET under one 600 s deadline, where the pinned httpx client times each phase separately, so its 30 s POST timeout restarts for the connect and for every read, and its userinfo client gives a stalled connect 5 s and every read 600 s.
+    why: betterlite's shared outbound client ends a request at its deadline, so a provider that trickles a body cannot hold the SSO callback open past the bound the task sets; that client's own connect timeout is 10 s, which is what ends a stalled connect on either request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4076-L4081
 kept_bugs: []
