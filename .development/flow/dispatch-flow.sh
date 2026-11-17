@@ -375,6 +375,14 @@ case "${result}" in
     lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
     # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
     [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
+    # deny failing alone on a branch that changes neither Cargo.lock nor deny.toml means new advisories on main, and no fix round can help (B9653 spent five on 11-17, Max)
+    failed_checks=$(grep -E '^FAIL ' <<< "${lines}")
+    other_checks=$(grep -v -E '^FAIL deny ' <<< "${failed_checks}")
+    base=$(git -C "${worktree}" merge-base HEAD origin/main)
+    if [[ -n "${failed_checks}" ]] && [[ -z "${other_checks}" ]] && [[ -n "${base}" ]] && git -C "${worktree}" diff --quiet "${base}" -- Cargo.lock deny.toml; then
+      park "CI failed on PR #${pr} (run ${run_id}) only on deny, and the branch changes neither Cargo.lock nor deny.toml, so the cause is on main; land it again once main passes deny"
+      exit 5
+    fi
     missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
     missed=$(sort -u <<< "${missed}")
     missed=$(head -n 40 <<< "${missed}")
