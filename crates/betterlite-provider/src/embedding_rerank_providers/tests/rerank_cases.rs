@@ -8,8 +8,7 @@ use rstest::rstest;
 
 use super::*;
 use crate::api::rerank_contracts::{
-    BaseRerankConfig as _, Headers as RerankHeaders, Params, RerankLogging, RerankProviderResponse,
-    ResponseTransform,
+    Headers as RerankHeaders, Params, RerankLogging, RerankProviderResponse, ResponseTransform,
 };
 use crate::operation::OperationError;
 #[test]
@@ -233,7 +232,9 @@ fn a_voyage_object_document_is_refused() {
 #[test]
 fn a_status_answer_is_the_provider_error() {
     let prepared = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5").prepared();
-    let error = decode(&prepared, 500, "boom").unwrap_err();
+    let Err(error) = decode(&prepared, 500, "boom") else {
+        panic!("a status answer is an error");
+    };
     assert!(matches!(
         error,
         OperationError::Provider { response } if response.status == 500
@@ -243,7 +244,9 @@ fn a_status_answer_is_the_provider_error() {
 #[test]
 fn a_reply_that_is_not_the_family_json_is_a_decode_error() {
     let prepared = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5").prepared();
-    let error = decode(&prepared, 200, "not json").unwrap_err();
+    let Err(error) = decode(&prepared, 200, "not json") else {
+        panic!("a reply that is not json is an error");
+    };
     assert!(matches!(
         error,
         OperationError::Decode {
@@ -313,7 +316,7 @@ fn the_rerank_config_names_its_params_and_url(
     let cohere = cohere_rerank_settings::Settings::default();
     let host = jina_infinity_rerank::Settings::default();
     let environment = BTreeMap::new();
-    let family = rerank::FamilyRerankConfig {
+    let family = FamilyRerankConfig {
         config,
         cohere: &cohere,
         host: &host,
@@ -337,7 +340,7 @@ fn the_rerank_config_rewrites_the_raw_response() {
     let cohere = cohere_rerank_settings::Settings::default();
     let host = jina_infinity_rerank::Settings::default();
     let environment = BTreeMap::new();
-    let family = rerank::FamilyRerankConfig {
+    let family = FamilyRerankConfig {
         config: RerankConfig::Cohere,
         cohere: &cohere,
         host: &host,

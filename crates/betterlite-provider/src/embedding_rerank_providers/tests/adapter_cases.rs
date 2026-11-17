@@ -6,7 +6,6 @@ use super::*;
 use crate::embedding_rerank_providers::EmbeddingRerankRequest;
 use crate::operation::{ChatOperation, EmbeddingOperation, OperationRequest};
 use crate::prepared::PreparedRequest;
-use crate::provider::Adapter as _;
 #[test]
 fn the_adapter_refuses_a_model_without_a_family_slug() {
     let request = OperationRequest::Chat(Box::new(ChatOperation {

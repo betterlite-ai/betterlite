@@ -72,10 +72,9 @@ impl Settings {
     // `headers = headers or litellm.headers or {}` followed by `headers.update(extra_headers)`
     #[must_use]
     pub fn resolve_headers(&self, supplied: Option<&Headers>, extra: &Headers) -> Headers {
-        let mut headers = match supplied.filter(|headers| !headers.is_empty()) {
-            Some(headers) => headers.clone(),
-            None => self.headers.clone(),
-        };
+        let mut headers = supplied
+            .filter(|headers| !headers.is_empty())
+            .map_or_else(|| self.headers.clone(), Clone::clone);
         headers.extend(extra.clone());
         headers
     }

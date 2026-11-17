@@ -132,13 +132,13 @@ fn the_litellm_settings_headers_load() {
 
 #[test]
 fn an_environment_reference_in_the_module_values_loads_the_variable() {
-    let settings = settings(
+    let loaded = settings(
         &[("BASE", "https://from-env.test"), ("KEY", "from-env")],
         "litellm_settings:\n  api_base: os.environ/BASE\n  cohere_key: os.environ/KEY\n",
     )
     .expect("the config loads");
-    assert_eq!(settings.api_base.as_deref(), Some("https://from-env.test"));
-    assert_eq!(revealed(settings.cohere_key.as_ref()), Some("from-env"));
+    assert_eq!(loaded.api_base.as_deref(), Some("https://from-env.test"));
+    assert_eq!(revealed(loaded.cohere_key.as_ref()), Some("from-env"));
     let error = settings(
         &[],
         "litellm_settings:\n  api_base: os.environ/MISSING_BASE\n",
@@ -165,9 +165,9 @@ fn resolved_headers(
 
 #[rstest]
 #[case::the_global_headers_alone(None, &[], &[("X-Org", "litellm")])]
-#[case::the_supplied_headers_win(Some(&[("X-Org", "caller")]), &[], &[("X-Org", "caller")])]
-#[case::an_empty_supplied_map_falls_back(Some(&[]), &[], &[("X-Org", "litellm")])]
-#[case::the_extra_headers_overlay_the_choice(Some(&[("Accept", "text/plain")]), &[("Accept", "application/json")], &[("Accept", "application/json")])]
+#[case::the_supplied_headers_win(Some(&[("X-Org", "caller")][..]), &[], &[("X-Org", "caller")])]
+#[case::an_empty_supplied_map_falls_back(Some(&[][..]), &[], &[("X-Org", "litellm")])]
+#[case::the_extra_headers_overlay_the_choice(Some(&[("Accept", "text/plain")][..]), &[("Accept", "application/json")], &[("Accept", "application/json")])]
 #[case::the_extra_headers_overlay_the_globals(None, &[("X-Org", "extra")], &[("X-Org", "extra")])]
 fn the_chat_headers_are_supplied_then_global_then_extra(
     #[case] supplied: Option<&[(&str, &str)]>,
