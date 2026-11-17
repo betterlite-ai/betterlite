@@ -94,7 +94,9 @@ fn threshold(
         None | Some(RawThreshold::Other(_)) => Ok(None),
         Some(RawThreshold::Number(RawNumber::Boolean(_))) => Ok(None),
         Some(RawThreshold::Number(RawNumber::Integer(integer))) => Ok(Some(Decimal::from(integer))),
-        Some(RawThreshold::Number(RawNumber::Float(float))) => Ok(float.to_string().parse().ok()),
+        Some(RawThreshold::Number(RawNumber::Float(float))) => {
+            parse_money(&float.to_string(), path).map(Some)
+        }
         // _coerce_threshold defaults every string; an os.environ/ reference resolves here instead
         Some(RawThreshold::Number(RawNumber::Text(text))) if text.starts_with("os.environ/") => {
             resolve_number(Some(RawNumber::Text(text)), path, lookup, parse_money)

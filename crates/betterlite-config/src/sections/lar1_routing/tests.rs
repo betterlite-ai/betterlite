@@ -77,6 +77,30 @@ fn lar1_routing_args_load(#[case] source: &str, #[case] expected: Option<Args>) 
     assert_eq!(load(source).args, expected);
 }
 
+// a finite YAML number the declared Decimal cannot hold is a load error that names the field
+#[rstest]
+#[case::under_the_decimal_scale("1e-30")]
+#[case::over_the_decimal_range("1e30")]
+fn lar1_routing_rejects_a_float_it_cannot_represent(#[case] value: &str) {
+    let source = format!(
+        "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: {value}\n"
+    );
+    let error = load_with(&source, &[]).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidScalar { path, .. }
+            if path == "router_settings.routing_strategy_args.confidence_threshold_low"
+    ));
+}
+
+// the YAML layer refuses a non-finite float before any config section reads the value
+#[test]
+fn lar1_routing_rejects_a_non_finite_threshold() {
+    let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: .inf\n";
+    let error = load_with(source, &[]).unwrap_err();
+    assert_eq!(error.category(), "yaml");
+}
+
 #[test]
 fn lar1_routing_reads_an_environment_reference() {
     let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
