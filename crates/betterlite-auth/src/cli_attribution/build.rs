@@ -55,19 +55,12 @@ fn claim_value<'a>(document: &'a JsonData, claim_path: &str) -> Option<&'a JsonD
         if let Some(value) = extra_fields.get(claim_path) {
             return Some(value);
         }
-        if let Some(value) = nested_claim_value(extra_fields, claim_path)
+        if let Some(value) = value_at(extra_fields, &split_key_path(claim_path))
             && !matches!(value, JsonData::Null)
         {
             return Some(value);
         }
     }
-    nested_claim_value(fields, claim_path)
-}
-
-fn nested_claim_value<'a>(
-    fields: &'a BTreeMap<String, JsonData>,
-    claim_path: &str,
-) -> Option<&'a JsonData> {
     if let Some(value) = fields.get(claim_path) {
         return Some(value);
     }

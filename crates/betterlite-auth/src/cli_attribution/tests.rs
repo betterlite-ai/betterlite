@@ -82,11 +82,11 @@ fn decode_cli_claim_map_keeps_well_formed_entries(#[case] text: &str, #[case] ex
         .iter()
         .map(entry)
         .collect::<Vec<String>>();
-    let expected = expected
+    let wanted = expected
         .iter()
-        .map(|text| (*text).to_owned())
+        .map(|claim| (*claim).to_owned())
         .collect::<Vec<String>>();
-    assert_eq!(decoded, expected);
+    assert_eq!(decoded, wanted);
 }
 
 #[rstest]

@@ -42,44 +42,28 @@ impl Helper for Op {
             Input::Build {
                 claim_map,
                 identity,
-            } => build(claim_map, identity),
+            } => {
+                let metadata =
+                    build_attribution_metadata(identity, &decode_cli_claim_map(claim_map))
+                        .map_err(|error| value_error(&error.to_string()))?;
+                serde_json::to_value(metadata).map_err(|error| value_error(&error.to_string()))
+            }
             Input::Merge {
                 existing_metadata,
                 attribution_metadata,
-            } => merge(existing_metadata, attribution_metadata),
+            } => {
+                let mut merged = existing_metadata.clone();
+                merge_metadata(&mut merged, attribution_metadata);
+                serde_json::to_value(merged).map_err(|error| value_error(&error.to_string()))
+            }
             Input::Flatten {
                 attribution_metadata,
-            } => flatten(attribution_metadata),
-            Input::Poll { session } => poll(session),
+            } => serde_json::to_value(flatten_metadata_for_poll(attribution_metadata))
+                .map_err(|error| value_error(&error.to_string())),
+            Input::Poll { session } => serde_json::to_value(poll_attribution_metadata(session))
+                .map_err(|error| value_error(&error.to_string())),
         }
     }
-}
-
-fn build(claim_map: &str, identity: &OpenIdIdentity) -> HelperResult {
-    let metadata = build_attribution_metadata(identity, &decode_cli_claim_map(claim_map))
-        .map_err(|error| value_error(&error.to_string()))?;
-    encode(metadata)
-}
-
-fn merge(
-    existing_metadata: &BTreeMap<String, JsonData>,
-    attribution_metadata: &BTreeMap<String, JsonData>,
-) -> HelperResult {
-    let mut merged = existing_metadata.clone();
-    merge_metadata(&mut merged, attribution_metadata);
-    encode(merged)
-}
-
-fn flatten(attribution_metadata: &BTreeMap<String, JsonData>) -> HelperResult {
-    encode(flatten_metadata_for_poll(attribution_metadata))
-}
-
-fn poll(session: &BTreeMap<String, JsonData>) -> HelperResult {
-    encode(poll_attribution_metadata(session))
-}
-
-fn encode(metadata: BTreeMap<String, JsonData>) -> HelperResult {
-    serde_json::to_value(metadata).map_err(|error| value_error(&error.to_string()))
 }
 
 fn value_error(message: &str) -> Box<HelperError> {

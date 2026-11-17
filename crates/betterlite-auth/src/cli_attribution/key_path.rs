@@ -21,7 +21,7 @@ pub(crate) fn split_key_path(key_path: &str) -> Vec<String> {
     parts.push(part);
     parts
         .into_iter()
-        .map(|part| part.replace('\0', "."))
+        .map(|piece| piece.replace('\0', "."))
         .collect()
 }
 

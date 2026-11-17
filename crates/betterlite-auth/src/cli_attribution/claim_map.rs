@@ -21,21 +21,26 @@ pub struct CliClaim {
 // One comma-separated source->destination entry per claim, destinations optionally prefixed with metadata.
 #[must_use]
 pub fn decode_cli_claim_map(text: &str) -> Vec<CliClaim> {
-    let trimmed = text.trim();
-    trimmed.split(',').filter_map(parse_claim).collect()
+    let mut claims = Vec::new();
+    for entry in text.trim().split(',') {
+        if let Some(claim) = parse_claim(entry) {
+            claims.push(claim);
+        }
+    }
+    claims
 }
 
 fn parse_claim(entry: &str) -> Option<CliClaim> {
-    let (source, destination) = entry.trim().split_once("->")?;
-    let source = source.trim();
-    let destination = destination.trim();
-    let destination = destination.strip_prefix("metadata.").unwrap_or(destination);
-    if source.is_empty() || destination.is_empty() {
+    let (source_field, destination_field) = entry.trim().split_once("->")?;
+    let source = source_field.trim();
+    let destination = destination_field.trim();
+    let unprefixed = destination.strip_prefix("metadata.").unwrap_or(destination);
+    if source.is_empty() || unprefixed.is_empty() {
         return None;
     }
     Some(CliClaim {
         source: source.to_owned(),
-        destination: destination.to_owned(),
+        destination: unprefixed.to_owned(),
     })
 }
 
