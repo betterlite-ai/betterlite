@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-claude-invoke-remote-url-inlined
+call:
+  bedrock_claude_invoke:
+    function: transform
+    model_cost:
+      bedrock/claude-plain: {litellm_provider: bedrock}
+    calls:
+      - model: claude-plain
+        messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: {url: 'https://example.test/pic.png'}}
+        optional_params: {max_tokens: 64}
+        litellm_params: {}
+        headers: {}
+        fetch:
+          'https://example.test/pic.png': 'data:image/png;base64,iVBORw0KGgo='
+        inline: true
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

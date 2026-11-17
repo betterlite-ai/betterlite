@@ -1,0 +1,37 @@
+kind: helper
+name: bedrock-claude-invoke-bedrock-beta-filter
+call:
+  bedrock_claude_invoke:
+    function: transform
+    model_cost:
+      bedrock/claude-plain: {litellm_provider: bedrock}
+    calls:
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params:
+          max_tokens: 64
+          mcp_servers: [{type: url, url: 'https://example.test/mcp', name: srv}]
+          tools:
+            - {type: computer_20250124, name: computer, display_width_px: 1024, display_height_px: 768}
+        litellm_params: {}
+        headers: {anthropic-beta: context-1m-2025-08-07}
+        fetch: {}
+        inline: false
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params:
+          max_tokens: 64
+          mcp_servers: [{type: url, url: 'https://example.test/mcp', name: srv}]
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 64}
+        litellm_params: {}
+        headers: {anthropic-beta: mcp-client-2025-11-20}
+        fetch: {}
+        inline: false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}
