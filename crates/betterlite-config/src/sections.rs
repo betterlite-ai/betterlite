@@ -471,6 +471,7 @@ use std::fmt;
 
 use serde::de::DeserializeOwned;
 
+use crate::api::realtime_session_state;
 use crate::api::responses_hook_policy;
 use crate::api::vector_context_shaping;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
@@ -633,7 +634,7 @@ sections! {
     prometheus_exporter, prometheus_request_budget, prompt_affinity, prompt_cache_accounting, prompt_injection, prompt_repositories, prompt_runtime, provider_resolution,
     provider_url_destination, proxy_base_url, proxy_custom_dispatch, proxy_hook_selection, proxy_provider_options, public_discovery, public_router_presets,
     quality_router, rag_records_and_chunking, rate_limit_usage, rate_limiter_settings,
-    rds_credentials, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
+    rds_credentials, realtime_session_state, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
     request_body, request_body_safety, request_form, request_headers, request_intake,
     request_metadata_safety, request_model_overrides, request_records, request_root_paths,
     request_scheduler, request_setup, request_setup_options, request_size_limit, resource_sdk_settings,
