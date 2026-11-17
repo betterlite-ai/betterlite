@@ -47,7 +47,7 @@ fn global(fields: &str) -> String {
 
 fn both(key: &str, deployment_value: &str, global_value: &str) -> String {
     format!(
-        "model_list:\n- model_name: unit\n  litellm_params: {{model: bedrock/unit, {key}: {deployment_value}}}\nlitellm_settings: {{{key}: {global_value}}}\n"
+        "model_list:\n- model_name: unit\n  litellm_params: {{model: bedrock/unit, {key}: {deployment_value}}}\n- model_name: other\n  litellm_params: {{model: bedrock/unit}}\nlitellm_settings: {{{key}: {global_value}}}\n"
     )
 }
 
@@ -94,7 +94,7 @@ fn assert_resolved<T>(
     assert_eq!(
         read(&resolved(&configured, 1)),
         Some(global_expected),
-        "{key} without a deployment"
+        "{key} from a deployment that omits it"
     );
 }
 
