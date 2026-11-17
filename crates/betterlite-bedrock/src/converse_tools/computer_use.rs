@@ -11,7 +11,7 @@ pub fn is_computer_use_tool_used(tools: Option<&[Json]>) -> Result<bool, Convers
         return Ok(false);
     };
     for tool in tools {
-        if tool_type(tool)?.is_some_and(is_computer_use_type) {
+        if tool_type(fields_of(tool)?)?.is_some_and(is_computer_use_type) {
             return Ok(true);
         }
     }
@@ -24,7 +24,7 @@ pub fn separate_computer_use_tools(
     let mut computer = Vec::new();
     let mut regular = Vec::new();
     for tool in tools {
-        if tool_type(tool)?.is_some_and(is_computer_use_type) {
+        if tool_type(fields_of(tool)?)?.is_some_and(is_computer_use_type) {
             computer.push(tool.clone());
         } else {
             regular.push(tool.clone());
@@ -47,10 +47,14 @@ fn is_computer_use_type(tool_type: &str) -> bool {
         .any(|prefix| tool_type.starts_with(prefix))
 }
 
-fn tool_type(tool: &Json) -> Result<Option<&str>, ConverseToolsError> {
+fn fields_of(tool: &Json) -> Result<&IndexMap<String, Json>, ConverseToolsError> {
     let Json::Object(fields) = tool else {
         return Err(ConverseToolsError::ToolNotAnObject);
     };
+    Ok(fields)
+}
+
+fn tool_type(fields: &IndexMap<String, Json>) -> Result<Option<&str>, ConverseToolsError> {
     match fields.get("type") {
         None => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
@@ -62,15 +66,10 @@ fn tool_type(tool: &Json) -> Result<Option<&str>, ConverseToolsError> {
 
 // The transformer reads a missing type as "not a computer tool" and copies the tool unchanged.
 fn transform_tool(tool: &Json) -> Result<Json, ConverseToolsError> {
-    let Json::Object(fields) = tool else {
-        return Err(ConverseToolsError::ToolNotAnObject);
-    };
-    match fields.get("type") {
+    let fields = fields_of(tool)?;
+    match tool_type(fields)? {
         None => Ok(tool.clone()),
-        Some(Json::Text(tool_type)) => typed_tool(fields, tool_type),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ConverseToolsError::ToolType)
-        }
+        Some(kind) => typed_tool(fields, kind),
     }
 }
 

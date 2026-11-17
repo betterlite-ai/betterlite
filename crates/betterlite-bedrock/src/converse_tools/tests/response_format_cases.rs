@@ -1,6 +1,7 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::NamedCapability;
+use indexmap::IndexMap;
 
 use super::support::{
     CATALOG, Fixture, LLAMA, MODEL, NOVA, Predicates, Query, json, object, runtime,
@@ -9,6 +10,44 @@ use crate::converse_tools::error::ConverseToolsError;
 use crate::converse_tools::response_format::{
     ResponseFormatRequest, create_output_config, translate_response_format,
 };
+
+struct Call<'call> {
+    value: Json,
+    model: &'call str,
+    thinking: bool,
+    stream: &'call str,
+}
+
+fn call<'call>(value: Json, model: &'call str, thinking: bool, stream: &'call str) -> Call<'call> {
+    Call {
+        value,
+        model,
+        thinking,
+        stream,
+    }
+}
+
+fn translated(
+    catalogs: &CatalogSources<'_>,
+    call: &Call<'_>,
+    predicates: &mut Predicates,
+) -> Result<IndexMap<String, Json>, ConverseToolsError> {
+    let stream = json(call.stream);
+    let request = ResponseFormatRequest {
+        model: call.model,
+        is_thinking_enabled: call.thinking,
+        stream: &stream,
+        catalogs,
+    };
+    let mut params = object("{}");
+    runtime().block_on(translate_response_format(
+        &call.value,
+        &request,
+        &mut params,
+        predicates,
+    ))?;
+    Ok(params)
+}
 
 pub(crate) fn native_structured_output() {
     let cost = json(CATALOG);
@@ -22,25 +61,16 @@ pub(crate) fn native_structured_output() {
 }
 
 fn native_config(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
     let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &json(
-                r#"{"type": "json_schema", "json_schema": {"name": "answer", "description": "", "schema": {"type": "object", "properties": {"city": {"type": "string"}}}}}"#,
-            ),
-            &request,
-            &mut params,
-            &mut native,
-        ))
-        .expect("the format translates natively");
+    let case = call(
+        json(
+            r#"{"type": "json_schema", "json_schema": {"name": "answer", "description": "", "schema": {"type": "object", "properties": {"city": {"type": "string"}}}}}"#,
+        ),
+        MODEL,
+        false,
+        "true",
+    );
+    let params = translated(catalogs, &case, &mut native).expect("the format translates natively");
     assert_eq!(
         params,
         object(
@@ -58,52 +88,43 @@ fn native_config(catalogs: &CatalogSources<'_>) {
 }
 
 fn response_schema_wins(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
     let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
-    let mut no_name = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &json(r#"{"type": "json_object", "response_schema": {"type": "object"}}"#),
-            &request,
-            &mut no_name,
-            &mut native,
-        ))
-        .expect("response_schema wins");
+    let response_schema = call(
+        json(r#"{"type": "json_object", "response_schema": {"type": "object"}}"#),
+        MODEL,
+        false,
+        "true",
+    );
+    let params = translated(catalogs, &response_schema, &mut native).expect("response_schema wins");
     assert_eq!(
-        no_name,
+        params,
         object(
             r#"{"outputConfig": {"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {"schema": "{\"type\": \"object\", \"additionalProperties\": false}"}}}}, "json_mode": true}"#
         )
     );
-    let mut null_schema = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &json(
-                r#"{"type": "json_object", "response_schema": null, "json_schema": {"schema": {"type": "object"}, "name": "ignored"}}"#,
-            ),
-            &request,
-            &mut null_schema,
-            &mut native,
-        ))
-        .expect("a null response_schema wins");
-    assert_eq!(null_schema, object(r#"{"json_mode": true}"#));
+    let null_schema = call(
+        json(
+            r#"{"type": "json_object", "response_schema": null, "json_schema": {"schema": {"type": "object"}, "name": "ignored"}}"#,
+        ),
+        MODEL,
+        false,
+        "true",
+    );
+    assert_eq!(
+        translated(catalogs, &null_schema, &mut native),
+        Ok(object(r#"{"json_mode": true}"#))
+    );
 }
 
 fn format_shapes(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
+    let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
+    let stream = json("true");
     let request = ResponseFormatRequest {
         model: MODEL,
         is_thinking_enabled: false,
-        stream: &stream_true,
+        stream: &stream,
         catalogs,
     };
-    let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
     let mut text = object(r#"{"existing": 1}"#);
     runtime()
         .block_on(translate_response_format(
@@ -114,62 +135,33 @@ fn format_shapes(catalogs: &CatalogSources<'_>) {
         ))
         .expect("text is a no-op");
     assert_eq!(text, object(r#"{"existing": 1}"#));
-    assert_eq!(
-        runtime().block_on(translate_response_format(
-            &json("5"),
-            &request,
-            &mut object("{}"),
-            &mut native,
-        )),
-        Err(ConverseToolsError::FormatNotAnObject)
-    );
-    assert_eq!(
-        runtime().block_on(translate_response_format(
-            &json(r#"{"json_schema": {}}"#),
-            &request,
-            &mut object("{}"),
-            &mut native,
-        )),
-        Err(ConverseToolsError::MissingFormatType)
-    );
 }
 
 fn format_errors(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
     let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
-    assert_eq!(
-        runtime().block_on(translate_response_format(
-            &json(r#"{"type": "json_schema", "json_schema": 5}"#),
-            &request,
-            &mut object("{}"),
-            &mut native,
-        )),
-        Err(ConverseToolsError::JsonSchemaNotAnObject)
-    );
-    assert_eq!(
-        runtime().block_on(translate_response_format(
-            &json(r#"{"type": "json_schema", "json_schema": {}}"#),
-            &request,
-            &mut object("{}"),
-            &mut native,
-        )),
-        Err(ConverseToolsError::MissingSchemaField)
-    );
-    assert_eq!(
-        runtime().block_on(translate_response_format(
-            &json(r#"{"type": "json_schema", "json_schema": {"schema": {}, "name": 5}}"#),
-            &request,
-            &mut object("{}"),
-            &mut native,
-        )),
-        Err(ConverseToolsError::NotText { field: "name" })
-    );
+    let cases = [
+        (json("5"), ConverseToolsError::FormatNotAnObject),
+        (
+            json(r#"{"json_schema": {}}"#),
+            ConverseToolsError::MissingFormatType,
+        ),
+        (
+            json(r#"{"type": "json_schema", "json_schema": 5}"#),
+            ConverseToolsError::JsonSchemaNotAnObject,
+        ),
+        (
+            json(r#"{"type": "json_schema", "json_schema": {}}"#),
+            ConverseToolsError::MissingSchemaField,
+        ),
+        (
+            json(r#"{"type": "json_schema", "json_schema": {"schema": {}, "name": 5}}"#),
+            ConverseToolsError::NotText { field: "name" },
+        ),
+    ];
+    for (value, expected) in cases {
+        let case = call(value, MODEL, false, "true");
+        assert_eq!(translated(catalogs, &case, &mut native), Err(expected));
+    }
 }
 
 fn output_config_blocks() {
@@ -195,11 +187,7 @@ pub(crate) fn unsupported_response_format() {
     let cost = json(CATALOG);
     let fixture = Fixture::new(&cost);
     let catalogs = fixture.catalogs();
-    fallback_translation(&catalogs);
-    thinking_gate(&catalogs);
-    capability_gate(&catalogs);
-    forced_gate(&catalogs);
-    stream_literals(&catalogs);
+    fallback_gates(&catalogs);
     schemaless_formats(&catalogs);
     existing_tools(&catalogs);
 }
@@ -210,167 +198,56 @@ fn fallback_schema() -> Json {
     )
 }
 
-fn fallback_translation(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &fallback_schema(),
-            &request,
-            &mut params,
-            &mut tool_choice_supported,
-        ))
-        .expect("the fallback translates");
-    assert_eq!(
-        params,
-        object(
-            r#"{"tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object"}, "description": "why"}}], "tool_choice": {"tool": {"name": "json_tool_call"}}, "fake_stream": true, "json_mode": true}"#
-        )
+// The synthetic tool plus fake_stream, with tool_choice only where the model and request allow forcing one.
+fn fallback_gates(catalogs: &CatalogSources<'_>) {
+    let gated = object(
+        r#"{"tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object"}, "description": "why"}}], "fake_stream": true, "json_mode": true}"#,
     );
-}
-
-fn thinking_gate(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let thinking = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: true,
-        stream: &stream_true,
-        catalogs,
-    };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &fallback_schema(),
-            &thinking,
-            &mut params,
-            &mut tool_choice_supported,
-        ))
-        .expect("the fallback translates");
-    assert!(params.get("tools").is_some());
-    assert_eq!(params.get("tool_choice"), None);
-    assert_eq!(params.get("fake_stream"), Some(&Json::Bool(true)));
-}
-
-fn capability_gate(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
-    let mut no_tool_choice = Predicates::default();
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &fallback_schema(),
-            &request,
-            &mut params,
-            &mut no_tool_choice,
-        ))
-        .expect("the fallback translates");
-    assert_eq!(params.get("tool_choice"), None);
-    assert_eq!(params.get("fake_stream"), Some(&Json::Bool(true)));
-}
-
-fn forced_gate(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let nova = ResponseFormatRequest {
-        model: NOVA,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &fallback_schema(),
-            &nova,
-            &mut params,
-            &mut tool_choice_supported,
-        ))
-        .expect("the fallback translates");
-    assert_eq!(params.get("tool_choice"), None, "forced use is refused");
-    assert_eq!(params.get("fake_stream"), Some(&Json::Bool(true)));
-}
-
-fn stream_literals(catalogs: &CatalogSources<'_>) {
-    let number_stream = json("1");
-    let request = ResponseFormatRequest {
-        model: LLAMA,
-        is_thinking_enabled: false,
-        stream: &number_stream,
-        catalogs,
-    };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
-    let mut params = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &fallback_schema(),
-            &request,
-            &mut params,
-            &mut tool_choice_supported,
-        ))
-        .expect("the fallback translates");
-    assert_eq!(params.get("fake_stream"), None);
+    let choosable = object(
+        r#"{"tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object"}, "description": "why"}}], "tool_choice": {"tool": {"name": "json_tool_call"}}, "json_mode": true}"#,
+    );
+    let gates = [
+        (call(fallback_schema(), MODEL, true, "true"), true, &gated),
+        (call(fallback_schema(), MODEL, false, "true"), false, &gated),
+        (call(fallback_schema(), NOVA, false, "true"), true, &gated),
+        (call(fallback_schema(), LLAMA, false, "1"), true, &choosable),
+    ];
+    for (case, tool_choice_supported, expected) in gates {
+        let mut predicates = if tool_choice_supported {
+            Predicates::with(&[NamedCapability::ToolChoice.key()])
+        } else {
+            Predicates::default()
+        };
+        let params = translated(catalogs, &case, &mut predicates).expect("the fallback translates");
+        assert_eq!(&params, expected);
+    }
 }
 
 fn schemaless_formats(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
-    let request = ResponseFormatRequest {
-        model: MODEL,
-        is_thinking_enabled: false,
-        stream: &stream_true,
-        catalogs,
-    };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
-    let mut schemaless = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &json(r#"{"type": "json_object"}"#),
-            &request,
-            &mut schemaless,
-            &mut tool_choice_supported,
-        ))
-        .expect("json_object needs no tool");
-    assert_eq!(schemaless, object(r#"{"json_mode": true}"#));
-    let mut unknown = object("{}");
-    runtime()
-        .block_on(translate_response_format(
-            &json(r#"{"type": "builtin"}"#),
-            &request,
-            &mut unknown,
-            &mut tool_choice_supported,
-        ))
-        .expect("an unknown type is not rejected here");
-    assert_eq!(unknown, object(r#"{"json_mode": true}"#));
+    let mut supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
+    let json_object = call(json(r#"{"type": "json_object"}"#), MODEL, false, "true");
+    let builtin = call(json(r#"{"type": "builtin"}"#), MODEL, false, "true");
+    let expected = Ok(object(r#"{"json_mode": true}"#));
+    assert_eq!(translated(catalogs, &json_object, &mut supported), expected);
+    assert_eq!(translated(catalogs, &builtin, &mut supported), expected);
 }
 
 fn existing_tools(catalogs: &CatalogSources<'_>) {
-    let stream_true = json("true");
+    let mut supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
+    let stream = json("true");
     let request = ResponseFormatRequest {
         model: MODEL,
         is_thinking_enabled: false,
-        stream: &stream_true,
+        stream: &stream,
         catalogs,
     };
-    let mut tool_choice_supported = Predicates::with(&[NamedCapability::ToolChoice.key()]);
     let mut existing = object(r#"{"tools": [{"toolSpec": {"name": "kept"}}]}"#);
     runtime()
         .block_on(translate_response_format(
             &fallback_schema(),
             &request,
             &mut existing,
-            &mut tool_choice_supported,
+            &mut supported,
         ))
         .expect("the fallback translates");
     let Json::List(tools) = existing.get("tools").expect("tools exist") else {

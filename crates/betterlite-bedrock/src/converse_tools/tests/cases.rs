@@ -121,24 +121,23 @@ fn unknown_choices(catalogs: &CatalogSources<'_>) {
 }
 
 fn dict_choices(catalogs: &CatalogSources<'_>) {
-    let no_drop = DropParams::default();
-    assert_eq!(
-        choice(
-            MODEL,
+    let cases = [
+        (
             r#"{"type": "function", "function": {"name": "get weather!"}}"#,
-            no_drop,
-            catalogs
+            r#"{"tool": {"name": "get_weather_"}}"#,
         ),
-        Ok(Some(object(r#"{"tool": {"name": "get_weather_"}}"#)))
-    );
-    assert_eq!(
-        choice(MODEL, r#"{"type": "auto"}"#, no_drop, catalogs),
-        Ok(Some(object(r#"{"tool": {"name": ""}}"#)))
-    );
-    assert_eq!(
-        choice(MODEL, r#"{"function": {"name": null}}"#, no_drop, catalogs),
-        Ok(Some(object(r#"{"tool": {"name": null}}"#)))
-    );
+        (r#"{"type": "auto"}"#, r#"{"tool": {"name": ""}}"#),
+        (
+            r#"{"function": {"name": null}}"#,
+            r#"{"tool": {"name": null}}"#,
+        ),
+    ];
+    for (tool_choice, expected) in cases {
+        assert_eq!(
+            choice(MODEL, tool_choice, DropParams::default(), catalogs),
+            Ok(Some(object(expected)))
+        );
+    }
 }
 
 fn downgraded_dict_choices(catalogs: &CatalogSources<'_>) {
@@ -378,7 +377,6 @@ fn fake_stream_flags(tool: &Json) {
 pub(crate) fn additional_properties_recursion() {
     primitive_values();
     walked_positions();
-    skipped_positions();
     definitions_and_unions();
     deep_schema();
     source_is_not_mutated();
@@ -418,9 +416,6 @@ fn walked_positions() {
         add_additional_properties(&json(r#"{"type": "array", "items": {"type": "object"}}"#)),
         json(r#"{"type": "array", "items": {"type": "object", "additionalProperties": false}}"#)
     );
-}
-
-fn skipped_positions() {
     assert_eq!(
         add_additional_properties(&json(
             r#"{"items": [{"type": "object"}], "not": {"type": "object"}, "patternProperties": {"x": {"type": "object"}}, "additionalProperties": {"type": "object"}}"#

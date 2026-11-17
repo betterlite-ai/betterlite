@@ -20,7 +20,15 @@ pub fn map_tool_choice_values(
         Json::Text(text) if text == "none" => none_choice(drop).map(|()| None),
         Json::Text(text) if text == "required" => required_choice(model, drop, catalogs).map(Some),
         Json::Text(text) if text == "auto" => Ok(Some(choice("auto"))),
-        Json::Object(fields) => specific_choice(model, fields, drop, catalogs, names).map(Some),
+        Json::Object(fields) => {
+            if forced_tool_use_downgraded(model, drop, catalogs)? {
+                return Ok(Some(choice("auto")));
+            }
+            Ok(Some(specific_tool_choice(name_json(
+                tool_choice_name(fields)?,
+                names,
+            )?)))
+        }
         other => Err(ConverseToolsError::UnsupportedChoice {
             value: match other {
                 Json::Text(text) => text.clone(),
@@ -46,22 +54,6 @@ fn required_choice(
         return Ok(choice("auto"));
     }
     Ok(choice("any"))
-}
-
-fn specific_choice(
-    model: &str,
-    fields: &IndexMap<String, Json>,
-    drop: DropParams,
-    catalogs: &CatalogSources<'_>,
-    names: &mut ToolNameMap,
-) -> Result<ToolChoiceValuesBlock, ConverseToolsError> {
-    if forced_tool_use_downgraded(model, drop, catalogs)? {
-        return Ok(choice("auto"));
-    }
-    Ok(specific_tool_choice(name_json(
-        tool_choice_name(fields)?,
-        names,
-    )?))
 }
 
 #[must_use]

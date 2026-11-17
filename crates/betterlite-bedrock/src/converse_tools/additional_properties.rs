@@ -113,20 +113,9 @@ impl Frame {
 
 fn children_of(original: &IndexMap<String, Json>) -> Vec<(Child, Json)> {
     let mut children = Vec::new();
-    push_properties(&mut children, original);
     push_items(&mut children, original);
-    push_definitions(&mut children, original);
-    push_unions(&mut children, original);
+    push_nested(&mut children, original);
     children
-}
-
-fn push_properties(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Json>) {
-    let Some(Json::Object(entries)) = original.get("properties") else {
-        return;
-    };
-    for (name, value) in entries {
-        children.push((Child::Property(name.clone()), value.clone()));
-    }
 }
 
 fn push_items(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Json>) {
@@ -136,7 +125,12 @@ fn push_items(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Jso
     children.push((Child::Items, items.clone()));
 }
 
-fn push_definitions(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Json>) {
+fn push_nested(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Json>) {
+    if let Some(Json::Object(properties)) = original.get("properties") {
+        for (name, value) in properties {
+            children.push((Child::Property(name.clone()), value.clone()));
+        }
+    }
     for key in ["$defs", "definitions"] {
         let Some(Json::Object(entries)) = original.get(key) else {
             continue;
@@ -151,9 +145,6 @@ fn push_definitions(children: &mut Vec<(Child, Json)>, original: &IndexMap<Strin
             ));
         }
     }
-}
-
-fn push_unions(children: &mut Vec<(Child, Json)>, original: &IndexMap<String, Json>) {
     for key in ["anyOf", "allOf", "oneOf"] {
         let Some(Json::List(items)) = original.get(key) else {
             continue;
