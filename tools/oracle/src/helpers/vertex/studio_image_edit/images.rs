@@ -90,19 +90,17 @@ fn edit_file(prepared: &mut PreparedImage) -> GeminiEditFile<'_> {
 
 // the cursor each record reads from after the transform; only a seekable record has one
 pub(super) fn positions_value(prepared: &Prepared) -> Value {
-    match prepared {
-        Prepared::None => Value::Array(Vec::new()),
-        Prepared::One(PreparedImage::Seekable(cursor)) => json!([cursor.position()]),
-        Prepared::One(PreparedImage::Bytes(_) | PreparedImage::Unsupported) => json!([Value::Null]),
-        Prepared::Many(records) => json!(
-            records
-                .iter()
-                .map(|record| match record {
-                    Some(PreparedImage::Seekable(cursor)) => json!(cursor.position()),
-                    Some(PreparedImage::Bytes(_) | PreparedImage::Unsupported) | None =>
-                        Value::Null,
-                })
-                .collect::<Vec<Value>>()
-        ),
+    let records: Vec<Option<&PreparedImage>> = match prepared {
+        Prepared::None => Vec::new(),
+        Prepared::One(record) => vec![Some(record)],
+        Prepared::Many(records) => records.iter().map(Option::as_ref).collect(),
+    };
+    Value::Array(records.into_iter().map(record_position).collect())
+}
+
+fn record_position(record: Option<&PreparedImage>) -> Value {
+    match record {
+        Some(PreparedImage::Seekable(cursor)) => json!(cursor.position()),
+        Some(PreparedImage::Bytes(_) | PreparedImage::Unsupported) | None => Value::Null,
     }
 }
