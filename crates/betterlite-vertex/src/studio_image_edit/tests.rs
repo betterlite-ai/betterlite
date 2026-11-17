@@ -370,6 +370,18 @@ fn a_usage_metadata_with_no_images_still_reaches_the_usage() {
     );
 }
 
+// the edit transform hands usageMetadata to the shared transformer and never counts the searches
+#[test]
+fn an_edit_usage_counts_no_web_search() {
+    let body = r#"{"candidates":[{"content":{"parts":[{"inlineData":{"data":"AAA"}}]},"groundingMetadata":{"webSearchQueries":["pixel art"]}}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":6,"totalTokenCount":10,"promptTokensDetails":[{"modality":"TEXT","tokenCount":4}]}}"#;
+    assert_eq!(
+        encoded(&edited(body)),
+        json(
+            r#"{"data":[{"b64_json":"AAA"}],"usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":0,"text_tokens":4},"output_tokens":6,"total_tokens":10,"prompt_tokens":4,"prompt_tokens_details":{"image_tokens":0,"text_tokens":4},"completion_tokens":6,"completion_tokens_details":{"image_tokens":6,"text_tokens":0},"output_tokens_details":{"image_tokens":6,"text_tokens":0}}}"#
+        )
+    );
+}
+
 #[rstest]
 #[case::absent(r#"{"candidates":[]}"#)]
 #[case::null(r#"{"candidates":[],"usageMetadata":null}"#)]
