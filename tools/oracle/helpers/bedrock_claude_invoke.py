@@ -5,10 +5,10 @@ from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 import httpx
 import litellm
 import litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation as claude
+from litellm.litellm_core_utils.prompt_templates import image_handling
 from litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation import (
     AmazonAnthropicClaudeConfig,
 )
-from litellm.litellm_core_utils.prompt_templates import image_handling
 from litellm.types.utils import ModelResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
@@ -58,9 +58,6 @@ class ResponseCall(TypedDict):
 class Response(TypedDict):
     function: Literal["response"]
     calls: list[ResponseCall]
-
-
-Input = Transform | MapParams | Response
 
 
 class CompletionView(TypedDict):
@@ -142,10 +139,11 @@ class Transformer(Protocol):
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
+        *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_response(
+    def transform_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L367-L394
         self,
         model: str,
         raw_response: httpx.Response,
@@ -234,7 +232,7 @@ def maps(argument: MapParams) -> JsonValue:
             dict(call["non_default_params"]),
             dict(call["optional_params"]),
             call["model"],
-            call["drop_params"],
+            drop_params=call["drop_params"],
         )
         answers.append(JSON.validate_python({"optional_params": mapped}))
     return JSON.validate_python({"calls": answers})
@@ -292,7 +290,7 @@ def responses(argument: Response) -> JsonValue:
     return {"calls": answers}
 
 
-def run(argument: Input) -> JsonValue:
+def run(argument: Transform | MapParams | Response) -> JsonValue:
     if argument["function"] == "transform":
         return transforms(argument)
     if argument["function"] == "map_params":
