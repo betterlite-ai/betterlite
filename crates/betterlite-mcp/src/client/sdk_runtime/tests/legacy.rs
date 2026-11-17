@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -16,16 +17,19 @@ use futures_util::stream::{self, StreamExt as _};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
+use crate::client::sdk_runtime::session::SdkSession;
 use crate::client::sessions::error::SessionError;
+use crate::client::sessions::run::run_with_session;
 use crate::client::sessions::stream::StreamFailureKind;
 use crate::client::sessions::transport::TransportType;
 use crate::client::tools::calling::{CallToolOptions, call_tool};
 use crate::client::tools::listing::list_tools;
 use crate::client::tools::result::{ContentBlock, ToolCallResult};
+use crate::tools::pagination::McpSession;
 use crate::tools::schemas::McpTool;
 use crate::tools::tool_calls::CallRequest;
 
@@ -38,6 +42,10 @@ const BAD_EVENT: &str = "data: not-json\n\n";
 const RAISE: CallToolOptions = CallToolOptions {
     raise_on_error: true,
     allow_input_required: false,
+};
+const ALLOW_INPUT: CallToolOptions = CallToolOptions {
+    raise_on_error: true,
+    allow_input_required: true,
 };
 
 #[derive(Deserialize)]
@@ -63,12 +71,13 @@ struct Named {
 // The MCP SDK's SSE transport answers requests on the stream the client opened, so the server pushes frames through this
 #[derive(Default)]
 struct LegacyServer {
-    outbox: Mutex<Option<UnboundedSender<String>>>,
+    outbox: Mutex<Option<Sender<String>>>,
+    initialized: AtomicBool,
 }
 
 impl LegacyServer {
     fn stream(&self) -> Body {
-        let (sender, receiver) = unbounded_channel::<String>();
+        let (sender, receiver) = channel::<String>(64);
         let mut outbox = self.outbox.lock().unwrap_or_else(PoisonError::into_inner);
         let replaced = outbox.replace(sender);
         drop(replaced);
@@ -86,7 +95,7 @@ impl LegacyServer {
         let Some(sender) = outbox.as_ref() else {
             return;
         };
-        drop(sender.send(frame));
+        drop(sender.try_send(frame));
     }
 }
 
@@ -103,12 +112,15 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
         return StatusCode::BAD_REQUEST.into_response();
     };
     let Some(id) = request.id.as_deref() else {
+        if request.method == "notifications/initialized" {
+            server.initialized.store(true, Ordering::SeqCst);
+        }
         return StatusCode::ACCEPTED.into_response();
     };
     let id = id.get().to_owned();
     let answer = match request.method.as_str() {
         "initialize" => Some(initialize_reply(&id)),
-        "tools/list" => Some(list_reply(&id, request.params.as_deref())),
+        "tools/list" => Some(list_reply(&server, &id, request.params.as_deref())),
         "tools/call" => call_reply(&id, request.params.as_deref()).await,
         other => Some(failure_reply(&id, &format!("unknown method {other}"))),
     };
@@ -128,9 +140,15 @@ fn initialize_reply(id: &str) -> String {
 
 const FIRST_PAGE: &str = r#"{"tools":[{"name":"alpha","description":"the first tool","inputSchema":{"type":"object"}},{"name":"beta","description":"the second tool","inputSchema":{"type":"object"}}],"nextCursor":"page-2"}"#;
 const SECOND_PAGE: &str = r#"{"tools":[{"name":"gamma","description":"the third tool","inputSchema":{"type":"object"}}]}"#;
-fn list_reply(id: &str, params: Option<&RawValue>) -> String {
+const WRONG_RESULT: &str = r#"{"prompts":[]}"#;
+// The tools page stays closed until the client sends notifications/initialized, as the SDK's own servers expect
+fn list_reply(server: &LegacyServer, id: &str, params: Option<&RawValue>) -> String {
+    if !server.initialized.load(Ordering::SeqCst) {
+        return failure_reply(id, "notifications/initialized was not sent");
+    }
     let page = match cursor(params).as_deref() {
         Some("page-2") => SECOND_PAGE,
+        Some("wrong-result") => WRONG_RESULT,
         _ => FIRST_PAGE,
     };
     format!(r#"{{"jsonrpc":"2.0","id":{id},"result":{page}}}"#)
@@ -144,6 +162,7 @@ fn cursor(params: Option<&RawValue>) -> Option<String> {
 async fn call_reply(id: &str, params: Option<&RawValue>) -> Option<String> {
     match tool_name(params).as_deref() {
         Some("echo") => Some(echo_reply(id, params)),
+        Some("input-required") => Some(input_required_reply(id)),
         Some("stream-fail") => None,
         // the delay keeps this answer behind another session's stream failure on a shared runtime
         Some("rpc-error") => {
@@ -168,16 +187,23 @@ fn echo_reply(id: &str, params: Option<&RawValue>) -> String {
         || "echoed".to_owned(),
         |raw| format!("echoed {}", raw.get()),
     );
-    let reply = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": serde_json::from_str::<serde_json::Value>(id).unwrap_or(serde_json::Value::Null),
-        "result": {"content": [{"type": "text", "text": text}]},
-    });
-    reply.to_string()
+    let Ok(text) = serde_json::to_string(&text) else {
+        return failure_reply(id, "the echo text is not encodable");
+    };
+    format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":{text}}}]}}}}"#
+    )
 }
 
 fn failure_reply(id: &str, message: &str) -> String {
     format!(r#"{{"jsonrpc":"2.0","id":{id},"error":{{"code":-32602,"message":"{message}"}}}}"#)
+}
+
+// A 2026-07-28 result, which rmcp's own server refuses to send to the older version this client negotiates
+fn input_required_reply(id: &str) -> String {
+    format!(
+        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"resultType":"input_required","requestState":"opaque"}}}}"#
+    )
 }
 
 struct LegacySseServer {
@@ -315,4 +341,77 @@ async fn a_broken_legacy_sse_stream_fails_the_pending_call() {
         }
         other => panic!("expected a stream failure, got {other}"),
     }
+}
+
+#[tokio::test]
+async fn a_session_sends_initialized_before_it_lists_tools() {
+    let server = serve_legacy().await;
+    let mut client = support::client_for(
+        support::runtime(),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let tools = list_tools(&mut client, support::CALL_TIMEOUT, true)
+        .await
+        .unwrap();
+    assert_eq!(tool_names(tools), ["alpha", "beta", "gamma"]);
+}
+
+#[tokio::test]
+async fn a_result_of_the_wrong_kind_fails_the_listing() {
+    let server = serve_legacy().await;
+    let mut client = support::client_for(
+        support::runtime(),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let error = run_with_session(
+        &mut client,
+        async |session| <SdkSession as McpSession>::list_tools(session, Some("wrong-result")).await,
+        false,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+}
+
+#[tokio::test]
+async fn an_input_required_result_is_an_error_unless_the_caller_allows_it() {
+    let server = serve_legacy().await;
+    let mut refused = support::client_for(
+        support::runtime(),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let error = call_tool(
+        &mut refused,
+        &call("input-required"),
+        None::<&RecordingHost>,
+        RAISE,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+
+    let mut allowed = support::client_for(
+        support::runtime(),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let result = call_tool(
+        &mut allowed,
+        &call("input-required"),
+        None::<&RecordingHost>,
+        ALLOW_INPUT,
+    )
+    .await
+    .unwrap();
+    let ToolCallResult::InputRequired(required) = result else {
+        panic!("expected an input-required result");
+    };
+    assert_eq!(required.request_state.as_deref(), Some("opaque"));
 }

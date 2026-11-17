@@ -145,6 +145,20 @@ impl ServerHandler for TestServer {
                     peer_answer(&context, request).await,
                 )])
             }
+            "sample-invalid" => {
+                let request: ServerRequest = serde_json::from_value(json!({
+                    "method": "sampling/createMessage",
+                    "params": {
+                        "messages": [{"role": "user", "content": {"type": "text", "text": "hello"}}],
+                        "maxTokens": 16,
+                        "metadata": 42
+                    }
+                }))
+                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                CallToolResult::success(vec![ContentBlock::text(
+                    peer_answer(&context, request).await,
+                )])
+            }
             "elicit" => {
                 let request: ServerRequest = serde_json::from_value(json!({
                     "method": "elicitation/create",

@@ -213,6 +213,19 @@ async fn sampling_goes_to_the_configured_responder() {
 }
 
 #[tokio::test]
+async fn a_sampling_request_the_responder_cannot_decode_is_invalid_params() {
+    let handlers = ServerRequestHandlers {
+        sampling: Some(Arc::new(TestSampling)),
+        elicitation: None,
+    };
+    let answer = answered("sample-invalid", handlers).await.unwrap();
+    assert!(
+        answer.starts_with("error -32602: invalid sampling request"),
+        "{answer}"
+    );
+}
+
+#[tokio::test]
 async fn elicitation_without_a_responder_answers_the_sdk_default() {
     let answer = answered("elicit", ServerRequestHandlers::default())
         .await
