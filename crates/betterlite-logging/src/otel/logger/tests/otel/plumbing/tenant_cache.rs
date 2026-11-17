@@ -423,6 +423,21 @@ mod routing {
     }
 
     #[test]
+    fn routing_skips_a_blank_service_name() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        let auth = BTreeMap::from([("otel_service_name".to_owned(), "  ".to_owned())]);
+        let route = tenants
+            .route_for(&default, None, Some(&auth), &[])
+            .expect("route");
+        // whitespace names no tenant, so the call stays on the default backend
+        assert!(route.provider.is_none());
+        assert!(!route.detached);
+        assert_eq!(built.builds(), 0);
+    }
+
+    #[test]
     fn routing_keeps_one_provider_per_project() {
         let built = Built::default();
         let tenants = cache(phoenix_http(), Some("arize_phoenix"), &built);
