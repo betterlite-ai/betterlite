@@ -20,7 +20,6 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderValue, Method, Request, StatusCode};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
-use betterlite_config::sections::settings::JsonValue;
 use rstest::rstest;
 use serde_json::json;
 use tokio::sync::Notify;

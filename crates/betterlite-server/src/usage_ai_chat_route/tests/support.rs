@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
+use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -135,12 +136,12 @@ impl FakeModel {
 }
 
 impl UsageChatModel for FakeModel {
-    type Error = std::convert::Infallible;
+    type Error = Infallible;
 
     fn complete(
         &self,
         request: &ModelRequest<'_>,
-    ) -> impl Future<Output = Result<ModelReply, std::convert::Infallible>> + Send {
+    ) -> impl Future<Output = Result<ModelReply, Infallible>> + Send {
         self.record(request);
         let reply = self
             .state
@@ -162,13 +163,10 @@ impl UsageChatModel for FakeModel {
         &self,
         _request: &ModelRequest<'_>,
     ) -> impl Future<
-        Output = Result<
-            impl Stream<Item = Result<String, std::convert::Infallible>> + Send,
-            std::convert::Infallible,
-        >,
+        Output = Result<impl Stream<Item = Result<String, Infallible>> + Send, Infallible>,
     > + Send {
-        let items: Vec<Result<String, std::convert::Infallible>> = Vec::new();
-        std::future::ready(Ok(stream::iter(items)))
+        let items: Vec<Result<String, Infallible>> = Vec::new();
+        ready(Ok(stream::iter(items)))
     }
 }
 
@@ -200,26 +198,36 @@ impl FakeSource {
 }
 
 impl UsageDataSource for FakeSource {
-    async fn global(
+    fn global(
         &self,
         _start_date: &str,
         _end_date: &str,
         user_id: Option<&str>,
-    ) -> PageResult {
+    ) -> impl Future<Output = PageResult> + Send {
         self.state
             .user_ids
             .lock()
             .expect("the source call log")
             .push(user_id.map(str::to_owned));
-        Ok(empty_page())
+        ready(PageResult::Ok(empty_page()))
     }
 
-    async fn teams(&self, _start_date: &str, _end_date: &str, _ids: Ids<'_>) -> PageResult {
-        Ok(empty_page())
+    fn teams(
+        &self,
+        _start_date: &str,
+        _end_date: &str,
+        _ids: Ids<'_>,
+    ) -> impl Future<Output = PageResult> + Send {
+        ready(PageResult::Ok(empty_page()))
     }
 
-    async fn tags(&self, _start_date: &str, _end_date: &str, _tags: Ids<'_>) -> PageResult {
-        Ok(empty_page())
+    fn tags(
+        &self,
+        _start_date: &str,
+        _end_date: &str,
+        _tags: Ids<'_>,
+    ) -> impl Future<Output = PageResult> + Send {
+        ready(PageResult::Ok(empty_page()))
     }
 }
 

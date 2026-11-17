@@ -86,11 +86,9 @@ async fn stream_adds_no_ping_without_an_interval() {
         next_frame(&mut frames).await.as_deref(),
         Some(THINKING_FRAME)
     );
-    assert!(
-        timeout(Duration::from_secs(60), next_frame(&mut frames))
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_secs(60), next_frame(&mut frames))
+        .await
+        .unwrap_err();
     gate.notify_one();
     assert_eq!(next_frame(&mut frames).await.as_deref(), Some(ANSWER_FRAME));
     assert_eq!(next_frame(&mut frames).await.as_deref(), Some(DONE_FRAME));

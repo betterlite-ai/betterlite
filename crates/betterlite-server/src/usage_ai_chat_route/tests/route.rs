@@ -50,7 +50,9 @@ async fn route_rejects_a_missing_key() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         parsed(&body_text(response).await),
-        json!({"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}})
+        parsed(
+            r#"{"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}}"#
+        )
     );
     assert!(model.calls().is_empty());
 }

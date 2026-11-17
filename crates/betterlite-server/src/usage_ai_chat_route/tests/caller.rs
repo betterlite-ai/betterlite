@@ -84,7 +84,9 @@ async fn caller_returns_the_guard_error_before_the_stream() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
         parsed(&body_text(response).await),
-        json!({"detail": {"error": "Service-account keys cannot query user analytics. Use a user-bound key, or call as a proxy admin."}})
+        parsed(
+            r#"{"detail": {"error": "Service-account keys cannot query user analytics. Use a user-bound key, or call as a proxy admin."}}"#
+        )
     );
     assert!(model.calls().is_empty());
 }

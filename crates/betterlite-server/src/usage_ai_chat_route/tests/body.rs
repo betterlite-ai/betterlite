@@ -1,97 +1,97 @@
 #[rstest]
 #[case::missing_messages(
     "{}",
-    json!({"detail": [{"type": "missing", "loc": ["body", "messages"], "msg": "Field required"}]})
+    r#"{"detail": [{"type": "missing", "loc": ["body", "messages"], "msg": "Field required"}]}"#
 )]
 #[case::messages_text(
     r#"{"messages": "hi"}"#,
-    json!({"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]})
+    r#"{"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]}"#
 )]
 #[case::messages_null(
     r#"{"messages": null}"#,
-    json!({"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]})
+    r#"{"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]}"#
 )]
 #[case::item_text(
     r#"{"messages": ["hi"]}"#,
-    json!({"detail": [{"type": "model_attributes_type", "loc": ["body", "messages", 0], "msg": "Input should be a valid dictionary or object to extract fields from"}]})
+    r#"{"detail": [{"type": "model_attributes_type", "loc": ["body", "messages", 0], "msg": "Input should be a valid dictionary or object to extract fields from"}]}"#
 )]
 #[case::missing_role(
     r#"{"messages": [{"content": "hi"}]}"#,
-    json!({"detail": [{"type": "missing", "loc": ["body", "messages", 0, "role"], "msg": "Field required"}]})
+    r#"{"detail": [{"type": "missing", "loc": ["body", "messages", 0, "role"], "msg": "Field required"}]}"#
 )]
 #[case::bad_role(
     r#"{"messages": [{"role": "system", "content": "hi"}]}"#,
-    json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]})
+    r#"{"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]}"#
 )]
 #[case::role_int(
     r#"{"messages": [{"role": 5, "content": "hi"}]}"#,
-    json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]})
+    r#"{"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]}"#
 )]
 #[case::role_null(
     r#"{"messages": [{"role": null, "content": "hi"}]}"#,
-    json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]})
+    r#"{"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"}]}"#
 )]
 #[case::messages_object(
     r#"{"messages": {}}"#,
-    json!({"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]})
+    r#"{"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list"}]}"#
 )]
 #[case::missing_content(
     r#"{"messages": [{"role": "user"}]}"#,
-    json!({"detail": [{"type": "missing", "loc": ["body", "messages", 0, "content"], "msg": "Field required"}]})
+    r#"{"detail": [{"type": "missing", "loc": ["body", "messages", 0, "content"], "msg": "Field required"}]}"#
 )]
 #[case::content_int(
     r#"{"messages": [{"role": "user", "content": 5}]}"#,
-    json!({"detail": [{"type": "string_type", "loc": ["body", "messages", 0, "content"], "msg": "Input should be a valid string"}]})
+    r#"{"detail": [{"type": "string_type", "loc": ["body", "messages", 0, "content"], "msg": "Input should be a valid string"}]}"#
 )]
 #[case::content_null(
     r#"{"messages": [{"role": "user", "content": null}]}"#,
-    json!({"detail": [{"type": "string_type", "loc": ["body", "messages", 0, "content"], "msg": "Input should be a valid string"}]})
+    r#"{"detail": [{"type": "string_type", "loc": ["body", "messages", 0, "content"], "msg": "Input should be a valid string"}]}"#
 )]
 #[case::model_int(
     r#"{"messages": [], "model": 5}"#,
-    json!({"detail": [{"type": "string_type", "loc": ["body", "model"], "msg": "Input should be a valid string"}]})
+    r#"{"detail": [{"type": "string_type", "loc": ["body", "model"], "msg": "Input should be a valid string"}]}"#
 )]
 #[case::body_list(
     "[1]",
-    json!({"detail": [{"type": "model_attributes_type", "loc": ["body"], "msg": "Input should be a valid dictionary or object to extract fields from"}]})
+    r#"{"detail": [{"type": "model_attributes_type", "loc": ["body"], "msg": "Input should be a valid dictionary or object to extract fields from"}]}"#
 )]
 #[case::body_null(
     "null",
-    json!({"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]})
+    r#"{"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]}"#
 )]
 #[case::empty(
     "",
-    json!({"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]})
+    r#"{"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]}"#
 )]
 #[case::two_messages(
     r#"{"messages": [{"role": "system", "content": "hi"}, {"role": "user", "content": 5}]}"#,
-    json!({"detail": [
+    r#"{"detail": [
         {"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"},
         {"type": "string_type", "loc": ["body", "messages", 1, "content"], "msg": "Input should be a valid string"}
-    ]})
+    ]}"#
 )]
 #[case::missing_role_and_content(
     r#"{"messages": [{}]}"#,
-    json!({"detail": [
+    r#"{"detail": [
         {"type": "missing", "loc": ["body", "messages", 0, "role"], "msg": "Field required"},
         {"type": "missing", "loc": ["body", "messages", 0, "content"], "msg": "Field required"}
-    ]})
+    ]}"#
 )]
 #[case::bad_role_and_model(
     r#"{"messages": [{"role": "nope", "content": "hi"}], "model": 5}"#,
-    json!({"detail": [
+    r#"{"detail": [
         {"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'"},
         {"type": "string_type", "loc": ["body", "model"], "msg": "Input should be a valid string"}
-    ]})
+    ]}"#
 )]
 #[tokio::test]
-async fn body_answers_the_fastapi_detail_list(#[case] raw: &str, #[case] expected: JsonValue) {
+async fn body_answers_the_fastapi_detail_list(#[case] raw: &str, #[case] expected: &str) {
     let model = FakeModel::new().replying(answer_reply("Hi"));
     let factory = FakeFactory::new(model.clone(), FakeSource::new());
     let request = with_principal(post(raw), master_principal());
     let response = send(state(factory, None, FakeCallerId::from_subject()), request).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(parsed(&body_text(response).await), expected);
+    assert_eq!(parsed(&body_text(response).await), parsed(expected));
     assert!(model.calls().is_empty());
 }
 
@@ -137,7 +137,9 @@ async fn body_reports_invalid_json_with_fastapis_shape() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         parsed(&body_text(response).await),
-        json!({"detail": [{"type": "json_invalid", "loc": ["body"], "msg": "JSON decode error"}]})
+        parsed(
+            r#"{"detail": [{"type": "json_invalid", "loc": ["body"], "msg": "JSON decode error"}]}"#
+        )
     );
     assert!(model.calls().is_empty());
 }
@@ -197,7 +199,7 @@ async fn body_reports_invalid_utf8_the_way_starlette_does() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         parsed(&body_text(response).await),
-        json!({"detail": "There was an error parsing the body"})
+        parsed(r#"{"detail": "There was an error parsing the body"}"#)
     );
     assert!(model.calls().is_empty());
 }
