@@ -282,6 +282,15 @@ async fn the_client_capabilities_name_the_configured_callbacks_only() {
 }
 
 #[tokio::test]
+async fn the_default_handshake_sends_the_sdk_client_info() {
+    let answer = answered("client-info", ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert!(answer.contains(r#""name":"mcp""#), "{answer}");
+    assert!(answer.contains(r#""version":"0.1.0""#), "{answer}");
+}
+
+#[tokio::test]
 async fn a_request_after_initialize_carries_the_negotiated_protocol_version() {
     let version = answered("protocol-version", ServerRequestHandlers::default())
         .await

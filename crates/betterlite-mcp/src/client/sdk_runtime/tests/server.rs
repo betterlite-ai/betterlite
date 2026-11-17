@@ -204,6 +204,13 @@ impl ServerHandler for TestServer {
                 );
                 CallToolResult::success(vec![ContentBlock::text(text)])
             }
+            "client-info" => {
+                let text = context.peer.peer_info().map_or_else(
+                    || "no peer info".to_owned(),
+                    |info| serde_json::to_string(&info.client_info).unwrap_or_default(),
+                );
+                CallToolResult::success(vec![ContentBlock::text(text)])
+            }
             "log" => {
                 let notification: ServerNotification = serde_json::from_value(json!({
                     "method": "notifications/message",
