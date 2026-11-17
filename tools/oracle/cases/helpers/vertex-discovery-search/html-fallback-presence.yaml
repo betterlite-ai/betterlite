@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-discovery-search-html-fallback-presence
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: find policy
+        api_base: https://host/v1
+        litellm_params: {}
+        response:
+          status: 200
+          body: '{"results":[{"id":"doc-2","document":{"derivedStructData":{"title":"Fallback Title","snippets":[{"htmlSnippet":"<b>one</b>"},{"snippet":"","htmlSnippet":"<b>two</b>"},{"snippet":"plain","htmlSnippet":"<b>three</b>"}]}}}]}'
+env: {}
+compare: {ignore: []}
