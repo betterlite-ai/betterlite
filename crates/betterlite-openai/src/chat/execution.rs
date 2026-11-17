@@ -1,10 +1,11 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_redact::secret::Redactor;
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
@@ -84,6 +85,8 @@ pub struct ChatExecutor {
     pub mock_embedding: MockEmbeddingBuilder,
     // built once at startup and shared by every request that renders a provider error
     pub redactor: Redactor,
+    // the bundled model cost map, parsed once at startup; the server state reads it here instead of parsing it again
+    pub bundled_catalog: Arc<ModelCatalog>,
 }
 
 impl ChatExecutor {

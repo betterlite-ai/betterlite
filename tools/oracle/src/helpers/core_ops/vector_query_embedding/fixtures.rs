@@ -82,6 +82,7 @@ pub(super) fn direct_executor() -> Result<DirectEmbeddingExecutor, Box<HelperErr
             mock_embedding,
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
                 .map_err(|error| helper_error(error.to_string()))?,
+            bundled_catalog: Arc::default(),
         },
         deployments: Vec::new(),
         defaults: OpenAiDefaults::default(),

@@ -58,11 +58,13 @@ pub(super) fn normalized_config_source(raw: &str, tls_mode: TlsMode) -> String {
         })
         .collect::<Vec<_>>();
     parsed.query_pairs_mut().clear().extend_pairs(parameters);
-    if had_query {
-        parsed.to_string()
-    } else {
-        raw.to_owned()
+    if !had_query {
+        return raw.to_owned();
     }
+    // form encoding writes a space as "+", and tokio-postgres reads that back as a plus, so options=-c a -c b would break
+    let query = parsed.query().unwrap_or_default().replace('+', "%20");
+    parsed.set_query(Some(&query));
+    parsed.to_string()
 }
 
 pub(super) fn tls_connector(

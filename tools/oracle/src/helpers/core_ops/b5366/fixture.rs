@@ -73,7 +73,7 @@ impl Session {
         ));
         let catalog = BundledCatalog::default().get();
         let selector = Arc::new(selector(&fetcher, client, Arc::clone(&service), &catalog));
-        let counter = Counter::new(selector, fetcher, service, Arc::clone(&catalog), settings);
+        let counter = Counter::new(selector, service, Arc::clone(&catalog), settings);
         Ok(Self { counter, catalog })
     }
 }

@@ -1,0 +1,15 @@
+kind: helper
+name: empty_patch_rejected
+call:
+  key_fields:
+    calls:
+      - {function: broadcast, body: {}}
+      - {function: broadcast, body: {metadata: null}}
+      - {function: broadcast, body: {metadata: null, tags: null}}
+      - {function: broadcast, body: {spend: null}}
+      - {function: broadcast, body: {team_id: null}}
+      - {function: broadcast, body: {models: null}}
+      - {function: update, body: {}}
+      - {function: update, body: {key: "k", metadata: null}}
+env: {}
+compare: {ignore: []}
