@@ -76,15 +76,11 @@ impl RoutingGroupIndex {
         self.groups.get(name)
     }
 
-    // _get_model_from_alias: a plain target rewrites the name, an absent or empty one does not.
-    fn resolved_name<'name>(&'name self, name: &'name str) -> &'name str {
-        self.aliases.get(name).map_or(name, String::as_str)
-    }
-
-    // _is_priority_routing_group: the alias target names the group, not the alias.
+    // _is_priority_routing_group: _get_model_from_alias names the group, the alias does not.
     #[must_use]
     pub fn is_priority_group(&self, name: &str) -> bool {
-        self.callable_group(self.resolved_name(name))
+        let resolved = self.aliases.get(name).map_or(name, String::as_str);
+        self.callable_group(resolved)
             .is_some_and(|group| matches!(group.routing_strategy, GroupStrategy::Priority))
     }
 
@@ -123,7 +119,8 @@ impl RoutingGroupIndex {
     // routing_group_has_alternatives: the alias target names the group, and each member's deployment count.
     #[must_use]
     pub fn has_alternatives(&self, name: &str, deployments_of: &dyn Fn(&str) -> usize) -> bool {
-        let Some(group) = self.callable_group(self.resolved_name(name)) else {
+        let resolved = self.aliases.get(name).map_or(name, String::as_str);
+        let Some(group) = self.callable_group(resolved) else {
             return false;
         };
         group
