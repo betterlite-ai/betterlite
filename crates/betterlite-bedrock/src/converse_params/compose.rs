@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
+use betterlite_openai::base_helpers::thinking_request;
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use indexmap::IndexMap;
 
@@ -14,13 +15,14 @@ use crate::converse_options::supported::auto_tool_choice;
 use crate::converse_options::web_search::map_web_search_options;
 use crate::converse_params::error::ConverseParamsError;
 use crate::converse_params::inference::{apply_sampling, apply_stop, max_tokens_value};
-use crate::converse_params::wire::{self, transcode};
+use crate::converse_params::wire::transcode;
 use crate::converse_params::{budget, mapping, merge, reasoning};
 use crate::converse_tools::json_mode::{append_tools, apply_tool_call_transformation};
 use crate::converse_tools::response_format::{ResponseFormatRequest, translate_response_format};
 use crate::converse_tools::tool_choice::map_tool_choice_values;
 use crate::model_routes::{ParamMap, ParamValue};
 
+const CONTEXT_MANAGEMENT_FIELD: &str = "context_management";
 const GPT_OSS_MARKER: &str = "gpt-oss";
 const MAX_TOKENS_FIELD: &str = "maxTokens";
 const PARALLEL_TOOL_USE_FIELD: &str = "_parallel_tool_use_config";
@@ -50,11 +52,10 @@ where
     Lookup: ModelInfoLookup,
 {
     for (param, value) in request.non_default_params {
-        apply_mapped_param(request, optional_params, param, value, names)?;
-        apply_reasoning_param(request, param, value, optional_params, environment).await?;
+        apply_param(request, optional_params, param, value, names, environment).await?;
     }
     if !request.model.contains(GPT_OSS_MARKER) && !is_nova_2_model(request.model) {
-        budget::update_optional_params_with_thinking_tokens(
+        budget::update_thinking_budget(
             request.non_default_params,
             optional_params,
             request.budgets.bedrock_min,
@@ -63,14 +64,20 @@ where
     downgrade_forced_tool_choice(request.model, optional_params)
 }
 
-// Every parameter the loop maps without an await, in the arm LiteLLM gives it.
-fn apply_mapped_param<Lookup>(
+// One param's arm: the literal names check the value shape, the rest resolve capabilities.
+async fn apply_param<Source, Transport, Lookup>(
     request: &ConverseParamsRequest<'_, Lookup>,
     optional_params: &mut ParamMap,
     param: &str,
     value: &ParamValue,
     names: &mut ToolNameMap,
-) -> Result<(), ConverseParamsError> {
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<(), ConverseParamsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
     match param {
         "max_tokens" | "max_completion_tokens" => {
             let max_tokens = max_tokens_value(request.model, value);
@@ -90,7 +97,11 @@ fn apply_mapped_param<Lookup>(
                 ParamValue::Mapping(config),
             );
         }
-        "context_management" => mapping::map_context_management_param(value, optional_params)?,
+        "context_management" => {
+            if let Some(mapped) = mapping::context_management_value(value)? {
+                optional_params.insert(CONTEXT_MANAGEMENT_FIELD.to_owned(), mapped);
+            }
+        }
         "requestMetadata" => mapping::map_request_metadata_param(value, optional_params)?,
         "service_tier" => {
             if let ParamValue::Text(tier) = value {
@@ -100,27 +111,9 @@ fn apply_mapped_param<Lookup>(
         "web_search_options" if matches!(value, ParamValue::Mapping(_)) => {
             apply_web_search(request.model, optional_params)?;
         }
-        _ => {}
-    }
-    Ok(())
-}
-
-// The arms whose prerequisites resolve capabilities, in the same elif chain's order.
-async fn apply_reasoning_param<Source, Transport, Lookup>(
-    request: &ConverseParamsRequest<'_, Lookup>,
-    param: &str,
-    value: &ParamValue,
-    optional_params: &mut ParamMap,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), ConverseParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    match param {
         "response_format" if matches!(value, ParamValue::Mapping(_)) => {
-            let thinking_enabled = wire::thinking_request(request.non_default_params)?.thinking;
+            let thinking_enabled =
+                thinking_request(&transcode(request.non_default_params)?).thinking;
             apply_response_format(
                 request,
                 optional_params,
@@ -128,17 +121,20 @@ where
                 thinking_enabled,
                 environment,
             )
-            .await
+            .await?;
         }
-        "thinking" => reasoning::apply_thinking(request, value, optional_params, environment).await,
+        "thinking" => {
+            reasoning::apply_thinking(request, value, optional_params, environment).await?;
+        }
         "reasoning_effort" => {
-            reasoning::apply_reasoning_effort(request, value, optional_params, environment).await
+            reasoning::apply_reasoning_effort(request, value, optional_params, environment).await?;
         }
         "output_config" if matches!(value, ParamValue::Mapping(_)) => {
-            reasoning::apply_output_config(request, value, optional_params).await
+            reasoning::apply_output_config(request, value, optional_params).await?;
         }
-        _ => Ok(()),
+        _ => {}
     }
+    Ok(())
 }
 
 async fn apply_response_format<Source, Transport, Lookup>(
@@ -230,7 +226,7 @@ fn downgrade_forced_tool_choice(
     model: &str,
     optional_params: &mut ParamMap,
 ) -> Result<(), ConverseParamsError> {
-    if !wire::thinking_request(optional_params)?.thinking {
+    if !thinking_request(&transcode(optional_params)?).thinking {
         return Ok(());
     }
     let forced = matches!(

@@ -70,58 +70,32 @@ where
         )
         .await
     {
-        return apply_adaptive_fallback(request, optional_params, environment).await;
+        // A model without adaptive thinking still gets the medium legacy budget, capped by the request's limit.
+        let reasoning = ReasoningRequest {
+            reasoning_effort: Some(MEDIUM_EFFORT),
+            model: request.model,
+            custom_llm_provider: BEDROCK_PROVIDER,
+            llm_provider: CONVERSE_PROVIDER,
+            budgets: request.budgets,
+        };
+        let limit = cap_limit(request.non_default_params)?;
+        let legacy = map_reasoning_effort(&reasoning, environment, request.catalogs).await?;
+        let capped = legacy
+            .as_ref()
+            .and_then(as_object)
+            .and_then(|fields| cap_thinking_to_max_tokens(fields, limit));
+        let Some(thinking) = capped else {
+            tracing::warn!(
+                "{}",
+                DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", request.model, 1)
+            );
+            return Ok(());
+        };
+        optional_params.insert(THINKING_FIELD.to_owned(), transcode(&thinking)?);
+        return Ok(());
     }
     optional_params.insert(THINKING_FIELD.to_owned(), value.clone());
-    translate_for_adaptive_model(request, optional_params, environment).await
-}
-
-// A model without adaptive thinking still gets the medium legacy budget, capped by the request's limit.
-async fn apply_adaptive_fallback<Source, Transport, Lookup>(
-    request: &ConverseParamsRequest<'_, Lookup>,
-    optional_params: &mut ParamMap,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), ConverseParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let reasoning = ReasoningRequest {
-        reasoning_effort: Some(MEDIUM_EFFORT),
-        model: request.model,
-        custom_llm_provider: BEDROCK_PROVIDER,
-        llm_provider: CONVERSE_PROVIDER,
-        budgets: request.budgets,
-    };
-    let limit = cap_limit(request.non_default_params)?;
-    let legacy = map_reasoning_effort(&reasoning, environment, request.catalogs).await?;
-    let capped = legacy
-        .as_ref()
-        .and_then(as_object)
-        .and_then(|fields| cap_thinking_to_max_tokens(fields, limit));
-    let Some(thinking) = capped else {
-        tracing::warn!(
-            "{}",
-            DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", request.model, 1)
-        );
-        return Ok(());
-    };
-    optional_params.insert(THINKING_FIELD.to_owned(), transcode(&thinking)?);
-    Ok(())
-}
-
-// B688 turns a legacy budget into an effort only on models that dropped the legacy field.
-async fn translate_for_adaptive_model<Source, Transport, Lookup>(
-    request: &ConverseParamsRequest<'_, Lookup>,
-    optional_params: &mut ParamMap,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), ConverseParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
+    // B688 turns a legacy budget into an effort only on models that dropped the legacy field.
     let mut params = OptionalParams {
         reasoning_effort: optional_param_json(optional_params, REASONING_EFFORT_FIELD)?,
         thinking: optional_param_json(optional_params, THINKING_FIELD)?,
@@ -220,17 +194,28 @@ where
 
 // Python's `max_completion_tokens or max_tokens`: a falsy value falls through, and null is absent.
 fn cap_limit(non_default_params: &ParamMap) -> Result<Option<i64>, ConverseParamsError> {
-    let chosen = match non_default_params.get(MAX_COMPLETION_TOKENS_FIELD) {
-        Some(value) if wire::truthy(value) => Some(value),
-        _ => non_default_params.get(MAX_TOKENS_FIELD),
+    let completion = non_default_params.get(MAX_COMPLETION_TOKENS_FIELD);
+    let chosen = if completion.is_some_and(wire::carries_value) {
+        completion
+    } else {
+        non_default_params.get(MAX_TOKENS_FIELD)
     };
     match chosen {
         None | Some(ParamValue::Null) => Ok(None),
-        Some(value) => wire::python_int(value).map(Some).ok_or_else(|| {
-            ConverseParamsError::Params(ParamsError::NotNumber {
+        Some(ParamValue::Bool(flag)) => Ok(Some(i64::from(*flag))),
+        Some(ParamValue::Number(number)) => {
+            number
+                .as_i64()
+                .map(Some)
+                .ok_or(ConverseParamsError::Params(ParamsError::NotNumber {
+                    field: MAX_TOKENS_FIELD,
+                }))
+        }
+        Some(ParamValue::Text(_) | ParamValue::List(_) | ParamValue::Mapping(_)) => {
+            Err(ConverseParamsError::Params(ParamsError::NotNumber {
                 field: MAX_TOKENS_FIELD,
-            })
-        }),
+            }))
+        }
     }
 }
 
@@ -241,7 +226,7 @@ fn is_explicit_adaptive(value: &ParamValue) -> bool {
     ))
 }
 
-fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
+const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
