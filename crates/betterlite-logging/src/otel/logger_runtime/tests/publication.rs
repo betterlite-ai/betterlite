@@ -7,7 +7,7 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
 use crate::callback_logger::CallbackLogger;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
-use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_otel_v2_provider};
+use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_v2_provider};
 use crate::otel::logger_runtime::select::{
     excluded_db_systems, select_global_otel_v2_logger, v2_configs,
 };
@@ -187,7 +187,7 @@ fn attach_before_publish() {
     .expect("built");
     let in_memory = vec![Arc::clone(&logger.callback)];
     let published =
-        publish_global_otel_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+        publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
     assert_eq!(*lock(&attached), Some(true));
     let seen = lock(&received).clone().expect("the setter saw a provider");
     assert_eq!(fixture.constructor.sink_index(&seen), Some(0));
@@ -206,7 +206,7 @@ fn remembered_provider_beats_global() {
         &registered_sink,
     );
     let published =
-        publish_global_otel_v2_provider(&fixture.runtime, &[], &|_provider: &SdkTracerProvider| {})
+        publish_global_v2_provider(&fixture.runtime, &[], &|_provider: &SdkTracerProvider| {})
             .expect("published");
     let provider = fan_out_provider(&fixture.runtime);
     assert!(provider.registry().fan_out.is_some());

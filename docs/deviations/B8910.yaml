@@ -7,7 +7,7 @@ deviations:
     why: >-
       betterlite keeps no process globals. The runtime holds the same single slot for the registered
       callback, the remembered published provider and the attach-once fan-out registry, and
-      publish_global_otel_v2_provider takes the provider setter as a parameter, so no test replaces the
+      publish_global_v2_provider takes the provider setter as a parameter, so no test replaces the
       process-wide OTel provider. fan_out_provider's last fallback is the injected SDK provider, which
       the proxy builds from get_tracer_provider(). The workspace denies clippy::multiple_inherent_impl,
       so LoggerRuntime's one inherent impl holds new() and every operation is a free function in its

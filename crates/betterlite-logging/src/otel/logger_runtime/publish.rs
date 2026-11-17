@@ -14,7 +14,7 @@ use super::types::{FanOutProvider, V2Logger};
 use super::{LoggerRuntime, published};
 
 // litellm.integrations.otel.logger.publish_global_otel_v2_provider: fan-out first, then the setter
-pub fn publish_global_otel_v2_provider(
+pub fn publish_global_v2_provider(
     runtime: &LoggerRuntime,
     in_memory: &[Arc<dyn CallbackLogger>],
     set_global_provider: &dyn Fn(&SdkTracerProvider),

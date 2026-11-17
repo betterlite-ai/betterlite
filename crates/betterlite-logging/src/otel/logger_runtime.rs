@@ -23,8 +23,7 @@ pub mod publish;
 pub mod select;
 pub mod types;
 
-// litellm.integrations.otel.logger's module state as one injected value: the canonical callback, the V2
-// catalog handles, the published provider and the fan-out registry the proxy shares with its auth adapter
+// litellm.integrations.otel.logger's module state, shared with the auth adapter
 pub struct LoggerRuntime {
     registered: Arc<V2Registry>,
     loggers: Mutex<Vec<Arc<V2Logger>>>,

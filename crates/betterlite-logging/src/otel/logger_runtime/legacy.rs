@@ -18,7 +18,7 @@ use crate::otel::vocabulary::span_names::PROXY_REQUEST_SPAN_NAME;
 
 // litellm.integrations.opentelemetry.OpenTelemetry.create_litellm_proxy_request_started_span
 #[must_use]
-pub fn create_litellm_proxy_request_started_span(
+pub fn start_proxy_request_span(
     tracer: &SdkTracer,
     start_time: SpanTime,
     now_ns: i64,
@@ -34,7 +34,7 @@ pub fn create_litellm_proxy_request_started_span(
 }
 
 // litellm.integrations.opentelemetry.OpenTelemetry.set_proxy_request_route_attributes
-pub fn set_proxy_request_route_attributes(
+pub fn set_proxy_request_route(
     span: Option<&LiveSpan>,
     url_path: Option<&str>,
     http_route: Option<&str>,
@@ -51,7 +51,7 @@ pub fn set_proxy_request_route_attributes(
 }
 
 // litellm.integrations.opentelemetry.OpenTelemetry.set_response_status_code_attribute
-pub fn set_response_status_code_attribute(span: Option<&LiveSpan>, status_code: Option<i64>) {
+pub fn set_response_status_code(span: Option<&LiveSpan>, status_code: Option<i64>) {
     let Some(live) = span else {
         return;
     };

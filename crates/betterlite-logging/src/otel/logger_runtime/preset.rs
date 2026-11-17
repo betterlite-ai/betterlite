@@ -101,19 +101,32 @@ fn preset_config(
 // litellm.litellm_core_utils.litellm_logging._is_gated
 #[must_use]
 pub fn is_gated(spec: &ExporterSpec) -> bool {
-    spec.requires_headers && spec.headers.as_deref().is_none_or(str::is_empty)
+    if !spec.requires_headers {
+        return false;
+    }
+    spec.headers.as_deref().is_none_or(str::is_empty)
 }
 
 // litellm.litellm_core_utils.litellm_logging._exports_nowhere: an empty exporter list exports nowhere
 #[must_use]
 pub fn exports_nowhere(config: &Settings) -> bool {
-    config.exporters.iter().all(is_gated)
+    for spec in &config.exporters {
+        if !is_gated(spec) {
+            return false;
+        }
+    }
+    true
 }
 
 // litellm.litellm_core_utils.litellm_logging._is_credential_gated
 #[must_use]
 pub fn is_credential_gated(config: &Settings) -> bool {
-    config.exporters.iter().any(is_gated)
+    for spec in &config.exporters {
+        if is_gated(spec) {
+            return true;
+        }
+    }
+    false
 }
 
 // litellm.litellm_core_utils.litellm_logging._has_operator_exporter

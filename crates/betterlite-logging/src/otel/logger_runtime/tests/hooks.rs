@@ -56,7 +56,13 @@ fn seed_identity_delegates_to_the_hook() {
     let fixture = fixture_with_hooks(Some(hooks));
     let auth = Auth {
         team_id: Some("team-1".to_owned()),
-        ..Auth::default()
+        team_alias: None,
+        team_metadata: None,
+        key_hash: None,
+        end_user_id: None,
+        user_id: None,
+        org_id: None,
+        key_alias: None,
     };
     let seed = IdentitySeed {
         auth: &auth,
@@ -86,7 +92,9 @@ fn phase_error_propagates() {
     let error = SpanError {
         error_type: Some("Boom".to_owned()),
         message: Some("kaboom".to_owned()),
-        ..SpanError::default()
+        code: None,
+        stack_trace: None,
+        llm_provider: None,
     };
     let result = phase_span(&fixture.runtime, "phase", &trace, |span| {
         let phase = span.expect("the hook opened a span");

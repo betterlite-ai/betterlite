@@ -74,6 +74,8 @@ pub fn seed_request_identity(
     seed: &IdentitySeed<'_>,
     trace: &mut RequestTraceContext,
 ) -> Option<Context> {
-    let hooks = runtime.hooks.as_ref()?;
-    hooks.seed_request_identity(seed, trace)
+    runtime
+        .hooks
+        .as_ref()
+        .and_then(|hooks| hooks.seed_request_identity(seed, trace))
 }
