@@ -459,6 +459,24 @@ fn output_text_selection() {
     );
     assert_eq!(
         extracted(
+            r#"[{"type":"function_call","arguments":"{}","call_id":"call_1","name":"search"},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#
+        ),
+        "later"
+    );
+    assert_eq!(
+        extracted(
+            r#"[{"type":"message","id":"msg_empty","status":"completed","role":"assistant","content":[]},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#
+        ),
+        "later"
+    );
+    assert_eq!(
+        extracted(
+            r#"[{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}]"#
+        ),
+        "later"
+    );
+    assert_eq!(
+        extracted(
             r#"[{"type":"message","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}]"#
         ),
         "first"
@@ -506,6 +524,15 @@ fn output_text_typed() {
     assert_eq!(
         response_output_text(&other_part).expect("a non output_text part is skipped"),
         ""
+    );
+    let skip_then_text = vec![
+        typed_message(Some("text"), Some("not output text")),
+        typed_message(Some("output_text"), Some("later")),
+    ];
+    assert_eq!(
+        response_output_text(&skip_then_text)
+            .expect("the next message answers after a skipped one"),
+        "later"
     );
     let function_call = vec![ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
         arguments: None,
