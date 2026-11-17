@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use axum::body::to_bytes;
@@ -196,10 +197,8 @@ fn the_null_drop_keeps_a_null_inside_a_list() {
     assert_eq!(cleaned, expected);
 }
 
-// the provider's body for one stream request, read before it answers with an empty event stream
-async fn provider_body(usage: StreamUsage, request: &str) -> Json {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let address = listener.local_addr().expect("address");
+// the chat executor and its one deployment, pointed at the fake provider at this address
+fn chat_setup(address: SocketAddr) -> ChatExecutor {
     let source = format!(
         "model_list:\n  - {{model_name: chat-model, litellm_params: {{model: openai/gpt-4o, api_base: 'http://{address}/v1', api_key: k}}}}\n"
     );
@@ -209,8 +208,14 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
     }
     .load(&source)
     .expect("config");
-    let executor =
-        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
+    chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor")
+}
+
+// the provider's body for one stream request, read before it answers with an empty event stream
+async fn provider_body(usage: StreamUsage, request: &str) -> Json {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let executor = chat_setup(address);
     let deployment = executor.deployments[0].clone();
     let parsed = ChatRequest::parse(request.as_bytes()).expect("chat request");
     let mut tasks = JoinSet::new();
@@ -286,17 +291,7 @@ async fn chat_events(listener: TcpListener) {
 async fn chat_stream_answer_decodes_the_chat_events() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
-    let source = format!(
-        "model_list:\n  - {{model_name: chat-model, litellm_params: {{model: openai/gpt-4o, api_base: 'http://{address}/v1', api_key: k}}}}\n"
-    );
-    let environment = BTreeMap::new();
-    let config = ConfigLoader {
-        lookup: environment.clone(),
-    }
-    .load(&source)
-    .expect("config");
-    let executor =
-        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
+    let executor = chat_setup(address);
     let deployment = executor.deployments[0].clone();
     let mut tasks = JoinSet::new();
     tasks.spawn(chat_events(listener));
@@ -319,24 +314,9 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         .expect("the stream ends within five seconds");
     let chunks: Vec<Json> = items.into_iter().collect::<Result<_, _>>().expect("chunks");
     assert_eq!(chunks.len(), 2, "{chunks:?}");
-    let first = serde_json::to_value(&chunks[0]).expect("value");
-    assert_eq!(
-        first.pointer("/model").and_then(serde_json::Value::as_str),
-        Some("client")
-    );
-    assert_eq!(
-        first
-            .pointer("/choices/0/delta/content")
-            .and_then(serde_json::Value::as_str),
-        Some("hello")
-    );
-    let second = serde_json::to_value(&chunks[1]).expect("value");
-    assert_eq!(
-        second
-            .pointer("/choices/0/delta/content")
-            .and_then(serde_json::Value::as_str),
-        Some("world")
-    );
+    assert_eq!(text_field(&chunks[0], "model"), Some("client"));
+    assert_eq!(chunk_content(&chunks[0]), Some("hello"));
+    assert_eq!(chunk_content(&chunks[1]), Some("world"));
     tasks
         .join_next()
         .await
@@ -348,10 +328,30 @@ fn text_field<'json>(body: &'json Json, name: &str) -> Option<&'json str> {
     let Json::Object(fields) = body else {
         return None;
     };
-    match fields.get(name) {
-        Some(Json::Text(text)) => Some(text),
-        _ => None,
-    }
+    let Some(Json::Text(text)) = fields.get(name) else {
+        return None;
+    };
+    Some(text)
+}
+
+// the content of a streamed chat chunk's first choice
+fn chunk_content(chunk: &Json) -> Option<&str> {
+    let Json::Object(fields) = chunk else {
+        return None;
+    };
+    let Some(Json::List(choices)) = fields.get("choices") else {
+        return None;
+    };
+    let Some(Json::Object(choice)) = choices.first() else {
+        return None;
+    };
+    let Some(Json::Object(delta)) = choice.get("delta") else {
+        return None;
+    };
+    let Some(Json::Text(text)) = delta.get("content") else {
+        return None;
+    };
+    Some(text)
 }
 
 fn include_usage(body: &Json) -> Option<bool> {
@@ -361,10 +361,10 @@ fn include_usage(body: &Json) -> Option<bool> {
     let Some(Json::Object(options)) = fields.get("stream_options") else {
         return None;
     };
-    match options.get("include_usage") {
-        Some(Json::Bool(chosen)) => Some(*chosen),
-        _ => None,
-    }
+    let Some(Json::Bool(chosen)) = options.get("include_usage") else {
+        return None;
+    };
+    Some(*chosen)
 }
 
 // atext_completion sends the caller's own stream options only; the chat route's injected usage option is not its own

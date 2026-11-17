@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -494,6 +495,37 @@ async fn serve_refusal(listener: &TcpListener, status: u16, answer: &str) -> Str
     serve(listener, &refusal_response(status, answer)).await
 }
 
+// the async SDK a deployment builds against the fake provider at this address
+fn async_sdk(address: SocketAddr) -> HttpCompletionSdk {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
+    let arguments = SdkArguments {
+        api_key: None,
+        base_url: Some(format!("http://{address}/v1")),
+        timeout: 5.0,
+        max_retries: None,
+        organization: None,
+        http_client: HttpClientSource::AsyncHttpClient,
+    };
+    HttpCompletionConstructor {
+        client,
+        authorization: Some(SecretString::from("Bearer sk-deployment")),
+        facts: Arc::new(Mutex::new(None)),
+    }
+    .construct(&arguments, ClientKind::Async)
+    .expect("sdk")
+    .expect("a credential builds the sdk")
+}
+
+// the completion body an async SDK streams for the fake provider
+fn streamed_completion_data() -> Map<String, Value> {
+    let mut data = Map::new();
+    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
+    data.insert(String::from("prompt"), Value::from("hi"));
+    data.insert(String::from("stream"), Value::Bool(true));
+    data
+}
+
 #[tokio::test]
 async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -582,10 +614,7 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
         .construct(&arguments, ClientKind::Async)
         .expect("sdk")
         .expect("a credential builds the sdk");
-    let mut data = Map::new();
-    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
-    data.insert(String::from("prompt"), Value::from("hi"));
-    data.insert(String::from("stream"), Value::Bool(true));
+    let data = streamed_completion_data();
     let (release, released) = oneshot::channel();
     tokio::join!(
         read_streamed_completion(&sdk, &data, release),
@@ -606,29 +635,8 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
 async fn a_refused_stream_answers_the_provider_error_object() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
-    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
-    let arguments = SdkArguments {
-        api_key: None,
-        base_url: Some(format!("http://{address}/v1")),
-        timeout: 5.0,
-        max_retries: None,
-        organization: None,
-        http_client: HttpClientSource::AsyncHttpClient,
-    };
-    let constructor = HttpCompletionConstructor {
-        client,
-        authorization: Some(SecretString::from("Bearer sk-deployment")),
-        facts: Arc::new(Mutex::new(None)),
-    };
-    let sdk = constructor
-        .construct(&arguments, ClientKind::Async)
-        .expect("sdk")
-        .expect("a credential builds the sdk");
-    let mut data = Map::new();
-    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
-    data.insert(String::from("prompt"), Value::from("hi"));
-    data.insert(String::from("stream"), Value::Bool(true));
+    let sdk = async_sdk(address);
+    let data = streamed_completion_data();
     let ((refused, internal), _served) = tokio::join!(
         async {
             let refused = sdk
@@ -655,11 +663,7 @@ async fn a_refused_stream_answers_the_provider_error_object() {
     assert_eq!(refusal.status, Some(400));
     assert_eq!(refusal.error_type.as_deref(), Some("invalid_request_error"));
     assert_eq!(refusal.param.as_deref(), Some("prompt"));
-    assert!(
-        refusal.message.contains("invalid prompt"),
-        "{}",
-        refusal.message
-    );
+    assert!(refusal.message.contains("invalid prompt"), "{refusal:?}");
     let SdkError::Status(server) = internal else {
         panic!("a status error");
     };
