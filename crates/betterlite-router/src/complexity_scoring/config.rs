@@ -71,6 +71,7 @@ impl Config {
     pub fn resolve(input: &section::Config) -> Result<Self, ScoringError> {
         let defaults: Defaults = serde_json::from_str(defaults::SOURCE)?;
         let tier_boundaries = boundaries(input.tier_boundaries.as_ref(), defaults.tier_boundaries)?;
+        let keywords = keyword_lists(input, &defaults);
         Ok(Self {
             tier_models: tier_models(input.tier_models.as_ref(), &defaults),
             token_thresholds: thresholds(
@@ -90,27 +91,11 @@ impl Config {
                     .unwrap_or(tier_boundaries.simple_medium),
                 "reasoning_override_min_score",
             )?,
-            code_keywords: input
-                .code_keywords
-                .as_deref()
-                .unwrap_or(&defaults.code_keywords)
-                .to_vec(),
-            reasoning_keywords: input
-                .reasoning_keywords
-                .as_deref()
-                .unwrap_or(&defaults.reasoning_keywords)
-                .to_vec(),
-            technical_keywords: input
-                .technical_keywords
-                .as_deref()
-                .unwrap_or(&defaults.technical_keywords)
-                .to_vec(),
+            code_keywords: keywords.code,
+            reasoning_keywords: keywords.reasoning,
+            technical_keywords: keywords.technical,
             custom_technical_keywords: input.custom_technical_keywords.clone().unwrap_or_default(),
-            simple_keywords: input
-                .simple_keywords
-                .as_deref()
-                .unwrap_or(&defaults.simple_keywords)
-                .to_vec(),
+            simple_keywords: keywords.simple,
             default_model: input.default_model.clone(),
             multi_step_patterns: defaults.multi_step_patterns.clone(),
             custom_dimensions: Vec::new(),
@@ -136,6 +121,39 @@ impl Config {
         medium.model().ok_or_else(|| ScoringError::TierPool {
             tier: "MEDIUM".to_owned(),
         })
+    }
+}
+
+struct KeywordLists {
+    code: Vec<String>,
+    reasoning: Vec<String>,
+    technical: Vec<String>,
+    simple: Vec<String>,
+}
+
+// a configured keyword list replaces its pinned one, and an empty configured list is used as given
+fn keyword_lists(input: &section::Config, defaults: &Defaults) -> KeywordLists {
+    KeywordLists {
+        code: input
+            .code_keywords
+            .as_deref()
+            .unwrap_or(&defaults.code_keywords)
+            .to_vec(),
+        reasoning: input
+            .reasoning_keywords
+            .as_deref()
+            .unwrap_or(&defaults.reasoning_keywords)
+            .to_vec(),
+        technical: input
+            .technical_keywords
+            .as_deref()
+            .unwrap_or(&defaults.technical_keywords)
+            .to_vec(),
+        simple: input
+            .simple_keywords
+            .as_deref()
+            .unwrap_or(&defaults.simple_keywords)
+            .to_vec(),
     }
 }
 
