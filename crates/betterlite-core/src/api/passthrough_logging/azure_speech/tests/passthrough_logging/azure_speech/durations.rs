@@ -9,6 +9,16 @@ use super::super::super::super::route::SpeechRoute;
 use super::super::super::support;
 
 const RECOGNIZED: &[u8] = br#"{"Offset": 5000000, "Duration": 25000000}"#;
+// The transcribe crate's one-second FLAC, OGG and MP3 fixtures, the containers only a format-aware decoder measures.
+const VALID_FLAC: &[u8] = include_bytes!(
+    "../../../../../../../../betterlite-transcribe/fuzz/corpus/media_duration/valid.flac"
+);
+const VALID_OGG: &[u8] = include_bytes!(
+    "../../../../../../../../betterlite-transcribe/fuzz/corpus/media_duration/valid.ogg"
+);
+const VALID_MP3: &[u8] = include_bytes!(
+    "../../../../../../../../betterlite-transcribe/fuzz/corpus/media_duration/valid.mp3"
+);
 
 #[test]
 fn short_audio_bills_the_recognized_ticks() {
@@ -113,14 +123,14 @@ fn an_upload_that_is_not_audio_bills_nothing() {
     );
 }
 
-// A FLAC, OGG or MP3 upload is not a WAV the native decoder reads, so it adds no uploaded seconds.
+// A FLAC, OGG or MP3 upload is a complete one-second container the WAV decoder does not read, so it adds no uploaded seconds.
 #[test]
 fn a_foreign_container_upload_bills_nothing() {
     let unrecognized = br#"{"RecognitionStatus":"Success"}"#;
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::ShortAudio,
-            Some(b"fLaC\x00\x00\x00\x22".as_slice()),
+            Some(VALID_FLAC.as_slice()),
             unrecognized
         )
         .expect("a FLAC upload is no duration"),
@@ -129,7 +139,7 @@ fn a_foreign_container_upload_bills_nothing() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::ShortAudio,
-            Some(b"OggS\x00\x02\x00\x00".as_slice()),
+            Some(VALID_OGG.as_slice()),
             unrecognized
         )
         .expect("an OGG upload is no duration"),
@@ -138,7 +148,7 @@ fn a_foreign_container_upload_bills_nothing() {
     assert_eq!(
         billed_audio_seconds(
             SpeechRoute::ShortAudio,
-            Some(b"ID3\x04\x00\x00\x00\x00\x00\x00".as_slice()),
+            Some(VALID_MP3.as_slice()),
             unrecognized
         )
         .expect("an MP3 upload is no duration"),
