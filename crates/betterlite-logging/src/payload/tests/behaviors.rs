@@ -8,7 +8,8 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::{
-    builder, builder_with, chat_response, end, init, object_field, start, state, state_from,
+    builder, builder_with, chat_response, end, init, object_field, sources_with, start, state,
+    state_from,
 };
 use crate::exporter_options::redaction::REDACTED_TEXT;
 use crate::fields::payload::StandardLoggingPayload;
@@ -19,8 +20,8 @@ use crate::logging_state::LoggingInit;
 use crate::logging_state::types::Messages;
 use crate::logging_success::ports::StandardPayloadBuilder;
 use crate::payload::deps::{
-    AutorouterAudit, PayloadClock, PayloadSettings, PayloadSources, SavedCacheCost, SavingsRequest,
-    TagConfig,
+    AbsentAutorouterAudit, AbsentSavedCacheCost, AutorouterAudit, PayloadClock, PayloadSettings,
+    PayloadSources, SavedCacheCost, SavingsRequest, SystemPayloadClock, TagConfig,
 };
 
 fn built(
@@ -247,11 +248,11 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             state
                 .model_call_details
                 .insert("cache_hit".to_owned(), Json::Bool(true));
-            let sources = PayloadSources {
-                clock: Arc::new(FixedClock(1234.0)),
-                saved_cache_cost: Arc::new(FixedSavedCost(Decimal::new(25, 2))),
-                ..PayloadSources::default()
-            };
+            let sources = sources_with(
+                Arc::new(FixedClock(1234.0)),
+                Arc::new(FixedSavedCost(Decimal::new(25, 2))),
+                Arc::new(AbsentAutorouterAudit),
+            );
             let payload = StandardPayloadBuilder::build(
                 &builder_with(sources, PayloadSettings::default(), Settings::default()),
                 &state,
@@ -324,14 +325,15 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 serde_json::from_str(r#"{"routing_decision": {"selected_model": "gpt-4o"}}"#)
                     .unwrap(),
             );
-            let estimated_sources = PayloadSources {
-                autorouter: Arc::new(FixedAudit {
+            let estimated_sources = sources_with(
+                Arc::new(SystemPayloadClock),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(FixedAudit {
                     savings: Some(Decimal::new(5, 2)),
                     observation: None,
                     active: false,
                 }),
-                ..PayloadSources::default()
-            };
+            );
             let estimated = built(estimated_sources, configuration.clone(), &chat_response());
             assert_eq!(
                 estimated
@@ -351,28 +353,30 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 estimate_field(&estimated, "status"),
                 Some(Json::Text("estimated".to_owned()))
             );
-            let unknown_sources = PayloadSources {
-                autorouter: Arc::new(FixedAudit {
+            let unknown_sources = sources_with(
+                Arc::new(SystemPayloadClock),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(FixedAudit {
                     savings: None,
                     observation: None,
                     active: false,
                 }),
-                ..PayloadSources::default()
-            };
+            );
             let unknown = built(unknown_sources, configuration.clone(), &chat_response());
             assert!(unknown.autorouter_savings.is_none());
             assert_eq!(
                 estimate_field(&unknown, "reason"),
                 Some(Json::Text("baseline_unavailable".to_owned()))
             );
-            let pending_sources = PayloadSources {
-                autorouter: Arc::new(FixedAudit {
+            let pending_sources = sources_with(
+                Arc::new(SystemPayloadClock),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(FixedAudit {
                     savings: Some(Decimal::new(5, 2)),
                     observation: Some("baseline-1".to_owned()),
                     active: false,
                 }),
-                ..PayloadSources::default()
-            };
+            );
             let pending = built(pending_sources, configuration, &chat_response());
             assert_eq!(
                 estimate_field(&pending, "version"),
@@ -395,14 +399,15 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 serde_json::from_str(r#"{"routing_decision": {"selected_model": "gpt-4o"}}"#)
                     .unwrap(),
             );
-            let sources = PayloadSources {
-                autorouter: Arc::new(FixedAudit {
+            let sources = sources_with(
+                Arc::new(SystemPayloadClock),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(FixedAudit {
                     savings: Some(Decimal::new(5, 2)),
                     observation: None,
                     active: false,
                 }),
-                ..PayloadSources::default()
-            };
+            );
             let mut cached_state = state_from(configuration.clone());
             cached_state
                 .model_call_details
@@ -420,14 +425,15 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 estimate_field(&cached, "reason"),
                 Some(Json::Text("baseline_unavailable".to_owned()))
             );
-            let active_sources = PayloadSources {
-                autorouter: Arc::new(FixedAudit {
+            let active_sources = sources_with(
+                Arc::new(SystemPayloadClock),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(FixedAudit {
                     savings: Some(Decimal::new(5, 2)),
                     observation: None,
                     active: true,
                 }),
-                ..PayloadSources::default()
-            };
+            );
             let active = built(active_sources, configuration.clone(), &chat_response());
             assert!(active.autorouter_savings.is_none());
             let exception: ExceptionFacts = serde_json::from_str(r#"{"message": "nope"}"#).unwrap();

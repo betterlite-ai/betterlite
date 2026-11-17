@@ -10,7 +10,8 @@ use rstest::rstest;
 
 use super::behaviors::FixedClock;
 use super::{
-    BASE_PAYLOAD, builder_with, chat_response, end, init, payload_from, start, state, state_from,
+    BASE_PAYLOAD, builder_with, chat_response, end, init, payload_from, sources_with, start, state,
+    state_from,
 };
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::{LoggingInit, LoggingState};
@@ -218,10 +219,11 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             state
                 .model_call_details
                 .insert("cache_hit".to_owned(), Json::Bool(true));
-            let sources = PayloadSources {
-                clock: Arc::new(FixedClock(1234.5)),
-                ..PayloadSources::default()
-            };
+            let sources = sources_with(
+                Arc::new(FixedClock(1234.5)),
+                Arc::new(AbsentSavedCacheCost),
+                Arc::new(AbsentAutorouterAudit),
+            );
             let payload = built_with(sources, &state, &chat_response());
             assert_eq!(payload.id, "chatcmpl-1_cache_hit1234.5");
             assert_eq!(payload.cache_hit, Some(true));

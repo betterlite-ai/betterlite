@@ -36,7 +36,10 @@ use crate::logging_success::payload_state::standard_logging_object;
 use crate::logging_success::ports::{StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessMode, SuccessRequest, SuccessResult};
 use crate::payload::builder::{PayloadBuilder, PayloadBuilderConfig};
-use crate::payload::deps::{PayloadSettings, PayloadSources};
+use crate::payload::deps::{
+    AbsentAutorouterAudit, AbsentModelCostInformation, AbsentRequestAccessGroups, AutorouterAudit,
+    PayloadClock, PayloadSettings, PayloadSources, SavedCacheCost,
+};
 use crate::payload::emit::{
     EmitError, EmitSettings, PayloadEmitter, emit_standard_logging_payload,
 };
@@ -146,6 +149,23 @@ pub(super) fn builder_with(
         truncator: Base64Truncator::new(0).unwrap(),
         privacy,
     })
+}
+
+// names every source so a test shows which one it replaces and which stay absent
+pub(super) fn sources_with(
+    clock: Arc<dyn PayloadClock>,
+    saved_cache_cost: Arc<dyn SavedCacheCost>,
+    autorouter: Arc<dyn AutorouterAudit>,
+) -> PayloadSources {
+    PayloadSources {
+        model_cost: Arc::new(AbsentModelCostInformation),
+        saved_cache_cost,
+        access_groups: Arc::new(AbsentRequestAccessGroups),
+        autorouter,
+        cold_storage: None,
+        clock,
+        responses_converter: PayloadSources::default().responses_converter,
+    }
 }
 
 pub(super) fn payload_from(text: &str) -> StandardLoggingPayload {
