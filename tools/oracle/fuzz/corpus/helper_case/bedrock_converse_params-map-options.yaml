@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-converse-params-map-options
+call:
+  bedrock_converse_params:
+    function: map_params
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_reasoning: true}
+    environment: {}
+    non_default_params:
+      max_tokens: 2048
+      stream: true
+      stop: ['\n\nHuman:']
+      temperature: 0.2
+      top_p: 0.9
+      service_tier: auto
+      parallel_tool_calls: false
+    optional_params: {}
+    global_drop: false
+    call_drop: false
+env: {}
+compare: {ignore: []}

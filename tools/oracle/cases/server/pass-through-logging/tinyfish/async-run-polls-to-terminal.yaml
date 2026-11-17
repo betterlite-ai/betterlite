@@ -1,0 +1,22 @@
+kind: helper
+name: tinyfish-async-run-polls-to-terminal
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      run_id: run_async
+      status: PENDING
+      num_of_steps: 0
+    replies:
+      - status: 200
+        body: {run_id: run_async, status: PENDING, num_of_steps: 0}
+      - status: 200
+        body:
+          run_id: run_async
+          status: COMPLETED
+          num_of_steps: 2
+          result: {answer: 42}
+          type: automation
+env: {}
+compare: {ignore: []}

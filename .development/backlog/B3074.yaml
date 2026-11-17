@@ -1,14 +1,14 @@
 id: B3074
 milestone: M4 keys, spend and management
 title: Buffer and redact PointFive callback events
-status: todo
+status: done
 depends_on: [B002, B8500, B173, B188, B189, B190, B256, B3073, B8741]
 file: tasks/B3074-pointfive-callback.yaml
 covers:
   - "litellm/integrations/pointfive/{__init__,logger}.py"
 parent: B073
 split_from: B073
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2251
