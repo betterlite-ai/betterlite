@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::Infallible;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -195,39 +195,33 @@ impl FakeSource {
             .expect("the source call log")
             .clone()
     }
+
+    fn empty(&self) -> Ready<PageResult> {
+        ready(PageResult::Ok(empty_page()))
+    }
 }
 
 impl UsageDataSource for FakeSource {
-    fn global(
+    async fn global(
         &self,
         _start_date: &str,
         _end_date: &str,
         user_id: Option<&str>,
-    ) -> impl Future<Output = PageResult> + Send {
+    ) -> PageResult {
         self.state
             .user_ids
             .lock()
             .expect("the source call log")
             .push(user_id.map(str::to_owned));
-        ready(PageResult::Ok(empty_page()))
+        self.empty().await
     }
 
-    fn teams(
-        &self,
-        _start_date: &str,
-        _end_date: &str,
-        _ids: Ids<'_>,
-    ) -> impl Future<Output = PageResult> + Send {
-        ready(PageResult::Ok(empty_page()))
+    async fn teams(&self, _start_date: &str, _end_date: &str, _ids: Ids<'_>) -> PageResult {
+        self.empty().await
     }
 
-    fn tags(
-        &self,
-        _start_date: &str,
-        _end_date: &str,
-        _tags: Ids<'_>,
-    ) -> impl Future<Output = PageResult> + Send {
-        ready(PageResult::Ok(empty_page()))
+    async fn tags(&self, _start_date: &str, _end_date: &str, _tags: Ids<'_>) -> PageResult {
+        self.empty().await
     }
 }
 
