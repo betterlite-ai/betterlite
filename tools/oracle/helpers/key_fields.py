@@ -21,13 +21,13 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 _JSON: Final = TypeAdapter(JsonValue)
 
 MODELS: Final[dict[str, type[BaseModel]]] = {
-    "base": GenerateRequestBase,
-    "key": KeyRequestBase,
-    "generate": GenerateKeyRequest,
-    "update": UpdateKeyRequest,
-    "regenerate": RegenerateKeyRequest,
-    "response": GenerateKeyResponse,
-    "broadcast": KeyUpdateFields,
+    "base": GenerateRequestBase,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1289
+    "key": KeyRequestBase,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1340
+    "generate": GenerateKeyRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376
+    "update": UpdateKeyRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441
+    "regenerate": RegenerateKeyRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487
+    "response": GenerateKeyResponse,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1399
+    "broadcast": KeyUpdateFields,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/key_management_endpoints.py#L72
 }
 
 
