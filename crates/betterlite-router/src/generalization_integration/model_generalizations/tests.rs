@@ -263,10 +263,10 @@ fn model_generalizations_behaviors(
     #[case] expected: &[&str],
 ) {
     let mut service = install(rules);
-    let mut lines = Vec::new();
-    for probe in probes {
-        lines.push(rendered(&mut service, *probe));
-    }
+    let lines: Vec<String> = probes
+        .iter()
+        .map(|probe| rendered(&mut service, *probe))
+        .collect();
     assert_eq!(lines, expected);
 }
 

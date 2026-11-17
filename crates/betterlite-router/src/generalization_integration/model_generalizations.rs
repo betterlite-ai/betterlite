@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::catalog_generalizations::{
-    CatalogGeneralizations, ModelInfo, decode_generalization_rules,
+    CapabilityRule, CatalogGeneralizations, ModelInfo, decode_generalization_rules,
 };
 use serde_json::value::RawValue;
 
@@ -30,6 +30,25 @@ fn limit_warning(pattern: &str) -> GeneralizationWarning {
         kind: WarningKind::MatchLimitExceeded,
         pattern: pattern.to_owned(),
     }
+}
+
+// the engine skips a capability rule whose search fails, so this scan reports it in the same order
+fn capability_warnings(
+    rules: &[CapabilityRule],
+    model: &str,
+    provider: Option<&str>,
+) -> Vec<GeneralizationWarning> {
+    let mut warnings = Vec::new();
+    if model.is_empty() || provider.is_some_and(str::is_empty) {
+        return warnings;
+    }
+    for rule in rules {
+        let wanted = provider.is_none_or(|name| rule.fill_missing_for_providers.contains(name));
+        if wanted && rule.pattern.is_match(model).is_err() {
+            warnings.push(limit_warning(rule.pattern.as_str()));
+        }
+    }
+    warnings
 }
 
 impl ModelGeneralizations {
@@ -108,34 +127,17 @@ impl ModelGeneralizations {
 
     #[must_use]
     pub fn capabilities(&self, model: &str) -> Found<ModelInfo> {
-        let mut warnings = Vec::new();
-        if !model.is_empty() {
-            for rule in &self.engine.capabilities {
-                if rule.pattern.is_match(model).is_err() {
-                    warnings.push(limit_warning(rule.pattern.as_str()));
-                }
-            }
-        }
         Found {
             answer: self.engine.match_capabilities(model),
-            warnings,
+            warnings: capability_warnings(&self.engine.capabilities, model, None),
         }
     }
 
     #[must_use]
     pub fn fill_missing(&self, model: &str, provider: &str) -> Found<ModelInfo> {
-        let mut warnings = Vec::new();
-        if !model.is_empty() && !provider.is_empty() {
-            for rule in &self.engine.capabilities {
-                let listed = rule.fill_missing_for_providers.contains(provider);
-                if listed && rule.pattern.is_match(model).is_err() {
-                    warnings.push(limit_warning(rule.pattern.as_str()));
-                }
-            }
-        }
         Found {
             answer: self.engine.match_fill_missing(model, provider),
-            warnings,
+            warnings: capability_warnings(&self.engine.capabilities, model, Some(provider)),
         }
     }
 }
