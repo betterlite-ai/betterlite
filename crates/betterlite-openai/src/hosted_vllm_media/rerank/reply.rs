@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::HostedVllmRerankError;
@@ -28,7 +28,9 @@ pub fn transform_rerank_response(
 ) -> Result<RerankResponse, HostedVllmRerankError> {
     let reply: Value =
         serde_json::from_slice(raw).map_err(|_source| HostedVllmRerankError::Parse {
-            text: String::from_utf8_lossy(raw).into_owned(),
+            text: str::from_utf8(raw)
+                .unwrap_or("<body is not UTF-8>")
+                .to_owned(),
             status_code: status,
         })?;
     transform_response(&reply, next_id)
@@ -66,14 +68,18 @@ pub fn transform_response(
     })
 }
 
-// LiteLLM's usage.get("total_tokens", 0): an absent count reads as zero and an explicit null stays null
+// LiteLLM calls response.get("usage", {}).get("total_tokens", 0), which needs an object: absent or null reads zero here, any other value is a typed error
 fn usage_blocks(
     response: &Value,
 ) -> Result<(RerankBilledUnits, RerankTokens), HostedVllmRerankError> {
-    let total_tokens = match response
-        .get("usage")
-        .and_then(|usage| usage.get("total_tokens"))
-    {
+    let usage = match response.get("usage") {
+        None | Some(Value::Null) => None,
+        Some(usage) => Some(
+            serde_json::from_value::<Map<String, Value>>(usage.clone())
+                .map_err(|source| HostedVllmRerankError::Shape { source })?,
+        ),
+    };
+    let total_tokens = match usage.as_ref().and_then(|usage| usage.get("total_tokens")) {
         None => Some(Some(0)),
         Some(Value::Null) => Some(None),
         Some(count) => serde_json::from_value::<i64>(count.clone())

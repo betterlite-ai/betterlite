@@ -1,9 +1,9 @@
 task: B8151
 deviations:
   - what: >-
-      The rerank reply decoder keeps the reply's declared types. A body that is not a JSON object, a document that is not an object and a null usage are an error or read as empty instead of raising AttributeError, an index, score or token count of the wrong JSON type is an error instead of int(), float() or pydantic coercion, and a document text that is null or a number reads as "" instead of "None" or its decimal text.
+      The rerank reply decoder keeps the reply's declared types. A body that is not a JSON object, a document that is not an object, an index, score or token count of the wrong JSON type, and a usage that is neither absent, null nor an object are typed errors instead of AttributeError, int()/float() or pydantic coercion; an absent or null usage reads as zero tokens, a document text that is null or a number reads as "" instead of "None" or its decimal text, and a body that is not UTF-8 reports its text as "<body is not UTF-8>" instead of a lossy decode.
     why: >-
-      LiteLLM raises AttributeError (a 500) on those inputs, and its str() conversion writes text the provider never sent. No working vLLM setup relies on either, and docs/compatibility.md keeps a value at its declared type.
+      LiteLLM raises AttributeError (a 500) on those inputs, and its str() conversion writes text the provider never sent. No working vLLM setup relies on either, and docs/compatibility.md keeps a value at its declared type and refuses bytes that are not UTF-8.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L194-L241
   - what: >-
       A media reference given as a plain URL string is checked for a blocked destination, while LiteLLM checks only a reference it turned into a JSON object or list.
