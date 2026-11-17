@@ -10,6 +10,7 @@ path = "lib.rs"
 
 [dependencies]
 base64 = "0.23.1"
+betterlite-anthropic = { path = "../../../../../crates/betterlite-anthropic" }
 betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
