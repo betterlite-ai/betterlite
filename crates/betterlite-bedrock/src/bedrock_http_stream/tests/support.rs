@@ -27,10 +27,10 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
+use crate::agentcore_stream::IdSource;
 use crate::agentcore_stream::transport::{
     Chunks, HandlerKind, PostRequest, StreamHandler, StreamHead,
 };
-use crate::agentcore_stream::{DecoderClock, IdSource};
 use crate::bedrock_http_stream::StreamDeps;
 use crate::bedrock_http_stream::converse::{ConverseCall, make_sync_call};
 use crate::bedrock_http_stream::error::HttpStreamError;
@@ -38,7 +38,7 @@ use crate::bedrock_http_stream::invoke::{InvokeCall, make_call};
 use crate::bedrock_http_stream::stream::{OpenedStream, StreamFailure};
 use crate::bedrock_settings::{BedrockError, ResponseBody};
 use crate::image_call::plan::LogContext;
-use crate::invoke_events::InvokeChunk;
+use crate::invoke_events::{DecoderClock, InvokeChunk};
 
 pub(super) const BASE: &str =
     "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke";
@@ -229,17 +229,20 @@ impl Inputs {
     }
 }
 
-pub(super) struct Counter(AtomicUsize);
+pub(super) struct Counter(Mutex<u128>);
 
 impl Counter {
     pub(super) fn new() -> Self {
-        Self(AtomicUsize::new(0))
+        Self(Mutex::new(0))
     }
 }
 
 impl IdSource for Counter {
     fn next_id(&self) -> Uuid {
-        Uuid::from_u128(self.0.fetch_add(1, Ordering::Relaxed) as u128)
+        let mut next = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let id = Uuid::from_u128(*next);
+        *next = next.saturating_add(1);
+        id
     }
 }
 
@@ -260,7 +263,7 @@ impl StreamHandler for Handler {
             .push(Recorded {
                 url: request.url.to_string(),
                 headers: sorted_pairs(&request.headers),
-                body: String::from_utf8_lossy(&request.body).into_owned(),
+                body: String::from_utf8(request.body).expect("a fixture request body is UTF-8"),
                 stream: request.stream,
             });
         let mut headers = HeaderMap::new();
