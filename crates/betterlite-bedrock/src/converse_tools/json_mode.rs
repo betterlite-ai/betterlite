@@ -12,7 +12,7 @@ pub fn append_tools(
     optional_params: &mut IndexMap<String, Json>,
     tools: Vec<Json>,
 ) -> Result<(), ConverseToolsError> {
-    let wire = serde_json::to_value(optional_params).map_err(ConverseToolsError::wire)?;
+    let wire = serde_json::to_value(&*optional_params).map_err(ConverseToolsError::wire)?;
     let mut base = serde_json::from_value(wire).map_err(ConverseToolsError::wire)?;
     let encoded = tools
         .into_iter()
