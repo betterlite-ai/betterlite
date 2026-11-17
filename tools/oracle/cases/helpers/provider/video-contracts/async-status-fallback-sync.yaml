@@ -1,0 +1,9 @@
+kind: helper
+name: async-status-fallback-sync
+call:
+  b3331:
+    function: async_status_fallback
+    body: video_1
+    custom_llm_provider: vertex_ai
+env: {}
+compare: {ignore: []}

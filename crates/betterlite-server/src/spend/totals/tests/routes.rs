@@ -711,12 +711,9 @@ async fn models_default_the_limit_to_ten() {
 
 #[rstest]
 #[case::positive("/global/spend/models?limit=3", "models_by_spend(3)")]
-#[case::negative("/global/spend/models?limit=-5", "models_by_spend(-5)")]
+#[case::zero("/global/spend/models?limit=0", "models_by_spend(0)")]
 #[tokio::test]
-async fn models_pass_the_limit_through_without_a_positivity_check(
-    #[case] uri: &str,
-    #[case] call_text: &str,
-) {
+async fn models_pass_a_zero_or_positive_limit_through(#[case] uri: &str, #[case] call_text: &str) {
     let store = store_with(spend_store());
     let reply = call(
         uri,

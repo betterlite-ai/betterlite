@@ -1,0 +1,26 @@
+kind: helper
+name: dalle2-dalle3-gpt-selection
+call:
+  azure_images:
+    models:
+      - dall-e-2
+      - DALL-E-3
+      - MAI-Image-1
+      - azure_ai/mai_image_1
+      - gpt-image-1
+      - azure/gpt-4o
+    generations:
+      - prompt: a cat
+        model: dall-e-2
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: gpt-image-1
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+env: {}
+compare: {ignore: []}
