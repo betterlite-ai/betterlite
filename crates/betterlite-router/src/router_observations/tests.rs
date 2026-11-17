@@ -464,6 +464,23 @@ fn case_response_without_a_deployment() -> Evidence {
     harness.evidence(key)
 }
 
+fn case_response_without(facts: RequestFacts<'static>, total_tokens: i64) -> Evidence {
+    let harness = Harness::default();
+    let deployment = usage_limited();
+    let mut metadata = ObservationMetadata::default();
+    let usage = response_usage(total_tokens);
+    let event = ResponseEvent {
+        usage: &usage,
+        request: facts,
+        deployment: Some(&deployment),
+    };
+    let key = harness
+        .observations()
+        .count_response_usage(&event, &mut metadata, now());
+    assert_eq!(metadata.counted_tokens, None);
+    harness.evidence(key)
+}
+
 fn case_response_pipeline_failure() -> Evidence {
     let harness = Harness {
         counters: MemoryCounters::rejecting_pipeline(),
@@ -487,6 +504,20 @@ fn case_response_pipeline_failure() -> Evidence {
 fn case_success_counter_failure() -> Evidence {
     let harness = Harness {
         counters: MemoryCounters::rejecting_increments(),
+        cooldowns: MemoryCooldowns::default(),
+    };
+    let deployment = usage_limited();
+    let key = harness.observations().on_success(
+        &success_event(Some(100), &deployment),
+        &ObservationMetadata::default(),
+        now(),
+    );
+    harness.evidence(key)
+}
+
+fn case_success_pipeline_failure() -> Evidence {
+    let harness = Harness {
+        counters: MemoryCounters::rejecting_pipeline(),
         cooldowns: MemoryCooldowns::default(),
     };
     let deployment = usage_limited();
@@ -616,13 +647,16 @@ fn case_async_failure(call_type: Option<&'static str>) -> Evidence {
     evidence
 }
 
-fn case_async_failure_without_model_group() -> Evidence {
+fn case_async_failure_without(
+    model_group: Option<&'static str>,
+    deployment_id: Option<&'static str>,
+) -> Evidence {
     let harness = Harness::default();
     let event = AsyncFailureEvent {
         call_type: None,
-        model_group: None,
+        model_group,
         deployment_name: "openai/gpt-4o",
-        deployment_id: Some("dep-1"),
+        deployment_id,
     };
     let result = harness.observations().on_async_failure(&event, now());
     let mut evidence = harness.evidence(None);
@@ -936,8 +970,24 @@ fn router_observations_behaviors(#[case] actual: Evidence, #[case] expected: Evi
     Evidence::default()
 )]
 #[case::async_failure_without_a_model_group_counts_nothing(
-    case_async_failure_without_model_group(),
+    case_async_failure_without(None, Some("dep-1")),
     Evidence::default()
+)]
+#[case::async_failure_without_a_deployment_id_counts_nothing(
+    case_async_failure_without(Some("probe-group"), None),
+    Evidence::default()
+)]
+#[case::response_without_a_model_group_marks_nothing(
+    case_response_without(RequestFacts { model_group: None, ..request() }, 25),
+    Evidence::default()
+)]
+#[case::response_without_a_deployment_id_marks_nothing(
+    case_response_without(RequestFacts { deployment_id: None, ..request() }, 25),
+    Evidence::default()
+)]
+#[case::success_usage_failure_keeps_the_success_count(
+    case_success_pipeline_failure(),
+    Evidence { successes: Some(1), ..Evidence::default() }
 )]
 fn router_observations_boundaries(#[case] actual: Evidence, #[case] expected: Evidence) {
     assert_eq!(actual, expected);
