@@ -6,7 +6,8 @@ use tokio_util::task::TaskTracker;
 // LiteLLM holds every billing poller in a module set until it finishes, since a weakly referenced task can vanish mid-poll.
 #[derive(Default)]
 pub struct BillingTasks {
-    tasks: TaskTracker,
+    // The server owns one tracker for its lifetime, so a poller outlives the client that started it.
+    pub tasks: TaskTracker,
 }
 
 impl BillingTasks {
