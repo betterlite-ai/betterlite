@@ -40,7 +40,7 @@ class Input(TypedDict):
     beta_matrix: JsonObject
     upstream_status: int | None
     upstream_headers: dict[str, str]
-    upstream_body: str
+    upstream_body: str | None
     upstream_lines: list[str]
     failure_message: str | None
     request_header_names: list[str]
@@ -69,6 +69,7 @@ class Recorder:
         self.post_input: JsonValue = None
         self.post_response: JsonValue = None
         self.post_body: JsonValue = None
+        self.model_call_details: JsonObject = {}
 
     def pre_call(self, **kwargs: Unpack[PreCallArguments]) -> None:
         self.pre_input = kwargs["input"]
@@ -88,7 +89,8 @@ class Upstream:
         self.status = input_value["upstream_status"]
         self.message = input_value["failure_message"]
         self.headers = input_value["upstream_headers"]
-        self.body = input_value["upstream_body"].encode()
+        body = input_value["upstream_body"]
+        self.body = b"" if body is None else body.encode()
         self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
