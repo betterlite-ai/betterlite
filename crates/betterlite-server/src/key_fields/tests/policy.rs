@@ -35,7 +35,7 @@ fn selection_exclusive() {
     let missing_team = BulkUpdateTeamKeysRequest::read(&value(
         r#"{"key_ids": ["k"], "update_fields": {"tags": []}}"#,
     ));
-    assert!(missing_team.is_err());
+    missing_team.unwrap_err();
 }
 
 #[test]

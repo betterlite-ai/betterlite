@@ -122,10 +122,10 @@ impl KeyRequestBase {
     }
 
     pub(crate) fn object_permission(&self) -> Option<&LiteLLMObjectPermissionBase> {
-        match &self.base.object_permission {
-            Some(permission) => permission.as_ref(),
-            None => None,
-        }
+        self.base
+            .object_permission
+            .as_ref()
+            .and_then(Option::as_ref)
     }
 
     // PositiveInt rejects zero and negatives for both the single and the per-model estimate.
@@ -135,14 +135,16 @@ impl KeyRequestBase {
                 field: "default_estimated_output_tokens".to_owned(),
             });
         }
-        if let Some(Some(per_model)) = &self.key_fields.per_model_output_tokens {
-            for (model, value) in per_model {
-                if *value <= 0 {
-                    return Err(DecodeError::NotPositive {
-                        field: format!("default_estimated_output_tokens_per_model.{model}"),
-                    });
-                }
-            }
+        let invalid = self
+            .key_fields
+            .per_model_output_tokens
+            .as_ref()
+            .and_then(Option::as_ref)
+            .and_then(|per_model| per_model.iter().find(|(_, value)| **value <= 0));
+        if let Some((model, _)) = invalid {
+            return Err(DecodeError::NotPositive {
+                field: format!("default_estimated_output_tokens_per_model.{model}"),
+            });
         }
         Ok(())
     }

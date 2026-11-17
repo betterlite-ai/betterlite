@@ -45,7 +45,7 @@ impl UpdateKeyRequest {
     }
 
     // The two after validators run in declaration order: the temporary pair, then the key identifier.
-    fn validate(&self) -> Result<(), DecodeError> {
+    const fn validate(&self) -> Result<(), DecodeError> {
         let increase = matches!(self.update.temp_budget_increase, Some(Some(_)));
         let expiry = matches!(self.update.temp_budget_expiry, Some(Some(_)));
         if increase != expiry {

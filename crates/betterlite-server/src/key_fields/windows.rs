@@ -43,8 +43,8 @@ pub fn stored_budget_limit_windows(
 pub fn typed_budget_limit_windows(
     entries: Option<&[BudgetLimitEntry]>,
 ) -> Result<Vec<BTreeMap<String, JsonData>>, DecodeError> {
-    let Some(entries) = entries else {
+    let Some(list) = entries else {
         return Ok(Vec::new());
     };
-    entries.iter().map(to_object).collect()
+    list.iter().map(to_object).collect()
 }

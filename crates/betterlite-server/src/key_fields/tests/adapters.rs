@@ -4,7 +4,7 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::resource_repository::config::ConfigParam;
 
 use super::{assert_field, decode_value, json_data, object};
-use crate::key_fields::adapters::{KeyListUserRow, LegacyDumpable, env_vars_param_value};
+use crate::key_fields::adapters::{KeyListUserRow as _, LegacyDumpable as _, env_vars_param_value};
 use crate::key_fields::decode::to_json;
 use crate::key_fields::values::{InsensitiveContains, MatchMode};
 
@@ -64,13 +64,9 @@ fn insensitive_contains() {
     .expect("the search filter");
     assert_eq!(filter.contains, "abc");
     assert_eq!(filter.mode, MatchMode::Insensitive);
-    assert!(decode_value::<InsensitiveContains>(&json_data(r#"{"contains": "abc"}"#)).is_err());
-    assert!(
-        decode_value::<InsensitiveContains>(&json_data(
-            r#"{"contains": "abc", "mode": "sensitive"}"#
-        ))
-        .is_err()
-    );
+    decode_value::<InsensitiveContains>(&json_data(r#"{"contains": "abc"}"#)).unwrap_err();
+    decode_value::<InsensitiveContains>(&json_data(r#"{"contains": "abc", "mode": "sensitive"}"#))
+        .unwrap_err();
     assert_eq!(
         to_json(&filter).expect("the filter dump"),
         json_data(r#"{"contains": "abc", "mode": "insensitive"}"#)

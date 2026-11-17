@@ -83,13 +83,15 @@ impl CustomKeyPolicyRequest {
 
 // Pydantic's smart union keeps the member with the most matching fields, ties to declaration order.
 fn select_request(value: &TypedValue) -> Result<PolicyRequestBody, DecodeError> {
-    let mut selected: Option<(usize, PolicyRequestBody)> = None;
-    if let Ok(request) = GenerateKeyRequest::read(value) {
-        selected = Some((
-            request.project()?.supplied.len(),
-            PolicyRequestBody::Generate(request),
-        ));
-    }
+    let mut selected: Option<(usize, PolicyRequestBody)> =
+        if let Ok(request) = GenerateKeyRequest::read(value) {
+            Some((
+                request.project()?.supplied.len(),
+                PolicyRequestBody::Generate(request),
+            ))
+        } else {
+            None
+        };
     if let Ok(request) = UpdateKeyRequest::read(value) {
         let score = request.project()?.supplied.len();
         if selected.as_ref().is_none_or(|(best, _)| score > *best) {

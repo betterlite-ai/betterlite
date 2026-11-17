@@ -42,7 +42,10 @@ fn object(text: &str) -> BTreeMap<String, JsonData> {
     fields
 }
 
-fn decode_value<T: DeserializeOwned>(value: &JsonData) -> Result<T, DecodeError> {
+fn decode_value<T>(value: &JsonData) -> Result<T, DecodeError>
+where
+    T: DeserializeOwned,
+{
     serde_path_to_error::deserialize(serde_json::to_value(value).map_err(DecodeError::Document)?)
         .map_err(DecodeError::Fields)
 }
@@ -51,11 +54,10 @@ fn assert_field(fields: &BTreeMap<String, JsonData>, name: &str, text: &str) {
     assert_eq!(fields.get(name), Some(&json_data(text)), "{name}");
 }
 
-fn exposed(value: &Option<Option<SecretString>>) -> Option<&str> {
+fn exposed(value: Option<&Option<SecretString>>) -> Option<&str> {
     value
-        .as_ref()
-        .and_then(|inner| inner.as_ref())
-        .map(|secret| secret.expose_secret())
+        .and_then(Option::as_ref)
+        .map(SecretString::expose_secret)
 }
 
 fn assert_null(fields: &BTreeMap<String, JsonData>, names: &[&str]) {
@@ -236,7 +238,7 @@ fn key_object_permission() {
 fn key_field_absent() {
     let request = KeyRequestBase::read(&value("{}")).expect("the key defaults");
     let fields = &request.key_fields;
-    assert_eq!(fields.allowed_routes, Some(Some(Vec::new())));
+    assert_eq!(fields.allowed_routes, None);
     let set = [
         fields.key.is_some(),
         fields.tpd_limit.is_some(),
@@ -403,11 +405,8 @@ fn generate_defaults() {
     assert_eq!(request.generate.rotation_interval, None);
     assert_eq!(request.generate.organization_id, None);
     assert_eq!(request.generate.project_id, None);
-    assert_eq!(
-        request.generate.key_type,
-        Some(Some(LiteLLMKeyType::Default))
-    );
-    assert_eq!(request.generate.auto_rotate, Some(Some(false)));
+    assert_eq!(request.generate.key_type, None);
+    assert_eq!(request.generate.auto_rotate, None);
     let resolved = request.project().expect("the projection").resolved;
     assert_eq!(resolved.len(), 54);
     assert_field(&resolved, "key_type", r#""default""#);
@@ -534,8 +533,8 @@ fn update_identifier() {
         UpdateKeyRequest::read(&value(r#"{"key": null, "key_alias": null}"#)),
         Err(DecodeError::MissingKeyIdentifier)
     ));
-    assert!(UpdateKeyRequest::read(&value(r#"{"key": ""}"#)).is_ok());
-    assert!(UpdateKeyRequest::read(&value(r#"{"key_alias": ""}"#)).is_ok());
+    UpdateKeyRequest::read(&value(r#"{"key": ""}"#)).unwrap();
+    UpdateKeyRequest::read(&value(r#"{"key_alias": ""}"#)).unwrap();
 }
 
 #[test]
@@ -550,17 +549,15 @@ fn temporary_budget_pair() {
         )),
         Err(DecodeError::TemporaryBudgetPair)
     ));
-    assert!(
-        UpdateKeyRequest::read(&value(r#"{"key": "k", "temp_budget_increase": null}"#)).is_ok()
-    );
+    UpdateKeyRequest::read(&value(r#"{"key": "k", "temp_budget_increase": null}"#)).unwrap();
     assert!(matches!(
         KeyUpdateFields::read(&value(r#"{"temp_budget_increase": 1.5}"#)),
         Err(DecodeError::TemporaryBudgetPair)
     ));
-    assert!(UpdateKeyRequest::read(&value(
-        r#"{"key": "k", "temp_budget_increase": -1.5, "temp_budget_expiry": "2020-01-01T00:00:00"}"#
+    UpdateKeyRequest::read(&value(
+        r#"{"key": "k", "temp_budget_increase": -1.5, "temp_budget_expiry": "2020-01-01T00:00:00"}"#,
     ))
-    .is_ok());
+    .unwrap();
 }
 
 #[test]
@@ -621,11 +618,11 @@ fn regenerate_defaults() {
 fn response_token_wins() {
     let response = GenerateKeyResponse::read(&value(r#"{"key": "k", "token": "t"}"#))
         .expect("a response with a token");
-    assert_eq!(exposed(&response.response.token), Some("t"));
-    assert_eq!(exposed(&response.response.key), Some("t"));
+    assert_eq!(exposed(response.response.token.as_ref()), Some("t"));
+    assert_eq!(exposed(response.response.key.as_ref()), Some("t"));
     let emptied =
         GenerateKeyResponse::read(&value(r#"{"key": "k", "token": ""}"#)).expect("an empty token");
-    assert_eq!(exposed(&emptied.response.key), Some(""));
+    assert_eq!(exposed(emptied.response.key.as_ref()), Some(""));
     assert!(matches!(
         GenerateKeyResponse::read(&value(r#"{"token": null}"#)),
         Err(DecodeError::MissingResponseKey)
@@ -667,12 +664,12 @@ fn response_json_fields() {
         panic!("malformed metadata");
     };
     assert_eq!(field, "metadata");
-    let Err(DecodeError::InvalidDictionary { field, .. }) =
+    let Err(DecodeError::InvalidDictionary { field: second, .. }) =
         GenerateKeyResponse::read(&value(r#"{"key": "k", "budget_limits": "{bad"}"#))
     else {
         panic!("malformed budget_limits");
     };
-    assert_eq!(field, "budget_limits");
+    assert_eq!(second, "budget_limits");
 }
 
 #[test]
@@ -773,11 +770,11 @@ fn broadcast_field_allowlist() {
     assert_eq!(names, BROADCAST_FIELDS);
     assert_field(&resolved, "tags", "[]");
     assert_field(&resolved, "metadata", "{}");
-    assert!(KeyUpdateFields::read(&value(r#"{"spend": 1.0}"#)).is_err());
-    assert!(KeyUpdateFields::read(&value(r#"{"team_id": "t"}"#)).is_err());
-    assert!(KeyUpdateFields::read(&value(r#"{"user_id": "u"}"#)).is_err());
-    assert!(KeyUpdateFields::read(&value(r#"{"models": []}"#)).is_err());
-    assert!(KeyUpdateFields::read(&value(r#"{"permissions": {}}"#)).is_err());
+    KeyUpdateFields::read(&value(r#"{"spend": 1.0}"#)).unwrap_err();
+    KeyUpdateFields::read(&value(r#"{"team_id": "t"}"#)).unwrap_err();
+    KeyUpdateFields::read(&value(r#"{"user_id": "u"}"#)).unwrap_err();
+    KeyUpdateFields::read(&value(r#"{"models": []}"#)).unwrap_err();
+    KeyUpdateFields::read(&value(r#"{"permissions": {}}"#)).unwrap_err();
 }
 
 #[test]
@@ -840,7 +837,7 @@ fn bare_hash_passthrough() {
 
 #[test]
 fn key_body_limits() {
-    let oversized = vec![b' '; 1_048_577];
+    let oversized = vec![b' '; 0x0010_0001];
     assert!(matches!(
         decode_key_request(&oversized),
         Err(DecodeError::Bounded(PrivateJsonError::TooLarge(..)))
@@ -854,12 +851,12 @@ fn key_body_limits() {
         decode_key_request(deep.as_bytes()),
         Err(DecodeError::Bounded(PrivateJsonError::TooDeep(_)))
     ));
-    assert!(decode_key_request(b"{").is_err());
+    decode_key_request(b"{").unwrap_err();
     assert!(matches!(
         decode_key_request(b"[]"),
         Err(DecodeError::NotAnObject)
     ));
-    assert!(decode_key_request(b"{}").is_ok());
+    decode_key_request(b"{}").unwrap();
 }
 
 #[rstest]

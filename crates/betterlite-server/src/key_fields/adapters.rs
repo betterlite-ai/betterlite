@@ -54,10 +54,10 @@ pub fn env_vars_param_value(param: &ConfigParam) -> Option<BTreeMap<String, Stri
     };
     let mut variables = BTreeMap::new();
     for (name, value) in fields {
-        let JsonData::String(value) = value else {
+        let JsonData::String(text) = value else {
             return None;
         };
-        variables.insert(name.clone(), value.clone());
+        variables.insert(name.clone(), text.clone());
     }
     Some(variables)
 }
