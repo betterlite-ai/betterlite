@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-connector-import-mapping
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        test-server:
+          url: https://mcp.example/mcp
+          headers:
+            Authorization: Bearer test-token
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcp_servers:
+          sanitize-me:
+            command: npx
+            args: [-y, pkg]
+        mcpServers:
+          ignored:
+            url: https://ignored.example/mcp
+      stdio: {enabled: false, allowed_commands: [npx]}
+env: {}
+compare: {ignore: []}

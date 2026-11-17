@@ -1,0 +1,1 @@
+{"results":[{"id":"doc-1","document":{"structData":{"category":"manual"},"derivedStructData":{"title":"Guide","link":"gs://bucket/doc.pdf","displayLink":"bucket","formattedUrl":"https://bucket/doc.pdf","snippets":[{"snippet":"snippet text"}],"extractive_answers":[{"content":"answer"}],"extractive_segments":[{"content":"segment"}]}}}]}

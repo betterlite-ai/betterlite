@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-payload-validation-new-stdio-gated
+call:
+  b4716:
+    function: new_request
+    payload:
+      transport: stdio
+      command: npx
+      args: [-y, some-server]
+    stdio: {enabled: false, allowed_commands: [npx]}
+calls:
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+      stdio: {enabled: false, allowed_commands: [npx]}
+env: {}
+compare: {ignore: []}

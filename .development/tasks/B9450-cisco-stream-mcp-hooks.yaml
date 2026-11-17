@@ -92,6 +92,7 @@ description: >-
   body the inspect endpoint got, and the applied_guardrails metadata.
 scope:
   paths:
+    - "tools/oracle/helpers/dispatch.py"
     - crates/betterlite-guardrails/src/cisco_stream_scan.rs
     - crates/betterlite-guardrails/src/cisco_stream_scan/**
     - crates/betterlite-guardrails/src/cisco_mcp_tool_hook.rs
@@ -100,6 +101,12 @@ scope:
     - crates/betterlite-guardrails/Cargo.toml
     - Cargo.lock
     - tools/oracle/cases/guardrails/cisco-stream/**
+    - tools/oracle/fuzz/corpus/helper_case/cisco-stream-*
+    - tools/oracle/helpers/b9450.py
+    - tools/oracle/helpers/b9450/**
+    - tools/oracle/src/helpers/guardrails/b9450.rs
+    - tools/oracle/src/helpers/guardrails/b9450/**
+    - tools/oracle/src/helpers/guardrails/lib.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/cisco_ai_defense.py#L419-L537
@@ -167,5 +174,5 @@ pitfalls:
   - "The MCP gate is an or: either during_mcp_call or pre_mcp_call being true runs the scan."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0

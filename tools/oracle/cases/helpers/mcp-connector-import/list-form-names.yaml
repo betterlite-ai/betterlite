@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-connector-import-list-form-names
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcp_servers:
+        - name: first
+          url: https://first.example/mcp
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcp_servers:
+          - name: first
+            url: https://first.example/mcp
+          - url: https://unnamed.example/mcp
+          - url: ""
+          - name: ""
+            url: https://empty-name.example/mcp
+          - name: third
+            url: https://third.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

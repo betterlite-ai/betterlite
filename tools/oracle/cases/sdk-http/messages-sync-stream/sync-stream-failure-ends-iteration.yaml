@@ -1,0 +1,19 @@
+kind: sdk_http
+name: messages-sync-sync-stream-failure-ends-iteration
+env: {}
+call:
+  messages_sync_stream:
+    model: claude-sonnet-4-5
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    runs:
+      - steps: [next, next, next, next, drain]
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"claude-sonnet-4-5","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - 'null'
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
