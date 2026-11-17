@@ -290,8 +290,8 @@ async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() 
     assert!(text.contains(
         "Permission denied: Tool 'shell' denied by rule 'block-shell' (Rule: block-shell)"
     ));
-    assert!(text.contains(r#""stop_reason":"end_turn""#));
-    assert!(!text.contains(r#""type":"tool_use""#));
+    assert!(text.contains(r#""stop_reason": "end_turn""#));
+    assert!(!text.contains(r#""type": "tool_use""#));
 }
 
 #[tokio::test]
@@ -306,9 +306,9 @@ async fn post_call_streaming_iterator_hook_keeps_an_allowed_anthropic_tool_use()
     )
     .await;
     let text = emitted_text(&items);
-    assert!(text.contains(r#""name":"read""#));
+    assert!(text.contains(r#""name": "read""#));
     assert!(text.contains("Permission denied:"));
-    assert!(!text.contains(r#""name":"shell""#));
+    assert!(!text.contains(r#""name": "shell""#));
 }
 
 #[tokio::test]
@@ -320,18 +320,18 @@ async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_ant
     )
     .await;
     let text = emitted_text(&items);
-    assert!(text.contains(r#""type":"thinking""#));
-    assert!(text.contains(r#""thinking":"hmm""#));
-    assert!(text.contains(r#""signature":"sig-abc""#));
+    assert!(text.contains(r#""type": "thinking""#));
+    assert!(text.contains(r#""thinking": "hmm""#));
+    assert!(text.contains(r#""signature": "sig-abc""#));
     assert!(text.contains("Permission denied:"));
-    assert!(!text.contains(r#""type":"tool_use""#));
+    assert!(!text.contains(r#""type": "tool_use""#));
 }
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_through() {
     let stream = anthropic_tool_stream(&["read"], false);
     let items = run_stream(
-        &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
+        &rewrite_guardrail(vec![rule("allow-read", "allow", "read")]),
         bytes_stream(stream.clone()),
     )
     .await;
