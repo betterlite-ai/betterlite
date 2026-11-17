@@ -112,7 +112,7 @@ class ProviderConfig(BaseRealtimeConfig):
 
     @override
     def unbilled_usage_on_session_close(  # ast-grep-ignore: no-long-names
-        self, _model: str
+        self, model: str  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L97-L98
     ) -> LiteLLMUsage | None:
         return self._usage
 
@@ -154,34 +154,6 @@ def client_argument(message: ClientMessage) -> str | UsageObject:
     return value
 
 
-def response_value(streaming: RealTimeStreaming) -> dict[str, JsonValue]:
-    return {
-        "current_output_item_id": streaming.current_output_item_id,
-        "current_response_id": streaming.current_response_id,
-        "current_conversation_id": streaming.current_conversation_id,
-        "current_delta_chunks": cast(JsonValue, streaming.current_delta_chunks),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L165
-        "current_item_chunks": cast(JsonValue, streaming.current_item_chunks),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L169
-        "current_delta_type": streaming.current_delta_type,
-        "session_configuration_request": streaming.session_configuration_request,
-    }
-
-
-def setup_value(streaming: RealTimeStreaming) -> dict[str, JsonValue]:
-    return {
-        "violation_count": streaming._violation_count,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L175
-        "pending_guardrail_message": streaming._pending_guardrail_message,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L178
-        "session_created_sent_to_client": streaming._session_created_sent_to_client,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L181
-        "turn_detection_update_sent": streaming._guardrail_turn_detection_update_sent,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L184
-        "backend_setup_complete": streaming._backend_setup_complete,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L187
-        "flushing_pending_messages": streaming._flushing_pending_messages_until_setup,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L188
-        "pending_messages_until_setup": JSON.validate_python(
-            streaming._pending_messages_until_setup  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L189
-        ),
-        "pending_messages_byte_total": streaming._pending_messages_byte_total,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L190
-        "content_sent_after_setup": streaming._content_sent_after_setup,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L193
-    }
-
-
 def snapshot(streaming: RealTimeStreaming) -> dict[str, JsonValue]:
     return {
         "logged_event_types": JSON.validate_python(streaming.logged_real_time_event_types),
@@ -199,23 +171,43 @@ def snapshot(streaming: RealTimeStreaming) -> dict[str, JsonValue]:
         "input_messages": JSON.validate_python(streaming.input_messages),
         "session_tools": cast(JsonValue, streaming.session_tools),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L149
         "tool_calls": cast(JsonValue, streaming.tool_calls),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L150
-        "response": response_value(streaming),
-        "setup": setup_value(streaming),
+        "response": {
+            "current_output_item_id": streaming.current_output_item_id,
+            "current_response_id": streaming.current_response_id,
+            "current_conversation_id": streaming.current_conversation_id,
+            "current_delta_chunks": cast(JsonValue, streaming.current_delta_chunks),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L165
+            "current_item_chunks": cast(JsonValue, streaming.current_item_chunks),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L169
+            "current_delta_type": streaming.current_delta_type,
+            "session_configuration_request": streaming.session_configuration_request,
+        },
+        "setup": {
+            "violation_count": streaming._violation_count,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L175
+            "pending_guardrail_message": streaming._pending_guardrail_message,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L178
+            "session_created_sent_to_client": streaming._session_created_sent_to_client,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L181
+            "turn_detection_update_sent": streaming._guardrail_turn_detection_update_sent,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L184
+            "backend_setup_complete": streaming._backend_setup_complete,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L187
+            "flushing_pending_messages": streaming._flushing_pending_messages_until_setup,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L188
+            "pending_messages_until_setup": JSON.validate_python(
+                streaming._pending_messages_until_setup  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L189
+            ),
+            "pending_messages_byte_total": streaming._pending_messages_byte_total,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L190
+            "content_sent_after_setup": streaming._content_sent_after_setup,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L193
+        },
     }
 
 
 def run(input_value: Input) -> JsonValue:
     litellm.logged_real_time_event_types = input_value["logged_event_types"]
-    streaming = RealTimeStreaming(socket_for(client_wants_beta=input_value["client_wants_beta"]), None, None, provider_config=provider_for(input_value["provider"]), model=input_value["model"], user_api_key_dict=input_value["user_api_key_dict"], request_data=input_value["request_data"], backend_uses_beta_protocol=input_value["backend_uses_beta_protocol"], force_transcription_model=input_value["force_transcription_model"])  # noqa: E501  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127-L144
+    streaming = RealTimeStreaming(socket_for(client_wants_beta=input_value["client_wants_beta"]), None, None, provider_config=provider_for(input_value["provider"]), model=input_value["model"], user_api_key_dict=input_value["user_api_key_dict"], request_data=input_value["request_data"], backend_uses_beta_protocol=input_value["backend_uses_beta_protocol"], force_transcription_model=input_value["force_transcription_model"])  # type: ignore[arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L127-L144
     for frame in input_value["store"]:
-        streaming.store_message(frame_argument(frame))
+        streaming.store_message(frame_argument(frame))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L247-L255
     for message in input_value["inputs"]:
-        streaming.store_input(client_argument(message))
+        streaming.store_input(client_argument(message))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L404-L409
     for event in input_value["backend_events"]:
-        streaming._collect_user_input_from_backend_event(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L308-L317
-        streaming._detect_transcription_session_from_backend(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L319-L333
+        streaming._collect_user_input_from_backend_event(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L308-L317
+        streaming._detect_transcription_session_from_backend(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L319-L333
     for event in input_value["usage_events"]:
-        streaming._capture_transcription_usage(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L335-L361
+        streaming._capture_transcription_usage(event)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L335-L361
     if input_value["flush"]:
         streaming._flush_unbilled_transcription_usage()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L364-L380
     return JSON.validate_python(snapshot(streaming))
