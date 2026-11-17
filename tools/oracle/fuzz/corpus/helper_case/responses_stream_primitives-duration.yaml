@@ -1,5 +1,13 @@
 kind: helper
 name: responses-stream-primitives-duration-seed
-call: {responses_stream_primitives: {operation: duration_boundary, rows: [{environment: "2.5", created: 0.0, now: 3.0, model: gpt-4o, provider: openai}]}}
+call:
+  responses_stream_primitives:
+    operation: duration_boundary
+    rows:
+      - environment: "2.5"
+        created: 0.0
+        now: 3.0
+        model: gpt-4o
+        provider: openai
 env: {}
 compare: {ignore: []}
