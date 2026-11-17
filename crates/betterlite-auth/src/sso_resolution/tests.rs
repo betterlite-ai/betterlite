@@ -85,8 +85,8 @@ fn secrets_come_back_unmasked() {
         config
             .microsoft_client_secret
             .as_ref()
-            .map(|secret| secret.expose_secret().as_str()),
-        Some("ms-secret")
+            .map(|secret| secret.expose_secret().to_owned()),
+        Some("ms-secret".to_owned())
     );
     assert_eq!(config.microsoft_tenant.as_deref(), Some("tenant-1"));
 }
