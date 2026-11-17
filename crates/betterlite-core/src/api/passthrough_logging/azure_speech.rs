@@ -95,12 +95,10 @@ fn priced_outcome(
 
 // LiteLLM writes all three keys onto the logging object, and the shared logger reads the cost off model_call_details.
 fn record(logging_obj: &StreamLoggingObject, spend: &MediaSpend) {
-    let entries = spend.entries();
+    let mut details = spend.entries();
     logging_obj.edit(&mut |state| {
         state.model.clone_from(&spend.model);
         state.custom_llm_provider = Some(spend.custom_llm_provider.to_owned());
-        for (key, value) in &entries {
-            state.model_call_details.insert(key.clone(), value.clone());
-        }
+        state.model_call_details.append(&mut details);
     });
 }
