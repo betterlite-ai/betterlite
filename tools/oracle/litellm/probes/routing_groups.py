@@ -15,7 +15,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false
 
 
 class Group(Strict):

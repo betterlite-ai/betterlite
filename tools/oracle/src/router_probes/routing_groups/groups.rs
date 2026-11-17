@@ -77,16 +77,14 @@ pub(super) fn name_facts(
     name: &str,
 ) -> NameFacts {
     let callable = index.callable_group(name).is_some();
-    let ids: Option<Vec<String>> = if callable {
+    let ids: Option<Vec<String>> = callable.then(|| {
         let rows = index.rows(Some(name), &|member| deploys(specs, member));
         let found: BTreeSet<String> = rows
             .iter()
             .filter_map(|row| row.id().map(str::to_owned))
             .collect();
-        Some(found.into_iter().collect())
-    } else {
-        None
-    };
+        found.into_iter().collect()
+    });
     NameFacts {
         name: name.to_owned(),
         is_callable: Flag(callable),

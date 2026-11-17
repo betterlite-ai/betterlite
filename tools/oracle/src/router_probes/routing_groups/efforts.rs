@@ -20,12 +20,14 @@ fn wire_names(levels: &[ReasoningEffort]) -> Vec<String> {
 }
 
 fn effort(name: &str) -> Result<ReasoningEffort, OperationError> {
-    match effort_from_wire(name) {
-        Some(level) => Ok(level),
-        None => Err(OperationError::InvalidRequest {
-            message: format!("unknown reasoning effort {name}"),
-        }),
-    }
+    effort_from_wire(name).map_or_else(
+        || {
+            Err(OperationError::InvalidRequest {
+                message: format!("unknown reasoning effort {name}"),
+            })
+        },
+        Ok,
+    )
 }
 
 fn parsed_levels(names: &[String]) -> Result<Vec<ReasoningEffort>, OperationError> {
