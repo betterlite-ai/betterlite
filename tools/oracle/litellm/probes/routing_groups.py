@@ -1,5 +1,6 @@
 import litellm
 from litellm.router import Router
+from litellm.router_utils import routing_groups
 from litellm.router_utils.common_utils import resolve_model_group_alias
 from litellm.router_utils.reasoning_effort_capability import (
     declared_reasoning_efforts_for_model,
@@ -8,7 +9,6 @@ from litellm.router_utils.reasoning_effort_capability import (
     nearest_declared_reasoning_effort,
     resolve_supported_reasoning_efforts,
 )
-from litellm.router_utils import routing_groups
 from litellm.types.router import RoutingGroup
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
