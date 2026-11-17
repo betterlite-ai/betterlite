@@ -18,13 +18,13 @@ use uuid::Uuid;
 const DONE: &[u8] = b"[DONE]";
 
 // The mock's SSE events decode through B004's chunk creator, one wrapper-view chunk per pull
-pub(super) struct Payloads {
+pub(super) struct PayloadSource {
     payloads: VecDeque<Vec<u8>>,
     shaper: ChunkShaper,
     state: DecodeState,
 }
 
-impl Payloads {
+impl PayloadSource {
     pub(super) fn new(model: String, payloads: VecDeque<Vec<u8>>) -> Self {
         let mut shaper = ChunkShaper::new(
             model.clone(),
@@ -60,10 +60,7 @@ impl Payloads {
 
     // A null payload reaches the driver as a null chunk; the sentinel ends the stream before the parser does
     fn decode_next(&mut self) -> Result<Option<Json>, StreamFailure> {
-        loop {
-            let Some(payload) = self.payloads.pop_front() else {
-                break;
-            };
+        while let Some(payload) = self.payloads.pop_front() {
             if payload == DONE {
                 self.payloads.clear();
                 break;
@@ -103,14 +100,14 @@ where
     }
 }
 
-impl ChunkStream for Payloads {
+impl ChunkStream for PayloadSource {
     fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
         self.decode_next()
     }
 }
 
 #[async_trait]
-impl AsyncChunkStream for Payloads {
+impl AsyncChunkStream for PayloadSource {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
         self.decode_next()
     }

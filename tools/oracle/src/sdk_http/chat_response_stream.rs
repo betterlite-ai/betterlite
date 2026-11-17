@@ -22,8 +22,8 @@ pub(crate) async fn send(
         opened.push(run::open(&prepared, call).await?);
     }
     let mut runs = Vec::with_capacity(opened.len());
-    for (spec, opened) in call.runs.iter().zip(opened) {
-        runs.push(run::run(call, spec, opened).await?);
+    for (spec, answer) in call.runs.iter().zip(opened) {
+        runs.push(run::run(call, spec, answer).await?);
     }
     Ok(SdkResult::ChatResponseStream { value: runs })
 }

@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 
 use super::assembly::AssemblyContext;
 use super::call::{ChatResponseStreamCall, ChatRunMode, ChatRunSpec, ChatRunStep};
-use super::source::Payloads;
+use super::source::PayloadSource;
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::native;
 use crate::sdk_http::result::{
@@ -23,7 +23,7 @@ use crate::sdk_http::wrapper_stream::{self, Prepared};
 
 const NORMALIZED_ID: &str = "00000000-0000-0000-0000-000000000000";
 
-type ChatStream = ChatResponseStream<Payloads, AssemblyContext>;
+type ChatStream = ChatResponseStream<PayloadSource, AssemblyContext>;
 type Step = ChatResponseStreamStepOutcome;
 type StepResult = Result<Step, SdkHttpError>;
 type EventResult = Result<Option<KnownResponseEvent>, ChatResponseStreamError>;
@@ -94,7 +94,7 @@ fn build(
             clock: Arc::new(|| Ok(0)),
             ids: Arc::new(|| NORMALIZED_ID.to_owned()),
         },
-        Payloads::new(call.model.clone(), payloads),
+        PayloadSource::new(call.model.clone(), payloads),
     )
     .map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
