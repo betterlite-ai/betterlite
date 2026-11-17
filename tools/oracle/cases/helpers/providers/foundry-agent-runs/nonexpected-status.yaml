@@ -1,0 +1,67 @@
+kind: helper
+name: foundry-agent-runs-nonexpected-status
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/agent-1
+        messages:
+          - {role: user, content: hi}
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 500, body: thread broke}
+      - model: azure_ai/agents/agent-1
+        messages:
+          - {role: user, content: hi}
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 400, body: bad message}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 429, body: slow down}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 503, body: status down}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-2"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 500, body: messages broke}
+env: {}
+compare: {ignore: []}
