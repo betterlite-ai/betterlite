@@ -7,8 +7,7 @@ use crate::registry::phases::CallbackPhase;
 use crate::registry::sink::CallbackEvent;
 use crate::worker::Callback;
 
-// One accepted service event on B191: the registered service callbacks hear the phase and the sink
-// writes the event. Nothing here enqueues another event, so a failing callback cannot recurse.
+// One accepted service event on B191: the callbacks hear the phase and the sink writes it, with no re-enqueue.
 pub struct Delivery {
     pub sink: Arc<dyn ServiceEventSink>,
     pub registry: Arc<CallbackRegistry>,

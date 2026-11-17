@@ -20,10 +20,12 @@ pub enum ServiceType {
     PodLockManager,
     InMemoryDailySpendUpdateQueue,
     RedisDailySpendUpdateQueue,
-    RedisDailyEndUserSpendUpdateQueue,
+    #[serde(rename = "redis_daily_end_user_spend_update_queue")]
+    RedisDailyEndUserQueue,
     RedisDailyOrgSpendUpdateQueue,
     RedisDailyTeamSpendUpdateQueue,
-    RedisDailyAgentSpendUpdateQueue,
+    #[serde(rename = "redis_daily_agent_spend_update_queue")]
+    RedisDailyAgentQueue,
     RedisDailyTagSpendUpdateQueue,
     InMemorySpendUpdateQueue,
     RedisSpendUpdateQueue,
@@ -43,10 +45,10 @@ impl ServiceType {
         Self::PodLockManager,
         Self::InMemoryDailySpendUpdateQueue,
         Self::RedisDailySpendUpdateQueue,
-        Self::RedisDailyEndUserSpendUpdateQueue,
+        Self::RedisDailyEndUserQueue,
         Self::RedisDailyOrgSpendUpdateQueue,
         Self::RedisDailyTeamSpendUpdateQueue,
-        Self::RedisDailyAgentSpendUpdateQueue,
+        Self::RedisDailyAgentQueue,
         Self::RedisDailyTagSpendUpdateQueue,
         Self::InMemorySpendUpdateQueue,
         Self::RedisSpendUpdateQueue,
@@ -67,10 +69,10 @@ impl ServiceType {
             Self::PodLockManager => "pod_lock_manager",
             Self::InMemoryDailySpendUpdateQueue => "in_memory_daily_spend_update_queue",
             Self::RedisDailySpendUpdateQueue => "redis_daily_spend_update_queue",
-            Self::RedisDailyEndUserSpendUpdateQueue => "redis_daily_end_user_spend_update_queue",
+            Self::RedisDailyEndUserQueue => "redis_daily_end_user_spend_update_queue",
             Self::RedisDailyOrgSpendUpdateQueue => "redis_daily_org_spend_update_queue",
             Self::RedisDailyTeamSpendUpdateQueue => "redis_daily_team_spend_update_queue",
-            Self::RedisDailyAgentSpendUpdateQueue => "redis_daily_agent_spend_update_queue",
+            Self::RedisDailyAgentQueue => "redis_daily_agent_spend_update_queue",
             Self::RedisDailyTagSpendUpdateQueue => "redis_daily_tag_spend_update_queue",
             Self::InMemorySpendUpdateQueue => "in_memory_spend_update_queue",
             Self::RedisSpendUpdateQueue => "redis_spend_update_queue",
@@ -78,32 +80,22 @@ impl ServiceType {
         }
     }
 
-    // PrometheusServicesLogger's _get_service_metrics_initialize: the configured gauge services keep
-    // their gauge, and every other service takes the counter and histogram default
+    // PrometheusServicesLogger's gauge services; every other service takes the counter and histogram default
     #[must_use]
     pub const fn metrics(self) -> &'static [ServiceMetric] {
-        match self {
+        if matches!(
+            self,
             Self::PodLockManager
-            | Self::InMemoryDailySpendUpdateQueue
-            | Self::RedisDailySpendUpdateQueue
-            | Self::RedisDailyEndUserSpendUpdateQueue
-            | Self::RedisDailyAgentSpendUpdateQueue
-            | Self::InMemorySpendUpdateQueue
-            | Self::RedisSpendUpdateQueue => &[ServiceMetric::Gauge],
-            Self::Redis
-            | Self::Postgres
-            | Self::BatchWriteToDb
-            | Self::ResetBudgetJob
-            | Self::Litellm
-            | Self::Router
-            | Self::Auth
-            | Self::ProxyPreCall
-            | Self::RedisDailyOrgSpendUpdateQueue
-            | Self::RedisDailyTeamSpendUpdateQueue
-            | Self::RedisDailyTagSpendUpdateQueue
-            | Self::RedisWindowSpendUpdateQueue => {
-                &[ServiceMetric::Counter, ServiceMetric::Histogram]
-            }
+                | Self::InMemoryDailySpendUpdateQueue
+                | Self::RedisDailySpendUpdateQueue
+                | Self::RedisDailyEndUserQueue
+                | Self::RedisDailyAgentQueue
+                | Self::InMemorySpendUpdateQueue
+                | Self::RedisSpendUpdateQueue
+        ) {
+            &[ServiceMetric::Gauge]
+        } else {
+            &[ServiceMetric::Counter, ServiceMetric::Histogram]
         }
     }
 }

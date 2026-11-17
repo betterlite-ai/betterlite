@@ -9,8 +9,7 @@ use crate::logging_service_events::types::TerminalOutcome;
 
 pub const STREAM_FAILED_ERROR: &str = "the response stream failed";
 
-// A body that records the call's one terminal service event: at the end of the stream, on a stream
-// error, or when the response body is dropped before either happens.
+// A body that records the call's one terminal event: at stream end, on a stream error, or when dropped.
 pub struct ServiceEventStream<S> {
     inner: Pin<Box<S>>,
     call: Option<ServiceCall>,
@@ -18,13 +17,14 @@ pub struct ServiceEventStream<S> {
 }
 
 #[must_use]
-pub(crate) fn failure_for(status: StatusCode) -> Option<String> {
+pub fn failure_for(status: StatusCode) -> Option<String> {
     (!status.is_success())
         .then(|| format!("the upstream call failed with HTTP {}", status.as_u16()))
 }
 
 impl<S> ServiceEventStream<S> {
-    pub(crate) fn new(inner: S, call: ServiceCall, failure: Option<String>) -> Self {
+    #[must_use]
+    pub fn new(inner: S, call: ServiceCall, failure: Option<String>) -> Self {
         Self {
             inner: Box::pin(inner),
             call: Some(call),
@@ -59,11 +59,10 @@ where
             Poll::Ready(Some(Err(_error))) => {
                 this.settle(TerminalOutcome::Failed(STREAM_FAILED_ERROR.to_owned()));
             }
-            Poll::Ready(Some(Ok(_data))) | Poll::Pending => {}
+            Poll::Ready(Some(Ok(_))) | Poll::Pending => {}
         }
         polled
     }
 }
 
-// A stream dropped before either end point leaves its call unsettled, and ServiceCall's own Drop
-// records that cancellation, so there is no second Drop here.
+// A dropped stream leaves its call unsettled, and ServiceCall's own Drop records the cancellation.

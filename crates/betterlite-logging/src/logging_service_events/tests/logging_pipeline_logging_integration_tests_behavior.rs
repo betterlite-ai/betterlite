@@ -5,22 +5,24 @@ use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use futures_util::stream::{self, StreamExt};
-use http::{HeaderMap, HeaderValue, StatusCode};
+use http::StatusCode;
 use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::sync::mpsc;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use betterlite_config::sections::service_callback::Settings as ServiceCallbackSettings;
+use betterlite_config::sections::service_callback::{
+    DEFAULT_CONCURRENCY as SETTINGS_CONCURRENCY, DEFAULT_EVENT_TIMEOUT as SETTINGS_EVENT_TIMEOUT,
+    DEFAULT_LOG_LEVEL, DEFAULT_MAX_QUEUE_SIZE as SETTINGS_QUEUE_SIZE,
+    Settings as ServiceCallbackSettings,
+};
 use betterlite_db::database_diagnostics::level::LogLevel;
 
 use crate::logging_service_events::clock::SystemClock;
-use crate::logging_service_events::pipeline::{
-    CALL_ID_HEADER, PipelineConfig, PipelineError, ServicePipeline,
-};
+use crate::logging_service_events::pipeline::{PipelineConfig, PipelineError, ServicePipeline};
 use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
-use crate::logging_service_events::stream::STREAM_FAILED_ERROR;
+use crate::logging_service_events::stream::{STREAM_FAILED_ERROR, ServiceEventStream, failure_for};
 use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
     ServiceMetric, ServiceType, TerminalOutcome,
@@ -33,13 +35,15 @@ use crate::registry::identity::CallbackIdentity;
 use crate::registry::phases::{CallbackList, CallbackPhase};
 use crate::registry::sink::CallbackSink;
 use crate::registry::{CallbackRegistry, Registration};
-use crate::worker::{Callback, WorkerError, WorkerSettings};
+use crate::worker::{
+    Callback, DEFAULT_CONCURRENCY, DEFAULT_EVENT_TIMEOUT, DEFAULT_SHUTDOWN_DRAIN,
+    DEFAULT_TIMEOUT_SUMMARY_WINDOW, WorkerError, WorkerSettings,
+};
 
 const NOW: &str = "2026-01-01T00:00:00+00:00";
 const SECRET: &str = "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-// Two clock reads per call: the pre-call event takes the first and the terminal event the second, so
-// the recorded duration is exactly one step and both timestamps are predictable.
+// Two clock reads per call keep the duration at one step and both timestamps predictable.
 struct SteppingClock {
     base: DateTime<FixedOffset>,
     step: i64,
@@ -142,74 +146,21 @@ fn harness() -> Harness {
     )
 }
 
-fn headers_with(id: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(CALL_ID_HEADER, HeaderValue::from_str(id).unwrap());
-    headers
-}
-
-fn header_value(headers: &HeaderMap) -> String {
-    headers
-        .get(CALL_ID_HEADER)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
-
-#[tokio::test]
-async fn begin_generates_a_call_id_and_writes_the_header() {
-    let harness = harness();
-    let mut headers = HeaderMap::new();
-    drop(harness.pipeline.begin(ServiceKind::Chat, &mut headers));
-    harness.pipeline.worker.flush().await;
-    let header = header_value(&headers);
-    assert!(uuid::Uuid::parse_str(&header).is_ok());
-    let events = harness.sink.recorded();
-    assert_eq!(events.len(), 2);
-    assert_eq!(events[0].call_id, header);
-    assert_eq!(events[1].call_id, header);
-}
-
-#[tokio::test]
-async fn begin_keeps_a_client_call_id() {
-    let harness = harness();
-    let mut headers = headers_with("client-call-id");
-    drop(harness.pipeline.begin(ServiceKind::Chat, &mut headers));
-    harness.pipeline.worker.flush().await;
-    assert_eq!(header_value(&headers), "client-call-id");
-    assert_eq!(harness.sink.recorded()[0].call_id, "client-call-id");
-}
-
-#[tokio::test]
-async fn begin_replaces_an_oversized_call_id() {
-    let harness = harness();
-    let oversized = "x".repeat(257);
-    let mut headers = headers_with(&oversized);
-    drop(harness.pipeline.begin(ServiceKind::Chat, &mut headers));
-    harness.pipeline.worker.flush().await;
-    let header = header_value(&headers);
-    assert!(uuid::Uuid::parse_str(&header).is_ok());
-    assert_eq!(harness.sink.recorded()[0].call_id, header);
-}
-
 #[tokio::test]
 async fn begin_redacts_a_secret_call_id() {
     let harness = harness();
-    let mut headers = headers_with(SECRET);
-    drop(harness.pipeline.begin(ServiceKind::Chat, &mut headers));
+    let call = harness.pipeline.begin(ServiceKind::Chat, SECRET);
+    call.finish(TerminalOutcome::Succeeded);
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
     assert_eq!(events[0].call_id, "REDACTED");
     assert_eq!(events[1].call_id, "REDACTED");
-    assert_eq!(header_value(&headers), SECRET);
 }
 
 #[tokio::test]
 async fn pre_call_event_carries_the_call_identity() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    drop(harness.pipeline.begin(ServiceKind::Embedding, &mut headers));
+    drop(harness.pipeline.begin(ServiceKind::Embedding, "call-1"));
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
     let pre_call = &events[0];
@@ -228,8 +179,7 @@ async fn pre_call_event_carries_the_call_identity() {
 #[tokio::test]
 async fn terminal_success_records_one_event() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
@@ -261,8 +211,7 @@ async fn terminal_duration_comes_from_the_clock() {
         })
         .unwrap(),
     );
-    let mut headers = headers_with("call-1");
-    let call = pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     pipeline.worker.flush().await;
     assert_eq!(sink.recorded()[1].payload.duration, 3.0);
@@ -271,8 +220,7 @@ async fn terminal_duration_comes_from_the_clock() {
 #[tokio::test]
 async fn terminal_failure_records_the_error_text() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Failed(
         "the upstream call failed with HTTP 500".to_owned(),
     ));
@@ -289,8 +237,7 @@ async fn terminal_failure_records_the_error_text() {
 #[tokio::test]
 async fn dropping_a_call_records_one_cancellation() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     drop(call);
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
@@ -302,8 +249,7 @@ async fn dropping_a_call_records_one_cancellation() {
 #[tokio::test]
 async fn a_finished_call_records_no_second_event() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     harness.pipeline.worker.flush().await;
     assert_eq!(harness.sink.recorded().len(), 2);
@@ -312,10 +258,9 @@ async fn a_finished_call_records_no_second_event() {
 #[tokio::test]
 async fn stream_end_records_success() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     let items: Vec<Result<u8, &'static str>> = vec![Ok(1), Ok(2)];
-    let mut body = call.watch(stream::iter(items), StatusCode::OK);
+    let mut body = ServiceEventStream::new(stream::iter(items), call, failure_for(StatusCode::OK));
     while body.next().await.is_some() {}
     drop(body);
     harness.pipeline.worker.flush().await;
@@ -328,10 +273,9 @@ async fn stream_end_records_success() {
 #[tokio::test]
 async fn stream_error_records_the_fixed_failure() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     let items: Vec<Result<u8, &'static str>> = vec![Ok(1), Err("upstream socket closed")];
-    let mut body = call.watch(stream::iter(items), StatusCode::OK);
+    let mut body = ServiceEventStream::new(stream::iter(items), call, failure_for(StatusCode::OK));
     while body.next().await.is_some() {}
     harness.pipeline.worker.flush().await;
     let terminal = &harness.sink.recorded()[1];
@@ -343,10 +287,13 @@ async fn stream_error_records_the_fixed_failure() {
 #[tokio::test]
 async fn stream_status_failure_records_the_status() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     let items: Vec<Result<u8, &'static str>> = vec![Ok(1)];
-    let mut body = call.watch(stream::iter(items), StatusCode::INTERNAL_SERVER_ERROR);
+    let mut body = ServiceEventStream::new(
+        stream::iter(items),
+        call,
+        failure_for(StatusCode::INTERNAL_SERVER_ERROR),
+    );
     while body.next().await.is_some() {}
     harness.pipeline.worker.flush().await;
     let terminal = &harness.sink.recorded()[1];
@@ -360,10 +307,9 @@ async fn stream_status_failure_records_the_status() {
 #[tokio::test]
 async fn dropping_a_stream_records_cancellation() {
     let harness = harness();
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     let items: Vec<Result<u8, &'static str>> = vec![Ok(1), Ok(2)];
-    let mut body = call.watch(stream::iter(items), StatusCode::OK);
+    let mut body = ServiceEventStream::new(stream::iter(items), call, failure_for(StatusCode::OK));
     assert!(body.next().await.is_some());
     drop(body);
     harness.pipeline.worker.flush().await;
@@ -388,37 +334,85 @@ fn service_kinds_come_from_the_request_path(
     assert_eq!(ServiceKind::from_path(path), expected);
 }
 
-#[test]
-fn service_types_round_trip_their_wire_names() {
-    for service in ServiceType::ALL {
-        assert_eq!(
-            serde_json::to_string(&service).unwrap(),
-            format!("\"{}\"", service.as_str())
-        );
-    }
+#[rstest]
+#[case::redis(ServiceType::Redis, "redis")]
+#[case::postgres(ServiceType::Postgres, "postgres")]
+#[case::batch_write_to_db(ServiceType::BatchWriteToDb, "batch_write_to_db")]
+#[case::reset_budget_job(ServiceType::ResetBudgetJob, "reset_budget_job")]
+#[case::litellm(ServiceType::Litellm, "self")]
+#[case::router(ServiceType::Router, "router")]
+#[case::auth(ServiceType::Auth, "auth")]
+#[case::proxy_pre_call(ServiceType::ProxyPreCall, "proxy_pre_call")]
+#[case::pod_lock_manager(ServiceType::PodLockManager, "pod_lock_manager")]
+#[case::in_memory_daily(
+    ServiceType::InMemoryDailySpendUpdateQueue,
+    "in_memory_daily_spend_update_queue"
+)]
+#[case::redis_daily(
+    ServiceType::RedisDailySpendUpdateQueue,
+    "redis_daily_spend_update_queue"
+)]
+#[case::redis_daily_end_user(
+    ServiceType::RedisDailyEndUserQueue,
+    "redis_daily_end_user_spend_update_queue"
+)]
+#[case::redis_daily_org(
+    ServiceType::RedisDailyOrgSpendUpdateQueue,
+    "redis_daily_org_spend_update_queue"
+)]
+#[case::redis_daily_team(
+    ServiceType::RedisDailyTeamSpendUpdateQueue,
+    "redis_daily_team_spend_update_queue"
+)]
+#[case::redis_daily_agent(
+    ServiceType::RedisDailyAgentQueue,
+    "redis_daily_agent_spend_update_queue"
+)]
+#[case::redis_daily_tag(
+    ServiceType::RedisDailyTagSpendUpdateQueue,
+    "redis_daily_tag_spend_update_queue"
+)]
+#[case::in_memory_spend(ServiceType::InMemorySpendUpdateQueue, "in_memory_spend_update_queue")]
+#[case::redis_spend(ServiceType::RedisSpendUpdateQueue, "redis_spend_update_queue")]
+#[case::redis_window(
+    ServiceType::RedisWindowSpendUpdateQueue,
+    "redis_window_spend_update_queue"
+)]
+fn service_types_round_trip_their_wire_names(#[case] service: ServiceType, #[case] wire: &str) {
+    assert_eq!(service.as_str(), wire);
+    assert_eq!(
+        serde_json::to_string(&service).unwrap(),
+        format!("\"{wire}\"")
+    );
 }
 
-#[test]
-fn metric_sets_follow_the_service_config() {
-    let gauge: &[ServiceMetric] = &[ServiceMetric::Gauge];
-    let default: &[ServiceMetric] = &[ServiceMetric::Counter, ServiceMetric::Histogram];
-    let gauges = [
-        ServiceType::PodLockManager,
-        ServiceType::InMemoryDailySpendUpdateQueue,
-        ServiceType::RedisDailySpendUpdateQueue,
-        ServiceType::RedisDailyEndUserSpendUpdateQueue,
-        ServiceType::RedisDailyAgentSpendUpdateQueue,
-        ServiceType::InMemorySpendUpdateQueue,
-        ServiceType::RedisSpendUpdateQueue,
-    ];
-    for service in ServiceType::ALL {
-        let expected = if gauges.contains(&service) {
-            gauge
-        } else {
-            default
-        };
-        assert_eq!(service.metrics(), expected, "{service:?}");
-    }
+#[rstest]
+#[case::redis(ServiceType::Redis, false)]
+#[case::postgres(ServiceType::Postgres, false)]
+#[case::batch_write_to_db(ServiceType::BatchWriteToDb, false)]
+#[case::reset_budget_job(ServiceType::ResetBudgetJob, false)]
+#[case::litellm(ServiceType::Litellm, false)]
+#[case::router(ServiceType::Router, false)]
+#[case::auth(ServiceType::Auth, false)]
+#[case::proxy_pre_call(ServiceType::ProxyPreCall, false)]
+#[case::pod_lock_manager(ServiceType::PodLockManager, true)]
+#[case::in_memory_daily(ServiceType::InMemoryDailySpendUpdateQueue, true)]
+#[case::redis_daily(ServiceType::RedisDailySpendUpdateQueue, true)]
+#[case::redis_daily_end_user(ServiceType::RedisDailyEndUserQueue, true)]
+#[case::redis_daily_org(ServiceType::RedisDailyOrgSpendUpdateQueue, false)]
+#[case::redis_daily_team(ServiceType::RedisDailyTeamSpendUpdateQueue, false)]
+#[case::redis_daily_agent(ServiceType::RedisDailyAgentQueue, true)]
+#[case::redis_daily_tag(ServiceType::RedisDailyTagSpendUpdateQueue, false)]
+#[case::in_memory_spend(ServiceType::InMemorySpendUpdateQueue, true)]
+#[case::redis_spend(ServiceType::RedisSpendUpdateQueue, true)]
+#[case::redis_window(ServiceType::RedisWindowSpendUpdateQueue, false)]
+fn metric_sets_follow_the_service_config(#[case] service: ServiceType, #[case] gauge: bool) {
+    let expected: &[ServiceMetric] = if gauge {
+        &[ServiceMetric::Gauge]
+    } else {
+        &[ServiceMetric::Counter, ServiceMetric::Histogram]
+    };
+    assert_eq!(service.metrics(), expected, "{service:?}");
 }
 
 #[test]
@@ -481,8 +475,7 @@ async fn a_failing_sink_records_no_second_event() {
         })
         .unwrap(),
     );
-    let mut headers = headers_with("call-1");
-    let call = pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     let report = pipeline.worker.flush().await;
     assert_eq!(report.accepted, 2);
@@ -508,8 +501,7 @@ async fn registered_service_callbacks_hear_each_event() {
         registry,
         WorkerSettings::default(),
     );
-    let mut headers = headers_with("call-1");
-    let call = harness.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     harness.pipeline.worker.flush().await;
     assert_eq!(receiver.try_recv().unwrap().phase, CallbackPhase::Service);
@@ -522,7 +514,10 @@ async fn a_zero_queue_size_keeps_the_pipeline_from_starting() {
     let error = ServicePipeline::start(PipelineConfig {
         settings: WorkerSettings {
             max_queue_size: 0,
-            ..WorkerSettings::default()
+            concurrency: DEFAULT_CONCURRENCY,
+            event_timeout: DEFAULT_EVENT_TIMEOUT,
+            shutdown_drain: DEFAULT_SHUTDOWN_DRAIN,
+            timeout_summary_window: DEFAULT_TIMEOUT_SUMMARY_WINDOW,
         },
         clock: SteppingClock::new(),
         sink: Arc::new(RecordingSink::default()),
@@ -539,8 +534,12 @@ async fn a_zero_queue_size_keeps_the_pipeline_from_starting() {
 #[tokio::test]
 async fn wiring_worker_rejects_a_zero_concurrency() {
     let settings = ServiceCallbackSettings {
+        service_callbacks: Vec::new(),
+        log_level: DEFAULT_LOG_LEVEL,
+        json_logs: false,
+        max_queue_size: SETTINGS_QUEUE_SIZE,
         concurrency: 0,
-        ..ServiceCallbackSettings::default()
+        event_timeout: SETTINGS_EVENT_TIMEOUT,
     };
     let error = LoggingWiring::start(
         &settings,
@@ -596,8 +595,12 @@ impl<'writer> MakeWriter<'writer> for Captured {
 #[tokio::test]
 async fn wiring_applies_the_resolved_queue_limit() {
     let settings = ServiceCallbackSettings {
+        service_callbacks: Vec::new(),
+        log_level: DEFAULT_LOG_LEVEL,
+        json_logs: false,
         max_queue_size: 1,
-        ..ServiceCallbackSettings::default()
+        concurrency: SETTINGS_CONCURRENCY,
+        event_timeout: SETTINGS_EVENT_TIMEOUT,
     };
     let sink = Arc::new(RecordingSink::default());
     let wiring = LoggingWiring::start(
@@ -608,8 +611,7 @@ async fn wiring_applies_the_resolved_queue_limit() {
         Arc::new(ChatStreamAssembler),
     )
     .unwrap();
-    let mut headers = headers_with("call-1");
-    let call = wiring.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = wiring.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     // the queue holds one event, so the two synchronous enqueues admit one and reject one
     let report = wiring.pipeline.stop().await;
@@ -627,7 +629,11 @@ async fn wiring_reports_callbacks_that_are_not_installed() {
         .finish();
     let settings = ServiceCallbackSettings {
         service_callbacks: vec!["datadog".to_owned()],
-        ..ServiceCallbackSettings::default()
+        log_level: DEFAULT_LOG_LEVEL,
+        json_logs: false,
+        max_queue_size: SETTINGS_QUEUE_SIZE,
+        concurrency: SETTINGS_CONCURRENCY,
+        event_timeout: SETTINGS_EVENT_TIMEOUT,
     };
     let wiring = with_default(subscriber, || {
         LoggingWiring::start(
@@ -674,11 +680,11 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
             max_queue_size: 8,
             concurrency: 2,
             event_timeout: Duration::from_secs(5),
-            ..WorkerSettings::default()
+            shutdown_drain: DEFAULT_SHUTDOWN_DRAIN,
+            timeout_summary_window: DEFAULT_TIMEOUT_SUMMARY_WINDOW,
         }
     );
-    let mut headers = headers_with("call-1");
-    let call = wiring.pipeline.begin(ServiceKind::Chat, &mut headers);
+    let call = wiring.pipeline.begin(ServiceKind::Chat, "call-1");
     call.finish(TerminalOutcome::Succeeded);
     let report = wiring.pipeline.stop().await;
     assert_eq!(report.accepted, 2);

@@ -9,10 +9,9 @@ use crate::logging_service_events::sink::ServiceEventSink;
 use crate::logging_success::ports::{StreamAssembler, SuccessClock};
 use crate::registry::CallbackRegistry;
 use crate::registry::phases::CallbackList;
-use crate::worker::WorkerSettings;
+use crate::worker::{DEFAULT_SHUTDOWN_DRAIN, DEFAULT_TIMEOUT_SUMMARY_WINDOW, WorkerSettings};
 
-// The one place the server builds the logging dependencies: the clock, the sink, the callback
-// registry and the stream assembler enter here, and every route reads the pipeline's Arc.
+// The one place the server builds the logging parts: clock, sink, callback registry and stream assembler.
 pub struct LoggingWiring {
     pub pipeline: Arc<ServicePipeline>,
     pub stream_assembler: Arc<dyn StreamAssembler>,
@@ -35,7 +34,8 @@ impl LoggingWiring {
             max_queue_size: settings.max_queue_size,
             concurrency: settings.concurrency,
             event_timeout: settings.event_timeout,
-            ..WorkerSettings::default()
+            shutdown_drain: DEFAULT_SHUTDOWN_DRAIN,
+            timeout_summary_window: DEFAULT_TIMEOUT_SUMMARY_WINDOW,
         };
         let pipeline = ServicePipeline::start(PipelineConfig {
             settings: worker_settings,
@@ -53,8 +53,7 @@ impl LoggingWiring {
     }
 }
 
-// A callback only reaches the service phase once an adapter for it exists; until then the name is
-// reported as not installed rather than advertised as registered.
+// A callback reaches the service phase only once its adapter exists; until then it is reported as not installed.
 fn register_service_callbacks(registry: &mut CallbackRegistry, names: &[String]) {
     for name in names {
         let registered = registry.register_configured(

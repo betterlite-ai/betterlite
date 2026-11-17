@@ -1,16 +1,12 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset};
-use http::header::HeaderValue;
-use http::{HeaderMap, StatusCode};
 use thiserror::Error;
-use uuid::Uuid;
 
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use crate::logging_service_events::sink::ServiceEventSink;
-use crate::logging_service_events::stream::{ServiceEventStream, failure_for};
 use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceKind, ServiceLoggerPayload, ServiceType, TerminalOutcome,
 };
@@ -19,11 +15,6 @@ use crate::logging_state::correlation::sanitize_correlation_id;
 use crate::logging_success::ports::SuccessClock;
 use crate::registry::CallbackRegistry;
 use crate::worker::{Admission, LoggingWorker, ShutdownReport, WorkerError, WorkerSettings};
-
-pub const CALL_ID_HEADER: &str = "x-litellm-call-id";
-
-// LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
-const MAXIMUM_CALL_ID_LENGTH: usize = 256;
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
@@ -43,8 +34,7 @@ pub(crate) struct PipelineConfig {
     pub(crate) registry: Arc<CallbackRegistry>,
 }
 
-// The service event track: every call enqueues its pre-call and terminal events here, and B191 hands
-// them to the sink and to the callbacks registered for the service phase.
+// The service event track: every call enqueues its pre-call and terminal events here for B191 to deliver.
 pub struct ServicePipeline {
     pub(crate) worker: LoggingWorker<Delivery>,
     clock: Arc<dyn SuccessClock>,
@@ -67,14 +57,12 @@ impl ServicePipeline {
         })
     }
 
-    // The call identity lives in the request headers: the handlers read the id this writes, so the
-    // events and the response it produces name the same call.
     #[must_use]
-    pub fn begin(self: &Arc<Self>, kind: ServiceKind, headers: &mut HeaderMap) -> ServiceCall {
-        let call_id = sanitize_correlation_id(&resolve_call_id(headers), Some(&self.redactor));
+    pub fn begin(self: &Arc<Self>, kind: ServiceKind, call_id: &str) -> ServiceCall {
+        let sanitized = sanitize_correlation_id(call_id, Some(&self.redactor));
         let started = self.clock.now();
         let event = ServiceEvent {
-            call_id: call_id.clone(),
+            call_id: sanitized.clone(),
             payload: ServiceLoggerPayload {
                 is_error: false,
                 error: None,
@@ -90,7 +78,7 @@ impl ServicePipeline {
         self.record(event);
         ServiceCall {
             pipeline: Arc::clone(self),
-            call_id,
+            call_id: sanitized,
             kind,
             started,
             settled: false,
@@ -134,11 +122,6 @@ pub struct ServiceCall {
 }
 
 impl ServiceCall {
-    #[must_use]
-    pub fn watch<S>(self, inner: S, status: StatusCode) -> ServiceEventStream<S> {
-        ServiceEventStream::new(inner, self, failure_for(status))
-    }
-
     pub(crate) fn finish(mut self, outcome: TerminalOutcome) {
         self.settled = true;
         self.record(outcome);
@@ -183,19 +166,4 @@ fn seconds_between(start: DateTime<FixedOffset>, end: DateTime<FixedOffset>) -> 
     end.signed_duration_since(start)
         .to_std()
         .map_or(0.0, |elapsed| elapsed.as_secs_f64())
-}
-
-fn resolve_call_id(headers: &mut HeaderMap) -> String {
-    let existing = headers
-        .get(CALL_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| (1..=MAXIMUM_CALL_ID_LENGTH).contains(&value.len()));
-    let call_id = existing.map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
-    match HeaderValue::from_str(&call_id) {
-        Ok(value) => {
-            headers.insert(CALL_ID_HEADER, value);
-        }
-        Err(_error) => tracing::warn!("the resolved call id is not a valid header value"),
-    }
-    call_id
 }
