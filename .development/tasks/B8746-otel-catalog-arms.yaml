@@ -17,7 +17,7 @@ description: >-
 
   The shared shape (agentops L4513-L4523, arize L4710-L4737, arize_phoenix L4739-L4763, levo L4765-L4788, langtrace
   L4941-L4962, signoz L4964-L4995, langfuse_otel L5013-L5025, weave_otel L5026-L5049): first call B8910's
-  `_maybe_construct_otel_v2` factory for the name; when it gives a V2 logger (B3853's OpenTelemetryV2) return it.
+  `_maybe_construct_otel_v2` factory for the name; when it gives a V2 logger (B3852's OpenTelemetryV2) return it.
   Otherwise build the legacy logger: Arize and Phoenix from B3862, AgentOps, Levo, Logfire, Traceloop and Weave from
   B3863, LangfuseOtelLogger from B3910, the generic legacy OpenTelemetry from B3868 for langtrace and signoz with the
   endpoint and header each arm computes. langtrace requires LANGTRACE_API_KEY and signoz requires the SigNoz ingestion
@@ -25,7 +25,7 @@ description: >-
   check it first. Every arm reads the environment through inputs.env, never std::env.
 
 
-  otel (L4790-L4828): when LITELLM_OTEL_V2 is on (B3853's is_otel_v2_enabled), build the V2 logger from
+  otel (L4790-L4828): when LITELLM_OTEL_V2 is on (B3842's otel_v2 feature flag), build the V2 logger from
   `inputs.callback_settings["otel"]` (LiteLLM's _get_custom_logger_settings_from_proxy_server); otherwise build the
   legacy OpenTelemetry from the same settings: copy their `attributes` value into OpenTelemetryConfig.attributes and build
   B3857's metric attribute filter from that config before calling B3868's init (LiteLLM's __init__ L395-L415), so a bad

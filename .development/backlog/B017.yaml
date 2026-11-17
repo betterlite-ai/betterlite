@@ -2,7 +2,7 @@ id: B017
 milestone: M2 routing
 title: Execute retries within the routing deadline
 status: todo
-depends_on: [B016, B305, B306, B005, B012, B301]
+depends_on: [B016, B305, B306, B005, B301]
 file: tasks/B017-routing-retries.yaml
 covers:
   - "litellm/litellm_core_utils/core_helpers.py"

@@ -4,7 +4,7 @@ description: >-
   Implement complete aupdate/update and adelete/delete functions from vector_stores/main.py in
   betterlite-core::api::vector_store_write. Omitted custom_llm_provider becomes openai; values containing
   slash go through B174 get_llm_provider for api_type and provider. B010 selects the provider configuration; then
-  call B2402's HTTP write service. Keep B011 SDK exception mapping and B012 logging context active in
+  call B2402's HTTP write service. Keep B011 SDK exception mapping and B247 logging context active in
   both execution modes. The aupdate/adelete flags select async only for boolean true.
 
   Update overlays kwargs on locals before B1058's create-parameter filter; file_ids and chunking_strategy
@@ -109,7 +109,7 @@ out_of_scope:
 - B2402 owns four HTTP write handlers and _handle_error; B668 cleans metadata there after this task filters arguments.
 - B1064 owns create/search, mock responses and the direct embedding executor in vector_stores/main.py; B1065 owns list/retrieve.
 - B1058 owns VectorStoreRequestUtils and provider contracts; B1131 owns wire records; B527 owns OpenAI transformations.
-- B174 resolves provider names, B010 owns config selection/GenericLiteLLMParams, B011 maps SDK exceptions and B012 supplies logging.
+- B174 resolves provider names, B010 owns config selection/GenericLiteLLMParams, B011 maps SDK exceptions and B247 supplies logging.
 pitfalls:
 - An update accepts file_ids and chunking_strategy because it uses the create allowlist.
 - extra_query appears in the public signature but neither write passes it to the HTTP handler.
