@@ -17,6 +17,9 @@ from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+# register_model calls get_llm_provider, which prints the provider list to stdout
+litellm.suppress_debug_info = True
+
 FAILED: Final = "Error: Unable to fetch image from URL after 3 attempts. url={url}"
 
 
