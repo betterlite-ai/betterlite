@@ -119,7 +119,37 @@ async fn keeps_issued_tokens_out_of_a_successful_exchange_log() {
         .unwrap();
     let captured = logs.text();
     assert!(captured.contains("the SSO token endpoint answered the code exchange"));
+    assert!(captured.contains("id_token_present=true"));
     assert!(!captured.contains("ISSUED-ACCESS-TOKEN"));
     assert!(!captured.contains("ISSUED-ID-TOKEN"));
     assert!(!captured.contains("ISSUED-REFRESH-TOKEN"));
+}
+
+#[tokio::test]
+async fn logs_a_falsy_id_token_as_absent() {
+    let provider = LocalProvider::start().await;
+    provider.reply(
+        "/token",
+        Reply::json(r#"{"access_token":"access-1","id_token":null}"#),
+    );
+    provider.reply("/userinfo", Reply::json(r#"{"sub":"user-1"}"#));
+    let (logs, _guard) = Logs::capture();
+    exchange_pkce_code(&client(), &base_request(&provider))
+        .await
+        .unwrap();
+    assert!(logs.text().contains("id_token_present=false"));
+}
+
+#[tokio::test]
+async fn logs_the_code_verifier_length_but_not_the_verifier() {
+    let provider = LocalProvider::start().await;
+    provider.reply("/token", Reply::json(r#"{"access_token":"access-1"}"#));
+    provider.reply("/userinfo", Reply::json(r#"{"sub":"user-1"}"#));
+    let (logs, _guard) = Logs::capture();
+    exchange_pkce_code(&client(), &base_request(&provider))
+        .await
+        .unwrap();
+    let captured = logs.text();
+    assert!(captured.contains("code_verifier_length=10"));
+    assert!(!captured.contains("verifier-1"));
 }

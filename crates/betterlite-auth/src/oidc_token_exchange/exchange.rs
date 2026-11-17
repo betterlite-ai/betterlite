@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::oidc_token_exchange::decode::{
     MAX_OIDC_RESPONSE_BYTES, OidcResponseError, ProviderClaims, TokenResponse, UserinfoDocument,
-    decode_oidc_token_response, decode_oidc_userinfo,
+    decode_oidc_token_response, decode_oidc_userinfo, is_empty_document,
 };
 
 use self::claims::{fallback_claims, merge_claims};
@@ -147,6 +147,10 @@ async fn post_token_request(
     client: &ProxiedClient,
     request: &TokenExchangeRequest,
 ) -> Result<TokenResponse, OidcTokenExchangeError> {
+    tracing::debug!(
+        code_verifier_length = request.code_verifier.expose_secret().chars().count(),
+        "the SSO token endpoint exchange starts"
+    );
     let url =
         Url::parse(&request.token_endpoint).map_err(OidcTokenExchangeError::TokenEndpointUrl)?;
     let outbound = OutboundRequest {
@@ -187,7 +191,10 @@ fn validated_token_response(
         OidcTokenExchangeError::TokenResponse(source)
     })?;
     tracing::debug!(
-        id_token_present = token_response.claims.contains_key(ID_TOKEN_FIELD),
+        id_token_present = token_response
+            .claims
+            .get(ID_TOKEN_FIELD)
+            .is_some_and(|value| !is_empty_document(value)),
         "the SSO token endpoint answered the code exchange"
     );
     Ok(token_response)

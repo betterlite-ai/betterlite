@@ -123,7 +123,7 @@ fn decode_document(bytes: &[u8]) -> Result<TypedValue, OidcResponseError> {
 }
 
 // Python's falsy test, which decides whether LiteLLM falls back to the id_token
-fn is_empty_document(document: &TypedValue) -> bool {
+pub(super) fn is_empty_document(document: &TypedValue) -> bool {
     let json = &document.json;
     json.is_null()
         || json.as_bool() == Some(false)
