@@ -144,7 +144,6 @@ fn request_value(case: &Request) -> Result<Value, Box<HelperError>> {
         &sniff,
     )
     .map_err(|error| edit_failure(&error))?;
-    drop(view);
     let revealed: BTreeMap<String, String> = headers
         .iter()
         .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
