@@ -7,5 +7,5 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(value) = serde_json::from_slice(bytes) else {
         return;
     };
-    decode_all(&value);
+    let _accepted = decode_all(&value);
 });

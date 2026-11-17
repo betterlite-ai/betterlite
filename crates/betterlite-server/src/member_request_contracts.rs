@@ -76,24 +76,26 @@ where
     Ok(serde_json::from_value(raw.clone())?)
 }
 
-pub fn decode_all(value: &Value) {
-    drop(team::DeleteTeamRequest::from_value(value));
-    drop(callbacks::AddTeamCallback::from_value(value));
-    drop(callbacks::TeamCallbackMetadata::from_value(value));
-    drop(members::OrgMember::from_value(value));
-    drop(members::MemberAddRequest::from_value(value));
-    drop(members::TeamMemberAddRequest::from_value(value));
-    drop(members::OrgMemberAddRequest::from_value(value));
-    drop(members::OrganizationMemberAddRequest::from_value(value));
-    // ast-grep-ignore: no-long-names
-    drop(members::OrganizationMemberDeleteRequest::from_value(value));
-    drop(members::TeamMemberDeleteRequest::from_value(value));
-    drop(members::TeamMemberUpdateRequest::from_value(value));
-    // ast-grep-ignore: no-long-names
-    drop(members::OrganizationMemberUpdateRequest::from_value(value));
-    drop(organization::OrganizationTableUpdate::from_value(value));
-    drop(organization::OrganizationUpdateRequestV2::from_value(value));
-    drop(organization::OrganizationTableWithMembers::from_value(
-        value,
-    ));
+#[must_use]
+pub fn decode_all(value: &Value) -> usize {
+    let accepted = [
+        team::DeleteTeamRequest::from_value(value).is_ok(),
+        callbacks::AddTeamCallback::from_value(value).is_ok(),
+        callbacks::TeamCallbackMetadata::from_value(value).is_ok(),
+        members::OrgMember::from_value(value).is_ok(),
+        members::MemberAddRequest::from_value(value).is_ok(),
+        members::TeamMemberAddRequest::from_value(value).is_ok(),
+        members::OrgMemberAddRequest::from_value(value).is_ok(),
+        members::OrganizationMemberAddRequest::from_value(value).is_ok(),
+        // ast-grep-ignore: no-long-names
+        members::OrganizationMemberDeleteRequest::from_value(value).is_ok(),
+        members::TeamMemberDeleteRequest::from_value(value).is_ok(),
+        members::TeamMemberUpdateRequest::from_value(value).is_ok(),
+        // ast-grep-ignore: no-long-names
+        members::OrganizationMemberUpdateRequest::from_value(value).is_ok(),
+        organization::OrganizationTableUpdate::from_value(value).is_ok(),
+        organization::OrganizationUpdateRequestV2::from_value(value).is_ok(),
+        organization::OrganizationTableWithMembers::from_value(value).is_ok(),
+    ];
+    accepted.iter().filter(|ok| **ok).count()
 }
