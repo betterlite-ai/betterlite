@@ -1,0 +1,19 @@
+kind: helper
+name: skipped-references
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://my-bucket/photo.png"}}
+          - {type: image_url, image_url: {url: "gs://my-bucket/diagram", format: image/png}}
+          - {type: image_url, image_url: {url: "https://generativelanguage.googleapis.com/v1beta/files/abc123"}}
+          - {type: image_url, image_url: {url: "https://example.com/cat.png"}}
+          - {type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}
+    litellm_params: {vertex_project: "my-project"}
+    metadata: {status: 200, json: {contentType: "image/png"}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}
