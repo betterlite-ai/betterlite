@@ -540,17 +540,13 @@ async fn a_chat_deployment_answers_the_text_shape() {
             .and_then(|choice| choice.text.as_deref()),
         Some(" hello")
     );
-    // the chat endpoint receives the messages the text prompt became, and the buffered call's stream flag
+    // the chat endpoint receives the messages the text prompt became, and a buffered call sends no stream flag
     assert!(
         answered.sent.contains(r#""role":"user""#),
         "{}",
         answered.sent
     );
-    assert!(
-        answered.sent.contains(r#""stream":false"#),
-        "{}",
-        answered.sent
-    );
+    assert!(!answered.sent.contains(r#""stream""#), "{}", answered.sent);
 }
 
 #[tokio::test]
