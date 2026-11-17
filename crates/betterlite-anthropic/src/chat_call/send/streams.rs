@@ -20,20 +20,20 @@ use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
 
 // The sent request the two stream branches share; the body already carries stream=True and pre_call saw it
-pub(super) struct StreamFacts<'facts> {
-    pub(super) model: &'facts str,
-    pub(super) api_base: &'facts str,
-    pub(super) messages: &'facts Json,
-    pub(super) data: IndexMap<String, Json>,
-    pub(super) headers: HeaderMap,
-    pub(super) timeout: Duration,
-    pub(super) json_mode: bool,
-    pub(super) optional_params: &'facts IndexMap<String, Json>,
-    pub(super) litellm_params: &'facts IndexMap<String, Json>,
+pub(crate) struct StreamFacts<'facts> {
+    pub(crate) model: &'facts str,
+    pub(crate) api_base: &'facts str,
+    pub(crate) messages: &'facts Json,
+    pub(crate) data: IndexMap<String, Json>,
+    pub(crate) headers: HeaderMap,
+    pub(crate) timeout: Duration,
+    pub(crate) json_mode: bool,
+    pub(crate) optional_params: &'facts IndexMap<String, Json>,
+    pub(crate) litellm_params: &'facts IndexMap<String, Json>,
 }
 
 // acompletion_stream_function accepts only an AsyncHTTPHandler, while make_sync_call takes any supplied client
-pub(super) async fn open_stream<Client, Counter>(
+pub(crate) async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
     logger: &dyn StreamLogger,
     build: StreamBuild<'_, Counter>,
@@ -49,29 +49,42 @@ where
         .as_ref()
         .filter(|item| !acompletion || item.kind == ClientKind::Async)
         .map(|item| item.transport);
-    if acompletion {
-        let stream = CompletionStream {
-            model: facts.model,
-            api_base: facts.api_base,
-            headers: facts.headers,
-            data: facts.data,
-            messages: facts.messages,
-            timeout: facts.timeout,
-            json_mode: facts.json_mode,
-            optional_params: facts.optional_params,
-            litellm_params: facts.litellm_params,
-        };
-        let wrapping = StreamClients {
-            supplied,
-            module_level_aclient: clients.pooled,
-            module_level_client: clients.pooled,
-            logger,
-        };
-        let wrapped = acompletion_stream_function(wrapping, stream, build)
-            .await
-            .map_err(completion_error)?;
-        return Ok(ChatOutcome::Stream(Box::new(wrapped)));
+    let wrapping = StreamClients {
+        supplied,
+        module_level_aclient: clients.pooled,
+        module_level_client: clients.pooled,
+        logger,
+    };
+    if !acompletion {
+        return sync_stream(wrapping, facts, build).await;
     }
+    let stream = CompletionStream {
+        model: facts.model,
+        api_base: facts.api_base,
+        headers: facts.headers,
+        data: facts.data,
+        messages: facts.messages,
+        timeout: facts.timeout,
+        json_mode: facts.json_mode,
+        optional_params: facts.optional_params,
+        litellm_params: facts.litellm_params,
+    };
+    let wrapped = acompletion_stream_function(wrapping, stream, build)
+        .await
+        .map_err(completion_error)?;
+    Ok(ChatOutcome::Stream(Box::new(wrapped)))
+}
+
+// make_sync_call sends the encoded body and wraps the opened stream with the provider name and its headers
+async fn sync_stream<Client, Counter>(
+    clients: StreamClients<'_, Client>,
+    facts: StreamFacts<'_>,
+    build: StreamBuild<'_, Counter>,
+) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
+where
+    Client: ChatTransport,
+    Counter: ReasoningTokenCounter + Unpin + Send,
+{
     let body = python_json::dumps_object(&facts.data);
     let (speed, reverse) = stream_names(facts.optional_params, facts.litellm_params)?;
     let request = StreamCall {
@@ -85,12 +98,7 @@ where
         tool_name_reverse_map: &reverse,
     };
     let opened = StreamOpening {
-        clients: StreamClients {
-            supplied,
-            module_level_aclient: clients.pooled,
-            module_level_client: clients.pooled,
-            logger,
-        },
+        clients,
         call: &request,
         build,
     }

@@ -29,9 +29,9 @@ impl FailureShape {
             ChatCallError::Response(ResponseError::Anthropic { .. }) => "AnthropicError",
             ChatCallError::Response(_) | ChatCallError::Parameter(_) => "ValueError",
             ChatCallError::Open(_) => "AnthropicError",
-            ChatCallError::Endpoint { .. }
-            | ChatCallError::HeaderName { .. }
-            | ChatCallError::HeaderValue { .. } => "ValueError",
+            ChatCallError::Endpoint(_)
+            | ChatCallError::HeaderName(_)
+            | ChatCallError::HeaderValue(_) => "ValueError",
         };
         Self {
             class,
@@ -56,13 +56,8 @@ fn failure_answer(run: &Run) -> HelperResult {
     }
 }
 
-pub(super) fn pre_stream_error(input: &Input) -> HelperResult {
-    let acompletion = input.acompletion;
-    let run = execute(input, acompletion, client_kind(acompletion))?;
-    failure_answer(&run)
-}
-
-pub(super) fn native_error_body(input: &Input) -> HelperResult {
+// both cases compare the exception LiteLLM raises, so the answer is that error and not a value
+pub(super) fn failed_call(input: &Input) -> HelperResult {
     let acompletion = input.acompletion;
     let run = execute(input, acompletion, client_kind(acompletion))?;
     failure_answer(&run)

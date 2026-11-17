@@ -15,6 +15,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use thiserror::Error;
@@ -26,7 +27,7 @@ use crate::anthropic_http_stream::transport::{
     LineChunks, StreamPost, StreamReply, StreamTransport,
 };
 use crate::chat_call::ChatCallError;
-use crate::chat_call::config::{ChatConfig, TransformRequest};
+use crate::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
 use crate::chat_call::error::ConfigError;
 use crate::chat_call::transport::{BufferedReply, ChatTransport};
 use crate::response::error::ResponseError;
@@ -184,10 +185,8 @@ impl StreamTransport for FixtureTransport {
             return Err(failure);
         }
         let lines: Vec<String> = self.reply.lines.clone();
-        let decoded: LineChunks<FixtureFailure> = futures_util::stream::iter(
-            lines.into_iter().map(|line| Ok(TransportChunk::Text(line))),
-        )
-        .boxed();
+        let decoded: LineChunks<FixtureFailure> =
+            stream::iter(lines.into_iter().map(|line| Ok(TransportChunk::Text(line)))).boxed();
         Ok(StreamReply {
             status_code: self.reply.status_code,
             headers: self.reply.headers.clone(),
@@ -297,15 +296,18 @@ impl ChatConfig for FixtureConfig {
 
     fn transform_response<Counter>(
         &self,
-        envelope: &mut ResponseEnvelope,
-        raw: &RawResponse<'_>,
-        request: &ResponseRequest<'_>,
+        response: TransformResponse<'_, '_, '_>,
         logging: ResponseLogging<'_>,
         counter: &Counter,
     ) -> Result<(), ResponseError<Counter::Failure>>
     where
         Counter: ReasoningTokenCounter,
     {
+        let TransformResponse {
+            envelope,
+            raw,
+            request,
+        } = response;
         transform_response(envelope, raw, request, logging, counter)
     }
 }

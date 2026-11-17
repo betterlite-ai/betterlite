@@ -82,6 +82,7 @@ def pre_call_value(recorder: Recorder) -> JsonValue:
         "input": recorder.pre_input,
         "body": recorder.pre_body,
         "api_base": recorder.pre_api_base,
+        "anthropic_beta": recorder.pre_beta,
     }
     return answer
 

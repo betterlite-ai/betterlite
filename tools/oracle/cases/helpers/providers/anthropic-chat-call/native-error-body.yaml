@@ -62,4 +62,4 @@ calls:
       response_header_names: []
 env:
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
-compare: {ignore: [{pointer: /error/message, why: "LiteLLM stringifies the upstream error object and betterlite writes its own text"}]}
+compare: {ignore: []}

@@ -16,6 +16,7 @@ use secrecy::SecretString;
 use crate::anthropic_http_stream::call::{StreamBuild, StreamLogger};
 use crate::anthropic_http_stream::completion::WrappedStream;
 use crate::credentials::AnthropicSettings;
+use crate::response::Logging;
 use crate::response::wire::ResponseEnvelope;
 use crate::stream_state::state::IdSource;
 use crate::usage::ReasoningTokenCounter;
@@ -25,7 +26,7 @@ use error::ChatCallError;
 use prepare::Prepared;
 use send::BufferedCall;
 use send::streams::{StreamFacts, open_stream};
-use transport::{ChatTransport, SuppliedChatClient};
+use transport::{ChatTransport, ClientKind, SuppliedChatClient};
 
 // embedding() is an empty pass body: it builds no request, sends none and returns None
 pub const EMBEDDING_REPLY: Option<ResponseEnvelope> = None;
@@ -78,60 +79,81 @@ pub async fn chat_call<Config, Client, Counter>(
 where
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter + Clone + Unpin + Send,
+    Counter: ReasoningTokenCounter + Unpin + Send,
+{
+    let prepared = prepare::prepare(&call, &mut deps).await?;
+    if prepared.options.stream {
+        return send_stream(call, prepared, deps).await;
+    }
+    // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
+    let client = match deps.clients.supplied.as_ref() {
+        Some(supplied) if call.acompletion || supplied.kind == ClientKind::Sync => {
+            supplied.transport
+        }
+        _ => deps.clients.pooled,
+    };
+    send::buffered(
+        BufferedCall {
+            call,
+            body: prepared.body,
+            header_map: prepared.header_map,
+            optional_params: prepared.optional_params,
+            options: prepared.options,
+        },
+        client,
+        deps.config,
+        Logging {
+            state: &mut *deps.state,
+            env: deps.env,
+        },
+        &deps.counter,
+    )
+    .await
+}
+
+// the stream branch: acompletion_stream_function takes only an AsyncHTTPHandler, make_sync_call any supplied client
+async fn send_stream<Config, Client, Counter>(
+    call: ChatCall<'_>,
+    prepared: Prepared,
+    deps: ChatDeps<'_, Config, Client, Counter>,
+) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
+where
+    Client: ChatTransport,
+    Counter: ReasoningTokenCounter + Unpin + Send,
 {
     let Prepared {
         body,
         header_map,
         optional_params,
         options,
-    } = prepare::prepare(&call, &mut deps).await?;
+    } = prepared;
     let ChatDeps {
-        config,
         clients,
-        state,
-        env,
         stream_logger,
         counter,
         ids,
         max_event_bytes,
         max_error_body_bytes,
+        ..
     } = deps;
-    if options.stream {
-        // the stream helper takes the messages as one JSON list, the way LiteLLM passes its copied list
-        let messages = Json::List(call.messages);
-        let facts = StreamFacts {
-            model: call.model,
-            api_base: call.api_base,
-            messages: &messages,
-            data: body,
-            headers: header_map,
-            timeout: call.timeout,
-            json_mode: options.json_mode,
-            optional_params: &optional_params,
-            litellm_params: &call.litellm_params,
-        };
-        let build = StreamBuild {
-            ids,
-            counter: counter.clone(),
-            max_event_bytes,
-            max_error_body_bytes,
-        };
-        return open_stream(clients, stream_logger, build, facts, call.acompletion).await;
-    }
-    send::buffered(
-        BufferedCall {
-            call,
-            body,
-            header_map,
-            optional_params,
-            options,
-        },
-        config,
-        &clients,
-        state,
-        env,
-        &counter,
-    )
-    .await
+    // the stream helper takes the messages as one JSON list, the way LiteLLM passes its copied list
+    let messages = Json::List(call.messages);
+    let facts = StreamFacts {
+        model: call.model,
+        api_base: call.api_base,
+        messages: &messages,
+        data: body,
+        headers: header_map,
+        timeout: call.timeout,
+        json_mode: options.json_mode,
+        optional_params: &optional_params,
+        litellm_params: &call.litellm_params,
+    };
+    let build = StreamBuild {
+        ids,
+        counter,
+        max_event_bytes,
+        max_error_body_bytes,
+    };
+    open_stream(clients, stream_logger, build, facts, call.acompletion).await
 }

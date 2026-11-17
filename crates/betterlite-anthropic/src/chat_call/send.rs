@@ -1,9 +1,7 @@
 use std::error::Error as StdError;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -14,11 +12,11 @@ use crate::anthropic_http_stream::transport::StreamPost;
 use crate::response::{Logging, RawResponse, ResponseRequest};
 use crate::usage::ReasoningTokenCounter;
 
-use super::config::ChatConfig;
+use super::config::{ChatConfig, TransformResponse};
 use super::error::ChatCallError;
 use super::prepare::Options;
-use super::transport::{ChatTransport, ClientKind};
-use super::{ChatCall, ChatClients, ChatOutcome};
+use super::transport::{BufferedReply, ChatTransport};
+use super::{ChatCall, ChatDeps, ChatOutcome};
 
 pub(super) mod streams;
 
@@ -30,12 +28,12 @@ pub(super) struct BufferedCall<'call> {
     pub(super) options: Options,
 }
 
+// The buffered branch: one POST with the prepared body, then the selected config fills in the reply
 pub(super) async fn buffered<Config, Client, Counter>(
     facts: BufferedCall<'_>,
+    client: &Client,
     config: &Config,
-    clients: &ChatClients<'_, Client>,
-    state: &mut LoggingState,
-    env: &PrePostEnv<'_>,
+    logging: Logging<'_>,
     counter: &Counter,
 ) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
 where
@@ -50,51 +48,54 @@ where
         optional_params,
         options,
     } = facts;
-    let client = match clients.supplied.as_ref() {
-        // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
-        Some(supplied) if call.acompletion || supplied.kind == ClientKind::Sync => {
-            supplied.transport
-        }
-        _ => clients.pooled,
-    };
-    let url = Url::parse(call.api_base).map_err(|source| ChatCallError::Endpoint { source })?;
-    let body_text = python_json::dumps_object(&body);
+    let url = Url::parse(call.api_base)?;
     let reply = client
         .post_buffered(StreamPost {
             url,
             headers: header_map,
-            body: body_text.into_bytes(),
+            body: python_json::dumps_object(&body).into_bytes(),
             stream: false,
             deadline: call.timeout,
         })
         .await;
     let reply = match reply {
         Ok(reply) => reply,
-        Err(failure) => return Err(buffered_failure(failure, &call, &body, state, env)),
+        Err(failure) => return Err(buffered_failure(failure, &call, &body, logging)),
     };
-    let raw = RawResponse {
-        status: reply.status_code,
-        headers: &reply.headers,
-        body: &reply.body,
-    };
-    let request = ResponseRequest {
-        messages: &call.messages,
-        optional_params: &optional_params,
-        litellm_params: &call.litellm_params,
-        request_data: &body,
-        json_mode: Some(options.json_mode),
-        now: call.now,
-        disable_add_prefix_to_prompt: call.disable_add_prefix_to_prompt,
-    };
+    let request = response_request(&call, &body, &optional_params, options.json_mode);
     let mut envelope = call.model_response;
     config.transform_response(
-        &mut envelope,
-        &raw,
-        &request,
-        Logging { state, env },
+        TransformResponse {
+            envelope: &mut envelope,
+            raw: &RawResponse {
+                status: reply.status_code,
+                headers: &reply.headers,
+                body: &reply.body,
+            },
+            request: &request,
+        },
+        logging,
         counter,
     )?;
     Ok(ChatOutcome::Reply(Box::new(envelope)))
+}
+
+// the arguments LiteLLM's transform_response reads back off the caller's own request
+fn response_request<'request>(
+    call: &'request ChatCall<'_>,
+    body: &'request IndexMap<String, Json>,
+    optional_params: &'request IndexMap<String, Json>,
+    json_mode: bool,
+) -> ResponseRequest<'request> {
+    ResponseRequest {
+        messages: &call.messages,
+        optional_params,
+        litellm_params: &call.litellm_params,
+        request_data: body,
+        json_mode: Some(json_mode),
+        now: call.now,
+        disable_add_prefix_to_prompt: call.disable_add_prefix_to_prompt,
+    }
 }
 
 // Both buffered paths raise the transport failure as AnthropicError; only the async path logs it first
@@ -102,13 +103,13 @@ fn buffered_failure<ClientFailure, CounterFailure>(
     failure: PostFailure<ClientFailure>,
     call: &ChatCall<'_>,
     body: &IndexMap<String, Json>,
-    state: &mut LoggingState,
-    env: &PrePostEnv<'_>,
+    logging: Logging<'_>,
 ) -> ChatCallError<ClientFailure, CounterFailure>
 where
     ClientFailure: StdError + Send + Sync + 'static,
     CounterFailure: StdError + Send + Sync + 'static,
 {
+    let Logging { state, env } = logging;
     let (status_code, message, headers) = match failure {
         PostFailure::Status(status) => {
             let status = *status;
@@ -130,12 +131,8 @@ where
                 input: Json::List(call.messages.clone()),
                 original_response: Json::Text(message.clone()),
                 additional_args: AdditionalArgs {
-                    api_base: None,
-                    headers: None,
                     complete_input_dict: Some(RawBody::Object(body.clone())),
-                    request_str: None,
-                    openai_sdk: None,
-                    passthrough: IndexMap::new(),
+                    ..AdditionalArgs::default()
                 },
             },
             env,

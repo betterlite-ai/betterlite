@@ -378,6 +378,12 @@ fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
 }
 
 fn chat_failure_projection() {
+    asynchronous_failure();
+    synchronous_failure();
+    transport_failures();
+}
+
+fn asynchronous_failure() {
     let asynchronous = failed_call(true);
     assert_eq!(asynchronous.status(), Some(500));
     assert!(format!("{}", asynchronous.error()).contains("boom"));
@@ -389,8 +395,15 @@ fn chat_failure_projection() {
         asynchronous.detail(&["original_response"]),
         Some(&text("boom"))
     );
+    // the failure post_call carries the filtered body the request tried to send
+    assert_eq!(
+        asynchronous.detail(&["additional_args", "complete_input_dict", "model"]),
+        Some(&text(MODEL))
+    );
     assert_eq!(asynchronous.posts_supplied, 1);
+}
 
+fn synchronous_failure() {
     // the sync path raises the same status but never logs the failure, so its details stay the pre_call record
     let synchronous = failed_call(false);
     assert_eq!(synchronous.status(), Some(500));
@@ -407,7 +420,14 @@ fn chat_failure_projection() {
         .detail(&["additional_args", "headers", "x-api-key"])
         .unwrap();
     assert_ne!(masked, &text(CALLER_KEY));
+    // pre_call saw the beta header the filter wrote, not the one the transform received
+    assert_eq!(
+        synchronous.detail(&["additional_args", "headers", "anthropic-beta"]),
+        Some(&text("filtered"))
+    );
+}
 
+fn transport_failures() {
     // a deadline with no response is a bare transport error here, so it takes the 500 path
     let mut timed_setup = Setup::default();
     timed_setup.acompletion = true;
@@ -426,4 +446,13 @@ fn chat_failure_projection() {
 
     let guarded = status_call(529, b"overloaded", true);
     assert_anthropic_error(&guarded, 529, "overloaded");
+
+    // a base that is not a URL fails while the request is addressed, before anything is sent
+    let mut unaddressed_setup = Setup::default();
+    unaddressed_setup.acompletion = true;
+    unaddressed_setup.api_base = "not a url";
+    let unaddressed = execute(unaddressed_setup);
+    assert_eq!(unaddressed.status(), Some(500));
+    assert!(format!("{}", unaddressed.error()).contains("the api_base is not a URL"));
+    assert_eq!(unaddressed.posts_supplied + unaddressed.posts_pooled, 0);
 }

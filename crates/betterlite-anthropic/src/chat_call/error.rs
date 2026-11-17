@@ -46,20 +46,11 @@ where
         headers: Option<HeaderMap>,
     },
     #[error("the api_base is not a URL")]
-    Endpoint {
-        #[source]
-        source: url::ParseError,
-    },
+    Endpoint(#[from] url::ParseError),
     #[error("a request header name is not valid")]
-    HeaderName {
-        #[source]
-        source: InvalidHeaderName,
-    },
+    HeaderName(#[from] InvalidHeaderName),
     #[error("a request header value is not valid")]
-    HeaderValue {
-        #[source]
-        source: InvalidHeaderValue,
-    },
+    HeaderValue(#[from] InvalidHeaderValue),
 }
 
 impl<ClientFailure, CounterFailure> ChatCallError<ClientFailure, CounterFailure>
@@ -93,7 +84,7 @@ where
             },
             Self::Anthropic { status_code, .. } => Some(*status_code),
             // httpx raises while building or sending, and the handler catches every one of those as a 500
-            Self::Endpoint { .. } | Self::HeaderName { .. } | Self::HeaderValue { .. } => Some(500),
+            Self::Endpoint(_) | Self::HeaderName(_) | Self::HeaderValue(_) => Some(500),
         }
     }
 }

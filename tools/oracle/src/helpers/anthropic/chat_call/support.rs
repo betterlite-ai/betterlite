@@ -20,25 +20,21 @@ pub(crate) fn header_map(pairs: &IndexMap<String, String>) -> Result<HeaderMap, 
     Ok(headers)
 }
 
-fn selected_http(headers: &HeaderMap, names: &[String]) -> Value {
-    let mut fields: IndexMap<&str, Option<&str>> = IndexMap::new();
+pub(crate) fn request_value(post: &StreamPost, names: &[String]) -> Value {
+    let body = serde_json::from_slice::<Value>(&post.body).unwrap_or(Value::Null);
+    let mut headers: IndexMap<&str, Option<&str>> = IndexMap::new();
     for name in names {
-        fields.insert(
+        headers.insert(
             name.as_str(),
-            headers
+            post.headers
                 .get(name.as_str())
                 .and_then(|value| value.to_str().ok()),
         );
     }
-    json!(fields)
-}
-
-pub(crate) fn request_value(post: &StreamPost, names: &[String]) -> Value {
-    let body = serde_json::from_slice::<Value>(&post.body).unwrap_or(Value::Null);
     json!({
         "url": post.url.as_str(),
         "body": body,
-        "headers": selected_http(&post.headers, names),
+        "headers": headers,
     })
 }
 
@@ -72,14 +68,15 @@ fn detail<'details>(args: Option<&'details Json>, key: &str) -> Option<&'details
     }
 }
 
-// the response mapper's post_call drops api_base from the details, so the sent post supplies it
-pub(crate) fn pre_call_value(details: &IndexMap<String, Json>, api_base: Option<&str>) -> Value {
-    let body = detail(details.get("additional_args"), "complete_input_dict");
-    let base = api_base.map_or(Value::Null, |value| Value::String(value.to_owned()));
+// the hook logged the filtered headers and body, so the beta here is the filter's answer, not the transform's
+pub(crate) fn pre_call_value(details: &IndexMap<String, Json>) -> Value {
+    let additional = details.get("additional_args");
+    let beta = detail(detail(additional, "headers"), "anthropic-beta");
     json!({
         "input": details.get("input"),
-        "body": body,
-        "api_base": base,
+        "body": detail(additional, "complete_input_dict"),
+        "api_base": detail(additional, "api_base"),
+        "anthropic_beta": beta,
     })
 }
 

@@ -20,6 +20,13 @@ pub struct TransformRequest<'request> {
     pub headers: &'request AnthropicHeaders,
 }
 
+// The response-side mirror: the reply being filled in, the wire answer it comes from and the caller's request
+pub struct TransformResponse<'response, 'raw, 'request> {
+    pub envelope: &'response mut ResponseEnvelope,
+    pub raw: &'response RawResponse<'raw>,
+    pub request: &'response ResponseRequest<'request>,
+}
+
 // The part of the selected provider chat config this slice calls; B027 supplies the implementation
 pub trait ChatConfig: Sync {
     fn transform_request(
@@ -41,9 +48,7 @@ pub trait ChatConfig: Sync {
 
     fn transform_response<Counter>(
         &self,
-        envelope: &mut ResponseEnvelope,
-        raw: &RawResponse<'_>,
-        request: &ResponseRequest<'_>,
+        response: TransformResponse<'_, '_, '_>,
         logging: Logging<'_>,
         counter: &Counter,
     ) -> Result<(), ResponseError<Counter::Failure>>

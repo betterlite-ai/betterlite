@@ -1,7 +1,9 @@
 use std::error::Error as StdError;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use http::HeaderMap;
@@ -12,6 +14,7 @@ use crate::anthropic_http_stream::completion::ParameterError;
 use crate::headers::environment::{
     EnvironmentRequest, HeaderLiteLlmParams, HeaderParams, validate_environment,
 };
+use crate::headers::{AnthropicHeaders, HeadersError};
 use crate::usage::ReasoningTokenCounter;
 
 use super::config::{ChatConfig, TransformRequest};
@@ -46,34 +49,19 @@ where
     let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
     let is_vertex_request = take_bool(&mut optional_params, "is_vertex_request", false)?;
     let _vertex_location = optional_params.shift_remove("vertex_count_tokens_location");
-
     let header_options = header_params(&optional_params, is_vertex_request)?;
     let lite_llm_params = lite_llm_params(&call.litellm_params)?;
-    let messages: Vec<PromptJson> = call.messages.iter().map(prompt_json).collect();
-    let validated = validate_environment(
-        &EnvironmentRequest {
-            model: call.model,
-            caller_headers: &call.caller_headers,
-            api_key: call.api_key,
-            api_base: Some(call.api_base),
-            litellm_params: &lite_llm_params,
-            messages: &messages,
-            optional_params: &header_options,
-            effort_used: call.effort_used,
-        },
-        call.settings,
-    )?;
+    let validated = validated_headers(call, &lite_llm_params, &header_options)?;
 
-    // transform_params keeps is_vertex_request for the config; the config's answer is the body that is sent
-    let mut transform_params = optional_params.clone();
-    transform_params.insert(
+    // LiteLLM inserts is_vertex_request back into the copied params before the transform, which answers with the body
+    optional_params.insert(
         "is_vertex_request".to_owned(),
         Json::Bool(is_vertex_request),
     );
     let transform = TransformRequest {
         model: call.model,
         messages: &call.messages,
-        optional_params: &transform_params,
+        optional_params: &optional_params,
         litellm_params: &call.litellm_params,
         headers: &validated,
     };
@@ -93,22 +81,7 @@ where
         body.insert("stream".to_owned(), Json::Bool(true));
     }
     let header_map = header_map(&headers)?;
-    pre_call(
-        &mut *deps.state,
-        &PreCall {
-            input: Json::List(call.messages.clone()),
-            model: None,
-            additional_args: AdditionalArgs {
-                api_base: Some(call.api_base.to_owned()),
-                headers: Some(headers_args(&headers)),
-                complete_input_dict: Some(RawBody::Object(body.clone())),
-                request_str: None,
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
-            },
-        },
-        deps.env,
-    )?;
+    log_pre_call(call, &mut *deps.state, deps.env, &body, &headers)?;
 
     Ok(Prepared {
         body,
@@ -116,6 +89,57 @@ where
         optional_params,
         options: Options { stream, json_mode },
     })
+}
+
+// validate_environment reads the caller's headers, key and base into the headers the request carries
+fn validated_headers(
+    call: &ChatCall<'_>,
+    lite_llm_params: &HeaderLiteLlmParams,
+    header_options: &HeaderParams,
+) -> Result<AnthropicHeaders, HeadersError> {
+    let messages: Vec<PromptJson> = call.messages.iter().map(prompt_json).collect();
+    validate_environment(
+        &EnvironmentRequest {
+            model: call.model,
+            caller_headers: &call.caller_headers,
+            api_key: call.api_key,
+            api_base: Some(call.api_base),
+            litellm_params: lite_llm_params,
+            messages,
+            optional_params: header_options,
+            effort_used: call.effort_used,
+        },
+        call.settings,
+    )
+}
+
+// LiteLLM logs pre_api_call with the filtered headers and the body it is about to send
+fn log_pre_call<ClientFailure, CounterFailure>(
+    call: &ChatCall<'_>,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+    body: &IndexMap<String, Json>,
+    headers: &IndexMap<String, String>,
+) -> Result<(), ChatCallError<ClientFailure, CounterFailure>>
+where
+    ClientFailure: StdError + Send + Sync + 'static,
+    CounterFailure: StdError + Send + Sync + 'static,
+{
+    pre_call(
+        state,
+        &PreCall {
+            input: Json::List(call.messages.clone()),
+            model: None,
+            additional_args: AdditionalArgs {
+                api_base: Some(call.api_base.to_owned()),
+                headers: Some(headers_args(headers)),
+                complete_input_dict: Some(RawBody::Object(body.clone())),
+                ..AdditionalArgs::default()
+            },
+        },
+        env,
+    )?;
+    Ok(())
 }
 
 fn take_bool(
@@ -220,10 +244,8 @@ where
     let mut map = HeaderMap::new();
     for (name, value) in headers {
         map.insert(
-            HeaderName::try_from(name.as_str())
-                .map_err(|source| ChatCallError::HeaderName { source })?,
-            HeaderValue::try_from(value.as_str())
-                .map_err(|source| ChatCallError::HeaderValue { source })?,
+            HeaderName::try_from(name.as_str())?,
+            HeaderValue::try_from(value.as_str())?,
         );
     }
     Ok(map)

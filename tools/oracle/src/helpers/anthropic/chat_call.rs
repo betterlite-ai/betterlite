@@ -58,9 +58,8 @@ impl Helper for Op {
             Scenario::MessagesPostRequest => scenarios::messages_post_request(input),
             Scenario::BufferedSuccess => scenarios::buffered_success(input),
             Scenario::StreamRequest => scenarios::stream_request(input),
-            Scenario::PreStreamError => failures::pre_stream_error(input),
-            Scenario::NativeErrorBody => failures::native_error_body(input),
-            Scenario::UnsupportedEmbedding => Ok(json!({"reply": EMBEDDING_REPLY, "posted": 0})),
+            Scenario::PreStreamError | Scenario::NativeErrorBody => failures::failed_call(input),
+            Scenario::UnsupportedEmbedding => Ok(json!({"reply": EMBEDDING_REPLY})),
             Scenario::ChatFailureProjection => failures::chat_failure_projection(input),
         }
     }

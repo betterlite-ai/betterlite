@@ -11,26 +11,19 @@ from .wire import EMBEDDING_HANDLER, Attempt, Input, JsonObject
 litellm.suppress_debug_info = True
 
 
-def _request_of(input_value: Input, attempt: Attempt) -> JsonValue:
-    if not attempt.requests:
-        return None
+def _attempt_value(input_value: Input, attempt: Attempt) -> JsonObject:
     names = input_value["request_header_names"]
-    return request_value(attempt.requests[0], names)
+    request: JsonValue = None
+    if attempt.requests:
+        request = request_value(attempt.requests[0], names)
+    return {"pre_call": pre_call_value(attempt.recorder), "request": request}
 
 
 def _messages_post_request(input_value: Input) -> JsonValue:
     asynchronous = Attempt(input_value, asynchronous=True)
     synchronous = Attempt(input_value, asynchronous=False)
-    answer: JsonObject = {
-        "async": {
-            "pre_call": pre_call_value(asynchronous.recorder),
-            "request": _request_of(input_value, asynchronous),
-        },
-        "sync": {
-            "pre_call": pre_call_value(synchronous.recorder),
-            "request": _request_of(input_value, synchronous),
-        },
-    }
+    answer: JsonObject = {"async": _attempt_value(input_value, asynchronous)}
+    answer["sync"] = _attempt_value(input_value, synchronous)
     return answer
 
 
@@ -66,8 +59,7 @@ def _chat_failure_projection(input_value: Input) -> JsonValue:
 
 
 def _unsupported_embedding(_input_value: Input) -> JsonValue:
-    EMBEDDING_HANDLER.embedding()
-    answer: JsonObject = {"reply": None, "posted": 0}
+    answer: JsonObject = {"reply": EMBEDDING_HANDLER.embedding()}
     return answer
 
 

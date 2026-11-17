@@ -13,6 +13,7 @@ TIMEOUT: Final[float] = 1.5
 SUCCESS: Final[int] = 200
 JsonObject = dict[str, JsonValue]
 ChatResult = ModelResponse | CustomStreamWrapper
+HEADERS: Final[TypeAdapter[dict[str, str] | None]] = TypeAdapter(dict[str, str] | None)
 
 Scenario = Literal[
     "messages_post_request",
@@ -66,6 +67,7 @@ class Recorder:
         self.pre_input: JsonValue = None
         self.pre_body: JsonValue = None
         self.pre_api_base: JsonValue = None
+        self.pre_beta: JsonValue = None
         self.post_input: JsonValue = None
         self.post_response: JsonValue = None
         self.post_body: JsonValue = None
@@ -76,6 +78,8 @@ class Recorder:
         arguments = kwargs["additional_args"]
         self.pre_body = arguments.get("complete_input_dict")
         self.pre_api_base = arguments.get("api_base")
+        headers = HEADERS.validate_python(arguments.get("headers"))
+        self.pre_beta = None if headers is None else headers.get("anthropic-beta")
 
     def post_call(self, **kwargs: Unpack[PostCallArguments]) -> None:
         self.post_input = kwargs["input"]

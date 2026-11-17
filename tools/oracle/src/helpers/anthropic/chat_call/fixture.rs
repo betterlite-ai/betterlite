@@ -6,7 +6,7 @@ use betterlite_anthropic::anthropic_http_stream::error::{PostFailure, StatusFail
 use betterlite_anthropic::anthropic_http_stream::transport::{
     LineChunks, StreamPost, StreamReply, StreamTransport,
 };
-use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest};
+use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
 use betterlite_anthropic::chat_call::error::ConfigError;
 use betterlite_anthropic::chat_call::transport::{BufferedReply, ChatTransport};
 use betterlite_anthropic::headers::AnthropicHeaders;
@@ -22,6 +22,7 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use thiserror::Error;
@@ -108,10 +109,8 @@ impl StreamTransport for FixtureTransport {
             return Err(failure);
         }
         let lines: Vec<String> = self.reply.lines.clone();
-        let decoded: LineChunks<FixtureFailure> = futures_util::stream::iter(
-            lines.into_iter().map(|line| Ok(TransportChunk::Text(line))),
-        )
-        .boxed();
+        let decoded: LineChunks<FixtureFailure> =
+            stream::iter(lines.into_iter().map(|line| Ok(TransportChunk::Text(line)))).boxed();
         Ok(StreamReply {
             status_code: self.reply.status_code,
             headers: self.reply.headers.clone(),
@@ -141,6 +140,7 @@ pub(crate) struct FixtureConfig {
     body: IndexMap<String, Json>,
     failure: Option<String>,
     matrix: BetaMatrix,
+    pre_call: Mutex<Option<IndexMap<String, Json>>>,
 }
 
 impl FixtureConfig {
@@ -152,7 +152,16 @@ impl FixtureConfig {
             body: input.transform_body.clone(),
             failure: input.transform_failure.clone(),
             matrix: BetaMatrix(entries.clone()),
+            pre_call: Mutex::new(None),
         })
+    }
+
+    // the crate's mapper logs post_call over this record, so the fixture keeps pre_call's own copy first
+    pub(crate) fn pre_call_record(&self) -> Option<IndexMap<String, Json>> {
+        self.pre_call
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn transform(&self) -> Result<IndexMap<String, Json>, ConfigError> {
@@ -226,16 +235,22 @@ impl ChatConfig for FixtureConfig {
 
     fn transform_response<Counter>(
         &self,
-        envelope: &mut ResponseEnvelope,
-        raw: &RawResponse<'_>,
-        request: &ResponseRequest<'_>,
+        response: TransformResponse<'_, '_, '_>,
         logging: Logging<'_>,
         counter: &Counter,
     ) -> Result<(), ResponseError<Counter::Failure>>
     where
         Counter: ReasoningTokenCounter,
     {
-        transform_response(envelope, raw, request, logging, counter)
+        *self.pre_call.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(logging.state.model_call_details.clone());
+        transform_response(
+            response.envelope,
+            response.raw,
+            response.request,
+            logging,
+            counter,
+        )
     }
 }
 

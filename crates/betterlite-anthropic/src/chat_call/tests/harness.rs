@@ -1,11 +1,15 @@
+use std::mem::take;
 use std::sync::Mutex;
 
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde_json::Number;
 use tokio::runtime::Builder;
 
 use crate::chat_call::transport::{ClientKind, SuppliedChatClient};
@@ -14,9 +18,9 @@ use crate::credentials::AnthropicSettings;
 use crate::response::wire::ResponseEnvelope;
 
 use super::fixture::{
-    API_BASE, CALLER_KEY, CallError, FixtureConfig, FixtureCounter, FixtureIds, FixtureReply,
-    FixtureTransport, MODEL, NOW, Recorded, RecordingLogger, Silent, StreamLoggerCall, TIMEOUT,
-    Trip, logging_env, logging_state, messages, redactor,
+    API_BASE, CALLER_KEY, CallError, FixtureConfig, FixtureCounter, FixtureFailure, FixtureIds,
+    FixtureReply, FixtureTransport, MODEL, NOW, Recorded, RecordingLogger, Silent,
+    StreamLoggerCall, TIMEOUT, Trip, logging_env, logging_state, messages, redactor,
 };
 
 #[derive(Clone)]
@@ -61,10 +65,7 @@ impl Default for Setup {
 pub(super) fn body() -> IndexMap<String, Json> {
     IndexMap::from([
         ("model".to_owned(), Json::Text(MODEL.to_owned())),
-        (
-            "max_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(64)),
-        ),
+        ("max_tokens".to_owned(), Json::Number(Number::from(64))),
         (
             "anthropic_beta".to_owned(),
             Json::List(vec![
@@ -114,7 +115,10 @@ impl Run {
     }
 
     pub(super) fn status(&self) -> Option<u16> {
-        self.outcome.as_ref().err().map(|error| error.status_code())
+        self.outcome
+            .as_ref()
+            .err()
+            .and_then(|error| error.status_code())
     }
 
     pub(super) fn reply(&self) -> &ResponseEnvelope {
@@ -167,61 +171,107 @@ pub(super) fn execute(setup: Setup) -> Run {
     let sink = Silent;
     let mut state = logging_state(&redactor);
     let env = logging_env(&redactor, &sink);
-    let config = FixtureConfig {
-        body: setup.body,
+    let config = fixture_config(&setup);
+    let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
+    let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
+    let logger = RecordingLogger::default();
+    let settings = settings_of(&setup);
+    let caller_key = setup
+        .caller_key
+        .map(|key| SecretString::from(key.to_owned()));
+    let call = call_of(&setup, caller_key.as_ref(), &settings);
+    let clients = ChatClients {
+        supplied: setup.supplied.then_some(SuppliedChatClient {
+            kind: setup.supplied_kind,
+            transport: &supplied,
+        }),
+        pooled: &pooled,
+    };
+    let deps = deps_of(&config, clients, &env, &mut state, &logger);
+    let runtime = Builder::new_current_thread().build().unwrap();
+    let result = runtime.block_on(chat_call(call, deps));
+    let outcome = outcome_of(result);
+    let (posted_bodies, posted_headers) = posts(&supplied, &pooled);
+    let (transforms, calls, logger_calls) = recorded(&config, &logger);
+    Run {
+        outcome,
+        posts_supplied: supplied.posts(),
+        posts_pooled: pooled.posts(),
+        posted_bodies,
+        posted_headers,
+        transforms,
+        calls,
+        logger_calls,
+        details: state.model_call_details.clone(),
+    }
+}
+
+fn fixture_config(setup: &Setup) -> FixtureConfig {
+    FixtureConfig {
+        body: setup.body.clone(),
         transform_failure: setup.transform_failure.map(str::to_owned),
         filter_failure: setup.filter_failure.map(str::to_owned),
         transforms: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
-    };
-    let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
-    let pooled = FixtureTransport::new(setup.reply, setup.trip);
-    let logger = RecordingLogger::default();
-    let caller_key = setup
-        .caller_key
-        .map(|key| SecretString::from(key.to_owned()));
+    }
+}
+
+fn settings_of(setup: &Setup) -> AnthropicSettings {
     let mut settings = AnthropicSettings::default();
     settings.api_key = setup
         .settings_key
         .map(|key| SecretString::from(key.to_owned()));
-    let call = ChatCall {
+    settings
+}
+
+fn call_of<'setup>(
+    setup: &'setup Setup,
+    api_key: Option<&'setup SecretString>,
+    settings: &'setup AnthropicSettings,
+) -> ChatCall<'setup> {
+    ChatCall {
         model: MODEL,
         custom_llm_provider: "anthropic",
         messages: messages(),
-        optional_params: setup.optional_params,
-        litellm_params: setup.litellm_params,
-        caller_headers: setup.caller_headers,
+        optional_params: setup.optional_params.clone(),
+        litellm_params: setup.litellm_params.clone(),
+        caller_headers: setup.caller_headers.clone(),
         api_base: setup.api_base,
-        api_key: caller_key.as_ref(),
-        settings: &settings,
+        api_key,
+        settings,
         timeout: TIMEOUT,
         acompletion: setup.acompletion,
         effort_used: false,
         now: NOW,
         disable_add_prefix_to_prompt: false,
         model_response: ResponseEnvelope::new("chatcmpl-1".to_owned()),
-    };
-    let entry = SuppliedChatClient {
-        kind: setup.supplied_kind,
-        transport: &supplied,
-    };
-    let deps = ChatDeps {
-        config: &config,
-        clients: ChatClients {
-            supplied: setup.supplied.then_some(entry),
-            pooled: &pooled,
-        },
-        state: &mut state,
-        env: &env,
-        stream_logger: &logger,
+    }
+}
+
+fn deps_of<'deps>(
+    config: &'deps FixtureConfig,
+    clients: ChatClients<'deps, FixtureTransport>,
+    env: &'deps PrePostEnv<'deps>,
+    state: &'deps mut LoggingState,
+    logger: &'deps RecordingLogger,
+) -> ChatDeps<'deps, FixtureConfig, FixtureTransport, FixtureCounter> {
+    ChatDeps {
+        config,
+        clients,
+        state,
+        env,
+        stream_logger: logger,
         counter: FixtureCounter,
         ids: &FixtureIds,
-        max_event_bytes: 1_048_576,
-        max_error_body_bytes: 1_048_576,
-    };
-    let runtime = Builder::new_current_thread().build().unwrap();
-    let result = runtime.block_on(chat_call(call, deps));
-    let outcome = match result {
+        max_event_bytes: 0x0010_0000,
+        max_error_body_bytes: 0x0010_0000,
+    }
+}
+
+fn outcome_of(
+    result: Result<ChatOutcome<FixtureFailure, FixtureCounter>, CallError>,
+) -> Result<Outcome, CallError> {
+    match result {
         Ok(ChatOutcome::Reply(envelope)) => Ok(Outcome::Reply(envelope)),
         Ok(ChatOutcome::Stream(wrapped)) => {
             let stream = *wrapped;
@@ -239,24 +289,26 @@ pub(super) fn execute(setup: Setup) -> Run {
             })
         }
         Err(error) => Err(error),
-    };
+    }
+}
+
+fn posts(
+    supplied: &FixtureTransport,
+    pooled: &FixtureTransport,
+) -> (Vec<IndexMap<String, Json>>, Vec<HeaderMap>) {
     let mut posted_bodies = supplied.posted_bodies();
     posted_bodies.extend(pooled.posted_bodies());
     let mut posted_headers = supplied.posted_headers();
     posted_headers.extend(pooled.posted_headers());
-    let details = state.model_call_details.clone();
-    let transforms = std::mem::take(&mut *config.transforms.lock().unwrap());
-    let calls = std::mem::take(&mut *config.calls.lock().unwrap());
-    let logger_calls = std::mem::take(&mut *logger.calls.lock().unwrap());
-    Run {
-        outcome,
-        posts_supplied: supplied.posts(),
-        posts_pooled: pooled.posts(),
-        posted_bodies,
-        posted_headers,
-        transforms,
-        calls,
-        logger_calls,
-        details,
-    }
+    (posted_bodies, posted_headers)
+}
+
+fn recorded(
+    config: &FixtureConfig,
+    logger: &RecordingLogger,
+) -> (Vec<Recorded>, Vec<String>, Vec<StreamLoggerCall>) {
+    let transforms = take(&mut *config.transforms.lock().unwrap());
+    let calls = take(&mut *config.calls.lock().unwrap());
+    let logger_calls = take(&mut *logger.calls.lock().unwrap());
+    (transforms, calls, logger_calls)
 }

@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::mem::take;
 use std::sync::PoisonError;
 use std::time::Duration;
 
@@ -49,6 +50,7 @@ pub(super) struct Run {
     pub(super) failure: Option<FailureShape>,
     posts: Vec<StreamPost>,
     details: IndexMap<String, Json>,
+    pre_call: IndexMap<String, Json>,
     logger_calls: Vec<LoggerCall>,
 }
 
@@ -129,6 +131,7 @@ fn run_of(
     transport: &FixtureTransport,
     state: &LoggingState,
     logger: &Logger,
+    pre_call: Option<IndexMap<String, Json>>,
 ) -> Run {
     let (outcome, failure) = match result {
         Ok(ChatOutcome::Reply(envelope)) => (RunOutcome::Reply(envelope), None),
@@ -138,19 +141,21 @@ fn run_of(
             (RunOutcome::Failed, Some(shape))
         }
     };
+    let details = state.model_call_details.clone();
+    // the response mapper's post_call replaces the record, so a buffered reply keeps the fixture's copy
+    let pre_call = pre_call.unwrap_or_else(|| details.clone());
     Run {
         outcome,
         failure,
-        posts: std::mem::take(
+        posts: take(
             &mut *transport
                 .posts
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner),
         ),
-        details: state.model_call_details.clone(),
-        logger_calls: std::mem::take(
-            &mut *logger.calls.lock().unwrap_or_else(PoisonError::into_inner),
-        ),
+        details,
+        pre_call,
+        logger_calls: take(&mut *logger.calls.lock().unwrap_or_else(PoisonError::into_inner)),
     }
 }
 
@@ -192,7 +197,8 @@ pub(super) fn execute(
     };
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     let result = runtime.block_on(chat_call(call, deps));
-    Ok(run_of(result, &transport, &state, &logger))
+    let pre_call = config.pre_call_record();
+    Ok(run_of(result, &transport, &state, &logger, pre_call))
 }
 
 fn both(input: &Input) -> Result<(Run, Run), Box<HelperError>> {
@@ -210,15 +216,13 @@ fn request_of(input: &Input, run: &Run) -> Value {
 
 pub(super) fn messages_post_request(input: &Input) -> HelperResult {
     let (asynchronous, synchronous) = both(input)?;
-    let async_base = asynchronous.posts.first().map(|post| post.url.as_str());
-    let sync_base = synchronous.posts.first().map(|post| post.url.as_str());
     Ok(json!({
         "async": {
-            "pre_call": pre_call_value(&asynchronous.details, async_base),
+            "pre_call": pre_call_value(&asynchronous.pre_call),
             "request": request_of(input, &asynchronous),
         },
         "sync": {
-            "pre_call": pre_call_value(&synchronous.details, sync_base),
+            "pre_call": pre_call_value(&synchronous.pre_call),
             "request": request_of(input, &synchronous),
         },
     }))
@@ -245,7 +249,7 @@ fn stream_answer(input: &Input, run: &Run) -> Result<Value, Box<HelperError>> {
     let logged = run.logger_calls.first().map_or(Value::Null, logger_value);
     Ok(json!({
         "stream": stream_value(wrapper),
-        "pre_call": pre_call_value(&run.details, run.posts.first().map(|post| post.url.as_str())),
+        "pre_call": pre_call_value(&run.pre_call),
         "request": request_of(input, run),
         "post_call": logged,
     }))
