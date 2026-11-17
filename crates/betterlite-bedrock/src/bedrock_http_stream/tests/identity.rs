@@ -12,7 +12,11 @@ type Identity = (&'static str, &'static str, &'static str);
 fn identity_call(messages: &Json, identity: Identity) -> InvokeCall<'_> {
     let (name, authorization, data) = identity;
     let mut call = invoke(BASE, data, messages);
-    call.headers = header_map(&[("authorization", authorization), ("x-identity", name)]);
+    call.headers = header_map(&[
+        ("authorization", authorization),
+        ("content-type", "application/json"),
+        ("x-identity", name),
+    ]);
     call
 }
 

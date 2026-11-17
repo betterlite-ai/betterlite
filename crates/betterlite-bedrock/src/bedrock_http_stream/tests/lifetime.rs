@@ -20,7 +20,8 @@ use super::support::{Call, Consume, DATA, FIRST, Outcome, invoke, messages, open
 use crate::agentcore_stream::transport::{HandlerKind, PostRequest, StreamHandler, StreamHead};
 use crate::bedrock_http_stream::stream::StreamFailure;
 
-const HEAD: &str = "HTTP/1.1 200 OK\r\ncontent-type: application/vnd.amazon.eventstream\r\n";
+const HEAD: &str =
+    "HTTP/1.1 200 OK\r\ncontent-type: application/vnd.amazon.eventstream\r\nconnection: close\r\n";
 const WAIT: Duration = Duration::from_secs(10);
 
 #[tokio::test]
@@ -178,7 +179,7 @@ async fn serve(
         socket.shutdown().await.unwrap();
     }
     let mut rest = Vec::new();
-    socket.read_to_end(&mut rest).await.unwrap();
+    let _read = socket.read_to_end(&mut rest).await;
     let _sent = closed.send(());
 }
 
