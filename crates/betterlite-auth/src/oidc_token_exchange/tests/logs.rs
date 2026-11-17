@@ -7,9 +7,7 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-use crate::oidc_token_exchange::exchange::{
-    TOKEN_EXCHANGE_PARAM, USERINFO_PARAM, exchange_pkce_code,
-};
+use crate::oidc_token_exchange::exchange::exchange_pkce_code;
 
 use super::support::{
     LocalProvider, Reply, VALID_ID_TOKEN, base_request, client, text, token_reply,
@@ -78,7 +76,7 @@ async fn keeps_a_rejected_token_body_out_of_the_logs(#[case] status: u16, #[case
     let error = exchange_pkce_code(&client(), &base_request(&provider))
         .await
         .unwrap_err();
-    assert_eq!(error.response().param, Some(TOKEN_EXCHANGE_PARAM));
+    assert_eq!(error.response().param, Some("token_exchange"));
     let captured = logs.text();
     assert!(!captured.contains("LEAKED-ACCESS-TOKEN"));
     assert!(captured.contains("the SSO token endpoint"));
@@ -155,7 +153,7 @@ async fn logs_an_empty_id_token_as_absent_on_the_fallback() {
     request.userinfo_endpoint = None;
     let (logs, _guard) = Logs::capture();
     let error = exchange_pkce_code(&client(), &request).await.unwrap_err();
-    assert_eq!(error.response().param, Some(USERINFO_PARAM));
+    assert_eq!(error.response().param, Some("userinfo"));
     assert!(!logs.text().contains("not a decodable JWT"));
 }
 

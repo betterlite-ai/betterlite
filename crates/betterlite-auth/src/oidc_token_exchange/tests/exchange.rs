@@ -7,8 +7,8 @@ use tokio::net::TcpListener;
 
 use crate::oidc_token_exchange::decode::ProviderClaims;
 use crate::oidc_token_exchange::exchange::{
-    OidcTokenExchangeError, TOKEN_EXCHANGE_PARAM, TOKEN_EXCHANGE_TIMEOUT, TokenExchangeRequest,
-    USERINFO_PARAM, USERINFO_TIMEOUT, exchange_pkce_code,
+    OidcTokenExchangeError, TOKEN_EXCHANGE_TIMEOUT, TokenExchangeRequest, USERINFO_TIMEOUT,
+    exchange_pkce_code,
 };
 
 use super::support::{
@@ -409,7 +409,7 @@ async fn fails_with_userinfo_401_when_the_id_token_cannot_supply_claims(#[case] 
     let response = error.response();
     assert_eq!(response.status, 401);
     assert_eq!(response.error_type, ProxyErrorTypes::AuthError);
-    assert_eq!(response.param, Some(USERINFO_PARAM));
+    assert_eq!(response.param, Some("userinfo"));
     assert_eq!(response.code, "401");
 }
 
@@ -420,7 +420,7 @@ async fn fails_with_userinfo_401_without_a_userinfo_endpoint_or_id_token() {
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
     let error = run_exchange(&request).await.unwrap_err();
-    assert_eq!(error.response().param, Some(USERINFO_PARAM));
+    assert_eq!(error.response().param, Some("userinfo"));
     assert_eq!(error.response().status, 401);
 }
 
@@ -428,6 +428,6 @@ fn assert_token_failure(error: &OidcTokenExchangeError) {
     let response = error.response();
     assert_eq!(response.status, 401);
     assert_eq!(response.error_type, ProxyErrorTypes::AuthError);
-    assert_eq!(response.param, Some(TOKEN_EXCHANGE_PARAM));
+    assert_eq!(response.param, Some("token_exchange"));
     assert_eq!(response.code, "401");
 }
