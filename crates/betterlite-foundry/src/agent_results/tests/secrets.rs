@@ -95,10 +95,13 @@ fn agent_results_credential_identity_isolation() {
     assert_eq!(first.headers.len(), 1);
     assert_eq!(shown(&rebuilt), format!("Bearer {FIRST_KEY}"));
 
-    let first_identity = response_identity(Uuid::from_u128(1), 1_000);
-    assert_eq!(first_identity, response_identity(Uuid::from_u128(1), 1_000));
-    assert_ne!(first_identity, response_identity(Uuid::from_u128(2), 1_000));
-    assert_ne!(first_identity, response_identity(Uuid::from_u128(1), 1_001));
+    let first_uuid = Uuid::from_u128(0x1a2b_3c4d_0000_4000_8000_0000_0000_0001);
+    let second_uuid = Uuid::from_u128(0x9f8e_7d6c_0000_4000_8000_0000_0000_0002);
+    let first_identity = response_identity(first_uuid, 1_000);
+    assert_eq!(first_identity.id, "chatcmpl-1a2b3c4d");
+    assert_eq!(first_identity, response_identity(first_uuid, 1_000));
+    assert_ne!(first_identity, response_identity(second_uuid, 1_000));
+    assert_ne!(first_identity, response_identity(first_uuid, 1_001));
     assert_eq!(first_identity.id.len(), "chatcmpl-".len().saturating_add(8));
 }
 
