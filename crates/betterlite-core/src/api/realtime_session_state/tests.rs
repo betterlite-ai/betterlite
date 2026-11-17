@@ -24,7 +24,9 @@ fn record(source: &str) -> IndexMap<String, Json> {
     let value: Json = serde_json::from_str(source).expect("the test record is valid JSON");
     match value {
         Json::Object(record) => record,
-        other => panic!("the test record is an object, not {other:?}"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the test record is not an object");
+        }
     }
 }
 
@@ -282,7 +284,7 @@ fn realtime_initial_state_marks_a_forced_transcription_session() {
 #[test]
 fn realtime_initial_state_is_not_shared_between_connections() {
     let mut first = state();
-    let mut second = state();
+    let second = state();
     first
         .store_message(SessionMessage::Text(r#"{"type":"response.create"}"#))
         .expect("the frame is valid JSON");
@@ -573,13 +575,13 @@ fn realtime_input_collection_takes_backend_transcripts() {
 
 #[test]
 fn realtime_input_collection_marks_transcription_sessions_from_backend_events() {
-    let mut state = state();
-    state.detect_transcription_session(&record(
+    let mut streaming = state();
+    streaming.detect_transcription_session(&record(
         r#"{"type":"session.created","session":{"type":"transcription"}}"#,
     ));
-    assert_eq!(state.is_transcription_session, SessionFlag(true));
-    state.detect_transcription_session(&record(r#"{"type":"session.updated"}"#));
-    assert_eq!(state.is_transcription_session, SessionFlag(true));
+    assert_eq!(streaming.is_transcription_session, SessionFlag(true));
+    streaming.detect_transcription_session(&record(r#"{"type":"session.updated"}"#));
+    assert_eq!(streaming.is_transcription_session, SessionFlag(true));
 
     let mut created = state();
     created.detect_transcription_session(&record(r#"{"type":"transcription_session.created"}"#));
@@ -652,15 +654,15 @@ fn realtime_usage_and_logging_flushes_provider_usage_on_close() {
         usage: Some(duration_usage(2)),
         models: Some(Arc::clone(&asked)),
     };
-    let mut state = state_with(|connection| {
+    let mut flushed = state_with(|connection| {
         connection.model = "gemini-2.5-flash".to_owned();
         connection.provider_config = Some(Box::new(recording));
     });
-    state
+    flushed
         .flush_unbilled_usage()
         .expect("the usage record encodes");
     assert_eq!(
-        state.messages,
+        flushed.messages,
         vec![record(
             r#"{"type":"conversation.item.input_audio_transcription.completed","usage":{"type":"duration","seconds":2}}"#
         )]
