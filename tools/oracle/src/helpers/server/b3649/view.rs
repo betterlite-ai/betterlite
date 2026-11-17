@@ -7,7 +7,7 @@ use betterlite_server::pass_through_logging::tinyfish::sse::sse_poller_spawned;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::fixture::RequestLog;
+use super::ports::RequestLog;
 
 // What the sink was handed: the poller dispatches, while the blocking and fallback handlers return their payload.
 #[derive(Clone, Debug)]
