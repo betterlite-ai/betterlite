@@ -10,7 +10,7 @@ fn mcp_config(mode: CallMode) -> ChatStreamConfig {
 
 fn world_with_hook(action: HookAction) -> (World, Arc<FakeHook>) {
     let hook = Arc::new(FakeHook::new(action));
-    let shared: Arc<dyn StreamingDeploymentHook> = Arc::clone(&hook);
+    let shared = Arc::clone(&hook);
     let mut world = World::new();
     world.hooks.push(shared);
     (world, hook)
