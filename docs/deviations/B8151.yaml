@@ -1,0 +1,28 @@
+task: B8151
+deviations:
+  - what: >-
+      The rerank reply decoder keeps the reply's declared types. A body that is not a JSON object, a document that is not an object and a null usage are an error or read as empty instead of raising AttributeError, an index, score or token count of the wrong JSON type is an error instead of int(), float() or pydantic coercion, and a document text that is null or a number reads as "" instead of "None" or its decimal text.
+    why: >-
+      LiteLLM raises AttributeError (a 500) on those inputs, and its str() conversion writes text the provider never sent. No working vLLM setup relies on either, and docs/compatibility.md keeps a value at its declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L194-L241
+  - what: >-
+      A media reference given as a plain URL string is checked for a blocked destination, while LiteLLM checks only a reference it turned into a JSON object or list.
+    why: >-
+      The plain string is what vLLM accepts in image_reference, video_reference and audio_reference, so leaving it unchecked lets a caller reach an internal service through a field that is meant to be a public URL. Fixed rather than copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L105-L116
+  - what: >-
+      The media URL check resolves no DNS, so a hostname that would resolve to a private address passes it, and a localhost or *.localhost name is reported as address 127.0.0.1 where LiteLLM names the address its resolver returned.
+    why: >-
+      A transform reads no network. The check still refuses every scheme but http, https, data and the empty one, a URL without a hostname, a blocked IPv4 or IPv6 literal, and the localhost names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L313
+  - what: >-
+      A "file" key among the caller's optional transcription params is an error, while LiteLLM's dict spread lets it replace the audio file.
+    why: >-
+      The audio file is an argument of the transcription call in betterlite's request type, so an option map cannot overwrite it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L61
+kept_bugs:
+  - what: >-
+      The transcription config's missing api_base error reads "api_base must be provided for Hosted VLLM rerank", naming rerank.
+    why: >-
+      That is LiteLLM's own text, and a caller matching on the message keeps working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L48
