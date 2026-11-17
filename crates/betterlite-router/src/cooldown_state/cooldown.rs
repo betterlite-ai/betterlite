@@ -32,6 +32,7 @@ pub struct CooldownCache {
 }
 
 impl CooldownCache {
+    #[must_use]
     pub fn new(settings: &Settings, shared: Arc<dyn SharedCooldowns>, clock: Clock) -> Self {
         let mut masker = SensitiveDataMasker::with_patterns(Vec::<String>::new(), ["cost"]);
         masker.visible_prefix = 50;

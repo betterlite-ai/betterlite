@@ -179,10 +179,7 @@ impl DeploymentHealthCache {
         fetched: Option<HealthSnapshot>,
     ) -> BTreeSet<String> {
         let stored = local.first().cloned().flatten();
-        let snapshot = match stored {
-            Some(snapshot) => Some(snapshot),
-            None => self.backfilled(fetched),
-        };
+        let snapshot = stored.or_else(|| self.backfilled(fetched));
         extract_unhealthy(snapshot.as_ref(), (self.clock)(), self.staleness_threshold)
     }
 }

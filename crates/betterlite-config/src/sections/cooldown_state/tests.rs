@@ -25,9 +25,9 @@ fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
 fn an_empty_config_takes_the_litellm_defaults() {
     let settings = loaded("{}", &[]);
     assert!(!settings.enable_health_check_routing);
-    assert_eq!(settings.staleness_threshold, 600.0);
+    assert_eq!(settings.staleness_threshold.to_bits(), 600.0_f64.to_bits());
     assert!(!settings.ignore_transient_errors);
-    assert_eq!(settings.read_interval_seconds, 1.0);
+    assert_eq!(settings.read_interval_seconds.to_bits(), 1.0_f64.to_bits());
 }
 
 #[rstest]
@@ -116,7 +116,10 @@ fn the_staleness_threshold_defaults_to_twice_the_health_check_interval(
     #[case] environment: &[(&str, &str)],
     #[case] expected: f64,
 ) {
-    assert_eq!(loaded(source, environment).staleness_threshold, expected);
+    assert_eq!(
+        loaded(source, environment).staleness_threshold.to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[rstest]
@@ -145,7 +148,10 @@ fn the_redis_read_interval_defaults_to_one_second(
     #[case] environment: &[(&str, &str)],
     #[case] expected: f64,
 ) {
-    assert_eq!(loaded(source, environment).read_interval_seconds, expected);
+    assert_eq!(
+        loaded(source, environment).read_interval_seconds.to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[rstest]

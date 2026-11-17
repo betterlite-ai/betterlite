@@ -32,14 +32,20 @@ pub(crate) async fn run(name: &str) {
         "set_states_keeps_an_unexpired_local_ttl" => set_states_keeps_the_local_ttl(),
         "the_minimum_cooldown_is_the_smallest_configured_time" => minimum_cooldown_is_smallest(),
         "the_minimum_cooldown_falls_back_to_the_router_default" => minimum_cooldown_falls_back(),
-        "set_states_merges_and_prunes_the_expired" => set_states_merges().await,
-        "set_states_prefers_the_shared_snapshot" => set_states_prefers_shared().await,
-        "set_states_falls_back_to_the_local_copy" => set_states_falls_back().await,
+        "set_states_merges_and_prunes_the_expired" => set_states_merges(),
+        "set_states_prefers_the_shared_snapshot" => set_states_prefers_shared(),
+        "set_states_falls_back_to_the_local_copy" => set_states_falls_back(),
         "a_missing_health_snapshot_marks_nothing_unhealthy" => {
             missing_snapshot_marks_nothing().await
         }
         "an_explicitly_healthy_state_is_not_unhealthy" => a_healthy_state_is_not_unhealthy().await,
-        "the_sync_facade_answers_from_the_shared_snapshot" => the_sync_facade_answers().await,
+        "the_sync_facade_answers_from_the_shared_snapshot" => the_sync_facade_answers(),
+        other => run_pool(other),
+    }
+}
+
+fn run_pool(name: &str) {
+    match name {
         "cooling_deployments_leave_the_pool" => cooling_deployments_leave_the_pool(),
         "the_health_filter_is_a_no_op_until_it_is_enabled" => the_filter_is_opt_in(),
         "an_allowed_fails_policy_skips_the_health_filter" => a_policy_skips_the_filter(),
@@ -279,7 +285,7 @@ fn minimum_cooldown_falls_back() {
     );
 }
 
-async fn set_states_merges() {
+fn set_states_merges() {
     let clock = TestClock::new();
     let existing = snapshot(&[("a", unhealthy(100.0)), ("b", unhealthy(0.0))]);
     let shared = Arc::new(MemoryHealth::with(existing));
@@ -297,7 +303,7 @@ async fn set_states_merges() {
     );
 }
 
-async fn set_states_prefers_shared() {
+fn set_states_prefers_shared() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryHealth::default());
     let cache = health(&clock, Arc::clone(&shared), 10.0);
@@ -316,7 +322,7 @@ async fn set_states_prefers_shared() {
     assert!(!merged.contains_key("a"));
 }
 
-async fn set_states_falls_back() {
+fn set_states_falls_back() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryHealth::default());
     let cache = health(&clock, Arc::clone(&shared), 10.0);
@@ -358,7 +364,7 @@ async fn a_healthy_state_is_not_unhealthy() {
     assert_eq!(shared.read_count(), 1);
 }
 
-async fn the_sync_facade_answers() {
+fn the_sync_facade_answers() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryHealth::with(snapshot(&[("a", unhealthy(1.0))])));
     let cache = health(&clock, Arc::clone(&shared), 10.0);

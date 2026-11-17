@@ -31,6 +31,16 @@ pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
 
 type SharedClock = Arc<Mutex<f64>>;
 
+fn shared_cooldowns(input: &Input) -> Result<FakeCooldowns, ScenarioError> {
+    let mut records = BTreeMap::new();
+    for (model_id, stored) in &input.shared_cooldowns {
+        records.insert(cooldown_key(model_id)?, stored.record());
+    }
+    Ok(FakeCooldowns {
+        records: Mutex::new(records),
+    })
+}
+
 struct Scenario<'case> {
     input: &'case Input,
     clock: SharedClock,
@@ -52,13 +62,7 @@ impl<'case> Scenario<'case> {
             staleness_threshold: input.settings.staleness_threshold.0,
             ignore_transient_errors: false,
         };
-        let mut records = BTreeMap::new();
-        for (model_id, stored) in &input.shared_cooldowns {
-            records.insert(cooldown_key(model_id)?, stored.record());
-        }
-        let shared = Arc::new(FakeCooldowns {
-            records: Mutex::new(records),
-        });
+        let shared = Arc::new(shared_cooldowns(input)?);
         let cooldowns = CooldownCache::new(&settings, shared, Arc::clone(&clock_fn));
         let snapshot = snapshot(&input.shared_health);
         let snapshot = (!snapshot.is_empty()).then_some(snapshot);
