@@ -1,0 +1,31 @@
+kind: helper
+name: azure_passthrough-api-version-removal-seed
+call:
+  azure_passthrough:
+    function: api_version_removal
+    removals:
+      - https://x.test/openai?api-version=2024-02-01
+      - https://x.test/openai?a=1&api-version=old&api-version=older&b=2
+      - https://x.test/openai?a=1&a=3&b=2
+    url_steps:
+      - model: gpt-4o
+        endpoint: chat/completions
+        litellm_params: {api_version: params-v}
+        request_query_params: {api-version: caller-v}
+        api_base: https://x.test/openai?api-version=base-v
+      - model: gpt-4o
+        endpoint: chat/completions
+        litellm_params: {api_version: 2024-08-01-preview}
+        api_base: https://x.test/openai
+      - model: gpt-4o
+        endpoint: chat/completions
+        litellm_params: {}
+        request_query_params: {api-version: caller-v}
+        env_base: https://env.test/openai
+      - model: gpt-4o
+        endpoint: gpt-4o/chat/completions
+        litellm_params: {litellm_metadata: {model_group: my-group}}
+        request_query_params: {api-version: caller-v}
+        api_base: https://x.test/openai/deployments/stale
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+task: B051
+deviations:
+  - what: >-
+      The Prisma bootstrap inputs PRISMA_OFFLINE_MODE, PRISMA_CLI_PATH, PRISMA_NODEENV_CACHE_DIR,
+      LITELLM_PRISMA_BOOTSTRAP_TIMEOUT and LITELLM_MIGRATION_DIR are accepted with one warning and no
+      toolchain side effects instead of setting up a Node runtime.
+    why: Official images set these obsolete inputs, and the native migration runner needs no Node toolchain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L57-L278
+  - what: >-
+      betterlite-db-admin migrate replaces the Python migrations/run.py and litellm/proxy/prisma_migration.py
+      jobs. Exit 2 is an unrecoverable migration failure, exit 1 is an exhausted retry budget, and the
+      request-log index build is awaited by the job before it exits. B8375 owns --skip_server_startup and
+      forwards it to this operation.
+    why: Native SQL migrations do not run Prisma or Node, so the Python entry points have no native counterpart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
+  - what: >-
+      With schema updates disabled the startup schema comparison reports Unavailable and warns that drift
+      was not checked, where LiteLLM diffs the database against the shipped schema and logs the drift.
+    why: >-
+      A native SchemaContract is only built from a database catalog, so this task has no expected contract to
+      compare against and never fails startup for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L111-L122
+kept_bugs: []

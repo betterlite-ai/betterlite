@@ -331,6 +331,7 @@ async fn selection_vertex_settings_fallback() {
             location: Some("europe-west1".to_owned()),
             credentials: None,
             adc: AdcEnvironment::default(),
+            default_video_duration_seconds: 8,
         },
     };
     let options = deployment("vertex_ai/gemini-2.0-flash", params(None, None, None), None);
@@ -615,6 +616,7 @@ async fn selection_partner_settings_fallback() {
             location: Some("europe-west1".to_owned()),
             credentials: None,
             adc: AdcEnvironment::default(),
+            default_video_duration_seconds: 8,
         },
     };
     let options = deployment(
@@ -791,6 +793,7 @@ fn selection_model_info_factory_kinds() {
             location: None,
             credentials: None,
             adc: AdcEnvironment::default(),
+            default_video_duration_seconds: 8,
         },
     };
     let studio = GeminiModelInfo {

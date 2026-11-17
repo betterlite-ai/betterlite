@@ -1,0 +1,29 @@
+kind: helper
+name: vertex-veo-operation-outcomes
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: vertex_ai
+        request_data:
+          parameters: {durationSeconds: 8, resolution: 720p, sampleCount: 1}
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+      - function: status_response
+        provider: vertex_ai
+        now: 1700000000
+        time_zone: UTC
+        response:
+          name: projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/operations/op-1
+          done: true
+          metadata: {createTime: '2024-12-04T21:53:12.120184Z'}
+      - function: content_response
+        response:
+          done: true
+          response:
+            videos:
+              - {bytesBase64Encoded: QUJD}
+env: {}
+compare: {ignore: []}

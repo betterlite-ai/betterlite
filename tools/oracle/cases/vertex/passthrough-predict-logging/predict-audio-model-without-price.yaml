@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-predict-audio-model-without-price
+call:
+  b3639:
+    operation: predict
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/text-embedding-004:predict
+    status: 200
+    body:
+      predictions:
+        - audioContent: QUJD
+          embeddings:
+            values: [1, 2]
+            statistics: {token_count: 4, truncated: false}
+    request_body: null
+env: {}
+compare: {ignore: []}
