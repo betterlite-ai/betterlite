@@ -81,9 +81,7 @@ fn apply_mapped_param<Lookup>(
         }
         "stop" => apply_stop(value, optional_params),
         "temperature" | "top_p" => apply_sampling(request, optional_params, param, value)?,
-        "tools" if matches!(value, ParamValue::List(_)) => {
-            apply_tools(request, value, optional_params)?;
-        }
+        "tools" => apply_tools(request, value, optional_params)?,
         "tool_choice" => apply_tool_choice(request, value, optional_params, names)?,
         "parallel_tool_calls" => {
             let config = merge::parallel_tool_use_config(value);
@@ -92,9 +90,7 @@ fn apply_mapped_param<Lookup>(
                 ParamValue::Mapping(config),
             );
         }
-        "context_management" if matches!(value, ParamValue::Mapping(_) | ParamValue::List(_)) => {
-            mapping::map_context_management_param(value, optional_params)?;
-        }
+        "context_management" => mapping::map_context_management_param(value, optional_params)?,
         "requestMetadata" => mapping::map_request_metadata_param(value, optional_params)?,
         "service_tier" => {
             if let ParamValue::Text(tier) = value {
