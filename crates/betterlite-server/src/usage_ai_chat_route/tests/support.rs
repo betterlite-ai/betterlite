@@ -196,7 +196,7 @@ impl FakeSource {
             .clone()
     }
 
-    fn empty(&self) -> Ready<PageResult> {
+    fn empty() -> Ready<PageResult> {
         ready(PageResult::Ok(empty_page()))
     }
 }
@@ -213,15 +213,15 @@ impl UsageDataSource for FakeSource {
             .lock()
             .expect("the source call log")
             .push(user_id.map(str::to_owned));
-        self.empty().await
+        Self::empty().await
     }
 
     async fn teams(&self, _start_date: &str, _end_date: &str, _ids: Ids<'_>) -> PageResult {
-        self.empty().await
+        Self::empty().await
     }
 
     async fn tags(&self, _start_date: &str, _end_date: &str, _tags: Ids<'_>) -> PageResult {
-        self.empty().await
+        Self::empty().await
     }
 }
 
