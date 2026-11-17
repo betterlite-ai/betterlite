@@ -6,11 +6,11 @@ deviations:
   - what: Provider response bytes are capped at 1 MiB and parsed with the decoder's nesting limit, so an oversized or deeply nested token or userinfo response fails as invalid JSON where the pinned json.loads would accept it.
     why: betterlite bounds every untrusted response before it allocates, and a 4 MiB JSON document from a token endpoint is a memory amplification vector, not a working configuration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3967-L3977
-  - what: A provider body holding a number that overflows f64, such as 1e400, or Python's non-standard NaN and Infinity literals is refused as invalid JSON, where Python's json.loads returns inf or accepts the literals and the pinned code merges them into the identity claims.
-    why: betterlite reads provider JSON through serde_json, which accepts only the numbers and literals the JSON standard defines; an infinite claim has no typed consumer, and docs/compatibility.md keeps the runtime to standard JSON values.
+  - what: A provider body holding Python's non-standard NaN or Infinity literal is refused as invalid JSON, where Python's json.loads accepts the literals and the pinned code merges them into the identity claims.
+    why: betterlite reads provider JSON through serde_json, which accepts only the literals the JSON standard defines; a claim holding NaN or Infinity has no typed consumer, and docs/compatibility.md keeps the runtime to standard JSON values.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3968
-  - what: An integer past u64 is kept as the nearest f64 and written back as a float, where Python's json.loads keeps the exact integer and the pinned code merges it into the identity claims.
-    why: serde_json's Number holds an i64, a u64 or an f64 and nothing wider; a claim with more than 64 bits of magnitude has no typed consumer, and docs/compatibility.md keeps the runtime to standard JSON values.
+  - what: A number past the f64 range, such as 1e400, is kept as the decimal text the provider wrote and read back as 1e+400, where Python's json.loads turns it into inf and writes it back as the non-standard Infinity literal.
+    why: serde_json keeps the number as its decimal text, so betterlite never emits the Infinity token Python's encoder uses; docs/compatibility.md keeps output to standard JSON, and a consumer that reads 1e+400 still gets infinity.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3968
   - what: A truthy non-object userinfo body answers 500 internal_server_error with code 500, where the pinned code lets the dict unpacking raise an unhandled TypeError that FastAPI turns into its generic 500 body.
     why: The status is the same; betterlite answers its typed error envelope so the failure is classified and the unhandled exception never reaches the server's panic path. No working setup relies on the shape of a crash response.

@@ -77,7 +77,7 @@ async fn fetches_userinfo_with_the_issued_bearer_token() {
 #[tokio::test]
 async fn puts_client_id_in_the_body_for_a_public_client() {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.client_secret = None;
     request.userinfo_endpoint = None;
@@ -95,7 +95,7 @@ async fn puts_client_id_in_the_body_for_a_public_client() {
 #[tokio::test]
 async fn treats_an_empty_client_secret_as_absent() {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.client_secret = Some(SecretString::from(String::new()));
     request.userinfo_endpoint = None;
@@ -111,7 +111,7 @@ async fn treats_an_empty_client_secret_as_absent() {
 #[tokio::test]
 async fn puts_client_credentials_in_the_body_when_include_client_id_is_set() {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.include_client_id = true;
     request.userinfo_endpoint = None;
@@ -132,7 +132,7 @@ async fn puts_client_credentials_in_the_body_when_include_client_id_is_set() {
 #[tokio::test]
 async fn include_client_id_without_a_secret_sends_only_the_client_id() {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.include_client_id = true;
     request.client_secret = None;
@@ -152,7 +152,7 @@ async fn include_client_id_without_a_secret_sends_only_the_client_id() {
 #[tokio::test]
 async fn omits_an_absent_or_empty_redirect_uri(#[case] redirect_url: Option<&str>) {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.redirect_url = redirect_url.map(str::to_owned);
     request.userinfo_endpoint = None;
@@ -163,7 +163,7 @@ async fn omits_an_absent_or_empty_redirect_uri(#[case] redirect_url: Option<&str
 #[tokio::test]
 async fn encodes_the_form_like_urllib() {
     let provider = LocalProvider::start().await;
-    provider.reply("/token", Reply::json(&token_reply(None)));
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.authorization_code = "code 1~*&=+".to_owned();
     request.userinfo_endpoint = None;
@@ -223,7 +223,10 @@ async fn follows_a_redirected_token_endpoint() {
         "/token",
         Reply::redirect(&provider.endpoint("/token-final")),
     );
-    provider.reply("/token-final", Reply::json(&token_reply(None)));
+    provider.reply(
+        "/token-final",
+        Reply::json(&token_reply(Some(VALID_ID_TOKEN))),
+    );
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
     let claims = run_exchange(&request).await.unwrap();

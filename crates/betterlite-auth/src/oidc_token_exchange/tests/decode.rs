@@ -48,8 +48,8 @@ fn keeps_the_last_duplicate_access_token() {
 #[case::numeric_access_token(br#"{"access_token":42}"#, "missing-access-token")]
 #[case::object_access_token(br#"{"access_token":{"token":"a"}}"#, "missing-access-token")]
 #[case::list_access_token(br#"{"access_token":["a"]}"#, "missing-access-token")]
-#[case::overflowing_float(br#"{"access_token":"a","expires_in":1e400}"#, "not-json")]
 #[case::nan_literal(br#"{"access_token":"a","score":NaN}"#, "not-json")]
+#[case::infinity_literal(br#"{"access_token":"a","score":Infinity}"#, "not-json")]
 fn rejects_token_responses_the_provider_should_not_send(#[case] body: &[u8], #[case] reason: &str) {
     let error = decode_oidc_token_response(body).unwrap_err();
     assert_eq!(reason_of(&error), reason);
@@ -77,13 +77,24 @@ fn classifies_userinfo_bodies(#[case] body: &[u8], #[case] shape: &str) {
 }
 
 #[test]
-fn keeps_an_integer_past_u64_as_a_float() {
+fn keeps_an_integer_past_u64_exactly() {
     let response =
         decode_oidc_token_response(br#"{"access_token":"a","user_id":18446744073709551616}"#)
             .unwrap();
-    let user_id = &response.claims.get("user_id").unwrap().json;
-    assert!(user_id.is_f64());
-    assert!(user_id.as_u64().is_none());
+    assert_eq!(
+        serde_json::to_string(&response.claims["user_id"].json).unwrap(),
+        "18446744073709551616"
+    );
+}
+
+#[test]
+fn keeps_a_number_past_f64_range_as_the_provider_wrote_it() {
+    let response =
+        decode_oidc_token_response(br#"{"access_token":"a","expires_in":1e400}"#).unwrap();
+    assert_eq!(
+        serde_json::to_string(&response.claims["expires_in"].json).unwrap(),
+        "1e+400"
+    );
 }
 
 #[test]
@@ -109,7 +120,7 @@ fn accepts_a_body_at_the_size_limit_and_refuses_one_past_it() {
     body.push_str(&"a".repeat(padding));
     body.push_str(tail);
     assert_eq!(body.len(), MAX_OIDC_RESPONSE_BYTES);
-    assert!(decode_oidc_token_response(body.as_bytes()).is_ok());
+    decode_oidc_token_response(body.as_bytes()).unwrap();
     body.push('a');
     let error = decode_oidc_token_response(body.as_bytes()).unwrap_err();
     assert_eq!(reason_of(&error), "too-large");
