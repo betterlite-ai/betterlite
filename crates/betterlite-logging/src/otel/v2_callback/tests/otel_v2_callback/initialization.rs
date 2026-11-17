@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::data::{ResourceMetrics, ScopeMetrics};
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor};
@@ -9,7 +12,8 @@ use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
-use betterlite_logging::otel::plumbing::providers::ProviderState;
+use betterlite_logging::otel::plumbing::events::{GenAIEventRecorder, SystemClock};
+use betterlite_logging::otel::plumbing::providers::{ProviderState, get_event_logger};
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
 use betterlite_logging::otel::v2_callback::error::CallbackError;
 use betterlite_logging::otel::v2_callback::phase;
@@ -82,6 +86,30 @@ fn enabling_metrics_and_events_builds_their_recorders() {
     let (metrics, events) = harness.callback.recorders();
     assert!(metrics.is_some());
     assert!(events.is_some());
+}
+
+#[test]
+fn an_injected_recorder_wins_and_an_opted_out_provider_stays_none() {
+    let mut config = settings();
+    config.enable_metrics = true;
+    config.enable_events = true;
+    let spans = InMemorySpanExporter::default();
+    let logs = SdkLoggerProvider::builder().build();
+    let events = Arc::new(GenAIEventRecorder {
+        event_logger: get_event_logger(&logs, "litellm"),
+        clock: Box::new(SystemClock),
+    });
+    let mut parts = construction_parts(config, &spans, None);
+    parts.providers.events = Some(Arc::clone(&events));
+    parts.providers.meter_state = ProviderState::OptedOut;
+    let registry = V2Registry::default();
+    let callback = V2Callback::new(parts, &registry).expect("callback");
+    let (metrics, recorded) = callback.recorders();
+    assert!(metrics.is_none());
+    assert!(std::ptr::eq(
+        recorded.expect("event recorder"),
+        events.as_ref()
+    ));
 }
 
 #[test]
