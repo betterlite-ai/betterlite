@@ -300,6 +300,9 @@ fn assert_drained(records: &[LogRecord]) {
     assert_eq!(report.accepted, Some(2));
     assert_eq!(report.completed, Some(2));
     assert_eq!(report.failed, Some(0));
+    assert_eq!(report.timed_out, Some(0));
+    assert_eq!(report.cancelled, Some(0));
+    assert_eq!(report.dropped, Some(0));
     assert_eq!(report.drained, Some(true));
 }
 
