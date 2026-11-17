@@ -1,6 +1,6 @@
 task: B892
 deviations:
-  - what: An allowed_routes entry that is a JSON list or object makes LiteLLM's safe-preset membership test raise TypeError from the frozenset lookup, a 500; betterlite reads any non-string entry as not a safe preset and rejects the request with the same 403 detail.error.
+  - what: An allowed_routes entry that is a JSON list or object makes LiteLLM's safe-preset membership test raise TypeError from the frozenset lookup, a 500; betterlite reads that unhashable entry as not a safe preset and rejects the request with the same 403 detail.error. An entry that is a number, bool or null is hashable, so LiteLLM already rejects it and betterlite matches.
     why: The route list is untyped JSON in both, and a caller's nested value must not crash the proxy; the 403 keeps LiteLLM's denial shape for an entry that is not a safe preset.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L945-L950
   - what: The same unhashable entry on either side of the route transition check makes LiteLLM build a frozenset and raise TypeError, a 500; betterlite reads the transition as unsafe and falls back to the raw-body permission check, which passes only for an admin or for an omitted falsey field.
