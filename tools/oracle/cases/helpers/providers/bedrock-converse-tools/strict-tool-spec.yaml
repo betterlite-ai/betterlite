@@ -60,4 +60,9 @@ calls:
       strict: true
       supports_strict_tools: true
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /error/status
+      why: >-
+        betterlite answers 400 for a tool whose parameters have no type, where LiteLLM raises KeyError
+        and answers 500; docs/deviations/B9978.yaml lists the fix.
