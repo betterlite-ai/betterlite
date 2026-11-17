@@ -9,6 +9,7 @@ use betterlite_azure::passthrough::config::AzurePassthroughConfig;
 use betterlite_azure::passthrough::logging::{
     ChatReplyProjection, ChatStreamAssembly, NoChatReplyProjection, NoChatStreamAssembly,
 };
+use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::reply::ResponseReply;
 use betterlite_openai::compatible_wire::LogInput;
@@ -28,7 +29,7 @@ pub(crate) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig 
     }
 }
 
-pub(crate) fn config_with_reply<Reply: Default>(reply: Reply) -> AzurePassthroughConfig<Reply> {
+pub(crate) fn config_with_reply<Reply>(reply: Reply) -> AzurePassthroughConfig<Reply> {
     AzurePassthroughConfig {
         api_base_env: None,
         api_key_env: None,
@@ -38,7 +39,7 @@ pub(crate) fn config_with_reply<Reply: Default>(reply: Reply) -> AzurePassthroug
     }
 }
 
-pub(crate) fn config_with_stream<Stream: Default>(
+pub(crate) fn config_with_stream<Stream>(
     stream: Stream,
 ) -> AzurePassthroughConfig<NoChatReplyProjection, Stream> {
     AzurePassthroughConfig {
@@ -86,7 +87,7 @@ impl ChatReplyProjection for OracleChatProjection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordedAssembly {
     pub(crate) model: String,
     pub(crate) messages: Option<Vec<Object>>,
@@ -177,8 +178,8 @@ impl CredentialSources for NoSources {
     }
 }
 
-pub(crate) fn deployment() -> betterlite_config::sections::azure_credentials::DeploymentSettings {
-    betterlite_config::sections::azure_credentials::DeploymentSettings {
+pub(crate) fn deployment() -> DeploymentSettings {
+    DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
         client_id: None,
