@@ -10,8 +10,9 @@ deviations:
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L82-L88
   - what: >-
-      A negative import_timeout is an already-expired deadline, so the import fails at once with a timeout
-      error. LiteLLM hands the negative integer to vertexai.rag.import_files as its timeout.
+      A negative import_timeout becomes a zero-length deadline, so an import that is not ready on the
+      first poll fails with a timeout error. LiteLLM hands the negative integer to
+      vertexai.rag.import_files as its timeout.
     why: >-
       A declared integer under 0 can only mean "no time left"; Duration has no negative value, and failing
       fast here beats an SDK call that cannot succeed.
