@@ -77,7 +77,7 @@ def transform_input(ids: Ids, session_configuration_request: str | None) -> dict
 def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     litellm_uuid.uuid4 = CountedUuid()
-    config: LiveConfig = GeminiRealtimeConfig()  # type: ignore[no-untyped-call,assignment]  # noqa: E501  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143
+    config: LiveConfig = GeminiRealtimeConfig()  # type: ignore[no-untyped-call,assignment]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L143
     ids = parsed["ids"]
     pending = parsed.get("pending_usage")
     if pending is not None:
@@ -102,5 +102,5 @@ def run(input_value: JsonValue) -> JsonValue:
             "response_id": answer["current_response_id"],
             "output_item_id": answer["current_output_item_id"],
         },
-        "pending_usage": config._pending_usage_metadata,  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L915
+        "pending_usage": config._pending_usage_metadata,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L915
     }
