@@ -21,7 +21,7 @@ use super::chunk;
 use super::error::ChatResponseStreamError;
 
 // The end of the provider stream: the assembled response, then any tool, text and item done events it owes
-pub fn common_done_event<Context>(
+pub(crate) fn common_done_event<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
 ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError>

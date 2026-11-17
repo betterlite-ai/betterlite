@@ -27,7 +27,7 @@ use super::chunk;
 use super::error::ChatResponseStreamError;
 
 // The first chunk that carries a choice decides what the stream's first output item is
-pub fn ensure_output_item_for_chunk<Context>(
+pub(crate) fn ensure_output_item_for_chunk<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
     chunk: &Json,
@@ -54,7 +54,7 @@ pub fn ensure_output_item_for_chunk<Context>(
 }
 
 // Only the async iterator closes a reasoning segment, and the close clears the active flag itself
-pub fn close_reasoning_segment<Context>(
+pub(crate) fn close_reasoning_segment<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
     chunk: &Json,
@@ -85,7 +85,7 @@ pub fn close_reasoning_segment<Context>(
 }
 
 // LiteLLM's priority: reasoning, text, tool deltas, queued annotations, then tool events queued by an earlier chunk
-pub fn transform<Context>(
+pub(crate) fn transform<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
     chunk: &Json,
@@ -202,7 +202,8 @@ fn queue_first_annotations<Context>(
     }
     let items = match delta.and_then(|fields| fields.get("annotations")) {
         None | Some(Json::Null) => return Ok(()),
-        Some(Json::List(items)) if !items.is_empty() => items,
+        Some(Json::List(items)) if items.is_empty() => return Ok(()),
+        Some(Json::List(items)) => items,
         Some(value) if !has_value(value) => return Ok(()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
             return Err(StreamItemsError::AnnotationsNotList.into());

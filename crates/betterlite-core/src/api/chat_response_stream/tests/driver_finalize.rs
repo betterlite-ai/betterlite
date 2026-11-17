@@ -130,6 +130,31 @@ fn driver_later_annotation_batches_are_ignored() {
 }
 
 #[test]
+fn driver_empty_annotation_batch_does_not_latch() {
+    let (mut stream, _received) = driver(
+        vec![
+            Ok(citation_chunk(&[], None)),
+            Ok(citation_chunk(&[CITATION], None)),
+            Ok(json(FINISH_STOP)),
+        ],
+        Reply::None,
+        "{}",
+        &["u1"],
+    );
+    let events = drain(&mut stream);
+    let annotations = annotation_events(&events);
+    assert_eq!(
+        annotations.len(),
+        1,
+        "an empty batch leaves the later one to convert"
+    );
+    assert_eq!(
+        field(&field(&annotations[0], "annotation"), "url"),
+        Json::Text(String::from("https://one"))
+    );
+}
+
+#[test]
 fn driver_provider_fields_merge_with_the_delta_winning() {
     let (mut stream, _received) = driver(
         vec![Ok(json(
