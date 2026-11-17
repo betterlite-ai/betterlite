@@ -3,8 +3,8 @@ use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
 use super::{
-    BUDGET_MESSAGE, SCHEMA_MESSAGE, authentication, budget, errors_header, guardrail, header, info,
-    json, object, plain, rate_limit, schema, unsupported,
+    BUDGET_MESSAGE, SCHEMA_MESSAGE, authentication, bad_request, budget, errors_header, guardrail,
+    header, info, json, object, plain, rate_limit, schema, unsupported,
 };
 use crate::fallback_observations::details::truncate_fallback_error_detail;
 use crate::fallback_observations::error_info::{

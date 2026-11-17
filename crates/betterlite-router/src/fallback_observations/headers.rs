@@ -26,8 +26,8 @@ pub fn attach_fallback_headers(
         ATTEMPTED_FALLBACKS_HEADER.to_owned(),
         Json::Number(Number::from(attempted_fallbacks)),
     );
-    if let Some(errors) = errors {
-        let merged = merged_errors(headers, errors);
+    if let Some(new_errors) = errors {
+        let merged = merged_errors(headers, new_errors);
         // Json always serializes; an impossible encoding failure must not fail the request
         let encoded = serde_json::to_string(&merged).unwrap_or_default();
         headers.insert(FALLBACK_ERRORS_HEADER.to_owned(), Json::Text(encoded));

@@ -1,7 +1,7 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_redact::secret::Redactor;
 
-use super::error_info::exception_message;
+use super::error_info::family_fields;
 
 // litellm.constants.ROUTER_FALLBACK_ERROR_DETAIL_MAX_CHARS, which no environment override reaches
 pub const FALLBACK_DETAIL_MAX_CHARS: usize = 2000;
@@ -21,7 +21,7 @@ pub fn truncate_fallback_error_detail(detail: &str) -> String {
 // Router.async_function_with_fallbacks redacts the exception text before it bounds it, so no secret survives partway into the prefix
 #[must_use]
 pub fn fallback_error_detail(redactor: &Redactor, class: &ErrorClass) -> String {
-    let message = exception_message(class);
+    let message = family_fields(class).message;
     let redacted = redactor.redact_string(&message);
     truncate_fallback_error_detail(&redacted)
 }

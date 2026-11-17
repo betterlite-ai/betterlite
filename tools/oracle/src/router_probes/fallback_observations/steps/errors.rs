@@ -64,8 +64,8 @@ fn error_class(case: &DetailCase) -> Result<ErrorClass, OperationError> {
         } => Ok(guardrail(message, guardrail_name.as_deref())),
         DetailCase::JsonSchema {
             raw_response,
-            json_schema,
-        } => Ok(json_schema(raw_response, json_schema)),
+            json_schema: schema,
+        } => Ok(json_schema(raw_response, schema)),
         DetailCase::Plain { message, .. } => Ok(ErrorClass::Unclassified(Box::new(context(
             message.to_owned(),
         )))),

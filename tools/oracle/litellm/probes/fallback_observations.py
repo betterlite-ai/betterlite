@@ -1,5 +1,6 @@
 import asyncio
 import warnings
+from collections.abc import Callable, Coroutine
 from typing import Annotated, Final, Literal
 
 import litellm
@@ -24,8 +25,8 @@ from litellm.router_utils.common_utils import (
     format_no_fallback_group_message,
     truncate_fallback_error_detail,
 )
-from litellm.router_utils.fallback_event_handlers import log_failure_fallback_event, log_success_fallback_event
-from pydantic import Field, JsonValue, TypeAdapter
+from litellm.router_utils import fallback_event_handlers
+from pydantic import Field, InstanceOf, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
@@ -37,6 +38,14 @@ PROVIDER: Final = "openai"
 ERRORS_HEADER: Final = "x-litellm-fallback-errors"
 HEADERS: Final = TypeAdapter(dict[str, JsonValue])
 ERRORS: Final = TypeAdapter(list[dict[str, JsonValue]])
+# litellm.callbacks mixes callables, names and loggers, so the probe claims only that it is a list
+CALLBACKS: Final[TypeAdapter[list[object]]] = TypeAdapter(InstanceOf[list[object]])
+LOG_SUCCESS: Callable[..., Coroutine[object, object, None]] = TypeAdapter(
+    Callable[..., Coroutine[object, object, None]]
+).validate_python(fallback_event_handlers.__dict__["log_success_fallback_event"])
+LOG_FAILURE: Callable[..., Coroutine[object, object, None]] = TypeAdapter(
+    Callable[..., Coroutine[object, object, None]]
+).validate_python(fallback_event_handlers.__dict__["log_failure_fallback_event"])
 ObserverKind = Literal["record", "fail", "silent"]
 OutcomeKind = Literal["success", "failure"]
 ResponseKind = Literal["absent", "object", "attributed", "opaque"]
@@ -173,7 +182,7 @@ class Opaque:
 
 class RecordingLogger(CustomLogger):
     def __init__(self, index: int, calls: list[EventCall]) -> None:
-        super().__init__()
+        # CustomLogger.__init__ only records message-logging flags this probe never reads
         self.index: int = index
         self.calls: list[EventCall] = calls
 
@@ -346,23 +355,24 @@ async def event_for(case: EventCase) -> EventFound:
     calls: list[EventCall] = []
     loggers = [logger_for(kind, index, calls) for index, kind in enumerate(case.observers)]
     exception = Exception(case.message)
-    before = len(litellm.callbacks)
-    litellm.callbacks.extend(loggers)
+    callbacks = CALLBACKS.validate_python(litellm.__dict__["callbacks"])
+    before = len(callbacks)
+    callbacks.extend(loggers)
     try:
         if case.outcome == "success":
-            await log_success_fallback_event(
+            await LOG_SUCCESS(
                 original_model_group=case.original_model_group,
                 kwargs=dict(case.request),
                 original_exception=exception,
             )
         else:
-            await log_failure_fallback_event(
+            await LOG_FAILURE(
                 original_model_group=case.original_model_group,
                 kwargs=dict(case.request),
                 original_exception=exception,
             )
     finally:
-        del litellm.callbacks[before:]
+        del callbacks[before:]
     return EventFound(calls=calls)
 
 

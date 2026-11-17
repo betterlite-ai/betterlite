@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::fallback_observations::error_info::exception_message;
+use betterlite_router::fallback_observations::error_info::family_fields;
 use betterlite_router::fallback_observations::observer::{
     FallbackEvent, FallbackObservationError, FallbackObserver, FallbackOutcome, log_fallback_event,
 };
@@ -89,7 +89,7 @@ impl RecordingObserver {
             outcome,
             original_model_group: event.original_model_group.to_owned(),
             model: model_of(event.request),
-            message: exception_message(event.exception),
+            message: family_fields(event.exception).message,
         };
         if let Ok(mut calls) = self.calls.lock() {
             calls.push(call);
@@ -134,7 +134,7 @@ fn observer_failure(event: &FallbackEvent<'_>) -> FallbackObservationError {
             "the observer failed for {} over {} values: {}",
             event.original_model_group,
             event.request.len(),
-            exception_message(event.exception)
+            family_fields(event.exception).message
         ),
     }
 }

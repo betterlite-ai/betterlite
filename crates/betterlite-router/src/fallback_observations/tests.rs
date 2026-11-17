@@ -18,7 +18,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rust_decimal::Decimal;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use super::error_info::{FALLBACK_ERRORS_HEADER, FallbackErrorInfo, exception_message};
+use super::error_info::{FALLBACK_ERRORS_HEADER, FallbackErrorInfo, family_fields};
 use super::observer::{FallbackEvent, FallbackObservationError, FallbackObserver};
 use crate::router_core::headers::{Response, ensure_additional_headers_dict};
 
@@ -33,16 +33,24 @@ pub(crate) const BUDGET_MESSAGE: &str =
 pub(crate) const SCHEMA_MESSAGE: &str = r#"litellm.JSONSchemaValidationError: model=gpt-4, returned an invalid response={"id": "x"}, for schema={"type": "object"}.
 Access raw response with `e.raw_response`"#;
 
+const EMPTY_CONTEXT: ErrorContext = ErrorContext {
+    message: String::new(),
+    model: None,
+    provider: None,
+    max_retries: None,
+    num_retries: None,
+    body_type: None,
+    body_param: None,
+    body_code: None,
+};
+
 pub(crate) fn context(message: &str) -> ErrorContext {
+    let owned = message.to_owned();
     ErrorContext {
-        message: message.to_owned(),
+        message: owned,
         model: Some(MODEL.to_owned()),
         provider: Some("openai".to_owned()),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
+        ..EMPTY_CONTEXT
     }
 }
 
@@ -73,10 +81,13 @@ pub(crate) fn bad_request(
 }
 
 pub(crate) fn budget(message: Option<&str>) -> ErrorClass {
+    let current_cost = Decimal::new(15, 1);
+    let max_budget = Decimal::new(10, 0);
+    let text = message.map(str::to_owned);
     ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
-        current_cost: Decimal::new(15, 1),
-        max_budget: Decimal::new(10, 0),
-        message: message.map(str::to_owned),
+        current_cost,
+        max_budget,
+        message: text,
         provider: "openai".to_owned(),
         entity_type: None,
         entity_id: None,
@@ -188,7 +199,7 @@ impl RecordingObserver {
     fn record(&self, outcome: &str, event: FallbackEvent<'_>) {
         let index = self.index;
         let group = event.original_model_group;
-        let message = exception_message(event.exception);
+        let message = family_fields(event.exception).message;
         let model = match event.request.get("model") {
             Some(Json::Text(model)) => model.as_str(),
             None
@@ -226,24 +237,28 @@ pub(crate) struct FailingObserver {
     pub(crate) message: String,
 }
 
+impl FailingObserver {
+    fn failure(&self) -> Result<(), FallbackObservationError> {
+        Err(FallbackObservationError::Observer {
+            message: self.message.clone(),
+        })
+    }
+}
+
 #[async_trait]
 impl FallbackObserver for FailingObserver {
     async fn log_success_fallback_event(
         &self,
         _event: FallbackEvent<'_>,
     ) -> Result<(), FallbackObservationError> {
-        Err(FallbackObservationError::Observer {
-            message: self.message.clone(),
-        })
+        self.failure()
     }
 
     async fn log_failure_fallback_event(
         &self,
         _event: FallbackEvent<'_>,
     ) -> Result<(), FallbackObservationError> {
-        Err(FallbackObservationError::Observer {
-            message: self.message.clone(),
-        })
+        self.failure()
     }
 }
 

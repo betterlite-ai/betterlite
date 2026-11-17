@@ -24,75 +24,97 @@ pub struct FallbackErrorInfo {
 #[must_use]
 pub fn fallback_error_info(class: &ErrorClass) -> FallbackErrorInfo {
     let metadata = class.metadata();
+    let fields = family_fields(class);
     FallbackErrorInfo {
-        message: exception_message(class),
-        error_type: error_type(class, &metadata),
+        message: fields.message,
+        error_type: error_type(&metadata, fields.missing_type_name),
         param: optional_text(&metadata.param),
         code: code_text(class, &metadata),
     }
 }
 
-// getattr(error, "message", str(error)): every family carries the text its Python constructor built
+// the two strings get_fallback_error_info reads off an exception family: the text its Python constructor built, and the class name it reports when the exception has no type attribute
+pub struct FamilyFields {
+    pub message: String,
+    // an exception outside every named family reaches the router as the plain Exception Python raised
+    pub missing_type_name: &'static str,
+}
+
 #[must_use]
-pub fn exception_message(class: &ErrorClass) -> String {
+pub fn family_fields(class: &ErrorClass) -> FamilyFields {
     match class {
-        ErrorClass::Authentication(details) => details.message.clone(),
-        ErrorClass::NotFound(details) => details.message.clone(),
-        ErrorClass::PermissionDenied(details) => details.message.clone(),
-        ErrorClass::UnprocessableEntity(details) => details.message.clone(),
+        ErrorClass::Authentication(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::NotFound(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::PermissionDenied(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::UnprocessableEntity(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "Exception",
+        },
         ErrorClass::BadRequest(details)
         | ErrorClass::ContextWindowExceeded(details)
-        | ErrorClass::ContentPolicyViolation(details) => details.message.clone(),
-        ErrorClass::Timeout(details) => details.context.message.clone(),
-        ErrorClass::RateLimit(details) => details.context.message.clone(),
-        ErrorClass::BudgetExceeded(details) => budget_message(details),
+        | ErrorClass::ContentPolicyViolation(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::GuardrailRaised(details) => FamilyFields {
+            message: details.message.clone(),
+            missing_type_name: "GuardrailRaisedException",
+        },
+        ErrorClass::Timeout(details) => FamilyFields {
+            message: details.context.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::RateLimit(details) => FamilyFields {
+            message: details.context.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::BudgetExceeded(details) => FamilyFields {
+            message: budget_message(details),
+            missing_type_name: "BudgetExceededError",
+        },
         ErrorClass::ServiceUnavailable(context)
         | ErrorClass::BadGateway(context)
         | ErrorClass::InternalServer(context)
         | ErrorClass::ApiConnection(context)
         | ErrorClass::ApiResponseValidation(context)
-        | ErrorClass::UnsupportedParams(context)
-        | ErrorClass::Unclassified(context) => context.message.clone(),
-        ErrorClass::Api(details) => details.context.message.clone(),
-        ErrorClass::MidStreamFallback(details) => details.context.message.clone(),
-        ErrorClass::JsonSchemaValidation(details) => schema_message(details),
-        ErrorClass::GuardrailRaised(details) => details.message.clone(),
+        | ErrorClass::Unclassified(context) => FamilyFields {
+            message: context.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::UnsupportedParams(context) => FamilyFields {
+            message: context.message.clone(),
+            missing_type_name: "UnsupportedParamsError",
+        },
+        ErrorClass::Api(details) => FamilyFields {
+            message: details.context.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::MidStreamFallback(details) => FamilyFields {
+            message: details.context.message.clone(),
+            missing_type_name: "Exception",
+        },
+        ErrorClass::JsonSchemaValidation(details) => FamilyFields {
+            message: schema_message(details),
+            missing_type_name: "Exception",
+        },
     }
 }
 
 // getattr(error, "type", error.__class__.__name__): a null type attribute reads as the string None
-fn error_type(class: &ErrorClass, metadata: &ErrorMetadata) -> String {
+fn error_type(metadata: &ErrorMetadata, missing_type_name: &'static str) -> String {
     match &metadata.error_type {
         WireField::Text(text) => text.clone(),
         WireField::Null => "None".to_owned(),
-        WireField::Missing(_) => missing_type_name(class),
-    }
-}
-
-// the families without a type attribute, whose class name LiteLLM reads instead; an exception outside every family reaches the router as the plain Exception Python raised
-fn missing_type_name(class: &ErrorClass) -> String {
-    match class {
-        ErrorClass::BudgetExceeded(_) => "BudgetExceededError".to_owned(),
-        ErrorClass::GuardrailRaised(_) => "GuardrailRaisedException".to_owned(),
-        ErrorClass::UnsupportedParams(_) => "UnsupportedParamsError".to_owned(),
-        ErrorClass::Authentication(_)
-        | ErrorClass::NotFound(_)
-        | ErrorClass::PermissionDenied(_)
-        | ErrorClass::BadRequest(_)
-        | ErrorClass::UnprocessableEntity(_)
-        | ErrorClass::Timeout(_)
-        | ErrorClass::RateLimit(_)
-        | ErrorClass::ContextWindowExceeded(_)
-        | ErrorClass::ContentPolicyViolation(_)
-        | ErrorClass::ServiceUnavailable(_)
-        | ErrorClass::BadGateway(_)
-        | ErrorClass::InternalServer(_)
-        | ErrorClass::Api(_)
-        | ErrorClass::ApiConnection(_)
-        | ErrorClass::ApiResponseValidation(_)
-        | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::MidStreamFallback(_)
-        | ErrorClass::Unclassified(_) => "Exception".to_owned(),
+        WireField::Missing(_) => missing_type_name.to_owned(),
     }
 }
 
@@ -113,17 +135,19 @@ fn code_text(class: &ErrorClass, metadata: &ErrorMetadata) -> Option<String> {
 
 // BudgetExceededError.__init__ replaces an absent or empty message with the costs it was given
 fn budget_message(details: &BudgetExceededDetails) -> String {
-    match details
+    details
         .message
         .as_deref()
         .filter(|message| !message.is_empty())
-    {
-        Some(message) => message.to_owned(),
-        None => format!(
-            "Budget has been exceeded! Current cost: {}, Max budget: {}",
-            details.current_cost, details.max_budget
-        ),
-    }
+        .map_or_else(
+            || {
+                format!(
+                    "Budget has been exceeded! Current cost: {}, Max budget: {}",
+                    details.current_cost, details.max_budget
+                )
+            },
+            str::to_owned,
+        )
 }
 
 // JSONSchemaValidationError.__init__ builds its message from the identity and the response it validated
@@ -169,17 +193,18 @@ fn parsed_object_entries(text: &str) -> Vec<JsonObject> {
 // FallbackErrorInfo's wire shape in the field order LiteLLM's TypedDict was built with
 #[must_use]
 pub fn error_object(error: &FallbackErrorInfo) -> JsonObject {
+    let param = error
+        .param
+        .as_deref()
+        .map_or_else(|| Json::Null, |text| Json::Text(text.to_owned()));
+    let code = error
+        .code
+        .as_deref()
+        .map_or_else(|| Json::Null, |text| Json::Text(text.to_owned()));
     JsonObject::from_iter([
         ("message".to_owned(), Json::Text(error.message.clone())),
         ("type".to_owned(), Json::Text(error.error_type.clone())),
-        ("param".to_owned(), optional_json(error.param.as_deref())),
-        ("code".to_owned(), optional_json(error.code.as_deref())),
+        ("param".to_owned(), param),
+        ("code".to_owned(), code),
     ])
-}
-
-fn optional_json(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
 }
