@@ -9,12 +9,14 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use futures_util::StreamExt as _;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::oneshot;
 use tokio::time::timeout;
 use tracing::Level;
 use tracing::subscriber::with_default;
@@ -31,7 +33,8 @@ use crate::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
 };
 use crate::text_completion_transport::sdk::{
-    ClientConstructor as _, ClientKind, HttpClientSource, SdkArguments, TextCompletionSdk as _,
+    ClientConstructor as _, ClientKind, HttpClientSource, RawCompletion, SdkArguments,
+    TextCompletionSdk as _,
 };
 
 fn deployment(model: &str) -> ChatDeployment {
@@ -391,7 +394,8 @@ async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
     data.insert(String::from("prompt"), Value::from("hi"));
     let (answer, head) = tokio::join!(sdk.create(&data), serve_text_completion(listener));
-    assert!(answer.is_ok(), "{:?}", answer.err());
+    let answer = answer.expect("completion answer");
+    assert!(matches!(answer, RawCompletion::Buffered { .. }));
     let sent = head.to_ascii_lowercase();
     assert!(sent.starts_with("post /v1/completions "), "{head}");
     assert!(
@@ -399,4 +403,108 @@ async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
         "{head}"
     );
     assert!(!sent.contains("openai-organization"), "{head}");
+}
+
+// a provider that writes its first event and then waits for the client to read it before the rest
+async fn serve_text_stream(listener: TcpListener, released: oneshot::Receiver<()>) {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(5), listener.accept()).await else {
+        return;
+    };
+    let head = read_completion_head(&mut stream).await;
+    let length = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or_default();
+    let mut body = vec![0_u8; length];
+    let _filled = stream.read_exact(&mut body).await;
+    let opening = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
+    let first = "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"finish_reason\":null}]}\n\n";
+    let _written = stream.write_all(opening.as_bytes()).await;
+    let _written = stream.write_all(first.as_bytes()).await;
+    let _flushed = stream.flush().await;
+    let _released = timeout(Duration::from_secs(5), released).await;
+    let last = "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"choices\":[{\"text\":\" there\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+    let _written = stream.write_all(last.as_bytes()).await;
+    let _flushed = stream.flush().await;
+}
+
+#[tokio::test]
+async fn the_http_sdk_streams_provider_events_as_they_arrive() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
+    let arguments = SdkArguments {
+        api_key: None,
+        base_url: Some(format!("http://{address}/v1")),
+        timeout: 5.0,
+        max_retries: None,
+        organization: None,
+        http_client: HttpClientSource::AsyncHttpClient,
+    };
+    let facts = Arc::new(Mutex::new(None));
+    let constructor = HttpCompletionConstructor {
+        client,
+        authorization: Some(SecretString::from("Bearer sk-deployment")),
+        facts: Arc::clone(&facts),
+    };
+    let sdk = constructor
+        .construct(&arguments, ClientKind::Async)
+        .expect("sdk")
+        .expect("a credential builds the sdk");
+    let mut data = Map::new();
+    data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
+    data.insert(String::from("prompt"), Value::from("hi"));
+    data.insert(String::from("stream"), Value::Bool(true));
+    let (release, released) = oneshot::channel();
+    let read = async {
+        let raw = timeout(Duration::from_secs(5), sdk.create(&data))
+            .await
+            .expect("the answer starts before the provider finishes")
+            .expect("stream answer");
+        let RawCompletion::Stream {
+            status,
+            headers,
+            mut body,
+        } = raw
+        else {
+            panic!("a stream request never buffers");
+        };
+        assert_eq!(status, 200);
+        assert_eq!(
+            headers
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("text/event-stream")
+        );
+        let mut received = Vec::new();
+        while !received.windows(2).any(|pair| pair == b"\n\n") {
+            let chunk = timeout(Duration::from_secs(5), body.next())
+                .await
+                .expect("the first event arrives while the provider waits")
+                .expect("a body chunk")
+                .expect("no body error");
+            received.extend_from_slice(&chunk);
+        }
+        let first = String::from_utf8(received).expect("utf8");
+        assert!(first.contains("\"text\":\" hello\""), "{first}");
+        release.send(()).expect("the provider is still streaming");
+        let mut rest = Vec::new();
+        while let Some(chunk) = body.next().await {
+            rest.extend_from_slice(&chunk.expect("no body error"));
+        }
+        let rest = String::from_utf8(rest).expect("utf8");
+        assert!(rest.contains("\"text\":\" there\""), "{rest}");
+        assert!(rest.ends_with("data: [DONE]\n\n"), "{rest}");
+    };
+    tokio::join!(read, serve_text_stream(listener, released));
+    let recorded = facts.lock().expect("facts").take().expect("recorded facts");
+    assert_eq!(
+        recorded
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
 }

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use futures_util::StreamExt as _;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -147,25 +148,57 @@ impl TextCompletionSdk for HttpCompletionSdk {
         data: &Map<String, Value>,
     ) -> impl Future<Output = Result<RawCompletion, SdkError>> + Send {
         let prepared = self.prepare(data);
+        // the SDK's create(stream=True) hands back its chunk iterator instead of a buffered model
+        let streamed = matches!(data.get("stream"), Some(Value::Bool(true)));
         let client = self.client.clone();
         let facts = Arc::clone(&self.facts);
         let deadline = self.timeout;
         async move {
             let Prepared { url, headers, body } = prepared?;
             let started = Instant::now();
-            let response = client
-                .send_buffered(OutboundRequest {
-                    method: Method::POST,
-                    url,
-                    query: Vec::new(),
+            let request = OutboundRequest {
+                method: Method::POST,
+                url,
+                query: Vec::new(),
+                headers,
+                body: RequestBody::Json(body),
+                deadline,
+            };
+            if streamed {
+                let response = client
+                    .send(request)
+                    .await
+                    .map_err(|source| SdkError::Other {
+                        message: source.to_string(),
+                    })?;
+                let elapsed = started.elapsed();
+                let status = response.response.status().as_u16();
+                let headers = response.response.headers().clone();
+                *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
+                    headers: headers.clone(),
+                    elapsed,
+                });
+                let body = response
+                    .body_stream()
+                    .map(|chunk| {
+                        chunk.map_err(|source| SdkError::Other {
+                            message: source.to_string(),
+                        })
+                    })
+                    .boxed();
+                return Ok(RawCompletion::Stream {
+                    status,
                     headers,
-                    body: RequestBody::Json(body),
-                    deadline,
-                })
-                .await
-                .map_err(|source| SdkError::Other {
-                    message: source.to_string(),
-                })?;
+                    body,
+                });
+            }
+            let response =
+                client
+                    .send_buffered(request)
+                    .await
+                    .map_err(|source| SdkError::Other {
+                        message: source.to_string(),
+                    })?;
             let elapsed = started.elapsed();
             *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
                 headers: response.headers.clone(),
