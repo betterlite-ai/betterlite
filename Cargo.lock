@@ -1139,6 +1139,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-cache",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-db",
  "betterlite-error",
@@ -3925,6 +3926,7 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -4464,6 +4466,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]

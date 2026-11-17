@@ -1,0 +1,21 @@
+kind: helper
+name: record-failure-operation-duration-only
+call:
+  b3869:
+    function: record_failure
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        metadata:
+          user_api_key_alias: key-a
+        error_information:
+          error_class: RateLimitError
+          error_code: '429'
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

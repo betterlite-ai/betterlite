@@ -1,0 +1,87 @@
+kind: helper
+name: auth-model-lists-team-public-name
+call:
+  auth_model_lists:
+    function: complete_model_list
+    key_models: []
+    team_models: []
+    proxy_model_list: [team-wild/*]
+    user_model: null
+    infer_model_from_keys: false
+    return_wildcard_routes: false
+    model_access_groups: {}
+    include_model_access_groups: false
+    only_model_access_groups: false
+    team_id: team-1
+    deployments:
+      - model_name: internal-team-row
+        litellm_params:
+          model: openai/*
+        team_id: team-1
+        team_public_model_name: team-wild/*
+      - model_name: global-row
+        litellm_params:
+          model: anthropic/*
+        team_id: null
+        team_public_model_name: null
+    catalog:
+      "openai|None|None|None": [openai/m1]
+      anthropic: [anthropic/known-model]
+    credentials: []
+calls:
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [team-wild/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: team-2
+      deployments:
+        - model_name: internal-team-row
+          litellm_params:
+            model: openai/*
+          team_id: team-1
+          team_public_model_name: team-wild/*
+        - model_name: global-row
+          litellm_params:
+            model: anthropic/*
+          team_id: null
+          team_public_model_name: null
+      catalog:
+        "openai|None|None|None": [openai/m1]
+        anthropic: [anthropic/known-model]
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [anthropic/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: true
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: team-1
+      deployments:
+        - model_name: internal-team-row
+          litellm_params:
+            model: openai/*
+          team_id: team-1
+          team_public_model_name: team-wild/*
+        - model_name: global-row
+          litellm_params:
+            model: anthropic/*
+          team_id: null
+          team_public_model_name: null
+      catalog:
+        "openai|None|None|None": [openai/m1]
+        anthropic: [anthropic/known-model]
+      credentials: []
+env: {}
+compare: {ignore: []}
