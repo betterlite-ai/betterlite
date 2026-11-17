@@ -1,0 +1,45 @@
+kind: helper
+name: openai-chat-content-fetch-request-media-async
+call:
+  b9960:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: async_base_class
+          optional_params:
+            max_retries: 3
+          refuse: false
+          urls:
+            "http://example.com/report.pdf": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_id: http://example.com/report.pdf
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: async_subclass
+          optional_params:
+            max_retries: 3
+          refuse: false
+          urls:
+            "www.example.com/report": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: user
+              content:
+                - {type: text, text: summarize}
+                - type: file
+                  file:
+                    file_id: www.example.com/report
+env: {}
+compare: {ignore: []}
