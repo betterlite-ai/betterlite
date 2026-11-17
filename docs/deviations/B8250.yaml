@@ -18,4 +18,7 @@ deviations:
   - what: passthrough_span_name computes the name and route for the caller to apply, where LiteLLM's server_request_hook renames the span itself and catches every exception.
     why: The Rust server opens its own span (B8680), so this task supplies the decision as pure code with no span object to rename.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L79-L99
+  - what: The wrappers forward only the CallbackLogger methods OpenTelemetryV2 overrides (callback_name, async_log_success_event, async_log_failure_event) and keep every other method at its trait default, where LiteLLM's classes inherit the whole of OpenTelemetryV2.
+    why: Every default there equals the wrapped logger's own value today, and forwarding the rest would add methods no test can tell apart; an override added to OpenTelemetryV2 later needs the same forwarding here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L178-L381
 kept_bugs: []

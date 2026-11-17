@@ -59,6 +59,11 @@ fn the_default_list_is_the_eleven_routes_in_order() {
     );
 }
 
+#[test]
+fn the_excluded_urls_variable_is_the_standard_instrumentation_name() {
+    assert_eq!(EXCLUDED_URLS_ENV, "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS");
+}
+
 #[rstest]
 #[case("/health", true)]
 #[case("/health/readiness", true)]
