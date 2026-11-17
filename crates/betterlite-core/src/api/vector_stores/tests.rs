@@ -266,6 +266,10 @@ fn chat_choices_without_a_message_are_unchanged(#[case] source: &str) {
     r#"{"litellm_logging_obj":{"model_call_details":{"search_results":[],"vector_store_search_failures":[]}}}"#,
     NO_FIELDS
 )]
+#[case::fields_only_in_request_data(
+    r#"{"litellm_logging_obj":{},"search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":[]}"#,
+    NO_FIELDS
+)]
 fn successful_hook_noop(#[case] source: &str, #[case] diagnostic: &str) {
     let mut answer = record(CHAT_ANSWER);
     let decoration = decorate_answer(&request(source), &mut answer);
