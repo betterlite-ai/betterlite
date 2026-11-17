@@ -138,6 +138,11 @@ pub(super) fn check_header_resolution() {
         resolved_headers(&composition, None, None),
         Some(headers(&[("x-global", "g")]))
     );
+    // an empty extra map is falsy as well, so the global map still stands
+    assert_eq!(
+        resolved_headers(&composition, None, Some(&Headers::new())),
+        Some(headers(&[("x-global", "g")]))
+    );
     assert_eq!(
         resolved_headers(&composition, None, Some(&extra)),
         Some(extra)
