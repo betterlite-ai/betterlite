@@ -45,9 +45,9 @@ where
 {
     type Item = Result<Data, Error>;
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        let polled = this.inner.as_mut().poll_next(context);
+        let polled = this.inner.as_mut().poll_next(cx);
         match &polled {
             Poll::Ready(None) => {
                 let outcome = this

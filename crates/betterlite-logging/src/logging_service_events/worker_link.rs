@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
@@ -17,14 +18,14 @@ pub struct Delivery {
 impl Callback for Delivery {
     type Error = ServiceEventError;
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "service_event"
     }
 
-    async fn call(self) -> Result<(), Self::Error> {
+    fn call(self) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
         self.registry.deliver(&CallbackEvent {
             phase: CallbackPhase::Service,
         });
-        self.sink.emit(&self.event)
+        ready(self.sink.emit(&self.event))
     }
 }

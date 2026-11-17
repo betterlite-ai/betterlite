@@ -109,15 +109,15 @@ fn service_callback_environment_tests_behavior(
 }
 
 #[rstest]
-#[case::default(&[], LogLevel::Debug, 10)]
-#[case::lowercase(&[("LITELLM_LOG", "debug")], LogLevel::Debug, 10)]
-#[case::capitalized(&[("LITELLM_LOG", "Warn")], LogLevel::Warning, 30)]
-#[case::warning_name(&[("LITELLM_LOG", "warning")], LogLevel::Warning, 30)]
-#[case::fatal(&[("LITELLM_LOG", "fatal")], LogLevel::Critical, 50)]
-#[case::notset(&[("LITELLM_LOG", "NoTsEt")], LogLevel::NotSet, 0)]
-#[case::info(&[("LITELLM_LOG", "info")], LogLevel::Info, 20)]
-#[case::error(&[("LITELLM_LOG", "ERROR")], LogLevel::Error, 40)]
-#[case::empty_counts_as_unset(&[("LITELLM_LOG", "")], LogLevel::Debug, 10)]
+#[case::default(&[], LogLevel::Debug, 10_i32)]
+#[case::lowercase(&[("LITELLM_LOG", "debug")], LogLevel::Debug, 10_i32)]
+#[case::capitalized(&[("LITELLM_LOG", "Warn")], LogLevel::Warning, 30_i32)]
+#[case::warning_name(&[("LITELLM_LOG", "warning")], LogLevel::Warning, 30_i32)]
+#[case::fatal(&[("LITELLM_LOG", "fatal")], LogLevel::Critical, 50_i32)]
+#[case::notset(&[("LITELLM_LOG", "NoTsEt")], LogLevel::NotSet, 0_i32)]
+#[case::info(&[("LITELLM_LOG", "info")], LogLevel::Info, 20_i32)]
+#[case::error(&[("LITELLM_LOG", "ERROR")], LogLevel::Error, 40_i32)]
+#[case::empty_counts_as_unset(&[("LITELLM_LOG", "")], LogLevel::Debug, 10_i32)]
 fn service_callback_log_level_tests_behavior(
     #[case] environment: &[(&str, &str)],
     #[case] level: LogLevel,
@@ -142,7 +142,13 @@ fn service_callback_log_level_tests_behavior(
 fn service_callback_unknown_log_level_tests_behavior(#[case] environment: &[(&str, &str)]) {
     let named = match load_error(environment) {
         ConfigError::InvalidScalar { path, .. } => path,
-        other => other.to_string(),
+        other @ (ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. }) => other.to_string(),
     };
     assert_eq!(named, "LITELLM_LOG");
 }
