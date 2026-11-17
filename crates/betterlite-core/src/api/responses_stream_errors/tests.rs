@@ -617,7 +617,7 @@ fn epoch_seconds_truncates_before_the_epoch(#[case] millis: u64, #[case] expecte
 
 #[test]
 fn the_initial_state_has_no_identity_and_no_sequence() {
-    let state = state(None);
+    let state = state(None).snapshot();
     assert_eq!(state.response_id, None);
     assert_eq!(state.model, None);
     assert_eq!(state.created_at, None);
