@@ -127,12 +127,14 @@ fn tool_result_placement(messages: &[Message], index: usize, message: &Message) 
     }
     let run_start = tool_run_start(messages, index);
     let run = system_run_before(messages, run_start);
-    let previous = run_start.checked_sub(run.len().saturating_add(1));
-    let moves_after_results = !run.is_empty()
-        && previous
-            .and_then(|before| messages.get(before))
-            .is_some_and(assistant_has_tool_calls);
-    if !moves_after_results {
+    if run.is_empty() {
+        return vec![message.clone()];
+    }
+    let preceded_by_call = run_start
+        .checked_sub(run.len().saturating_add(1))
+        .and_then(|before| messages.get(before))
+        .is_some_and(assistant_has_tool_calls);
+    if !preceded_by_call {
         return vec![message.clone()];
     }
     let mut moved = Vec::with_capacity(run.len().saturating_add(1));
