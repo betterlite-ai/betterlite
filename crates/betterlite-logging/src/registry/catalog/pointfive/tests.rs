@@ -12,7 +12,6 @@ use indexmap::IndexMap;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::registry::catalog::{CatalogError, CatalogInputs};

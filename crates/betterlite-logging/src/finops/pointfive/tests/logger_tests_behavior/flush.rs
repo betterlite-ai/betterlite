@@ -167,7 +167,7 @@ async fn a_flush_waiting_on_the_lock_keeps_the_flag_set_while_it_sends() {
     let core = core(
         PointFiveInitParams::default(),
         client_over(
-            Arc::clone(&http),
+            Arc::<GatedHttp>::clone(&http),
             Arc::new(FakeUrlCheck),
             Arc::new(RecordingSleeper::default()),
             1,

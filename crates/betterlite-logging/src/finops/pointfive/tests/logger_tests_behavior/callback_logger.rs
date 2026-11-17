@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 
 use crate::callback_logger::CallbackLogger;
+use crate::finops::pointfive::logger::PointFiveLogger;
 
 use super::support::{FakeHttp, client, default_params, event, logger, payload};
 
@@ -29,7 +30,7 @@ fn callback_logger_reports_the_configured_redaction_flag() {
 async fn callback_logger_buffers_a_success_event() {
     let http = FakeHttp::default();
     let logger = logger(PointFiveInitParams::default(), client(&http, 1));
-    let trait_logger: Arc<dyn CallbackLogger> = Arc::clone(&logger);
+    let trait_logger: Arc<dyn CallbackLogger> = Arc::<PointFiveLogger>::clone(&logger);
     trait_logger
         .async_log_success_event(event(payload("evt-1")))
         .await
@@ -48,7 +49,7 @@ async fn callback_logger_buffers_a_success_event() {
 async fn callback_logger_buffers_a_failure_event() {
     let http = FakeHttp::default();
     let logger = logger(PointFiveInitParams::default(), client(&http, 1));
-    let trait_logger: Arc<dyn CallbackLogger> = Arc::clone(&logger);
+    let trait_logger: Arc<dyn CallbackLogger> = Arc::<PointFiveLogger>::clone(&logger);
     trait_logger
         .async_log_failure_event(event(payload("evt-2")))
         .await
