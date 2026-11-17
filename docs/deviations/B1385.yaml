@@ -26,6 +26,15 @@ deviations:
       docs/compatibility.md rejects values the declared type cannot hold.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L88-L89
+  - what: >-
+      A chunk_size or chunk_overlap outside the signed 32-bit range is refused with an error that
+      names the field before any request leaves the process. LiteLLM passes the integer to the SDK,
+      which rejects it while encoding the protobuf request.
+    why: >-
+      The Vertex field is int32, so the value cannot be used; naming the field at the boundary turns an
+      opaque transport error into a load-time answer.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L97-L102
 kept_bugs:
   - what: >-
       wait_for_import false calls the SDK's async import without awaiting it, so no import request leaves
