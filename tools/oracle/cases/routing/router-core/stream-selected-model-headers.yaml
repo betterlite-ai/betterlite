@@ -1,0 +1,23 @@
+kind: probe
+name: stream-selected-model-headers
+probes:
+  - clock: {unix_millis: 1700000000600, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: streamed, weight: 1}
+        routes:
+          - {model: gpt}
+        responses:
+          - carrier: stream
+            metadata: {model_info: {id: streamed}}
+          - carrier: stream
+          - carrier: dict
+            hidden: {model_id: preset, additional_headers: {"x-cached": "yes"}}
+          - carrier: attributed
+            hidden: {custom: 3}
+            metadata: {model_info: {id: attributed}}
+          - carrier: dict
+            metadata: {model_info: {}}
+compare: {ignore: []}
