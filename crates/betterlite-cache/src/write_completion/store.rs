@@ -13,6 +13,7 @@ use crate::embedding::embedding_cache::pipeline::async_add_cache_pipeline;
 use crate::embedding::response::EmbeddingResponse;
 use crate::envelope::backend::EnvelopeBackend;
 use crate::envelope::facade::ResponseCache;
+use crate::envelope::request::EnvelopeRequest;
 use crate::handler::HandlerError;
 use crate::handler::call_types::should_store_result_in_cache;
 use crate::handler::state::OriginalFunction;
@@ -30,8 +31,8 @@ use crate::write_completion::tracker::{CacheWriteFuture, CacheWriteTracker};
 pub enum StoreError {
     #[error("the cache write request is invalid")]
     Request {
-        #[from]
-        source: HandlerError,
+        #[source]
+        source: Box<HandlerError>,
     },
     #[error("the response could not be serialized for the cache")]
     Serialize {
@@ -40,6 +41,14 @@ pub enum StoreError {
     },
     #[error("the response has no cache representation")]
     Unrepresentable,
+}
+
+impl From<HandlerError> for StoreError {
+    fn from(source: HandlerError) -> Self {
+        Self::Request {
+            source: Box::new(source),
+        }
+    }
 }
 
 // What the store reads off the configured cache: the facade itself and the call types it was built to cache.
@@ -191,23 +200,28 @@ fn start_write<L, C, Memory>(
         let task_target = Arc::clone(&target);
         Box::pin(async move {
             let mut envelope = task_request.envelope();
-            match task_target.as_ref() {
-                WriteTarget::Response { value, dual } => {
-                    let dynamic: Option<&dyn EnvelopeBackend> =
-                        dual.as_ref().map(|store| -> &dyn EnvelopeBackend { store });
-                    task_cache
-                        .async_add_cache(dynamic, &mut envelope, value)
-                        .await;
-                }
-                WriteTarget::Embedding { result, dual } => {
-                    let dynamic: Option<&dyn CacheBackend> =
-                        dual.as_ref().map(|store| -> &dyn CacheBackend { store });
-                    async_add_cache_pipeline(&task_cache, dynamic, None, &mut envelope, result)
-                        .await;
-                }
-            }
+            task_target.write(&task_cache, &mut envelope).await;
             Ok(())
         })
     };
     let _write = context.tracker.spawn(call, factory);
+}
+
+impl<Memory: MemoryCacheOps> WriteTarget<Memory> {
+    async fn write<L, C>(&self, cache: &ResponseCache<L, C>, envelope: &mut EnvelopeRequest)
+    where
+        L: LoggerSink + Send + Sync,
+        C: ConsoleSink + Send + Sync,
+    {
+        match self {
+            Self::Response { value, dual } => {
+                let dynamic = dual.as_ref().map(|store| -> &dyn EnvelopeBackend { store });
+                cache.async_add_cache(dynamic, envelope, value).await;
+            }
+            Self::Embedding { result, dual } => {
+                let dynamic = dual.as_ref().map(|store| -> &dyn CacheBackend { store });
+                async_add_cache_pipeline(cache, dynamic, None, envelope, result).await;
+            }
+        }
+    }
 }
