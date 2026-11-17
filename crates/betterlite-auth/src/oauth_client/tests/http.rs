@@ -187,6 +187,47 @@ async fn include_client_id_off_omits_the_body_client_id() {
 }
 
 #[tokio::test]
+async fn the_request_redirect_uri_reaches_the_token_body() {
+    let provider = provider().await;
+    let client = client();
+    let discovery = discovery(&client, &provider).await;
+    let request = ExchangeRequest {
+        callback: callback("https://proxy.test/sso/callback?code=abc"),
+        redirect_uri: Some("https://request.test/cb"),
+        include_client_id: true,
+    };
+    exchange(&client, &transport(), &discovery, &request)
+        .await
+        .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(
+        form_value(&seen[1].body, "redirect_uri"),
+        "https://request.test/cb"
+    );
+}
+
+#[tokio::test]
+async fn the_client_redirect_uri_reaches_the_token_body() {
+    let provider = provider().await;
+    let mut client = client();
+    client.redirect_uri = Some("https://proxy.test/configured/callback".to_owned());
+    let discovery = discovery(&client, &provider).await;
+    exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request("https://proxy.test/sso/callback?code=abc", true),
+    )
+    .await
+    .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(
+        form_value(&seen[1].body, "redirect_uri"),
+        "https://proxy.test/configured/callback"
+    );
+}
+
+#[tokio::test]
 async fn additional_headers_overlay_the_generated_headers() {
     let provider = provider().await;
     let mut client = client();

@@ -121,6 +121,15 @@ fn a_document_over_the_transport_limit_is_refused() {
 }
 
 #[test]
+fn a_document_at_the_transport_limit_is_decoded() {
+    let mut bytes =
+        br#"{"authorization_endpoint":"a","token_endpoint":"t","userinfo_endpoint":"u"}"#.to_vec();
+    bytes.resize(MAX_OAUTH_DOCUMENT_BYTES, b' ');
+    let document: OAuthDiscoveryDocument = decode_oauth_provider_document(&bytes).unwrap();
+    assert_eq!(document.token_endpoint, "t");
+}
+
+#[test]
 fn the_document_kind_tag_selects_the_document() {
     assert!(matches!(
         OAuthDocumentKind::try_from(0).unwrap().decode(b"{}"),

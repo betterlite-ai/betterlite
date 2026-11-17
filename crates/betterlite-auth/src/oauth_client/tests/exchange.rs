@@ -243,3 +243,23 @@ fn oauth_failures_map_to_proxy_error_responses(
         expected
     );
 }
+
+#[test]
+fn an_endpoint_error_names_the_endpoint() {
+    let names = [
+        (OAuthEndpoint::Discovery, "discovery"),
+        (OAuthEndpoint::Authorization, "authorization"),
+        (OAuthEndpoint::Token, "token"),
+        (OAuthEndpoint::Userinfo, "userinfo"),
+    ];
+    for (endpoint, name) in names {
+        assert_eq!(endpoint.to_string(), name);
+    }
+    let error = OAuthClientError::Insecure {
+        endpoint: OAuthEndpoint::Userinfo,
+    };
+    assert_eq!(
+        error.to_string(),
+        "the userinfo endpoint is not HTTPS and allow_insecure_http is off"
+    );
+}
