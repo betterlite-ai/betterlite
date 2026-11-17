@@ -211,6 +211,24 @@ fn raw_message_unknown_role_is_refused() {
 }
 
 #[test]
+fn raw_message_roles_map_to_chat_roles() {
+    for (role, expected) in [
+        ("", "assistant"),
+        ("assistant", "assistant"),
+        ("user", "user"),
+        ("system", "system"),
+        ("tool", "tool"),
+        ("function", "function"),
+    ] {
+        let choices = choices_of(json!([{
+            "type": "message", "role": role,
+            "content": [{"type": "output_text", "text": "a"}],
+        }]));
+        assert_eq!(choices, json!([text_choice("a", expected, 0)]));
+    }
+}
+
+#[test]
 fn raw_message_annotations_are_kept_unfiltered() {
     let choices = choices_of(json!([{
         "type": "message", "role": "assistant",

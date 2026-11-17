@@ -126,7 +126,6 @@ impl Assembly {
             return choices;
         }
         let mut message = ChatMessage {
-            content: None,
             tool_calls: Some(tool_calls),
             ..ChatMessage::default()
         };
