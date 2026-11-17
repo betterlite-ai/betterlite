@@ -146,6 +146,12 @@ fn malformed_metadata() {
                 .starts_with("the lar1 metadata is not a valid LAR-1 object")
         );
     }
+    // a JSON array is not a metadata object, and the decode error names the object it expected
+    let error = Lar1Metadata::parse(b"[]").unwrap_err();
+    assert!(
+        error.to_string().contains("a LAR-1 metadata object"),
+        "{error}"
+    );
 }
 
 fn threshold_order() {
