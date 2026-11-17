@@ -185,10 +185,12 @@ impl ChatConfig for FixtureConfig {
         headers: &mut IndexMap<String, String>,
         body: &mut IndexMap<String, Json>,
     ) -> Result<(), ConfigError> {
-        let mut prompt: IndexMap<String, PromptJson> =
-            serde_json::from_value(serde_json::to_value(&*body)?)?;
+        // a text round trip keeps the key order Python's dicts have; a serde_json::Value one sorts it
+        let encoded = serde_json::to_string(&*body)?;
+        let mut prompt: IndexMap<String, PromptJson> = serde_json::from_str(&encoded)?;
         filter_request_betas(headers, &mut prompt, &self.matrix, provider)?;
-        *body = serde_json::from_value(serde_json::to_value(&prompt)?)?;
+        let filtered = serde_json::to_string(&prompt)?;
+        *body = serde_json::from_str(&filtered)?;
         Ok(())
     }
 
