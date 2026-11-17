@@ -1,0 +1,8 @@
+kind: helper
+name: output-limits-unrelated-error
+call:
+  openai_output_limits:
+    marker:
+      message: "Error code: 400 - the model output limit was reached for this request."
+env: {}
+compare: {ignore: []}

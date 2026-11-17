@@ -1,0 +1,8 @@
+kind: helper
+name: output-limits-case-insensitive
+call:
+  openai_output_limits:
+    marker:
+      message: "Error code: 400 - COULD NOT FINISH THE MESSAGE BECAUSE MAX_TOKENS OR MODEL OUTPUT LIMIT WAS REACHED."
+env: {}
+compare: {ignore: []}
