@@ -318,7 +318,7 @@ fn assert_v2_fallbacks() {
                     json_object(vec![("float", list(vec![float(0.5), float(0.25)]))]),
                 ),
             ]),
-            floats(&[0.5, 0.25]),
+            floats(&[0.5_f64, 0.25_f64]),
         ),
         (
             object(vec![
@@ -329,7 +329,7 @@ fn assert_v2_fallbacks() {
                     json_object(vec![("int8", list(vec![int(4)]))]),
                 ),
             ]),
-            floats(&[0.125, 0.5]),
+            floats(&[0.125_f64, 0.5_f64]),
         ),
         (
             object(vec![
@@ -337,7 +337,7 @@ fn assert_v2_fallbacks() {
                 ("embedding", list(vec![float(0.125)])),
                 ("embeddingsByType", list(vec![int(4), int(5)])),
             ]),
-            floats(&[0.125]),
+            floats(&[0.125_f64]),
         ),
         (
             object(vec![("embedding", text("encoded-vector"))]),
@@ -396,7 +396,7 @@ fn assert_v2_malformed_by_type() {
     ]);
     assert_eq!(
         v2::by_type_embedding(&harmless_text).unwrap(),
-        floats(&[0.5])
+        floats(&[0.5_f64])
     );
     let list_types = object(vec![("embeddingsByType", list(vec![text("binary")]))]);
     assert!(matches!(
@@ -677,7 +677,7 @@ fn assert_g1_response() {
     assert_eq!(result.data.len(), 2);
     assert_eq!(result.data[0].object, "embedding");
     assert_eq!(result.data[0].index, 0);
-    assert_eq!(result.data[0].embedding, floats(&[0.1, 0.2]));
+    assert_eq!(result.data[0].embedding, floats(&[0.1_f64, 0.2_f64]));
     assert_eq!(result.data[1].index, 1);
     // an integer vector stays integer, not a base64 string
     assert_eq!(result.data[1].embedding, numbers(&[1, 0]));
