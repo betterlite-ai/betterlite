@@ -61,8 +61,8 @@ impl StreamAssembly for AssemblyContext {
             messages: None,
             count_prompt_tokens: None,
             logging: None,
-            costs: &QUIET,
-            counter: &QUIET,
+            costs: &Quiet,
+            counter: &Quiet,
             metadata: None,
             now: 0,
         };
@@ -82,7 +82,6 @@ fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 // Every seam the builder calls is silent and counts nothing: the mock's usage chunk carries the counts and cost
-const QUIET: Quiet = Quiet;
 pub(super) struct Quiet;
 
 impl LoggerSink for Quiet {

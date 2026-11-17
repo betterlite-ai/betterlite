@@ -21,8 +21,13 @@ from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
 
-# completion declares both answers, and stream=True narrows them to the wrapper
 CompletionAnswer: TypeAlias = ModelResponse | CustomStreamWrapper
+
+
+# A LiteLLM class reads as Any to mypy, so pydantic's field check is the wrapper's boundary
+class StreamedAnswer(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    wrapper: CustomStreamWrapper
 
 
 class StepOutcome(TypedDict):
@@ -116,11 +121,10 @@ def event_view(event: BaseResponse) -> dict[str, Json]:
 
 
 def build_iterator(call: ChatResponseStreamCall, answer: CompletionAnswer) -> ResponsesIterator:
-    if not isinstance(answer, CustomStreamWrapper):
-        raise TypeError("stream=True answers with a CustomStreamWrapper")
+    wrapper = StreamedAnswer.model_validate({"wrapper": answer}).wrapper
     return ResponsesIterator(
         model=call.model,
-        litellm_custom_stream_wrapper=answer,
+        litellm_custom_stream_wrapper=wrapper,
         request_input=call.request_input,
         # LiteLLM's request TypedDict carries `metadata: dict[str, Any] | None`
         responses_api_request=cast("RequestParams", call.responses_api_request),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
