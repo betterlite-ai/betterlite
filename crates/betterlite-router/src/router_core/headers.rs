@@ -89,7 +89,7 @@ impl Prepared {
         if let Some(model_id) = &self.model_id {
             hidden.insert(MODEL_ID.to_owned(), Json::Text(model_id.clone()));
         }
-        if self.headers_present || !self.additional_headers.is_empty() {
+        if self.headers_present {
             hidden.insert(
                 ADDITIONAL_HEADERS.to_owned(),
                 Json::Object(self.additional_headers.clone()),
