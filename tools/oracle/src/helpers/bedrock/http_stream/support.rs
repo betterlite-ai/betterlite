@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_bedrock::agentcore_stream::IdSource;
@@ -35,11 +34,14 @@ impl LogSink for Quiet {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) struct Counter(pub(super) AtomicUsize);
+pub(super) struct Counter(Mutex<u128>);
 
 impl IdSource for Counter {
     fn next_id(&self) -> Uuid {
-        Uuid::from_u128(u128::from(self.0.fetch_add(1, Ordering::Relaxed)))
+        let mut next = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let id = Uuid::from_u128(*next);
+        *next = next.saturating_add(1);
+        id
     }
 }
 
@@ -103,7 +105,7 @@ pub(super) fn stream_deps<'deps>(
     StreamDeps {
         supplied: Some(Arc::clone(&handler)),
         default: Arc::clone(&handler),
-        ids: Arc::new(Counter(AtomicUsize::new(0))),
+        ids: Arc::new(Counter(Mutex::new(0))),
         clock: DecoderClock {
             next_id: || Uuid::from_u128(0x5EED_0000_u128),
             now: || i64::try_from(SECONDS).unwrap_or(0),
