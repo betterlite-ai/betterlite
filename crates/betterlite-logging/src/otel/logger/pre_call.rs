@@ -1,4 +1,7 @@
+use std::time::SystemTime;
+
 use betterlite_models::decisions::Json;
+use opentelemetry::Context;
 use opentelemetry::trace::TraceContextExt as _;
 
 use crate::logging_pre_post::error::PrePostError;
@@ -7,11 +10,10 @@ use crate::otel::emitter::span_emission::StartOptions;
 use crate::otel::logger::v2::{OpenCall, OpenTelemetryV2, detached_context, request_trace_links};
 use crate::otel::model::metadata::llm_call_event::LLMCallEvent;
 use crate::otel::model::metadata::wire::callback::Callback;
+use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::vocabulary::registry::SpanRole;
 
-// litellm.integrations.otel.logger.OpenTelemetryV2.log_pre_api_call: open the LLM-call span at the
-// boundary when a recordable parent is visible, else record only the start time for the async
-// callback to create it against its own worker context
+// litellm.integrations.otel.logger.OpenTelemetryV2.log_pre_api_call: open the LLM-call span at the boundary when a recordable parent is visible, else record only the start time for the async close
 pub fn log_pre_api_call(
     logger: &OpenTelemetryV2,
     event: &PreCallEvent<'_>,
@@ -30,27 +32,35 @@ pub fn log_pre_api_call(
     if logger.open_calls().contains(&call_id) {
         return Ok(());
     }
-    let start_time = std::time::SystemTime::now();
+    let start_time = SystemTime::now();
     let trace = logger.trace.trace_context();
     let parent = trace.resolve_request_span_context();
-    // is_recordable_span(get_current_span(parent)): only an anchored or ambient parent can carry a
-    // boundary span, and the thread-pool case defers to the close callback instead
+    // is_recordable_span(get_current_span(parent)): only an anchored or ambient parent carries a boundary span
     if !parent.span().span_context().is_valid() {
-        logger.store_open_call(
-            call_id,
-            OpenCall {
-                span: None,
-                start_time,
-                provider: None,
-            },
-        );
+        let carrier = OpenCall {
+            span: None,
+            start_time,
+            provider: None,
+        };
+        logger.store_open_call(call_id, carrier);
         return Ok(());
     }
+    let carrier = open_at_boundary(logger, &call, &trace, parent, start_time)?;
+    logger.store_open_call(call_id, carrier);
+    Ok(())
+}
+
+// the live-span arm of OpenTelemetryV2.log_pre_api_call: route, then open on the routed tracer, detached for a tenant account
+fn open_at_boundary(
+    logger: &OpenTelemetryV2,
+    call: &LLMCallEvent,
+    trace: &RequestTraceContext,
+    parent: Context,
+    start_time: SystemTime,
+) -> Result<OpenCall, PrePostError> {
     let dynamic_params: Json = serde_json::to_value(&call.dynamic_params)
         .map_err(callback_failed)
         .and_then(|value| serde_json::from_value(value).map_err(callback_failed))?;
-    // not routed on the deferred path: creating or touching a tenant provider there would evict
-    // idle ones even though close routes afresh
     let route = logger
         .tenants
         .route_for(
@@ -75,18 +85,14 @@ pub fn log_pre_api_call(
             links: &links,
         },
     );
-    logger.store_open_call(
-        call_id,
-        OpenCall {
-            span: Some(Box::new(span)),
-            start_time,
-            provider: route.provider,
-        },
-    );
-    Ok(())
+    Ok(OpenCall {
+        span: Some(Box::new(span)),
+        start_time,
+        provider: route.provider,
+    })
 }
 
-fn callback_failed(error: impl std::fmt::Display) -> PrePostError {
+fn callback_failed<T: std::fmt::Display>(error: T) -> PrePostError {
     PrePostError::CallbackFailed {
         message: error.to_string(),
     }

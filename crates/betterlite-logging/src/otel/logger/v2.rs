@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use opentelemetry::Context;
 use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::{Link, TraceContextExt as _};
-use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider, Span as SdkSpan};
+use opentelemetry_sdk::trace::{SdkTracer, Span as SdkSpan};
 
 use crate::otel::config::Settings;
 use crate::otel::emitter::span_emission::SpanEmitter;
@@ -13,14 +13,10 @@ use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
 use crate::otel::plumbing::routing::cache::{TenantProvider, TenantTracerCache};
 
-// LiteLLM's _OPEN_CALLS_MAX: a span opened at pre_call that never reaches a success or failure
-// callback (a stream that only fires stream events) would linger, so the oldest carrier is evicted
-// past this many and the map stays flat on a long-running proxy
+// LiteLLM's _OPEN_CALLS_MAX: a span opened at pre_call that never reaches a callback would linger, so the oldest carrier is evicted past this many
 pub const OPEN_CALLS_MAX: usize = 10_000;
 
-// litellm.integrations.otel.logger._LLMCallSpan: the state carried from the pre_call boundary to
-// span close. A span is present when it could be opened at the boundary (the server span was
-// ambient), else creation is deferred to the close callback using ``start_time``.
+// litellm.integrations.otel.logger._LLMCallSpan: the state carried from the pre_call boundary to close; a span is present when one opened at the boundary, else creation is deferred to the close callback
 pub struct OpenCall {
     pub span: Option<Box<SdkSpan>>,
     pub start_time: SystemTime,
@@ -45,9 +41,8 @@ impl OpenCalls {
         self.calls.get(call_id?).map(|call| call.start_time)
     }
 
-    // idempotent storage keyed by call id; the oldest carrier is evicted past the cap and handed
-    // back so its provider lease is released, and a call whose carrier was evicted still emits
-    // through the deferred branch when it later closes with a payload
+    // idempotent storage keyed by call id; an evicted carrier comes back so its provider lease is released
+    #[must_use]
     pub fn store(&mut self, call_id: String, call: OpenCall) -> Option<OpenCall> {
         self.calls.insert(call_id, call);
         if self.calls.len() > OPEN_CALLS_MAX {
@@ -57,15 +52,14 @@ impl OpenCalls {
         None
     }
 
-    // ``pop`` is the dedup: whichever of the success and failure paths fires first removes the
-    // carrier and closes the span, and the second sees nothing
+    // pop is the dedup: whichever of the success and failure paths fires first closes the span
+    #[must_use]
     pub fn pop(&mut self, call_id: Option<&str>) -> Option<OpenCall> {
         self.calls.shift_remove(call_id?)
     }
 }
 
-// the request's anchored trace state, injected by the proxy; a task with no request bound (an SDK
-// call or a thread-pool worker) sees the empty context, which is what makes ``pre_call`` defer
+// the request's anchored trace state, injected by the proxy; a task with no request bound sees the empty context, which makes pre_call defer
 pub trait RequestTraceSource: Send + Sync {
     fn trace_context(&self) -> RequestTraceContext;
 }
@@ -81,15 +75,13 @@ pub fn request_trace_links(context: &Context) -> Vec<Link> {
     }
 }
 
-// what a detached span starts from: the request's Baggage with no parent span, so the routed span
-// roots a fresh trace instead of fragmenting the request trace across accounts
+// what a detached span starts from: the request's Baggage with no parent span, so the routed span roots its own trace
 #[must_use]
 pub fn detached_context(context: &Context) -> Context {
     Context::new().with_baggage(context.baggage().clone())
 }
 
-// what building the logger takes: the provider and emitter the constructor assembled, the metric
-// recorder, the tenant cache, and the injected request scope
+// what building the logger takes: the assembled provider and emitter, the metric recorder, the tenant cache and the request scope
 pub struct OpenTelemetryV2Parts {
     pub name: String,
     pub config: Settings,
@@ -100,8 +92,7 @@ pub struct OpenTelemetryV2Parts {
     pub trace: Arc<dyn RequestTraceSource>,
 }
 
-// litellm.integrations.otel.logger.OpenTelemetryV2: the inference lifecycle and the tenant routing
-// around the span engine
+// litellm.integrations.otel.logger.OpenTelemetryV2: the inference lifecycle and tenant routing around the span engine
 pub struct OpenTelemetryV2 {
     pub(crate) name: String,
     pub(crate) config: Settings,
@@ -137,8 +128,7 @@ impl OpenTelemetryV2 {
         }
     }
 
-    // LiteLLM's _store_open_call: remember an in-flight call, releasing the provider of a carrier
-    // the overflow evicted
+    // LiteLLM's _store_open_call: remember an in-flight call, releasing the provider of an evicted carrier
     pub(crate) fn store_open_call(&self, call_id: String, call: OpenCall) {
         let evicted = { self.open_calls().store(call_id, call) };
         if let Some(evicted) = evicted.as_ref() {

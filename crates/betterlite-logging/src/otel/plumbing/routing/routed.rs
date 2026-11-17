@@ -26,15 +26,13 @@ const UNRESERVED: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'~');
 
-// litellm.integrations.otel.plumbing.routing.tenant_service_name: read only from the key/team config
-// the proxy resolved at auth, never caller-supplied metadata, since it picks the dataset traces
-// land in
+// litellm.integrations.otel.plumbing.routing.tenant_service_name: read only from the key/team config the proxy resolved at auth; it picks the dataset, so caller metadata never reaches it
 #[must_use]
 pub fn tenant_service_name(auth_metadata: Option<&BTreeMap<String, String>>) -> Option<String> {
-    let auth_metadata = auth_metadata?;
+    let resolved = auth_metadata?;
     SERVICE_NAME_KEYS
         .iter()
-        .filter_map(|key| auth_metadata.get(*key))
+        .filter_map(|key| resolved.get(*key))
         .map(|value| value.trim())
         .find(|value| !value.is_empty())
         .map(str::to_owned)
@@ -73,8 +71,7 @@ impl RouteKey {
 }
 
 impl TenantTracerCache {
-    // LiteLLM's _credential_headers: a callback owning only a header-ignoring exporter has nowhere
-    // to stamp the credentials, so it warns once and stays on the default backend
+    // LiteLLM's _credential_headers: a callback owning only a header-ignoring exporter has nowhere to stamp credentials, so it warns once
     pub(super) fn credential_headers(
         &self,
         dynamic_params: Option<&StandardCallbackDynamicParams>,
@@ -101,8 +98,7 @@ impl TenantTracerCache {
         BTreeMap::new()
     }
 
-    // LiteLLM's _project_headers: the project header route is HTTP-only, so a gRPC-only exporter
-    // warns once and stays in the env-configured default project
+    // LiteLLM's _project_headers: the project header route is HTTP-only, so a gRPC-only exporter warns once and stays in the default project
     pub(super) fn project_headers(
         &self,
         auth_metadata: Option<&BTreeMap<String, String>>,
@@ -132,8 +128,8 @@ impl TenantTracerCache {
         )
     }
 
-    // LiteLLM's _routed_config: only the callback's own exporters are rewritten, credentials replace
-    // the static headers, project headers append to them, and the tenant's service name wins
+    // LiteLLM's _routed_config: only the callback's own exporters are rewritten, and the tenant's service name wins
+    #[must_use]
     pub fn routed_config(
         &self,
         credential_headers: &BTreeMap<String, String>,
@@ -155,8 +151,7 @@ impl TenantTracerCache {
         routed
     }
 
-    // LiteLLM's _routed_exporter: a request carrying one tenant's key must never rewrite the headers
-    // of a co-configured exporter, which would leak that key to a different backend
+    // LiteLLM's _routed_exporter: a request carrying one tenant's key must never rewrite a co-configured exporter's headers, which would leak that key
     fn routed_exporter(
         &self,
         spec: &ExporterSpec,
@@ -193,8 +188,7 @@ impl TenantTracerCache {
     }
 }
 
-// LiteLLM compares the callback's name with the exporter's owner, with no owner meaning the
-// unnamed callback owns it
+// LiteLLM compares the callback's name with the exporter's owner, with no owner meaning the unnamed callback owns it
 #[must_use]
 pub(super) fn owns(spec: &ExporterSpec, callback_name: Option<&str>) -> bool {
     match (spec.owner, callback_name) {
@@ -217,9 +211,7 @@ const OWNER_NAMES: [(&str, ExporterOwner); 8] = [
     ("signoz", ExporterOwner::Signoz),
 ];
 
-// litellm.integrations.otel.plumbing.routing._plain_header_string, and _encoded_header_string: a
-// value containing the separators (a project name with a comma) survives percent-encoding, and
-// parse_env_headers decodes it back
+// litellm.integrations.otel.plumbing.routing._plain_header_string and _encoded_header_string: a value containing a comma survives percent-encoding, and parse_env_headers decodes it back
 fn join(headers: &BTreeMap<String, String>, encode: bool) -> String {
     headers
         .iter()

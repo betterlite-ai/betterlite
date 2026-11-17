@@ -77,8 +77,7 @@ fn delivery(logger: &OpenTelemetryV2, error: &dyn Display) -> LoggerError {
     }
 }
 
-// litellm.integrations.otel.logger.OpenTelemetryV2._record_metrics and _record_failure_metrics: a
-// synthetic proxy-gate log records no failure metric, since no GenAI operation ran to time
+// litellm.integrations.otel.logger.OpenTelemetryV2._record_metrics and _record_failure_metrics: a synthetic proxy-gate log records no failure metric
 fn record(
     logger: &OpenTelemetryV2,
     call: &CallContext,
@@ -110,12 +109,11 @@ fn record(
     Ok(())
 }
 
-// litellm.integrations.otel.logger.OpenTelemetryV2._guarded_record: a misconfigured attribute
-// filter is operator-fixable, so it surfaces once at ERROR and is silent afterwards
-fn guarded_record(
-    logger: &OpenTelemetryV2,
-    record: impl FnOnce(&GenAiMetricRecorder) -> Result<(), LegacyMetricsError>,
-) {
+// litellm.integrations.otel.logger.OpenTelemetryV2._guarded_record: an operator-fixable filter error surfaces once at ERROR
+fn guarded_record<F>(logger: &OpenTelemetryV2, record: F)
+where
+    F: FnOnce(&GenAiMetricRecorder) -> Result<(), LegacyMetricsError>,
+{
     let Some(recorder) = logger.metrics.as_ref() else {
         return;
     };
@@ -137,7 +135,7 @@ fn guarded_record(
 }
 
 // the errors an otel.attributes filter raises are LiteLLM's ValueError class
-fn is_filter_error(error: &LegacyMetricsError) -> bool {
+const fn is_filter_error(error: &LegacyMetricsError) -> bool {
     matches!(
         error,
         LegacyMetricsError::AttributesNotMapping
@@ -155,23 +153,7 @@ fn metric_kwargs(call: &CallContext, payload: &Payload) -> Result<MetadataMap, M
         "standard_logging_object".to_owned(),
         OtelModelValue::Object(kwargs.clone()),
     );
-    kwargs.insert(
-        "litellm_params".to_owned(),
-        OtelModelValue::Object(BTreeMap::from([
-            (
-                "custom_llm_provider".to_owned(),
-                payload
-                    .extra
-                    .get("custom_llm_provider")
-                    .cloned()
-                    .unwrap_or(OtelModelValue::Null(())),
-            ),
-            (
-                "metadata".to_owned(),
-                serde_json::from_value(serde_json::to_value(&payload.metadata)?)?,
-            ),
-        ])),
-    );
+    kwargs.insert("litellm_params".to_owned(), litellm_params(payload)?);
     kwargs.insert(
         "optional_params".to_owned(),
         OtelModelValue::Object(BTreeMap::from([(
@@ -179,6 +161,30 @@ fn metric_kwargs(call: &CallContext, payload: &Payload) -> Result<MetadataMap, M
             OtelModelValue::Bool(call.stream),
         )])),
     );
+    stamp_times(&mut kwargs, call);
+    Ok(kwargs)
+}
+
+// the provider and metadata LiteLLM's kwargs carries under litellm_params
+fn litellm_params(payload: &Payload) -> Result<OtelModelValue, MetadataError> {
+    Ok(OtelModelValue::Object(BTreeMap::from([
+        (
+            "custom_llm_provider".to_owned(),
+            payload
+                .extra
+                .get("custom_llm_provider")
+                .cloned()
+                .unwrap_or(OtelModelValue::Null(())),
+        ),
+        (
+            "metadata".to_owned(),
+            serde_json::from_value(serde_json::to_value(&payload.metadata)?)?,
+        ),
+    ])))
+}
+
+// the latency stamps the recorder reads, present only when the call carried a positive one
+fn stamp_times(kwargs: &mut MetadataMap, call: &CallContext) {
     for (key, value) in [
         ("api_call_start_time", call.api_call_start_time),
         ("completion_start_time", call.completion_start_time),
@@ -189,5 +195,4 @@ fn metric_kwargs(call: &CallContext, payload: &Payload) -> Result<MetadataMap, M
             kwargs.insert(key.to_owned(), OtelModelValue::Number(number));
         }
     }
-    Ok(kwargs)
 }

@@ -14,13 +14,14 @@ use crate::otel::model::baggage::promoted_baggage;
 use crate::otel::model::metadata::llm_call_event::LLMCallEvent;
 use crate::otel::model::metadata::wire::MetadataError;
 use crate::otel::model::metadata::wire::Timestamp;
-use crate::otel::model::metadata::wire::callback::{Callback, OptionalParams, Params};
+use crate::otel::model::metadata::wire::callback::{
+    Callback, OptionalParams, Params, ProxyRequest,
+};
 use crate::otel::model::payloads::RequestIdentity;
 use crate::otel::model::utils::time::{LocalTimeResolver, to_ns};
 use crate::otel::plumbing::context::baggage_context::set_request_baggage;
 
-// LiteLLM's ``litellm_no_upstream_llm_call`` kwargs flag, which the proxy sets on a synthetic
-// proxy-gate log; a logging event keeps it in the metadata map under the same name
+// LiteLLM's litellm_no_upstream_llm_call kwargs flag, which the proxy sets on a synthetic gate log
 const NO_UPSTREAM_LLM_CALL_KEY: &str = "litellm_no_upstream_llm_call";
 
 // the closed request as the OTel callbacks read it
@@ -35,8 +36,7 @@ pub struct CallContext {
 }
 
 impl CallContext {
-    // the request's own start stands in for a missing carrier, so a payload-carrying close still
-    // reads as a call that reached the provider
+    // the request's own start stands in for a missing carrier, so a payload still reads as upstream
     pub fn from_event(
         event: &LoggerEvent,
         api_start: Option<SystemTime>,
@@ -91,13 +91,12 @@ fn wire_callback(
                 &*event.litellm_metadata,
             )?)?,
             litellm_session_id: Some(payload.session_id.clone()),
-            proxy_server_request: Default::default(),
+            proxy_server_request: ProxyRequest { headers: None },
         },
     })
 }
 
-// litellm.integrations.otel.logger.OpenTelemetryV2._seed_identity_baggage: read from the parsed
-// payload's identity, never the client's carrier, so it cannot be spoofed
+// litellm.integrations.otel.logger.OpenTelemetryV2._seed_identity_baggage reads the parsed payload's identity, never the carrier
 #[must_use]
 pub fn seed_identity_baggage(
     config: &Settings,
@@ -147,8 +146,8 @@ impl LocalTimeResolver for NoLocalTime {
 
 #[must_use]
 pub fn system_time(seconds: Decimal) -> Option<SystemTime> {
-    let nanos = to_ns(Some(&seconds), None, &NoLocalTime)?;
-    let nanos = u64::try_from(nanos).ok()?;
+    let stamp = to_ns(Some(&seconds), None, &NoLocalTime)?;
+    let nanos = u64::try_from(stamp).ok()?;
     UNIX_EPOCH.checked_add(Duration::from_nanos(nanos))
 }
 

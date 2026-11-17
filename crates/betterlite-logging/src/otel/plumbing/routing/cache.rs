@@ -21,12 +21,10 @@ use crate::otel_provider_assembly::tracer_provider_assembly::{
 
 const SCOPE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-// LiteLLM's _MAX_CACHED_PROVIDERS: the LRU bound on distinct routed providers, below which an
-// unbounded cache would let a caller spawn one provider (and exporter thread) per credential set
+// LiteLLM's _MAX_CACHED_PROVIDERS: the LRU bound on distinct routed providers, without which a caller spawns one provider per credential set
 pub const MAX_CACHED_PROVIDERS: usize = 256;
 
-// LiteLLM's _MAX_RETIRED_PROVIDERS (a quarter of the cache cap): evicted providers kept draining
-// their open spans, bounded so their threads can't accumulate past the cache cap
+// LiteLLM's _MAX_RETIRED_PROVIDERS (a quarter of the cache cap): evicted providers kept draining their spans, bounded
 pub const MAX_RETIRED_PROVIDERS: usize = 64;
 
 // the tracer to create a span on, plus whether it must root its own trace
@@ -52,6 +50,13 @@ struct CacheState {
     next_id: u64,
 }
 
+// what the cache is built from: its exporter factories, the request scope, and the destination allowlist
+pub struct TenantSources {
+    pub factories: Arc<ExporterFactories>,
+    pub scope_source: Arc<dyn RequestScopeSource>,
+    pub allowed_hosts: Arc<[AllowedDestination]>,
+}
+
 // litellm.integrations.otel.plumbing.routing.TenantTracerCache
 pub struct TenantTracerCache {
     pub(super) config: Settings,
@@ -73,57 +78,55 @@ impl TenantTracerCache {
         config: Settings,
         callback_name: Option<String>,
         tracer_name: &str,
-        factories: Arc<ExporterFactories>,
-        scope_source: Arc<dyn RequestScopeSource>,
-        allowed_hosts: Arc<[AllowedDestination]>,
+        sources: TenantSources,
     ) -> Self {
         let transports: Vec<Transport> = config
             .exporters
             .iter()
             .filter(|spec| owns(spec, callback_name.as_deref()))
-            .map(|spec| factories.exporter_transport(&spec.kind))
+            .map(|spec| sources.factories.exporter_transport(&spec.kind))
             .collect();
         Self {
             config,
             callback_name,
-            allowed_hosts,
+            allowed_hosts: sources.allowed_hosts,
             project_routable: transports.contains(&Transport::Http),
             credential_routable: transports
                 .iter()
                 .any(|transport| matches!(transport, Transport::Http | Transport::Grpc)),
             warned_project_unroutable: AtomicBool::new(false),
             warned_credential_unroutable: AtomicBool::new(false),
-            factories,
+            factories: sources.factories,
             scope: InstrumentationScope::builder(tracer_name.to_owned())
                 .with_version(SCOPE_VERSION)
                 .build(),
-            scope_source,
+            scope_source: sources.scope_source,
             state: Mutex::new(CacheState::default()),
         }
     }
 
     // litellm.integrations.otel.plumbing.routing.TenantTracerCache.release
     pub fn release(&self, provider: Option<&Arc<TenantProvider>>) {
-        let Some(provider) = provider else {
+        let Some(leased) = provider else {
             return;
         };
         let drained = {
             let mut state = self.lock();
             let remaining = state
                 .open_span_counts
-                .get(&provider.id)
+                .get(&leased.id)
                 .copied()
                 .unwrap_or(0)
                 .saturating_sub(1);
             if remaining > 0 {
-                state.open_span_counts.insert(provider.id, remaining);
+                state.open_span_counts.insert(leased.id, remaining);
                 return;
             }
-            state.open_span_counts.remove(&provider.id);
-            state.retired.shift_remove(&provider.id).is_some()
+            state.open_span_counts.remove(&leased.id);
+            state.retired.shift_remove(&leased.id).is_some()
         };
         if drained {
-            shutdown_provider(&provider.provider);
+            shutdown_provider(&leased.provider);
         }
     }
 
@@ -143,43 +146,48 @@ impl TenantTracerCache {
         {
             return Ok(default_route(default));
         }
-        let credential_headers = self.credential_headers(dynamic_params);
-        let project_headers = self.project_headers(auth_metadata);
-        let service_name = tenant_service_name(auth_metadata);
-        let tenant_account = !credential_headers.is_empty() || !project_headers.is_empty();
-        if !tenant_account && (service_name.is_none() || !backends.is_empty()) {
+        let inputs = self.route_inputs(dynamic_params, auth_metadata);
+        if !inputs.tenant_account() && (inputs.service_name.is_none() || !backends.is_empty()) {
             return Ok(default_route(default));
         }
-        let endpoint = self.endpoint(dynamic_params);
-        let key = RouteKey::new(
-            &credential_headers,
-            &project_headers,
-            endpoint.as_deref(),
-            service_name.as_deref(),
-        );
-        let (provider, evicted) = {
-            let mut state = self.lock();
-            let built = self.cached_provider(
-                &mut state,
-                &key,
-                &credential_headers,
-                &project_headers,
-                endpoint.as_deref(),
-                service_name.as_deref(),
-            )?;
-            let count = state.open_span_counts.entry(built.id).or_insert(0);
-            *count = count.saturating_add(1);
-            let evicted = evict_overflow(&mut state);
-            (built, evicted)
-        };
+        let key = inputs.key();
+        let (provider, evicted) = self.lease(&key, &inputs)?;
         if let Some(evicted) = evicted {
             shutdown_provider(&evicted);
         }
         Ok(TenantRoute {
             tracer: provider.provider.tracer_with_scope(self.scope.clone()),
-            detached: tenant_account,
+            detached: inputs.tenant_account(),
             provider: Some(provider),
         })
+    }
+
+    // the fields a request routes by: LiteLLM's cache key plus the header sets its account check reads
+    fn route_inputs(
+        &self,
+        dynamic_params: Option<&StandardCallbackDynamicParams>,
+        auth_metadata: Option<&BTreeMap<String, String>>,
+    ) -> RouteInputs {
+        RouteInputs {
+            credential_headers: self.credential_headers(dynamic_params),
+            project_headers: self.project_headers(auth_metadata),
+            endpoint: self.endpoint(dynamic_params),
+            service_name: tenant_service_name(auth_metadata),
+        }
+    }
+
+    // the cached provider for a route, leased one open-span count so eviction retires it instead of shutting it down
+    fn lease(
+        &self,
+        key: &RouteKey,
+        inputs: &RouteInputs,
+    ) -> ExportResult<(Arc<TenantProvider>, Option<SdkTracerProvider>)> {
+        let mut state = self.lock();
+        let provider = self.cached_provider(&mut state, key, inputs)?;
+        let count = state.open_span_counts.entry(provider.id).or_insert(0);
+        *count = count.saturating_add(1);
+        let evicted = evict_overflow(&mut state);
+        Ok((provider, evicted))
     }
 
     // LiteLLM's _cached_provider_locked: an LRU hit moves to the recent end, a miss builds a provider
@@ -187,17 +195,18 @@ impl TenantTracerCache {
         &self,
         state: &mut CacheState,
         key: &RouteKey,
-        credential_headers: &BTreeMap<String, String>,
-        project_headers: &BTreeMap<String, String>,
-        endpoint: Option<&str>,
-        service_name: Option<&str>,
+        inputs: &RouteInputs,
     ) -> ExportResult<Arc<TenantProvider>> {
         if let Some(cached) = state.providers.shift_remove(key) {
             state.providers.insert(key.clone(), Arc::clone(&cached));
             return Ok(cached);
         }
-        let config =
-            self.routed_config(credential_headers, project_headers, endpoint, service_name);
+        let config = self.routed_config(
+            &inputs.credential_headers,
+            &inputs.project_headers,
+            inputs.endpoint.as_deref(),
+            inputs.service_name.as_deref(),
+        );
         let provider = Arc::new(TenantProvider {
             id: state.next_id,
             provider: build_tracer_provider(
@@ -220,6 +229,30 @@ impl TenantTracerCache {
     }
 }
 
+// the fields a request routes by: LiteLLM's provider cache key plus its tenant account check
+struct RouteInputs {
+    credential_headers: BTreeMap<String, String>,
+    project_headers: BTreeMap<String, String>,
+    endpoint: Option<String>,
+    service_name: Option<String>,
+}
+
+impl RouteInputs {
+    // a request carrying a tenant credential or project is detached into that tenant's own trace
+    fn tenant_account(&self) -> bool {
+        !self.credential_headers.is_empty() || !self.project_headers.is_empty()
+    }
+
+    fn key(&self) -> RouteKey {
+        RouteKey::new(
+            &self.credential_headers,
+            &self.project_headers,
+            self.endpoint.as_deref(),
+            self.service_name.as_deref(),
+        )
+    }
+}
+
 // the unrouted answer: the logger's own tracer, parented into the request trace as usual
 fn default_route(default: &SdkTracer) -> TenantRoute {
     TenantRoute {
@@ -229,8 +262,7 @@ fn default_route(default: &SdkTracer) -> TenantRoute {
     }
 }
 
-// LiteLLM's _evicted_on_overflow_locked: a provider with open spans retires to drain instead of
-// being shut down under them, and the stalest retiree is shut down once too many pile up
+// LiteLLM's _evicted_on_overflow_locked: a provider with open spans retires to drain, and the stalest retiree shuts down once too many pile up
 fn evict_overflow(state: &mut CacheState) -> Option<SdkTracerProvider> {
     if state.providers.len() <= MAX_CACHED_PROVIDERS {
         return None;
