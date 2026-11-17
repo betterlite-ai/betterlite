@@ -8,11 +8,18 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use crate::sdk_http::result::SyncDiagnostic;
 
-const SOURCE: &str = "betterlite_core::api::messages_sync_stream";
+// Collects one run's adapter lines, from the module that run drives
+#[derive(Clone)]
+pub(crate) struct Diagnostics {
+    pub(crate) source: &'static str,
+    pub(crate) entries: Arc<Mutex<Vec<SyncDiagnostic>>>,
+}
 
-#[derive(Clone, Default)]
-pub(super) struct Diagnostics {
-    pub(super) entries: Arc<Mutex<Vec<SyncDiagnostic>>>,
+impl Diagnostics {
+    // One step's lines, cleared so the next step reports only its own
+    pub(crate) fn take(&self) -> Vec<SyncDiagnostic> {
+        std::mem::take(&mut *self.entries.lock().unwrap_or_else(PoisonError::into_inner))
+    }
 }
 
 #[derive(Default)]
@@ -34,7 +41,7 @@ impl Visit for PrefixVisitor {
 
 impl<Inner: Subscriber> Layer<Inner> for Diagnostics {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        if !event.metadata().target().starts_with(SOURCE) {
+        if !event.metadata().target().starts_with(self.source) {
             return;
         }
         let mut visitor = PrefixVisitor::default();

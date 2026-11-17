@@ -11,6 +11,7 @@ use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use error::SdkHttpError;
 use file_azure_storage::FileAzureStorageCall;
+use messages_chat_stream::call::MessagesChatStreamCall;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;
 use messages_sync_stream::call;
@@ -23,6 +24,7 @@ mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
 pub mod file_azure_storage;
+pub mod messages_chat_stream;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub mod messages_sync_stream;
@@ -32,6 +34,7 @@ pub mod responses_agentic_continuation;
 pub mod result;
 mod tests;
 pub(crate) mod vector_query_embedding;
+pub(crate) mod wrapper_stream;
 
 #[derive(Debug, Clone)]
 pub struct OracleLimits {
@@ -78,6 +81,7 @@ pub enum SdkHttpCall {
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
     MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
+    MessagesChatStream(Box<MessagesChatStreamCall>),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
     FileAzureStorage(FileAzureStorageCall),
 }
@@ -257,6 +261,9 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
             }
         }
         SdkHttpCall::MessagesSyncStream(stream) => call::validate(stream, limits)?,
+        SdkHttpCall::MessagesChatStream(stream) => {
+            messages_chat_stream::call::validate(stream, limits)?;
+        }
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)

@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::sdk_http::error::SdkHttpError;
+use crate::sdk_http::wrapper_stream::WireCall;
 use crate::sdk_http::{ChatMessage, OracleLimits};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,4 +76,22 @@ pub(crate) fn validate(
         }
     }
     Ok(())
+}
+
+impl WireCall for MessagesSyncStreamCall {
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn messages(&self) -> &[ChatMessage] {
+        &self.messages
+    }
+
+    fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
+    fn timeout_seconds(&self) -> u64 {
+        self.timeout_seconds
+    }
 }
