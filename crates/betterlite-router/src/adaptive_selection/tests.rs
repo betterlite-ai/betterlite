@@ -407,6 +407,16 @@ fn a_model_without_preferences_starts_at_tier_two() {
 }
 
 #[test]
+fn an_empty_router_reports_the_missing_tier_as_none() {
+    let mut service = selection(&[], &[], &[], weights(0.7, 0.3), &[]);
+    let error = service.pick_model(RequestType::General, None).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "AdaptiveRouter[probe]: no models meet min_quality_tier=None"
+    );
+}
+
+#[test]
 fn an_unsupported_preference_tier_is_refused() {
     let mut preferences = IndexMap::new();
     preferences.insert(
