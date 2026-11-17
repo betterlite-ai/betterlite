@@ -49,37 +49,35 @@ pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
 
 impl Assembled {
     fn absorb(&mut self, event: &Value) {
-        match event.get("type").and_then(Value::as_str) {
-            Some("content_block_delta") => self.absorb_delta(event),
-            Some("message_delta") => self.absorb_finish(event),
-            Some(_) | None => {}
-        }
-    }
-
-    fn absorb_delta(&mut self, event: &Value) {
+        let Some(kind) = event.get("type").and_then(Value::as_str) else {
+            return;
+        };
         let delta = event.get("delta");
-        if let Some(text) = delta
-            .and_then(|fields| fields.get("text"))
-            .and_then(Value::as_str)
-        {
-            self.text.push_str(text);
-        }
-    }
-
-    fn absorb_finish(&mut self, event: &Value) {
-        if let Some(reason) = event
-            .get("delta")
-            .and_then(|fields| fields.get("stop_reason"))
-            .and_then(Value::as_str)
-        {
-            self.stop_reason = Some(reason.to_owned());
-        }
-        if let Some(tokens) = event
-            .get("usage")
-            .and_then(|fields| fields.get("output_tokens"))
-            .and_then(integer)
-        {
-            self.output_tokens = Some(tokens);
+        match kind {
+            "content_block_delta" => {
+                if let Some(text) = delta
+                    .and_then(|fields| fields.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    self.text.push_str(text);
+                }
+            }
+            "message_delta" => {
+                if let Some(reason) = delta
+                    .and_then(|fields| fields.get("stop_reason"))
+                    .and_then(Value::as_str)
+                {
+                    self.stop_reason = Some(reason.to_owned());
+                }
+                if let Some(tokens) = event
+                    .get("usage")
+                    .and_then(|fields| fields.get("output_tokens"))
+                    .and_then(integer)
+                {
+                    self.output_tokens = Some(tokens);
+                }
+            }
+            _ => {}
         }
     }
 
