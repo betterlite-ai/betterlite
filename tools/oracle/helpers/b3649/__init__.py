@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-from collections.abc import Awaitable
 from datetime import datetime
 from typing import Final, Literal, NotRequired, TypedDict, cast
 
@@ -94,20 +93,17 @@ def configure(base: str, api_key: str) -> None:
 
 def blocking_value(input_value: Input) -> dict[str, JsonValue]:
     logging_obj = make_logging()
-    payload = cast(
-        HandlerPayload,
-        HANDLER.tinyfish_passthrough_handler(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L174
-            httpx_response=httpx.Response(200),
-            response_body=input_value.get("run"),
-            logging_obj=logging_obj,
-            url_route=ROUTE,
-            result=result_text(input_value),
-            start_time=START,
-            end_time=END,
-            cache_hit=False,
-            request_body={},
-        ),
-    )
+    payload = cast(HandlerPayload, HANDLER.tinyfish_passthrough_handler(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L174
+        httpx_response=httpx.Response(200),
+        response_body=input_value.get("run"),
+        logging_obj=logging_obj,
+        url_route=ROUTE,
+        result=result_text(input_value),
+        start_time=START,
+        end_time=END,
+        cache_hit=False,
+        request_body={},
+    ))
     logged = LoggedResponse.model_validate(payload["result"])
     return billing_view(logging_obj, parsed(logged.response), NO_REQUESTS, cache_hit=None)
 
@@ -173,16 +169,14 @@ async def collected_value(input_value: Input) -> dict[str, JsonValue]:
     lines = input_value.get("lines")
     with Served(script) as base:
         configure(base, input_value["api_key"])
-        payload = await cast(
-            Awaitable[HandlerPayload],
-            HANDLER.handle_logging_tinyfish_collected_chunks(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L333-L364
-                litellm_logging_obj=logging_obj,
-                url_route=ROUTE,
-                start_time=START,
-                all_chunks=[] if lines is None else lines,
-                end_time=END,
-            ),
+        pending = HANDLER.handle_logging_tinyfish_collected_chunks(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L333-L364
+            litellm_logging_obj=logging_obj,
+            url_route=ROUTE,
+            start_time=START,
+            all_chunks=[] if lines is None else lines,
+            end_time=END,
         )
+        payload = cast(HandlerPayload, await pending)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L333-L364
     logged = LoggedResponse.model_validate(payload["result"])
     return billing_view(
         logging_obj, parsed(logged.response), script.summary(base), cache_hit=None
