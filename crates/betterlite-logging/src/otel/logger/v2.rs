@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use opentelemetry::Context;
 use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::{Link, TraceContextExt as _};
-use opentelemetry_sdk::trace::{SdkTracer, Span as SdkSpan};
+use opentelemetry_sdk::trace::SdkTracer;
 
 use crate::otel::config::Settings;
 use crate::otel::emitter::span_emission::SpanEmitter;
@@ -16,12 +16,20 @@ use crate::otel::plumbing::routing::cache::{TenantProvider, TenantTracerCache};
 // LiteLLM's _OPEN_CALLS_MAX: a span opened at pre_call that never reaches a callback would linger, so the oldest carrier is evicted past this many
 pub const OPEN_CALLS_MAX: usize = 10_000;
 
-// litellm.integrations.otel.logger._LLMCallSpan: the state carried from the pre_call boundary to close; a span is present when one opened at the boundary, else creation is deferred to the close callback
+// litellm.integrations.otel.logger._LLMCallSpan: the state carried from the pre_call boundary to close; a boundary is present when pre_call saw a recordable parent, else creation is deferred to the close callback
 pub struct OpenCall {
-    pub span: Option<Box<SdkSpan>>,
+    // the span itself is created at close: the SDK ends and exports any span it drops, while LiteLLM's abandoned carrier never ends
+    pub boundary: Option<BoundarySpan>,
     pub start_time: SystemTime,
-    // the routed provider the live span was opened on, released exactly once when the carrier goes
+    // the routed provider the boundary route leased, released exactly once when the carrier goes
     pub provider: Option<Arc<TenantProvider>>,
+}
+
+// what pre_call captured for the boundary span: the request parent, the routed tracer and the detached links back to the request trace
+pub struct BoundarySpan {
+    pub parent: Context,
+    pub tracer: SdkTracer,
+    pub links: Vec<Link>,
 }
 
 // litellm.integrations.otel.logger's _open_llm_calls ordered map

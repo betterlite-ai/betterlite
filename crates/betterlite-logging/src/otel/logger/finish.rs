@@ -4,9 +4,11 @@ use opentelemetry::trace::Span as _;
 use opentelemetry_sdk::trace::Span as SdkSpan;
 
 use self::mcp::{McpEmission, emit_mcp_span};
-use crate::otel::emitter::span_emission::EmitOptions;
+use crate::otel::emitter::span_emission::{EmitOptions, StartOptions};
 use crate::otel::logger::call_context::{CallContext, SpanTimes, seed_identity_baggage};
-use crate::otel::logger::v2::{OpenTelemetryV2, detached_context, request_trace_links};
+use crate::otel::logger::v2::{
+    BoundarySpan, OpenTelemetryV2, detached_context, request_trace_links,
+};
 use crate::otel::mappers::base::SpanData;
 use crate::otel::model::metadata::wire::MetadataError;
 use crate::otel::model::metadata::wire::payload::Payload;
@@ -83,7 +85,7 @@ pub fn close_llm_call(
             return Ok(None);
         }
         let close = CarrierClose {
-            span: None,
+            boundary: None,
             start_time: None,
             call,
             times,
@@ -91,7 +93,7 @@ pub fn close_llm_call(
         return finish_carrier(logger, close);
     };
     let close = CarrierClose {
-        span: carrier.span.map(|span| *span),
+        boundary: carrier.boundary,
         start_time: Some(carrier.start_time),
         call,
         times,
@@ -102,9 +104,9 @@ pub fn close_llm_call(
     result
 }
 
-// the close state a carrier hands on: the boundary span, if it opened one, and the start time a deferred span uses
+// the close state a carrier hands on: the boundary state, if pre_call saw a recordable parent, and the start time a deferred span uses
 struct CarrierClose<'a> {
-    span: Option<SdkSpan>,
+    boundary: Option<BoundarySpan>,
     start_time: Option<SystemTime>,
     call: &'a CallContext,
     times: SpanTimes,
@@ -116,18 +118,20 @@ fn finish_carrier(
     close: CarrierClose<'_>,
 ) -> Result<Option<SdkSpan>, FinishError> {
     let CarrierClose {
-        span,
+        boundary,
         start_time,
         call,
         times,
     } = close;
     let Some(payload) = call.event.payload.as_ref() else {
-        return Ok(end_without_payload(logger, span, call, times));
+        return Ok(end_without_payload(
+            logger, boundary, start_time, call, times,
+        ));
     };
     let trace = logger.trace.trace_context();
     let data = llm_call_data(logger, call, payload, &trace)?;
-    match span {
-        Some(span) => Ok(finish_open_span(logger, span, &data, call, times)),
+    match boundary {
+        Some(boundary) => Ok(finish_open_span(logger, boundary, start_time, &data, times)),
         None => {
             let deferred = DeferredClose {
                 data: &data,
@@ -141,17 +145,28 @@ fn finish_carrier(
     }
 }
 
-// the payload never materialized: end the boundary span under its provisional name, and mark the call emitted so a later close cannot re-emit it deferred
+// the payload never materialized: open the boundary span at its captured start and end it under its provisional name, then mark the call emitted so a later close cannot re-emit it deferred
 fn end_without_payload(
     logger: &OpenTelemetryV2,
-    span: Option<SdkSpan>,
+    boundary: Option<BoundarySpan>,
+    start_time: Option<SystemTime>,
     call: &CallContext,
     times: SpanTimes,
 ) -> Option<SdkSpan> {
-    let mut open = span?;
+    let boundary = boundary?;
     logger
         .emitter
         .mark_emitted(call.event.call_id.as_deref(), SpanRole::LlmCall);
+    let mut open = logger.emitter.start_span(
+        SpanRole::LlmCall,
+        &call.event.provisional_span_name,
+        &StartOptions {
+            parent: Some(&boundary.parent),
+            start_time,
+            tracer: Some(&boundary.tracer),
+            links: &boundary.links,
+        },
+    );
     match times.end {
         Some(end) => open.end_with_timestamp(end),
         None => open.end(),
@@ -177,24 +192,25 @@ fn llm_call_data(
     )?)
 }
 
-// born at the boundary: stamp the payload's attributes, set status, and end it under the parent captured at creation
+// born at the boundary: the payload proves the call ran, so open on the parent, tracer and links pre_call captured, then stamp and end it under the payload model
 fn finish_open_span(
     logger: &OpenTelemetryV2,
-    mut span: SdkSpan,
+    boundary: BoundarySpan,
+    start_time: Option<SystemTime>,
     data: &LLMCallSpanData,
-    call: &CallContext,
     times: SpanTimes,
 ) -> Option<SdkSpan> {
-    logger
-        .emitter
-        .mark_emitted(call.event.call_id.as_deref(), SpanRole::LlmCall);
-    logger.emitter.finish_span(
+    logger.emitter.emit(
         SpanRole::LlmCall,
-        &mut span,
         &SpanData::LLMCall(data),
-        times.end,
-    );
-    Some(span)
+        &EmitOptions {
+            parent: Some(&boundary.parent),
+            start_time,
+            end_time: times.end,
+            tracer: Some(&boundary.tracer),
+            links: &boundary.links,
+        },
+    )
 }
 
 // what the deferred branch routes and emits with: the mapped data, its call, and the request trace

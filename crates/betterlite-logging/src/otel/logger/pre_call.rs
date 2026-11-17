@@ -6,12 +6,12 @@ use opentelemetry::trace::TraceContextExt as _;
 
 use crate::logging_pre_post::error::PrePostError;
 use crate::logging_pre_post::hooks::PreCallEvent;
-use crate::otel::emitter::span_emission::StartOptions;
-use crate::otel::logger::v2::{OpenCall, OpenTelemetryV2, detached_context, request_trace_links};
+use crate::otel::logger::v2::{
+    BoundarySpan, OpenCall, OpenTelemetryV2, detached_context, request_trace_links,
+};
 use crate::otel::model::metadata::llm_call_event::LLMCallEvent;
 use crate::otel::model::metadata::wire::callback::Callback;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
-use crate::otel::vocabulary::registry::SpanRole;
 
 // litellm.integrations.otel.logger.OpenTelemetryV2.log_pre_api_call: open the LLM-call span at the boundary when a recordable parent is visible, else record only the start time for the async close
 pub fn log_pre_api_call(
@@ -35,10 +35,10 @@ pub fn log_pre_api_call(
     let start_time = SystemTime::now();
     let trace = logger.trace.trace_context();
     let parent = trace.resolve_request_span_context();
-    // is_recordable_span(get_current_span(parent)): only an anchored or ambient parent carries a boundary span
+    // is_recordable_span(get_current_span(parent)): only an anchored or ambient parent carries a boundary
     if !parent.span().span_context().is_valid() {
         let carrier = OpenCall {
-            span: None,
+            boundary: None,
             start_time,
             provider: None,
         };
@@ -50,7 +50,7 @@ pub fn log_pre_api_call(
     Ok(())
 }
 
-// the live-span arm of OpenTelemetryV2.log_pre_api_call: route, then open on the routed tracer, detached for a tenant account
+// the boundary arm of OpenTelemetryV2.log_pre_api_call: route here, and keep what the close callback needs to open on the routed tracer, detached for a tenant account
 fn open_at_boundary(
     logger: &OpenTelemetryV2,
     call: &LLMCallEvent,
@@ -70,23 +70,17 @@ fn open_at_boundary(
             &trace.destinations,
         )
         .map_err(callback_failed)?;
-    let (parent_context, links) = if route.detached {
+    let (parent, links) = if route.detached {
         (detached_context(&parent), request_trace_links(&parent))
     } else {
         (parent, Vec::new())
     };
-    let span = logger.emitter.start_span(
-        SpanRole::LlmCall,
-        &call.provisional_span_name,
-        &StartOptions {
-            parent: Some(&parent_context),
-            start_time: Some(start_time),
-            tracer: Some(&route.tracer),
-            links: &links,
-        },
-    );
     Ok(OpenCall {
-        span: Some(Box::new(span)),
+        boundary: Some(BoundarySpan {
+            parent,
+            tracer: route.tracer,
+            links,
+        }),
         start_time,
         provider: route.provider,
     })
