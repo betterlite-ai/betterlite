@@ -14,7 +14,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::text_completion_stream::without_nulls;
+use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
 use betterlite_provider::operation::{ChatOperation, OperationRequest, OperationResult};
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
@@ -127,7 +127,7 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<Bytes, io::Error>, 
                 state.finished = true;
                 state
                     .pending
-                    .push_back(Bytes::from_static(b"data: [DONE]\n\n"));
+                    .push_back(Bytes::from_static(DONE_FRAME.as_bytes()));
             }
         }
     }

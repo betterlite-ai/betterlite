@@ -218,8 +218,48 @@ async fn the_stream_is_wrapped_as_text_chunks_with_the_client_usage_choice() {
         Some(Json::Text(String::from("client")))
     );
     let second = body[1].as_ref().expect("second chunk");
-    assert!(
-        matches!(json_field(second, "usage"), Some(Json::Object(fields)) if fields.contains_key("total_tokens"))
+    let Some(Json::Object(usage)) = json_field(second, "usage") else {
+        panic!("the second chunk carries no usage");
+    };
+    // the provider's own counters, so a wrapper that lost include_usage and wrote EMPTY_USAGE fails here
+    assert_eq!(
+        usage.get("total_tokens"),
+        Some(&Json::Number(serde_json::Number::from(5_u8)))
+    );
+    assert_eq!(
+        usage.get("prompt_tokens"),
+        Some(&Json::Number(serde_json::Number::from(3_u8)))
+    );
+    assert_eq!(
+        usage.get("completion_tokens"),
+        Some(&Json::Number(serde_json::Number::from(2_u8)))
+    );
+}
+
+#[tokio::test]
+async fn without_a_usage_choice_the_wrapper_writes_the_empty_usage() {
+    // no stream_options leaves include_usage off, so the wrapper writes EMPTY_USAGE instead of the chunk's counters
+    let body = collected(
+        Arc::new(Streams),
+        r#"{"model":"g","prompt":"hello","stream":true}"#,
+    )
+    .await;
+    assert_eq!(body.len(), 2);
+    let second = body[1].as_ref().expect("second chunk");
+    let Some(Json::Object(usage)) = json_field(second, "usage") else {
+        panic!("the second chunk carries no usage");
+    };
+    assert_eq!(
+        usage.get("total_tokens"),
+        Some(&Json::Number(serde_json::Number::from(0_u8)))
+    );
+    assert_eq!(
+        usage.get("prompt_tokens"),
+        Some(&Json::Number(serde_json::Number::from(0_u8)))
+    );
+    assert_eq!(
+        usage.get("completion_tokens"),
+        Some(&Json::Number(serde_json::Number::from(0_u8)))
     );
 }
 

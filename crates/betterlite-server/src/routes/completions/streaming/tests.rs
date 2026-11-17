@@ -8,7 +8,7 @@ use betterlite_core::message_utilities::response_streams::StreamError;
 use betterlite_core::operation::text_stream::TextStreamResult;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
-use betterlite_openai::text_completion_stream::without_nulls;
+use betterlite_openai::text_completion_stream::{DONE_FRAME, without_nulls};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
 use rstest::rstest;
@@ -90,10 +90,8 @@ async fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
             let body = to_bytes(response.into_body(), usize::MAX)
                 .await
                 .expect("body");
-            assert_eq!(
-                String::from_utf8(body.to_vec()).expect("utf8"),
-                "data: [DONE]\n\n"
-            );
+            // the whole body of an empty stream is the closing frame the route takes from DONE_FRAME
+            assert_eq!(String::from_utf8(body.to_vec()).expect("utf8"), DONE_FRAME);
         }
         Scenario::ErrorTruncates => {
             let answer = result(vec![Err(StreamError::MissingChunk)]);
