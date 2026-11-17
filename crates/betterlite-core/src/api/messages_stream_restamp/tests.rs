@@ -213,6 +213,20 @@ fn torn_after_ping() -> RestampCase {
     )
 }
 
+// The ping leaves the stream armed, so the torn start behind it is held and restamped once it closes
+fn ping_block_then_torn_start() -> RestampCase {
+    let frame = start_frame("upstream-model");
+    let (torn, rest) = frame.split_at(frame.len() / 2);
+    restamp_case(
+        vec![text(&format!("{}{torn}", ping_sse_frame())), text(rest)],
+        vec![
+            bytes(ping_sse_frame().as_bytes()),
+            bytes(start_frame(REQUESTED_MODEL).as_bytes()),
+        ],
+        bytes(b""),
+    )
+}
+
 #[rstest]
 #[case::ping_block_keeps_the_stream_armed(restamp_case(
     vec![text(&ping_sse_frame()), text(&start_frame("upstream-model"))],
@@ -288,6 +302,7 @@ fn torn_after_ping() -> RestampCase {
     ],
     bytes(b""),
 ))]
+#[case::ping_block_then_torn_start(ping_block_then_torn_start())]
 fn ping_frame(#[case] case: RestampCase) {
     assert_restamp_case(case);
 }
