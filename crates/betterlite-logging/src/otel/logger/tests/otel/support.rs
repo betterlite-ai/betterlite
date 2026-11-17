@@ -30,10 +30,11 @@ use betterlite_logging::otel::plumbing::context::context_slots::{
     AnchoredSpan, RequestTraceContext,
 };
 use betterlite_logging::otel::plumbing::exporters::{
-    ExportResult, ExporterFactories, ExporterFactory, HttpClients, SpanSink,
+    ExportResult, ExporterFactories, ExporterFactory, HttpClients,
 };
 use betterlite_logging::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
 use betterlite_logging::otel::plumbing::routing::cache::TenantTracerCache;
+use betterlite_logging::otel::plumbing::sinks::SpanSink;
 use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
 use betterlite_logging::otel_provider_assembly::tracer_provider_assembly::{
     AssemblyOptions, build_tracer_provider,
