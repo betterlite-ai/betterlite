@@ -152,11 +152,13 @@ def request_options(call: ChatResponseStreamCall, api_base: str) -> dict[str, Js
 
 def sync_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
     events: list[dict[str, Json]] = []
-    for event in iterator:
-        events.append(event_view(event))
-        if step == "next":
-            return StepOutcome(events=events, end=False)
-    return StepOutcome(events=events, end=True)
+    try:
+        events.append(event_view(next(iterator)))
+        while step == "drain":
+            events.append(event_view(next(iterator)))
+    except StopIteration:
+        return StepOutcome(events=events, end=True)
+    return StepOutcome(events=events, end=False)
 
 
 async def async_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
