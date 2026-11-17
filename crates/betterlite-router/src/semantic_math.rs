@@ -18,7 +18,7 @@ pub enum MathError {
 }
 
 pub fn vector_norm(vector: &[f64], index: usize) -> Result<f64, MathError> {
-    let mut squares = 0.0;
+    let mut squares = 0.0_f64;
     for value in vector {
         if !value.is_finite() {
             return Err(MathError::NonFinite { index });
@@ -29,7 +29,7 @@ pub fn vector_norm(vector: &[f64], index: usize) -> Result<f64, MathError> {
     if !norm.is_finite() {
         return Err(MathError::NonFinite { index });
     }
-    if norm <= 0.0 {
+    if norm <= 0.0_f64 {
         return Err(MathError::ZeroNorm { index });
     }
     Ok(norm)
@@ -45,7 +45,7 @@ pub fn cosine_similarity(query: &[f64], document: &[f64], index: usize) -> Resul
     }
     let query_norm = vector_norm(query, 0)?;
     let document_norm = vector_norm(document, index)?;
-    let mut dot = 0.0;
+    let mut dot = 0.0_f64;
     for (query_value, document_value) in query.iter().zip(document) {
         dot += query_value * document_value;
     }
@@ -75,7 +75,7 @@ pub fn validate_documents(vectors: &[Vec<f64>]) -> Result<(), MathError> {
 // the mean of an empty group is NaN, the float division of zero by zero that never reaches a real route
 #[must_use]
 pub fn mean(values: &[f64]) -> f64 {
-    let mut total = 0.0;
+    let mut total = 0.0_f64;
     for value in values {
         total += value;
     }

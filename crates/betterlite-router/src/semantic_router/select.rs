@@ -13,8 +13,8 @@ pub struct BuiltEntry {
 
 // one scored row with its group threshold, so grouping never looks a route up again
 #[derive(Debug, Clone, Copy)]
-struct Scored<'a> {
-    route: &'a str,
+struct Scored<'row> {
+    route: &'row str,
     score: f64,
     threshold: f64,
     index: usize,
@@ -22,8 +22,8 @@ struct Scored<'a> {
 
 // one route's standing: the threshold of its first route and the mean of its rows inside the top_k window
 #[derive(Debug, Clone, Copy)]
-struct RouteScore<'a> {
-    route: &'a str,
+struct RouteScore<'row> {
+    route: &'row str,
     threshold: f64,
     mean: f64,
 }
@@ -35,7 +35,7 @@ pub fn select(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, M
     let scored = top_scores(entries, query)?;
     for route_score in route_scores(&scored) {
         // the source reads a zero threshold as falsy, which always passes; a nonzero one compares normally
-        let comparable = route_score.threshold > 0.0 || route_score.threshold < 0.0;
+        let comparable = route_score.threshold != 0.0_f64;
         if !comparable || route_score.mean >= route_score.threshold {
             return Ok(Some(route_score.route.to_owned()));
         }
@@ -43,8 +43,11 @@ pub fn select(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, M
     Ok(None)
 }
 
-fn top_scores<'a>(entries: &'a [BuiltEntry], query: &[f64]) -> Result<Vec<Scored<'a>>, MathError> {
-    let mut scored: Vec<Scored<'a>> = Vec::with_capacity(entries.len());
+fn top_scores<'row>(
+    entries: &'row [BuiltEntry],
+    query: &[f64],
+) -> Result<Vec<Scored<'row>>, MathError> {
+    let mut scored: Vec<Scored<'row>> = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
         let score = cosine_similarity(query, &entry.vector, index)?;
         scored.push(Scored {
@@ -70,9 +73,9 @@ fn top_scores<'a>(entries: &'a [BuiltEntry], query: &[f64]) -> Result<Vec<Scored
     Ok(scored)
 }
 
-fn route_scores<'a>(scored: &[Scored<'a>]) -> Vec<RouteScore<'a>> {
+fn route_scores<'row>(scored: &[Scored<'row>]) -> Vec<RouteScore<'row>> {
     // the threshold of the first route of each name, in the order the group first appears
-    let mut routes: Vec<(&'a str, f64)> = Vec::new();
+    let mut routes: Vec<(&'row str, f64)> = Vec::new();
     for row in scored {
         if !routes.iter().any(|(name, _)| *name == row.route) {
             routes.push((row.route, row.threshold));
