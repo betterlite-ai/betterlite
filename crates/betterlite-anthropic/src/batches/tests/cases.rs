@@ -45,14 +45,14 @@ enum Scenario {
 }
 
 #[rstest]
-#[case::case_1_batch_create_requests(Scenario::CreateRequests)]
-#[case::case_2_batch_status_counts(Scenario::StatusCounts)]
-#[case::case_3_batch_ended_output_file_id(Scenario::EndedOutputFileId)]
-#[case::case_4_batch_error_counts(Scenario::ErrorCounts)]
-#[case::case_5_batch_retrieve(Scenario::Retrieve)]
-#[case::case_6_batch_result_response(Scenario::ResultResponse)]
-#[case::case_7_batch_timestamps(Scenario::Timestamps)]
-#[case::case_8_batch_auth_headers(Scenario::AuthHeaders)]
+#[case::batch_create_requests(Scenario::CreateRequests)]
+#[case::batch_status_counts(Scenario::StatusCounts)]
+#[case::batch_ended_output_file_id(Scenario::EndedOutputFileId)]
+#[case::batch_error_counts(Scenario::ErrorCounts)]
+#[case::batch_retrieve(Scenario::Retrieve)]
+#[case::batch_result_response(Scenario::ResultResponse)]
+#[case::batch_timestamps(Scenario::Timestamps)]
+#[case::batch_auth_headers(Scenario::AuthHeaders)]
 #[tokio::test]
 async fn batches_cases(#[case] scenario: Scenario) {
     match scenario {
