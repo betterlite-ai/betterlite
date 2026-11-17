@@ -2594,6 +2594,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
