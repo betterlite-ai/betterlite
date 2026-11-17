@@ -18,12 +18,16 @@ use crate::text_completion_response::CompletionResponse;
 use crate::text_completion_transport::call::{
     TextCompletionOutcome, TextCompletionReply, TextCompletionRequest as TransportRequest,
 };
+use crate::text_completion_transport::error::{
+    ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure,
+};
 use crate::text_completion_transport::logging::CompletionLogger;
+use crate::text_completion_transport::sdk::SdkError;
 use crate::text_completion_transport::stream::CompletionStream;
 use crate::text_completion_transport::{TextCompletionConfigs, TextCompletionTransport};
 
 use self::catalog::{CompletionCatalog, CompletionRoute, route_for};
-use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure};
+use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure, wrapped_failure};
 use self::http::{HttpCompletionConstructor, UpstreamFacts};
 
 pub mod catalog;
@@ -37,9 +41,9 @@ const MISSING_PROMPT: &str =
 
 const INVALID_REQUEST_ERROR: &str = "invalid_request_error";
 
-const NO_STREAM: &str = "the provider answered a text completion request as a byte stream";
+const NO_STREAM: &str = "the provider answered a buffered request with a byte stream";
 
-const NO_BUFFER: &str = "the provider answered a text completion stream without a body";
+const NO_BUFFER: &str = "the provider answered a stream request with a buffered completion";
 
 // main.py's text completion switch reaches these four provider tags, all sharing the one transform
 const TRANSFORMS: TextCompletionConfigs = TextCompletionConfigs {
@@ -55,13 +59,11 @@ pub struct CompletionAnswer {
     pub upstream_time: Duration,
 }
 
-// whichever answer shape a send was asked for
 pub enum CompletionCallAnswer {
     Buffered(CompletionAnswer),
     Streamed(CompletionStreamAnswer),
 }
 
-// The provider's text stream with the facts of its call, still in the transport's chunk shape.
 pub struct CompletionStreamAnswer {
     pub stream: CompletionStream,
     pub upstream_headers: HeaderMap,
@@ -73,7 +75,6 @@ pub struct CompletionExecutor {
     pub catalog: OnceCell<CompletionCatalog>,
 }
 
-// one send: the request the bridge built, the shape the route answers, and the call's own redaction and logging
 pub struct CompletionSend<'call> {
     pub deployment: &'call ChatDeployment,
     pub request: TransportRequest,
@@ -83,7 +84,6 @@ pub struct CompletionSend<'call> {
 }
 
 impl CompletionExecutor {
-    // where the completion route sends this deployment: the text endpoint, or the chat endpoint
     pub async fn endpoint(&self, deployment: &ChatDeployment) -> CompletionEndpoint {
         if matches!(self.route(deployment).await, CompletionRoute::Text { .. }) {
             CompletionEndpoint::Text
@@ -120,7 +120,6 @@ impl CompletionExecutor {
         Ok(built)
     }
 
-    // a request the bridge already built: the same send, read as the answer the mode asked for
     pub async fn send(
         &self,
         call: CompletionSend<'_>,
@@ -213,7 +212,6 @@ fn transport_request(
     })
 }
 
-// the provider's buffered reply read as a completion response
 fn read_reply(reply: TextCompletionReply) -> Result<CompletionResponse, CompletionFailure> {
     serde_json::from_value::<CompletionResponse>(reply.response).map_err(|source| {
         CompletionFailure::new(
@@ -236,8 +234,29 @@ async fn drive(
     let sent = transport
         .send(&begun, None)
         .await
-        .map_err(|failure| transport_failure(failure, redactor))?;
+        .map_err(|failure| raised_failure(failure, redactor))?;
     transport
         .finish(&begun, sent, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))
+}
+
+// atext_completion re-raises a raw SDK error through exception_type, so the route answers the class's own type
+fn raised_failure(failure: TextCompletionFailure, redactor: &Redactor) -> CompletionFailure {
+    match failure {
+        TextCompletionFailure::Raw(error) => {
+            let status = if let SdkError::Status(status) = &error {
+                status.status.map_or(ErrorStatus::Null, ErrorStatus::Code)
+            } else {
+                ErrorStatus::Missing
+            };
+            let wrapped = TextCompletionError {
+                status,
+                message: error.to_string(),
+                headers: None,
+                source: Box::new(ErrorSource::Sdk(Box::new(error))),
+            };
+            wrapped_failure(&wrapped, redactor)
+        }
+        TextCompletionFailure::Wrapped(error) => wrapped_failure(&error, redactor),
+    }
 }

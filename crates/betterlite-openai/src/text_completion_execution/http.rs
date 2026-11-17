@@ -193,7 +193,6 @@ async fn streamed_completion(
     })
 }
 
-// The buffered model the SDK parses once the whole body arrived.
 async fn buffered_completion(
     client: &ProxiedClient,
     request: OutboundRequest,

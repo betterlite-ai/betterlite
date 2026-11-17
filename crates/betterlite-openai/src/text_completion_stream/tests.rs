@@ -254,11 +254,12 @@ fn chat_finish_scenario() {
     let mut last = chunk(StreamDelta::default());
     last.choices[0].finish_reason = Some(String::from("stop"));
     let value = emitted(&last, false);
+    let choice = value.pointer("/choices/0").expect("choice");
     assert_eq!(
-        value.pointer("/choices/0/finish_reason"),
-        Some(&Value::from("stop"))
+        choice.get("finish_reason").and_then(Value::as_str),
+        Some("stop")
     );
-    assert_eq!(value.pointer("/choices/0/delta"), Some(&fixture("{}")));
+    assert_eq!(choice.get("delta"), Some(&fixture("{}")));
 }
 
 fn chat_done_scenario() {

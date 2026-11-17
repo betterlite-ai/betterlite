@@ -10,7 +10,6 @@ use betterlite_streaming::stream_chunk_shaping::records::{
 use crate::stream::SseError;
 use crate::stream::chunk::{Chunk, ChunkError};
 
-// What a text stream decode can fail on: the B005 framing limits or a chunk of the wrong shape.
 #[derive(Debug, Error)]
 pub enum TextStreamDecodeError {
     #[error("a text stream event exceeds the framing limit")]
@@ -73,7 +72,6 @@ fn with_details(mut usage: Usage) -> Usage {
     usage
 }
 
-// The chat chunk a text chunk becomes on the chat route: role, content, finish reason, and usage only if asked
 pub fn chat_chunk(
     chunk: &StreamChunk,
     model: &str,

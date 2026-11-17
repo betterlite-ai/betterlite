@@ -10,6 +10,7 @@ use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyT
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
+use http::HeaderMap;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::{Map, Value};
@@ -26,16 +27,18 @@ use super::failure::{CompletionFailure, wrapped_failure};
 use super::http::{HttpCompletionConstructor, HttpCompletionSdk};
 use super::log::TracingCompletionLog;
 use super::transport_request;
-use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend};
+use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend, raised_failure};
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
-use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
+use crate::text_completion_transport::error::{
+    ErrorSource, ErrorStatus, TextCompletionError, TextCompletionFailure,
+};
 use crate::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
 };
 use crate::text_completion_transport::sdk::{
-    ClientConstructor as _, ClientKind, HttpClientSource, RawCompletion, SdkArguments,
-    TextCompletionSdk as _,
+    ClientConstructor as _, ClientKind, HttpClientSource, RawCompletion, SdkArguments, SdkError,
+    StatusError, TextCompletionSdk as _,
 };
 
 fn deployment(model: &str) -> ChatDeployment {
@@ -251,6 +254,24 @@ fn configured_destination_scenario() {
     assert_eq!(built.api_base.as_deref(), Some("http://127.0.0.1:9/v1"));
     assert!(built.timeout > 0.0_f64);
     assert!(built.acompletion);
+}
+
+// the streamed async path lets the SDK's own status error through, so its class names the wire type
+#[test]
+fn a_raw_sdk_status_error_answers_the_class_type() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
+    let status = SdkError::Status(Box::new(StatusError {
+        status: Some(500),
+        message: String::from("Error code: 500 - "),
+        headers: HeaderMap::new(),
+        error_type: None,
+        param: None,
+        code: None,
+    }));
+    let failure = raised_failure(TextCompletionFailure::Raw(status), &redactor);
+    assert_eq!(failure.status, 500);
+    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
+    assert_eq!(failure.param, None);
 }
 
 fn unsupported_provider_scenario() {
@@ -617,7 +638,7 @@ async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
         Some("internal_server_error")
     );
     assert!(
-        stream_sent.message.contains("without a body"),
+        stream_sent.message.contains("buffered completion"),
         "{}",
         stream_sent.message
     );

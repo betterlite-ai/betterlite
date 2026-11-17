@@ -91,7 +91,6 @@ pub fn chat_endpoint(deployment: &ChatDeployment) -> ChatEndpoint {
     ChatEndpoint::Chat
 }
 
-// The model a text endpoint receives for a chat request: the provider tag comes off the prefix
 #[must_use]
 pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
     match chat_endpoint(deployment) {
@@ -107,7 +106,6 @@ pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
     }
 }
 
-// A chat request reaching the text endpoint: messages become the prompt, chat kwargs the optional params
 pub fn text_request(
     deployment: &ChatDeployment,
     request: &ChatRequest,
@@ -218,7 +216,6 @@ pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, Completi
     })
 }
 
-// One user message per prompt string; a token prompt cannot reach a chat deployment
 fn prompt_messages(request: &CompletionRequest) -> Result<Vec<ChatMessage>, CompletionFailure> {
     let mut messages = Vec::new();
     match &request.prompt {

@@ -17,9 +17,9 @@ fuzz_target!(|bytes: &[u8]| {
         let Some(boundary) = usize::from(*first).checked_rem(units) else {
             return;
         };
-        let (left, right) = rest.split_at(boundary);
+        let parts: [&[u8]; 2] = rest.split_at(boundary).into();
         let mut parser = SseParser::default();
-        for piece in [left, right] {
+        for piece in parts {
             if let Ok(events) = parser.push(piece) {
                 let _piece_chunks = decode_chat_events(&events, "model", true);
             }

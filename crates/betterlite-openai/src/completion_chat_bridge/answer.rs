@@ -27,14 +27,14 @@ pub fn chat_completion_body(
     created: i64,
     model: Option<&str>,
 ) -> Result<Vec<u8>, CompletionFailure> {
-    let body = Value::Object(Map::from_iter([
-        field("id", Some(Value::from(response.id.as_str()))),
-        field("created", Some(Value::from(created))),
-        field("model", model.map(Value::from)),
-        field("object", Some(Value::from("chat.completion"))),
-        field("choices", Some(Value::Array(chat_choices(response)))),
-        field("usage", response.usage.as_ref().map(usage_value)),
-    ]));
+    let mut fields = Vec::new();
+    fields.push(field("id", Some(Value::from(response.id.as_str()))));
+    fields.push(field("created", Some(Value::from(created))));
+    fields.push(field("object", Some(Value::from("chat.completion"))));
+    fields.push(field("choices", Some(Value::Array(chat_choices(response)))));
+    fields.push(field("model", model.map(Value::from)));
+    fields.push(field("usage", response.usage.as_ref().map(usage_value)));
+    let body = Value::Object(Map::from_iter(fields));
     serde_json::to_vec(&without_nulls(body)).map_err(|source| encode_failure(&source))
 }
 
