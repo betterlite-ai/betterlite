@@ -1,0 +1,21 @@
+kind: probe
+name: adaptive-selection-cost-normalization-no-spread
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: normalized_cost
+        cost_checks:
+          - {"model": "a", "amount": "0.5", "all_costs": []}
+          - {"model": "a", "amount": "0.5", "all_costs": ["0.5"]}
+          - {"model": "a", "amount": "0.5", "all_costs": ["0.5", "0.5", "0.5"]}
+          - {"model": "a", "amount": "0", "all_costs": ["0", "1"]}
+          - {"model": "a", "amount": "1", "all_costs": ["0", "1"]}
+          - {"model": "a", "amount": "0.25", "all_costs": ["0", "0.5", "1"]}
+          - {"model": "a", "amount": "0.5", "all_costs": ["1", "0"]}
+          - {"model": "a", "amount": "2", "all_costs": ["0", "1"]}
+          - {"model": "a", "amount": "-0.5", "all_costs": ["0", "1"]}
+          - {"model": "a", "amount": "0.125", "all_costs": ["0.125", "0.5"]}
+          - {"model": "a", "amount": "0.375", "all_costs": ["0.125", "0.5"]}
+compare: {ignore: []}
