@@ -4,15 +4,19 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Fixture, LastOnly, RequestSetup, body, clock, deployment, group_and_ids, hidden, metadata,
-    number, object, picked, run_healthy, run_route, run_simple, seeded, text, weighted, with_info,
+    Fixture, LastOnly, NoServices, RequestSetup, body, clock, deployment, group_and_ids, hidden,
+    metadata, number, object, paused, picked, run_healthy, run_route, run_simple, seeded, text,
+    weighted, with_info,
 };
 use crate::deployment_catalog::types::{AliasSource, AliasStep, Candidates};
 use crate::deployment_clients::clients::{CachedClient, CachedClients, ClientCredential};
+use crate::deployment_identity::spec::DeploymentSpec;
+use crate::router_core::attempt::AttemptResult;
 use crate::router_core::headers::{
     apply_response_model_id, ensure_additional_headers, prepare_response,
     response_has_hidden_params, response_total_token_count, write_hidden_params,
 };
+use crate::router_core::pipeline::HealthyDeployments;
 use crate::strategy::Strategy;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
@@ -39,6 +43,8 @@ pub(super) async fn run(name: &str) {
         "header_model_id_kept" => header_model_id_kept(),
         "token_count_from_usage" => token_count_from_usage(),
         "token_count_from_input_output" => token_count_from_input_output(),
+        "override_pre_call_bound" => override_pre_call_bound().await,
+        "override_pre_call_absent" => override_pre_call_absent().await,
         _ => panic!("unknown case {name}"),
     }
 }
@@ -227,41 +233,69 @@ async fn client_acquired() {
     );
 }
 
-async fn healthy_pool() {
-    let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
-    let Ok(found) = run_healthy(&fixture, &RequestSetup::new("gpt-4o")).await else {
-        panic!("the group resolves to its pool");
+// The deployments the healthy view keeps for a group, which it answers as a pool.
+fn healthy_pool_of(found: &HealthyDeployments) -> &[DeploymentSpec] {
+    let Candidates::Pool(pool) = &found.healthy else {
+        panic!("a group answers a pool");
     };
+    pool
+}
+
+// The healthy view of a request that names the model, which the catalog answers.
+async fn healthy_of(fixture: &Fixture, model: &str) -> HealthyDeployments {
+    run_healthy(fixture, &RequestSetup::new(model))
+        .await
+        .unwrap()
+}
+
+// The fixture whose group alias "gpt" names the two-deployment pool "gpt-4o".
+fn aliased_pool() -> Fixture {
+    Fixture::aliased(
+        group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]),
+        &[("gpt", "gpt-4o")],
+        &[],
+    )
+}
+
+// the healthy view keeps the pool, the alias it resolved and every deployment the catalog holds
+async fn healthy_pool() {
+    let fixture = aliased_pool();
+    let found = healthy_of(&fixture, "gpt").await;
     assert_eq!(found.group, "gpt-4o");
-    assert_eq!(found.all.len(), 2);
-    assert!(matches!(&found.healthy, Candidates::Pool(pool) if pool.len() == 2));
-    assert!(found.aliases.is_empty());
+    assert_eq!(healthy_pool_of(&found).len(), 2);
+    assert_eq!(found.aliases.len(), 1);
 }
 
 async fn healthy_single() {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
-    let setup = RequestSetup::new("a");
-    let Ok(found) = run_healthy(&fixture, &setup).await else {
-        panic!("a deployment id resolves to one deployment");
-    };
+    let found = healthy_of(&fixture, "a").await;
     assert_eq!(found.group, "openai/a");
     assert_eq!(found.all.len(), 1);
+    assert_eq!(found.aliases.len(), 1);
     assert!(matches!(&found.healthy, Candidates::Single(one) if one.id() == Some("a")));
 }
 
 // the healthy view drops what an admin paused, while the whole pool still counts it
 async fn healthy_blocked_pool() {
-    let paused = with_info("gpt-4o", "paused", &[], &[("blocked", Json::Bool(true))]);
-    let fixture = Fixture::plain(vec![paused, deployment("gpt-4o", "live", &[])]);
-    let Ok(found) = run_healthy(&fixture, &RequestSetup::new("gpt-4o")).await else {
-        panic!("the group resolves to its pool");
-    };
+    let fixture = Fixture::plain(vec![
+        paused("gpt-4o", "paused", &[]),
+        deployment("gpt-4o", "live", &[]),
+    ]);
+    let found = run_healthy(&fixture, &RequestSetup::new("gpt-4o"))
+        .await
+        .unwrap();
     assert_eq!(found.all.len(), 2);
-    let Candidates::Pool(pool) = &found.healthy else {
-        panic!("a group answers a pool");
-    };
+    let pool = healthy_pool_of(&found);
     assert_eq!(pool.len(), 1);
     assert_eq!(pool[0].id(), Some("live"));
+}
+
+// The deployment a simple-shuffle route over the fixture picks.
+async fn picked_from(fixture: &Fixture) -> String {
+    let result = run_simple(fixture, &RequestSetup::new("gpt-4o"))
+        .await
+        .unwrap();
+    picked(&result).to_owned()
 }
 
 // the lowest declared order narrows the pool before the strategy weighs what is left
@@ -274,26 +308,15 @@ async fn order_lowest_wins() {
         &[],
     );
     let fixture = Fixture::plain(vec![second, first]);
-    let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
-        .await
-        .unwrap();
-    assert_eq!(picked(&result), "a");
+    assert_eq!(picked_from(&fixture).await, "a");
 }
 
 // the order filter runs after the paused filter, so a paused order-1 leaves the live order-2 to serve
 async fn order_after_blocked() {
-    let paused = with_info(
-        "gpt-4o",
-        "a",
-        &[("order", number(1))],
-        &[("blocked", Json::Bool(true))],
-    );
+    let blocked = paused("gpt-4o", "a", &[("order", number(1))]);
     let live = deployment("gpt-4o", "b", &[("order", number(2))]);
-    let fixture = Fixture::plain(vec![paused, live]);
-    let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
-        .await
-        .unwrap();
-    assert_eq!(picked(&result), "b");
+    let fixture = Fixture::plain(vec![blocked, live]);
+    assert_eq!(picked_from(&fixture).await, "b");
 }
 
 fn headers_attach_to_object() {
@@ -354,4 +377,29 @@ fn token_count_from_input_output() {
         ])),
     )]);
     assert_eq!(response_total_token_count(&response), 9);
+}
+
+// The attempt a named deployment resolves to when the request carries its own routing_strategy.
+async fn override_attempt(configured: RoutingStrategy, strategy: &str) -> AttemptResult {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
+    let mut setup = RequestSetup::new("a");
+    setup.routing_strategy = Some(strategy.to_owned());
+    let mut random = seeded();
+    run_route(&fixture, &setup, &NoServices, configured, &mut random)
+        .await
+        .unwrap()
+}
+
+// a request that names another strategy gets that selector's override pre-call check, bound as a callback
+async fn override_pre_call_bound() {
+    let result = override_attempt(RoutingStrategy::SimpleShuffle, "usage-based-routing-v2").await;
+    let target = result.override_pre_call.expect("the override selector");
+    assert_eq!(result.bindings.dynamic_callbacks, vec![target]);
+}
+
+// an override naming the configured strategy reuses its default selector, which runs no override pre-call check
+async fn override_pre_call_absent() {
+    let result = override_attempt(RoutingStrategy::LeastBusy, "least-busy").await;
+    assert_eq!(result.override_pre_call, None);
+    assert!(result.bindings.dynamic_callbacks.is_empty());
 }

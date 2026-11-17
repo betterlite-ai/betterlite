@@ -28,6 +28,8 @@ use rstest::rstest;
 #[case::header_model_id_kept("header_model_id_kept")]
 #[case::token_count_from_usage("token_count_from_usage")]
 #[case::token_count_from_input_output("token_count_from_input_output")]
+#[case::override_pre_call_bound("override_pre_call_bound")]
+#[case::override_pre_call_absent("override_pre_call_absent")]
 #[tokio::test]
 async fn router_core_behaviors(#[case] name: &str) {
     behaviors::run(name).await;

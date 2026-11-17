@@ -17,6 +17,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::Response;
+use crate::router_core::no_deployment::NoDeployment;
 use crate::router_core::pipeline::{HealthyDeployments, StrategyRoute, healthy_deployments, route};
 use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
 use crate::router_core::services::{Cancelled, RouteServices};
@@ -54,36 +55,14 @@ impl TokenLimits for Windows {
     }
 }
 
-// A provider registry that knows no provider.
-pub(crate) struct NoParams;
-
-impl ParamSupport for NoParams {
-    fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
-        false
-    }
-
-    fn resolve_provider(
-        &self,
-        _model: &str,
-        _custom_llm_provider: Option<&str>,
-    ) -> Option<ResolvedProvider> {
-        None
-    }
-
-    fn supported_openai_params(
-        &self,
-        _model: &str,
-        _custom_llm_provider: &str,
-        _base_model: Option<&str>,
-    ) -> Option<Vec<String>> {
-        None
-    }
+// A provider registry with one entry: the unknown arm knows no provider, the openai arm declares one param.
+#[derive(Clone, Copy)]
+pub(crate) enum Providers {
+    Unknown,
+    OpenAi,
 }
 
-// A provider registry whose providers all answer the same openai params, without response_format.
-pub(crate) struct NarrowProviders;
-
-impl ParamSupport for NarrowProviders {
+impl ParamSupport for Providers {
     fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
         false
     }
@@ -93,10 +72,13 @@ impl ParamSupport for NarrowProviders {
         model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> Option<ResolvedProvider> {
-        Some(ResolvedProvider {
-            model: model.to_owned(),
-            custom_llm_provider: "openai".to_owned(),
-        })
+        match self {
+            Self::Unknown => None,
+            Self::OpenAi => Some(ResolvedProvider {
+                model: model.to_owned(),
+                custom_llm_provider: "openai".to_owned(),
+            }),
+        }
     }
 
     fn supported_openai_params(
@@ -105,7 +87,10 @@ impl ParamSupport for NarrowProviders {
         _custom_llm_provider: &str,
         _base_model: Option<&str>,
     ) -> Option<Vec<String>> {
-        Some(vec![String::from("temperature")])
+        match self {
+            Self::Unknown => None,
+            Self::OpenAi => Some(vec![String::from("temperature")]),
+        }
     }
 }
 
@@ -224,6 +209,11 @@ pub(super) fn weighted(group: &str, id: &str, weight: u64) -> DeploymentSpec {
     deployment(group, id, &[("weight", number(weight))])
 }
 
+// A deployment an admin paused: no route serves it, and the healthy view drops it
+pub(super) fn paused(group: &str, id: &str, params: &[(&str, Json)]) -> DeploymentSpec {
+    with_info(group, id, params, &[("blocked", Json::Bool(true))])
+}
+
 fn catalog_of(deployments: Vec<DeploymentSpec>) -> DeploymentCatalog {
     let mut catalog = DeploymentCatalog::default();
     for deployment in deployments {
@@ -305,11 +295,17 @@ impl Fixture {
     }
 
     pub(super) fn resolver(&self) -> CatalogResolver<'_> {
+        let Self {
+            catalog,
+            group_alias,
+            model_alias,
+            view,
+        } = self;
         CatalogResolver {
-            catalog: &self.catalog,
-            model_group_alias: &self.group_alias,
-            model_alias_map: &self.model_alias,
-            view: &self.view,
+            catalog,
+            model_group_alias: group_alias,
+            model_alias_map: model_alias,
+            view,
         }
     }
 }
@@ -322,6 +318,8 @@ pub(super) struct RequestSetup {
     pub(super) pinned: bool,
     pub(super) excluded: Vec<String>,
     pub(super) retry_skipped: Vec<String>,
+    // the request's routing_strategy entry, which LiteLLM reads before the router's own strategy
+    pub(super) routing_strategy: Option<String>,
     pub(super) clients: Option<CachedClients>,
 }
 
@@ -335,6 +333,7 @@ impl RequestSetup {
             pinned: false,
             excluded: Vec::new(),
             retry_skipped: Vec::new(),
+            routing_strategy: None,
             clients: None,
         }
     }
@@ -370,10 +369,19 @@ pub(super) fn clock() -> ClientClock {
     Arc::new(SystemTime::now)
 }
 
+// The strategy the request names for itself, which _get_routing_context reads before the router's own.
+fn override_of(setup: &RequestSetup) -> StrategyOverride<'_> {
+    match &setup.routing_strategy {
+        Some(strategy) => StrategyOverride::Text(strategy),
+        None => StrategyOverride::Absent,
+    }
+}
+
 // The route over a built context, with B395's dispatch resolved once for the request.
 async fn drive(
     fixture: &Fixture,
     context: &RouteContext<'_>,
+    setup: &RequestSetup,
     strategy: RoutingStrategy,
     random: &mut StdRng,
 ) -> Result<AttemptResult, RoutingError> {
@@ -382,7 +390,7 @@ async fn drive(
     let mut dispatch = StrategyDispatch::new(strategy, None).unwrap();
     let routing = StrategyRoute {
         dispatch: &mut dispatch,
-        override_strategy: StrategyOverride::Absent,
+        override_strategy: override_of(setup),
         scope: RoutingScope {
             groups: &groups,
             shadowing: &shadowing,
@@ -400,10 +408,10 @@ pub(super) async fn run_route(
     random: &mut StdRng,
 ) -> Result<AttemptResult, RoutingError> {
     let request = setup.request();
-    let (limits, params) = (NoLimits, NoParams);
+    let (limits, params) = (NoLimits, Providers::Unknown);
     let mut context = route_context(&request, services, &limits, &params);
     context.clients = setup.client_access();
-    drive(fixture, &context, strategy, random).await
+    drive(fixture, &context, setup, strategy, random).await
 }
 
 // A simple-shuffle route over the caller's limits and providers, with the pre-call checks it asks for.
@@ -421,6 +429,7 @@ pub(super) async fn run_checked(
     drive(
         fixture,
         &context,
+        setup,
         RoutingStrategy::SimpleShuffle,
         &mut random,
     )
@@ -447,10 +456,38 @@ pub(super) async fn run_healthy(
     setup: &RequestSetup,
 ) -> Result<HealthyDeployments, RoutingError> {
     let request = setup.request();
-    let (services, limits, params) = (NoServices, NoLimits, NoParams);
+    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let context = route_context(&request, &services, &limits, &params);
     let resolver = fixture.resolver();
     healthy_deployments(&resolver, &context).await
+}
+
+// A simple-shuffle route over one window per deployment id, with the pre-call checks as asked.
+pub(super) async fn run_windowed(
+    fixture: &Fixture,
+    setup: &RequestSetup,
+    windows: &Windows,
+    pre_call: bool,
+) -> Result<AttemptResult, RoutingError> {
+    let checks = Checked {
+        limits: windows,
+        params: &Providers::Unknown,
+        pre_call,
+    };
+    run_checked(fixture, setup, &NoServices, &checks).await
+}
+
+// The error a simple-shuffle route over the fixture ends with.
+pub(super) async fn error_of(fixture: &Fixture, setup: &RequestSetup) -> RoutingError {
+    run_simple(fixture, setup).await.unwrap_err()
+}
+
+// The no-deployment error a simple-shuffle route over the fixture ends with.
+pub(super) async fn no_deployment_of(fixture: &Fixture, setup: &RequestSetup) -> NoDeployment {
+    let RoutingError::NoDeployment(no_deployment) = error_of(fixture, setup).await else {
+        panic!("an empty pool reports no deployment");
+    };
+    no_deployment
 }
 
 pub(super) fn picked(result: &AttemptResult) -> &str {

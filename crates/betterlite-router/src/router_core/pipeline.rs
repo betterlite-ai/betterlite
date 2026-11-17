@@ -1,14 +1,14 @@
+mod clients;
 mod filters;
 
-use betterlite_models::decisions::Json;
 use betterlite_models::deployment_filters::get_order_filtered_deployments;
 use rand::Rng;
 
+use self::clients::acquire_client;
 use self::filters::{pre_call_pool, static_pool};
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::lookup::CatalogResolver;
 use crate::deployment_catalog::types::{AliasStep, Candidates, CatalogMatch, LookupRequest};
-use crate::deployment_clients::clients::{CachedClient, ClientDeployment, ClientLookup};
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::candidates::{CandidateSet, deployment_ids, without_blocked};
@@ -18,9 +18,12 @@ use crate::router_core::route::{RouteContext, RouteRequest};
 use crate::static_eligibility::filter::{EligibilityInput, EligibilityServices, eligible};
 use crate::strategy::{self, Strategy, StrategyContext};
 use crate::strategy_dispatch::groups::RoutingScope;
-use crate::strategy_dispatch::override_resolution::resolve;
+use crate::strategy_dispatch::override_resolution::{override_pre_call_target, resolve};
+use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
-use crate::strategy_dispatch::types::{RequestBindings, RoutingRequest, StrategyOverride};
+use crate::strategy_dispatch::types::{
+    RequestBindings, Resolution, RoutingRequest, StrategyOverride,
+};
 
 // The strategy state one route resolves against: B395's dispatch, the request's override and the groups in scope.
 pub struct StrategyRoute<'route> {
@@ -29,14 +32,18 @@ pub struct StrategyRoute<'route> {
     pub scope: RoutingScope<'route>,
 }
 
-// What one request resolved to, before any filter touched it.
+// What one request resolved to, before any filter touched it: the catalog's match and B395's routing decision.
 struct ResolvedRoute {
     group: String,
     aliases: Vec<AliasStep>,
     model_ids: Vec<String>,
+    resolution: Resolution,
+    override_pre_call: Option<SelectorId>,
+    bindings: RequestBindings,
 }
 
 // Router._async_get_healthy_deployments for the group, or the one deployment a specific request names
+#[derive(Debug)]
 pub struct HealthyDeployments {
     pub group: String,
     pub healthy: Candidates,
@@ -81,14 +88,29 @@ where
     R: Rng + Send,
 {
     let matched = resolve_catalog(resolver, context.request)?;
-    let resolved = ResolvedRoute {
+    // LiteLLM resolves the routing context before it looks at the deployments, and every arm keeps that decision.
+    let mut bindings = RequestBindings::default();
+    let mut routing_request = RoutingRequest {
+        resolved_model: &matched.group,
+        strategy: routing.override_strategy,
+        bindings: Some(&mut bindings),
+    };
+    let resolution = resolve(routing.dispatch, &mut routing_request, &routing.scope);
+    let state = ResolvedRoute {
         model_ids: deployment_ids(matched.candidates.deployments()),
         group: matched.group,
         aliases: matched.aliases,
+        override_pre_call: override_pre_call_target(
+            routing.dispatch,
+            resolution.strategy,
+            resolution.selector,
+        ),
+        resolution,
+        bindings,
     };
     match matched.candidates {
-        Candidates::Single(deployment) => single_route(context, resolved, deployment),
-        Candidates::Pool(pool) => pool_route(context, routing, resolved, pool, random).await,
+        Candidates::Single(deployment) => single_route(context, state, deployment),
+        Candidates::Pool(pool) => pool_route(context, routing.dispatch, state, pool, random).await,
     }
 }
 
@@ -133,7 +155,7 @@ fn single_route(
 
 async fn pool_route<R>(
     context: &RouteContext<'_>,
-    routing: StrategyRoute<'_>,
+    dispatch: &mut StrategyDispatch,
     resolved: ResolvedRoute,
     pool: Vec<DeploymentSpec>,
     random: &mut R,
@@ -152,7 +174,7 @@ where
         };
         return Ok(attempt(context, resolved, deployment, None));
     }
-    let pick = select_index(context, &resolved.group, routing, &set, random).await?;
+    let pick = select_index(context, dispatch, &resolved.resolution, &set, random).await?;
     let Some((strategy, index)) = pick else {
         return Err(no_deployment_error(context, &resolved));
     };
@@ -200,24 +222,17 @@ async fn narrowed_pool(
     Ok(set)
 }
 
-// B395 resolves which strategy applies, and that strategy's own module picks the deployment.
+// B395 resolved which strategy applies; that strategy's own module picks the deployment.
 async fn select_index<R>(
     context: &RouteContext<'_>,
-    group: &str,
-    routing: StrategyRoute<'_>,
+    dispatch: &mut StrategyDispatch,
+    resolution: &Resolution,
     set: &CandidateSet,
     random: &mut R,
 ) -> Result<Option<(Strategy, usize)>, RoutingError>
 where
     R: Rng + Send,
 {
-    let mut bindings = RequestBindings::default();
-    let mut request = RoutingRequest {
-        resolved_model: group,
-        strategy: routing.override_strategy,
-        bindings: Some(&mut bindings),
-    };
-    let resolution = resolve(routing.dispatch, &mut request, &routing.scope);
     let Some(strategy) = Strategy::of(resolution.strategy) else {
         return Ok(None);
     };
@@ -226,8 +241,8 @@ where
         StrategyContext {
             deployments: &set.deployments,
             route: context,
-            dispatch: routing.dispatch,
-            resolution: &resolution,
+            dispatch,
+            resolution,
         },
         random,
     )
@@ -259,34 +274,7 @@ fn attempt(
         aliases: resolved.aliases,
         strategy,
         client,
+        override_pre_call: resolved.override_pre_call,
+        bindings: resolved.bindings,
     }
-}
-
-// Router._get_client for the selected deployment: the client its provider call runs with
-fn acquire_client(
-    context: &RouteContext<'_>,
-    group: &str,
-    deployment: &DeploymentSpec,
-) -> Option<CachedClient> {
-    let access = context.clients?;
-    let model_id = deployment.id()?;
-    let api_base = match deployment.litellm_params.get("api_base") {
-        Some(Json::Text(base)) => base.as_str(),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            ""
-        }
-    };
-    Some(access.clients.openai_client(
-        access.kind,
-        &ClientLookup {
-            model_id,
-            stream: access.stream,
-            api_key: None,
-        },
-        &ClientDeployment {
-            model_group: group,
-            api_base,
-        },
-    ))
 }
