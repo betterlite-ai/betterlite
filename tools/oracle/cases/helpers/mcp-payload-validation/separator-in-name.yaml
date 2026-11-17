@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-payload-validation-separator-in-name
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test-server
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload:
+        alias: test-alias
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

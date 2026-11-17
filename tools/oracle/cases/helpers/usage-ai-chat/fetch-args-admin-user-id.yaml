@@ -1,0 +1,25 @@
+kind: helper
+name: usage-ai-chat-fetch-args-admin-user-id
+call:
+  b3103:
+    function: fetch_args
+    tool: usage
+    arguments:
+      start_date: "2026-01-01"
+      end_date: "2026-01-31"
+      user_id: target
+    user_id: admin-1
+    is_admin: true
+calls:
+  - b3103:
+      function: fetch_args
+      tool: usage
+      arguments:
+        start_date: "2026-01-01"
+        end_date: "2026-01-31"
+        user_id: ""
+      user_id: admin-1
+      is_admin: true
+env: {}
+compare:
+  ignore: []

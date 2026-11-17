@@ -1,0 +1,11 @@
+kind: helper
+name: usage-ai-chat-summary-usage-seed
+call:
+  b3103:
+    function: summary_usage
+    page:
+      results: []
+      metadata: {}
+env: {}
+compare:
+  ignore: []
