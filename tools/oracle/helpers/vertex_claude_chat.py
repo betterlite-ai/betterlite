@@ -12,7 +12,7 @@ from pydantic import JsonValue as Json
 from typing_extensions import override
 
 BETA_LIST: Final = TypeAdapter(list[str])
-JSON_LIST: Final = TypeAdapter(list[Json])
+JSON: Final = TypeAdapter(Json)
 
 
 class Fixture(TypedDict):
@@ -152,13 +152,13 @@ def request_answer(transformer: Transformer, step: RequestStep) -> Json:
         litellm_params=litellm_params,
         headers=headers,
     )
-    betas = sorted(BETA_LIST.validate_python(body.pop("anthropic_beta", [])))
-    beta_header = [part for part in headers.pop("anthropic-beta", "").split(",") if part]
-    return {
-        "body": body,
-        "anthropic_beta": JSON_LIST.validate_python(betas),
-        "beta_header": JSON_LIST.validate_python(sorted(beta_header)),
-    }
+    betas: list[str] = sorted(BETA_LIST.validate_python(body.pop("anthropic_beta", [])))
+    beta_header: list[str] = [
+        part for part in headers.pop("anthropic-beta", "").split(",") if part
+    ]
+    return JSON.validate_python(
+        {"body": body, "anthropic_beta": betas, "beta_header": sorted(beta_header)}
+    )
 
 
 def response_answer(responder: Responder, step: ResponseStep) -> Json:
