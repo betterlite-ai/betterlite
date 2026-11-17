@@ -205,13 +205,7 @@ def run_envs(call: EnvsInput) -> Output:
 def run_wire(call: WireInput) -> Output:
     match call["function"]:
         case "allowlist":
-            server = SimpleNamespace(
-                mcp_info=call.get("mcp_info"), allowed_tools=call.get("allowed_tools")
-            )
-            return {
-                "enforced": utils.is_server_tool_allowlist_enforced(server),
-                "applies": utils.server_applies_tool_allowlist(server),
-            }
+            return allowlist(call)
         case "tool_result_error":
             return utils.extract_mcp_tool_result_error_message(call["result"])
         case "merge_headers":
@@ -221,6 +215,16 @@ def run_wire(call: WireInput) -> Output:
             )
         case "synthetic":
             return synthetic(call)
+
+
+def allowlist(call: AllowlistInput) -> dict[str, JsonValue]:
+    server = SimpleNamespace(
+        mcp_info=call.get("mcp_info"), allowed_tools=call.get("allowed_tools")
+    )
+    return {
+        "enforced": utils.is_server_tool_allowlist_enforced(server),
+        "applies": utils.server_applies_tool_allowlist(server),
+    }
 
 
 def match_prefix(call: MatchPrefixInput) -> list[str] | None:
