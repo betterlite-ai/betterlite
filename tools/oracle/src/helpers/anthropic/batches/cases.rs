@@ -116,8 +116,8 @@ fn error_record(scenario: &ErrorScenario) -> Result<Value, Box<HelperError>> {
 }
 
 fn pairs_value(pairs: Option<&[(String, String)]>) -> Value {
-    pairs.map_or(Value::Null, |pairs| {
-        json!(pairs.iter().cloned().collect::<BTreeMap<String, String>>())
+    pairs.map_or(Value::Null, |given| {
+        json!(given.iter().cloned().collect::<BTreeMap<String, String>>())
     })
 }
 

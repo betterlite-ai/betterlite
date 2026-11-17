@@ -67,9 +67,8 @@ pub(crate) fn header_fields(headers: &HeaderMap, names: Option<&[&str]>) -> Valu
                 .map(|(name, value)| (name.as_str(), value))
                 .collect()
         },
-        |names| {
-            names
-                .iter()
+        |keep| {
+            keep.iter()
                 .filter_map(|name| headers.get(*name).map(|value| (*name, value)))
                 .collect()
         },
