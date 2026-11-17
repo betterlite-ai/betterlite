@@ -158,28 +158,36 @@ impl TinyfishRunBilling {
                 "TinyFish passthrough: run-async response carried no run_id; logging the request without cost"
             );
         }
-        self.spawn_poll(PollRun {
-            run_id,
-            logging_obj: input.logging_obj,
-            result: input.result,
-            kwargs: input.kwargs,
-            log: input.log,
-            start_time: input.start_time,
-        })
+        poller::spawn_poll(
+            &self.deps,
+            &self.settings,
+            PollRun {
+                run_id,
+                logging_obj: input.logging_obj,
+                result: input.result,
+                kwargs: input.kwargs,
+                log: input.log,
+                start_time: input.start_time,
+            },
+        )
     }
 
     // The marker goes down before the spawn, so the end of the stream sees that a poller owns this request.
     #[must_use]
     pub fn start_sse_run_billing(&self, input: SseRun) -> JoinHandle<()> {
         mark_sse_poller_spawned(&input.logging_obj);
-        self.spawn_poll(PollRun {
-            run_id: Some(input.run_id),
-            logging_obj: input.logging_obj,
-            result: String::new(),
-            kwargs: PassThroughLoggingKwargs::default(),
-            log: input.log,
-            start_time: input.start_time,
-        })
+        poller::spawn_poll(
+            &self.deps,
+            &self.settings,
+            PollRun {
+                run_id: Some(input.run_id),
+                logging_obj: input.logging_obj,
+                result: String::new(),
+                kwargs: PassThroughLoggingKwargs::default(),
+                log: input.log,
+                start_time: input.start_time,
+            },
+        )
     }
 
     // The no-poller fallback; a run_id found in the collected frames still prices the run with one GET.

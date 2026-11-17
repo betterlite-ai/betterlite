@@ -496,6 +496,10 @@ fn build_fixture(
     let clock = TestClock::new();
     let sleeper = Arc::new(AdvancingSleeper::new(Arc::clone(&clock)));
     let tasks = TaskTracker::new();
+    // Each port is cloned as its own type first, since Arc::clone cannot widen to the trait object the deps hold.
+    let port_transport = Arc::clone(&transport);
+    let port_clock = Arc::clone(&clock);
+    let port_sleeper = Arc::clone(&sleeper);
     let billing = TinyfishRunBilling::new(
         RunSettings {
             api_base: "https://agent.tinyfish.ai".to_owned(),
@@ -503,9 +507,9 @@ fn build_fixture(
         },
         BillingDeps {
             credentials: Arc::new(FixedCredentials { key }),
-            transport: Arc::clone(&transport),
-            monotonic: Arc::clone(&clock),
-            sleeper: Arc::clone(&sleeper),
+            transport: port_transport,
+            monotonic: port_clock,
+            sleeper: port_sleeper,
             clock: Arc::new(FixedSuccessClock),
             payload,
             tasks: BillingTasks {
@@ -533,6 +537,6 @@ impl RunPayload for FailingPayload {
 }
 
 // The dispatch sink is injected per test so each call site passes the recorder it asserts on.
-pub(super) fn dispatch_handle(dispatch: &Arc<RecordingDispatch>) -> Arc<dyn StreamSuccessDispatch> {
+pub(super) fn dispatch_handle(dispatch: &Arc<RecordingDispatch>) -> Arc<RecordingDispatch> {
     Arc::clone(dispatch)
 }

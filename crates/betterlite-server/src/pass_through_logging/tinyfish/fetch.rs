@@ -66,11 +66,9 @@ pub async fn fetch_run(
         tracing::warn!("TinyFish passthrough: invalid run_id {run_id:?}");
         return None;
     };
-    let Some(request) = run_request(api_base, &safe_run_id, &api_key) else {
-        return None;
-    };
+    let request = run_request(api_base, &safe_run_id, &api_key)?;
     match transport.get(request).await {
-        Ok(reply) => reply_run(&safe_run_id, reply),
+        Ok(reply) => reply_run(&safe_run_id, &reply),
         Err(error) => {
             tracing::warn!(%error, "[Non blocking logging error] TinyFish run fetch failed");
             None
@@ -109,7 +107,7 @@ fn run_request(api_base: &str, safe_run_id: &str, api_key: &SecretString) -> Opt
 }
 
 // LiteLLM checks the status before reading the body, and a body that is not JSON fails the poll the same way.
-fn reply_run(safe_run_id: &str, reply: RunReply) -> Option<TinyfishRun> {
+fn reply_run(safe_run_id: &str, reply: &RunReply) -> Option<TinyfishRun> {
     if !(200..300).contains(&reply.status) {
         tracing::warn!(
             "TinyFish passthrough: GET /v1/runs/{safe_run_id} returned {}",

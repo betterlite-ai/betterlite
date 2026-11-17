@@ -1,6 +1,5 @@
 use std::sync::{Arc, PoisonError};
 
-use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::logging_success::types::SuccessResult;
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamSuccessCall, StreamSuccessDispatch,
@@ -12,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use super::super::poll::Poller;
 use super::super::records::TinyfishRun;
-use super::{BillingDeps, PayloadInput, PollRun, RunSettings, TinyfishRunBilling};
+use super::{BillingDeps, PayloadInput, PollRun, RunSettings};
 
 struct RunLog {
     logging_obj: Arc<StreamLoggingObject>,
@@ -22,14 +21,16 @@ struct RunLog {
     end_time: DateTime<FixedOffset>,
 }
 
-impl TinyfishRunBilling {
-    pub(super) fn spawn_poll(&self, poll: PollRun) -> JoinHandle<()> {
-        let deps = Arc::clone(&self.deps);
-        let settings = self.settings.clone();
-        self.deps
-            .tasks
-            .spawn(async move { poll_and_log(&deps, &settings, poll).await })
-    }
+// The poller runs detached from the request, so the server's task tracker owns it and the drain can wait for it.
+pub(super) fn spawn_poll(
+    deps: &Arc<BillingDeps>,
+    settings: &RunSettings,
+    poll: PollRun,
+) -> JoinHandle<()> {
+    let deps = Arc::clone(deps);
+    let settings = settings.clone();
+    deps.tasks
+        .spawn(async move { poll_and_log(&deps, &settings, poll).await })
 }
 
 // Billing must never break the relayed response, so every failure here ends in a log line and no spend row.
