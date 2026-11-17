@@ -419,14 +419,14 @@ fn cooling_deployments_leave_the_pool() {
 }
 
 fn the_filter_is_opt_in() {
-    let deployments = pool(&[("gpt-4o", "a")]);
+    let deployments = pool(&[("gpt-4o", "a"), ("gpt-4o", "b")]);
     let routing = HealthRouting {
         enabled: false,
         has_allowed_fails_policy: false,
         scoped_groups: None,
     };
     let result = without_unhealthy(deployments, &unhealthy_ids(&["a"]), routing, false);
-    assert_eq!(kept(&result), ids(&["a"]));
+    assert_eq!(kept(&result), ids(&["a", "b"]));
 }
 
 fn a_policy_skips_the_filter() {

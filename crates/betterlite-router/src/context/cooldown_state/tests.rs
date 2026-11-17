@@ -146,7 +146,7 @@ async fn an_allowed_fails_policy_keeps_unhealthy_deployments() {
     let (limits, params) = (NoLimits, Providers::Unknown);
     let route = route_context(&request, &services, &limits, &params);
     let set = CandidateSet {
-        deployments: vec![deployment("gpt-4o", "a")],
+        deployments: vec![deployment("gpt-4o", "a"), deployment("gpt-4o", "b")],
     };
     let result = apply(set.clone(), &route).await.unwrap();
     assert_eq!(result, set);
