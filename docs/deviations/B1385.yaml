@@ -1,0 +1,38 @@
+task: B1385
+deviations:
+  - what: >-
+      vertex_project and vertex_location fall back through the shared Vertex settings section, so
+      litellm_settings.vertex_project, litellm_settings.vertex_location and the legacy VERTEX_LOCATION also
+      fill them. LiteLLM's ingestion constructor reads only VERTEXAI_PROJECT and VERTEXAI_LOCATION.
+    why: >-
+      The section already resolves those settings for every other Vertex call, and one Vertex identity per
+      deployment is what a config author expects. The vector_store record still wins over all of them.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L82-L88
+  - what: >-
+      A negative import_timeout is an already-expired deadline, so the import fails at once with a timeout
+      error. LiteLLM hands the negative integer to vertexai.rag.import_files as its timeout.
+    why: >-
+      A declared integer under 0 can only mean "no time left"; Duration has no negative value, and failing
+      fast here beats an SDK call that cannot succeed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L204-L210
+  - what: >-
+      A chunking_strategy key other than chunk_size, chunk_overlap, separators, type, static and
+      white_space_config is refused with a load error that names the field. LiteLLM's
+      transform_chunking_strategy_to_vertex_format reads the declared keys and ignores every other one.
+    why: >-
+      A misspelled key silently losing its value is the failure the load errors exist to catch, and
+      docs/compatibility.md rejects values the declared type cannot hold.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L82-L84
+kept_bugs:
+  - what: >-
+      wait_for_import false calls the SDK's async import without awaiting it, so no import request leaves
+      the process while the store reports the upload as a success and the log says Import started
+      asynchronously. betterlite keeps that upload-only success and the log line.
+    why: >-
+      A working setup at the pin relies on the store returning after the upload with the corpus id and the
+      GCS URI; sending a real background import would change the corpus contents behind its back.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L217-L224
