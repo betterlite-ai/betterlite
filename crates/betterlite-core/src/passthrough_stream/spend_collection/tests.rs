@@ -114,13 +114,12 @@ fn owned_spend_builds_the_provider_collector_once_at_construction() {
     let mut sink = owned_spend(CountingConfig {
         created: Arc::clone(&created),
     });
-    {
-        let targets = created.lock().unwrap_or_else(PoisonError::into_inner);
-        assert_eq!(
-            *targets,
-            vec![(MODEL.to_owned(), PROVIDER.to_owned(), ENDPOINT.to_owned())]
-        )
-    };
+    let targets = created.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(
+        *targets,
+        vec![(MODEL.to_owned(), PROVIDER.to_owned(), ENDPOINT.to_owned())]
+    );
+    drop(targets);
     PassthroughStreamCollector::add(&mut sink, b"data: one\n\n");
     let mut logging = NoopPassthroughLogging;
     let logged = sink
@@ -143,12 +142,10 @@ fn add_absorbs_a_collector_failure_and_drops_later_chunks() {
     let (captured, _guard) = capture();
     spend.add(b"one");
     spend.add(b"two");
-    {
-        let guarded = state.lock().unwrap_or_else(PoisonError::into_inner);
-        assert_eq!(guarded.calls, 1);
-        assert!(guarded.chunks.is_empty());
-        drop(guarded)
-    };
+    let guarded = state.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(guarded.calls, 1);
+    assert!(guarded.chunks.is_empty());
+    drop(guarded);
     assert!(spend.take_flush().is_none());
     let errors: Vec<_> = captured
         .events()
@@ -200,10 +197,9 @@ fn take_flush_hands_the_collector_over_once() {
 fn owned_spend_stops_collecting_exactly_past_the_byte_cap() {
     let config = fake_config();
     let mut sink = owned_spend(config);
-    {
-        let chunk = vec![b'a'; MAX_COLLECTED_BYTES];
-        PassthroughStreamCollector::add(&mut sink, &chunk)
-    };
+    let chunk = vec![b'a'; MAX_COLLECTED_BYTES];
+    PassthroughStreamCollector::add(&mut sink, &chunk);
+    drop(chunk);
     let mut logging = NoopPassthroughLogging;
     assert!(
         sink.build_logged_response(&mut logging)

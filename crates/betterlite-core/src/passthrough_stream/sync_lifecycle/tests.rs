@@ -131,11 +131,14 @@ fn iterator_next_yields_chunks_until_the_end() {
         ReplyFixture::ok(script(chunk_steps(&["one", "two"]))),
         inline_executor(),
     );
-    let mut seen = Vec::new();
-    for item in fixture.stream.by_ref() {
-        seen.push(item.expect("the scripted chunk arrives"));
-    }
-    assert_eq!(seen, vec![b"one".to_vec(), b"two".to_vec()]);
+    let first = fixture.stream.next().expect("the first chunk arrives");
+    assert_eq!(first.expect("the first chunk is returned"), b"one".to_vec());
+    let second = fixture.stream.next().expect("the second chunk arrives");
+    assert_eq!(
+        second.expect("the second chunk is returned"),
+        b"two".to_vec()
+    );
+    assert!(fixture.stream.next().is_none());
     assert_eq!(fixture.executor.scheduled(), 1);
 }
 
