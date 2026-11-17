@@ -43,24 +43,13 @@ impl ApiBaseHooks for NoHooks {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct SharedResolution {
     pub(crate) catalog: ModelCatalog,
     pub(crate) known: BTreeSet<String>,
     pub(crate) custom: BTreeSet<String>,
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) aliases: BTreeMap<String, String>,
-}
-
-impl Default for SharedResolution {
-    fn default() -> Self {
-        Self {
-            catalog: ModelCatalog::default(),
-            known: BTreeSet::new(),
-            custom: BTreeSet::new(),
-            environment: BTreeMap::new(),
-            aliases: BTreeMap::new(),
-        }
-    }
 }
 
 pub(crate) fn resolution_context(resolution: &SharedResolution) -> ResolutionContext<'_> {
