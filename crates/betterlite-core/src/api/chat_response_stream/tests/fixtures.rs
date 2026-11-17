@@ -159,57 +159,57 @@ impl StreamAssembly for FixtureAssembly {
 
 fn signed_reply() -> Response {
     let mut response = chat("", "stop", None);
-    if let Response::Chat(chat) = &mut response {
-        chat.choices[0].message.thinking_blocks = Some(vec![ThinkingBlock::Thinking {
-            thinking: String::from("t"),
-            signature: String::from("sig"),
-        }]);
-    }
+    message_of(&mut response).thinking_blocks = Some(vec![ThinkingBlock::Thinking {
+        thinking: String::from("t"),
+        signature: String::from("sig"),
+    }]);
     response
 }
 
 fn float_tool_reply() -> Response {
     let mut response = chat("", "tool_calls", Some(("call_1", "lookup", r#"{"x":1}"#)));
-    if let Response::Chat(chat) = &mut response {
-        let tool = &mut chat.choices[0]
-            .message
-            .tool_calls
-            .as_mut()
-            .expect("the fixture reply carries one tool call")[0];
-        tool.provider_specific_fields = Some(BTreeMap::from([(
-            "score".to_owned(),
-            ToolJsonValue::Number(serde_json::Number::from_f64(0.5).expect("0.5 is finite")),
-        )]));
-    }
+    let tool = &mut message_of(&mut response)
+        .tool_calls
+        .as_mut()
+        .expect("the fixture reply carries one tool call")[0];
+    tool.provider_specific_fields = Some(BTreeMap::from([(
+        "score".to_owned(),
+        ToolJsonValue::Number(serde_json::Number::from_f64(0.5).expect("0.5 is finite")),
+    )]));
     response
 }
 
 fn code_interpreter_reply() -> Response {
     let mut response = chat("", "tool_calls", Some(("call_1", "lookup", r#"{"x":1}"#)));
-    if let Response::Chat(chat) = &mut response {
-        let result = JsonObject::from([
-            (
-                "type".to_owned(),
-                JsonValue::String("code_interpreter_call".to_owned()),
-            ),
-            ("id".to_owned(), JsonValue::String("call_1".to_owned())),
-            (
-                "status".to_owned(),
-                JsonValue::String("completed".to_owned()),
-            ),
-            ("code".to_owned(), JsonValue::String("x".to_owned())),
-            (
-                "container_id".to_owned(),
-                JsonValue::String("ct".to_owned()),
-            ),
-            ("outputs".to_owned(), JsonValue::Null),
-        ]);
-        chat.choices[0].message.provider_specific_fields = Some(JsonObject::from([(
-            "code_interpreter_results".to_owned(),
-            JsonValue::Array(vec![JsonValue::Object(result)]),
-        )]));
-    }
+    let result = JsonObject::from([
+        (
+            "type".to_owned(),
+            JsonValue::String("code_interpreter_call".to_owned()),
+        ),
+        ("id".to_owned(), JsonValue::String("call_1".to_owned())),
+        (
+            "status".to_owned(),
+            JsonValue::String("completed".to_owned()),
+        ),
+        ("code".to_owned(), JsonValue::String("x".to_owned())),
+        (
+            "container_id".to_owned(),
+            JsonValue::String("ct".to_owned()),
+        ),
+        ("outputs".to_owned(), JsonValue::Null),
+    ]);
+    message_of(&mut response).provider_specific_fields = Some(JsonObject::from([(
+        "code_interpreter_results".to_owned(),
+        JsonValue::Array(vec![JsonValue::Object(result)]),
+    )]));
     response
+}
+
+fn message_of(response: &mut Response) -> &mut ChatMessage {
+    let Response::Chat(chat) = response else {
+        panic!("the fixture builds a chat response");
+    };
+    &mut chat.choices[0].message
 }
 
 fn chat(content: &str, finish: &str, tool: Option<(&str, &str, &str)>) -> Response {

@@ -42,10 +42,10 @@ fn citation_chunk(citations: &[&str], content: Option<&str>) -> Json {
     ))
 }
 
-fn cited_events() -> Vec<Json> {
+fn cited_events(citations: &[&str], content: Option<&str>) -> Vec<Json> {
     let (mut stream, _received) = driver(
         vec![
-            Ok(citation_chunk(&[CITATION], Some("hi"))),
+            Ok(citation_chunk(citations, content)),
             Ok(json(
                 r#"{"id":"chat_a","choices":[{"index":0,"delta":{},"finish_reason":null}]}"#,
             )),
@@ -61,7 +61,7 @@ fn cited_events() -> Vec<Json> {
 #[test]
 fn driver_annotation_batch_waits_for_an_idle_chunk() {
     assert_eq!(
-        kinds(&cited_events()),
+        kinds(&cited_events(&[CITATION], Some("hi"))),
         [
             "response.created",
             "response.in_progress",
@@ -80,7 +80,7 @@ fn driver_annotation_batch_waits_for_an_idle_chunk() {
 
 #[test]
 fn driver_annotation_fields_follow_the_batch() {
-    let events = cited_events();
+    let events = cited_events(&[CITATION], Some("hi"));
     let annotation = field(&events[5], "annotation");
     assert_eq!(
         field(&annotation, "type"),
