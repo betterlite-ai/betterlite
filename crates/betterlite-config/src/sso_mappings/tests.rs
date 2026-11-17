@@ -31,46 +31,54 @@ fn loads_mapping_sources() {
     let configured = load_mapping_sources(&environment(&[
         ("GENERIC_CLIENT_SECRET", "secret"),
         ("GENERIC_SCOPE", "openid email"),
+        ("GENERIC_INCLUDE_CLIENT_ID", "TRUE"),
+        ("GENERIC_SSO_HEADERS", "X-Team=eng"),
+    ]));
+    assert_eq!(secret(&configured), Some("secret"));
+    assert_eq!(configured.scope.as_deref(), Some("openid email"));
+    assert!(configured.include_client_id);
+    assert_eq!(configured.sso_headers.as_deref(), Some("X-Team=eng"));
+}
+
+#[test]
+fn loads_the_endpoint_and_role_sources() {
+    let configured = load_mapping_sources(&environment(&[
         (
             "GENERIC_AUTHORIZATION_ENDPOINT",
             "https://idp.example/authorize",
         ),
         ("GENERIC_TOKEN_ENDPOINT", "https://idp.example/token"),
         ("GENERIC_USERINFO_ENDPOINT", "https://idp.example/userinfo"),
-        ("GENERIC_INCLUDE_CLIENT_ID", "TRUE"),
         ("GENERIC_ROLE_MAPPINGS_ROLES", "{'proxy_admin': ['admins']}"),
         ("GENERIC_ROLE_MAPPINGS_GROUP_CLAIM", "groups"),
         ("GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE", "internal_user"),
-        ("GENERIC_SSO_HEADERS", "X-Team=eng"),
     ]));
-    assert_eq!(secret(&configured), Some("secret"));
-    assert_eq!(configured.scope.as_deref(), Some("openid email"));
-    assert_eq!(
-        configured.authorization_endpoint.as_deref(),
-        Some("https://idp.example/authorize")
-    );
-    assert_eq!(
-        configured.token_endpoint.as_deref(),
-        Some("https://idp.example/token")
-    );
-    assert_eq!(
-        configured.userinfo_endpoint.as_deref(),
-        Some("https://idp.example/userinfo")
-    );
-    assert!(configured.include_client_id);
-    assert_eq!(
-        configured.role_mappings_roles.as_deref(),
-        Some("{'proxy_admin': ['admins']}")
-    );
-    assert_eq!(
-        configured.role_mappings_group_claim.as_deref(),
-        Some("groups")
-    );
-    assert_eq!(
-        configured.role_mappings_default_role.as_deref(),
-        Some("internal_user")
-    );
-    assert_eq!(configured.sso_headers.as_deref(), Some("X-Team=eng"));
+    let read = [
+        (
+            configured.authorization_endpoint.as_deref(),
+            "https://idp.example/authorize",
+        ),
+        (
+            configured.token_endpoint.as_deref(),
+            "https://idp.example/token",
+        ),
+        (
+            configured.userinfo_endpoint.as_deref(),
+            "https://idp.example/userinfo",
+        ),
+        (
+            configured.role_mappings_roles.as_deref(),
+            "{'proxy_admin': ['admins']}",
+        ),
+        (configured.role_mappings_group_claim.as_deref(), "groups"),
+        (
+            configured.role_mappings_default_role.as_deref(),
+            "internal_user",
+        ),
+    ];
+    for (actual, wanted) in read {
+        assert_eq!(actual, Some(wanted));
+    }
 }
 
 #[test]

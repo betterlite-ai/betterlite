@@ -99,21 +99,10 @@ fn a_non_text_role_key_is_an_error() {
 #[case::text_value(b"{'proxy_admin': 'admins'}".as_slice())]
 #[case::text_inside_the_list(b"{'proxy_admin': ['admins', 1]}".as_slice())]
 #[case::nested_list(b"{'proxy_admin': [['admins']]}".as_slice())]
-fn groups_that_are_not_a_list_of_names_are_an_error(#[case] literal: &[u8]) {
-    let decoded = decode_role_mapping_literal(literal, Some("groups"), None);
-    assert_eq!(
-        decoded,
-        Err(RoleMappingError::GroupsNotText {
-            role: UserRole::ProxyAdmin,
-        })
-    );
-}
-
-#[rstest]
 #[case::tuple(b"{'proxy_admin': ('admins',)}".as_slice())]
 #[case::set(b"{'proxy_admin': {'admins'}}".as_slice())]
 #[case::bytes(b"{'proxy_admin': [b'admins']}".as_slice())]
-fn groups_pydantic_would_coerce_are_refused(#[case] literal: &[u8]) {
+fn groups_that_are_not_a_list_of_names_are_an_error(#[case] literal: &[u8]) {
     let decoded = decode_role_mapping_literal(literal, Some("groups"), None);
     assert_eq!(
         decoded,

@@ -40,6 +40,7 @@ fn text(value: &str) -> Literal {
 #[case::unknown_escape("'\\q'", text("\\q"))]
 #[case::integer("42", Literal::Number)]
 #[case::negative("-42", Literal::Number)]
+#[case::signed_parenthesized_number("-(-1)", Literal::Number)]
 #[case::leading_dot(".5", Literal::Number)]
 #[case::imaginary("+1.5e-3j", Literal::Number)]
 #[case::float_with_imaginary_suffix("5.j", Literal::Number)]
@@ -69,6 +70,10 @@ fn text(value: &str) -> Literal {
 #[case::tuple("(1, 2)", Literal::Tuple(vec![Literal::Number, Literal::Number]))]
 #[case::parenthesized("(1)", Literal::Number)]
 #[case::trailing_comment("{'a': 1} # note", Literal::Dict(vec![(text("a"), Literal::Number)]))]
+#[case::leading_newline_indentation(
+    "\n  {'a': 1}",
+    Literal::Dict(vec![(text("a"), Literal::Number)])
+)]
 #[case::continued_line(
     "{'a': \\\n 1}",
     Literal::Dict(vec![(text("a"), Literal::Number)])
@@ -98,6 +103,7 @@ fn parses_an_accepted_literal(#[case] input: &str, #[case] expected: Literal) {
 #[case::leading_zero("01", LiteralError::Syntax)]
 #[case::leading_zero_underscore("0_1", LiteralError::Syntax)]
 #[case::double_underscore("1__0", LiteralError::Syntax)]
+#[case::double_underscore_after_radix("0x__1f", LiteralError::Syntax)]
 #[case::trailing_underscore("1_", LiteralError::Syntax)]
 #[case::exponent_underscore("1e_5", LiteralError::Syntax)]
 #[case::fraction_underscore("1._5", LiteralError::Syntax)]
