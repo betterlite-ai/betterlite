@@ -63,12 +63,18 @@ where
             for item in items {
                 match item {
                     JsonValue::String(event) => types.push(event),
-                    other => return Err(invalid_scalar(&other)),
+                    other @ (JsonValue::Null
+                    | JsonValue::Bool(_)
+                    | JsonValue::Number(_)
+                    | JsonValue::Array(_)
+                    | JsonValue::Object(_)) => return Err(invalid_scalar(&other)),
                 }
             }
             Ok(LoggedEventTypes::Only(types))
         }
-        other => Err(invalid_scalar(&other)),
+        other @ (JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_)) => {
+            Err(invalid_scalar(&other))
+        }
     }
 }
 
