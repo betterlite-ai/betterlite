@@ -722,6 +722,10 @@ fn realtime_usage_and_logging_copies_details_and_queues_once() {
             "realtime_tool_calls".to_owned(),
             Json::List(vec![Json::Object(call)]),
         ),
+        (
+            "realtime_session_success_logged".to_owned(),
+            Json::Bool(true),
+        ),
     ];
     assert_eq!(details, expected);
     assert_eq!(spy.flag(), Some(Json::Bool(true)));
