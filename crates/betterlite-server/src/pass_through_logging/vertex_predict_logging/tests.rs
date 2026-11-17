@@ -311,6 +311,22 @@ fn predict_empty_predictions_take_the_image_error() {
 }
 
 #[test]
+fn predict_null_predictions_take_the_image_shape_error() {
+    let fixture = fixture(PREDICT_ROUTE, r#"{"predictions":null}"#);
+    let logger = VertexPredictLogger::new(priced());
+    let Err(error) = logger.handle_predict_response(predict_input(&fixture)) else {
+        panic!("a null predictions value is an error");
+    };
+    assert!(
+        matches!(
+            &error,
+            VertexPredictError::Prediction(PredictionError::Shape { .. })
+        ),
+        "{error}"
+    );
+}
+
+#[test]
 fn predict_missing_predictions_is_a_text_embedding_error() {
     let fixture = fixture(PREDICT_ROUTE, r#"{"answers":[1]}"#);
     let logger = VertexPredictLogger::new(priced());
