@@ -160,6 +160,13 @@ impl ServerHandler for TestServer {
                     peer_answer(&context, request).await,
                 )])
             }
+            "ping" => {
+                let request: ServerRequest = serde_json::from_value(json!({"method": "ping"}))
+                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                CallToolResult::success(vec![ContentBlock::text(
+                    peer_answer(&context, request).await,
+                )])
+            }
             "roots" => {
                 let request: ServerRequest =
                     serde_json::from_value(json!({"method": "roots/list"}))

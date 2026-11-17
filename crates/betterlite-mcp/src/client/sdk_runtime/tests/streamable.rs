@@ -230,6 +230,14 @@ async fn elicitation_goes_to_the_configured_responder() {
 }
 
 #[tokio::test]
+async fn a_ping_answers_an_empty_result() {
+    let answer = answered("ping", ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert_eq!(answer, "{}");
+}
+
+#[tokio::test]
 async fn a_roots_request_answers_the_sdk_default() {
     let answer = answered("roots", ServerRequestHandlers::default())
         .await
