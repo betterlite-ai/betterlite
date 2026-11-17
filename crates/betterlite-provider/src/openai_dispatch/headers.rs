@@ -81,7 +81,6 @@ pub fn embedding_headers(
     );
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    insert_organization(&mut headers, deployment.organization.as_deref())?;
     insert_headers(&mut headers, extra)?;
     Ok(headers)
 }

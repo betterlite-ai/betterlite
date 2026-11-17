@@ -11,40 +11,16 @@ pub fn logged_json<T: Serialize>(value: &T) -> Json {
     serde_json::from_value(serde_json::to_value(value).unwrap_or_default()).unwrap_or(Json::Null)
 }
 
-// main.py's post_call carries the messages, the reply it logged and the resolved supplied headers
-pub struct ChatPostCall {
+// main.py's post_call carries the messages, the reply or the error text it logged, and the headers it resolved
+pub struct LoggedCall {
     pub input: Json,
     pub original_response: Json,
     pub headers: Option<IndexMap<String, Json>>,
 }
 
-// the text branch logs through the same record, with the reply already rendered to JSON
-pub struct TextPostCall {
-    pub input: Json,
-    pub original_response: Json,
-    pub headers: Option<IndexMap<String, Json>>,
-}
-
-impl TextPostCall {
-    #[must_use]
-    pub const fn new(
-        input: Json,
-        original_response: Json,
-        headers: Option<IndexMap<String, Json>>,
-    ) -> Self {
-        Self {
-            input,
-            original_response,
-            headers,
-        }
-    }
-}
-
-// The two main.py hooks plus the completion logger B2238's transport reads, as one port a fixture can record.
+// The main.py hook plus the completion logger B2238's transport reads, as one port a fixture can record.
 pub trait OpenAiLogger {
-    fn chat_post_call(&mut self, record: ChatPostCall);
-
-    fn text_post_call(&mut self, record: TextPostCall);
+    fn post_call(&mut self, record: LoggedCall);
 
     fn completion(&mut self) -> &mut dyn CompletionLogger;
 }
@@ -55,19 +31,7 @@ pub struct B249Logger<'call, 'env> {
 }
 
 impl OpenAiLogger for B249Logger<'_, '_> {
-    fn chat_post_call(&mut self, record: ChatPostCall) {
-        post_call(
-            self.completion.state,
-            &PostCall {
-                original_response: record.original_response,
-                input: record.input,
-                additional_args: headers_only(record.headers),
-            },
-            self.completion.env,
-        );
-    }
-
-    fn text_post_call(&mut self, record: TextPostCall) {
+    fn post_call(&mut self, record: LoggedCall) {
         post_call(
             self.completion.state,
             &PostCall {
@@ -85,7 +49,7 @@ impl OpenAiLogger for B249Logger<'_, '_> {
 }
 
 // main.py's additional_args names the headers alone; the base and the input dictionary stay unrecorded there
-const fn headers_only(headers: Option<IndexMap<String, Json>>) -> AdditionalArgs {
+fn headers_only(headers: Option<IndexMap<String, Json>>) -> AdditionalArgs {
     AdditionalArgs {
         api_base: None,
         headers,

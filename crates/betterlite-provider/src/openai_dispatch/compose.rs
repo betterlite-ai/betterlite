@@ -4,7 +4,7 @@ use betterlite_openai::embedding::EncodingFormat;
 use betterlite_openai::openai_base_config::{Headers, Object, OpenAiSettings};
 use http::Method;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use crate::operation::OperationError;
@@ -25,7 +25,8 @@ const NONE_FORMAT: &str = "none";
 pub struct ChatPlan {
     pub prepared: PreparedRequest,
     pub api_base: String,
-    pub headers: Option<Headers>,
+    // main.py logs the resolved header map itself, after the experimental handler has added its own entries
+    pub logged_headers: Option<Headers>,
 }
 
 // B500 resolves the base, the key and the organization the same way for both the chat and the text branch.
@@ -67,6 +68,8 @@ pub fn chat_plan(
     };
     let deployment = build_deployment(&call.model, call.timeout, &credentials, organization)?;
     let mut body = chat_fields(&call.request, &call.model, &composition.catalog)?;
+    // extra_headers travel as HTTP headers; the normal branch hands them to the SDK through optional_params
+    body.shift_remove("extra_headers");
     if composition.provider.enable_preview_features {
         if let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata) {
             body.insert(String::from("metadata"), metadata);
@@ -80,6 +83,11 @@ pub fn chat_plan(
         call.headers.as_ref(),
         call.extra_headers.as_ref(),
     );
+    let logged_headers = if composition.provider.experimental_base_llm_http_handler {
+        experiment_logged_headers(headers.as_ref(), credentials.api_key.as_ref())
+    } else {
+        headers.clone()
+    };
     let http = PreparedHttp {
         method: Method::POST,
         url: deployment.endpoint.clone(),
@@ -106,25 +114,42 @@ pub fn chat_plan(
     Ok(ChatPlan {
         prepared,
         api_base: deployment.api_base,
-        headers,
+        logged_headers,
     })
+}
+
+// B504's validate_environment writes the key and the content type into the map it was handed, which main.py then logs.
+fn experiment_logged_headers(
+    headers: Option<&Headers>,
+    api_key: Option<&SecretString>,
+) -> Option<Headers> {
+    // a call without caller headers passed None, and validate_environment mutated its own fresh map instead
+    let mut logged = headers.cloned()?;
+    if let Some(key) = api_key {
+        logged.insert(
+            String::from("Authorization"),
+            format!("Bearer {}", key.expose_secret()),
+        );
+    }
+    if !logged
+        .keys()
+        .any(|name| name == "content-type" || name == "Content-Type")
+    {
+        logged.insert(
+            String::from("Content-Type"),
+            String::from("application/json"),
+        );
+    }
+    Some(logged)
 }
 
 pub fn embedding_plan(
     composition: &Composition,
     call: &EmbeddingCall,
 ) -> Result<PreparedRequest, OpenAiProviderError> {
-    let mut credentials = resolve(composition, &call.credentials);
-    // the embedding branch reads no explicit organization, so the deployment's chain starts at the global one
-    credentials.organization = present_text(composition.globals.organization.as_deref())
-        .or_else(|| present_text(composition.credentials.organization.as_deref()))
-        .map(str::to_owned);
-    let deployment = build_deployment(
-        &call.model,
-        call.timeout,
-        &credentials,
-        credentials.organization.clone(),
-    )?;
+    let credentials = resolve(composition, &call.credentials);
+    // B006 builds its client without an organization, so the embedding branch sends no organization header
+    let deployment = build_deployment(&call.model, call.timeout, &credentials, None)?;
     let mut fields = request_fields(&call.request, "embeddings")?;
     fields.insert(String::from("model"), JsonValue::Text(call.model.clone()));
     fields.shift_remove("mock_response");
@@ -149,7 +174,8 @@ pub fn embedding_plan(
     Ok(PreparedRequest::Embedding(Box::new(PreparedChat {
         http,
         retry: TransformRetry::DISABLED,
-        client_model: call.request.model.clone(),
+        // the reply's own model and object are returned, as convert_to_model_response_object copies them
+        client_model: None,
     })))
 }
 

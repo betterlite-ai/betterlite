@@ -2,8 +2,8 @@ use betterlite_models::controls::json_value::JsonValue;
 use secrecy::SecretString;
 
 use super::support;
-use crate::openai_dispatch::call::{Credentials, EmbeddingCall};
-use crate::openai_dispatch::test_support::FixtureAnswer;
+use crate::openai_dispatch::call::EmbeddingCall;
+use crate::openai_dispatch::fixtures::FixtureAnswer;
 use crate::operation::OperationResult;
 
 pub async fn check() {
@@ -17,11 +17,11 @@ pub async fn check() {
             r#"{"input":"hello","encoding_format":"float","dimensions":8,"user":"u1","mock_response":"mocked"}"#,
         ),
         encoding_format: Some(String::from("none")),
-        credentials: Credentials {
-            api_base: Some(String::from("https://explicit.test/v1")),
-            api_key: None,
-            organization: Some(String::from("org-explicit")),
-        },
+        credentials: support::credentials(
+            Some("https://explicit.test/v1"),
+            None,
+            Some("org-explicit"),
+        ),
         headers: None,
         timeout: Some(20.0),
     };
@@ -37,8 +37,8 @@ pub async fn check() {
     assert_eq!(sent.header("authorization"), Some("Bearer sk-env"));
     assert_eq!(sent.header("accept"), Some("application/json"));
     assert_eq!(sent.header("content-type"), Some("application/json"));
-    // the embedding branch reads no explicit organization, so the global one names the deployment
-    assert_eq!(sent.header("openai-organization"), Some("org-global"));
+    // B006 builds its client without an organization, so neither the explicit nor the global one is sent
+    assert_eq!(sent.header("openai-organization"), None);
     let body = support::body_fields(&sent.body);
     assert_eq!(
         support::field(&body, "model"),
@@ -70,7 +70,7 @@ pub async fn check_configured_format() {
         model: String::from("text-embedding-3-small"),
         request: support::embedding_request(r#"{"input":["a","b"]}"#),
         encoding_format: None,
-        credentials: Credentials::default(),
+        credentials: support::credentials(None, None, None),
         headers: None,
         timeout: None,
     };

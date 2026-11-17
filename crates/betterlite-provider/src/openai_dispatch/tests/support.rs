@@ -3,41 +3,32 @@ use std::collections::BTreeSet;
 use betterlite_config::sections::openai_credentials::Settings as CredentialsSettings;
 use betterlite_config::sections::openai_provider::Settings as ProviderSettings;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object, OpenAiSettings};
 use betterlite_openai::text_completion_policy::TextCompletionSettings;
-use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
-use uuid::Uuid;
+use secrecy::SecretString;
 
 use crate::openai_dispatch::OpenAiRequest;
+use crate::openai_dispatch::call::Credentials;
 use crate::openai_dispatch::call::{
     ChatCall, Composition, EmbeddingCall, OpenAiOperation, TextCall,
 };
 use crate::openai_dispatch::dispatch::dispatch;
 use crate::openai_dispatch::error::OpenAiProviderError;
-use crate::openai_dispatch::test_support::{
-    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply,
+use crate::openai_dispatch::fixtures::{
+    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply, fixed_id, fixed_now,
 };
+use crate::openai_dispatch::logging::LoggedCall;
 use crate::openai_dispatch::transport::Deps;
 use crate::operation::{OperationRequest, OperationResult};
 
 pub const CHAT_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o-2024-08-06","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 pub const EMBEDDING_REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.5]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":2,"total_tokens":2}}"#;
 pub const TEXT_REPLY: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"hello","finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
-
-pub fn fixed_now() -> StreamInstant {
-    StreamInstant {
-        seconds: 1_700_000_000,
-        timestamp: 1_700_000_000.0,
-    }
-}
-
-pub fn fixed_id() -> Uuid {
-    Uuid::from_u128(1)
-}
 
 pub fn composition() -> Composition {
     Composition {
@@ -55,8 +46,48 @@ pub fn composition() -> Composition {
     }
 }
 
+pub fn globals(
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    openai_key: Option<&str>,
+    organization: Option<&str>,
+) -> LiteLlmGlobals {
+    LiteLlmGlobals {
+        api_base: api_base.map(str::to_owned),
+        api_key: api_key.map(SecretString::from),
+        openai_key: openai_key.map(SecretString::from),
+        organization: organization.map(str::to_owned),
+    }
+}
+
+pub fn credentials(
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    organization: Option<&str>,
+) -> Credentials {
+    Credentials {
+        api_base: api_base.map(str::to_owned),
+        api_key: api_key.map(SecretString::from),
+        organization: organization.map(str::to_owned),
+    }
+}
+
+// What main.py logged under additional_args.headers, read back by name.
+pub fn logged_header<'call>(call: &'call LoggedCall, name: &str) -> Option<&'call str> {
+    let headers = call.headers.as_ref()?;
+    match headers.get(name)? {
+        Json::Text(value) => Some(value),
+        _other => None,
+    }
+}
+
 pub fn chat_request(body: &str) -> ChatRequest {
     ChatRequest::parse(body.as_bytes()).expect("a chat request the route accepts")
+}
+
+// A request a route built before the parse step, so a test can reach the maps that parse would refuse.
+pub fn raw_chat_request(body: &str) -> ChatRequest {
+    serde_json::from_str(body).expect("a chat request body")
 }
 
 pub fn embedding_request(body: &str) -> EmbeddingRequest {

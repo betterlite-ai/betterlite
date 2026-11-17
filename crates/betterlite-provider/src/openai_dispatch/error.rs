@@ -1,3 +1,4 @@
+use betterlite_openai::text_completion_policy::reply::ReplyError;
 use betterlite_openai::text_completion_transport::error::TextCompletionFailure;
 use http::header::InvalidHeaderName;
 use thiserror::Error;
@@ -17,6 +18,11 @@ pub enum OpenAiProviderError {
     Deployment(#[from] DeploymentError),
     #[error(transparent)]
     Text(#[from] TextCompletionFailure),
+    #[error("the text completion reply cannot be converted to a chat completion: {source}")]
+    Reply {
+        #[from]
+        source: ReplyError,
+    },
     #[error("the {field} field must be {expected}")]
     FieldType {
         field: &'static str,

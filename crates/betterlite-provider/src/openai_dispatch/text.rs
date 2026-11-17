@@ -1,9 +1,9 @@
-use std::collections::BTreeMap;
-
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::{Extra, Json};
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_openai::chat::response::{AssistantMessage, ChatChoice, ChatResponse, ChatUsage};
+use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::text_completion_policy::reply::to_chat_model_response;
 use betterlite_openai::text_completion_policy::{
     TextCompletionSettings, transform_completion_request,
 };
@@ -17,6 +17,7 @@ use betterlite_openai::text_completion_transport::{
 };
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use secrecy::SecretString;
+use serde_json::Number;
 use uuid::Uuid;
 
 use crate::operation::OperationError;
@@ -24,7 +25,7 @@ use crate::operation::OperationError;
 use super::call::{Composition, TextCall};
 use super::compose::resolve;
 use super::error::OpenAiProviderError;
-use super::headers::{present_text, resolved_headers};
+use super::headers::resolved_headers;
 use super::logging::OpenAiLogger;
 use super::transport::TextClientSource;
 
@@ -49,8 +50,6 @@ pub struct TextPlan {
     pub messages: Vec<JsonValue>,
     pub api_base: String,
     pub api_key: Option<SecretString>,
-    // main.py sets the SDK organization only from a truthy global, and no explicit or environment lookup runs here
-    pub organization: Option<String>,
     pub optional_params: Object,
     pub headers: Option<Headers>,
     pub timeout: f64,
@@ -58,7 +57,6 @@ pub struct TextPlan {
     pub text_completion: bool,
     pub api_type: &'static str,
     pub api_version: Option<&'static str>,
-    pub created: u64,
 }
 
 pub enum TextOutcome {
@@ -66,11 +64,7 @@ pub enum TextOutcome {
     Stream(Box<CompletionStream>),
 }
 
-pub fn plan(
-    composition: &Composition,
-    call: &TextCall,
-    now: StreamInstant,
-) -> Result<TextPlan, OpenAiProviderError> {
+pub fn plan(composition: &Composition, call: &TextCall) -> Result<TextPlan, OpenAiProviderError> {
     let credentials = resolve(composition, &call.credentials);
     let mut optional_params = call.optional_params.clone();
     merge_defaults(&mut optional_params, &composition.text_defaults)?;
@@ -79,7 +73,6 @@ pub fn plan(
         messages: call.messages.clone(),
         api_base: credentials.api_base,
         api_key: credentials.api_key,
-        organization: present_text(composition.globals.organization.as_deref()).map(str::to_owned),
         optional_params,
         headers: resolved_headers(composition, call.headers.as_ref(), None),
         timeout: call.timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
@@ -87,7 +80,6 @@ pub fn plan(
         text_completion: call.text_completion,
         api_type: API_TYPE,
         api_version: API_VERSION,
-        created: u64::try_from(now.seconds).unwrap_or_default(),
     })
 }
 
@@ -134,7 +126,8 @@ where
         api_key: plan.api_key.clone(),
         api_base: Some(plan.api_base.clone()),
         timeout: plan.timeout,
-        organization: plan.organization.clone(),
+        // main.py assigns the SDK module global only, and B2238's handler builds its client without an organization
+        organization: None,
         optional_params: plan.optional_params.clone(),
         headers: plan.headers.clone().map(SecretHeaders),
         acompletion: plan.acompletion,
@@ -173,104 +166,57 @@ pub fn logs_post_call(plan: &TextPlan) -> bool {
     truthy(plan.optional_params.get("stream")) || plan.acompletion
 }
 
-// Python truthiness of the stream option; the typed request policy already refused any other shape.
+// Python truthiness of the stream option, for the values a request can carry before the transport refuses the rest.
 fn truthy(value: Option<&JsonValue>) -> bool {
     match value {
         None | Some(JsonValue::Null | JsonValue::Bool(false)) => false,
-        Some(
-            JsonValue::Bool(true)
-            | JsonValue::Number(_)
-            | JsonValue::Text(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        ) => true,
+        Some(JsonValue::Bool(true)) => true,
+        Some(JsonValue::Number(number)) => number.as_f64() != Some(0.0_f64),
+        Some(JsonValue::Text(text)) => !text.is_empty(),
+        Some(JsonValue::Array(values)) => !values.is_empty(),
+        Some(JsonValue::Object(fields)) => !fields.is_empty(),
     }
 }
 
-// convert_to_chat_model_response_object: each text choice becomes one assistant message, indexed by position.
-pub fn project(plan: &TextPlan, response: &JsonValue) -> Result<ChatResponse, OpenAiProviderError> {
-    let JsonValue::Object(fields) = response else {
-        return Err(field_type("text completion", "an object"));
-    };
-    let Some(JsonValue::Array(choices)) = fields.get("choices") else {
-        return Err(field_type("choices", "an array"));
-    };
-    let mut projected = Vec::with_capacity(choices.len());
-    for (position, choice) in choices.iter().enumerate() {
-        projected.push(choice_at(position, choice)?);
-    }
-    Ok(ChatResponse {
-        id: text_at(fields, "id").unwrap_or_default(),
-        object: String::from("chat.completion"),
-        created: plan.created,
-        model: text_at(fields, "model").unwrap_or_else(|| plan.model.clone()),
-        choices: projected,
-        usage: usage(fields.get("usage")),
-        system_fingerprint: None,
-        service_tier: None,
+// ModelResponse() before the conversion: the reply's id, created, model and usage replace these, the object stays
+fn fresh_target(identifier: &dyn Fn() -> Uuid, clock: &dyn Fn() -> i64) -> Extra {
+    let mut target = Extra::new();
+    target.insert(String::from("choices"), Json::List(Vec::new()));
+    target.insert(String::from("created"), Json::Number(Number::from(clock())));
+    target.insert(
+        String::from("id"),
+        Json::Text(format!("chatcmpl-{}", identifier())),
+    );
+    target.insert(String::from("model"), Json::Null);
+    target.insert(
+        String::from("object"),
+        Json::Text(String::from("chat.completion")),
+    );
+    target.insert(String::from("system_fingerprint"), Json::Null);
+    target
+}
+
+// B2237's convert_to_chat_model_response_object: every text choice becomes one assistant message, indexed by position.
+pub fn project(
+    response: &JsonValue,
+    now: StreamInstant,
+    next_id: fn() -> Uuid,
+) -> Result<ChatResponse, OpenAiProviderError> {
+    let identifier = || next_id();
+    let clock = || now.seconds;
+    let serialized = serde_json::to_value(fresh_target(&identifier, &clock))
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    let target: Object = serde_json::from_value(serialized)
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    let response = serde_json::to_value(response)
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    let converted = to_chat_model_response(Some(response), Some(target), &identifier, &clock)?;
+    let converted = serde_json::to_value(converted)
+        .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
+    serde_json::from_value(converted).map_err(|source| {
+        OpenAiProviderError::Operation(OperationError::Decode {
+            operation: "text completion chat projection",
+            source,
+        })
     })
-}
-
-fn choice_at(position: usize, choice: &JsonValue) -> Result<ChatChoice, OpenAiProviderError> {
-    let JsonValue::Object(choice) = choice else {
-        return Err(field_type("choices", "an array of objects"));
-    };
-    let logprobs = match choice.get("logprobs") {
-        Some(value) if !matches!(value, JsonValue::Null) => {
-            Some(serde_json::to_value(value).map_err(|source| {
-                OpenAiProviderError::Operation(OperationError::Encode { source })
-            })?)
-        }
-        _ => None,
-    };
-    Ok(ChatChoice {
-        index: u32::try_from(position).unwrap_or(u32::MAX),
-        message: AssistantMessage {
-            role: String::from("assistant"),
-            // Choices carries the choice's own text, and the SDK's reply normalizes a missing one to null
-            content: text_at(choice, "text"),
-            tool_calls: None,
-            annotations: None,
-            audio: None,
-            refusal: None,
-            provider_specific_fields: Default::default(),
-        },
-        finish_reason: text_at(choice, "finish_reason"),
-        logprobs,
-        provider_specific_fields: BTreeMap::new(),
-    })
-}
-
-fn text_at(fields: &indexmap::IndexMap<String, JsonValue>, name: &str) -> Option<String> {
-    match fields.get(name) {
-        Some(JsonValue::Text(text)) => Some(text.clone()),
-        _ => None,
-    }
-}
-
-fn usage(raw: Option<&JsonValue>) -> ChatUsage {
-    let Some(JsonValue::Object(fields)) = raw else {
-        return ChatUsage::default();
-    };
-    ChatUsage {
-        prompt_tokens: count(fields.get("prompt_tokens")),
-        completion_tokens: count(fields.get("completion_tokens")),
-        total_tokens: count(fields.get("total_tokens")),
-        prompt_tokens_details: None,
-        completion_tokens_details: None,
-    }
-}
-
-fn count(value: Option<&JsonValue>) -> u64 {
-    match value {
-        Some(JsonValue::Number(number)) => number
-            .as_i64()
-            .and_then(|value| u64::try_from(value).ok())
-            .unwrap_or_default(),
-        _ => 0,
-    }
-}
-
-fn field_type(field: &'static str, expected: &'static str) -> OpenAiProviderError {
-    OpenAiProviderError::FieldType { field, expected }
 }

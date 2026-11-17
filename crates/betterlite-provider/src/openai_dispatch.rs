@@ -23,11 +23,13 @@ pub mod call;
 pub mod compose;
 pub mod dispatch;
 pub mod error;
+#[cfg(any(test, feature = "testing"))]
+pub mod fixtures;
 pub mod headers;
 pub mod logging;
 pub mod metadata;
-#[cfg(any(test, feature = "testing"))]
-pub mod test_support;
+#[cfg(test)]
+mod tests;
 pub mod text;
 pub mod transport;
 

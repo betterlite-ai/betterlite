@@ -5,8 +5,8 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use secrecy::SecretString;
 
 use super::support;
-use crate::openai_dispatch::call::{ChatCall, Credentials};
-use crate::openai_dispatch::test_support::{FixtureAnswer, FixtureLogger};
+use crate::openai_dispatch::call::ChatCall;
+use crate::openai_dispatch::fixtures::{FixtureAnswer, FixtureLogger};
 use crate::operation::{ChatCompletion, OperationResult};
 
 pub async fn check() {
@@ -23,11 +23,11 @@ pub async fn check() {
         request: support::chat_request(
             r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"temperature":0.0}"#,
         ),
-        credentials: Credentials {
-            api_base: Some(String::from("https://explicit.test/v1")),
-            api_key: Some(SecretString::from("sk-explicit")),
-            organization: None,
-        },
+        credentials: support::credentials(
+            Some("https://explicit.test/v1"),
+            Some("sk-explicit"),
+            None,
+        ),
         headers: Some(BTreeMap::from([(
             String::from("x-header"),
             String::from("h"),
@@ -79,5 +79,5 @@ pub async fn check() {
     assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(reply.usage.total_tokens, 2);
     // a successful non-streamed chat call has no post_call of main.py's
-    assert!(logger.chat.is_empty());
+    assert!(logger.calls.is_empty());
 }

@@ -11,7 +11,7 @@ use crate::provider::Adapter as _;
 use super::call::{ChatCall, Composition, EmbeddingCall, OpenAiOperation, TextCall};
 use super::compose::{ChatPlan, chat_plan, embedding_plan};
 use super::error::OpenAiProviderError;
-use super::logging::{ChatPostCall, OpenAiLogger, TextPostCall, logged_json};
+use super::logging::{LoggedCall, OpenAiLogger, logged_json};
 use super::text::{self, TextOutcome};
 use super::transport::{Deps, ProviderAnswer, TextClientSource};
 use super::{OpenAi, OpenAiRequest, OpenAiResult};
@@ -70,11 +70,11 @@ where
         Err(error) => return Err(logged_failure(logger, call, &plan, error)),
     };
     if call.request.stream {
-        logger.chat_post_call(ChatPostCall {
+        logger.post_call(LoggedCall {
             input: logged_input(&call.request.messages),
             // LiteLLM logs the opened stream itself, which betterlite hands to the client unrendered
             original_response: Json::Null,
-            headers: logged_headers(plan.headers.as_ref()),
+            headers: logged_headers(plan.logged_headers.as_ref()),
         });
     }
     Ok(result)
@@ -87,10 +87,10 @@ fn logged_failure<Logger: OpenAiLogger>(
     plan: &ChatPlan,
     error: OpenAiProviderError,
 ) -> OpenAiProviderError {
-    logger.chat_post_call(ChatPostCall {
+    logger.post_call(LoggedCall {
         input: logged_input(&call.request.messages),
         original_response: Json::Text(error.to_string()),
-        headers: logged_headers(plan.headers.as_ref()),
+        headers: logged_headers(plan.logged_headers.as_ref()),
     });
     error
 }
@@ -121,21 +121,22 @@ where
     Source::Constructor::Client: Clone,
     Logger: OpenAiLogger,
 {
-    let plan = text::plan(composition, call, now())?;
+    let plan = text::plan(composition, call)?;
     let outcome = text::execute(&plan, source, now, next_id, logger).await?;
     let response = match outcome {
         TextOutcome::Buffered(response) => response,
         TextOutcome::Stream(stream) => {
-            logger.text_post_call(TextPostCall::new(
-                logged_input(&plan.messages),
-                Json::Null,
-                logged_headers(plan.headers.as_ref()),
-            ));
+            logger.post_call(LoggedCall {
+                input: logged_input(&plan.messages),
+                // the opened text stream has no rendered JSON form, so the log records its absence
+                original_response: Json::Null,
+                headers: logged_headers(plan.logged_headers.as_ref()),
+            });
             return Ok(OperationResult::OpenAi(OpenAiResult::TextStream(stream)));
         }
     };
     let (result, logged) = if text::projects_to_chat(&plan) {
-        let chat = text::project(&plan, &response)?;
+        let chat = text::project(&response, now(), next_id)?;
         let logged = logged_json(&chat);
         (
             OperationResult::Chat(ChatCompletion::OpenAi(Box::new(chat))),
@@ -148,11 +149,11 @@ where
         )
     };
     if text::logs_post_call(&plan) {
-        logger.text_post_call(TextPostCall::new(
-            logged_input(&plan.messages),
-            logged,
-            logged_headers(plan.headers.as_ref()),
-        ));
+        logger.post_call(LoggedCall {
+            input: logged_input(&plan.messages),
+            original_response: logged,
+            headers: logged_headers(plan.logged_headers.as_ref()),
+        });
     }
     Ok(result)
 }
