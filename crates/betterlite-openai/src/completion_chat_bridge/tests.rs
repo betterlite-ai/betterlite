@@ -83,17 +83,24 @@ fn a_text_completion_prefix_selects_the_converting_text_endpoint() {
 
 #[test]
 fn the_fine_tuned_models_select_the_raw_text_endpoint() {
-    for model in ["openai/ft:babbage-002", "openai/ft:davinci-002"] {
-        let resolved = deployment(model);
-        assert_eq!(
-            chat_endpoint(&resolved),
-            ChatEndpoint::Text { convert: false }
-        );
-        assert_eq!(
-            text_endpoint_model(&resolved),
-            Some(model.trim_start_matches("openai/").to_owned())
-        );
-    }
+    let babbage = deployment("openai/ft:babbage-002");
+    assert_eq!(
+        chat_endpoint(&babbage),
+        ChatEndpoint::Text { convert: false }
+    );
+    assert_eq!(
+        text_endpoint_model(&babbage),
+        Some(String::from("ft:babbage-002"))
+    );
+    let davinci = deployment("openai/ft:davinci-002");
+    assert_eq!(
+        chat_endpoint(&davinci),
+        ChatEndpoint::Text { convert: false }
+    );
+    assert_eq!(
+        text_endpoint_model(&davinci),
+        Some(String::from("ft:davinci-002"))
+    );
     let unresolved = unsupported("openai/ft:babbage-002");
     assert_eq!(
         text_endpoint_model(&unresolved),
@@ -149,9 +156,14 @@ fn control_kwargs_and_internal_keys_stay_off_the_provider_body() {
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream_chunk_size":5,"_hidden":true,"temperature":0.5}"#,
     );
     let built = text_request(&deployment("gpt-4o"), &request, "gpt-4o").expect("request");
-    for name in ["stream_chunk_size", "_hidden"] {
-        assert!(!built.optional_params.contains_key(name), "{name} leaked");
-    }
+    assert!(
+        !built.optional_params.contains_key("stream_chunk_size"),
+        "stream_chunk_size leaked"
+    );
+    assert!(
+        !built.optional_params.contains_key("_hidden"),
+        "_hidden leaked"
+    );
     assert_eq!(built.optional_params.get("temperature"), Some(&json!(0.5)));
 }
 

@@ -1,6 +1,3 @@
-// The two bridges main.py puts around the text-completion endpoint: a chat request that reaches the
-// text endpoint is rebuilt as messages, and a text answer on the chat route is converted back.
-
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
@@ -41,16 +38,14 @@ const UNMAPPED_PROMPT: &str =
 
 const INTERNAL_ERROR: &str = "internal_server_error";
 
-// Where main.py's chat dispatch sends a request: the chat endpoint, or the text endpoint with or
-// without the text-to-chat conversion for the answer.
+// Where main.py's chat dispatch sends a request: the chat endpoint, or the text endpoint with or without the answer conversion
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatEndpoint {
     Chat,
     Text { convert: bool },
 }
 
-// Where main.py's text dispatch sends a request: the text endpoint, or a chat endpoint whose answer
-// is converted with convert_chat_to_text_completion.
+// Where main.py's text dispatch sends a request: the text endpoint, or a chat endpoint whose answer converts
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionEndpoint {
     Text,
@@ -80,8 +75,7 @@ pub fn chat_endpoint(deployment: &ChatDeployment) -> ChatEndpoint {
     ChatEndpoint::Chat
 }
 
-// The model a text endpoint receives for a chat request: the provider tag comes off the prefix,
-// and the stripped OpenAI name goes as the provider resolved it.
+// The model a text endpoint receives for a chat request: the provider tag comes off the prefix
 #[must_use]
 pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
     match chat_endpoint(deployment) {
@@ -96,8 +90,7 @@ pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
     }
 }
 
-// A chat request reaching the text endpoint: the messages become the prompt and the chat kwargs the
-// body's optional params, with the usage option the proxy injects for every stream.
+// A chat request reaching the text endpoint: messages become the prompt, chat kwargs the optional params
 pub fn text_request(
     deployment: &ChatDeployment,
     request: &ChatRequest,
@@ -159,8 +152,7 @@ pub fn text_request(
     })
 }
 
-// The client's text prompt rebuilt as chat messages; main.py keeps one message per string and one
-// message holding the prompt for the token branch, which typed messages cannot carry.
+// The client's text prompt rebuilt as chat messages, one per string; typed messages cannot carry the token branch
 pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, CompletionFailure> {
     let mut messages = Vec::new();
     match &request.prompt {

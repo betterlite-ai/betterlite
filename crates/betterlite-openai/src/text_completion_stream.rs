@@ -1,6 +1,3 @@
-// The text-route stream shapes: provider chunks turned into the chat chunks the text wrapper reads,
-// and chat chunks turned into the text chunks the client reads, all written with LiteLLM's JSON.
-
 use betterlite_models::decisions::Json;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -39,16 +36,9 @@ pub fn without_nulls(value: Value) -> Value {
     }
 }
 
-// One SSE event of the client's answer.
-#[must_use]
-pub fn event_frame(value: &Value) -> String {
-    format!("data: {value}\n\n")
-}
-
 pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 
-// The chat chunk the text wrapper converts: the provider's usage counters gain the detail block
-// litellm's Usage validator fills in, and the route names the model the client asked for.
+// The chat chunk the text wrapper converts: usage gains the detail block litellm fills in, model restamped
 pub fn shaped_chunk(mut chunk: StreamChunk, model: &str) -> Result<Value, serde_json::Error> {
     if !model.is_empty() {
         model.clone_into(&mut chunk.model);
@@ -76,8 +66,7 @@ fn with_details(mut usage: Usage) -> Usage {
     usage
 }
 
-// The chat chunk a text endpoint's chunk becomes on the chat route: the wrapper carries the first
-// delta's role, the content and the finish reason, and the usage chunk only when it was asked for.
+// The chat chunk a text chunk becomes on the chat route: role, content, finish reason, and usage only if asked
 pub fn chat_chunk(
     chunk: &StreamChunk,
     model: &str,
@@ -130,67 +119,42 @@ pub fn chat_chunk(
     Ok(Some(without_nulls(Value::Object(fields))))
 }
 
-// A chat endpoint's SSE bytes read as the text route's chunks: B005's framing, then the chunk parse
-// the chat route already trusts, with the client's usage choice.
-#[derive(Debug)]
-pub struct ChatTextStream {
-    parser: SseParser,
-    model: String,
-    include_usage: bool,
-}
-
-impl ChatTextStream {
-    #[must_use]
-    pub fn new(model: String, include_usage: bool) -> Self {
-        Self {
-            parser: SseParser::default(),
-            model,
-            include_usage,
-        }
-    }
-
-    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Json>, TextStreamDecodeError> {
-        let events = self.parser.push(bytes)?;
-        self.chunks(&events)
-    }
-
-    pub fn finish(&mut self) -> Result<Vec<Json>, TextStreamDecodeError> {
-        let events = self.parser.finish();
-        self.chunks(&events)
-    }
-
-    fn chunks(&self, events: &[Vec<u8>]) -> Result<Vec<Json>, TextStreamDecodeError> {
-        let mut chunks = Vec::new();
-        for event in events {
-            if event.trim_ascii() == b"[DONE]" {
-                continue;
-            }
-            if let Some(chunk) = Chunk::parse(event, &self.model, self.include_usage)? {
-                chunks.push(
-                    serde_json::to_value(&chunk)
-                        .map_err(|source| TextStreamDecodeError::Chunk(ChunkError::from(source)))
-                        .and_then(|value| {
-                            serde_json::from_value(value).map_err(|source| {
-                                TextStreamDecodeError::Chunk(ChunkError::from(source))
-                            })
-                        })?,
-                );
-            }
-        }
-        Ok(chunks)
-    }
-}
-
-// The whole-buffer form of ChatTextStream, for the committed corpus and the fuzz target.
+// A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped
 pub fn decode_chat_events(
+    events: &[Vec<u8>],
+    model: &str,
+    include_usage: bool,
+) -> Result<Vec<Json>, TextStreamDecodeError> {
+    let mut chunks = Vec::new();
+    for event in events {
+        if event.trim_ascii() == b"[DONE]" {
+            continue;
+        }
+        if let Some(chunk) = Chunk::parse(event, model, include_usage)? {
+            chunks.push(
+                serde_json::to_value(&chunk)
+                    .map_err(|source| TextStreamDecodeError::Chunk(ChunkError::from(source)))
+                    .and_then(|value| {
+                        serde_json::from_value(value).map_err(|source| {
+                            TextStreamDecodeError::Chunk(ChunkError::from(source))
+                        })
+                    })?,
+            );
+        }
+    }
+    Ok(chunks)
+}
+
+// The whole-buffer form, for the committed corpus and the fuzz target
+pub fn decode_chat_bytes(
     bytes: &[u8],
     model: &str,
     include_usage: bool,
 ) -> Result<Vec<Json>, TextStreamDecodeError> {
-    let mut stream = ChatTextStream::new(model.to_owned(), include_usage);
-    let mut chunks = stream.push(bytes)?;
-    chunks.extend(stream.finish()?);
-    Ok(chunks)
+    let mut parser = SseParser::default();
+    let mut events = parser.push(bytes)?;
+    events.extend(parser.finish());
+    decode_chat_events(&events, model, include_usage)
 }
 
 mod tests;

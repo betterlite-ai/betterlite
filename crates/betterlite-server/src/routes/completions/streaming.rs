@@ -14,6 +14,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::text_completion_stream::without_nulls;
 use betterlite_provider::operation::{ChatOperation, OperationRequest, OperationResult};
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
@@ -23,8 +24,7 @@ use futures_util::stream::{self, BoxStream};
 use crate::routes::chat::headers::success_headers;
 use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
-// The chat endpoint reached for a chat-catalog deployment; the chat route streams through it too,
-// and routes/chat.rs keeps its streaming module private, so it lives here.
+// The chat endpoint reached for a chat-catalog deployment; routes/chat.rs keeps its streaming module private
 pub(crate) async fn provider_stream(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
@@ -134,26 +134,12 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<Bytes, io::Error>, 
 }
 
 fn push_chunk(state: &mut FrameState, chunk: Json) -> Result<(), io::Error> {
-    let text = serde_json::to_string(&without_nulls(chunk)).map_err(io::Error::other)?;
+    let value = serde_json::to_value(&chunk).map_err(io::Error::other)?;
+    let text = serde_json::to_string(&without_nulls(value)).map_err(io::Error::other)?;
     state
         .pending
         .push_back(Bytes::from(format!("data: {text}\n\n")));
     Ok(())
-}
-
-// pydantic's exclude_none over the wrapper's response object
-fn without_nulls(json: Json) -> Json {
-    match json {
-        Json::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .filter(|(_, value)| !matches!(value, Json::Null))
-                .map(|(name, value)| (name, without_nulls(value)))
-                .collect(),
-        ),
-        Json::List(items) => Json::List(items.into_iter().map(without_nulls).collect()),
-        other => other,
-    }
 }
 
 mod tests;

@@ -1,7 +1,3 @@
-// The answer conversions on both bridges: LiteLLM's convert_to_chat_model_response_object for a
-// text answer on the chat route, and convert_chat_to_text_completion for a chat answer on the
-// completion route.
-
 use serde_json::{Map, Value};
 
 use super::failure;
@@ -24,8 +20,7 @@ pub fn text_completion_body(
     serde_json::to_vec(&without_nulls(value)).map_err(encode_failure)
 }
 
-// convert_to_chat_model_response_object: a fresh chat response carrying the text answer, stamped
-// with the call's own time rather than the provider's.
+// convert_to_chat_model_response_object: a fresh chat response carrying the text answer, stamped with the call's own time
 pub fn chat_completion_body(
     response: &CompletionResponse,
     created: i64,
@@ -74,8 +69,7 @@ pub fn chat_completion_body(
     serde_json::to_vec(&without_nulls(Value::Object(body))).map_err(encode_failure)
 }
 
-// The text route's chat-deployment answer: LiteLLM's text completion object keeps its null fields
-// but writes no system fingerprint, because the conversion never sets one.
+// The text route's chat-deployment answer keeps its null fields but writes no system fingerprint
 pub fn text_answer_body(response: &CompletionResponse) -> Result<Vec<u8>, CompletionFailure> {
     let mut value = serde_json::to_value(response).map_err(encode_failure)?;
     if let Value::Object(fields) = &mut value

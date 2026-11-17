@@ -50,8 +50,7 @@ fn client() -> ProxiedClient {
     ProxiedClient::outbound(&policy).expect("client")
 }
 
-// The provider sends one event, waits for the client to consume it, then sends the next and holds
-// the connection until the client closes it.
+// The provider sends one event, waits for the client to consume it, then sends the next and holds the connection
 async fn paused_provider(
     listener: TcpListener,
     first_delivered: oneshot::Receiver<()>,

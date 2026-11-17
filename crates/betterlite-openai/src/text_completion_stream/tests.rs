@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::io;
 use std::path::Path;
 
 use betterlite_models::decisions::Json;
@@ -11,9 +12,10 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 use super::{
-    ChatTextStream, DONE_FRAME, TextStreamDecodeError, chat_chunk, decode_chat_events,
+    DONE_FRAME, TextStreamDecodeError, chat_chunk, decode_chat_bytes, decode_chat_events,
     shaped_chunk, without_nulls,
 };
+use crate::stream::SseParser;
 
 const CORPUS: &str = "fuzz/corpus/text_stream";
 
@@ -187,7 +189,7 @@ fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
                 json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"a"}}]}),
                 json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
             );
-            let decoded = decode_chat_events(events.as_bytes(), "client", false).expect("decode");
+            let decoded = decode_chat_bytes(events.as_bytes(), "client", false).expect("decode");
             assert_eq!(decoded.len(), 2);
             let first = value_of(&decoded[0]);
             assert_eq!(first.pointer("/choices/0/delta/content"), Some(&json!("a")));
@@ -203,13 +205,24 @@ fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
                 json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"héllo"}}]}),
                 json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":" wörld"}}]}),
             );
-            let whole = decode_chat_events(events.as_bytes(), "client", false).expect("whole");
+            let whole = decode_chat_bytes(events.as_bytes(), "client", false).expect("whole");
             for boundary in 1..events.len() {
                 let (left, right) = events.as_bytes().split_at(boundary);
-                let mut stream = ChatTextStream::new(String::from("client"), false);
-                let mut split = stream.push(left).expect("left");
-                split.extend(stream.push(right).expect("right"));
-                split.extend(stream.finish().expect("finish"));
+                let mut parser = SseParser::default();
+                let mut split = parser
+                    .push(left)
+                    .map_err(TextStreamDecodeError::from)
+                    .and_then(|parsed| decode_chat_events(&parsed, "client", false))
+                    .expect("left");
+                split.extend(
+                    parser
+                        .push(right)
+                        .map_err(TextStreamDecodeError::from)
+                        .and_then(|parsed| decode_chat_events(&parsed, "client", false))
+                        .expect("right"),
+                );
+                split
+                    .extend(decode_chat_events(&parser.finish(), "client", false).expect("finish"));
                 assert_eq!(split, whole, "boundary {boundary}");
             }
         }
@@ -218,10 +231,10 @@ fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
                 b"data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"".to_vec();
             bytes.push(0xff);
             bytes.extend_from_slice(b"\"}}]}\n\n");
-            assert!(decode_chat_events(&bytes, "client", false).is_err());
+            assert!(decode_chat_bytes(&bytes, "client", false).is_err());
         }
         Scenario::ChatMalformedJson => {
-            assert!(decode_chat_events(b"data: {\"id\": \n\n", "client", false).is_err());
+            assert!(decode_chat_bytes(b"data: {\"id\": \n\n", "client", false).is_err());
         }
     }
 }
@@ -241,23 +254,31 @@ fn replays_the_text_stream_corpus() {
     files.sort();
     assert!(!files.is_empty(), "the corpus holds no file");
     let mut failures = Vec::new();
-    for file in files {
-        let bytes = fs::read(&file).expect("corpus file");
-        let whole = decode_chat_events(&bytes, "client", true);
-        for boundary in 1..=bytes.len().min(8) {
-            let (left, right) = bytes.split_at(boundary);
+    files
+        .into_iter()
+        .try_for_each(|file| {
+            failures.extend(boundary_failures(&file)?);
+            Ok::<(), io::Error>(())
+        })
+        .expect("corpus files");
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+fn boundary_failures(file: &Path) -> Result<Vec<String>, io::Error> {
+    let bytes = fs::read(file)?;
+    let whole = decode_chat_bytes(&bytes, "client", true);
+    Ok((1..=bytes.len().min(8))
+        .filter(|boundary| {
+            let (left, right) = bytes.split_at(*boundary);
             let split = split_decode(left, right);
-            let agrees = match (&split, &whole) {
+            !match (&split, &whole) {
                 (Ok(split), Ok(whole)) => split == whole,
                 (Err(_), Err(_)) => true,
                 (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
-            };
-            if !agrees {
-                failures.push(format!("{file:?} boundary {boundary}"));
             }
-        }
-    }
-    assert!(failures.is_empty(), "{failures:?}");
+        })
+        .map(|boundary| format!("{file:?} boundary {boundary}"))
+        .collect())
 }
 
 fn value_of(json: &Json) -> Value {
@@ -265,9 +286,17 @@ fn value_of(json: &Json) -> Value {
 }
 
 fn split_decode(left: &[u8], right: &[u8]) -> Result<Vec<Json>, TextStreamDecodeError> {
-    let mut stream = ChatTextStream::new(String::from("client"), true);
-    let mut chunks = stream.push(left)?;
-    chunks.extend(stream.push(right)?);
-    chunks.extend(stream.finish()?);
+    let mut parser = SseParser::default();
+    let mut chunks = parser
+        .push(left)
+        .map_err(TextStreamDecodeError::from)
+        .and_then(|parsed| decode_chat_events(&parsed, "client", true))?;
+    chunks.extend(
+        parser
+            .push(right)
+            .map_err(TextStreamDecodeError::from)
+            .and_then(|parsed| decode_chat_events(&parsed, "client", true))?,
+    );
+    chunks.extend(decode_chat_events(&parser.finish(), "client", true)?);
     Ok(chunks)
 }

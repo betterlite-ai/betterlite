@@ -27,10 +27,11 @@ use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::completion_chat_bridge::answer::{
     text_answer_body, text_completion_response,
 };
+use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
-use betterlite_openai::text_completion_stream::{ChatTextStream, shaped_chunk};
+use betterlite_openai::text_completion_stream::{decode_chat_events, shaped_chunk};
 use betterlite_provider::operation::ChatCompletion;
 use futures_util::StreamExt as _;
 use tokio::sync::OnceCell;
@@ -220,7 +221,9 @@ impl TextCompletionCall for CompletionCalls {
         let model = call.request.model.clone().unwrap_or_default();
         let state = ChatChunkState {
             bytes: upstream.body_stream(),
-            parser: ChatTextStream::new(model, include_usage),
+            parser: SseParser::default(),
+            model,
+            include_usage,
             pending: VecDeque::new(),
             finished: false,
         };
@@ -238,7 +241,9 @@ struct ChatChunkState {
         'static,
         Result<Vec<u8>, betterlite_http::error::HttpError>,
     >,
-    parser: ChatTextStream,
+    parser: SseParser,
+    model: String,
+    include_usage: bool,
     pending: VecDeque<betterlite_models::decisions::Json>,
     finished: bool,
 }
@@ -258,7 +263,14 @@ async fn next_chat_chunk(
         }
         match state.bytes.next().await {
             Some(Ok(bytes)) => {
-                let parsed = state.parser.push(&bytes);
+                let parsed = state
+                    .parser
+                    .push(&bytes)
+                    .map_err(|source| internal_failure(&source.to_string()))
+                    .and_then(|events| {
+                        decode_chat_events(&events, &state.model, state.include_usage)
+                            .map_err(|error| internal_failure(&error.to_string()))
+                    });
                 if let Err(error) = enqueue(&mut state, parsed) {
                     state.finished = true;
                     return Some((Err(error), state));
@@ -270,8 +282,10 @@ async fn next_chat_chunk(
             }
             None => {
                 state.finished = true;
-                let tail = state.parser.finish();
-                if let Err(error) = enqueue(&mut state, tail) {
+                let decoded =
+                    decode_chat_events(&state.parser.finish(), &state.model, state.include_usage)
+                        .map_err(|error| internal_failure(&error.to_string()));
+                if let Err(error) = enqueue(&mut state, decoded) {
                     return Some((Err(error), state));
                 }
             }
@@ -281,12 +295,9 @@ async fn next_chat_chunk(
 
 fn enqueue(
     state: &mut ChatChunkState,
-    parsed: Result<
-        Vec<betterlite_models::decisions::Json>,
-        betterlite_openai::text_completion_stream::TextStreamDecodeError,
-    >,
+    parsed: Result<Vec<betterlite_models::decisions::Json>, TextCompletionFailure>,
 ) -> Result<(), TextCompletionFailure> {
-    for chunk in parsed.map_err(|error| internal_failure(&error.to_string()))? {
+    for chunk in parsed? {
         state.pending.push_back(chunk);
     }
     Ok(())

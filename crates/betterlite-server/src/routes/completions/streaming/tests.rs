@@ -8,12 +8,13 @@ use betterlite_core::message_utilities::response_streams::StreamError;
 use betterlite_core::operation::text_stream::TextStreamResult;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
+use betterlite_openai::text_completion_stream::without_nulls;
 use futures_util::StreamExt as _;
 use http::HeaderMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{render, without_nulls};
+use super::render;
 
 fn deployment() -> ChatDeployment {
     let listed = ModelDeployment {
@@ -126,8 +127,13 @@ async fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
 
 #[test]
 fn the_null_drop_keeps_a_null_inside_a_list() {
-    let cleaned = without_nulls(chunk(
-        r#"{"a":null,"b":[null,{"c":null,"d":1}],"e":"keep"}"#,
-    ));
-    assert_eq!(cleaned, chunk(r#"{"b":[null,{"d":1}],"e":"keep"}"#));
+    let cleaned = without_nulls(
+        serde_json::to_value(chunk(
+            r#"{"a":null,"b":[null,{"c":null,"d":1}],"e":"keep"}"#,
+        ))
+        .expect("value"),
+    );
+    let expected =
+        serde_json::to_value(chunk(r#"{"b":[null,{"d":1}],"e":"keep"}"#)).expect("value");
+    assert_eq!(cleaned, expected);
 }
