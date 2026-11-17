@@ -982,6 +982,16 @@ fn media_refused_fetch_fails_once(#[case] asynchronous: bool) {
         other => panic!("a refused download is an inline media error, got {other:?}"),
     }
     assert_eq!(harness.fetcher.calls(), 1);
+    if asynchronous {
+        assert_eq!(
+            harness.fetcher.batches(),
+            vec![vec![REMOTE_HTTP.to_owned()]]
+        );
+        assert!(harness.fetcher.converted().is_empty());
+    } else {
+        assert_eq!(harness.fetcher.converted(), vec![REMOTE_HTTP.to_owned()]);
+        assert!(harness.fetcher.batches().is_empty());
+    }
     assert_eq!(harness.transport.calls(), 0);
 }
 
