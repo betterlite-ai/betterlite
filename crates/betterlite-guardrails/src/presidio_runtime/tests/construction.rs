@@ -116,6 +116,10 @@ pub(super) fn defaults_are_applied() {
         ),
         (false, false, true, true, true, true, true)
     );
+    anonymizer_defaults_are_applied(&server, &guard);
+}
+
+fn anonymizer_defaults_are_applied(server: &Mock, guard: &PresidioGuard) {
     assert_eq!(
         (
             guard.anonymizer.settings.anonymizer_api_base.as_str(),
@@ -125,7 +129,7 @@ pub(super) fn defaults_are_applied() {
             guard.callback_role,
         ),
         (
-            url(&server).as_str(),
+            url(server).as_str(),
             DEFAULT_ANALYZE_TIMEOUT,
             true,
             false,
@@ -344,7 +348,7 @@ pub(super) fn unrepresentable_timeout() {
     args.timeout = Some(-1.0_f64);
     assert!(matches!(
         failing(&args),
-        PresidioRuntimeError::Timeout { seconds, .. } if (seconds + 1.0_f64).abs() < f64::EPSILON
+        PresidioRuntimeError::Timeout { seconds, .. } if seconds.to_bits() == (-1.0_f64).to_bits()
     ));
 }
 

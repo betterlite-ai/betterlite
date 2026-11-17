@@ -237,7 +237,7 @@ pub(super) async fn output_parse_pii_stores_tokens() {
     let messages = messages_of(&data);
     assert_eq!(
         content_of(&messages[0]),
-        GuardrailValue::Text("<PHONE_NUMBER_1>".to_owned())
+        GuardrailValue::Text("call me at <PHONE_NUMBER_1>".to_owned())
     );
     assert_eq!(
         pii_tokens_of(&data),
