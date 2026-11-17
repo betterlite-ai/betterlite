@@ -364,6 +364,15 @@ fn blank_lines_between_rows_are_skipped() {
     assert_eq!(field(completion(&body[1]), "created"), &json("1700000000"));
 }
 
+// str::trim follows the White_Space property and keeps U+001C, which Python's str.strip drops
+#[test]
+fn a_file_separator_prefix_returns_the_whole_payload() {
+    let content = format!("\u{1c}{ROW}\n");
+    let response = convert(&content, URL);
+    assert_eq!(response.content, content.as_bytes());
+    assert_eq!(declared_length(&response), content.len());
+}
+
 #[test]
 fn generation_rows_are_newline_joined() {
     let content = format!("{ROW}\n{OTHER_ROW}");

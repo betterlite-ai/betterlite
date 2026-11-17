@@ -185,6 +185,15 @@ fn blank_lines_never_decide() {
     assert!(lines(&output)[0].starts_with(r#"{"id":"batch_req_"#));
 }
 
+// trim_ascii follows the WhatWG set and leaves a vertical tab, which Python's bytes.strip drops
+#[test]
+fn a_vertical_tab_prefix_replays_the_download() {
+    let content = format!("\x0b{ROW}\n");
+    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+    assert_eq!(decoder.mode, DownloadMode::Passthrough);
+    assert_eq!(output.as_slice(), content.as_bytes());
+}
+
 #[test]
 fn a_trailing_row_without_a_newline_is_converted() {
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[ROW.as_bytes()]);
