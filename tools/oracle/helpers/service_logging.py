@@ -3,9 +3,7 @@ import json
 from typing import Final, Literal, NotRequired, TypedDict
 
 import litellm
-from litellm._logging import json_logs as parsed_json_logs
-from litellm._logging import log_level as configured_log_level
-from litellm._logging import resolve_log_level, set_trace_id, trace_id_var
+from litellm._logging import json_logs, log_level, resolve_log_level, set_trace_id, trace_id_var
 from litellm._service_logger import ServiceLogging
 from litellm.integrations.prometheus_services import PrometheusServicesLogger
 from litellm.types.services import ServiceLoggerPayload, ServiceTypes
@@ -40,8 +38,7 @@ PAYLOAD: Final[TypeAdapter[PayloadRecord]] = TypeAdapter(PayloadRecord)
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-# The service logger only hands its payload to the configured services; this recorder stands in for
-# the Prometheus service so the payload LiteLLM built is what the case compares.
+# the recorder stands in for the Prometheus service, so the case compares the payload LiteLLM built
 class PayloadRecorder(PrometheusServicesLogger):
     def __init__(self) -> None:
         self.payloads: list[PayloadRecord] = []
@@ -81,8 +78,8 @@ def correlation_value(input_value: Input) -> JsonValue:
 
 def level_value() -> JsonValue:
     value: dict[str, JsonValue] = {
-        "numeric": resolve_log_level(configured_log_level),
-        "json_logs": parsed_json_logs,
+        "numeric": resolve_log_level(log_level),
+        "json_logs": json_logs,
     }
     return value
 
