@@ -36,7 +36,7 @@ class StreamedFile(NamedTuple):
 
 @runtime_checkable
 class FilesConfig(Protocol):
-    def transform_file_content_response(
+    def transform_file_content_response(  # ast-grep-ignore: no-long-names
         self,
         raw_response: httpx.Response,
         logging_obj: Logging,

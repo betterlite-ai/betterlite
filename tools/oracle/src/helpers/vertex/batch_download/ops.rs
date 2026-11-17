@@ -6,9 +6,9 @@ use base64::engine::general_purpose::STANDARD;
 use betterlite_http::error::HttpError;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_vertex::vertex_batch_download::records::{
-    ContentResponse, ConversionContext, transform_file_content_response,
-};
+// ast-grep-ignore: no-long-names
+use betterlite_vertex::vertex_batch_download::records::transform_file_content_response;
+use betterlite_vertex::vertex_batch_download::records::{ContentResponse, ConversionContext};
 use betterlite_vertex::vertex_batch_download::streaming::transform_file_content_stream;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
@@ -47,6 +47,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
             now,
         } => {
             let original = STANDARD.decode(content).or_config_error()?;
+            // ast-grep-ignore: no-long-names
             let found = transform_file_content_response(
                 &original,
                 url,
