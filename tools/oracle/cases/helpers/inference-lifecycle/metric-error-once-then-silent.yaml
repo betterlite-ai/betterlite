@@ -1,0 +1,16 @@
+kind: helper
+name: metric-error-once-then-silent
+call:
+  b3852:
+    function: metric_error
+    callback_name: null
+    anchored: false
+    exporters: []
+    credentials: null
+    auth_metadata: null
+    spaces: []
+    project_name: null
+    filter: not a mapping
+env: {}
+compare:
+  ignore: []

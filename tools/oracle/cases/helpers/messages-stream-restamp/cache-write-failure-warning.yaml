@@ -1,0 +1,14 @@
+kind: helper
+name: messages-stream-restamp-cache-write-failure-warning
+call:
+  messages_stream_restamp:
+    restamp: null
+    cache_stream:
+      reads:
+        - "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-3\"}}\n\n"
+        - "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      preset_cache_key: null
+      fail: the cache backend is down
+      replay: false
+env: {}
+compare: {ignore: []}
