@@ -24,6 +24,9 @@ deviations:
   - what: The Lyria audio price is read from the bundled model catalog only, with no runtime litellm.model_cost overlay.
     why: betterlite has no runtime mutation of the model cost map, so the bundled catalog is what a working setup on the pinned map gets. A model that is not a Lyria model, or carries no price, takes no audio branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L79-L99
+  - what: When the price lookup fails, the logging object's model, custom_llm_provider and model_call_details are left unwritten, where LiteLLM has already set them before completion_cost raises.
+    why: This module writes the logging fields together with the kwargs once the price is known, so a failed reply leaves no partial attribution behind; the caller drops the dispatch on the Err in both implementations. On the image path the call_type write still happens before the price lookup in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L397-L412
   - what: An audio prediction count that does not fit an i64, or a price multiplication that overflows the decimal, comes back as a cost error.
     why: Rust decimals and integers are fixed width where LiteLLM multiplies floats without a bound. A list length past i64 cannot come out of a decoded body in one process, so this is a guard, and its outcome is the same Err a failed price lookup gives rather than a silently wrong cost.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L427-L428
