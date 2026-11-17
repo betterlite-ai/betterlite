@@ -237,7 +237,10 @@ pub(super) fn standard_text(result: &Json) -> String {
 
 pub(super) fn outcome_text(outcome: &HandlerOutcome) -> String {
     match outcome.result.as_ref() {
-        Some(PassThroughResponse::Standard(response)) => standard_text(&response.response),
+        Some(PassThroughResponse::Standard(response)) => match &response.response {
+            Json::Text(text) => text.clone(),
+            other => panic!("the standard response carries a text: {other:?}"),
+        },
         other => panic!("the outcome carries a standard response: {other:?}"),
     }
 }
@@ -266,7 +269,7 @@ impl RecordingDispatch {
             .clone()
     }
 
-    fn record(&self, call: StreamSuccessCall<'_>) {
+    fn record(&self, call: &StreamSuccessCall<'_>) {
         let result = call.result.response().clone();
         self.0
             .lock()
@@ -287,7 +290,7 @@ impl RecordingDispatch {
 #[async_trait]
 impl StreamSuccessDispatch for RecordingDispatch {
     async fn dispatch_success(&self, call: StreamSuccessCall<'_>) {
-        self.record(call);
+        self.record(&call);
     }
 }
 
