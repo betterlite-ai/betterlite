@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::net::SocketAddr;
+use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -548,10 +549,13 @@ async fn answer_completion(listener: TcpListener) {
             Err(_) => return,
         }
     }
-    let length: usize = String::from_utf8_lossy(&head)
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
-        .and_then(|value| value.trim().parse().ok())
+    let length = str::from_utf8(&head)
+        .ok()
+        .and_then(|text| {
+            text.lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .and_then(|value| value.trim().parse::<usize>().ok())
+        })
         .unwrap_or_default();
     let mut body = vec![0_u8; length];
     if stream.read_exact(&mut body).await.is_err() {
