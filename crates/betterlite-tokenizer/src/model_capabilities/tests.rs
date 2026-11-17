@@ -130,7 +130,6 @@ fn layer(directory: &Path) -> ModelCapabilities {
     ));
     let counter = Arc::new(Counter::new(
         selector,
-        fetcher,
         service,
         Arc::clone(&catalog),
         settings,

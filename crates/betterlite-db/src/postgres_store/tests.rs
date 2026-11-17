@@ -626,10 +626,11 @@ async fn postgres_cancel_and_autocommit() {
 
 #[tokio::test]
 async fn postgres_fixture_contracts() {
-    use betterlite_postgres_fixture::connection::{FixtureSource, select_source};
+    use betterlite_postgres_fixture::connection::configured_options;
+    use betterlite_postgres_fixture::error::FixtureError;
     assert!(matches!(
-        select_source(None).unwrap(),
-        FixtureSource::Testcontainers
+        configured_options(None),
+        Err(FixtureError::MissingConfiguredUrl)
     ));
     let (fixture, store) = database().await;
     // Start from the server URL, since a new fixture must not inherit the first schema's search path.
@@ -639,7 +640,6 @@ async fn postgres_fixture_contracts() {
         .resolve()
         .await
         .unwrap();
-    assert!(second.container.is_none());
     assert_ne!(
         fixture.options.config.get_options(),
         second.options.config.get_options()

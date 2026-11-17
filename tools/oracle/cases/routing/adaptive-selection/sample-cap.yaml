@@ -1,0 +1,20 @@
+kind: probe
+name: adaptive-selection-sample-cap
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: apply_delta
+        deltas:
+          - {"request_type": "general", "model": "a", "alpha": "50", "beta": "50", "delta_alpha": "1", "delta_beta": "1"}
+          - {"request_type": "general", "model": "a", "alpha": "99", "beta": "99", "delta_alpha": "1", "delta_beta": "1"}
+          - {"request_type": "general", "model": "a", "alpha": "199.5", "beta": "0", "delta_alpha": "0.5", "delta_beta": "0"}
+          - {"request_type": "general", "model": "a", "alpha": "199.5", "beta": "0", "delta_alpha": "0.5", "delta_beta": "0.000001"}
+          - {"request_type": "general", "model": "a", "alpha": "199.999999", "beta": "0", "delta_alpha": "0.000001", "delta_beta": "0"}
+          - {"request_type": "general", "model": "a", "alpha": "100", "beta": "100", "delta_alpha": "100", "delta_beta": "0"}
+          - {"request_type": "general", "model": "a", "alpha": "100", "beta": "100", "delta_alpha": "-50", "delta_beta": "-50"}
+          - {"request_type": "general", "model": "a", "alpha": "5", "beta": "5", "delta_alpha": "-10", "delta_beta": "0"}
+          - {"request_type": "general", "model": "a", "alpha": "0", "beta": "0", "delta_alpha": "0", "delta_beta": "0"}
+          - {"request_type": "general", "model": "a", "alpha": "10", "beta": "10", "delta_alpha": "0", "delta_beta": "0"}
+compare: {ignore: []}
