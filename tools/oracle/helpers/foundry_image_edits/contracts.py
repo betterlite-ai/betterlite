@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 Headers: TypeAlias = dict[str, str]
-ImageValue: TypeAlias = bytes | io.BufferedReader | io.BytesIO | str
+ImageValue: TypeAlias = bytes | io.BufferedIOBase | str
 ImageArgument: TypeAlias = ImageValue | list[ImageValue | None] | None
 # the exception classes carry Any, so the catches name them through typed aliases
 UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError

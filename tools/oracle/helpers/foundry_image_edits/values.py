@@ -53,6 +53,16 @@ def failure(kind: str, status: int | None, provider: str | None) -> JsonValue:
     return {"error": detail}
 
 
+def params_failure(error: Exception) -> JsonValue:
+    record = FailureRecord.model_validate(error, from_attributes=True)
+    return failure(type(error).__name__, record.status_code, record.llm_provider)
+
+
+def provider_failure(error: Exception) -> JsonValue:
+    record = FailureRecord.model_validate(error, from_attributes=True)
+    return failure("OpenAIError", record.status_code, None)
+
+
 def outcomes(calls: list[Call], compute: Callable[[Call], JsonValue]) -> JsonValue:
     results: list[JsonValue] = []
     for call in calls:
@@ -61,11 +71,9 @@ def outcomes(calls: list[Call], compute: Callable[[Call], JsonValue]) -> JsonVal
         except ValueError:
             results.append(failure("ValueError", None, None))
         except (UNSUPPORTED, BAD_REQUEST) as error:
-            record = FailureRecord.model_validate(error, from_attributes=True)
-            results.append(failure(type(error).__name__, record.status_code, record.llm_provider))
+            results.append(params_failure(error))
         except OPENAI_ERROR as error:
-            record = FailureRecord.model_validate(error, from_attributes=True)
-            results.append(failure("OpenAIError", record.status_code, None))
+            results.append(provider_failure(error))
     return results
 
 
@@ -89,7 +97,8 @@ def supported_value(model: str) -> JsonValue:
 
 def auth_value(step: AuthStep) -> JsonValue:
     apply_globals(step.get("global_api_base"), step.get("global_api_key"), None)
-    with environment({} if step.get("environment") is None else step["environment"]):
+    values: Final = step.get("environment")
+    with environment({} if values is None else values):
         config = config_for(step["model"])
         supplied = step.get("headers")
         try:
@@ -102,6 +111,10 @@ def auth_value(step: AuthStep) -> JsonValue:
             )
         except ValueError:
             return failure("ValueError", None, None)
+        except (UNSUPPORTED, BAD_REQUEST) as error:
+            return params_failure(error)
+        except OPENAI_ERROR as error:
+            return provider_failure(error)
         return {
             "class": type(config).__name__,
             "multipart": config.use_multipart_form_data(),
@@ -112,7 +125,8 @@ def auth_value(step: AuthStep) -> JsonValue:
 
 def url_value(step: UrlStep) -> JsonValue:
     apply_globals(None, None, step.get("global_api_version"))
-    with environment({} if step.get("environment") is None else step["environment"]):
+    values: Final = step.get("environment")
+    with environment({} if values is None else values):
         config = config_for(step["model"])
         params: JsonObject = {}
         version = step.get("api_version")

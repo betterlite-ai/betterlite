@@ -4,6 +4,7 @@ use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_generation::error::FoundryImageError;
 use betterlite_foundry::image_generation::flux::supported_params;
 use betterlite_foundry::mai_images::error::MaiImageError;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Map, Value, json};
 
@@ -23,56 +24,61 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut answer = Map::new();
-        if let Some(models) = &input.models {
-            answer.insert(
-                "models".to_owned(),
-                json!(
-                    models
-                        .iter()
-                        .map(String::as_str)
-                        .map(model_step)
-                        .collect::<Vec<_>>()
-                ),
-            );
-        }
-        if let Some(models) = &input.supported {
-            answer.insert(
-                "supported".to_owned(),
-                json!(
-                    models
-                        .iter()
-                        .map(String::as_str)
-                        .map(supported_step)
-                        .collect::<Vec<_>>()
-                ),
-            );
-        }
-        if let Some(auths) = &input.auths {
-            answer.insert(
-                "auths".to_owned(),
-                json!(auths.iter().map(auth_step).collect::<Result<Vec<_>, _>>()?),
-            );
-        }
-        if let Some(urls) = &input.urls {
-            answer.insert(
-                "urls".to_owned(),
-                json!(urls.iter().map(url_step).collect::<Result<Vec<_>, _>>()?),
-            );
-        }
-        if let Some(transforms) = &input.transforms {
-            answer.insert(
-                "transforms".to_owned(),
-                json!(transforms.iter().map(transform_step).collect::<Vec<_>>()),
-            );
-        }
-        if let Some(replies) = &input.replies {
-            answer.insert(
-                "replies".to_owned(),
-                json!(replies.iter().map(reply_step).collect::<Vec<_>>()),
-            );
-        }
+        insert_strings(&mut answer, "models", input.models.as_deref(), model_step);
+        insert_strings(
+            &mut answer,
+            "supported",
+            input.supported.as_deref(),
+            supported_step,
+        );
+        insert_results(&mut answer, "auths", input.auths.as_deref(), auth_step)?;
+        insert_results(&mut answer, "urls", input.urls.as_deref(), url_step)?;
+        insert_values(
+            &mut answer,
+            "transforms",
+            input.transforms.as_deref(),
+            transform_step,
+        );
+        insert_values(&mut answer, "replies", input.replies.as_deref(), reply_step);
         Ok(Value::Object(answer))
     }
+}
+
+fn insert_strings(
+    answer: &mut Map<String, Value>,
+    key: &str,
+    values: Option<&[String]>,
+    step: fn(&str) -> Value,
+) {
+    if let Some(entries) = values {
+        let mapped: Vec<Value> = entries.iter().map(String::as_str).map(step).collect();
+        answer.insert(key.to_owned(), json!(mapped));
+    }
+}
+
+fn insert_values<T>(
+    answer: &mut Map<String, Value>,
+    key: &str,
+    values: Option<&[T]>,
+    step: fn(&T) -> Value,
+) {
+    if let Some(entries) = values {
+        let mapped: Vec<Value> = entries.iter().map(step).collect();
+        answer.insert(key.to_owned(), json!(mapped));
+    }
+}
+
+fn insert_results<T>(
+    answer: &mut Map<String, Value>,
+    key: &str,
+    values: Option<&[T]>,
+    step: fn(&T) -> Result<Value, Box<HelperError>>,
+) -> Result<(), Box<HelperError>> {
+    if let Some(entries) = values {
+        let mapped: Vec<Value> = entries.iter().map(step).collect::<Result<Vec<_>, _>>()?;
+        answer.insert(key.to_owned(), json!(mapped));
+    }
+    Ok(())
 }
 
 fn model_step(model: &str) -> Value {

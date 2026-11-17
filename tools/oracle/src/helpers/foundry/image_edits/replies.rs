@@ -26,9 +26,7 @@ impl ImageLogging for Recorder {
 
 pub(super) fn reply_step(step: &ReplyStep) -> Value {
     let mut recorder = Recorder::default();
-    let result =
-        transform_mai_edit_response(step.body.as_bytes(), step.status, CLOCK, &mut recorder);
-    match result {
+    match transform_mai_edit_response(step.body.as_bytes(), step.status, CLOCK, &mut recorder) {
         Ok(reply) => {
             // only the present image fields are projected, so an absent one compares like LiteLLM's exclude_none
             let data: Vec<Value> = reply
@@ -36,14 +34,14 @@ pub(super) fn reply_step(step: &ReplyStep) -> Value {
                 .iter()
                 .map(|datum| {
                     let mut fields = Map::new();
-                    if let Some(value) = &datum.b64_json {
-                        fields.insert(String::from("b64_json"), json!(value));
+                    if let Some(encoded) = &datum.b64_json {
+                        fields.insert(String::from("b64_json"), json!(encoded));
                     }
-                    if let Some(value) = &datum.url {
-                        fields.insert(String::from("url"), json!(value));
+                    if let Some(url) = &datum.url {
+                        fields.insert(String::from("url"), json!(url));
                     }
-                    if let Some(value) = &datum.revised_prompt {
-                        fields.insert(String::from("revised_prompt"), json!(value));
+                    if let Some(prompt) = &datum.revised_prompt {
+                        fields.insert(String::from("revised_prompt"), json!(prompt));
                     }
                     Value::Object(fields)
                 })

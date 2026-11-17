@@ -1,3 +1,4 @@
+import litellm
 from pydantic import JsonValue
 
 from .contracts import Input, JsonObject
@@ -10,6 +11,9 @@ from .values import (
     transform_value,
     url_value,
 )
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 
 def run(values: Input) -> JsonValue:

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
-    CallableTokenProvider, ClientSecretRecord, CredentialSources, OidcExchangeInput, SourceFailure,
-    UsernamePasswordRecord,
+    CallableTokenProvider, CredentialSources, SourceFailure,
 };
+use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_foundry::credentials::model_info::ModelInfoAccessors;
 use betterlite_foundry::image_edits::auth::{ValidateEnvironmentRequest, validate_environment};
@@ -13,7 +14,6 @@ use betterlite_foundry::image_edits::mai::{self, MaiEditRequest};
 use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_edits::url::{CompleteUrlRequest, complete_url};
 use betterlite_openai::image_edits::file::ImageEditFile;
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -81,13 +81,8 @@ pub(super) fn auth_step(step: &AuthStep) -> Result<Value, Box<HelperError>> {
         environment_api_key: settings.api_key.as_ref(),
     };
     let base = accessors.api_base(step.api_base.as_deref());
-    let headers: Headers = step
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
     let result = validate_environment(ValidateEnvironmentRequest {
-        headers,
+        headers: step.headers.clone(),
         model: &step.model,
         api_key: explicit.as_ref(),
         params: step.params.as_ref(),
@@ -120,7 +115,7 @@ pub(super) fn url_step(step: &UrlStep) -> Result<Value, Box<HelperError>> {
         environment_api_base: settings.api_base.as_deref(),
         environment_api_key: settings.api_key.as_ref(),
     };
-    let result = complete_url(CompleteUrlRequest {
+    let result = complete_url(&CompleteUrlRequest {
         model: &step.model,
         accessors,
         api_base: step.api_base.as_deref(),
@@ -145,24 +140,24 @@ fn sources(step: &TransformStep) -> Option<Vec<ImageSource>> {
 }
 
 fn image_source(field: Option<&ImageField>) -> ImageSource {
-    let Some(field) = field else {
+    let Some(present) = field else {
         return ImageSource::Unsupported {
             kind: String::from("NoneType"),
         };
     };
-    let content = field.text.clone().into_bytes();
-    match field.kind {
+    let content = present.text.clone().into_bytes();
+    match present.kind {
         ImageKind::Bytes => ImageSource::Bytes(content),
         ImageKind::Buffered => ImageSource::Buffered {
             content,
-            position: field.position,
+            position: present.position,
         },
         ImageKind::Reader => ImageSource::Reader {
             content,
-            position: field.position,
+            position: present.position,
         },
         ImageKind::Unsupported => ImageSource::Unsupported {
-            kind: field.text.clone(),
+            kind: present.text.clone(),
         },
     }
 }
@@ -175,53 +170,55 @@ fn mai_file(field: Option<&ImageField>) -> Option<ImageEditFile> {
 }
 
 pub(super) fn transform_step(step: &TransformStep) -> Value {
-    let Ok(variant) = ImageEditVariant::select(&step.model) else {
-        return json!({"error": {"kind": "ValueError", "status": null, "provider": null}});
-    };
-    match variant {
-        ImageEditVariant::Flux2 => {
-            // the dispatch maps the optional request params before the transform, so the probe runs the same order
-            let mapped = match flux2::map_edit_params(&step.options, &step.model, false) {
-                Ok(mapped) => mapped,
-                Err(error) => return error_value(&error),
-            };
-            let mut built = sources(step);
-            let result = flux2::transform_request(Flux2EditRequest {
-                model: &step.model,
-                prompt: step.prompt.as_deref(),
-                images: built.as_mut().map(Vec::as_mut_slice),
-                options: &mapped,
-            });
-            match result {
-                Ok(form) => json!({"value": {"kind": "flux2", "data": form.data, "files": []}}),
-                Err(error) => error_value(&error),
-            }
-        }
-        ImageEditVariant::Mai => {
-            let files: Option<Vec<Option<ImageEditFile>>> = step
-                .images
-                .as_ref()
-                .map(|list| list.iter().map(Option::as_ref).map(mai_file).collect());
-            let single_files = step.image.as_ref().map(|image| vec![mai_file(Some(image))]);
-            let form = mai::transform_request(MaiEditRequest {
-                model: &step.model,
-                prompt: step.prompt.as_deref(),
-                image: files.as_deref().or(single_files.as_deref()),
-                options: &step.options,
-            });
-            let projected: Vec<Value> = form
-                .files
-                .iter()
-                .map(|(field, file)| {
-                    json!({
-                        "field": field,
-                        "filename": file.filename,
-                        "content_type": file.content_type,
-                    })
-                })
-                .collect();
-            json!({"value": {"kind": "mai", "data": form.data, "files": projected}})
-        }
-        ImageEditVariant::Flux1 => Value::Null,
+    match ImageEditVariant::select(&step.model) {
+        Ok(ImageEditVariant::Flux2) => flux2_step(step),
+        Ok(ImageEditVariant::Mai) => mai_step(step),
+        Ok(ImageEditVariant::Flux1) => Value::Null,
+        Err(_) => json!({"error": {"kind": "ValueError", "status": null, "provider": null}}),
     }
+}
+
+fn flux2_step(step: &TransformStep) -> Value {
+    // the dispatch maps the optional request params before the transform, so the probe runs the same order
+    let mapped = match flux2::map_edit_params(&step.options, &step.model, false) {
+        Ok(mapped) => mapped,
+        Err(error) => return error_value(&error),
+    };
+    let mut built = sources(step);
+    let result = flux2::transform_request(Flux2EditRequest {
+        model: &step.model,
+        prompt: step.prompt.as_deref(),
+        images: built.as_mut().map(Vec::as_mut_slice),
+        options: &mapped,
+    });
+    match result {
+        Ok(form) => json!({"value": {"kind": "flux2", "data": form.data, "files": []}}),
+        Err(error) => error_value(&error),
+    }
+}
+
+fn mai_step(step: &TransformStep) -> Value {
+    let files: Option<Vec<Option<ImageEditFile>>> = step
+        .images
+        .as_ref()
+        .map(|list| list.iter().map(Option::as_ref).map(mai_file).collect());
+    let single_files = step.image.as_ref().map(|image| vec![mai_file(Some(image))]);
+    let form = mai::transform_request(&MaiEditRequest {
+        model: &step.model,
+        prompt: step.prompt.as_deref(),
+        image: files.as_deref().or(single_files.as_deref()),
+        options: &step.options,
+    });
+    let projected: Vec<Value> = form
+        .files
+        .iter()
+        .map(|(field, file)| {
+            json!({
+                "field": field,
+                "filename": file.filename,
+                "content_type": file.content_type,
+            })
+        })
+        .collect();
+    json!({"value": {"kind": "mai", "data": form.data, "files": projected}})
 }

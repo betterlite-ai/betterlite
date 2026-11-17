@@ -53,8 +53,7 @@ def reply_value(step: ReplyStep) -> JsonValue:
     data: list[JsonValue] = []
     entries = response.data
     if entries is not None:
-        for image in entries:
-            data.append(JSON.validate_json(image.model_dump_json(exclude_none=True)))
+        data = [JSON.validate_json(image.model_dump_json(exclude_none=True)) for image in entries]
     usage = response.usage
     projected_usage: JsonValue = {
         "input_tokens": 0,
