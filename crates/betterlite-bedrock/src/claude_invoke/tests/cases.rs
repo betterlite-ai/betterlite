@@ -69,7 +69,9 @@ pub(super) fn bedrock_anthropic_version() {
     let explicit = plain_request(
         &defaults,
         &catalog,
-        map_of(r#"{"max_tokens": 64, "anthropic_version": "custom-2024-01-01"}"#),
+        map_of(
+            r#"{"max_tokens": 64, "anthropic_version": "custom-2024-01-01", "aws_access_key_id": "AKIAEXAMPLE", "aws_secret_access_key": "secret"}"#,
+        ),
     );
     let prepared = session
         .transform(&explicit, &fetcher)
@@ -78,6 +80,8 @@ pub(super) fn bedrock_anthropic_version() {
         body_json(&prepared)["anthropic_version"],
         json!("custom-2024-01-01")
     );
+    assert!(body_json(&prepared).get("aws_access_key_id").is_none());
+    assert!(body_json(&prepared).get("aws_secret_access_key").is_none());
     assert!(fetcher.calls().is_empty());
 }
 

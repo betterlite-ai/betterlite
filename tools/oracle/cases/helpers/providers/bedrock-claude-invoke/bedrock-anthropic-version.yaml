@@ -15,7 +15,7 @@ call:
         inline: false
       - model: claude-plain
         messages: [{role: user, content: hello}]
-        optional_params: {max_tokens: 64, anthropic_version: custom-2024-01-01}
+        optional_params: {max_tokens: 64, anthropic_version: custom-2024-01-01, aws_access_key_id: AKIAEXAMPLE, aws_secret_access_key: secret}
         litellm_params: {}
         headers: {}
         fetch: {}
