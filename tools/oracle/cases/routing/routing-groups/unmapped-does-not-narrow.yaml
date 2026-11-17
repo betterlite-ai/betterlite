@@ -28,6 +28,6 @@ probes:
         intersections:
           - current: [none, minimal, low, medium, high]
           - resolved: []
-          - current: [low, high]
-            resolved: [high, max]
+          - current: [high, low]
+            resolved: [low, high]
 compare: {ignore: []}
