@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -30,11 +30,11 @@ use rmcp::model::{
     ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
     ResourceContents, ResourceTemplate, Role, ServerCapabilities as SdkCapabilities, ServerConfig,
 };
-use rmcp::service::{RequestContext, RxJsonRpcMessage, TxJsonRpcMessage};
+use rmcp::service::{MaybeSendFuture, RequestContext, RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 use rmcp::transport::async_rw::AsyncRwTransport;
 use rmcp::{RoleClient, RoleServer, ServerHandler, ServiceExt as _};
-use tokio::io::{DuplexStream, ReadHalf, WriteHalf, split};
+use tokio::io::{DuplexStream, ReadHalf, WriteHalf, duplex, split};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -74,12 +74,12 @@ impl TransportContext for DuplexContext {
     type Streams = DuplexStreams;
     type Error = SdkError;
 
-    async fn enter(&mut self) -> Result<DuplexStreams, SdkError> {
-        self.streams.take().ok_or(SdkError::AlreadyOpen)
+    fn enter(&mut self) -> impl Future<Output = Result<DuplexStreams, SdkError>> + Send {
+        ready(self.streams.take().ok_or(SdkError::AlreadyOpen))
     }
 
-    async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
-        Ok(())
+    fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
+        ready(Ok(()))
     }
 }
 
@@ -141,7 +141,7 @@ impl McpRuntime for DuplexRuntime {
         self: Arc<Self>,
         _client: Arc<NoHttpClient>,
     ) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
-        std::future::ready(Ok(()))
+        ready(Ok(()))
     }
 }
 
@@ -165,11 +165,11 @@ impl ServerHandler for ResourceServer {
         Cow::Owned(SdkVersion::KNOWN_VERSIONS.to_vec())
     }
 
-    async fn list_prompts(
+    fn list_prompts(
         &self,
         request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ListPromptsResult, ErrorData> {
+    ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> + MaybeSendFuture + '_ {
         let cursor = request.and_then(|params| params.cursor);
         let prompt = match cursor.as_deref() {
             Some("more") => Prompt::new("farewell", Some("says goodbye"), None),
@@ -177,16 +177,16 @@ impl ServerHandler for ResourceServer {
         };
         let mut result = ListPromptsResult::with_all_items(vec![prompt]);
         result.next_cursor = cursor.is_none().then(|| "more".to_owned());
-        Ok(result)
+        ready(Ok(result))
     }
 
-    async fn get_prompt(
+    fn get_prompt(
         &self,
         request: SdkGetPromptParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<GetPromptResponse, ErrorData> {
+    ) -> impl Future<Output = Result<GetPromptResponse, ErrorData>> + MaybeSendFuture + '_ {
         if request.name != "greet" {
-            return Err(ErrorData::invalid_params("no such prompt", None));
+            return ready(Err(ErrorData::invalid_params("no such prompt", None)));
         }
         let name = request
             .arguments
@@ -196,36 +196,32 @@ impl ServerHandler for ResourceServer {
             .unwrap_or("stranger");
         let message = PromptMessage::new_text(Role::User, format!("hello {name}"));
         let result = GetPromptResult::new(vec![message]).with_description("a greeting");
-        Ok(GetPromptResponse::from(result))
+        ready(Ok(GetPromptResponse::from(result)))
     }
 
-    async fn list_resources(
+    fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, ErrorData> {
-        Ok(ListResourcesResult::with_all_items(vec![notes_resource()]))
+    ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + MaybeSendFuture + '_ {
+        ready(Ok(resource_page()))
     }
 
-    async fn list_resource_templates(
+    fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ListResourceTemplatesResult, ErrorData> {
-        Ok(ListResourceTemplatesResult::with_all_items(vec![
-            file_template(),
-        ]))
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> + MaybeSendFuture + '_
+    {
+        ready(Ok(template_page()))
     }
 
-    async fn read_resource(
+    fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResponse, ErrorData> {
-        let contents = ResourceContents::text("the notes' text", request.uri);
-        Ok(ReadResourceResponse::from(ReadResourceResult::new(vec![
-            contents,
-        ])))
+    ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + MaybeSendFuture + '_ {
+        ready(Ok(notes_response(request.uri)))
     }
 }
 
@@ -235,6 +231,19 @@ fn notes_resource() -> Resource {
 
 fn file_template() -> ResourceTemplate {
     ResourceTemplate::new("file:///{name}", "file")
+}
+
+fn resource_page() -> ListResourcesResult {
+    ListResourcesResult::with_all_items(vec![notes_resource()])
+}
+
+fn template_page() -> ListResourceTemplatesResult {
+    ListResourceTemplatesResult::with_all_items(vec![file_template()])
+}
+
+fn notes_response(uri: String) -> ReadResourceResponse {
+    let contents = ResourceContents::text("the notes' text", uri);
+    ReadResourceResponse::from(ReadResourceResult::new(vec![contents]))
 }
 
 fn session_client(runtime: DuplexRuntime) -> SessionClient<DuplexRuntime> {
@@ -280,7 +289,7 @@ fn session_client(runtime: DuplexRuntime) -> SessionClient<DuplexRuntime> {
 
 #[tokio::test]
 async fn every_resource_session_method_round_trips_through_the_server() {
-    let (client_half, server_half) = tokio::io::duplex(64 * 1024);
+    let (client_half, server_half) = duplex(64 * 1024);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         let running = ResourceServer.serve(server_half).await.unwrap();
@@ -370,7 +379,7 @@ async fn check_prompt_requests(session: &mut SdkSession) {
     let SdkError::JsonRpc(failure) = rejected else {
         panic!("expected a JSON-RPC failure");
     };
-    assert_eq!(failure.code.0, -32_602);
+    assert_eq!(failure.code.0, -32_602_i32);
     assert_eq!(failure.message.as_ref(), "no such prompt");
 }
 
@@ -415,7 +424,7 @@ async fn check_resources(session: &mut SdkSession) {
 fn a_json_rpc_failure_keeps_its_code_and_other_errors_do_not() {
     let rejected = SdkError::JsonRpc(ErrorData::invalid_params("no such prompt", None));
     let failure = <SdkSession as ResourceSession>::protocol_failure(&rejected).expect("mapped");
-    assert_eq!(failure.code, -32_602);
+    assert_eq!(failure.code, -32_602_i32);
     assert_eq!(failure.message, "no such prompt");
     assert!(
         <SdkSession as ResourceSession>::protocol_failure(&SdkError::AlreadyOpen).is_none(),
