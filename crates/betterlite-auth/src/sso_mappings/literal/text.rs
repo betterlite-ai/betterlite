@@ -10,7 +10,7 @@ enum TextPrefix {
     RawBytes,
 }
 
-struct TextStart {
+pub(super) struct TextStart {
     prefix: TextPrefix,
     quote_at: usize,
 }
