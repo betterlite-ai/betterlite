@@ -77,7 +77,7 @@ fn object_headers(length: usize) -> HeaderMap {
     headers
 }
 
-// afile_content: the sync entry point runs this same operation on its own runtime, so both shapes end up here
+// the sync entry point awaits this one operation on its own runtime, so the read stays a plain future that never blocks
 pub async fn file_content<Auth, Http>(
     base: &GcsBucketBase<Auth, Http>,
     read: &ContentRead<'_>,
