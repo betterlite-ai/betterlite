@@ -5,7 +5,7 @@ description: >-
   validation, complete-URL selection, request transformation and pre-call logging before choosing sync/async
   transport. B1013 supplies the contract; B173 the bounded client; B2402 _handle_error. Headers default {},
   litellm_params=None and timeout=None. Log optional_rerank_params.query or "" and the supplied key through
-  B012 redaction. Async is selected only by boolean _is_async=true. Matching-kind clients are reused; wrong
+  B249 redaction. Async is selected only by boolean _is_async=true. Matching-kind clients are reused; wrong
   kind selects the pooled client. Async send receives logging_obj; sync send does not.
 
   Send data=json.dumps(transformed_request), not a JSON encoder that silently changes the byte representation:
