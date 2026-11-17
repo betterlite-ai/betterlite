@@ -66,18 +66,13 @@ async fn complete_despite_cancellation<Write>(
     cancellation: CancellationToken,
 ) -> CacheWriteOutcome
 where
-    Write: Fn(CallState) -> CacheWriteFuture,
+    Write: Fn(CallState) -> CacheWriteFuture + Send + Sync,
 {
     if cancellation.is_cancelled() {
         flush_pending_write(&write, call).await;
         return CacheWriteOutcome::Cancelled;
     }
-    let outcome = tokio::select! {
-        biased;
-        () = cancellation.cancelled() => None,
-        result = write(call) => Some(result),
-    };
-    match outcome {
+    match cancellation.run_until_cancelled(write(call)).await {
         Some(Ok(())) => CacheWriteOutcome::Completed,
         Some(Err(error)) => CacheWriteOutcome::Failed { error },
         None => {
@@ -90,7 +85,7 @@ where
 // The write the event loop interrupted is redone from its factory, never resumed, and a failure here is logged and dropped.
 async fn flush_pending_write<Write>(write: &Write, call: CallState)
 where
-    Write: Fn(CallState) -> CacheWriteFuture,
+    Write: Fn(CallState) -> CacheWriteFuture + Send + Sync,
 {
     match timeout(CACHE_WRITE_FLUSH_TIMEOUT, write(call)).await {
         Ok(Ok(())) => {}
