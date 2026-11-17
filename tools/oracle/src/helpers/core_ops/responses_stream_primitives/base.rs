@@ -5,7 +5,7 @@ use betterlite_core::api::responses_stream_primitives::state::{
 use betterlite_models::api_base_lookup::ApiBaseContext;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
-use chrono::DateTime;
+use chrono::{DateTime, TimeDelta};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -68,7 +68,8 @@ pub(crate) fn build_state(
         headers: &spec.headers,
         api_base: &resolver,
         times: StreamTimes {
-            now: start_time,
+            // the fallback clock is a different instant, so the case fails when the logged start time is ignored
+            now: start_time + TimeDelta::hours(12),
             created_timestamp: spec.created,
         },
         max_streaming_duration_seconds,
