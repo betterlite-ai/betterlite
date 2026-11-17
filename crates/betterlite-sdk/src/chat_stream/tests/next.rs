@@ -208,6 +208,20 @@ async fn next_effective_model_survives_a_skipped_chunk() {
 }
 
 #[tokio::test]
+async fn next_effective_model_keeps_openai_when_the_logging_provider_matches() {
+    let mut config = config(CallMode::Blocking);
+    config.provider = Some("openai".to_owned());
+    config.logging_provider = Some("openai".to_owned());
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    assert_eq!(only_chunk(stream.next().await).model, MODEL);
+    assert_eq!(only_chunk(stream.next().await).model, MODEL);
+}
+
+#[tokio::test]
 async fn next_stamps_base_hidden_params() {
     let mut config = config(CallMode::Blocking);
     config.logging_provider = Some("custom".to_owned());
