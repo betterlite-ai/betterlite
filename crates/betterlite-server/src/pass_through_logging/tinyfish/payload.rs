@@ -14,7 +14,7 @@ use super::records::{TinyfishRun, run_cost};
 use super::{TINYFISH_MODEL_NAME, TINYFISH_PROVIDER};
 use crate::media_relay_logging::write_spend;
 
-// LiteLLM stamps the model and provider on the log object and the kwargs, and logs the parsed run object when there is one.
+// LiteLLM stamps the model and provider on the log object and the kwargs, and logs the parsed run as JSON text when there is one.
 pub fn build_logging_payload(
     logging_obj: &StreamLoggingObject,
     run: Option<&TinyfishRun>,
@@ -32,11 +32,9 @@ pub fn build_logging_payload(
         state.custom_llm_provider = Some(TINYFISH_PROVIDER.to_owned());
     });
     let response = match run {
-        Some(submitted) => {
-            let encoded = serde_json::to_string(submitted)
-                .map_err(|source| TinyfishError::Encode { source })?;
-            serde_json::from_str(&encoded).map_err(|source| TinyfishError::Encode { source })?
-        }
+        Some(submitted) => Json::Text(
+            serde_json::to_string(submitted).map_err(|source| TinyfishError::Encode { source })?,
+        ),
         None => Json::Text(result.to_owned()),
     };
     let mut outcome_kwargs = spend.kwargs(kwargs);

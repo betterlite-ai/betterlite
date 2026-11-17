@@ -57,12 +57,41 @@ fn stamps_the_run_model_provider_and_cost() {
         outcome.kwargs.entries.get("litellm_params"),
         Some(&json("{}"))
     );
+}
+
+// LiteLLM logs json.dumps(run), so the standard response carries the run as JSON text rather than an object.
+#[test]
+fn logs_parsed_runs_as_json_text() {
+    let logging_obj = logging_object();
+    let submitted = run(
+        r#"{"run_id": "run-1", "status": "COMPLETED", "num_of_steps": 3, "result": {"ok": true}}"#,
+    );
+    let outcome = build_logging_payload(
+        &logging_obj,
+        Some(&submitted),
+        "",
+        &kwargs(&[]),
+        decimal("0.016"),
+    )
+    .expect("the payload builds");
     assert_eq!(
         standard_response(&outcome),
-        &json(
-            r#"{"run_id": "run-1", "status": "COMPLETED", "num_of_steps": 3, "result": {"ok": true}}"#
+        &Json::Text(
+            r#"{"run_id":"run-1","status":"COMPLETED","num_of_steps":3,"result":{"ok":true}}"#
+                .to_owned()
         )
     );
+
+    let empty_obj = logging_object();
+    let empty = parse_run(&json("{}")).expect("the run parses");
+    let empty_outcome =
+        build_logging_payload(&empty_obj, Some(&empty), "", &kwargs(&[]), decimal("0.016"))
+            .expect("the payload builds");
+    assert_eq!(
+        standard_response(&empty_outcome),
+        &Json::Text("{}".to_owned())
+    );
+    assert_eq!(detail_cost(&empty_obj), None);
 }
 
 #[test]
@@ -214,21 +243,4 @@ fn prices_at_the_resolved_rate() {
         outcome.kwargs.entries.get("response_cost"),
         Some(&json("1.5"))
     );
-}
-
-#[test]
-fn logs_an_empty_run_as_an_empty_object() {
-    let logging_obj = logging_object();
-    let submitted = parse_run(&json("{}")).expect("the run parses");
-    let outcome = build_logging_payload(
-        &logging_obj,
-        Some(&submitted),
-        "",
-        &kwargs(&[]),
-        decimal("0.016"),
-    )
-    .expect("the payload builds");
-
-    assert_eq!(standard_response(&outcome), &json("{}"));
-    assert_eq!(detail_cost(&logging_obj), None);
 }
