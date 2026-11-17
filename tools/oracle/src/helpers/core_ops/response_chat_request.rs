@@ -40,14 +40,14 @@ pub(crate) struct Input {
 
 // the flat request LiteLLM returns, so the oracle compares one object on both sides
 #[derive(Serialize)]
-struct RequestView<'a> {
+struct RequestView<'request> {
     #[serde(flatten)]
-    params: &'a ResponsesApiRequestParams,
+    params: &'request ResponsesApiRequestParams,
     #[serde(flatten)]
-    litellm_params: &'a IndexMap<String, Value>,
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    extra_headers: Option<&'a IndexMap<String, String>>,
-    client: Option<&'a str>,
+    litellm_params: &'request IndexMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extra_headers: Option<&'request IndexMap<String, String>>,
+    client: Option<&'request str>,
 }
 
 pub(crate) struct Op;
