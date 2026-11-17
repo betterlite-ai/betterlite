@@ -40,8 +40,8 @@ deviations:
       LiteLLM lets httpx.HTTPStatusError out with its own rendered text.
     why: >-
       betterlite surfaces every provider status through one typed error, which
-      keeps the status, the class of failure and the body text. docs/
-      compatibility.md does not port Python exception text, and httpx's
+      keeps the status, the class of failure and the body text. The
+      compatibility rules do not port Python exception text, and httpx's
       rendering of the request URL is not part of the API's answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L114
   - what: >-
@@ -56,16 +56,17 @@ deviations:
       from a transport failure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L332-L343
   - what: >-
-      Projecting a result body emits one post_call per projected row and one
-      pre_call for the whole body, each stamped with the injected clock's now,
-      where LiteLLM's transform_response calls neither hook and the handler
-      builds its Logging with start_time=None.
+      Projecting a result body routes each row through betterlite's chat
+      response transform, so its pre_call and post_call logging hooks fire per
+      row, and the call's timestamps come from the injected clock, where
+      LiteLLM's batch transform calls transform_parsed_response directly and
+      the handler builds its Logging with start_time=None.
     why: >-
       betterlite's other chat paths log through pre_call and post_call, and its
-      timestamps come from the injected clock instead of the wall clock.
-      docs/compatibility.md keeps Python's wall-clock reads out of the port.
-      The projected ModelResponse, its usage and its content are unchanged.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L58-L77
+      timestamps come from the injected clock instead of the wall clock. The
+      compatibility rules keep Python's wall-clock reads out of the port. The
+      projected ModelResponse, its usage and its content are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L282-L331
 kept_bugs:
   - what: >-
       get_complete_batch_url strips trailing slashes and appends the route
