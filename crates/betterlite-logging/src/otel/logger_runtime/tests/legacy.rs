@@ -5,7 +5,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::{TimeZone as _, Utc};
 use opentelemetry::Value;
-use opentelemetry::trace::{Span as _, SpanId, SpanKind, TraceId, TracerProvider as _};
+use opentelemetry::trace::{Span as _, SpanId, SpanKind, Status, TraceId, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
 
@@ -107,6 +107,27 @@ fn legacy_route_missing_values() {
         Some(&Value::from("/v1/chat/completions"))
     );
     assert_eq!(attribute(data, ROUTE), Some(&Value::from("/v1/chat")));
+}
+
+#[test]
+fn legacy_setters_leave_the_span_open() {
+    let sink = InMemorySpanExporter::default();
+    let (_provider, span) = proxy_span(&sink, SpanTime::Missing, NOW_NS, None);
+    set_proxy_request_route_attributes(Some(&span), Some("/v1/chat"), Some("/chat"));
+    assert!(span.lock().is_recording());
+    set_response_status_code_attribute(Some(&span), Some(201));
+    assert!(span.lock().is_recording());
+    span.lock().end();
+    let spans = sink.get_finished_spans().expect("exported spans");
+    assert_eq!(spans.len(), 1);
+    let data = &spans[0];
+    assert_eq!(attribute(data, URL_PATH), Some(&Value::from("/v1/chat")));
+    assert_eq!(attribute(data, ROUTE), Some(&Value::from("/chat")));
+    assert_eq!(
+        attribute(data, RESPONSE_STATUS_CODE),
+        Some(&Value::I64(201))
+    );
+    assert_eq!(data.status, Status::Unset);
 }
 
 #[test]
