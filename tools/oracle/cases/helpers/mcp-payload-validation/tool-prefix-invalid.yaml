@@ -1,0 +1,27 @@
+kind: helper
+name: mcp-payload-validation-tool-prefix-invalid
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test server
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        alias: bad/alias
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: a.b_c
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test,srv
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}
