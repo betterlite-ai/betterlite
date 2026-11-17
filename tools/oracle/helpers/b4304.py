@@ -1,17 +1,17 @@
 import asyncio
 import datetime as dt
 from collections.abc import Callable
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, Protocol, Self, TypeAlias, TypedDict
 
 import litellm
 from litellm.caching.base_cache import BaseCache
 from litellm.caching.caching import Cache
-from litellm.caching.s3_cache import S3Cache
 from litellm.caching.caching_handler import LLMCachingHandler
+from litellm.caching.s3_cache import S3Cache
 from litellm.types.caching import CachingSupportedCallTypes, LiteLLMCacheType
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import Self, override
+from typing_extensions import override
 
 FIXED_TIME = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
 CHAT_BODY: dict[str, JsonValue] = {
@@ -84,11 +84,22 @@ class Handler(Protocol):
     ) -> StreamResult: ...
 
 
+class RecordingHandler(LLMCachingHandler):
+    def __init__(
+        self,
+        original_function: Callable[..., JsonValue],
+        request_kwargs: dict[str, JsonValue],
+        start_time: dt.datetime,
+    ) -> None:
+        super().__init__(original_function, {}, start_time)
+        self.request_kwargs.update(request_kwargs)
+
+
 HANDLER_FACTORY: Callable[
     [NamedFunction, dict[str, JsonValue], dt.datetime], Handler
 ] = TypeAdapter(
     Callable[[NamedFunction, dict[str, JsonValue], dt.datetime], Handler]
-).validate_python(LLMCachingHandler)
+).validate_python(RecordingHandler)
 
 
 class StoreResult(TypedDict):
@@ -135,10 +146,9 @@ Input: TypeAlias = StoreInput | WrapInput
 def write_record(sink: str, key: str, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match value["response"]:
         case str():
-            kind = "text"
+            return {"sink": sink, "kind": "text", "key": key}
         case bool() | int() | float() | list() | dict() | None:
-            kind = "value"
-    return {"sink": sink, "kind": kind, "key": key}
+            return {"sink": sink, "kind": "value", "key": key}
 
 
 class Recorder(BaseCache):
