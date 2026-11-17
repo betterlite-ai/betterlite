@@ -14,6 +14,7 @@ async fn next_returns_chunks_in_order() {
     assert_eq!(first.id, CHAT_ID);
     assert_eq!(first.model, MODEL);
     assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
+    assert!(first.hidden_params.get("usage").is_none());
 
     let second = only_chunk(stream.next().await);
     assert_eq!(content_of(&second), "lo");
@@ -65,6 +66,54 @@ async fn next_moves_inline_usage_to_hidden_params() {
     assert_eq!(content_of(&chunk), "Hi");
     assert!(chunk.usage.is_none());
     assert_eq!(hidden_usage_total(&chunk), Some(10));
+}
+
+#[tokio::test]
+async fn next_keeps_a_stripped_usage_chunk_that_a_choice_keeps_alive() {
+    let finish_usage = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![provider_json(finish_usage)]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&chunk).as_deref(), Some("stop"));
+    assert!(chunk.usage.is_none());
+    assert_eq!(hidden_usage_total(&chunk), Some(10));
+}
+
+#[tokio::test]
+async fn next_keeps_a_stripped_usage_chunk_with_a_nonzero_choice_index() {
+    let indexed = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":1,"delta":{"provider_specific_fields":{}},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), provider_json(indexed)]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(chunk.choices[0].index, 1);
+    assert!(chunk.usage.is_none());
+    assert_eq!(hidden_usage_total(&chunk), Some(10));
+}
+
+#[tokio::test]
+async fn next_drops_stripped_usage_chunks_that_carry_nothing() {
+    let variants = [
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#,
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"provider_specific_fields":{}},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"vendor_note":"","vendor_list":[],"vendor_obj":{}}"#,
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"provider_specific_fields":{}}"#,
+    ];
+    for raw in variants {
+        let world = World::new();
+        let mut correlation = CorrelationContext::default();
+        let source = FakeSource::new(vec![content_chunk("Hi"), provider_json(raw)]);
+        let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+        assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+        let after = only_chunk(stream.next().await);
+        assert_eq!(finish_of(&after).as_deref(), Some("stop"));
+    }
 }
 
 #[tokio::test]

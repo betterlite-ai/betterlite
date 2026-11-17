@@ -234,6 +234,54 @@ async fn finalize_usage_only_build_logs_the_fallback() {
 }
 
 #[tokio::test]
+async fn finalize_synthesized_finish_logs_only_for_blocking() {
+    let async_world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(
+        &async_world,
+        &mut correlation,
+        config(CallMode::Async),
+        source,
+    );
+
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(
+        async_world
+            .logging
+            .logged
+            .lock()
+            .unwrap()
+            .successes
+            .is_empty()
+    );
+
+    let blocking_world = World::new();
+    let mut blocking_correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut blocking = start(
+        &blocking_world,
+        &mut blocking_correlation,
+        config(CallMode::Blocking),
+        source,
+    );
+
+    assert!(blocking.next().await.unwrap().is_some());
+    assert!(blocking.next().await.unwrap().is_some());
+    assert_eq!(
+        blocking_world
+            .logging
+            .logged
+            .lock()
+            .unwrap()
+            .successes
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn finalize_without_cache_stores_nothing() {
     let world = World::with_build(complete_build());
     let mut correlation = CorrelationContext::default();
