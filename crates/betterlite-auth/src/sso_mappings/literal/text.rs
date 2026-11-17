@@ -1,7 +1,5 @@
 mod escape;
 
-use std::str;
-
 use super::{Cursor, Literal, LiteralError};
 
 #[derive(Clone, Copy)]
@@ -29,21 +27,13 @@ fn text_prefix(letters: &str) -> Option<TextPrefix> {
 
 impl Cursor<'_> {
     pub(super) fn text_start(&self) -> Option<TextStart> {
-        let mut index = self.at;
-        loop {
-            match self.bytes.get(index) {
-                Some(b'\'' | b'"') => {
-                    let prefix = self.bytes.get(self.at..index)?;
-                    let letters = str::from_utf8(prefix).ok()?;
-                    return Some(TextStart {
-                        prefix: text_prefix(letters)?,
-                        quote_at: index,
-                    });
-                }
-                Some(byte) if byte.is_ascii_alphabetic() => index = index.saturating_add(1),
-                _other => return None,
-            }
-        }
+        let rest = self.text.get(self.at..)?;
+        let quote = rest.find(['\'', '"'])?;
+        let prefix = rest.get(..quote)?;
+        Some(TextStart {
+            prefix: text_prefix(prefix)?,
+            quote_at: self.at.saturating_add(quote),
+        })
     }
 
     // implicit concatenation joins adjacent literals, but only within the expression's brackets
@@ -97,6 +87,11 @@ impl Cursor<'_> {
             }
             if !triple && matches!(character, '\n' | '\r') {
                 return Err(LiteralError::Syntax);
+            }
+            if character == '\r' {
+                value.push('\n');
+                at = self.skip_newline_of(at.saturating_add(1));
+                continue;
             }
             if matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes)
                 && !character.is_ascii()

@@ -31,9 +31,11 @@ impl Cursor<'_> {
             return Err(LiteralError::Syntax);
         };
         if character == '\n' {
+            value.push_str("\\\n");
             return Ok(at.saturating_add(2));
         }
         if character == '\r' {
+            value.push_str("\\\n");
             return Ok(self.skip_newline_of(at.saturating_add(2)));
         }
         // a raw string keeps its backslash, which still hides the quote that follows it
@@ -147,7 +149,11 @@ impl Cursor<'_> {
             code = code.saturating_mul(8).saturating_add(digit);
             width = width.saturating_add(1);
         }
-        let point = if bytes { code & 0xff } else { code };
+        let point = if bytes {
+            u32::from(code.to_le_bytes()[0])
+        } else {
+            code
+        };
         let Some(character) = char::from_u32(point) else {
             return Err(LiteralError::Syntax);
         };
