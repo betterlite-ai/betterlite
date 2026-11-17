@@ -3,17 +3,23 @@
 use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes, to_bytes};
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::dispatch::error::DispatchError;
-use betterlite_core::operation::chat::ChatFailure;
+use betterlite_core::operation::chat::{ChatFailure, ChatResult, TextCallMode};
 use betterlite_http::error::HttpError;
+use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
+use betterlite_openai::text_completion_execution::{
+    CompletionAnswer, CompletionCallAnswer, CompletionStreamAnswer,
+};
+use betterlite_openai::text_completion_response::CompletionResponse;
+use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::{StreamExt as _, stream};
 use rand::SeedableRng as _;
@@ -22,6 +28,7 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
+use super::answered_result;
 use super::completion_failure;
 use super::relay::{Pump, RelaySource, TextSource, next_frame};
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
@@ -427,6 +434,62 @@ async fn a_text_provider_failure_is_a_chat_provider_failure() {
 #[derive(serde::Deserialize)]
 struct ProviderReply {
     error: ProviderFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ConvertedTextAnswer {
+    object: String,
+    model: String,
+}
+
+// The text endpoint's answer arrives in the shape the text call asked for; a crossed shape is a dispatch bug.
+#[tokio::test]
+async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
+    let executor = executor_for(
+        "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
+    );
+    let request =
+        ChatRequest::parse(br#"{"model":"client","messages":[{"role":"user","content":"hi"}]}"#)
+            .expect("chat request");
+    let response: CompletionResponse = serde_json::from_str(
+        r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}]}"#,
+    )
+    .expect("completion response");
+    let buffered = CompletionCallAnswer::Buffered(CompletionAnswer {
+        response: Box::new(response),
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::ZERO,
+    });
+    let ChatResult::Completion(answer) = answered_result(
+        &executor,
+        TextCallMode::Buffered { convert: true },
+        buffered,
+        &request,
+    )
+    .expect("buffered answer") else {
+        panic!("a buffered text answer cannot fill a stream");
+    };
+    let body: ConvertedTextAnswer = serde_json::from_slice(&answer.body).expect("body");
+    assert_eq!(body.object, "chat.completion");
+    assert_eq!(body.model, "client");
+    let empty_stream: CompletionStream = Box::pin(stream::empty());
+    let streamed = CompletionCallAnswer::Streamed(CompletionStreamAnswer {
+        stream: empty_stream,
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::ZERO,
+    });
+    let ChatResult::Stream(answer) =
+        answered_result(&executor, TextCallMode::Streamed, streamed, &request)
+            .expect("streamed answer")
+    else {
+        panic!("a text stream cannot fill a buffered answer");
+    };
+    let frames: Vec<_> = answer.body.collect().await;
+    assert_eq!(frames.len(), 1);
+    assert_eq!(
+        frames[0].as_ref().expect("done").as_ref(),
+        b"data: [DONE]\n\n"
+    );
 }
 
 #[derive(serde::Deserialize)]
