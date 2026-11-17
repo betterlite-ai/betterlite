@@ -84,12 +84,10 @@ fn the_adapter_takes_an_endpoint_and_optional_credentials() {
 #[tokio::test]
 async fn import_request_carries_the_chunking_config() {
     let capture = CaptureImport::default();
-    let port = VertexRagDataImport::from_client(VertexRagDataService::from_stub(capture.clone()));
-    let strategy = RagChunkingStrategy {
-        chunk_size: Some(512),
-        chunk_overlap: Some(16),
-        ..RagChunkingStrategy::default()
-    };
+    let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
+    let strategy: RagChunkingStrategy =
+        serde_json::from_str(r#"{"chunk_size": 512, "chunk_overlap": 16}"#)
+            .expect("the strategy is valid");
     let chunking = transform_chunking_strategy(Some(&strategy), ChunkDefaults::LITELLM);
     let outcome = port
         .import(import_request(chunking))
@@ -139,7 +137,7 @@ async fn an_out_of_range_chunk_value_is_refused(
     #[case] field: &str,
 ) {
     let capture = CaptureImport::default();
-    let port = VertexRagDataImport::from_client(VertexRagDataService::from_stub(capture.clone()));
+    let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
     let error = port
         .import(import_request(fixed_length(chunk_size, chunk_overlap)))
         .await

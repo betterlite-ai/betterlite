@@ -40,12 +40,6 @@ impl VertexRagDataImport {
         }
     }
 
-    // The SDK stub path: a test client answers the RPC without credentials or a socket
-    #[must_use]
-    pub const fn from_client(client: VertexRagDataService) -> Self {
-        Self::Existing(client)
-    }
-
     async fn open(&self) -> Result<VertexRagDataService, ImportError> {
         let builder = match self {
             Self::Existing(client) => return Ok(client.clone()),
@@ -71,9 +65,7 @@ impl CorpusImport for VertexRagDataImport {
         Box::pin(async move {
             let client = self.open().await?;
             let chunking = request.chunking.chunking_config;
-            let fixed = FixedLengthChunking::new()
-                .set_chunk_size(integer("chunk_size", chunking.chunk_size)?)
-                .set_chunk_overlap(integer("chunk_overlap", chunking.chunk_overlap)?);
+            let fixed = fixed_length_chunking(chunking.chunk_size, chunking.chunk_overlap)?;
             let transformation = RagFileTransformationConfig::new().set_rag_file_chunking_config(
                 RagFileChunkingConfig::new().set_chunking_config(Some(
                     ChunkingConfig::FixedLengthChunking(Box::new(fixed)),
@@ -99,6 +91,21 @@ impl CorpusImport for VertexRagDataImport {
     }
 }
 
-fn integer(field: &'static str, value: i64) -> Result<i32, ImportError> {
-    i32::try_from(value).map_err(|_source| ImportError::IntegerRange { field, value })
+fn fixed_length_chunking(
+    chunk_size: i64,
+    chunk_overlap: i64,
+) -> Result<FixedLengthChunking, ImportError> {
+    Ok(FixedLengthChunking::new()
+        .set_chunk_size(
+            i32::try_from(chunk_size).map_err(|_source| ImportError::IntegerRange {
+                field: "chunk_size",
+                value: chunk_size,
+            })?,
+        )
+        .set_chunk_overlap(i32::try_from(chunk_overlap).map_err(|_source| {
+            ImportError::IntegerRange {
+                field: "chunk_overlap",
+                value: chunk_overlap,
+            }
+        })?))
 }
