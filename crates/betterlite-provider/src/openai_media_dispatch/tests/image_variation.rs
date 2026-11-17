@@ -77,6 +77,7 @@ async fn variation() {
     let form = parts(&sent);
     let names: Vec<&str> = form.iter().map(|part| part.name.as_str()).collect();
     assert_eq!(names, ["n", "size", "image"]);
+    assert!(form.len() > 2);
     assert_eq!(form[0].data, b"2".to_vec());
     assert_eq!(form[1].data, b"256x256".to_vec());
     assert_eq!(form[2].file_name.as_deref(), Some("cat.png"));

@@ -57,10 +57,10 @@ impl Fixture {
 
     #[must_use]
     pub fn request_count(&self) -> usize {
-        match self.seen.lock() {
-            Ok(seen) => seen.len(),
-            Err(_) => 0,
-        }
+        let Ok(seen) = self.seen.lock() else {
+            return 0;
+        };
+        seen.len()
     }
 
     pub fn take_request(&self) -> Option<OutboundRequest> {

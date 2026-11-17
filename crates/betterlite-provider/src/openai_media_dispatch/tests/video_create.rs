@@ -89,10 +89,15 @@ async fn multipart() {
     let OpenAiMediaResult::Video(outcome) = result else {
         panic!("the create stays a video outcome");
     };
+    form_projection(&outcome);
+    reply_projection(&outcome);
+}
+
+fn form_projection(outcome: &VideoOutcome) {
     assert_eq!(outcome.request.method, MediaMethod::Post);
     assert_eq!(outcome.request.url, "https://video.test/v1/videos");
     assert!(outcome.request.multipart);
-    let body = body_of(&outcome);
+    let body = body_of(outcome);
     assert_eq!(body.get("model"), Some(&json!("sora-2")));
     assert_eq!(body.get("prompt"), Some(&json!("a cat surfing")));
     assert_eq!(body.get("seconds"), Some(&json!("4")));
@@ -104,6 +109,9 @@ async fn multipart() {
         .expect("the characters ride along");
     assert_eq!(characters[0].get("id"), Some(&json!("char-1")));
     assert_eq!(characters[0].get("role"), Some(&json!("hero")));
+}
+
+fn reply_projection(outcome: &VideoOutcome) {
     assert_eq!(outcome.request.parts.len(), 1);
     let part = &outcome.request.parts[0];
     assert_eq!(part.field, "input_reference");
@@ -118,7 +126,7 @@ async fn multipart() {
     assert_eq!(decoded.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(decoded.model_id.as_deref(), Some("sora-2"));
     let usage = video.usage.as_ref().expect("the create adds usage");
-    assert_eq!(usage.get("duration_seconds"), Some(&json!(4.0)));
+    assert_eq!(usage.get("duration_seconds"), Some(&json!(4.0_f64)));
 }
 
 async fn plain_json() {

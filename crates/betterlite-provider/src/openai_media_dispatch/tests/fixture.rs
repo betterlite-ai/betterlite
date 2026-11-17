@@ -10,9 +10,11 @@ use crate::operation::OperationResult;
 
 pub(crate) use crate::openai_media_dispatch::test_support::{Fixture, Recorder};
 
-pub(crate) fn media_result(result: Result<OperationResult, OpenAiMediaError>) -> OpenAiMediaResult {
-    match result {
-        Ok(OperationResult::OpenAiMedia(result)) => result,
+pub(crate) fn media_result(
+    outcome: Result<OperationResult, OpenAiMediaError>,
+) -> OpenAiMediaResult {
+    match outcome {
+        Ok(OperationResult::OpenAiMedia(media)) => media,
         Ok(_) => panic!("the media dispatcher returns a media result"),
         Err(error) => panic!("the media dispatch failed: {error}"),
     }

@@ -4,7 +4,7 @@ use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::transcription::client::TranscriptionConnection;
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use betterlite_openai::transcription::error::TranscriptionError;
-use betterlite_openai::transcription::reply::StoredDuration;
+use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use http::Method;
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -80,12 +80,17 @@ async fn projection() {
     let form = parts(&sent);
     let names: Vec<&str> = form.iter().map(|part| part.name.as_str()).collect();
     assert_eq!(names, ["model", "language", "response_format", "file"]);
+    assert!(form.len() > 3);
     assert_eq!(form[0].data, b"whisper-1".to_vec());
     assert_eq!(form[1].data, b"en".to_vec());
     assert_eq!(form[2].data, b"verbose_json".to_vec());
     assert_eq!(form[3].file_name.as_deref(), Some("clip.wav"));
     assert_eq!(form[3].content_type.as_deref(), Some("audio/wav"));
     assert_eq!(form[3].data, WAV.to_vec());
+    reply_projection(&reply);
+}
+
+fn reply_projection(reply: &TranscriptionReply) {
     assert_eq!(reply.response.text.as_deref(), Some("hello world"));
     assert_eq!(reply.custom_llm_provider, "openai");
     assert_eq!(reply.model.as_deref(), Some("whisper-1"));
