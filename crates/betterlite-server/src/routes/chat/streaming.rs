@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
-use axum::http::HeaderMap;
+use axum::http::header::CONTENT_LENGTH;
+use axum::http::{HeaderMap, HeaderValue};
 use axum::middleware::Next;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::mock_response::failure::MockError;
@@ -20,6 +21,7 @@ use betterlite_core::operation::chat::{
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_logging::logging_service_events::pipeline::ServicePipeline;
+use betterlite_logging::logging_service_events::stream::{ServiceEventStream, failure_for};
 use betterlite_logging::logging_service_events::types::ServiceKind;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -33,15 +35,16 @@ use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
+use http_body::Body as _;
 
 use super::CallContext;
 use super::headers::stream_headers;
+use crate::pre_call::rewrites::resolve_call_id;
 use crate::server::chat_setup::provider_call::{
     CallError, answer_chat, chat_error, control_options,
 };
 
-// Every chat and embeddings call enters the service event track here: one pre-call event before the
-// route runs, and one terminal event when the response body ends, fails or is dropped unconsumed.
+// Every chat and embeddings call enters the service event track here, one pre-call and one terminal event.
 pub(crate) async fn service_events(
     State(pipeline): State<Arc<ServicePipeline>>,
     mut request: Request,
@@ -50,11 +53,28 @@ pub(crate) async fn service_events(
     let Some(kind) = ServiceKind::from_path(request.uri().path()) else {
         return next.run(request).await;
     };
-    let call = pipeline.begin(kind, request.headers_mut());
+    let call_id = resolve_call_id(
+        request
+            .headers()
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+    );
+    if let Ok(value) = HeaderValue::from_str(&call_id) {
+        request.headers_mut().insert("x-litellm-call-id", value);
+    }
+    let call = pipeline.begin(kind, &call_id);
     let response = next.run(request).await;
-    let (parts, body) = response.into_parts();
-    let body = Body::from_stream(call.watch(body.into_data_stream(), parts.status));
-    Response::from_parts(parts, body)
+    let (mut parts, body) = response.into_parts();
+    let size = body.size_hint().exact();
+    if let Some(value) = size.and_then(|length| HeaderValue::from_str(&length.to_string()).ok()) {
+        parts.headers.entry(CONTENT_LENGTH).or_insert(value);
+    }
+    let streamed = Body::from_stream(ServiceEventStream::new(
+        body.into_data_stream(),
+        call,
+        failure_for(parts.status),
+    ));
+    Response::from_parts(parts, streamed)
 }
 
 // the existing chat implementation, reached through the dispatch pipeline's port

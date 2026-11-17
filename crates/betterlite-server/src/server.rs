@@ -96,8 +96,7 @@ pub async fn run_with_listener(
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
     let tasks = TaskTracker::new();
-    // the one place the logging dependencies are built: clock, sink, callback registry and the
-    // stream assembler B8610 later replaces
+    // the one place the logging parts are built, with the stream assembler B8610 later replaces
     let logging = LoggingWiring::start(
         &config.sections.service_callback,
         Arc::new(SystemClock),

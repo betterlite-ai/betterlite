@@ -30,12 +30,13 @@ use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use uuid::Uuid;
 
+use crate::pre_call::rewrites::resolve_call_id;
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::{failure, plain_failure};
 
 use headers::success_headers;
 
-// LiteLLM's MAX_LITELLM_CALL_ID_LENGTH
+// LiteLLM's MAX_LITELLM_CALL_ID_LENGTH, the longest client-supplied call id the routes accept
 pub(super) const MAX_CALL_ID_LENGTH: usize = 256;
 
 pub(crate) fn chat_routes_with_call_id(
@@ -136,11 +137,8 @@ async fn chat_completion(
     body: Bytes,
 ) -> Response {
     let started = Instant::now();
-    let call_id = request_headers
-        .get("x-litellm-call-id")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
-        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
+    let header = request_headers.get("x-litellm-call-id");
+    let call_id = resolve_call_id(header.and_then(|value| value.to_str().ok()));
     let mut call = CallContext {
         id: &call_id,
         include_in_body: state.include_call_id,

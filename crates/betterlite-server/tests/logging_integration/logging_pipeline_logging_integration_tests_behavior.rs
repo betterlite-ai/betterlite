@@ -196,6 +196,64 @@ fn split_reply(reply: &[u8]) -> (u16, String) {
     (status, body.to_owned())
 }
 
+struct Reply {
+    head: String,
+    body: Vec<u8>,
+}
+
+// a kept-alive request keeps hyper's own framing, so the reply says how the body is delimited
+async fn exchange_kept_alive(
+    address: SocketAddr,
+    path: &str,
+    call_id: Option<&str>,
+    body: &str,
+) -> Reply {
+    let identified = call_id.map_or_else(String::new, |id| format!("x-litellm-call-id: {id}\r\n"));
+    let head = format!(
+        "POST {path} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\n\
+         authorization: Bearer {SENTINEL}\r\n{identified}content-length: {}\r\n\r\n",
+        body.len()
+    );
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(body.as_bytes()).await.unwrap();
+    let read = read_reply(&mut stream);
+    timeout(Duration::from_secs(60), read)
+        .await
+        .expect("the reply arrived")
+}
+
+async fn read_reply(stream: &mut TcpStream) -> Reply {
+    let mut received = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !received.ends_with(b"\r\n\r\n") {
+        let count = stream.read(&mut byte).await.unwrap();
+        assert!(count > 0, "the reply ended inside its head");
+        received.push(byte[0]);
+    }
+    let head = String::from_utf8(received).expect("the HTTP head is UTF-8");
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .expect("the reply carries a content length")
+        .parse()
+        .expect("a numeric content length");
+    let mut body = vec![0_u8; length];
+    stream.read_exact(&mut body).await.unwrap();
+    Reply { head, body }
+}
+
+fn assert_sized_reply(head: &str, body_length: usize) {
+    assert!(
+        head.contains(&format!("content-length: {body_length}")),
+        "the reply has no matching content length: {head}"
+    );
+    assert!(
+        !head.to_lowercase().contains("transfer-encoding"),
+        "the reply is chunked instead of sized: {head}"
+    );
+}
+
 fn parse(text: &str) -> Vec<LogRecord> {
     assert!(
         !text.contains(SENTINEL),
@@ -263,6 +321,81 @@ async fn a_chat_call_logs_one_pre_call_and_one_terminal_event() {
     assert_one_call(&events, "acompletion", false);
     assert_eq!(events[1].error.as_deref(), Some(""));
     assert_drained(&records);
+}
+
+#[tokio::test]
+async fn a_kept_alive_chat_reply_carries_its_content_length() {
+    let _serial = SERIAL.lock().await;
+    let running = start(MOCK_CHAT).await;
+    running.wait_for_listening().await;
+    let reply = exchange_kept_alive(
+        running.address,
+        "/v1/chat/completions",
+        Some(CALL_ID),
+        r#"{"model":"g","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 200"), "{}", reply.head);
+    assert_sized_reply(&reply.head, reply.body.len());
+    assert!(
+        reply
+            .head
+            .contains(&format!("x-litellm-call-id: {CALL_ID}")),
+        "{}",
+        reply.head
+    );
+    let records = running.shut_down().await;
+    assert_one_call(&service_events(&records), "acompletion", false);
+}
+
+#[tokio::test]
+async fn an_error_reply_carries_its_content_length() {
+    let _serial = SERIAL.lock().await;
+    let running = start(MOCK_CHAT).await;
+    running.wait_for_listening().await;
+    let reply = exchange_kept_alive(
+        running.address,
+        "/v1/chat/completions",
+        Some(CALL_ID),
+        r#"{"model":"absent","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    assert!(reply.head.starts_with("HTTP/1.1 400"), "{}", reply.head);
+    assert_sized_reply(&reply.head, reply.body.len());
+    let records = running.shut_down().await;
+    let events = service_events(&records);
+    assert_one_call(&events, "acompletion", true);
+    assert_eq!(
+        events[1].error.as_deref(),
+        Some("the upstream call failed with HTTP 400")
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_call_id_is_resolved_once_for_the_reply_and_the_events() {
+    let _serial = SERIAL.lock().await;
+    let running = start(MOCK_CHAT).await;
+    running.wait_for_listening().await;
+    let oversized = "c".repeat(257);
+    let reply = exchange_kept_alive(
+        running.address,
+        "/v1/chat/completions",
+        Some(&oversized),
+        r#"{"model":"g","messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .await;
+    let resolved = reply
+        .head
+        .lines()
+        .find_map(|line| line.strip_prefix("x-litellm-call-id: "))
+        .expect("the reply names the call");
+    assert_eq!(resolved.len(), 36);
+    assert_ne!(resolved, oversized);
+    let records = running.shut_down().await;
+    let events = service_events(&records);
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].call_id.as_deref(), Some(resolved));
+    assert_eq!(events[1].call_id.as_deref(), Some(resolved));
 }
 
 #[tokio::test]
