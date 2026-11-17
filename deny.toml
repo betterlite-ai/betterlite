@@ -19,6 +19,8 @@ ignore = [
   { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no fix; testcontainers 0.28.0, its newest release, needs it, and only tools/postgres-fixture uses testcontainers" },
   { id = "RUSTSEC-2026-0441", reason = "pin-utils is unmaintained; aws-smithy-runtime drops it from 1.16.1, which needs the AWS SDK crates on aws-smithy-schema 1.x" },
   { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; tokenizers 0.23.1, the version LiteLLM's lock pins, depends on it" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained with no fixed release; 58 workspace packages use it and xet-runtime 1.8.1, the newest, needs it too" },
+  { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained with no fixed release; xet-runtime 1.8.1, the newest, needs it through hf-hub 1.0.0 in betterlite-tokenizer" },
 ]
 [licenses]
 version = 2
