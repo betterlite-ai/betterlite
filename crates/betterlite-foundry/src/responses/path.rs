@@ -11,7 +11,7 @@ pub enum PathError {
 }
 
 // httpx's copy_with(path=...) parses the decoded path again, so quoting and dot-segment removal come from HttpxUrl::parse
-pub(super) fn requoted_path(base: &HttpxUrl, path: &str) -> Result<String, PathError> {
+pub(crate) fn requoted_path(base: &HttpxUrl, path: &str) -> Result<String, PathError> {
     if path.contains(['?', '#']) {
         return Err(PathError::Unrewritable);
     }

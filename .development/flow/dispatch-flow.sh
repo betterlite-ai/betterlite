@@ -52,10 +52,13 @@ args=${L}/flows/${id}.args
 jq -n --arg run "${run}" --arg note "${note}" --arg grant "${grant}" --arg ci_rounds "${CI_ROUNDS:-0}" --arg conflicts "${CONFLICTS:-0}" --arg land_only "${LAND_ONLY:-}" '$ARGS.named' > "${args}"
 trap 'rm -f -- "$args"' EXIT
 worktree=${worktrees}/${id}
+rm -f -- "${main}/.git/betterlite/${id}/parked"
 events=${L}/flow-events.log
 say() { printf '%(%H:%M)T %s\n' -1 "${id} $*" >> "${events}"; }
 park() {
   say "blocked: $*"
+  # the gate does not count a parked task as running, so tasks it blocks can go first; the flow clears the mark when it starts again
+  [[ -d "${main}/.git/betterlite/${id}" ]] && : > "${main}/.git/betterlite/${id}/parked"
   # the reason column ends with a space, as every earlier parked.tsv row does
   printf '%(%F %H:%M)T\t%s\t%s\t%s\t%s \n' -1 "${id}" "${run}" "${main}/.git/betterlite/${id}" "${*//[$'\t\n']/ }" >> "${L}/parked.tsv"
 }
@@ -372,15 +375,33 @@ case "${result}" in
     lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
     # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
     [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
+    # deny failing alone on a branch that changes neither Cargo.lock nor deny.toml means new advisories on main, and no fix round can help (B9653 spent five on 11-17, Max)
+    failed_checks=$(grep -E '^FAIL ' <<< "${lines}")
+    other_checks=$(grep -v -E '^FAIL deny ' <<< "${failed_checks}")
+    base=$(git -C "${worktree}" merge-base HEAD origin/main)
+    if [[ -n "${failed_checks}" ]] && [[ -z "${other_checks}" ]] && [[ -n "${base}" ]] && git -C "${worktree}" diff --quiet "${base}" -- Cargo.lock deny.toml; then
+      park "CI failed on PR #${pr} (run ${run_id}) only on deny, and the branch changes neither Cargo.lock nor deny.toml, so the cause is on main; land it again once main passes deny"
+      exit 5
+    fi
     missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
     missed=$(sort -u <<< "${missed}")
     missed=$(head -n 40 <<< "${missed}")
     timed_out=$(find "${logs}" -path '*/mutants.out/timeout.txt' -exec cat {} + 2> /dev/null)
     timed_out=$(sort -u <<< "${timed_out}")
     timed_out=$(head -n 20 <<< "${timed_out}")
+    # a failed unmutated baseline prints only its last line in the job log, and its failing test and panic sit in mutants.log (B203 spent two rounds blind on 11-17)
+    baseline=$(grep -r -l --include=mutants.log 'cargo test failed in an unmutated tree' "${logs}" 2> /dev/null)
+    baseline=$(head -n 1 <<< "${baseline}")
+    if [[ -n "${baseline}" ]]; then
+      baseline=$(awk '/^ +FAIL \[/ {sub(/\[ *[0-9.]+s\] /, ""); sub(/\( *[0-9]+\/[0-9]+\) /, ""); print; next} t {print; t = 0; next} /^    thread / {print; t = 1}' "${baseline}")
+      baseline=$(awk '!seen[$0]++' <<< "${baseline}")
+      baseline=$(head -n 20 <<< "${baseline}")
+    fi
     say "CI failed on PR #${pr} (run ${run_id}); fix round $((${CI_ROUNDS:-0} + 1))"
     LAND_ONLY='' CI_ROUNDS=$((${CI_ROUNDS:-0} + 1)) exec bash "${P}/dispatch-flow.sh" "${id}" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/${run_id} failed on PR #${pr}.
-${lines}${missed:+
+${lines}${baseline:+
+Mutants never ran: the unmutated baseline runs every workspace test, including ones your task commands never name, and it stops at the first failure, so check the tests next to this one too:
+${baseline}}${missed:+
 Mutants CI missed:
 ${missed}}${timed_out:+
 Mutants that timed out in CI (the gate counts a timeout as a failure, so a test must fail on the mutant instead of hanging):

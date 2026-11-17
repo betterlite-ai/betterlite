@@ -110,13 +110,7 @@ const VERTEX: &str = "model_list:\n  - model_name: embed\n    litellm_params:\n 
 fn a_config_without_a_vertex_deployment_builds_no_call() {
     let config = load_config(OPENAI_ONLY);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let calls = vertex_embedding_calls(
-        &config,
-        &chat.client,
-        &chat.deployments,
-        &TaskTracker::new(),
-    )
-    .unwrap();
+    let calls = vertex_embedding_calls(&config, &chat, &TaskTracker::new()).unwrap();
     assert!(calls.is_none());
 }
 
@@ -124,13 +118,7 @@ fn a_config_without_a_vertex_deployment_builds_no_call() {
 fn a_vertex_deployment_builds_the_call() {
     let config = load_config(VERTEX);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let calls = vertex_embedding_calls(
-        &config,
-        &chat.client,
-        &chat.deployments,
-        &TaskTracker::new(),
-    )
-    .unwrap();
+    let calls = vertex_embedding_calls(&config, &chat, &TaskTracker::new()).unwrap();
     assert!(calls.is_some());
 }
 
@@ -139,12 +127,9 @@ fn a_pin_that_is_not_text_or_an_object_names_the_deployment() {
     let yaml = "model_list:\n  - model_name: embed\n    litellm_params:\n      model: vertex_ai/text-embedding-004\n      vertex_credentials: 5\n";
     let config = load_config(yaml);
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let Err(VertexEmbeddingSetupError::Pinned { model_name, .. }) = vertex_embedding_calls(
-        &config,
-        &chat.client,
-        &chat.deployments,
-        &TaskTracker::new(),
-    ) else {
+    let Err(VertexEmbeddingSetupError::Pinned { model_name, .. }) =
+        vertex_embedding_calls(&config, &chat, &TaskTracker::new())
+    else {
         panic!("a numeric credential pin must stop startup");
     };
     assert_eq!(model_name, "embed");

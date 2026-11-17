@@ -1,17 +1,21 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
+
 use crate::stream_content_assembly::wire::{AudioResponse, ExpiryValue, ThinkingBlock};
 use crate::streamed_response_assembly::records::Chunk;
 
 use super::support::chunks;
 use super::{FIXED_NOW, Harness, chat_of, response_of, value};
 
-pub(super) async fn complex_content_order() {
-    complex_tool_calls().await;
-    complex_tool_call_text().await;
-    complex_function_calls().await;
-    complex_lists().await;
-    complex_thinking().await;
-    complex_audio().await;
-    complex_created_at_order().await;
+pub(super) async fn complex_content_order(redactor: &Arc<Redactor>) {
+    complex_tool_calls(redactor).await;
+    complex_tool_call_text(redactor).await;
+    complex_function_calls(redactor).await;
+    complex_lists(redactor).await;
+    complex_thinking(redactor).await;
+    complex_audio(redactor).await;
+    complex_created_at_order(redactor).await;
 }
 
 const TOOL_CALL_STREAM: &str = r#"[
@@ -25,8 +29,8 @@ const TOOL_CALL_STREAM: &str = r#"[
 const TOOL_CALL_TEXT: &str = r#"Hi there{"function":{"arguments":"{\"city\":\"Paris\"}","name":"get_weather"},"id":"call_1","type":"function"}"#;
 
 // Without a usage chunk the counter sees the completion text: the content followed by each tool call's JSON.
-pub(super) async fn complex_tool_call_text() {
-    let mut harness = Harness::new(Some(chunks(TOOL_CALL_STREAM)));
+pub(super) async fn complex_tool_call_text(redactor: &Arc<Redactor>) {
+    let mut harness = Harness::new(Some(chunks(TOOL_CALL_STREAM)), redactor);
     harness.messages = true;
     harness.counter.response_text = 1;
     let response = chat_of(&harness).await;
@@ -37,7 +41,7 @@ pub(super) async fn complex_tool_call_text() {
     );
 }
 
-pub(super) async fn complex_tool_calls() {
+pub(super) async fn complex_tool_calls(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -50,7 +54,7 @@ pub(super) async fn complex_tool_calls() {
          "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
     ]"#,
     );
-    let response = chat_of(&Harness::new(Some(stream))).await;
+    let response = chat_of(&Harness::new(Some(stream), redactor)).await;
     let message = &response.choices[0].message;
     assert_eq!(message.content.as_deref(), Some("Hi there"));
     let calls = message
@@ -96,9 +100,9 @@ const FUNCTION_CALLS: [(&str, Option<&str>); 2] = [
 ];
 
 // A function call clears the text, so only a later content chunk brings it back.
-pub(super) async fn complex_function_calls() {
+pub(super) async fn complex_function_calls(redactor: &Arc<Redactor>) {
     for (source, content) in FUNCTION_CALLS {
-        let response = response_of(source, 2).await;
+        let response = response_of(source, 2, redactor).await;
         let message = &response.choices[0].message;
         assert_eq!(message.content.as_deref(), content);
         assert!(message.tool_calls.is_none());
@@ -122,8 +126,8 @@ const CREATED_AT_STREAM: &str = r#"[
         "finish_reason": "length"}]}
 ]"#;
 
-pub(super) async fn complex_created_at_order() {
-    let response = response_of(CREATED_AT_STREAM, 1).await;
+pub(super) async fn complex_created_at_order(redactor: &Arc<Redactor>) {
+    let response = response_of(CREATED_AT_STREAM, 1, redactor).await;
     let choice = &response.choices[0];
     assert_eq!(choice.message.content.as_deref(), Some("AB"));
     assert_eq!(choice.message.reasoning_content.as_deref(), Some("xy"));
@@ -137,16 +141,16 @@ const LISTS_STREAM: &str = r#"[
     {"choices": [{"index": 0, "delta": {"annotations": [{"url": "u2"}], "images": []}}]}
 ]"#;
 
-pub(super) async fn complex_lists() {
-    let response = response_of(LISTS_STREAM, 1).await;
+pub(super) async fn complex_lists(redactor: &Arc<Redactor>) {
+    let response = response_of(LISTS_STREAM, 1, redactor).await;
     let message = &response.choices[0].message;
     let annotations = vec![value(r#"{"url": "u1"}"#), value(r#"{"url": "u2"}"#)];
     assert_eq!(message.annotations, Some(annotations));
     assert_eq!(message.images, Some(vec![value(r#"{"url": "img1"}"#)]));
 }
 
-pub(super) async fn complex_thinking() {
-    let mut harness = Harness::new(Some(thinking_stream()));
+pub(super) async fn complex_thinking(redactor: &Arc<Redactor>) {
+    let mut harness = Harness::new(Some(thinking_stream()), redactor);
     harness.messages = true;
     harness.counter.text = 2;
     harness.counter.response_text = 3;
@@ -208,7 +212,7 @@ const AUDIO_STREAMS: [&str; 2] = [
 ];
 
 // The first stream carries its own expiry and id; the second falls back to the clock plus an hour.
-pub(super) async fn complex_audio() {
+pub(super) async fn complex_audio(redactor: &Arc<Redactor>) {
     let explicit = AudioResponse {
         data: "YWI=".to_owned(),
         expires_at: ExpiryValue::Signed(1_600_000_000),
@@ -222,7 +226,7 @@ pub(super) async fn complex_audio() {
         id: None,
     };
     for (source, expected) in AUDIO_STREAMS.into_iter().zip([explicit, defaulted]) {
-        let response = response_of(source, 1).await;
+        let response = response_of(source, 1, redactor).await;
         assert_eq!(response.choices[0].message.audio, Some(expected));
     }
 }
