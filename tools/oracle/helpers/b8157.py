@@ -169,11 +169,12 @@ def substituted_base(case: Case, upstream: str) -> str | None:
 def request_view(
     requests: list[tuple[str, dict[str, str]]], upstream: str
 ) -> JsonValue:
-    if not requests:
-        return None
-    url, recorded = requests[0]
-    headers: dict[str, JsonValue] = dict[str, JsonValue](recorded.items())
-    return {"url": url.replace(upstream, PLACEHOLDER), "headers": headers}
+    # LiteLLM answers a model-info lookup for some providers before the request being compared
+    for url, recorded in requests:
+        if not url.endswith("/api/show") and "/models/" not in url:
+            headers: dict[str, JsonValue] = dict[str, JsonValue](recorded.items())
+            return {"url": url.replace(upstream, PLACEHOLDER), "headers": headers}
+    return None
 
 
 def prepared(case: Case, upstream: str) -> tuple[Recorder, HTTPHandler]:
