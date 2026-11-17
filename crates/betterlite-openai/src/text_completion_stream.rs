@@ -1,14 +1,13 @@
 use betterlite_models::decisions::Json;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use thiserror::Error;
 
 use betterlite_streaming::stream_chunk_shaping::decision::is_delta_empty;
 use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonValue, StreamChunk, TokenDetails, Usage,
+    JsonValue, StreamChoice, StreamChunk, TokenDetails, Usage,
 };
 
 use crate::stream::SseError;
-use crate::stream::SseParser;
 use crate::stream::chunk::{Chunk, ChunkError};
 
 // What a text stream decode can fail on: the B005 framing limits or a chunk of the wrong shape.
@@ -17,7 +16,10 @@ pub enum TextStreamDecodeError {
     #[error("a text stream event exceeds the framing limit")]
     Framing(#[from] SseError),
     #[error("a text stream chunk is invalid: {source}")]
-    Chunk(#[from] ChunkError),
+    Chunk {
+        #[from]
+        source: ChunkError,
+    },
 }
 
 // pydantic's exclude_none: a null field of the answer is left out of the client's JSON.
@@ -79,44 +81,34 @@ pub fn chat_chunk(
     if silent && (chunk.usage.is_none() || !include_usage) {
         return Ok(None);
     }
-    let choices = chunk
-        .choices
-        .iter()
-        .map(|choice| {
-            let mut delta = Map::new();
-            if let Some(role) = &choice.delta.role {
-                delta.insert(String::from("role"), Value::from(role.as_str()));
-            }
-            if let Some(content) = &choice.delta.content {
-                delta.insert(String::from("content"), Value::from(content.as_str()));
-            }
-            let mut converted = Map::new();
-            converted.insert(String::from("index"), Value::from(choice.index));
-            converted.insert(String::from("delta"), Value::Object(delta));
-            if let Some(reason) = &choice.finish_reason {
-                converted.insert(String::from("finish_reason"), Value::from(reason.as_str()));
-            }
-            Value::Object(converted)
-        })
-        .collect();
-    let mut fields = Map::new();
-    fields.insert(String::from("id"), Value::from(chunk.id.as_str()));
-    fields.insert(String::from("object"), Value::from(chunk.object.as_str()));
-    fields.insert(String::from("created"), Value::from(chunk.created));
     let model = if model.is_empty() {
         chunk.model.as_str()
     } else {
         model
     };
-    fields.insert(String::from("model"), Value::from(model));
-    fields.insert(String::from("choices"), Value::Array(choices));
-    if include_usage && let Some(usage) = &chunk.usage {
-        fields.insert(
-            String::from("usage"),
-            serde_json::to_value(with_details(usage.clone()))?,
-        );
-    }
-    Ok(Some(without_nulls(Value::Object(fields))))
+    let usage = chunk.usage.clone().map(with_details);
+    let usage = serde_json::to_value(usage.filter(|_| include_usage))?;
+    let fields = serde_json::json!({
+        "id": chunk.id,
+        "object": chunk.object,
+        "created": chunk.created,
+        "model": model,
+        "choices": chunk.choices.iter().map(chat_choice).collect::<Vec<_>>(),
+        "usage": usage,
+    });
+    Ok(Some(without_nulls(fields)))
+}
+
+fn chat_choice(choice: &StreamChoice) -> Value {
+    let delta = serde_json::json!({
+        "role": choice.delta.role.as_deref(),
+        "content": choice.delta.content.as_deref(),
+    });
+    serde_json::json!({
+        "index": choice.index,
+        "delta": delta,
+        "finish_reason": choice.finish_reason.as_deref(),
+    })
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped
@@ -131,30 +123,11 @@ pub fn decode_chat_events(
             continue;
         }
         if let Some(chunk) = Chunk::parse(event, model, include_usage)? {
-            chunks.push(
-                serde_json::to_value(&chunk)
-                    .map_err(|source| TextStreamDecodeError::Chunk(ChunkError::from(source)))
-                    .and_then(|value| {
-                        serde_json::from_value(value).map_err(|source| {
-                            TextStreamDecodeError::Chunk(ChunkError::from(source))
-                        })
-                    })?,
-            );
+            let value = serde_json::to_value(&chunk).map_err(ChunkError::from)?;
+            chunks.push(serde_json::from_value(value).map_err(ChunkError::from)?);
         }
     }
     Ok(chunks)
-}
-
-// The whole-buffer form, for the committed corpus and the fuzz target
-pub fn decode_chat_bytes(
-    bytes: &[u8],
-    model: &str,
-    include_usage: bool,
-) -> Result<Vec<Json>, TextStreamDecodeError> {
-    let mut parser = SseParser::default();
-    let mut events = parser.push(bytes)?;
-    events.extend(parser.finish());
-    decode_chat_events(&events, model, include_usage)
 }
 
 mod tests;

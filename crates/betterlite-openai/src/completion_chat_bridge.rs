@@ -45,6 +45,12 @@ const CONTROL_PARAMS: [&str; 12] = [
 const UNMAPPED_PROMPT: &str =
     "Unmapped prompt format. Your prompt is neither a list of strings nor a string.";
 
+const TOKEN_PROMPT: &str = "a token-id prompt cannot be sent to this deployment's chat endpoint";
+
+const MESSAGES_UNWRITTEN: &str = "the chat messages could not be written for the text endpoint";
+
+const REQUEST_UNWRITTEN: &str = "the chat request could not be written for the text endpoint";
+
 const INTERNAL_ERROR: &str = "internal_server_error";
 
 // Where main.py's chat dispatch sends a request: the chat endpoint, or the text endpoint with or without the answer conversion
@@ -107,131 +113,80 @@ pub fn text_request(
     request: &ChatRequest,
     model: &str,
 ) -> Result<TransportRequest, CompletionFailure> {
-    let messages = serde_json::to_value(&request.messages)
-        .ok()
-        .and_then(|value| value.as_array().cloned())
-        .ok_or_else(|| {
-            failure(
-                500,
-                Some(INTERNAL_ERROR),
-                "the chat messages could not be written for the text endpoint",
-            )
-        })?;
-    let mut params = serde_json::to_value(request)
-        .ok()
-        .and_then(|value| match value {
-            Value::Object(fields) => Some(fields),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            failure(
-                500,
-                Some(INTERNAL_ERROR),
-                "the chat request could not be written for the text endpoint",
-            )
-        })?;
-    params.remove("model");
-    params.remove("messages");
-    params.retain(|name, _| !CONTROL_PARAMS.contains(&name.as_str()) && !name.starts_with('_'));
-    // get_optional_params raises UnsupportedParamsError when a set value is outside the text config's list
-    if let Some(name) = params
-        .keys()
-        .find(|name| !SUPPORTED_PARAMS.contains(&name.as_str()))
-    {
-        return Err(failure(
-            400,
-            Some("invalid_request_error"),
-            &format!("the text endpoint does not support the parameter {name}"),
-        ));
-    }
-    if request.stream {
-        params.insert(String::from("stream"), Value::Bool(true));
-        // an absent include_usage asks for usage the way the proxy does; a caller's own choice is kept
-        let include_usage = request
-            .stream_options
-            .as_ref()
-            .is_none_or(|options| options.include_usage);
-        let mut options = Map::new();
-        options.insert(String::from("include_usage"), Value::Bool(include_usage));
-        params.insert(String::from("stream_options"), Value::Object(options));
-    } else {
-        // main.py sends the chat dispatch's own stream flag, so the provider reads an explicit false
-        params.insert(String::from("stream"), Value::Bool(false));
-    }
     Ok(TransportRequest {
         model: Some(model.to_owned()),
-        messages: Some(messages),
+        messages: Some(text_messages(request)?),
         api_key: deployment.api_key.clone(),
         api_base: Some(deployment.api_base.clone()),
         // the deployment timeout is the text call's deadline; the chat request names none
         timeout: deployment.timeout_seconds,
         // the text dispatch leaves the handler's organization at None
         organization: None,
-        optional_params: params,
+        optional_params: text_params(request)?,
         headers: None,
         acompletion: true,
     })
 }
 
+fn text_messages(request: &ChatRequest) -> Result<Vec<Value>, CompletionFailure> {
+    serde_json::to_value(&request.messages)
+        .map_err(|source| failure(500, Some(INTERNAL_ERROR), &source.to_string()))?
+        .as_array()
+        .cloned()
+        .ok_or_else(|| failure(500, Some(INTERNAL_ERROR), MESSAGES_UNWRITTEN))
+}
+
+// get_optional_params raises UnsupportedParamsError for a set value outside the text config's list
+fn text_params(request: &ChatRequest) -> Result<Map<String, Value>, CompletionFailure> {
+    let mut params = serde_json::to_value(request)
+        .map_err(|source| failure(500, Some(INTERNAL_ERROR), &source.to_string()))?
+        .as_object()
+        .cloned()
+        .ok_or_else(|| failure(500, Some(INTERNAL_ERROR), REQUEST_UNWRITTEN))?;
+    params.remove("model");
+    params.remove("messages");
+    params.retain(|name, _| !CONTROL_PARAMS.contains(&name.as_str()) && !name.starts_with('_'));
+    reject_unsupported(&params)?;
+    set_stream(&mut params, request);
+    Ok(params)
+}
+
+fn reject_unsupported(params: &Map<String, Value>) -> Result<(), CompletionFailure> {
+    let Some(name) = params
+        .keys()
+        .find(|name| !SUPPORTED_PARAMS.contains(&name.as_str()))
+    else {
+        return Ok(());
+    };
+    Err(failure(
+        400,
+        Some("invalid_request_error"),
+        &format!("the text endpoint does not support the parameter {name}"),
+    ))
+}
+
+// An absent include_usage asks for usage the way the proxy does; a caller's own choice is kept.
+fn set_stream(params: &mut Map<String, Value>, request: &ChatRequest) {
+    if !request.stream {
+        // main.py sends the chat dispatch's own stream flag, so the provider reads an explicit false
+        params.insert(String::from("stream"), Value::Bool(false));
+        return;
+    }
+    params.insert(String::from("stream"), Value::Bool(true));
+    let chosen = request.stream_options.as_ref();
+    let include_usage = chosen.is_none_or(|options| options.include_usage);
+    let mut options = Map::new();
+    options.insert(String::from("include_usage"), Value::Bool(include_usage));
+    params.insert(String::from("stream_options"), Value::Object(options));
+}
+
 // The client's text prompt rebuilt as chat messages, one per string; typed messages cannot carry the token branch
 pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, CompletionFailure> {
-    let mut messages = Vec::new();
-    match &request.prompt {
-        CompletionPrompt::Text(text) => messages.push(text.clone()),
-        CompletionPrompt::Texts(texts) => messages.extend(texts.iter().cloned()),
-        CompletionPrompt::Tokens(_) | CompletionPrompt::TokenLists(_) => {
-            return Err(failure(
-                400,
-                Some("invalid_request_error"),
-                "a token-id prompt cannot be sent to this deployment's chat endpoint",
-            ));
-        }
-        CompletionPrompt::Empty
-        | CompletionPrompt::Unmapped(_)
-        | CompletionPrompt::Unreadable(_) => {
-            return Err(failure(500, None, UNMAPPED_PROMPT));
-        }
-    }
-    let mut passthrough = IndexMap::new();
-    if let Some(functions) = &request.functions
-        && let Ok(value) = serde_json::to_value(functions)
-    {
-        passthrough.insert(String::from("functions"), value);
-    }
-    if let Some(choice) = &request.function_call
-        && let Ok(value) = serde_json::to_value(choice)
-    {
-        passthrough.insert(String::from("function_call"), value);
-    }
-    // text_completion() hands these to the chat call, whose OpenAI config supports and forwards all three
-    for (name, value) in [
-        (
-            "logit_bias",
-            request
-                .logit_bias
-                .as_ref()
-                .and_then(|bias| serde_json::to_value(bias).ok()),
-        ),
-        ("logprobs", request.logprobs.map(Value::from)),
-        ("top_logprobs", request.top_logprobs.map(Value::from)),
-    ] {
-        if let Some(value) = value {
-            passthrough.insert(String::from(name), value);
-        }
-    }
+    let messages = prompt_messages(request)?;
+    let passthrough = passthrough_params(request)?;
     Ok(ChatRequest {
         model: request.model.clone(),
-        messages: messages
-            .into_iter()
-            .map(|text| ChatMessage {
-                role: Role::User,
-                content: Some(MessageContent::Text(text)),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-                passthrough: IndexMap::new(),
-            })
-            .collect(),
+        messages,
         stream: request.stream == Some(true),
         stream_options: request.stream_options.clone(),
         temperature: request.temperature.clone(),
@@ -261,6 +216,60 @@ pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, Completi
         disable_fallbacks: None,
         passthrough,
     })
+}
+
+// One user message per prompt string; a token prompt cannot reach a chat deployment
+fn prompt_messages(request: &CompletionRequest) -> Result<Vec<ChatMessage>, CompletionFailure> {
+    let mut messages = Vec::new();
+    match &request.prompt {
+        CompletionPrompt::Text(text) => messages.push(text.clone()),
+        CompletionPrompt::Texts(texts) => messages.extend(texts.iter().cloned()),
+        CompletionPrompt::Tokens(_) | CompletionPrompt::TokenLists(_) => {
+            return Err(failure(400, Some("invalid_request_error"), TOKEN_PROMPT));
+        }
+        CompletionPrompt::Empty
+        | CompletionPrompt::Unmapped(_)
+        | CompletionPrompt::Unreadable(_) => {
+            return Err(failure(500, None, UNMAPPED_PROMPT));
+        }
+    }
+    Ok(messages
+        .into_iter()
+        .map(|text| ChatMessage {
+            role: Role::User,
+            content: Some(MessageContent::Text(text)),
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+            passthrough: IndexMap::new(),
+        })
+        .collect())
+}
+
+// text_completion() hands these five to the chat call, whose OpenAI config supports and forwards all of them
+fn passthrough_params(
+    request: &CompletionRequest,
+) -> Result<IndexMap<String, Value>, CompletionFailure> {
+    let params = request.optional_params().map_err(|source| {
+        failure(
+            500,
+            Some(INTERNAL_ERROR),
+            &format!("the text request could not be read as its fields: {source}"),
+        )
+    })?;
+    let mut passthrough = IndexMap::new();
+    for name in [
+        "functions",
+        "function_call",
+        "logit_bias",
+        "logprobs",
+        "top_logprobs",
+    ] {
+        if let Some(value) = params.get(name).filter(|value| !value.is_null()) {
+            passthrough.insert(String::from(name), value.clone());
+        }
+    }
+    Ok(passthrough)
 }
 
 pub(super) fn failure(status: u16, error_type: Option<&str>, message: &str) -> CompletionFailure {

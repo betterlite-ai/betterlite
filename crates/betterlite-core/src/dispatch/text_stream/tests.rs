@@ -5,13 +5,14 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::text_completion_request::CompletionRequest;
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use http::HeaderMap;
 
 use crate::dispatch::error::DispatchError;
-use crate::dispatch::log::CallOutcome;
+use crate::dispatch::log::{CallOutcome, TracingCallLog};
 use crate::dispatch::tests::support::{MODEL_ID, RecordingLog, Trace, context, deployment};
 use crate::dispatch::{Dispatch, NoRules};
 use crate::message_utilities::response_streams::StreamError;
@@ -55,7 +56,7 @@ impl TextCompletionCall for Streams {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        streamed_request(call)
+        streamed_request(&call)
     }
 }
 
@@ -71,10 +72,7 @@ impl TextCompletionCall for Routed {
         Err(unused())
     }
 
-    async fn endpoint(
-        &self,
-        _deployment: &betterlite_openai::chat::deployment::ChatDeployment,
-    ) -> CompletionEndpoint {
+    async fn endpoint(&self, _deployment: &ChatDeployment) -> CompletionEndpoint {
         CompletionEndpoint::Chat
     }
 
@@ -117,7 +115,7 @@ impl TextCompletionCall for Fails {
 
 // only a string prompt reaches the text endpoint, so the port sees one message
 fn streamed_request(
-    call: TextCompletionCallInput<'_>,
+    call: &TextCompletionCallInput<'_>,
 ) -> Result<TextStreamAnswer, TextCompletionFailure> {
     assert!(call.request.prompt.messages().is_some());
     Ok(answer(vec![Ok(chunk(FIRST_CHUNK)), Ok(chunk(LAST_CHUNK))]))
@@ -125,7 +123,7 @@ fn streamed_request(
 
 fn answer(items: Vec<Result<Json, TextCompletionFailure>>) -> TextStreamAnswer {
     TextStreamAnswer {
-        body: futures_util::stream::iter(items).boxed(),
+        body: stream::iter(items).boxed(),
         upstream_headers: HeaderMap::new(),
         upstream_time: Duration::ZERO,
     }
@@ -151,7 +149,7 @@ fn request(
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
         Arc::new(NoRules),
-        Arc::new(crate::dispatch::log::TracingCallLog),
+        Arc::new(TracingCallLog),
     ));
     let request = TextCompletionRequest {
         call_id: "call".to_owned(),
@@ -314,10 +312,11 @@ impl TextCompletionCall for Pending {
         &self,
         _call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        // the first chunk is ready and the provider keeps the stream open after it
+        let first = stream::iter([Ok(chunk(FIRST_CHUNK))]);
+        let body = first.chain(stream::pending()).boxed();
         Ok(TextStreamAnswer {
-            body: futures_util::stream::iter(vec![Ok(chunk(FIRST_CHUNK))])
-                .chain(futures_util::stream::pending())
-                .boxed(),
+            body,
             upstream_headers: HeaderMap::new(),
             upstream_time: Duration::ZERO,
         })
@@ -326,8 +325,7 @@ impl TextCompletionCall for Pending {
 
 #[tokio::test]
 async fn a_dropped_text_stream_records_cancellation_once() {
-    let trace = Trace::default();
-    let log = Arc::new(RecordingLog::new(trace));
+    let log = Arc::new(RecordingLog::new(Trace::default()));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
         Arc::new(NoRules),
@@ -359,10 +357,8 @@ async fn a_dropped_text_stream_records_cancellation_once() {
         .await
         .expect("first chunk")
         .expect("chunk");
-    assert_eq!(
-        json_field(&first, "object"),
-        Some(&Json::Text(String::from("text_completion")))
-    );
+    let object = json_field(&first, "object");
+    assert_eq!(object, Some(&Json::Text(String::from("text_completion"))));
     assert!(log.calls().is_empty());
     drop(result.body);
     let recorded = log.calls();

@@ -6,8 +6,9 @@ use serde_json::{Value, json};
 
 use super::answer::{chat_completion_body, text_completion_body, text_completion_response};
 use super::{ChatEndpoint, chat_endpoint, chat_request, text_endpoint_model, text_request};
-use crate::chat::ChatRequest;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
+use crate::chat::response::ChatResponse;
+use crate::chat::{ChatRequest, Role};
 use crate::text_completion_request::CompletionRequest;
 use crate::text_completion_response::CompletionResponse;
 
@@ -223,7 +224,7 @@ fn control_kwargs_and_internal_keys_stay_off_the_provider_body() {
 fn one_user_message_per_prompt_string() {
     let single = chat_request(&completion(r#"{"model":"m","prompt":"hello"}"#)).expect("chat");
     assert_eq!(single.messages.len(), 1);
-    assert_eq!(single.messages[0].role, crate::chat::Role::User);
+    assert_eq!(single.messages[0].role, Role::User);
     assert_eq!(
         serde_json::to_value(&single.messages[0].content).expect("content"),
         json!("hello")
@@ -280,8 +281,9 @@ fn a_parameter_the_text_config_does_not_support_is_a_400() {
     let request = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":4}"#,
     );
-    let failure =
-        text_request(&deployment("gpt-4o"), &request, "gpt-4o").expect_err("max_completion_tokens");
+    let Err(failure) = text_request(&deployment("gpt-4o"), &request, "gpt-4o") else {
+        panic!("max_completion_tokens must be refused");
+    };
     assert_eq!(failure.status, 400);
     assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
     assert_eq!(failure.param, None);
@@ -313,13 +315,13 @@ fn the_chat_route_drops_the_nulls_of_a_converted_text_answer() {
     let text = response(
         r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5,"completion_tokens_details":null,"prompt_tokens_details":null},"system_fingerprint":null}"#,
     );
-    let body = chat_completion_body(&text, 1794865546, Some("client-model")).expect("body");
+    let body = chat_completion_body(&text, 1_794_865_546, Some("client-model")).expect("body");
     let value: Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(
         value,
         json!({
             "id": "cmpl-1",
-            "created": 1794865546,
+            "created": 1_794_865_546,
             "model": "client-model",
             "object": "chat.completion",
             "choices": [{
@@ -347,7 +349,7 @@ fn the_fine_tuned_answer_keeps_its_text_shape_with_the_client_model() {
 
 #[test]
 fn a_chat_answer_becomes_the_text_response_the_route_writes() {
-    let chat: crate::chat::response::ChatResponse = serde_json::from_str(
+    let chat: ChatResponse = serde_json::from_str(
         r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
     )
     .expect("chat response");

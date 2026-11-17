@@ -23,7 +23,7 @@ use tracing::subscriber::with_default;
 
 use super::catalog::{CompletionCatalog, CompletionRoute, route_for};
 use super::failure::{CompletionFailure, wrapped_failure};
-use super::http::HttpCompletionConstructor;
+use super::http::{HttpCompletionConstructor, HttpCompletionSdk};
 use super::log::TracingCompletionLog;
 use super::transport_request;
 use super::{CompletionCallAnswer, CompletionExecutor};
@@ -131,110 +131,133 @@ enum Scenario {
 #[case::unsupported_provider(Scenario::UnsupportedProvider)]
 fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::StringPrompt => {
-            let request = completion(r#""hello""#);
-            let messages = request.prompt.messages().expect("messages");
-            assert_eq!(messages.len(), 1);
-        }
-        Scenario::StringsPrompt => {
-            let request = completion(r#"["a","b"]"#);
-            let messages = request.prompt.messages().expect("messages");
-            assert_eq!(messages.len(), 2);
-        }
-        Scenario::TokensPrompt => {
-            let request = completion("[1,2]");
-            let messages = request.prompt.messages().expect("messages");
-            assert_eq!(messages.len(), 1);
-        }
-        Scenario::TokenListsPrompt => {
-            let request = completion("[[1,2],[3]]");
-            let messages = request.prompt.messages().expect("messages");
-            assert_eq!(messages.len(), 1);
-        }
-        Scenario::EmptyStringPrompt => {
-            let request = completion(r#""""#);
-            assert!(request.prompt.messages().is_some());
-        }
-        Scenario::EmptyListRejected => {
-            let request = completion("[]");
-            assert!(matches!(&request.prompt, CompletionPrompt::Empty));
-            let failure =
-                transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
-                    .err()
-                    .expect("empty prompt");
-            assert_eq!(failure.status, 400);
-            assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
-        }
-        Scenario::MixedPromptRejected => {
-            let request = completion(r#"["a",1]"#);
-            assert!(request.prompt.messages().is_none());
-        }
-        Scenario::ChatCatalogSelection => {
-            assert_eq!(
-                route_for(&deployment("openai/gpt-4o"), &catalog()),
-                CompletionRoute::Chat {
-                    model: String::from("gpt-4o")
-                }
-            );
-            assert_eq!(
-                route_for(&deployment("openai/gpt-3.5-turbo-instruct"), &catalog()),
-                CompletionRoute::Text {
-                    model: String::from("gpt-3.5-turbo-instruct")
-                }
-            );
-            assert_eq!(
-                route_for(&unsupported("text-completion-openai/gpt-4o"), &catalog()),
-                CompletionRoute::Text {
-                    model: String::from("gpt-4o")
-                }
-            );
-            assert_eq!(
-                route_for(&unsupported("gpt-3.5-turbo-instruct"), &catalog()),
-                CompletionRoute::Text {
-                    model: String::from("gpt-3.5-turbo-instruct")
-                }
-            );
-            // an unprefixed name still needs the text catalog, so a completion model newer than the bundle refuses
-            assert_eq!(
-                route_for(&unsupported("some-new-model"), &catalog()),
-                CompletionRoute::Unsupported {
-                    provider: String::from("some-new-model")
-                }
-            );
-        }
-        Scenario::BundledCatalog => {
-            let bundled = CompletionCatalog::bundled();
-            assert!(bundled.chat_models.contains("gpt-4o"));
-            assert!(bundled.text_models.contains("gpt-3.5-turbo-instruct"));
-            assert!(!bundled.text_models.contains("gpt-4o"));
-        }
-        Scenario::ProviderErrorFacts => {
-            let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
-            let failure = wrapped_failure(&provider_error(429), &redactor);
-            assert_eq!(failure.status, 429);
-            assert_eq!(failure.error_type.as_deref(), Some("throttling_error"));
-            assert_eq!(failure.param, None);
-            assert!(!failure.message.is_empty());
-            let refused = wrapped_failure(&provider_error(400), &redactor);
-            assert_eq!(refused.status, 400);
-            assert_eq!(refused.error_type, None);
-        }
-        Scenario::ConfiguredDestination => {
-            let request = completion(r#""hi""#);
-            let deployment = deployment("openai/gpt-3.5-turbo-instruct");
-            let built = transport_request(&deployment, &request, "gpt-3.5-turbo-instruct")
-                .expect("transport request");
-            assert_eq!(built.api_base.as_deref(), Some("http://127.0.0.1:9/v1"));
-            assert!(built.timeout > 0.0_f64);
-            assert!(built.acompletion);
-        }
-        Scenario::UnsupportedProvider => {
-            assert!(matches!(
-                route_for(&unsupported("azure/gpt-35-turbo"), &catalog()),
-                CompletionRoute::Unsupported { .. }
-            ));
-        }
+        Scenario::StringPrompt => string_prompt_scenario(),
+        Scenario::StringsPrompt => strings_prompt_scenario(),
+        Scenario::TokensPrompt => tokens_prompt_scenario(),
+        Scenario::TokenListsPrompt => token_lists_prompt_scenario(),
+        Scenario::EmptyStringPrompt => empty_string_prompt_scenario(),
+        Scenario::EmptyListRejected => empty_list_rejected_scenario(),
+        Scenario::MixedPromptRejected => mixed_prompt_rejected_scenario(),
+        Scenario::ChatCatalogSelection => chat_catalog_selection_scenario(),
+        Scenario::BundledCatalog => bundled_catalog_scenario(),
+        Scenario::ProviderErrorFacts => provider_error_facts_scenario(),
+        Scenario::ConfiguredDestination => configured_destination_scenario(),
+        Scenario::UnsupportedProvider => unsupported_provider_scenario(),
     }
+}
+
+fn string_prompt_scenario() {
+    let request = completion(r#""hello""#);
+    let messages = request.prompt.messages().expect("messages");
+    assert_eq!(messages.len(), 1);
+}
+
+fn strings_prompt_scenario() {
+    let request = completion(r#"["a","b"]"#);
+    let messages = request.prompt.messages().expect("messages");
+    assert_eq!(messages.len(), 2);
+}
+
+fn tokens_prompt_scenario() {
+    let request = completion("[1,2]");
+    let messages = request.prompt.messages().expect("messages");
+    assert_eq!(messages.len(), 1);
+}
+
+fn token_lists_prompt_scenario() {
+    let request = completion("[[1,2],[3]]");
+    let messages = request.prompt.messages().expect("messages");
+    assert_eq!(messages.len(), 1);
+}
+
+fn empty_string_prompt_scenario() {
+    let request = completion(r#""""#);
+    assert!(request.prompt.messages().is_some());
+}
+
+fn empty_list_rejected_scenario() {
+    let request = completion("[]");
+    assert!(matches!(&request.prompt, CompletionPrompt::Empty));
+    let failure = transport_request(&deployment("openai/gpt-3.5-turbo-instruct"), &request, "m")
+        .err()
+        .expect("empty prompt");
+    assert_eq!(failure.status, 400);
+    assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
+}
+
+fn mixed_prompt_rejected_scenario() {
+    let request = completion(r#"["a",1]"#);
+    assert!(request.prompt.messages().is_none());
+}
+
+fn chat_catalog_selection_scenario() {
+    assert_eq!(
+        route_for(&deployment("openai/gpt-4o"), &catalog()),
+        CompletionRoute::Chat {
+            model: String::from("gpt-4o")
+        }
+    );
+    assert_eq!(
+        route_for(&deployment("openai/gpt-3.5-turbo-instruct"), &catalog()),
+        CompletionRoute::Text {
+            model: String::from("gpt-3.5-turbo-instruct")
+        }
+    );
+    assert_eq!(
+        route_for(&unsupported("text-completion-openai/gpt-4o"), &catalog()),
+        CompletionRoute::Text {
+            model: String::from("gpt-4o")
+        }
+    );
+    assert_eq!(
+        route_for(&unsupported("gpt-3.5-turbo-instruct"), &catalog()),
+        CompletionRoute::Text {
+            model: String::from("gpt-3.5-turbo-instruct")
+        }
+    );
+    // an unprefixed name still needs the text catalog, so a completion model newer than the bundle refuses
+    assert_eq!(
+        route_for(&unsupported("some-new-model"), &catalog()),
+        CompletionRoute::Unsupported {
+            provider: String::from("some-new-model")
+        }
+    );
+}
+
+fn bundled_catalog_scenario() {
+    let bundled = CompletionCatalog::bundled();
+    assert!(bundled.chat_models.contains("gpt-4o"));
+    assert!(bundled.text_models.contains("gpt-3.5-turbo-instruct"));
+    assert!(!bundled.text_models.contains("gpt-4o"));
+}
+
+fn provider_error_facts_scenario() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
+    let failure = wrapped_failure(&provider_error(429), &redactor);
+    assert_eq!(failure.status, 429);
+    assert_eq!(failure.error_type.as_deref(), Some("throttling_error"));
+    assert_eq!(failure.param, None);
+    assert!(!failure.message.is_empty());
+    let refused = wrapped_failure(&provider_error(400), &redactor);
+    assert_eq!(refused.status, 400);
+    assert_eq!(refused.error_type, None);
+}
+
+fn configured_destination_scenario() {
+    let request = completion(r#""hi""#);
+    let deployment = deployment("openai/gpt-3.5-turbo-instruct");
+    let built = transport_request(&deployment, &request, "gpt-3.5-turbo-instruct")
+        .expect("transport request");
+    assert_eq!(built.api_base.as_deref(), Some("http://127.0.0.1:9/v1"));
+    assert!(built.timeout > 0.0_f64);
+    assert!(built.acompletion);
+}
+
+fn unsupported_provider_scenario() {
+    assert!(matches!(
+        route_for(&unsupported("azure/gpt-35-turbo"), &catalog()),
+        CompletionRoute::Unsupported { .. }
+    ));
 }
 
 #[test]
@@ -298,25 +321,7 @@ fn the_route_logger_records_counts_and_never_the_prompt() {
         .finish();
     let defaults = with_default(subscriber, || {
         let mut logger = TracingCompletionLog;
-        logger
-            .pre_call(PreCallRecord {
-                input: vec![Value::Object(Map::from_iter([
-                    (String::from("role"), Value::from("user")),
-                    (String::from("content"), Value::from("secret prompt")),
-                ]))],
-                api_key: None,
-                headers: SecretHeaders::default(),
-                api_base: Some(String::from("http://upstream.test/v1")),
-                complete_input_dict: Map::new(),
-            })
-            .expect("pre-call");
-        logger.post_call(PostCallRecord {
-            api_key: None,
-            original_response: Value::Null,
-            kind: ResponseKind::SdkObject,
-            headers: SecretHeaders::default(),
-            api_base: None,
-        });
+        record_call(&mut logger);
         logger.stream_defaults()
     });
     let text = fs::read_to_string(log.path()).expect("log text");
@@ -330,6 +335,28 @@ fn the_route_logger_records_counts_and_never_the_prompt() {
     assert!(!defaults.merge_reasoning_in_choices);
     assert!(!defaults.is_function_call);
     assert!(defaults.base_hidden_params.is_empty());
+}
+
+fn record_call(logger: &mut TracingCompletionLog) {
+    logger
+        .pre_call(PreCallRecord {
+            input: vec![Value::Object(Map::from_iter([
+                (String::from("role"), Value::from("user")),
+                (String::from("content"), Value::from("secret prompt")),
+            ]))],
+            api_key: None,
+            headers: SecretHeaders::default(),
+            api_base: Some(String::from("http://upstream.test/v1")),
+            complete_input_dict: Map::new(),
+        })
+        .expect("pre-call");
+    logger.post_call(PostCallRecord {
+        api_key: None,
+        original_response: Value::Null,
+        kind: ResponseKind::SdkObject,
+        headers: SecretHeaders::default(),
+        api_base: None,
+    });
 }
 
 // the request head the completion client sent, read byte by byte so no header line is cut short
@@ -459,47 +486,10 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
     data.insert(String::from("prompt"), Value::from("hi"));
     data.insert(String::from("stream"), Value::Bool(true));
     let (release, released) = oneshot::channel();
-    let read = async {
-        let raw = timeout(Duration::from_secs(5), sdk.create(&data))
-            .await
-            .expect("the answer starts before the provider finishes")
-            .expect("stream answer");
-        let RawCompletion::Stream {
-            status,
-            headers,
-            mut body,
-        } = raw
-        else {
-            panic!("a stream request never buffers");
-        };
-        assert_eq!(status, 200);
-        assert_eq!(
-            headers
-                .get("content-type")
-                .and_then(|value| value.to_str().ok()),
-            Some("text/event-stream")
-        );
-        let mut received = Vec::new();
-        while !received.windows(2).any(|pair| pair == b"\n\n") {
-            let chunk = timeout(Duration::from_secs(5), body.next())
-                .await
-                .expect("the first event arrives while the provider waits")
-                .expect("a body chunk")
-                .expect("no body error");
-            received.extend_from_slice(&chunk);
-        }
-        let first = String::from_utf8(received).expect("utf8");
-        assert!(first.contains("\"text\":\" hello\""), "{first}");
-        release.send(()).expect("the provider is still streaming");
-        let mut rest = Vec::new();
-        while let Some(chunk) = body.next().await {
-            rest.extend_from_slice(&chunk.expect("no body error"));
-        }
-        let rest = String::from_utf8(rest).expect("utf8");
-        assert!(rest.contains("\"text\":\" there\""), "{rest}");
-        assert!(rest.ends_with("data: [DONE]\n\n"), "{rest}");
-    };
-    tokio::join!(read, serve_text_stream(listener, released));
+    tokio::join!(
+        read_streamed_completion(&sdk, &data, release),
+        serve_text_stream(listener, released)
+    );
     let recorded = facts.lock().expect("facts").take().expect("recorded facts");
     assert_eq!(
         recorded
@@ -508,6 +498,52 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
     );
+}
+
+// The client half of the streaming test: the first event arrives while the provider still waits.
+async fn read_streamed_completion(
+    sdk: &HttpCompletionSdk,
+    data: &Map<String, Value>,
+    release: oneshot::Sender<()>,
+) {
+    let raw = timeout(Duration::from_secs(5), sdk.create(data))
+        .await
+        .expect("the answer starts before the provider finishes")
+        .expect("stream answer");
+    let RawCompletion::Stream {
+        status,
+        headers,
+        mut body,
+    } = raw
+    else {
+        panic!("a stream request never buffers");
+    };
+    assert_eq!(status, 200);
+    assert_eq!(
+        headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+    let mut received = Vec::new();
+    while !received.windows(2).any(|pair| pair == b"\n\n") {
+        let chunk = timeout(Duration::from_secs(5), body.next())
+            .await
+            .expect("the first event arrives while the provider waits")
+            .expect("a body chunk")
+            .expect("no body error");
+        received.extend_from_slice(&chunk);
+    }
+    let first = String::from_utf8(received).expect("utf8");
+    assert!(first.contains("\"text\":\" hello\""), "{first}");
+    release.send(()).expect("the provider is still streaming");
+    let mut rest = Vec::new();
+    while let Some(chunk) = body.next().await {
+        rest.extend_from_slice(&chunk.expect("no body error"));
+    }
+    let rest = String::from_utf8(rest).expect("utf8");
+    assert!(rest.contains("\"text\":\" there\""), "{rest}");
+    assert!(rest.ends_with("data: [DONE]\n\n"), "{rest}");
 }
 
 // a send whose transport was built for one shape and whose executor was asked for the other

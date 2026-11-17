@@ -6,6 +6,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
+use serde_json::Value;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
@@ -75,11 +76,10 @@ pub struct CompletionExecutor {
 impl CompletionExecutor {
     // where the completion route sends this deployment: the text endpoint, or the chat endpoint
     pub async fn endpoint(&self, deployment: &ChatDeployment) -> CompletionEndpoint {
-        match self.route(deployment).await {
-            CompletionRoute::Text { .. } => CompletionEndpoint::Text,
-            CompletionRoute::Chat { .. } | CompletionRoute::Unsupported { .. } => {
-                CompletionEndpoint::Chat
-            }
+        if matches!(self.route(deployment).await, CompletionRoute::Text { .. }) {
+            CompletionEndpoint::Text
+        } else {
+            CompletionEndpoint::Chat
         }
     }
 
@@ -106,7 +106,7 @@ impl CompletionExecutor {
         if streamed {
             built
                 .optional_params
-                .insert(String::from("stream"), serde_json::Value::Bool(true));
+                .insert(String::from("stream"), Value::Bool(true));
         }
         Ok(built)
     }
@@ -123,7 +123,11 @@ impl CompletionExecutor {
         let facts = Arc::new(Mutex::new(None));
         let transport = self.transport(deployment, &facts);
         let outcome = drive(&transport, request, redactor, logger).await?;
-        let captured = take_facts(&facts);
+        let captured = facts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .unwrap_or_default();
         match outcome {
             TextCompletionOutcome::Buffered(reply) if !streamed => {
                 Ok(CompletionCallAnswer::Buffered(CompletionAnswer {
@@ -168,14 +172,6 @@ impl CompletionExecutor {
             next_id: Uuid::new_v4,
         }
     }
-}
-
-fn take_facts(facts: &Mutex<Option<UpstreamFacts>>) -> UpstreamFacts {
-    facts
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .take()
-        .unwrap_or_default()
 }
 
 // the prompt dispatch builds the messages the OpenAI handler transforms into the provider prompt

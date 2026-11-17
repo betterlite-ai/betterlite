@@ -1,10 +1,11 @@
+use std::fmt::Display;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, TryStreamExt as _};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -102,7 +103,7 @@ impl HttpCompletionSdk {
         })?;
         let headers = self.request_headers(extra)?;
         let body =
-            serde_json::to_vec(&Value::Object(payload)).map_err(|source| SdkError::Other {
+            serde_json::to_vec(Value::Object(payload)).map_err(|source| SdkError::Other {
                 message: format!("the completion request could not be written as JSON: {source}"),
             })?;
         Ok(Prepared { url, headers, body })
@@ -155,7 +156,6 @@ impl TextCompletionSdk for HttpCompletionSdk {
         let deadline = self.timeout;
         async move {
             let Prepared { url, headers, body } = prepared?;
-            let started = Instant::now();
             let request = OutboundRequest {
                 method: Method::POST,
                 url,
@@ -165,50 +165,62 @@ impl TextCompletionSdk for HttpCompletionSdk {
                 deadline,
             };
             if streamed {
-                let response = client
-                    .send(request)
-                    .await
-                    .map_err(|source| SdkError::Other {
-                        message: source.to_string(),
-                    })?;
-                let elapsed = started.elapsed();
-                let status = response.response.status().as_u16();
-                let headers = response.response.headers().clone();
-                *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
-                    headers: headers.clone(),
-                    elapsed,
-                });
-                let body = response
-                    .body_stream()
-                    .map(|chunk| {
-                        chunk.map_err(|source| SdkError::Other {
-                            message: source.to_string(),
-                        })
-                    })
-                    .boxed();
-                return Ok(RawCompletion::Stream {
-                    status,
-                    headers,
-                    body,
-                });
+                streamed_completion(client, request, &facts).await
+            } else {
+                buffered_completion(client, request, &facts).await
             }
-            let response =
-                client
-                    .send_buffered(request)
-                    .await
-                    .map_err(|source| SdkError::Other {
-                        message: source.to_string(),
-                    })?;
-            let elapsed = started.elapsed();
-            *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
-                headers: response.headers.clone(),
-                elapsed,
-            });
-            Ok(RawCompletion::Buffered {
-                status: response.status,
-                headers: response.headers,
-                body: response.body,
-            })
         }
+    }
+}
+
+// The SDK's chunk iterator: the response headers are recorded before the bytes stream in.
+async fn streamed_completion(
+    client: ProxiedClient,
+    request: OutboundRequest,
+    facts: &Mutex<Option<UpstreamFacts>>,
+) -> Result<RawCompletion, SdkError> {
+    let started = Instant::now();
+    let response = client.send(request).await.map_err(sdk_other)?;
+    let elapsed = started.elapsed();
+    let status = response.response.status().as_u16();
+    let headers = response.response.headers().clone();
+    record_facts(facts, &headers, elapsed);
+    let body = response.body_stream().map_err(sdk_other).boxed();
+    Ok(RawCompletion::Stream {
+        status,
+        headers,
+        body,
+    })
+}
+
+// The buffered model the SDK parses once the whole body arrived.
+async fn buffered_completion(
+    client: ProxiedClient,
+    request: OutboundRequest,
+    facts: &Mutex<Option<UpstreamFacts>>,
+) -> Result<RawCompletion, SdkError> {
+    let started = Instant::now();
+    let response = client.send_buffered(request).await.map_err(sdk_other)?;
+    record_facts(facts, &response.headers, started.elapsed());
+    Ok(RawCompletion::Buffered {
+        status: response.status,
+        headers: response.headers,
+        body: response.body,
+    })
+}
+
+fn record_facts(facts: &Mutex<Option<UpstreamFacts>>, headers: &HeaderMap, elapsed: Duration) {
+    *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
+        headers: headers.clone(),
+        elapsed,
+    });
+}
+
+fn sdk_other<E>(source: E) -> SdkError
+where
+    E: Display,
+{
+    SdkError::Other {
+        message: source.to_string(),
     }
 }
