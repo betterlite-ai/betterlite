@@ -1,7 +1,7 @@
 task: B3652
 deviations:
-  - what: An uploaded short-audio file is measured only when it is a WAV container; a FLAC, OGG or MP3 upload adds no uploaded seconds, where LiteLLM reports its duration through soundfile.
-    why: The handler measures the upload with betterlite's bounded native decoder (B1001), which reads the WAV container only, so for other containers the recognized ticks alone decide the billed duration.
+  - what: An uploaded short-audio file is measured only when it is a WAV container inside the decoder's bounds; a FLAC, OGG or MP3 upload, or one past 64 MiB, 33,177,600,000 frames or 384 kHz, adds no uploaded seconds, where LiteLLM reports its duration through soundfile.
+    why: The handler measures the upload with betterlite's bounded native decoder (B1001), which reads the WAV container only and refuses an input past those limits, so outside them the recognized ticks alone decide the billed duration.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L323-L327
   - what: An Offset, Duration or durationMilliseconds value beyond 79228162514264337593543950335, or a tick total beyond it, logs an error and returns the uncosted fallback payload, where LiteLLM adds its arbitrary-precision integers and bills the result.
     why: Billed durations and money are rust_decimal values whose mantissa stops at 96 bits, so a tick count no decimal can hold has no response cost to log.
