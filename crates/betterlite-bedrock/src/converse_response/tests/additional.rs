@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 
+use crate::converse_response::message::MessageError;
 use crate::converse_response::{ReplyFieldError, transform::TransformError};
 use crate::converse_usage::reasoning::ThinkingBlock;
 
@@ -75,7 +76,9 @@ fn a_body_without_a_message_keeps_headers_off_the_failure() {
     let run = convert(&fixture, body);
     assert!(matches!(
         run.failure(),
-        TransformError::Reply(ReplyFieldError::Missing { path: "output" })
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
+            path: "output"
+        }))
     ));
     assert_eq!(run.status(), None);
     assert_eq!(
@@ -153,15 +156,18 @@ fn a_null_or_empty_service_tier_replaces_what_it_names() {
     assert_eq!(run.response().trace, Some(Json::Null));
     assert_eq!(run.response().service_tier, Some(Json::Null));
 
-    let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": {}}"#;
+    let empty_body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": {}}"#;
     let mut empty_tier = fixture();
     empty_tier.supplied = with_tier(
         supplied("chatcmpl-supplied", None),
         r#""priority""#,
         r#"{"guardrail": "kept"}"#,
     );
-    let run = convert(&empty_tier, body);
-    assert_eq!(run.response().service_tier, Some(json(r#""priority""#)));
+    let empty_run = convert(&empty_tier, empty_body);
+    assert_eq!(
+        empty_run.response().service_tier,
+        Some(json(r#""priority""#))
+    );
 }
 
 fn a_non_object_service_tier_leaves_the_existing_value() {

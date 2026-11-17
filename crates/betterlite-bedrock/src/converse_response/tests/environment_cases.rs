@@ -8,13 +8,16 @@ use crate::converse_response::ReplyFieldError;
 use crate::converse_response::environment::{
     get_error_class, should_fake_stream, validate_environment,
 };
+use crate::converse_response::message::MessageError;
 use crate::converse_response::transform::TransformError;
 use crate::request_policy::{BedrockRequestPolicy, Params, RequestValue};
 
 use super::support::{convert, convert_bytes, fixture, json};
 
+type FakeStreamRow = (Option<&str>, Option<bool>, Option<bool>, bool);
+
 pub(super) fn fake_stream_capability() {
-    let cases: [(Option<&str>, Option<bool>, Option<bool>, bool); 11] = [
+    let cases: [FakeStreamRow; 11] = [
         (None, None, None, false),
         (Some("ai21.j2-mid"), Some(true), None, true),
         (Some("ai21.j2-mid"), Some(false), None, false),
@@ -100,11 +103,15 @@ fn a_non_object_body_is_a_422() {
     assert_eq!(error.response_headers, fixture.headers);
 
     let bare = run_scalar_body();
-    let TransformError::Conversion { error, .. } = bare.failure() else {
+    let TransformError::Conversion {
+        error: scalar_error,
+        ..
+    } = bare.failure()
+    else {
         panic!("a scalar body is a conversion failure");
     };
-    assert_eq!(error.error.status_code, 422);
-    assert!(error.response_headers.is_empty());
+    assert_eq!(scalar_error.error.status_code, 422);
+    assert!(scalar_error.response_headers.is_empty());
 }
 
 fn run_scalar_body() -> super::support::Run {
@@ -119,16 +126,18 @@ fn missing_output_members_keep_their_own_failure() {
     assert_eq!(missing_output.status(), None);
     assert!(matches!(
         missing_output.failure(),
-        TransformError::Reply(ReplyFieldError::Missing { path: "output" })
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
+            path: "output"
+        }))
     ));
 
     let missing_message = convert(&fixture, r#"{"output": {}}"#);
     assert_eq!(missing_message.status(), None);
     assert!(matches!(
         missing_message.failure(),
-        TransformError::Reply(ReplyFieldError::Missing {
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
             path: "output.message"
-        })
+        }))
     ));
 
     let not_an_output = convert(
@@ -137,10 +146,10 @@ fn missing_output_members_keep_their_own_failure() {
     );
     assert!(matches!(
         not_an_output.failure(),
-        TransformError::Reply(ReplyFieldError::NotA {
+        TransformError::Message(MessageError::Reply(ReplyFieldError::NotA {
             path: "output",
             expected: "an object"
-        })
+        }))
     ));
 
     let not_a_message = convert(
@@ -149,10 +158,10 @@ fn missing_output_members_keep_their_own_failure() {
     );
     assert!(matches!(
         not_a_message.failure(),
-        TransformError::Reply(ReplyFieldError::NotA {
+        TransformError::Message(MessageError::Reply(ReplyFieldError::NotA {
             path: "output.message",
             expected: "an object"
-        })
+        }))
     ));
 }
 
@@ -175,7 +184,9 @@ fn missing_later_members_keep_their_own_failure() {
     assert_eq!(missing_stop_reason.status(), None);
     assert!(matches!(
         missing_stop_reason.failure(),
-        TransformError::Reply(ReplyFieldError::Missing { path: "stopReason" })
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
+            path: "stopReason"
+        }))
     ));
 }
 
@@ -185,9 +196,9 @@ fn a_message_without_content_keeps_its_own_failure() {
     assert_eq!(run.status(), None);
     assert!(matches!(
         run.failure(),
-        TransformError::Reply(ReplyFieldError::Missing {
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
             path: "output.message.content"
-        })
+        }))
     ));
 }
 
@@ -212,10 +223,10 @@ fn a_non_list_content_is_not_a_block_list() {
         assert_eq!(run.status(), None);
         assert!(matches!(
             run.failure(),
-            TransformError::Reply(ReplyFieldError::NotA {
+            TransformError::Message(MessageError::Reply(ReplyFieldError::NotA {
                 path: "output.message.content",
                 expected: "a list of content blocks"
-            })
+            }))
         ));
     }
 }
@@ -226,7 +237,9 @@ fn a_reply_missing_usage_and_stop_reason_names_the_stop_reason() {
     assert_eq!(run.status(), None);
     assert!(matches!(
         run.failure(),
-        TransformError::Reply(ReplyFieldError::Missing { path: "stopReason" })
+        TransformError::Message(MessageError::Reply(ReplyFieldError::Missing {
+            path: "stopReason"
+        }))
     ));
 }
 
@@ -244,7 +257,7 @@ fn an_unreadable_body_is_logged_by_its_byte_count() {
 // The shared BedrockError holds error headers as ASCII, so a 422 whose headers are not ASCII fails as a header error.
 fn a_422_with_non_ascii_headers_is_a_header_error() {
     let mut fixture = fixture();
-    fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-é"))];
+    fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-\u{e9}"))];
     let run = convert(&fixture, "{not json");
     assert!(matches!(run.failure(), TransformError::Header(_)));
 }
@@ -273,8 +286,11 @@ fn error_class_delegates_the_supplied_fields() {
 pub(super) fn auth_and_metadata_headers() {
     let empty = params(Vec::new());
     api_key_writes_the_bearer_header(&empty);
-    the_metadata_owner_evicts_and_rewrites(&empty);
-    spend_and_identity_headers_follow_their_sources();
+    the_metadata_owner_writes_and_evicts_the_header(&empty);
+    an_unowned_metadata_header_is_kept(&empty);
+    spend_logs_metadata_fills_the_header();
+    identity_and_key_fill_their_headers();
+    both_metadata_sources_merge_into_one_header();
     an_unforwardable_identity_leaves_no_header();
 }
 
@@ -346,7 +362,7 @@ fn api_key_writes_the_bearer_header(empty: &Params) {
     );
 }
 
-fn the_metadata_owner_evicts_and_rewrites(empty: &Params) {
+fn the_metadata_owner_writes_and_evicts_the_header(empty: &Params) {
     let identity = policy(&["user_api_key_team_id"]);
     let metadata = params(vec![(
         "metadata",
@@ -381,7 +397,9 @@ fn the_metadata_owner_evicts_and_rewrites(empty: &Params) {
     )
     .expect("the headers merge");
     assert_eq!(evicted, headers(&[("X-Caller", "kept")]));
+}
 
+fn an_unowned_metadata_header_is_kept(empty: &Params) {
     let unowned = validate_environment(
         &headers(&[("x-amzn-bedrock-request-metadata", "caller")]),
         None,
@@ -395,7 +413,7 @@ fn the_metadata_owner_evicts_and_rewrites(empty: &Params) {
     );
 }
 
-fn spend_and_identity_headers_follow_their_sources() {
+fn spend_logs_metadata_fills_the_header() {
     let spend = policy(&["spend_logs_metadata"]);
     let spend_params = params(vec![(
         "metadata",
@@ -413,7 +431,9 @@ fn spend_and_identity_headers_follow_their_sources() {
             r#"{"team":"a","user":"b"}"#
         )])
     );
+}
 
+fn identity_and_key_fill_their_headers() {
     let identity = policy(&["user_api_key_team_id"]);
     let litellm_params = params(vec![(
         "litellm_metadata",
@@ -436,7 +456,9 @@ fn spend_and_identity_headers_follow_their_sources() {
             )
         ])
     );
+}
 
+fn both_metadata_sources_merge_into_one_header() {
     let both = policy(&["user_api_key_team_id", "spend_logs_metadata"]);
     let mixed = params(vec![(
         "metadata",

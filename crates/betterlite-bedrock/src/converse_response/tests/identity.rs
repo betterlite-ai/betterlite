@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::iter::once;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -35,10 +37,13 @@ fn converse_response_credential_identity_isolation() {
     let keyless = validate_environment(&caller, None, None, &empty).expect("the headers merge");
     assert_eq!(keyless, caller);
     assert!(!caller.contains_key("Authorization"));
+    metadata_identity_is_isolated();
+}
 
+fn metadata_identity_is_isolated() {
     // Each request resolves only its own identity fields, even when the policy is shared.
     let policy = BedrockRequestPolicy {
-        fields: ["user_api_key_team_id".to_owned()].into_iter().collect(),
+        fields: once("user_api_key_team_id".to_owned()).collect(),
     };
     let one = metadata_params("team-one");
     let two = metadata_params("team-two");

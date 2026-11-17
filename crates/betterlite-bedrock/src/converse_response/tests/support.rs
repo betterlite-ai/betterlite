@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::convert::Infallible;
+use std::mem::take;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -133,21 +134,22 @@ pub(super) fn convert(fixture: &Fixture, body: &str) -> Run {
     convert_bytes(fixture, body.as_bytes())
 }
 
-pub(super) fn convert_bytes(fixture: &Fixture, body: &[u8]) -> Run {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
+fn logging_fixture<'borrow>(
+    redactor: &'borrow Redactor,
+    sink: &'borrow DiscardingSink,
+) -> (LoggingState, PrePostEnv<'borrow>) {
     let init: LoggingInit = serde_json::from_str(INIT).expect("the logging fixture is valid");
-    let mut state = LoggingState::new(
+    let state = LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &redactor,
+        redactor,
         || String::from("generated"),
         Duration::default,
     )
     .expect("the logging fixture builds");
-    let sink = DiscardingSink;
     let env = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
@@ -155,13 +157,20 @@ pub(super) fn convert_bytes(fixture: &Fixture, body: &[u8]) -> Run {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
-        log: &sink,
+        redactor,
+        log: sink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
         now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).expect("the fixture clock parses"),
     };
+    (state, env)
+}
+
+pub(super) fn convert_bytes(fixture: &Fixture, body: &[u8]) -> Run {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
+    let sink = DiscardingSink;
+    let (mut state, env) = logging_fixture(&redactor, &sink);
     let ids = FixedIds {
         values: Mutex::new(fixture.ids.clone()),
     };
@@ -196,7 +205,7 @@ pub(super) fn convert_bytes(fixture: &Fixture, body: &[u8]) -> Run {
     );
     Run {
         response,
-        details: std::mem::take(&mut state.model_call_details),
+        details: take(&mut state.model_call_details),
     }
 }
 

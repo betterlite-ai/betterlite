@@ -12,6 +12,7 @@ use super::support::{
 };
 use super::tools::{citation_content_alignment, tool_calls_response};
 use crate::converse_response::ReplyFieldError;
+use crate::converse_response::message::MessageError;
 use crate::converse_response::transform::TransformError;
 use crate::converse_response::wire::ReplyToolCall;
 
@@ -138,10 +139,10 @@ fn a_non_string_stop_reason_maps_to_stop_and_a_container_is_an_error() {
         assert_eq!(run.status(), None, "stopReason {reason}");
         assert!(matches!(
             run.failure(),
-            TransformError::Reply(ReplyFieldError::NotA {
+            TransformError::Message(MessageError::Reply(ReplyFieldError::NotA {
                 path: "stopReason",
                 expected: "a string"
-            })
+            }))
         ));
     }
 }

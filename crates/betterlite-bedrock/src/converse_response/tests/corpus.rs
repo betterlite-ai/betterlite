@@ -32,10 +32,13 @@ fn replays_the_bedrock_converse_response_corpus() {
         .collect();
     names.iter().zip(&outcomes).for_each(|(name, outcome)| {
         assert_eq!(outcome.is_ok(), name.starts_with("valid-"), "seed {name}");
-        let has_output = outcome
-            .as_ref()
-            .is_ok_and(|reply| reply.body.contains_key("output"));
-        assert_eq!(has_output, name != "valid-empty-object.json", "seed {name}");
+        if let Ok(reply) = outcome {
+            assert_eq!(
+                reply.body.contains_key("output"),
+                name != "valid-empty-object.json",
+                "seed {name}"
+            );
+        }
     });
     assert_eq!(
         outcomes.iter().filter(|outcome| outcome.is_ok()).count(),
