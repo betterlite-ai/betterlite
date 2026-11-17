@@ -197,14 +197,16 @@ async fn pins_content_type_and_accept_over_additional_headers() {
     assert_eq!(requests[1].header("x-provider"), "sso");
 }
 
+#[rstest]
+#[case::exact_case("Authorization")]
+#[case::lower_case("authorization")]
 #[tokio::test]
-async fn userinfo_bearer_overrides_an_additional_authorization_header() {
+async fn userinfo_bearer_overrides_an_additional_authorization_header(#[case] name: &str) {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(None)));
     provider.reply("/userinfo", Reply::json(r#"{"sub":"user-1"}"#));
     let mut request = base_request(&provider);
-    request.additional_headers =
-        vec![("Authorization".to_owned(), "Bearer stale-header".to_owned())];
+    request.additional_headers = vec![(name.to_owned(), "Bearer stale-header".to_owned())];
     run_exchange(&request).await.unwrap();
     let requests = provider.requests();
     assert_eq!(requests[1].header("authorization"), "Bearer access-1");
