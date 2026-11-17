@@ -1,0 +1,24 @@
+task: B1620
+deviations:
+  - what: OAuth failure diagnostics report the status and the failure category without copying the provider response body into logs or error messages; the pinned code logs the first 500 characters of a failed token response and of a failed userinfo response.
+    why: Those bodies carry the freshly issued access_token, id_token and refresh_token, so logging them would put bearer credentials into the proxy's log stream. secrets-stay-secret requires redaction, and no working setup can depend on a log line it cannot read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4093-L4104
+  - what: Provider response bytes are capped at 1 MiB and parsed with the decoder's nesting limit, so an oversized or deeply nested token or userinfo response fails as invalid JSON where the pinned json.loads would accept it.
+    why: betterlite bounds every untrusted response before it allocates, and a 4 MiB JSON document from a token endpoint is a memory amplification vector, not a working configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3967-L3977
+  - what: A provider body holding Python's non-standard NaN or Infinity literal is refused as invalid JSON, where Python's json.loads accepts the literals and the pinned code merges them into the identity claims.
+    why: betterlite reads provider JSON through serde_json, which accepts only the literals the JSON standard defines; a claim holding NaN or Infinity has no typed consumer, and docs/compatibility.md keeps the runtime to standard JSON values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3968
+  - what: A number past the f64 range, such as 1e400, is kept as the decimal text the provider wrote and read back as 1e+400, where Python's json.loads turns it into inf and writes it back as the non-standard Infinity literal.
+    why: serde_json keeps the number as its decimal text, so betterlite never emits the Infinity token Python's encoder uses; docs/compatibility.md keeps output to standard JSON, and a consumer that reads 1e+400 still gets infinity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3968
+  - what: A truthy non-object userinfo body answers 500 internal_server_error with code 500, where the pinned code lets the dict unpacking raise an unhandled TypeError that FastAPI turns into its generic 500 body.
+    why: The status is the same; betterlite answers its typed error envelope so the failure is classified and the unhandled exception never reaches the server's panic path. No working setup relies on the shape of a crash response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4136
+  - what: The pinned Content-Type, Accept and Authorization headers replace an additional header of the same name whatever its letter case; the pinned dict spread only replaces the exact-case key, so a differently cased duplicate would be sent alongside it.
+    why: Sending two conflicting Authorization headers makes the provider pick one by its own rule, which is exactly what the pinned comment says must not happen; betterlite's header map is case-insensitive, so the pinned value wins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4056-L4059
+  - what: The token POST runs under one 30 s deadline and the userinfo GET under one 600 s deadline, where the pinned httpx client times each phase separately, so its 30 s POST timeout restarts for the connect and for every read, and its userinfo client gives a stalled connect 5 s and every read 600 s.
+    why: betterlite's shared outbound client ends a request at its deadline, so a provider that trickles a body cannot hold the SSO callback open past the bound the task sets; that client's own connect timeout is 10 s, which is what ends a stalled connect on either request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4076-L4081
+kept_bugs: []
