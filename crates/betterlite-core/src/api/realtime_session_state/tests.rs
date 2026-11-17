@@ -326,6 +326,15 @@ fn realtime_event_storage_handles_wildcard_and_empty_selection() {
     });
     store_types(&mut none, &["response.done"]);
     assert!(none.messages.is_empty());
+    let mut selected = state_with(|connection| {
+        connection.logged_real_time_event_types =
+            LoggedEventTypes::Only(vec!["response.done".to_owned()]);
+    });
+    store_types(&mut selected, &["response.create", "response.done"]);
+    assert_eq!(
+        selected.messages,
+        vec![record(r#"{"type":"response.done"}"#)]
+    );
 }
 
 #[test]
@@ -363,19 +372,23 @@ fn realtime_event_storage_logs_a_session_event_shape_failure() {
     let (logs, _guard) = capture();
     let mut state = state();
     state
+        .store_message(SessionMessage::Text(
+            r#"{"type":"session.created","session":{}}"#,
+        ))
+        .expect("a session event with an object session is stored");
+    state
         .store_message(SessionMessage::Text(r#"{"type":"session.created"}"#))
         .expect("a session event without a session object is still stored");
-    assert_eq!(
-        state.messages,
-        vec![record(r#"{"type":"session.created"}"#)]
-    );
-    assert!(
-        logs.messages()
-            .iter()
-            .any(|message| message.contains("Error parsing message for logging:")),
-        "{:?}",
-        logs.messages()
-    );
+    state
+        .store_message(SessionMessage::Text(r#"{"type":"response.create"}"#))
+        .expect("an ordinary event needs no session object");
+    assert_eq!(state.messages.len(), 3);
+    let failures: Vec<String> = logs
+        .messages()
+        .into_iter()
+        .filter(|message| message.contains("Error parsing message for logging:"))
+        .collect();
+    assert_eq!(failures.len(), 1, "{failures:?}");
 }
 
 #[test]
@@ -463,6 +476,13 @@ fn realtime_input_collection_reads_session_updates() {
     assert_eq!(state.session_tools.len(), 1);
     assert_eq!(state.input_messages.len(), 1);
     assert_eq!(state.is_transcription_session, SessionFlag(true));
+    state.store_input(SessionInput::Text(
+        r#"{"type":"session.update","session":{"tools":["not-a-tool",{"type":"function","name":"other"}]}}"#,
+    ));
+    assert_eq!(
+        state.session_tools,
+        vec![record(r#"{"type":"function","name":"lookup"}"#)]
+    );
 }
 
 #[test]
