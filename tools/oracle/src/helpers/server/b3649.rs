@@ -134,7 +134,7 @@ fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
     view::billing_view(
         fixture.logging_obj.as_ref(),
         &logged,
-        fixture.transport.request_log(),
+        &fixture.transport.request_log(),
     )
 }
 
@@ -152,7 +152,7 @@ where
     view::billing_view(
         fixture.logging_obj.as_ref(),
         &logged,
-        fixture.transport.request_log(),
+        &fixture.transport.request_log(),
     )
 }
 
@@ -161,10 +161,10 @@ fn result_text(input: &Input) -> Result<String, Box<HelperError>> {
     if let Some(text) = input.result.as_ref() {
         return Ok(text.clone());
     }
-    match input.run.as_ref() {
-        Some(run) => serde_json::to_string(run).or_value_error(),
-        None => Ok(String::new()),
-    }
+    input.run.as_ref().map_or_else(
+        || Ok(String::new()),
+        |run| serde_json::to_string(run).or_value_error(),
+    )
 }
 
 pub(super) fn failure(message: &str) -> Box<HelperError> {

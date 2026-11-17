@@ -56,10 +56,10 @@ impl ScriptedTransport {
         let mut paths: Vec<String> = Vec::new();
         let mut api_keys: Vec<Option<String>> = Vec::new();
         for request in requests.iter() {
-            let path = match request.url.strip_prefix(API_BASE) {
-                Some(rest) => rest.to_owned(),
-                None => request.url.clone(),
-            };
+            let path = request
+                .url
+                .strip_prefix(API_BASE)
+                .map_or_else(|| request.url.clone(), ToOwned::to_owned);
             if !paths.contains(&path) {
                 paths.push(path);
             }
@@ -134,6 +134,7 @@ impl PollSleeper for AdvancingSleeper {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         *elapsed = elapsed.saturating_add(duration);
+        drop(elapsed);
         Box::pin(ready(()))
     }
 }

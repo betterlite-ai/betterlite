@@ -20,7 +20,7 @@ pub(super) struct Recorded {
 pub(super) fn billing_view(
     logging_obj: &StreamLoggingObject,
     logged: &Recorded,
-    requests: RequestLog,
+    requests: &RequestLog,
 ) -> Result<Value, Box<HelperError>> {
     let Some((details, call_id)) = logging_obj.read(&mut |state| {
         (
@@ -77,9 +77,7 @@ fn outcome_text(outcome: &HandlerOutcome) -> Option<String> {
 
 // LiteLLM writes the model and provider as text and the cost as a number, and the view compares all three as text.
 pub(super) fn text_entry(fields: &IndexMap<String, Json>, name: &str) -> Option<String> {
-    let Some(value) = fields.get(name) else {
-        return None;
-    };
+    let value = fields.get(name)?;
     match value {
         Json::Text(text) => Some(text.clone()),
         Json::Number(number) => Some(number.to_string()),
