@@ -1,11 +1,7 @@
-use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::logging_privacy::PrivacyContext;
-use crate::logging_privacy::request::{Flag, Metadata, PrivacyRequest};
-use crate::logging_state::LoggingState;
 
 pub const REDACTED_TEXT: &str = "redacted-by-litellm";
 
@@ -19,9 +15,7 @@ pub(crate) const VERTEX_METADATA_FIELDS: [&str; 5] = [
 
 // redact_messages.redacted_standard_logging_payload: a callback that batches failure payloads redacts them itself.
 #[must_use]
-pub fn redacted_standard_logging_payload(
-    payload: &StandardLoggingPayload,
-) -> StandardLoggingPayload {
+pub fn redact_standard_payload(payload: &StandardLoggingPayload) -> StandardLoggingPayload {
     let mut redacted = payload.clone();
     redacted.classifier_input = None;
     redacted.originating_request_masked = None;
@@ -46,7 +40,7 @@ pub(crate) fn redacted_messages_json() -> Json {
     ]))])
 }
 
-// _redact_standard_logging_object's response branch: a string response becomes the marker itself.
+// _redact_standard_logging_object reads output first, then choices, and scrubs vertex metadata in both.
 fn redact_logged_response(response: Json) -> Json {
     match response {
         Json::Object(mut fields) if fields.contains_key("output") => {
@@ -66,16 +60,16 @@ fn redact_logged_response(response: Json) -> Json {
     }
 }
 
-// perform_redaction's result branch, which the logged response goes through before it is stored.
+// perform_redaction's result branch reads choices before output, and only the choices branch scrubs.
 pub(crate) fn redact_response_text(response: Json) -> Json {
     match response {
-        Json::Object(mut fields) if fields.contains_key("output") => {
-            redact_output(&mut fields);
-            Json::Object(fields)
-        }
         Json::Object(mut fields) if fields.contains_key("choices") => {
             redact_choices(&mut fields);
             scrub_vertex_metadata(&mut fields);
+            Json::Object(fields)
+        }
+        Json::Object(mut fields) if fields.contains_key("output") => {
+            redact_output(&mut fields);
             Json::Object(fields)
         }
         Json::Null
@@ -94,42 +88,46 @@ fn text_placeholder() -> Json {
     )]))
 }
 
+fn as_object_mut(value: &mut Json) -> Option<&mut IndexMap<String, Json>> {
+    if let Json::Object(fields) = value {
+        return Some(fields);
+    }
+    None
+}
+
 fn redact_output(fields: &mut IndexMap<String, Json>) {
     let Some(Json::List(items)) = fields.get_mut("output") else {
         return;
     };
-    for item in items {
-        let Json::Object(item_fields) = item else {
-            continue;
-        };
-        redact_present(item_fields, "text");
-        if let Some(Json::List(content)) = item_fields.get_mut("content") {
-            for part in content {
-                if let Json::Object(part_fields) = part {
-                    redact_present(part_fields, "text");
-                    redact_present(part_fields, "refusal");
-                }
-            }
+    for item in items.iter_mut().filter_map(as_object_mut) {
+        redact_output_item(item);
+    }
+}
+
+fn redact_output_item(item: &mut IndexMap<String, Json>) {
+    redact_present(item, "text");
+    if let Some(Json::List(content)) = item.get_mut("content") {
+        for part in content.iter_mut().filter_map(as_object_mut) {
+            redact_present(part, "text");
+            redact_present(part, "refusal");
         }
-        let kind = match item_fields.get("type") {
-            Some(Json::Text(kind)) => kind.clone(),
-            _ => String::new(),
-        };
-        if kind == "reasoning"
-            && let Some(Json::List(summary)) = item_fields.get_mut("summary")
-        {
-            for entry in summary {
-                if let Json::Object(entry_fields) = entry {
-                    redact_present(entry_fields, "text");
-                }
-            }
+    }
+    let kind = match item.get("type") {
+        Some(Json::Text(kind)) => kind.clone(),
+        _ => String::new(),
+    };
+    if kind == "reasoning"
+        && let Some(Json::List(summary)) = item.get_mut("summary")
+    {
+        for entry in summary.iter_mut().filter_map(as_object_mut) {
+            redact_present(entry, "text");
         }
-        if kind == "function_call" && item_fields.contains_key("arguments") {
-            item_fields.insert("arguments".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
-        }
-        if kind == "custom_tool_call" && item_fields.contains_key("input") {
-            item_fields.insert("input".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
-        }
+    }
+    if kind == "function_call" && item.contains_key("arguments") {
+        item.insert("arguments".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
+    }
+    if kind == "custom_tool_call" && item.contains_key("input") {
+        item.insert("input".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
     }
 }
 
@@ -138,24 +136,22 @@ fn redact_choices(fields: &mut IndexMap<String, Json>) {
         return;
     };
     for choice in choices {
-        let Json::Object(choice_fields) = choice else {
-            continue;
-        };
-        let message_key = if matches!(choice_fields.get("message"), Some(Json::Object(_))) {
-            Some("message")
-        } else if matches!(choice_fields.get("delta"), Some(Json::Object(_))) {
-            Some("delta")
-        } else {
-            None
-        };
-        if let Some(key) = message_key {
-            if let Some(Json::Object(message)) = choice_fields.get_mut(key) {
-                redact_message(message);
-            }
-        } else {
-            redact_present(choice_fields, "text");
+        if let Json::Object(choice_fields) = choice {
+            redact_choice(choice_fields);
         }
     }
+}
+
+fn redact_choice(choice: &mut IndexMap<String, Json>) {
+    if let Some(Json::Object(message)) = choice.get_mut("message") {
+        redact_message(message);
+        return;
+    }
+    if let Some(Json::Object(delta)) = choice.get_mut("delta") {
+        redact_message(delta);
+        return;
+    }
+    redact_present(choice, "text");
 }
 
 fn redact_message(message: &mut IndexMap<String, Json>) {
@@ -198,52 +194,5 @@ fn scrub_vertex_metadata(fields: &mut IndexMap<String, Json>) {
         if let Some(Json::Object(hidden)) = fields.get_mut("_hidden_params") {
             hidden.shift_remove(name);
         }
-    }
-}
-
-// should_redact_message_logging: the request flag, then the redaction headers, then the global setting.
-#[must_use]
-pub fn should_redact_message_logging(state: &LoggingState, settings: Settings) -> bool {
-    let metadata = ["litellm_metadata", "metadata"].iter().find_map(|key| {
-        match state.litellm_params.get(*key) {
-            Some(Json::Object(fields)) => Some(fields),
-            _ => None,
-        }
-    });
-    let headers = match metadata.and_then(|fields| fields.get("headers")) {
-        Some(Json::Object(headers)) => headers
-            .iter()
-            .filter_map(|(name, value)| Some((name.clone(), flag(value)?)))
-            .collect(),
-        _ => IndexMap::new(),
-    };
-    let request = PrivacyRequest {
-        direct: Metadata {
-            turn_off_message_logging: state
-                .callback_dynamic_params
-                .get("turn_off_message_logging")
-                .and_then(flag),
-            headers,
-            redact_user_api_key_info: None,
-            callback_params: IndexMap::new(),
-        },
-        litellm_params: None,
-        litellm_metadata: None,
-        metadata: None,
-    };
-    match request.decide(settings, PrivacyContext::default(), true) {
-        Ok(decision) => decision.content,
-        Err(error) => {
-            tracing::warn!(%error, "the message redaction flags could not be read");
-            settings.turn_off_message_logging
-        }
-    }
-}
-
-fn flag(candidate: &Json) -> Option<Flag> {
-    match candidate {
-        Json::Bool(on) => Some(Flag::Boolean(*on)),
-        Json::Text(text) => Some(Flag::Text(text.clone())),
-        Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }

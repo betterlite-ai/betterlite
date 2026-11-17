@@ -124,10 +124,6 @@ fn unconverted_responses_usage(_mapping: &IndexMap<String, Json>) -> Result<Usag
     })
 }
 
-pub fn absent_responses_converter() -> OwnedResponsesConverter {
-    Arc::new(unconverted_responses_usage)
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TagConfig {
     pub disable_user_agent_tags: bool,
@@ -153,7 +149,7 @@ impl Default for PayloadSources {
             autorouter: Arc::new(AbsentAutorouterAudit),
             cold_storage: None,
             clock: Arc::new(SystemPayloadClock),
-            responses_converter: absent_responses_converter(),
+            responses_converter: Arc::new(unconverted_responses_usage),
         }
     }
 }

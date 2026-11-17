@@ -85,26 +85,22 @@ pub enum PayloadError {
     CacheCost,
 }
 
-impl PayloadError {
-    pub(crate) fn decode(field: &'static str, source: DecodeError) -> Self {
-        Self::Decode { field, source }
-    }
-}
-
 // The guardrail list is decoded where it is read, so the error names the metadata key it came from
 pub(crate) fn guardrail_information(
     value: Option<&Json>,
 ) -> Result<Option<Vec<GuardrailInformation>>, PayloadError> {
-    let Some(Json::List(_)) = value else {
-        return match value {
-            None | Some(Json::Null) => Ok(None),
-            Some(_) => Err(PayloadError::FieldType {
-                field: "standard_logging_guardrail_information",
-            }),
-        };
+    let Some(value) = value else {
+        return Ok(None);
     };
-    let encoded = serde_json::to_vec(value.as_ref().unwrap_or(&Json::Null))
-        .map_err(|source| PayloadError::Json { source })?;
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    let Json::List(_) = value else {
+        return Err(PayloadError::FieldType {
+            field: "standard_logging_guardrail_information",
+        });
+    };
+    let encoded = serde_json::to_vec(value).map_err(|source| PayloadError::Json { source })?;
     serde_json::from_slice(&encoded)
         .map(Some)
         .map_err(|source| PayloadError::GuardrailInformation {

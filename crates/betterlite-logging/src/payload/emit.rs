@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::fields::payload::StandardLoggingPayload;
 
-pub const PRINT_STANDARD_LOGGING_PAYLOAD_ENV: &str = "LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD";
+pub const PRINT_PAYLOAD_ENV: &str = "LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EmitSettings {

@@ -13,9 +13,7 @@ use crate::logging_failure::{FailurePayloadInput, FailurePayloadSource};
 use crate::logging_metadata::base64::Base64Truncator;
 use crate::logging_state::LoggingState;
 use crate::logging_success::ports::StandardPayloadBuilder;
-use crate::payload::compose::{
-    PayloadComposition, PayloadRequest, get_standard_logging_object_payload,
-};
+use crate::payload::compose::{PayloadComposition, PayloadRequest, standard_logging_payload};
 use crate::payload::deps::{PayloadSettings, PayloadSources};
 
 pub const WEB_SEARCH_OPTIONS_KEY: &str = "web_search_options";
@@ -65,7 +63,7 @@ impl PayloadBuilder {
 
     // The builder never fails a request: a payload that cannot be built is warned about and skipped.
     fn assemble(&self, request: &PayloadRequest<'_>) -> Option<StandardLoggingPayload> {
-        match get_standard_logging_object_payload(request, &self.composition()) {
+        match standard_logging_payload(request, &self.composition()) {
             Ok(payload) => Some(payload),
             Err(error) => {
                 tracing::warn!(%error, "the standard logging payload could not be built");

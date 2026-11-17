@@ -1,6 +1,4 @@
-use betterlite_models::cost_breakdown::{
-    CostBreakdown, CostBreakdownError, cost_breakdown_with_guardrail,
-};
+use betterlite_models::cost_breakdown::{CostBreakdown, cost_breakdown_with_guardrail};
 use betterlite_models::decisions::Json;
 use betterlite_models::guardrail_pricing::entries::{
     GuardrailInformation as PricedGuardrailInformation, guardrail_information_cost,
@@ -17,7 +15,8 @@ use crate::fields::status::LoggingStatus;
 use crate::fields::timestamps::with_fraction;
 use crate::logging_metadata::headers::get_hidden_params;
 use crate::logging_metadata::params::MetadataMap;
-use crate::payload::compose::inputs::{Identifiers, optional_text};
+use crate::payload::compose::identifiers::Identifiers;
+use crate::payload::compose::inputs::optional_text;
 use crate::payload::compose::{PayloadComposition, PayloadRequest};
 use crate::payload::deps::{ModelCostRequest, SavingsRequest};
 use crate::payload::error::PayloadError;
@@ -213,12 +212,13 @@ pub(crate) fn hidden_params(
         clean.response_cost = Some(decimal_json(raw)?);
     }
     if clean.litellm_overhead_time_ms.is_none() && request.status == LoggingStatus::Success {
+        // the metric is an f64; its shortest round-trip text is the decimal Python's json would print
         clean.litellm_overhead_time_ms = request
             .state
             .response_timing_metrics
             .get(OVERHEAD_TIMING_KEY)
-            .and_then(|value| Decimal::from_f64(*value))
-            .map(DecimalValue);
+            .and_then(|value| parse_decimal_lexeme(&value.to_string()).ok())
+            .map(|value| DecimalValue(with_fraction(value)));
     }
     Ok(clean)
 }

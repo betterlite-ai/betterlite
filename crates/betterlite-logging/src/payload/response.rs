@@ -17,11 +17,7 @@ pub fn init_response_object(response: &Json) -> InitResponseObject {
                 body: fields.clone(),
                 hidden_params: Some(hidden.clone()),
             },
-            Some(Json::Null)
-            | Some(Json::Bool(_))
-            | Some(Json::Number(_))
-            | Some(Json::Text(_))
-            | Some(Json::List(_))
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
             | None => InitResponseObject::Mapping(fields.clone()),
         },
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
@@ -114,7 +110,7 @@ pub fn response_model_name(response: &Json) -> Option<&str> {
 }
 
 #[must_use]
-pub fn object_field(value: &Json, name: &str) -> Option<&Json> {
+pub fn object_field<'input>(value: &'input Json, name: &str) -> Option<&'input Json> {
     let Json::Object(fields) = value else {
         return None;
     };
