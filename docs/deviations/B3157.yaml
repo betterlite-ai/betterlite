@@ -1,0 +1,45 @@
+task: B3157
+deviations:
+  - what: A coordinator operation that fails is reported as false, where LiteLLM's protocol methods can raise.
+    why: The Rust SyncCoordinator trait returns bool from acquire, heartbeat, finish and Option<ROISyncStatus> from status, so a failed lease operation has the same outcome its raised exception has in LiteLLM, and _heartbeat's bare `except Exception` has nothing left to catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L431-L443
+  - what: A stored started_at or finished_at that is not an RFC 3339 timestamp yields zero elapsed seconds instead of raising.
+    why: Python's datetime.fromisoformat raises ValueError inside the status property; betterlite treats an unreadable stored timestamp as unset, the same way docs/compatibility.md handles a value of the wrong type, and the status stays readable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L356-L370
+  - what: remaining_seconds is computed as a rust_decimal Decimal and rounded with RoundingStrategy::MidpointNearestEven, where LiteLLM computes round(elapsed / done * (total - done)) on floats.
+    why: Decimal keeps the exact ratio of the second counters and applies the same half-to-even rule, so the values agree for every input reachable here while avoiding float drift; the clippy table denies float comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L363-L367
+  - what: A cached pull record whose commit_emails is null is re-estimated, where LiteLLM checks `"commit_emails" in cached_pull`, finds the key and then fails iterating None.
+    why: docs/compatibility.md reads an explicit null as the field's default, and a record with no commit emails cannot supply the refreshed email set; re-estimating produces a report instead of LiteLLM's unexpected-error status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L495-L500
+  - what: A GitHub factory failure fails the run with the SourceError message and phase error, where LiteLLM calls the factory outside its try block and the exception escapes the task.
+    why: An escaped exception leaves the stored status running forever, so the next start refuses and the UI shows a live sync that does not exist; a hang a working setup cannot rely on, so it is fixed and the phase error names the construction failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L456-L458
+  - what: The runner asks a CapabilityLookup injected when the manager is built for every cache_context and estimate call, where LiteLLM reads litellm.model_cost directly through supports_none_reasoning_effort.
+    why: An injected lookup that reports support makes the estimate request carry reasoning_effort "none" and hashes the matching option into the cache context, but betterlite's server loads no model map yet, so nothing in production answers true and a lookup answering false is what the tests inject; for models the map marks, as gpt-5.1 for none-reasoning support, betterlite sends no reasoning_effort and keys a different cache context until a caller injects a metadata-backed lookup. B2221 owns supports_none_reasoning_effort; B8588 builds the manager and must inject the lookup once a model map exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L67-L75
+  - what: A cancelled run can drop its GitHub handle without calling close, where LiteLLM's finally closes it.
+    why: The Rust task drops the Analyze future at the cancellation point, so the handle returned by the factory is released without close when the cancel lands before the phases return; GitHub::close is a no-op (B3152) and holds no client of its own, so nothing observable changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L616-L622
+  - what: cancel takes the same start lock start takes, where LiteLLM's cancel does not.
+    why: The lock only orders a cancel against a concurrent start; both paths end with the same cancelled status, the same finished_at and the same coordinator notification, and serializing them keeps the stored slot from being replaced between the check and the cancel.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L418-L429
+  - what: When one pull worker fails, the other two run to the end of the queue before the run reports the error, where LiteLLM's asyncio.gather raises at once and the finally cancels the unfinished workers.
+    why: join_all polls every worker to completion, so the run still ends in the same error phase with the same message, but the error status can count more estimates and the failure waits for the rest of the queue; the cache entries the extra workers write are keyed by pull content and are the ones a later run writes anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L552-L560
+  - what: SyncManager::new requires its GitHub factory and clock from the caller, where LiteLLM's __init__ defaults the factory to GitHub and the clock to _utc_now.
+    why: The composition root resolves both defaults once, so the manager holds plain injected dependencies instead of Option fields, as the non-nullable-by-default rule asks; B8588 builds the manager with the GitHub factory and Arc::new(Utc::now), which yields the same clients and timestamps LiteLLM's defaults produce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L333-L338
+  - what: start takes the lease owner id from a UuidSource injected when the manager is built, where LiteLLM calls uuid.uuid4() inside start.
+    why: The caller passes Uuid::new_v4, so the owner string is the same hyphenated random UUID LiteLLM builds, and the random source is a constructor dependency instead of a hidden call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L405
+kept_bugs:
+  - what: A cancelled run notifies the coordinator twice, once from the run task's finally and once from cancel itself.
+    why: Both calls carry the cancelled status, and the second one is what LiteLLM's cancel does after awaiting the task, so a coordinator that records every finish sees the same two entries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L627-L628
+  - what: A stored status that still says running with no coordinator makes start return false forever, even after the old run task has ended.
+    why: LiteLLM returns false before it looks at the task, so a setup that loses its coordinator cannot restart until something rewrites the stored status; the comparison keeps the same refusal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L386-L392
+  - what: A refused complete finish turns into a SourceError and then a second, error-phase finish, so the coordinator is told twice about a run it just replaced.
+    why: LiteLLM raises after the refused call and its finally finishes again with the error status; the report in the first call is dropped and the second carries no report, which is what a coordinator observes in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sync.py#L594-L598

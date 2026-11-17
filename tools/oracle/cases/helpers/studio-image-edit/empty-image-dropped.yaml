@@ -1,0 +1,21 @@
+kind: helper
+name: studio-image-edit-empty-image-dropped
+call:
+  studio_image_edit:
+    factories: []
+    requests: []
+    responses:
+      - body:
+          candidates:
+            - content:
+                parts:
+                  - inlineData: {data: ""}
+                  - inlineData: {data: AAA}
+                    thoughtSignature: sig-1
+                  - inlineData: {mimeType: image/png}
+                  - text: ignored
+            - content: {parts: [{inlineData: {data: BBB}}]}
+            - finishReason: STOP
+    costs: []
+env: {}
+compare: {ignore: []}

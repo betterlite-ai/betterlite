@@ -132,6 +132,8 @@ description: >-
   wiring lines; 765 planned, 775 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-config/src/sections.rs"
+  - "crates/betterlite-config/src/loader.rs"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/converse_options.rs
   - crates/betterlite-bedrock/src/converse_options/**
@@ -141,6 +143,7 @@ scope:
   - tools/oracle/helpers/bedrock_converse_options.py
   - tools/oracle/helpers/bedrock_converse_options/**
   - tools/oracle/cases/helpers/providers/bedrock-converse-options/**
+  - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
   - tools/oracle/fuzz/corpus/helper_case/bedrock_converse_options*
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_converse_options*
@@ -421,6 +424,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
   L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
 pitfalls:
+- "The merge queue lints betterlite-server, and its provider_call test helper call() keeps the loaded Config alive across the tokio::join! and to_bytes awaits, so the new config section makes that future 16432 bytes, over clippy large_futures 16384 (tests.rs:126 and tests/errors.rs:58). In crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs build the executor inside a block, let executor = { let config = loader.load(&source).unwrap(); chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap() };, so Config drops before the first await after it. Do not Box::pin the callers or allow the lint."
 - 'The oracle helper for this task is pre-registered as bedrock_converse_options in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/converse_options.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_converse_options.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The Nova2 detector recognizes only us., eu. and apac. wrappers, while Nova grounding accepts any nova substring.
 - Adaptive effort keeps an existing output_config.effort; this differs from the direct Anthropic mapper that replaces

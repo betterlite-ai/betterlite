@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-image-edits-flux2-preview-default
+call:
+  foundry_image_edits:
+    urls:
+      - {model: FLUX.2-pro, api_base: https://res.services.ai.azure.com}
+      - {model: FLUX.2-pro, api_base: https://res.services.ai.azure.com, global_api_version: from-global}
+      - {model: FLUX-2-flex, api_base: https://res.services.ai.azure.com, environment: {AZURE_AI_API_VERSION: from-env}}
+      - {model: FLUX.2-pro, api_base: https://res.services.ai.azure.com/providers/blackforestlabs/v1/flux-2-pro}
+      - {model: FLUX.2-pro}
+env: {}
+compare: {ignore: []}
