@@ -13,6 +13,7 @@ use betterlite_core::api::messages_chat_output::records::{
 use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_models::decisions::Json;
 use betterlite_redact::structured::Payload;
+use betterlite_streaming::streamed_response_assembly::records::Chunk;
 use betterlite_streaming::streamed_response_assembly::response::Response;
 use betterlite_streaming::streamed_response_assembly::{Request, stream_chunk_builder};
 
@@ -44,8 +45,22 @@ pub(crate) async fn assemble_openai_chunks(
     if chunks.is_empty() {
         return Ok(None);
     }
+    match build_response(&chunks, services).await? {
+        Some(Response::Chat(chat)) => {
+            let value = serde_json::to_value(&chat)?;
+            Ok(Some(serde_json::from_value::<Object>(value)?))
+        }
+        Some(Response::Text(_)) | None => Ok(None),
+    }
+}
+
+// B2227's builder over the chunk list, behind the silent logger and console the stream check runs with
+async fn build_response(
+    chunks: &[Chunk],
+    services: &StreamServices<'_>,
+) -> Result<Option<Response>, ResponseToolError> {
     let request = Request {
-        chunks: Some(chunks.as_slice()),
+        chunks: Some(chunks),
         messages: None,
         count_prompt_tokens: None,
         logging: None,
@@ -60,14 +75,9 @@ pub(crate) async fn assemble_openai_chunks(
         set_verbose: Payload::Bool(false),
         redactor: Arc::clone(&services.redactor),
     };
-    match stream_chunk_builder(&request, &hooks).await {
-        Ok(Some(Response::Chat(chat))) => {
-            let value = serde_json::to_value(&chat)?;
-            Ok(Some(serde_json::from_value::<Object>(value)?))
-        }
-        Ok(Some(Response::Text(_)) | None) => Ok(None),
-        Err(error) => Err(ResponseToolError::Assembly(error)),
-    }
+    stream_chunk_builder(&request, &hooks)
+        .await
+        .map_err(ResponseToolError::Assembly)
 }
 
 // The Anthropic stream assembles to an OpenAI-shaped record that the check reads and the re-encoder turns back into frames.
@@ -158,35 +168,24 @@ async fn assemble_events(events: &[Json], services: &StreamServices<'_>) -> Opti
     let mut chunks = Vec::with_capacity(events.len());
     for event in events {
         let chunk = converter.chunk_parser(event).ok()?;
-        let encoded = serde_json::to_string(&chunk).ok()?;
-        chunks.push(serde_json::from_str(&encoded).ok()?);
+        let mut encoded = serde_json::to_value(&chunk).ok()?;
+        // LiteLLM's ModelResponseStream stamps the object and creation time its builder reads from the first chunk
+        let fields = encoded.as_object_mut()?;
+        fields.insert(
+            "object".to_owned(),
+            serde_json::json!("chat.completion.chunk"),
+        );
+        fields.insert("created".to_owned(), serde_json::json!(services.now));
+        chunks.push(serde_json::from_value(encoded).ok()?);
     }
     if chunks.is_empty() {
         return None;
     }
-    let request = Request {
-        chunks: Some(chunks.as_slice()),
-        messages: None,
-        count_prompt_tokens: None,
-        logging: None,
-        costs: services.costs,
-        counter: services.counter,
-        metadata: None,
-        now: services.now,
+    let Some(Response::Chat(chat)) = build_response(&chunks, services).await.ok()? else {
+        return None;
     };
-    let hooks = VerboseHooks {
-        logger: SilentLogger,
-        console: SilentConsole,
-        set_verbose: Payload::Bool(false),
-        redactor: Arc::clone(&services.redactor),
-    };
-    match stream_chunk_builder(&request, &hooks).await {
-        Ok(Some(Response::Chat(chat))) => {
-            let encoded = serde_json::to_string(&chat).ok()?;
-            serde_json::from_str(&encoded).ok()
-        }
-        Ok(Some(Response::Text(_)) | None) | Err(_) => None,
-    }
+    let encoded = serde_json::to_string(&chat).ok()?;
+    serde_json::from_str(&encoded).ok()
 }
 
 // The rewrite helpers read the OpenAI message shape; every other record field stays with the assembler.
