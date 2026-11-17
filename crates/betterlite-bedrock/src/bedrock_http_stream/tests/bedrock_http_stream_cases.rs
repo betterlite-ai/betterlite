@@ -1,6 +1,5 @@
 use betterlite_http::error::HttpError;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
-use rstest::rstest;
 use serde_json::{Value, json, to_value};
 
 use super::support::{
@@ -64,14 +63,29 @@ fn finish_reason(chunk: &InvokeChunk) -> Option<&str> {
     }
 }
 
-#[rstest]
-#[case::invoke_stream_url(invoke_stream_url)]
-#[case::http_error_before_frame(http_error_before_frame)]
-#[case::converse_stream_headers(converse_stream_headers)]
-#[case::fake_stream_projection(fake_stream_projection)]
-#[case::post_call_before_consumption(post_call_before_consumption)]
-fn bedrock_http_stream_cases(#[case] case: fn()) {
-    case();
+#[test]
+fn case_1_invoke_stream_url() {
+    invoke_stream_url();
+}
+
+#[test]
+fn case_2_http_error_before_frame() {
+    http_error_before_frame();
+}
+
+#[test]
+fn case_3_converse_stream_headers() {
+    converse_stream_headers();
+}
+
+#[test]
+fn case_4_fake_stream_projection() {
+    fake_stream_projection();
+}
+
+#[test]
+fn case_5_post_call_before_consumption() {
+    post_call_before_consumption();
 }
 
 fn invoke_stream_url() {
@@ -267,6 +281,24 @@ fn http_error_before_frame() {
     assert_eq!(
         error.response_headers,
         vec![("x-amzn-requestid".to_owned(), "req-1".to_owned())]
+    );
+
+    // Python's bytes repr escapes the delimiter, a backslash, controls and non-ASCII bytes.
+    let inputs = Inputs::new(Reply {
+        status: 500,
+        headers: Vec::new(),
+        reads: vec![Ok(b"it's \"x\" \\\t\r\xff".to_vec())],
+        refused: None,
+    });
+    let outcome = run(
+        Call::Converse(converse(BASE, DATA, &messages)),
+        &inputs,
+        Consume::None,
+    );
+    assert_eq!(outcome.provider_status(), Some(500));
+    assert_eq!(
+        outcome.provider_message(),
+        Some(r#"b'it\'s "x" \\\t\r\xff'"#)
     );
 
     let inputs = Inputs::new(Reply::refusing(Refusal::ReadTimeout));
