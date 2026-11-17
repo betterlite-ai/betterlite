@@ -1,0 +1,33 @@
+kind: helper
+name: gemini-live-tool-turn-seed
+call:
+  gemini_live_tool_turn:
+    ids: {}
+    tool_call:
+      functionCalls:
+        - {id: call_a, name: lookup, args: {city: Zürich}}
+        - {name: fallback}
+    session_configuration_request: '{"setup": {"generationConfig": {"temperature": 0.7, "maxOutputTokens": 100, "responseModalities": ["TEXT", "AUDIO"]}}}'
+calls:
+  - gemini_live_tool_turn:
+      ids: {conversation_id: conv_1, response_id: resp_1, output_item_id: item_1}
+      tool_call:
+        functionCalls: []
+  - gemini_live_tool_turn:
+      ids: {response_id: resp_1}
+      pending_usage: {promptTokenCount: 10, toolUsePromptTokenCount: 3, candidatesTokenCount: 5, totalTokenCount: 18}
+      frame:
+        serverContent:
+          groundingMetadata: {webSearchQueries: [a]}
+      tool_call:
+        functionCalls:
+          - {id: call_b, name: search, args: {query: "a b"}}
+      session_configuration_request: 'not json'
+  - gemini_live_tool_turn:
+      ids: {}
+      pending_usage: {promptTokenCount: 4}
+      tool_call:
+        functionCalls:
+          - {name: nested, args: {list: [1, {two: 2}], flag: true}}
+env: {}
+compare: {ignore: []}

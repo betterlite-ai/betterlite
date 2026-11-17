@@ -1,0 +1,20 @@
+kind: helper
+name: tool-usage-once
+call:
+  gemini_live_tool_turn:
+    ids: {conversation_id: conv_given, response_id: resp_given, output_item_id: item_given}
+    pending_usage: {promptTokenCount: 99, candidatesTokenCount: 1, totalTokenCount: 100}
+    frame:
+      usageMetadata: {promptTokenCount: 10, toolUsePromptTokenCount: 3, candidatesTokenCount: 5, totalTokenCount: 18}
+    tool_call:
+      functionCalls:
+        - {id: call_a, name: lookup}
+calls:
+  - gemini_live_tool_turn:
+      ids: {}
+      pending_usage: {promptTokenCount: 7, candidatesTokenCount: 2, totalTokenCount: 9}
+      tool_call:
+        functionCalls:
+          - {id: call_b, name: other}
+env: {}
+compare: {ignore: []}
