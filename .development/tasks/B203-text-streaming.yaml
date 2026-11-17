@@ -26,6 +26,7 @@ description: >-
   bridges remain with B202/B203.
 scope:
   paths:
+  - "crates/betterlite-openai/src/text_completion_execution/http.rs"
   - "crates/betterlite-server/src/routes/completions/streaming/tests.rs"
   - "crates/betterlite-server/src/routes/completions/streaming.rs"
   - "crates/betterlite-server/src/routes/completions.rs"
