@@ -1,11 +1,7 @@
-from litellm.types.utils import LiteLLMBatch, ModelResponse
+from litellm.types.utils import ModelResponse
 from pydantic import JsonValue
 
-from .models import PROJECTION, REPLY, ZERO_COMPLETION, ZERO_PROMPT, Usage
-
-
-def batch_view(batch: LiteLLMBatch) -> JsonValue:
-    return REPLY.validate_json(batch.model_dump_json())
+from .models import PROJECTION, ZERO_COMPLETION, ZERO_PROMPT, Usage
 
 
 def usage_view(usage: Usage) -> JsonValue:

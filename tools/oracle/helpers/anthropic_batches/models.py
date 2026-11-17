@@ -1,3 +1,4 @@
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 from .api import PreCall
@@ -95,7 +96,17 @@ class Projection(BaseModel):
 class ErrorView(BaseModel):
     status_code: int
     message: str
-    headers: dict[str, str] | None
+    headers: dict[str, JsonValue] | None
+
+    @classmethod
+    def of(cls, error: BaseLLMException) -> JsonValue:
+        view = cls.model_validate(error, from_attributes=True)
+        fields: dict[str, JsonValue] = {
+            "status": view.status_code,
+            "message": view.message,
+            "headers": view.headers,
+        }
+        return fields
 
 
 REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)

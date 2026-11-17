@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use super::input::{AuthCase, AuthScenario, BodiesCase, CreateCase, ErrorCase, ErrorScenario};
 use super::support::{
-    Silent, ZeroCounter, failure, header_map, logging_env, logging_state, plain_headers, settings,
+    Silent, ZeroCounter, failure, header_fields, header_map, logging_env, logging_state, settings,
     utc_offset,
 };
 use super::views::{auth_of, response_view};
@@ -30,10 +30,12 @@ pub(crate) fn create_requests(case: &CreateCase) -> HelperResult {
     for base in &case.url_bases {
         urls.push(config.get_complete_batch_url(base.as_deref()));
     }
+    let create_request = create_raised(config.transform_create_batch_request());
+    let create_response = create_raised(config.transform_create_batch_response());
     Ok(json!({
         "urls": urls,
-        "create_request": create_raised(config.transform_create_batch_request()),
-        "create_response": create_raised(config.transform_create_batch_response()),
+        "create_request": create_request,
+        "create_response": create_response,
     }))
 }
 
@@ -57,20 +59,13 @@ pub(crate) fn lifecycle(case: &BodiesCase) -> HelperResult {
     };
     let mut values = Vec::new();
     for body in &case.bodies {
-        values.push(decoded_or_raised(&config, body, &clock)?);
+        let value = match config.transform_retrieve_batch_response(body.as_bytes(), &clock) {
+            Ok(batch) => json!({"batch": serde_json::to_value(&batch).map_err(failure)?}),
+            Err(_error) => json!({"raised": true}),
+        };
+        values.push(value);
     }
     Ok(json!({"batches": values}))
-}
-
-fn decoded_or_raised(
-    config: &AnthropicBatchesConfig,
-    body: &str,
-    clock: &Clock,
-) -> Result<Value, Box<HelperError>> {
-    match config.transform_retrieve_batch_response(body.as_bytes(), clock) {
-        Ok(batch) => Ok(json!({"batch": serde_json::to_value(&batch).map_err(failure)?})),
-        Err(_error) => Ok(json!({"raised": true})),
-    }
 }
 
 pub(crate) fn error_counts(case: &ErrorCase) -> HelperResult {
@@ -83,25 +78,20 @@ pub(crate) fn error_counts(case: &ErrorCase) -> HelperResult {
     };
     let mut bodies = Vec::new();
     for body in &case.bodies {
-        bodies.push(parse_outcome(&config, body, &clock)?);
+        let value = match config.transform_retrieve_batch_response(body.as_bytes(), &clock) {
+            Ok(batch) => json!({"batch": serde_json::to_value(&batch).map_err(failure)?}),
+            Err(DecodeError::Parse { .. }) => json!({"prefix": true}),
+            Err(DecodeError::Shape { .. } | DecodeError::CountOverflow) => {
+                json!({"prefix": false})
+            }
+        };
+        bodies.push(value);
     }
     let mut errors = Vec::new();
     for scenario in &case.errors {
         errors.push(error_record(scenario)?);
     }
     Ok(json!({"bodies": bodies, "errors": errors}))
-}
-
-fn parse_outcome(
-    config: &AnthropicBatchesConfig,
-    body: &str,
-    clock: &Clock,
-) -> Result<Value, Box<HelperError>> {
-    match config.transform_retrieve_batch_response(body.as_bytes(), clock) {
-        Ok(batch) => Ok(json!({"batch": serde_json::to_value(&batch).map_err(failure)?})),
-        Err(DecodeError::Parse { .. }) => Ok(json!({"prefix": true})),
-        Err(DecodeError::Shape { .. } | DecodeError::CountOverflow) => Ok(json!({"prefix": false})),
-    }
 }
 
 fn error_record(scenario: &ErrorScenario) -> Result<Value, Box<HelperError>> {
@@ -187,7 +177,7 @@ fn auth_scenario(scenario: &AuthScenario) -> Result<Value, Box<HelperError>> {
         }));
     }
     Ok(json!({
-        "headers": plain_headers(&headers),
+        "headers": header_fields(&headers, None),
         "auth": auth_of(&headers, scenario.expected_auth.as_deref()),
         "raised": Value::Null,
     }))

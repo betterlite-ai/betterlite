@@ -69,8 +69,8 @@ def retrieve_scenario(now: int, scenario: Scenario) -> JsonValue:
     recorder = Recorder(scenario)
     client = AsyncHTTPHandler(transport=httpx.MockTransport(recorder.handle))
     litellm.in_memory_llm_clients_cache = BatchClientCache(client)
-    Capture.constructed = None
-    Capture.pre = None
+    Capture.constructed.clear()
+    Capture.pre.clear()
     handler = cast(BatchesHandlerApi, AnthropicBatchesHandler())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L25-L35
     module = sys.modules[LOGGING_MODULE]
     sys.modules[LOGGING_MODULE] = FakeLoggingModule(LOGGING_MODULE)
@@ -82,8 +82,12 @@ def retrieve_scenario(now: int, scenario: Scenario) -> JsonValue:
         time.time = clock
         sys.modules[LOGGING_MODULE] = module
     logging: JsonValue = None
-    if Capture.constructed is not None:
-        logging = {"constructed": Capture.constructed, "pre_call": Capture.pre}
+    if Capture.constructed:
+        captured: dict[str, JsonValue] = {
+            "constructed": Capture.constructed[-1],
+            "pre_call": Capture.pre[-1] if Capture.pre else None,
+        }
+        logging = captured
     return {
         "sync": scenario.sync,
         "requests": recorder.seen,

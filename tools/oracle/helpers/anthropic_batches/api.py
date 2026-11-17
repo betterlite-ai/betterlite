@@ -99,8 +99,9 @@ class BatchesApi(Protocol):
 
 
 class BatchesHandlerApi(Protocol):
-    def retrieve_batch(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L124-L163
+    def retrieve_batch(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L124-L163
         self,
+        *,
         _is_async: bool,
         batch_id: str,
         api_base: str | None,

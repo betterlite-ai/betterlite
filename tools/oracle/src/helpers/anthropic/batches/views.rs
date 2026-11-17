@@ -1,32 +1,26 @@
 use std::collections::BTreeMap;
 
-use betterlite_anthropic::batches::handler::BatchLogging;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::usage::AnthropicUsage;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_models::decisions::Json;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use super::support::{AUTH_HEADERS, EXPLICIT_HEADERS, explicit_headers};
+use super::support::{AUTH_HEADERS, EXPLICIT_HEADERS, header_fields};
 
 pub(crate) fn request_view(request: &OutboundRequest) -> Value {
+    let auth = AUTH_HEADERS
+        .into_iter()
+        .find(|name| request.headers.contains_key(*name))
+        .map_or(Value::Null, |name| json!(name));
     json!({
         "method": request.method.as_str(),
         "url": request.url.as_str(),
-        "headers": explicit_headers(&request.headers),
-        "auth_header": auth_header(&request.headers),
+        "headers": header_fields(&request.headers, Some(EXPLICIT_HEADERS.as_slice())),
+        "auth_header": auth,
     })
-}
-
-fn auth_header(headers: &HeaderMap) -> Value {
-    for name in AUTH_HEADERS {
-        if headers.contains_key(name) {
-            return json!(name);
-        }
-    }
-    Value::Null
 }
 
 pub(crate) fn pre_call_view(details: &IndexMap<String, Json>) -> Value {
@@ -39,57 +33,45 @@ pub(crate) fn pre_call_view(details: &IndexMap<String, Json>) -> Value {
     let Some(Json::Object(headers)) = additional.get("headers") else {
         return Value::Null;
     };
-    json!({
-        "input": input,
-        "api_base": additional.get("api_base").cloned().unwrap_or(Json::Null),
-        "headers": recorded_headers(headers),
-        "auth_header": recorded_auth_header(headers),
-        "complete_input_dict": additional.get("complete_input_dict").cloned().unwrap_or(Json::Null),
-    })
-}
-
-fn recorded_headers(headers: &IndexMap<String, Json>) -> Value {
     let mut fields = BTreeMap::new();
     for name in EXPLICIT_HEADERS {
         if let Some(value) = headers.get(name) {
             fields.insert(name.to_owned(), value.clone());
         }
     }
-    json!(fields)
-}
-
-fn recorded_auth_header(headers: &IndexMap<String, Json>) -> Value {
-    for name in AUTH_HEADERS {
-        if headers.contains_key(name) {
-            return json!(name);
-        }
-    }
-    Value::Null
-}
-
-pub(crate) fn constructed_view(context: &BatchLogging) -> Value {
+    let auth = AUTH_HEADERS
+        .into_iter()
+        .find(|name| headers.contains_key(*name))
+        .map_or(Value::Null, |name| json!(name));
     json!({
-        "model": context.model,
-        "messages": context.messages,
-        "stream": context.stream,
-        "call_type": context.call_type,
-        "start_time": context.start_time,
-        "litellm_call_id": context.litellm_call_id,
-        "function_id": context.function_id,
+        "input": input,
+        "api_base": additional.get("api_base").cloned().unwrap_or(Json::Null),
+        "headers": fields,
+        "auth_header": auth,
+        "complete_input_dict": additional.get("complete_input_dict").cloned().unwrap_or(Json::Null),
     })
 }
 
 pub(crate) fn response_view(envelope: &ResponseEnvelope) -> Value {
     let choice = envelope.choices.first();
-    json!({
-        "id": envelope.id,
-        "object": envelope.object,
-        "created": envelope.created,
-        "model": envelope.model,
-        "content": choice.and_then(|chosen| chosen.message.content.clone()),
-        "finish_reason": choice.and_then(|chosen| chosen.finish_reason.clone()),
-        "usage": envelope.usage.as_ref().map(usage_view),
-    })
+    let mut fields = Map::new();
+    fields.insert("id".to_owned(), json!(envelope.id));
+    fields.insert("object".to_owned(), json!(envelope.object));
+    fields.insert("created".to_owned(), json!(envelope.created));
+    fields.insert("model".to_owned(), json!(envelope.model));
+    fields.insert(
+        "content".to_owned(),
+        json!(choice.and_then(|chosen| chosen.message.content.clone())),
+    );
+    fields.insert(
+        "finish_reason".to_owned(),
+        json!(choice.and_then(|chosen| chosen.finish_reason.clone())),
+    );
+    fields.insert(
+        "usage".to_owned(),
+        envelope.usage.as_ref().map_or(Value::Null, usage_view),
+    );
+    Value::Object(fields)
 }
 
 fn usage_view(usage: &AnthropicUsage) -> Value {

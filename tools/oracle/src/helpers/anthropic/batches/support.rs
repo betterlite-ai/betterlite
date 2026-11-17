@@ -58,28 +58,24 @@ pub(crate) fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, Box<He
     Ok(headers)
 }
 
-pub(crate) fn explicit_headers(headers: &HeaderMap) -> Value {
+pub(crate) fn header_fields(headers: &HeaderMap, names: Option<&[&str]>) -> Value {
+    let selected: Vec<(&str, &HeaderValue)> = match names {
+        Some(names) => names
+            .iter()
+            .filter_map(|name| headers.get(*name).map(|value| (*name, value)))
+            .collect(),
+        None => headers
+            .iter()
+            .filter(|(name, _value)| !matches!(name.as_str(), "authorization" | "x-api-key"))
+            .map(|(name, value)| (name.as_str(), value))
+            .collect(),
+    };
     let mut fields = BTreeMap::new();
-    for name in EXPLICIT_HEADERS {
-        if let Some(value) = headers.get(name) {
-            let text = value
-                .to_str()
-                .map_or_else(|_invalid| String::new(), str::to_owned);
-            fields.insert(name.to_owned(), text);
-        }
-    }
-    json!(fields)
-}
-
-pub(crate) fn plain_headers(headers: &HeaderMap) -> Value {
-    let mut fields = BTreeMap::new();
-    for (name, value) in headers {
-        if !matches!(name.as_str(), "authorization" | "x-api-key") {
-            let text = value
-                .to_str()
-                .map_or_else(|_invalid| String::new(), str::to_owned);
-            fields.insert(name.as_str().to_owned(), text);
-        }
+    for (name, value) in selected {
+        let text = value
+            .to_str()
+            .map_or_else(|_invalid| String::new(), str::to_owned);
+        fields.insert(name.to_owned(), text);
     }
     json!(fields)
 }

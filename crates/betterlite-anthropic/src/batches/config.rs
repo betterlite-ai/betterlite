@@ -41,6 +41,7 @@ pub trait BatchesConfig {
 
     fn transform_create_batch_request(&self) -> Result<Vec<u8>, BatchesError>;
 
+    // ast-grep-ignore: no-long-names
     fn transform_create_batch_response(&self) -> Result<BatchObject, BatchesError>;
 
     fn get_retrieve_batch_url(
@@ -49,8 +50,10 @@ pub trait BatchesConfig {
         batch_id: &str,
     ) -> Result<String, BatchesError>;
 
+    // ast-grep-ignore: no-long-names
     fn transform_retrieve_batch_request(&self) -> IndexMap<String, Json>;
 
+    // ast-grep-ignore: no-long-names
     fn transform_retrieve_batch_response(
         &self,
         body: &[u8],
@@ -109,6 +112,7 @@ impl BatchesConfig for AnthropicBatchesConfig {
         Err(BatchesError::NotImplemented)
     }
 
+    // ast-grep-ignore: no-long-names
     fn transform_create_batch_response(&self) -> Result<BatchObject, BatchesError> {
         Err(BatchesError::NotImplemented)
     }
@@ -128,10 +132,12 @@ impl BatchesConfig for AnthropicBatchesConfig {
         ))
     }
 
+    // ast-grep-ignore: no-long-names
     fn transform_retrieve_batch_request(&self) -> IndexMap<String, Json> {
         IndexMap::new()
     }
 
+    // ast-grep-ignore: no-long-names
     fn transform_retrieve_batch_response(
         &self,
         body: &[u8],

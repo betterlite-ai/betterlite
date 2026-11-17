@@ -109,7 +109,39 @@ where
 fn combine(usages: &[AnthropicUsage]) -> Result<AnthropicUsage, UsageSumError> {
     let projected: Vec<SummedUsage> = usages.iter().map(project_usage).collect();
     let summed = usage_sum(&projected)?;
-    Ok(aggregate_usage(&summed))
+    let prompt = summed.prompt_tokens_details.clone().unwrap_or_default();
+    let completion = summed.completion_tokens_details.clone().unwrap_or_default();
+    Ok(AnthropicUsage {
+        prompt_tokens: summed.prompt_tokens,
+        completion_tokens: summed.completion_tokens,
+        total_tokens: summed.total_tokens,
+        prompt_tokens_details: AnthropicPromptDetails {
+            text: prompt.text_tokens.unwrap_or(0),
+            cached: prompt.cached_tokens.unwrap_or(0),
+            cache_creation: prompt.cache_creation_tokens.unwrap_or(0),
+            cache_write: prompt.cache_write_tokens.unwrap_or(0),
+            audio: Some(prompt.audio_tokens.unwrap_or(0)),
+            image: Some(prompt.image_tokens.unwrap_or(0)),
+            video: Some(prompt.video_tokens.unwrap_or(0)),
+            cache_creation_details: None,
+        },
+        completion_tokens_details: AnthropicCompletionDetails {
+            reasoning: Some(completion.reasoning_tokens.unwrap_or(0)),
+            text: Some(completion.text_tokens.unwrap_or(0)),
+            accepted_prediction: Some(completion.accepted_prediction_tokens.unwrap_or(0)),
+            rejected_prediction: Some(completion.rejected_prediction_tokens.unwrap_or(0)),
+            audio: Some(completion.audio_tokens.unwrap_or(0)),
+            image: Some(completion.image_tokens.unwrap_or(0)),
+            video: Some(completion.video_tokens.unwrap_or(0)),
+        },
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+        iterations: None,
+        inference_geo: None,
+        speed: None,
+        service_tier: None,
+        server_tool_use: None,
+    })
 }
 
 fn project_usage(usage: &AnthropicUsage) -> SummedUsage {
@@ -145,41 +177,5 @@ fn project_usage(usage: &AnthropicUsage) -> SummedUsage {
             rejected_prediction_tokens: usage.completion_tokens_details.rejected_prediction,
         }),
         numeric_extras: BTreeMap::new(),
-    }
-}
-
-fn aggregate_usage(summed: &SummedUsage) -> AnthropicUsage {
-    let prompt = summed.prompt_tokens_details.clone().unwrap_or_default();
-    let completion = summed.completion_tokens_details.clone().unwrap_or_default();
-    AnthropicUsage {
-        prompt_tokens: summed.prompt_tokens,
-        completion_tokens: summed.completion_tokens,
-        total_tokens: summed.total_tokens,
-        prompt_tokens_details: AnthropicPromptDetails {
-            text: prompt.text_tokens.unwrap_or(0),
-            cached: prompt.cached_tokens.unwrap_or(0),
-            cache_creation: prompt.cache_creation_tokens.unwrap_or(0),
-            cache_write: prompt.cache_write_tokens.unwrap_or(0),
-            audio: Some(prompt.audio_tokens.unwrap_or(0)),
-            image: Some(prompt.image_tokens.unwrap_or(0)),
-            video: Some(prompt.video_tokens.unwrap_or(0)),
-            cache_creation_details: None,
-        },
-        completion_tokens_details: AnthropicCompletionDetails {
-            reasoning: Some(completion.reasoning_tokens.unwrap_or(0)),
-            text: Some(completion.text_tokens.unwrap_or(0)),
-            accepted_prediction: Some(completion.accepted_prediction_tokens.unwrap_or(0)),
-            rejected_prediction: Some(completion.rejected_prediction_tokens.unwrap_or(0)),
-            audio: Some(completion.audio_tokens.unwrap_or(0)),
-            image: Some(completion.image_tokens.unwrap_or(0)),
-            video: Some(completion.video_tokens.unwrap_or(0)),
-        },
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
-        iterations: None,
-        inference_geo: None,
-        speed: None,
-        service_tier: None,
-        server_tool_use: None,
     }
 }

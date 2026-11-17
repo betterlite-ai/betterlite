@@ -36,38 +36,20 @@ pub fn parse_timestamp(value: &Json, zone: FixedOffset) -> Option<i64> {
 }
 
 fn parse_date(text: &str) -> Option<NaiveDate> {
-    let (year, month, day) = if let Some(parts) = dashed_date(text) {
-        parts
-    } else {
-        compact_date(text)?
-    };
+    let bytes = text.as_bytes();
+    let (year, month, day) =
+        if text.len() == 10 && bytes[4] == b'-' && bytes[7] == b'-' && text.is_ascii() {
+            (&text[..4], &text[5..7], &text[8..10])
+        } else if text.len() == 8 && text.bytes().all(|byte| byte.is_ascii_digit()) {
+            (&text[..4], &text[4..6], &text[6..8])
+        } else {
+            return None;
+        };
+    let year: i32 = year.parse().ok()?;
     if !(1..=9999).contains(&year) {
         return None;
     }
-    NaiveDate::from_ymd_opt(year, month, day)
-}
-
-fn dashed_date(text: &str) -> Option<(i32, u32, u32)> {
-    let bytes = text.as_bytes();
-    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' || !text.is_ascii() {
-        return None;
-    }
-    Some((
-        text[..4].parse().ok()?,
-        text[5..7].parse().ok()?,
-        text[8..10].parse().ok()?,
-    ))
-}
-
-fn compact_date(text: &str) -> Option<(i32, u32, u32)> {
-    if text.len() != 8 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    Some((
-        text[..4].parse().ok()?,
-        text[4..6].parse().ok()?,
-        text[6..8].parse().ok()?,
-    ))
+    NaiveDate::from_ymd_opt(year, month.parse().ok()?, day.parse().ok()?)
 }
 
 fn parse_time(text: &str) -> Option<(NaiveTime, Option<i32>)> {

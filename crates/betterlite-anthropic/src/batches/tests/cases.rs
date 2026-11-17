@@ -702,8 +702,7 @@ fn status_timestamps() {
 
 fn batch_auth_headers() {
     explicit_auth();
-    token_auth();
-    oauth_auth();
+    bearer_auth();
     missing_auth();
 }
 
@@ -748,14 +747,14 @@ fn explicit_auth() {
     assert_eq!(header(&caller_beta, "x-api-key"), "sk-explicit");
 }
 
-fn token_auth() {
+fn bearer_auth() {
     let token_only = AnthropicBatchesConfig {
         settings: configured(None, Some("auth-token"), None),
     };
-    let mut headers = HeaderMap::new();
+    let mut token_headers = HeaderMap::new();
     token_only
         .validate_environment(
-            &mut headers,
+            &mut token_headers,
             Environment {
                 api_key: None,
                 api_base: None,
@@ -763,19 +762,19 @@ fn token_auth() {
             },
         )
         .unwrap();
-    assert_eq!(header(&headers, "authorization"), "Bearer auth-token");
-    assert!(!has_header(&headers, "x-api-key"));
-    assert_eq!(header(&headers, "anthropic-beta"), BATCHES_BETA_HEADER);
-}
-
-fn oauth_auth() {
+    assert_eq!(header(&token_headers, "authorization"), "Bearer auth-token");
+    assert!(!has_header(&token_headers, "x-api-key"));
+    assert_eq!(
+        header(&token_headers, "anthropic-beta"),
+        BATCHES_BETA_HEADER
+    );
     let oauth = AnthropicBatchesConfig {
         settings: configured(Some("sk-ant-oat-abc"), None, None),
     };
-    let mut headers = HeaderMap::new();
+    let mut oauth_headers = HeaderMap::new();
     oauth
         .validate_environment(
-            &mut headers,
+            &mut oauth_headers,
             Environment {
                 api_key: None,
                 api_base: None,
@@ -783,8 +782,11 @@ fn oauth_auth() {
             },
         )
         .unwrap();
-    assert_eq!(header(&headers, "authorization"), "Bearer sk-ant-oat-abc");
-    assert!(!has_header(&headers, "x-api-key"));
+    assert_eq!(
+        header(&oauth_headers, "authorization"),
+        "Bearer sk-ant-oat-abc"
+    );
+    assert!(!has_header(&oauth_headers, "x-api-key"));
 }
 
 fn missing_auth() {

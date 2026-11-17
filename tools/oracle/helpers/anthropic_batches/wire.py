@@ -17,24 +17,26 @@ LOGGING_MODULE = "litellm.litellm_core_utils.litellm_logging"
 
 
 class Capture:
-    constructed: ClassVar[dict[str, JsonValue] | None] = None
-    pre: ClassVar[dict[str, JsonValue] | None] = None
+    constructed: ClassVar[list[dict[str, JsonValue]]] = []
+    pre: ClassVar[list[dict[str, JsonValue]]] = []
 
 
 class RecordingLogging:
     def __init__(self, **kwargs: JsonValue) -> None:
-        Capture.constructed = kwargs
+        Capture.constructed.append(kwargs)
 
     def pre_call(self, **kwargs: JsonValue) -> None:
         call = PRE_CALL.validate_python(kwargs)
         additional = call["additional_args"]
-        Capture.pre = {
-            "input": call["input"],
-            "api_base": additional["api_base"],
-            "headers": explicit_headers(additional["headers"]),
-            "auth_header": auth_header(additional["headers"]),
-            "complete_input_dict": additional["complete_input_dict"],
-        }
+        Capture.pre.append(
+            {
+                "input": call["input"],
+                "api_base": additional["api_base"],
+                "headers": header_fields(additional["headers"], EXPLICIT_HEADERS),
+                "auth_header": auth_header(additional["headers"]),
+                "complete_input_dict": additional["complete_input_dict"],
+            }
+        )
 
 
 class FakeLoggingModule(ModuleType):
@@ -66,12 +68,12 @@ class Recorder:
         )
 
 
-def explicit_headers(headers: dict[str, str]) -> dict[str, JsonValue]:
-    return {name: headers[name] for name in EXPLICIT_HEADERS if name in headers}
-
-
-def plain_headers(headers: dict[str, str]) -> dict[str, JsonValue]:
-    return {name: value for name, value in headers.items() if name not in AUTH_HEADERS}
+def header_fields(
+    headers: dict[str, str], keep: tuple[str, ...] | None
+) -> dict[str, JsonValue]:
+    if keep is None:
+        return {name: value for name, value in headers.items() if name not in AUTH_HEADERS}
+    return {name: headers[name] for name in keep if name in headers}
 
 
 def auth_header(headers: dict[str, str]) -> str | None:
@@ -93,7 +95,7 @@ def request_view(request: httpx.Request) -> JsonValue:
     return {
         "method": request.method,
         "url": str(request.url),
-        "headers": explicit_headers(headers),
+        "headers": header_fields(headers, EXPLICIT_HEADERS),
         "auth_header": auth_header(headers),
     }
 

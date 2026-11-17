@@ -85,16 +85,39 @@ fn decode_lifecycle(body: &[u8]) -> Result<LifecycleBatch, DecodeError> {
     let value: Json =
         serde_json::from_slice(body).map_err(|source| DecodeError::Parse { source })?;
     let Json::Object(mut fields) = value else {
-        return Err(shape("the body", "must be a JSON object"));
+        return Err(DecodeError::Shape {
+            field: "the body",
+            expected: "must be a JSON object",
+        });
     };
-    let raw_status = status_of(&mut fields)?;
+    let raw_status = match fields.shift_remove("processing_status") {
+        None => Some("in_progress".to_owned()),
+        Some(Json::Null) => None,
+        Some(Json::Text(text)) => Some(text),
+        Some(_other) => {
+            return Err(DecodeError::Shape {
+                field: "processing_status",
+                expected: "must be a string or null",
+            });
+        }
+    };
     let status = match raw_status.as_deref() {
         Some("ended") => BatchStatus::Completed,
         Some("canceling") => BatchStatus::Cancelling,
         _ => BatchStatus::InProgress,
     };
+    let id = match fields.shift_remove("id") {
+        None => String::new(),
+        Some(Json::Text(text)) => text,
+        Some(_other) => {
+            return Err(DecodeError::Shape {
+                field: "id",
+                expected: "must be a string",
+            });
+        }
+    };
     Ok(LifecycleBatch {
-        id: text_of(&mut fields, "id", "")?,
+        id,
         raw_status,
         status,
         created_at: fields.shift_remove("created_at").unwrap_or(Json::Null),
@@ -108,37 +131,15 @@ fn decode_lifecycle(body: &[u8]) -> Result<LifecycleBatch, DecodeError> {
     })
 }
 
-fn status_of(fields: &mut IndexMap<String, Json>) -> Result<Option<String>, DecodeError> {
-    match fields.shift_remove("processing_status") {
-        None => Ok(Some("in_progress".to_owned())),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(shape("processing_status", "must be a string or null"))
-        }
-    }
-}
-
-fn text_of(
-    fields: &mut IndexMap<String, Json>,
-    name: &'static str,
-    default: &str,
-) -> Result<String, DecodeError> {
-    match fields.shift_remove(name) {
-        None => Ok(default.to_owned()),
-        Some(Json::Text(text)) => Ok(text),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(shape(name, "must be a string"))
-        }
-    }
-}
-
 fn counts_of(value: Option<Json>) -> Result<BatchCounts, DecodeError> {
     let Some(value) = value else {
         return Ok(BatchCounts::default());
     };
     let Json::Object(mut fields) = value else {
-        return Err(shape("request_counts", "must be a JSON object"));
+        return Err(DecodeError::Shape {
+            field: "request_counts",
+            expected: "must be a JSON object",
+        });
     };
     Ok(BatchCounts {
         processing: count_of(&mut fields, "processing")?,
@@ -152,11 +153,15 @@ fn counts_of(value: Option<Json>) -> Result<BatchCounts, DecodeError> {
 fn count_of(fields: &mut IndexMap<String, Json>, name: &'static str) -> Result<i64, DecodeError> {
     match fields.shift_remove(name) {
         None => Ok(0),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .ok_or_else(|| shape(name, "must be an integer")),
+        Some(Json::Number(number)) => number.as_i64().ok_or_else(|| DecodeError::Shape {
+            field: name,
+            expected: "must be an integer",
+        }),
         Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(shape(name, "must be an integer"))
+            Err(DecodeError::Shape {
+                field: name,
+                expected: "must be an integer",
+            })
         }
     }
 }
@@ -184,7 +189,7 @@ fn decode_results(body: &[u8]) -> Result<Vec<Json>, DecodeError> {
         let value = match serde_json::from_str::<Json>(line) {
             Ok(value) => value,
             // Python skips a row json.loads cannot decode and keeps reading the rest
-            Err(error) if is_syntax_error(&error) => continue,
+            Err(error) if matches!(error.classify(), Category::Syntax | Category::Eof) => continue,
             Err(source) => return Err(DecodeError::Parse { source }),
         };
         messages.push(message_of(value)?);
@@ -194,21 +199,21 @@ fn decode_results(body: &[u8]) -> Result<Vec<Json>, DecodeError> {
 
 fn message_of(value: Json) -> Result<Json, DecodeError> {
     let Json::Object(mut row) = value else {
-        return Err(shape("result row", "must be a JSON object"));
+        return Err(DecodeError::Shape {
+            field: "result row",
+            expected: "must be a JSON object",
+        });
     };
     let Some(Json::Object(mut result)) = row.shift_remove("result") else {
-        return Err(shape("result row", "must hold a result object"));
+        return Err(DecodeError::Shape {
+            field: "result row",
+            expected: "must hold a result object",
+        });
     };
     result
         .shift_remove("message")
-        .ok_or_else(|| shape("result row", "must hold a result message"))
-}
-
-fn shape(field: &'static str, expected: &'static str) -> DecodeError {
-    DecodeError::Shape { field, expected }
-}
-
-// the fuzz target only needs the parse-vs-shape split, so the caller reads it through the variant
-pub(crate) fn is_syntax_error(error: &serde_json::Error) -> bool {
-    matches!(error.classify(), Category::Syntax | Category::Eof)
+        .ok_or_else(|| DecodeError::Shape {
+            field: "result row",
+            expected: "must hold a result message",
+        })
 }

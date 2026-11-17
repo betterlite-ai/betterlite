@@ -4,8 +4,7 @@ from typing import Final
 import litellm
 from pydantic import JsonValue
 
-from .auth import auth_headers
-from .lifecycle import create_requests, error_counts, lifecycle
+from .lifecycle import auth_headers, create_requests, error_counts, lifecycle
 from .results import result_response
 from .retrieve import retrieve
 

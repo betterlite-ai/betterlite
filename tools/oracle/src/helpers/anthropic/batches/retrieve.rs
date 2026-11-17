@@ -20,7 +20,7 @@ use super::input::{RetrieveCase, RetrieveScenario};
 use super::support::{
     CLIENT_TIMEOUT, Replay, Silent, failure, logging_env, logging_state, settings, utc_offset,
 };
-use super::views::{constructed_view, pre_call_view, request_view};
+use super::views::{pre_call_view, request_view};
 
 pub(crate) fn retrieve(case: &RetrieveCase) -> HelperResult {
     let mut scenarios = Vec::new();
@@ -34,7 +34,15 @@ fn retrieve_scenario(now: i64, scenario: &RetrieveScenario) -> Result<Value, Box
     let recorder = Replay::new(scenario.status, &scenario.headers, &scenario.body)?;
     let handler = handler_for(now, scenario, &recorder)?;
     let context = default_batch_logging(&scenario.batch_id);
-    let constructed = constructed_view(&context);
+    let constructed = json!({
+        "model": context.model,
+        "messages": context.messages,
+        "stream": context.stream,
+        "call_type": context.call_type,
+        "start_time": context.start_time,
+        "litellm_call_id": context.litellm_call_id,
+        "function_id": context.function_id,
+    });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
     let silent = Silent;
     let mut state = logging_state(&scenario.batch_id, now, &redactor)?;
@@ -54,9 +62,10 @@ fn retrieve_scenario(now: i64, scenario: &RetrieveScenario) -> Result<Value, Box
     );
     let (batch, raised) = outcome(&result)?;
     let logging = logging_value(&result, &constructed, &state);
+    let seen = std::mem::take(&mut *recorder.seen.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({
         "sync": scenario.sync,
-        "requests": sent_requests(&recorder),
+        "requests": seen.iter().map(request_view).collect::<Vec<_>>(),
         "batch": batch,
         "raised": raised,
         "logging": logging,
@@ -130,9 +139,4 @@ fn logging_value(
         "constructed": constructed,
         "pre_call": pre_call_view(&state.model_call_details),
     })
-}
-
-fn sent_requests(recorder: &Replay) -> Vec<Value> {
-    let seen = std::mem::take(&mut *recorder.seen.lock().unwrap_or_else(PoisonError::into_inner));
-    seen.iter().map(request_view).collect()
 }
