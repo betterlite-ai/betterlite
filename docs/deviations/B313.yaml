@@ -38,11 +38,11 @@ deviations:
       deployment unchanged; a deployment whose model prefix names its provider is not re-inferred at selection,
       so a routing rule may supply a provider its records leave out. The chat handler still picks its
       deployment with simple shuffle directly (crates/betterlite-server/src/routes/chat.rs:165) and the server
-      has no config reload path yet, so no request reaches the route entry and nothing calls the reload: B021
-      adapts Chat, Responses and Messages at the server boundary through the router pipeline, and B9810
-      records all three routes on automatic routing, so B021 is the unfinished owner of the request path that
-      calls the route entry; B8379 owns reload_config, the config-reload task that calls RoutingState::reload.
-      Until they land the stage runs only where pipeline::route is called.
+      has no config reload path yet, so no request reaches the route entry and nothing calls the reload: B021 is
+      the unfinished owner of the request path, since it adapts Chat, Responses and Messages at the server
+      boundary through the router pipeline and B9810 records all three routes on automatic routing; B8379 owns
+      reload_config, the config-reload task that calls RoutingState::reload. Until they land the stage runs only
+      where pipeline::route is called.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
   - what: >-
       A rule document the server cannot install at startup is logged as an error and the server starts with no
