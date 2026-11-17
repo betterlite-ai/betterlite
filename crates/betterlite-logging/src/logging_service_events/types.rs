@@ -1,6 +1,8 @@
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
+mod wire_names;
+
 pub const CANCELLED_ERROR: &str = "the request was cancelled";
 
 // LiteLLM's ServiceTypes enum; a payload names the service with the same strings
@@ -55,47 +57,31 @@ impl ServiceType {
         Self::RedisWindowSpendUpdateQueue,
     ];
 
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Redis => "redis",
-            Self::Postgres => "postgres",
-            Self::BatchWriteToDb => "batch_write_to_db",
-            Self::ResetBudgetJob => "reset_budget_job",
-            Self::Litellm => "self",
-            Self::Router => "router",
-            Self::Auth => "auth",
-            Self::ProxyPreCall => "proxy_pre_call",
-            Self::PodLockManager => "pod_lock_manager",
-            Self::InMemoryDailySpendUpdateQueue => "in_memory_daily_spend_update_queue",
-            Self::RedisDailySpendUpdateQueue => "redis_daily_spend_update_queue",
-            Self::RedisDailyEndUserQueue => "redis_daily_end_user_spend_update_queue",
-            Self::RedisDailyOrgSpendUpdateQueue => "redis_daily_org_spend_update_queue",
-            Self::RedisDailyTeamSpendUpdateQueue => "redis_daily_team_spend_update_queue",
-            Self::RedisDailyAgentQueue => "redis_daily_agent_spend_update_queue",
-            Self::RedisDailyTagSpendUpdateQueue => "redis_daily_tag_spend_update_queue",
-            Self::InMemorySpendUpdateQueue => "in_memory_spend_update_queue",
-            Self::RedisSpendUpdateQueue => "redis_spend_update_queue",
-            Self::RedisWindowSpendUpdateQueue => "redis_window_spend_update_queue",
-        }
-    }
-
     // PrometheusServicesLogger's gauge services; every other service takes the counter and histogram default
     #[must_use]
     pub const fn metrics(self) -> &'static [ServiceMetric] {
-        if matches!(
-            self,
+        match self {
             Self::PodLockManager
-                | Self::InMemoryDailySpendUpdateQueue
-                | Self::RedisDailySpendUpdateQueue
-                | Self::RedisDailyEndUserQueue
-                | Self::RedisDailyAgentQueue
-                | Self::InMemorySpendUpdateQueue
-                | Self::RedisSpendUpdateQueue
-        ) {
-            &[ServiceMetric::Gauge]
-        } else {
-            &[ServiceMetric::Counter, ServiceMetric::Histogram]
+            | Self::InMemoryDailySpendUpdateQueue
+            | Self::RedisDailySpendUpdateQueue
+            | Self::RedisDailyEndUserQueue
+            | Self::RedisDailyAgentQueue
+            | Self::InMemorySpendUpdateQueue
+            | Self::RedisSpendUpdateQueue => &[ServiceMetric::Gauge],
+            Self::Redis
+            | Self::Postgres
+            | Self::BatchWriteToDb
+            | Self::ResetBudgetJob
+            | Self::Litellm
+            | Self::Router
+            | Self::Auth
+            | Self::ProxyPreCall
+            | Self::RedisDailyOrgSpendUpdateQueue
+            | Self::RedisDailyTeamSpendUpdateQueue
+            | Self::RedisDailyTagSpendUpdateQueue
+            | Self::RedisWindowSpendUpdateQueue => {
+                &[ServiceMetric::Counter, ServiceMetric::Histogram]
+            }
         }
     }
 }
