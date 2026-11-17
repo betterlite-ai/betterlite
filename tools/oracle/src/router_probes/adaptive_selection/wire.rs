@@ -160,7 +160,7 @@ pub(super) struct RoutingOutput {
 
 impl From<&StateSnapshot> for SnapshotOutput {
     fn from(snapshot: &StateSnapshot) -> Self {
-        SnapshotOutput {
+        Self {
             router_name: snapshot.router_name.clone(),
             available_models: snapshot.available_models.clone(),
             weights: WeightsOutput {
