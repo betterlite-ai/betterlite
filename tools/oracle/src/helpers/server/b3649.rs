@@ -73,62 +73,69 @@ impl Helper for Op {
 fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     match input.function {
-        Function::AsyncRun => {
-            let log = Arc::clone(&fixture.recorder);
-            let poll = AsyncRun {
-                logging_obj: Arc::clone(&fixture.logging_obj),
-                response_body: input.run.as_ref(),
-                result: result_text(input)?,
-                kwargs: PassThroughLoggingKwargs::default(),
-                log,
-                start_time: fixture.start_time,
-            };
-            let handle = {
-                let _entered = runtime.enter();
-                fixture.billing.start_async_run_billing(poll)
-            };
-            polled_answer(fixture, &runtime, handle)
-        }
-        Function::SseRun => {
-            let run_id = input
-                .run_id
-                .clone()
-                .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
-            let log = Arc::clone(&fixture.recorder);
-            let poll = SseRun {
-                run_id,
-                logging_obj: Arc::clone(&fixture.logging_obj),
-                log,
-                start_time: fixture.start_time,
-            };
-            let handle = {
-                let _entered = runtime.enter();
-                fixture.billing.start_sse_run_billing(poll)
-            };
-            polled_answer(fixture, &runtime, handle)
-        }
-        Function::Blocking => {
-            let result = result_text(input)?;
-            let kwargs = PassThroughLoggingKwargs::default();
-            let outcome = fixture.billing.tinyfish_passthrough_handler(BlockingRun {
-                logging_obj: fixture.logging_obj.as_ref(),
-                response_body: input.run.as_ref(),
-                result: &result,
-                kwargs: &kwargs,
-            });
-            payload_view(fixture, &outcome)
-        }
-        Function::CollectedChunks => {
-            let outcome =
-                runtime.block_on(fixture.billing.handle_logging_tinyfish_collected_chunks(
-                    CollectedChunks {
-                        logging_obj: fixture.logging_obj.as_ref(),
-                        lines: &input.lines,
-                    },
-                ));
-            payload_view(fixture, &outcome)
-        }
+        Function::AsyncRun => async_run(input, fixture, &runtime),
+        Function::SseRun => sse_run(input, fixture, &runtime),
+        Function::Blocking => blocking_run(input, fixture),
+        Function::CollectedChunks => collected_chunks(input, fixture, &runtime),
     }
+}
+
+fn async_run(input: &Input, fixture: &Fixture, runtime: &Runtime) -> HelperResult {
+    let log = Arc::clone(&fixture.recorder);
+    let poll = AsyncRun {
+        logging_obj: Arc::clone(&fixture.logging_obj),
+        response_body: input.run.as_ref(),
+        result: result_text(input)?,
+        kwargs: PassThroughLoggingKwargs::default(),
+        log,
+        start_time: fixture.start_time,
+    };
+    let handle = {
+        let _entered = runtime.enter();
+        fixture.billing.start_async_run_billing(poll)
+    };
+    polled_answer(fixture, runtime, handle)
+}
+
+fn sse_run(input: &Input, fixture: &Fixture, runtime: &Runtime) -> HelperResult {
+    let run_id = input
+        .run_id
+        .clone()
+        .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
+    let log = Arc::clone(&fixture.recorder);
+    let poll = SseRun {
+        run_id,
+        logging_obj: Arc::clone(&fixture.logging_obj),
+        log,
+        start_time: fixture.start_time,
+    };
+    let handle = {
+        let _entered = runtime.enter();
+        fixture.billing.start_sse_run_billing(poll)
+    };
+    polled_answer(fixture, runtime, handle)
+}
+
+fn blocking_run(input: &Input, fixture: &Fixture) -> HelperResult {
+    let result = result_text(input)?;
+    let kwargs = PassThroughLoggingKwargs::default();
+    let outcome = fixture.billing.tinyfish_passthrough_handler(BlockingRun {
+        logging_obj: fixture.logging_obj.as_ref(),
+        response_body: input.run.as_ref(),
+        result: &result,
+        kwargs: &kwargs,
+    });
+    payload_view(fixture, &outcome)
+}
+
+fn collected_chunks(input: &Input, fixture: &Fixture, runtime: &Runtime) -> HelperResult {
+    let outcome = runtime.block_on(fixture.billing.handle_logging_tinyfish_collected_chunks(
+        CollectedChunks {
+            logging_obj: fixture.logging_obj.as_ref(),
+            lines: &input.lines,
+        },
+    ));
+    payload_view(fixture, &outcome)
 }
 
 fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
