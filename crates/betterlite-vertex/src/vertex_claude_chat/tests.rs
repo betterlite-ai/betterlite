@@ -8,7 +8,10 @@ use rstest::rstest;
 
 use crate::vertex_claude_chat::provider::is_supported_model;
 
-use fixture::{InliningFetcher, RefusingFetcher, Scenario, expect_absent, expect_field, json, map};
+use fixture::{
+    InliningFetcher, RefusingFetcher, Scenario, expect_absent, expect_field, json, map,
+    map_with_packaged,
+};
 
 const NO_DROP: DropParams = DropParams {
     global: false,
@@ -86,6 +89,20 @@ fn overrides_response_format_native_keeps_model() {
     assert!(mapped.contains_key("output_format"));
     assert!(!mapped.contains_key("tools"));
     assert_eq!(mapped.get("json_mode"), Some(&json("true")));
+}
+
+#[test]
+fn overrides_reads_native_output_format_from_the_packaged_catalog() {
+    let mapped = map_with_packaged(
+        "claude-sonnet-4-5",
+        &format!(r#"{{"response_format":{FORMAT}}}"#),
+        "{}",
+        NO_DROP,
+        r#"{"claude-sonnet-4-5":{"supports_native_structured_output":true}}"#,
+    )
+    .expect("the request maps");
+    assert!(mapped.contains_key("output_format"));
+    assert!(!mapped.contains_key("tools"));
 }
 
 #[test]

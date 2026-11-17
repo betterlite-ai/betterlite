@@ -196,6 +196,10 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new(model_cost: &str) -> Self {
+        Self::with_packaged(model_cost, "{}")
+    }
+
+    pub(crate) fn with_packaged(model_cost: &str, packaged: &str) -> Self {
         Self {
             map: ModelCostMap::parse(model_cost.as_bytes()).expect("model cost map"),
             // every case names its provider, so resolution never reads the typed catalog
@@ -211,7 +215,7 @@ impl Fixture {
             environment: BTreeMap::new(),
             patterns: CandidatePatterns::new().expect("candidate patterns"),
             runtime: serde_json::from_str(model_cost).expect("runtime catalog"),
-            packaged: serde_json::from_str("{}").expect("packaged catalog"),
+            packaged: serde_json::from_str(packaged).expect("packaged catalog"),
         }
     }
 
@@ -294,6 +298,7 @@ pub(crate) struct Scenario {
     headers: IndexMap<String, String>,
     defaults: OptionDefaults,
     billing_header: BillingHeader,
+    packaged: String,
 }
 
 impl Scenario {
@@ -305,11 +310,17 @@ impl Scenario {
             headers: IndexMap::new(),
             defaults: OptionDefaults::default(),
             billing_header: BillingHeader::Keep,
+            packaged: String::from("{}"),
         }
     }
 
     pub(crate) fn optional(mut self, source: &str) -> Self {
         self.optional_params = fields(source);
+        self
+    }
+
+    pub(crate) fn packaged(mut self, source: &str) -> Self {
+        self.packaged = source.to_owned();
         self
     }
 
@@ -322,7 +333,7 @@ impl Scenario {
     where
         F: RemoteMediaFetcher + Sync,
     {
-        let fixture = Fixture::new(MODELS);
+        let fixture = Fixture::with_packaged(MODELS, &self.packaged);
         let mut session = Session::new(&fixture);
         let runtime = Builder::new_current_thread()
             .enable_all()
@@ -380,7 +391,17 @@ pub(crate) fn map(
     initial: &str,
     drop: DropParams,
 ) -> Result<IndexMap<String, Json>, ParamsError> {
-    let fixture = Fixture::new(MODELS);
+    map_with_packaged(model, requested, initial, drop, "{}")
+}
+
+pub(crate) fn map_with_packaged(
+    model: &str,
+    requested: &str,
+    initial: &str,
+    drop: DropParams,
+    packaged: &str,
+) -> Result<IndexMap<String, Json>, ParamsError> {
+    let fixture = Fixture::with_packaged(MODELS, packaged);
     let mut session = Session::new(&fixture);
     let catalogs = fixture.catalogs();
     let budgets = Settings::default();
