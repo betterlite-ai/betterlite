@@ -243,22 +243,13 @@ where
             let outcome = build_entries(&index, embedder.as_ref(), &model, limit)
                 .await
                 .map_err(Arc::new);
-            store_outcome(slot.as_ref(), &outcome);
+            let mut held = slot.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Ok(entries) = &outcome {
+                held.built = Some(Arc::clone(entries));
+            }
+            held.waiters = None;
+            drop(held);
             sender.send_replace(BuildState::Done(outcome));
         });
     }
-}
-
-// the build's outcome reaches every later caller through the slot, so a repeated call never builds twice
-fn store_outcome<E>(
-    state: &Mutex<BuildSlot<E>>,
-    outcome: &Result<Arc<[BuiltEntry]>, Arc<RouterError<E>>>,
-) where
-    E: Error + Send + Sync + 'static,
-{
-    let mut slot = state.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Ok(entries) = outcome {
-        slot.built = Some(Arc::clone(entries));
-    }
-    slot.waiters = None;
 }
