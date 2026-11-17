@@ -348,6 +348,21 @@ async fn falls_back_to_the_id_token_when_the_userinfo_url_does_not_parse() {
 }
 
 #[tokio::test]
+async fn falls_back_to_the_id_token_when_the_access_token_cannot_form_a_header() {
+    let provider = LocalProvider::start().await;
+    provider.reply(
+        "/token",
+        Reply::json(&format!(
+            r#"{{"access_token":"bad\nvalue","id_token":"{VALID_ID_TOKEN}"}}"#
+        )),
+    );
+    let claims = run_exchange(&base_request(&provider)).await.unwrap();
+    assert_eq!(text(&claims, "sub"), Some("user-1"));
+    assert_eq!(text(&claims, "access_token"), Some("bad\nvalue"));
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test]
 async fn falls_back_to_the_id_token_when_userinfo_is_unreachable() {
     let provider = LocalProvider::start().await;
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
