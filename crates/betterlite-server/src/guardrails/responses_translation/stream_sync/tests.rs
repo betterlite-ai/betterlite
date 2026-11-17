@@ -21,16 +21,6 @@ fn delta(output_index: u32, content_index: u32, value: &str) -> Value {
     })
 }
 
-fn done(output_index: u32, content_index: u32, value: &str) -> Value {
-    json!({
-        "type": "response.output_text.done",
-        "item_id": "m1",
-        "output_index": output_index,
-        "content_index": content_index,
-        "text": value,
-    })
-}
-
 fn rewrites(entries: &[((usize, usize), &str)]) -> BTreeMap<(usize, usize), String> {
     entries
         .iter()
@@ -82,7 +72,9 @@ fn sync_counts_deltas_per_position() {
 
 #[test]
 fn sync_sets_the_output_text_done_text() {
-    let mut events = [done(0, 0, "old")];
+    let mut events = [
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "old"}),
+    ];
     sync_stream_events_with_rewrites(&mut events, &rewrites(&[((0, 0), "new")]));
     assert_eq!(events[0]["text"], json!("new"));
 }
@@ -181,7 +173,10 @@ fn sync_skips_events_that_are_not_objects() {
 
 #[test]
 fn sync_leaves_a_position_without_a_rewrite_alone() {
-    let mut events = [delta(0, 0, "old"), done(0, 0, "old")];
+    let mut events = [
+        delta(0, 0, "old"),
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "old"}),
+    ];
     sync_stream_events_with_rewrites(&mut events, &rewrites(&[((1, 0), "new")]));
     assert_eq!(events[0]["delta"], json!("old"));
     assert_eq!(events[1]["text"], json!("old"));
@@ -193,7 +188,7 @@ fn spread_puts_the_text_on_the_first_position_and_blanks_the_rest() {
         delta(0, 0, "a"),
         delta(0, 1, "b"),
         delta(0, 0, "c"),
-        done(0, 0, "abc"),
+        json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "abc"}),
     ];
     spread_text_rewrite_over_stream_events(&mut events, "new", "guard").unwrap();
     assert_eq!(events[0]["delta"], json!("new"));

@@ -88,10 +88,9 @@ pub(super) fn write_item_rewrites(
         .iter_mut()
         .filter(|item| is_tool_call_output_item(item));
     for (item, call_id) in items.zip(call_ids) {
-        let Some(rewrite) = rewrites.get(call_id) else {
-            continue;
-        };
-        write_tool_call_item(item, rewrite.name.as_deref(), Some(&rewrite.arguments));
+        if let Some(rewrite) = rewrites.get(call_id) {
+            write_tool_call_item(item, rewrite.name.as_deref(), Some(&rewrite.arguments));
+        }
     }
 }
 
