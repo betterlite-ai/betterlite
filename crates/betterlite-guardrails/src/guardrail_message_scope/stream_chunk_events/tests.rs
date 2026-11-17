@@ -30,12 +30,12 @@ fn parsed_types(item: &StreamItem) -> Vec<String> {
 #[case::lines_in_one_block("data: {\"type\":\"a\"}\ndata: {\"type\":\"b\"}", &["a", "b"])]
 #[case::carriage_return_line_breaks("data: {\"type\":\"a\"}\r\n\r\ndata: {\"type\":\"b\"}", &["a", "b"])]
 #[case::bare_carriage_return("data: {\"type\":\"a\"}\rdata: {\"type\":\"b\"}", &["a", "b"])]
-#[case::unicode_line_separator("data: {\"type\":\"a\"}\u{2028}data: {\"type\":\"b\"}", &["a", "b"])]
-#[case::next_line_separator("data: {\"type\":\"a\"}\u{85}data: {\"type\":\"b\"}", &["a", "b"])]
-#[case::file_separator("data: {\"type\":\"a\"}\u{1c}data: {\"type\":\"b\"}", &["a", "b"])]
+#[case::unicode_line_separator("data: {\"type\":\"a\"}\u{2028}data: {\"type\":\"b\"}", &[])]
+#[case::next_line_separator("data: {\"type\":\"a\"}\u{85}data: {\"type\":\"b\"}", &[])]
+#[case::file_separator("data: {\"type\":\"a\"}\u{1c}data: {\"type\":\"b\"}", &[])]
 #[case::leading_file_separator("\u{1c}data: {\"type\":\"a\"}", &["a"])]
 #[case::trailing_group_separator("data: {\"type\":\"a\"}\u{1d}", &["a"])]
-#[case::record_separator_between_events("data: {\"type\":\"a\"}\u{1e}data: {\"type\":\"b\"}", &["a", "b"])]
+#[case::record_separator_between_events("data: {\"type\":\"a\"}\u{1e}data: {\"type\":\"b\"}", &[])]
 #[case::unit_separator_is_stripped("\u{1f}data: {\"type\":\"a\"}\u{1f}", &["a"])]
 #[case::padding_is_stripped("   data:   {\"type\":\"a\"}   ", &["a"])]
 #[case::done_marker_is_skipped("data: [DONE]\ndata: {\"type\":\"a\"}", &["a"])]
@@ -47,6 +47,18 @@ fn parsed_types(item: &StreamItem) -> Vec<String> {
 #[case::empty_chunk("", &[])]
 fn text_chunks_yield_their_json_objects(#[case] chunk: &str, #[case] expected: &[&str]) {
     assert_eq!(parsed_types(&text_item(chunk)), expected);
+}
+
+#[test]
+fn keeps_unicode_separators_inside_a_json_string() {
+    let text = "a\u{85}b\u{2028}c\u{2029}d";
+    let chunk = format!("data: {{\"type\":\"a\",\"text\":\"{text}\"}}");
+    let events = anthropic_stream_chunk_events(&text_item(&chunk));
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].get("text"),
+        Some(&GuardrailValue::Text(text.to_owned()))
+    );
 }
 
 #[test]
