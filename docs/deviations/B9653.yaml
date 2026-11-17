@@ -1,0 +1,24 @@
+task: B9653
+deviations:
+  - what: Every request carries params._meta.progressToken, where the SDK stamps one only when the call passes a progress callback (LiteLLM passes one only for a tool call with its own progress callback).
+    why: rmcp's Peer::send_request_with_option mints a progress token for every outgoing request and puts it on the wire; the session then listens on that token so a progress notification reaches the caller's ProgressForwarder, and an unused token only draws notifications the session drops.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/shared/jsonrpc_dispatcher.py#L356-L362
+  - what: The cancellation sent upstream when the read timeout elapses carries the reason "request timeout", where the SDK sends "timed out after {timeout}s".
+    why: rmcp's RequestHandle sends its own notifications/cancelled with a fixed reason when its timeout fires; the code and message of the timeout error the caller sees match the SDK's REQUEST_TIMEOUT exactly.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/shared/jsonrpc_dispatcher.py#L411-L425
+  - what: A pending request whose caller cancels is dropped without a notifications/cancelled, where the SDK sends one with reason "caller cancelled" before it propagates the cancellation.
+    why: B4744 cancels by dropping the operation future, and rmcp's RequestHandle has no hook that runs when it is dropped, so the session has no point at which it can tell the peer to stop.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/shared/jsonrpc_dispatcher.py#L426-L436
+  - what: A legacy SSE or streamable HTTP server URL that fails to parse becomes an unavailable transport, so the session fails on enter with a runtime error, where the SDK raises the URL error when the transport context is created.
+    why: B4744's McpRuntime::sse_client and streamable_http_client return the transport without a Result, so the runtime can only warn when it builds it and stand in with StdioTransport::Unsupported.
+    link: ""
+  - what: A JSON-RPC error's data field is dropped when the session turns it into a protocol failure; the caller sees the code and message.
+    why: B4744's McpFailure (crates/betterlite-mcp/src/client/sessions/error.rs) carries code, message and context only, and that type is outside this task's scope; the SDK's MCPError keeps the data.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/shared/jsonrpc_dispatcher.py#L444
+  - what: A non-error tool result that misses the structuredContent its declared outputSchema requires, or carries structuredContent the schema rejects, fails with rmcp's ServiceError::UnexpectedResponse ("Unexpected response type"), where the SDK raises RuntimeError naming the tool and the schema error.
+    why: SdkError (crates/betterlite-mcp/src/client/sdk_transport/error.rs) has no message-carrying runtime variant and that file is outside this task's scope; the failure is still a runtime error rather than a JSON-RPC one, so the caller sees SessionError::Runtime as it does from the SDK's RuntimeError.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/client/session.py#L1118-L1183
+  - what: 'An initialize result whose protocolVersion is outside the SDK''s four handshake versions fails with rmcp''s ServiceError::UnexpectedResponse ("Unexpected response type"), where the SDK raises RuntimeError("Unsupported protocol version from the server: ...").'
+    why: Same SdkError limitation; the check still runs after the initialize response and before the result is adopted or notifications/initialized is sent, so the caller sees SessionError::Runtime and the server sees no initialized notification.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/client/session.py#L666-L667
+kept_bugs: []

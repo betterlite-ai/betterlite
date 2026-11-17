@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::tls::{TlsPolicy, Verification};
+use betterlite_mcp::client::sdk_runtime::handler::ServerRequestHandlers;
 use betterlite_mcp::client::sessions::client::{SessionClient, SessionSettings};
 use betterlite_mcp::client::sessions::negotiate::{Callbacks, ProtocolVersion};
 use betterlite_mcp::client::sessions::transport::StdioConfig;
@@ -123,6 +124,7 @@ fn session_settings(input: &SettingsInput) -> Result<SessionSettings, Box<Helper
         callbacks: Callbacks {
             kinds: BTreeSet::new(),
         },
+        handlers: ServerRequestHandlers::default(),
     })
 }
 
