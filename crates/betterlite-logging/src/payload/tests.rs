@@ -10,6 +10,7 @@ use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::exporter_options::redaction::ResponseStamp;
@@ -39,23 +40,25 @@ use crate::payload::emit::{
     EmitError, EmitSettings, PayloadEmitter, emit_standard_logging_payload,
 };
 use crate::payload::lifecycle::{LoggingLifecycle, LoggingLifecycleConfig};
-use crate::payload::redaction::{REDACTED_TEXT, redacted_standard_logging_payload};
+use crate::payload::redaction::{REDACTED_TEXT, redact_standard_payload};
 use crate::payload::response::object_field;
 use crate::registry::CallbackRegistry;
 
-fn time(text: &str) -> DateTime<FixedOffset> {
+mod behaviors;
+
+pub(super) fn time(text: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(text).unwrap()
 }
 
-fn start() -> DateTime<FixedOffset> {
+pub(super) fn start() -> DateTime<FixedOffset> {
     time("2024-01-01T00:00:00+00:00")
 }
 
-fn end() -> DateTime<FixedOffset> {
+pub(super) fn end() -> DateTime<FixedOffset> {
     time("2024-01-01T00:00:01+00:00")
 }
 
-fn init(stream: Option<bool>) -> LoggingInit {
+pub(super) fn init(stream: Option<bool>) -> LoggingInit {
     LoggingInit {
         model: "gpt-4o".to_owned(),
         call_type: "completion".to_owned(),
@@ -81,7 +84,7 @@ fn state(stream: Option<bool>) -> LoggingState {
     state_from(init(stream))
 }
 
-fn state_from(configuration: LoggingInit) -> LoggingState {
+pub(super) fn state_from(configuration: LoggingInit) -> LoggingState {
     LoggingState::new(
         configuration,
         CorrelationSetup {
@@ -95,7 +98,7 @@ fn state_from(configuration: LoggingInit) -> LoggingState {
     .unwrap()
 }
 
-fn chat_response() -> Json {
+pub(super) fn chat_response() -> Json {
     serde_json::from_str(
         r#"{
             "id": "chatcmpl-1",
@@ -121,14 +124,30 @@ fn request(result: SuccessResult) -> SuccessRequest {
 }
 
 fn builder(privacy: Settings) -> PayloadBuilder {
+    builder_with(
+        PayloadSources::default(),
+        PayloadSettings::default(),
+        privacy,
+    )
+}
+
+pub(super) fn builder_with(
+    sources: PayloadSources,
+    settings: PayloadSettings,
+    privacy: Settings,
+) -> PayloadBuilder {
     PayloadBuilder::new(PayloadBuilderConfig {
-        sources: Arc::new(PayloadSources::default()),
-        settings: PayloadSettings::default(),
+        sources: Arc::new(sources),
+        settings,
         redactor: Arc::new(Redactor::new(16).unwrap()),
         normalizer: Arc::new(Normalizer::new().unwrap()),
         truncator: Base64Truncator::new(0).unwrap(),
         privacy,
     })
+}
+
+pub(super) fn payload_from(text: &str) -> StandardLoggingPayload {
+    serde_json::from_str(text).unwrap()
 }
 
 #[derive(Default)]
@@ -222,11 +241,13 @@ fn lifecycle(builder: PayloadBuilder, emitter: Arc<Recorder>) -> LoggingLifecycl
     })
 }
 
-fn payload_from(text: &str) -> StandardLoggingPayload {
-    serde_json::from_str(text).unwrap()
+fn redacted_response(response: Json) -> Option<Json> {
+    let mut payload = payload_from(BASE_PAYLOAD);
+    payload.response = Some(response);
+    redact_standard_payload(&payload).response
 }
 
-const BASE_PAYLOAD: &str = r#"{
+pub(super) const BASE_PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
     "trace_id": "trace-1",
     "session_id": "",
@@ -257,13 +278,14 @@ const BASE_PAYLOAD: &str = r#"{
 enum Behavior {
     EmitDisabled,
     EmitEnabled,
+    EmitEnvValues,
     EmitWriteFailure,
     DecimalSeconds,
     RedactionMessages,
     RedactionPlaceholders,
-    RedactionChoices,
-    RedactionOutput,
-    RedactionLeavesInput,
+    RedactionChoiceBranches,
+    RedactionOutputBranches,
+    RedactionCopiesInput,
     RedactionKeepsAbsentResponse,
     PrivacyRedactsPayload,
     LifecycleOnce,
@@ -277,13 +299,14 @@ enum Behavior {
 #[rstest]
 #[case::emit_disabled_prints_nothing(Behavior::EmitDisabled)]
 #[case::emit_enabled_writes_one_json_line(Behavior::EmitEnabled)]
+#[case::emit_env_values_follow_os_getenv(Behavior::EmitEnvValues)]
 #[case::emit_reports_a_failed_write(Behavior::EmitWriteFailure)]
 #[case::decimal_seconds_keep_a_fraction(Behavior::DecimalSeconds)]
 #[case::redaction_replaces_messages(Behavior::RedactionMessages)]
 #[case::redaction_placeholders_response_shapes(Behavior::RedactionPlaceholders)]
-#[case::redaction_scrubs_choices_and_vertex(Behavior::RedactionChoices)]
-#[case::redaction_output_items_and_vertex(Behavior::RedactionOutput)]
-#[case::redaction_copies_the_payload(Behavior::RedactionLeavesInput)]
+#[case::redaction_redacts_delta_and_choice_entries(Behavior::RedactionChoiceBranches)]
+#[case::redaction_redacts_output_items(Behavior::RedactionOutputBranches)]
+#[case::redaction_copies_the_payload(Behavior::RedactionCopiesInput)]
 #[case::redaction_keeps_an_absent_response(Behavior::RedactionKeepsAbsentResponse)]
 #[case::privacy_policy_redacts_the_logged_messages(Behavior::PrivacyRedactsPayload)]
 #[case::lifecycle_prints_one_terminal_payload(Behavior::LifecycleOnce)]
@@ -309,6 +332,21 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             assert!(sink.ends_with(b"\n"));
             let printed: Json = serde_json::from_slice(&sink[..sink.len() - 1]).unwrap();
             assert_eq!(printed, serde_json::to_value(&payload).unwrap());
+        }
+        Behavior::EmitEnvValues => {
+            let payload = payload_from(BASE_PAYLOAD);
+            let mut zero = Vec::new();
+            emit_standard_logging_payload(&payload, &EmitSettings::from_env(Some("0")), &mut zero)
+                .unwrap();
+            assert!(!zero.is_empty());
+            let mut empty = Vec::new();
+            emit_standard_logging_payload(&payload, &EmitSettings::from_env(Some("")), &mut empty)
+                .unwrap();
+            assert!(empty.is_empty());
+            let mut absent = Vec::new();
+            emit_standard_logging_payload(&payload, &EmitSettings::from_env(None), &mut absent)
+                .unwrap();
+            assert!(absent.is_empty());
         }
         Behavior::EmitWriteFailure => {
             let payload = payload_from(BASE_PAYLOAD);
@@ -336,7 +374,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
         }
         Behavior::RedactionMessages => {
             let payload = payload_from(BASE_PAYLOAD);
-            let redacted = redacted_standard_logging_payload(&payload);
+            let redacted = redact_standard_payload(&payload);
             let messages = redacted.messages.unwrap();
             let Json::List(items) = messages else {
                 panic!("messages must be a list");
@@ -347,128 +385,151 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             };
             assert_eq!(
                 fields.get("content"),
-                Some(&Json::Text("redacted-by-litellm".to_owned()))
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
             );
             assert_eq!(fields.get("role"), Some(&Json::Text("user".to_owned())));
             assert!(redacted.classifier_input.is_none());
             assert!(redacted.originating_request_masked.is_none());
         }
         Behavior::RedactionPlaceholders => {
-            for response in [
-                Json::Text("secret".to_owned()),
-                Json::Null,
-                Json::Bool(true),
-                Json::Number(serde_json::Number::from(7)),
-                Json::List(Vec::new()),
-                Json::Object(IndexMap::new()),
-            ] {
-                let mut payload = payload_from(BASE_PAYLOAD);
-                payload.response = Some(response);
-                if matches!(payload.response, Some(Json::Text(_))) {
-                    assert_eq!(
-                        redacted_standard_logging_payload(&payload).response,
-                        Some(Json::Text("redacted-by-litellm".to_owned()))
-                    );
-                    continue;
-                }
-                assert_eq!(
-                    redacted_standard_logging_payload(&payload).response,
-                    Some(Json::Object(IndexMap::from([(
-                        "text".to_owned(),
-                        Json::Text("redacted-by-litellm".to_owned())
-                    )])))
-                );
-            }
+            let placeholder = Json::Object(IndexMap::from([(
+                "text".to_owned(),
+                Json::Text(REDACTED_TEXT.to_owned()),
+            )]));
+            assert_eq!(
+                redacted_response(Json::Text("secret".to_owned())),
+                Some(Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(redacted_response(Json::Null), Some(placeholder.clone()));
+            assert_eq!(
+                redacted_response(Json::Bool(true)),
+                Some(placeholder.clone())
+            );
+            assert_eq!(
+                redacted_response(Json::Number(Number::from(7))),
+                Some(placeholder.clone())
+            );
+            assert_eq!(
+                redacted_response(Json::List(Vec::new())),
+                Some(placeholder.clone())
+            );
+            assert_eq!(
+                redacted_response(Json::Object(IndexMap::new())),
+                Some(placeholder)
+            );
         }
-        Behavior::RedactionChoices => {
+        Behavior::RedactionChoiceBranches => {
             let mut payload = payload_from(BASE_PAYLOAD);
             payload.response = Some(
                 serde_json::from_str(
                     r#"{
-                        "choices": [{"message": {"role": "assistant", "content": "secret",
-                            "tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}}],
-                        "vertex_ai_grounding_metadata": [{"secret": true}],
-                        "_hidden_params": {"vertex_ai_safety_ratings": [{"blocked": false}]}
+                        "choices": [
+                            {"delta": {"content": "secret", "reasoning_content": "hidden",
+                                "thinking_blocks": [{"text": "block"}], "audio": {"id": "a"},
+                                "tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}},
+                            {"text": "choice text"},
+                            {"message": {"content": "hello", "reasoning_content": "hidden",
+                                "thinking_blocks": [], "audio": {"id": "a"},
+                                "function_call": {"name": "f", "arguments": "{}"}}}
+                        ]
                     }"#,
                 )
                 .unwrap(),
             );
-            let redacted = redacted_standard_logging_payload(&payload);
-            let Json::Object(fields) = redacted.response.unwrap() else {
+            let Json::Object(fields) = redact_standard_payload(&payload).response.unwrap() else {
                 panic!("an object response stays an object");
             };
-            assert_eq!(
-                fields.get("vertex_ai_grounding_metadata"),
-                Some(&Json::List(Vec::new()))
-            );
-            let Json::Object(hidden) = fields.get("_hidden_params").unwrap() else {
-                panic!("hidden params stay an object");
-            };
-            assert!(!hidden.contains_key("vertex_ai_safety_ratings"));
             let Json::List(choices) = fields.get("choices").unwrap() else {
                 panic!("choices stay a list");
             };
-            let Json::Object(choice) = &choices[0] else {
-                panic!("a choice is an object");
+            let Json::Object(delta) = object_field(&choices[0], "delta").unwrap() else {
+                panic!("a delta is an object");
             };
-            let Json::Object(message) = choice.get("message").unwrap() else {
+            assert_eq!(
+                delta.get("content"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(
+                delta.get("reasoning_content"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(delta.get("thinking_blocks"), Some(&Json::Null));
+            assert_eq!(delta.get("audio"), Some(&Json::Null));
+            let Json::List(calls) = delta.get("tool_calls").unwrap() else {
+                panic!("tool calls stay a list");
+            };
+            let function = object_field(&calls[0], "function").unwrap();
+            assert_eq!(
+                object_field(function, "arguments"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(
+                object_field(&choices[1], "text"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            let Json::Object(message) = object_field(&choices[2], "message").unwrap() else {
                 panic!("a message is an object");
             };
             assert_eq!(
-                message.get("content"),
-                Some(&Json::Text("redacted-by-litellm".to_owned()))
+                message.get("reasoning_content"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(message.get("thinking_blocks"), Some(&Json::Null));
+            assert_eq!(message.get("audio"), Some(&Json::Null));
+            let function_call = message.get("function_call").unwrap();
+            assert_eq!(
+                object_field(function_call, "arguments"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
             );
         }
-        Behavior::RedactionOutput => {
+        Behavior::RedactionOutputBranches => {
             let mut payload = payload_from(BASE_PAYLOAD);
             payload.response = Some(
                 serde_json::from_str(
                     r#"{
                         "output": [
-                            {"type": "message", "content": [{"type": "output_text", "text": "secret"}]},
-                            {"type": "function_call", "arguments": "{}"},
-                            {"type": "reasoning", "summary": [{"text": "secret"}]}
+                            {"type": "message", "text": "item text",
+                                "content": [{"type": "output_text", "text": "part", "refusal": "no"}]},
+                            {"type": "custom_tool_call", "input": "secret input"}
                         ],
-                        "vertex_ai_citation_metadata": [{"secret": true}]
+                        "vertex_ai_safety_ratings": [{"blocked": false}]
                     }"#,
                 )
                 .unwrap(),
             );
-            let redacted = redacted_standard_logging_payload(&payload);
-            let Json::Object(fields) = redacted.response.unwrap() else {
+            let Json::Object(fields) = redact_standard_payload(&payload).response.unwrap() else {
                 panic!("an object response stays an object");
             };
             assert_eq!(
-                fields.get("vertex_ai_citation_metadata"),
+                fields.get("vertex_ai_safety_ratings"),
                 Some(&Json::List(Vec::new()))
             );
             let Json::List(items) = fields.get("output").unwrap() else {
                 panic!("output stays a list");
             };
-            let Json::Object(call) = &items[1] else {
-                panic!("an output item is an object");
-            };
             assert_eq!(
-                call.get("arguments"),
-                Some(&Json::Text("redacted-by-litellm".to_owned()))
+                object_field(&items[0], "text"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
             );
-            let Json::Object(reasoning) = &items[2] else {
-                panic!("an output item is an object");
-            };
-            let Json::List(summary) = reasoning.get("summary").unwrap() else {
-                panic!("summary stays a list");
-            };
-            let Json::Object(entry) = &summary[0] else {
-                panic!("a summary entry is an object");
+            let Json::List(content) = object_field(&items[0], "content").unwrap() else {
+                panic!("content stays a list");
             };
             assert_eq!(
-                entry.get("text"),
-                Some(&Json::Text("redacted-by-litellm".to_owned()))
+                object_field(&content[0], "text"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(
+                object_field(&content[0], "refusal"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
+            );
+            assert_eq!(
+                object_field(&items[1], "input"),
+                Some(&Json::Text(REDACTED_TEXT.to_owned()))
             );
         }
-        Behavior::RedactionLeavesInput => {
+        Behavior::RedactionCopiesInput => {
             let payload = payload_from(BASE_PAYLOAD);
-            let redacted = redacted_standard_logging_payload(&payload);
+            let redacted = redact_standard_payload(&payload);
             assert_eq!(
                 payload.messages,
                 Some(serde_json::from_str(r#"[{"role":"user","content":"hello"}]"#).unwrap())
@@ -481,17 +542,9 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
         Behavior::RedactionKeepsAbsentResponse => {
             let mut payload = payload_from(BASE_PAYLOAD);
             payload.response = None;
-            assert!(
-                redacted_standard_logging_payload(&payload)
-                    .response
-                    .is_none()
-            );
+            assert!(redact_standard_payload(&payload).response.is_none());
             payload.messages = None;
-            assert!(
-                redacted_standard_logging_payload(&payload)
-                    .messages
-                    .is_none()
-            );
+            assert!(redact_standard_payload(&payload).messages.is_none());
         }
         Behavior::PrivacyRedactsPayload => {
             let mut configuration = init(None);
@@ -507,7 +560,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             let mut correlation = CorrelationContext::default();
             let privacy = Settings {
                 turn_off_message_logging: true,
-                ..Settings::default()
+                redact_user_api_key_info: false,
             };
             let recorder = Arc::new(Recorder::default());
             let lifecycle = lifecycle(builder(privacy), Arc::clone(&recorder));
@@ -522,13 +575,9 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             let Json::List(messages) = payload.messages.unwrap() else {
                 panic!("messages stay a list");
             };
-            assert_eq!(messages.len(), 2);
+            assert_eq!(messages.len(), 1);
             assert_eq!(
                 object_field(&messages[0], "content"),
-                Some(&Json::Text("log the system prompt".to_owned()))
-            );
-            assert_eq!(
-                object_field(&messages[1], "content"),
                 Some(&Json::Text(REDACTED_TEXT.to_owned()))
             );
             let response = payload.response.unwrap();
@@ -585,8 +634,9 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
                 start_time: Some(start()),
                 end_time: Some(end()),
             };
+            let registry = CallbackRegistry::new(10);
             let callbacks = FailureCallbacks {
-                registry: &CallbackRegistry::new(10),
+                registry: &registry,
                 dynamic: None,
             };
             let mut call = FailureCall {
@@ -635,22 +685,21 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             assert_eq!(payload.stream, Some(true));
         }
         Behavior::FailurePayload => {
+            let exception: ExceptionFacts =
+                serde_json::from_str(r#"{"message": "server exploded", "llm_provider": "openai"}"#)
+                    .unwrap();
             let state = state(None);
-            let exception = ExceptionFacts {
-                message: Some("server exploded".to_owned()),
-                llm_provider: Some("openai".to_owned()),
-                ..ExceptionFacts::default()
-            };
-            let builder = builder(Settings::default());
-            let payload = builder
-                .build(FailurePayloadInput {
+            let payload = FailurePayloadSource::build(
+                &builder(Settings::default()),
+                FailurePayloadInput {
                     state: &state,
                     exception: &exception,
                     start_time: start(),
                     end_time: end(),
                     error_str: "server exploded",
-                })
-                .unwrap();
+                },
+            )
+            .unwrap();
             assert_eq!(payload.status, LoggingStatus::Failure);
             assert_eq!(payload.error_str.as_deref(), Some("server exploded"));
             assert_eq!(payload.total_tokens, 0);
