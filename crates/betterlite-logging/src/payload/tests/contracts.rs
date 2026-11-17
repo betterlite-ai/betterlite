@@ -1,4 +1,4 @@
-use std::io::{Read as _, Seek as _, SeekFrom};
+use std::io::{Read as _, Seek as _, SeekFrom, stdout};
 use std::os::fd::AsFd as _;
 use std::sync::Arc;
 
@@ -228,8 +228,12 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                 "litellm_call_id".to_owned(),
                 Json::Text("kwargs-call".to_owned()),
             );
-            let payload = built_with(PayloadSources::default(), &from_details, &chat_response());
-            assert_eq!(payload.litellm_call_id.as_deref(), Some("kwargs-call"));
+            let details_payload =
+                built_with(PayloadSources::default(), &from_details, &chat_response());
+            assert_eq!(
+                details_payload.litellm_call_id.as_deref(),
+                Some("kwargs-call")
+            );
             let mut from_params = state(None);
             from_params
                 .model_call_details
@@ -238,8 +242,12 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
                 "litellm_call_id".to_owned(),
                 Json::Text("params-call".to_owned()),
             );
-            let payload = built_with(PayloadSources::default(), &from_params, &chat_response());
-            assert_eq!(payload.litellm_call_id.as_deref(), Some("params-call"));
+            let params_payload =
+                built_with(PayloadSources::default(), &from_params, &chat_response());
+            assert_eq!(
+                params_payload.litellm_call_id.as_deref(),
+                Some("params-call")
+            );
         }
         ContractBehavior::ParamsSupplyTraceId => {
             let mut configuration = init(None);
@@ -255,20 +263,22 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             unstreamed
                 .model_call_details
                 .insert(COMPLETE_STREAMING_RESPONSE.to_owned(), Json::Bool(true));
-            let payload = built_with(PayloadSources::default(), &unstreamed, &chat_response());
-            assert_eq!(payload.stream, None);
+            let unstreamed_payload =
+                built_with(PayloadSources::default(), &unstreamed, &chat_response());
+            assert_eq!(unstreamed_payload.stream, None);
             let mut streamed = state(Some(true));
             streamed
                 .model_call_details
                 .insert(ASYNC_STREAM_RESPONSE_KEY.to_owned(), Json::Bool(true));
-            let payload = built_with(PayloadSources::default(), &streamed, &chat_response());
-            assert_eq!(payload.stream, Some(true));
+            let streamed_payload =
+                built_with(PayloadSources::default(), &streamed, &chat_response());
+            assert_eq!(streamed_payload.stream, Some(true));
             let mut nulled = state(Some(true));
             nulled
                 .model_call_details
                 .insert(COMPLETE_STREAMING_RESPONSE.to_owned(), Json::Null);
-            let payload = built_with(PayloadSources::default(), &nulled, &chat_response());
-            assert_eq!(payload.stream, None);
+            let nulled_payload = built_with(PayloadSources::default(), &nulled, &chat_response());
+            assert_eq!(nulled_payload.stream, None);
         }
         ContractBehavior::AzureEmptyStamp => {
             let response: Json = serde_json::from_str(
@@ -490,7 +500,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
         ContractBehavior::StdoutEmitterOutput => {
             let payload = payload_from(BASE_PAYLOAD);
             let file = tempfile::tempfile().expect("a scratch file");
-            let saved = nix::unistd::dup(std::io::stdout()).expect("stdout can be duplicated");
+            let saved = nix::unistd::dup(stdout()).expect("stdout can be duplicated");
             nix::unistd::dup2_stdout(file.as_fd()).expect("stdout can be redirected");
             let emitter = StdoutEmitter {
                 settings: EmitSettings::from_env(Some("1")),
@@ -500,13 +510,13 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             assert!(emitted.is_ok(), "the stdout emitter writes the payload");
             let mut reader = &file;
             reader.seek(SeekFrom::Start(0)).expect("the file rewinds");
-            let mut printed = Vec::new();
+            let mut printed_bytes = Vec::new();
             reader
-                .read_to_end(&mut printed)
+                .read_to_end(&mut printed_bytes)
                 .expect("the printed line reads back");
-            assert!(printed.ends_with(b"\n"));
-            let printed: Json =
-                serde_json::from_slice(&printed[..printed.len() - 1]).expect("the line is JSON");
+            assert!(printed_bytes.ends_with(b"\n"));
+            let printed: Json = serde_json::from_slice(&printed_bytes[..printed_bytes.len() - 1])
+                .expect("the line is JSON");
             assert_eq!(
                 serde_json::to_string(&printed).unwrap(),
                 serde_json::to_string(&payload).unwrap()

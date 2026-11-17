@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::io::{Error as IoError, Result as IoResult, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -715,12 +716,12 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
 
 struct FailingSink;
 
-impl std::io::Write for FailingSink {
-    fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
-        Err(std::io::Error::other("sink is closed"))
+impl Write for FailingSink {
+    fn write(&mut self, _buffer: &[u8]) -> IoResult<usize> {
+        Err(IoError::other("sink is closed"))
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Err(std::io::Error::other("sink is closed"))
+    fn flush(&mut self) -> IoResult<()> {
+        Err(IoError::other("sink is closed"))
     }
 }

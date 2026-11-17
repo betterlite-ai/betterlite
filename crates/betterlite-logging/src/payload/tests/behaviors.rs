@@ -320,13 +320,13 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 serde_json::from_str(r#"{"routing_decision": {"selected_model": "gpt-4o"}}"#)
                     .unwrap(),
             );
-            let mut sources = PayloadSources::default();
-            sources.autorouter = Arc::new(FixedAudit {
+            let mut estimated_sources = PayloadSources::default();
+            estimated_sources.autorouter = Arc::new(FixedAudit {
                 savings: Some(Decimal::new(5, 2)),
                 observation: None,
                 active: false,
             });
-            let estimated = built(sources, configuration.clone(), chat_response());
+            let estimated = built(estimated_sources, configuration.clone(), chat_response());
             assert_eq!(
                 estimated
                     .autorouter_savings
@@ -345,25 +345,25 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 estimate_field(&estimated, "status"),
                 Some(Json::Text("estimated".to_owned()))
             );
-            let mut sources = PayloadSources::default();
-            sources.autorouter = Arc::new(FixedAudit {
+            let mut unknown_sources = PayloadSources::default();
+            unknown_sources.autorouter = Arc::new(FixedAudit {
                 savings: None,
                 observation: None,
                 active: false,
             });
-            let unknown = built(sources, configuration.clone(), chat_response());
+            let unknown = built(unknown_sources, configuration.clone(), chat_response());
             assert!(unknown.autorouter_savings.is_none());
             assert_eq!(
                 estimate_field(&unknown, "reason"),
                 Some(Json::Text("baseline_unavailable".to_owned()))
             );
-            let mut sources = PayloadSources::default();
-            sources.autorouter = Arc::new(FixedAudit {
+            let mut pending_sources = PayloadSources::default();
+            pending_sources.autorouter = Arc::new(FixedAudit {
                 savings: Some(Decimal::new(5, 2)),
                 observation: Some("baseline-1".to_owned()),
                 active: false,
             });
-            let pending = built(sources, configuration, chat_response());
+            let pending = built(pending_sources, configuration, chat_response());
             assert_eq!(
                 estimate_field(&pending, "version"),
                 Some(Json::Number(Number::from(3)))
@@ -439,13 +439,13 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 }"#,
             )
             .unwrap();
-            let payload = built_failure(
+            let exception_payload = built_failure(
                 PayloadSources::default(),
                 PayloadSettings::default(),
                 init(None),
                 &exception,
             );
-            let headers = payload
+            let headers = exception_payload
                 .hidden_params
                 .additional_headers
                 .expect("the exception headers are logged");
@@ -454,7 +454,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 Some(&Json::Text("from-exception".to_owned()))
             );
             assert!(!headers.contains_key("x_other"));
-            let information = payload
+            let information = exception_payload
                 .error_information
                 .expect("the error information is logged");
             assert_eq!(
@@ -473,14 +473,14 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 }"#,
             )
             .unwrap();
-            let payload = built_failure(
+            let response_payload = built_failure(
                 PayloadSources::default(),
                 PayloadSettings::default(),
                 init(None),
                 &from_response,
             );
             assert_eq!(
-                payload
+                response_payload
                     .hidden_params
                     .additional_headers
                     .expect("the response headers are logged")
@@ -494,14 +494,14 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
                 }"#,
             )
             .unwrap();
-            let payload = built_failure(
+            let litellm_payload = built_failure(
                 PayloadSources::default(),
                 PayloadSettings::default(),
                 init(None),
                 &from_litellm,
             );
             assert_eq!(
-                payload
+                litellm_payload
                     .hidden_params
                     .additional_headers
                     .expect("the litellm headers are logged")
