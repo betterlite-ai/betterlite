@@ -40,10 +40,10 @@ pub fn without_nulls(value: Value) -> Value {
 pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 
 pub(crate) fn field(name: &str, value: Option<Value>) -> (String, Value) {
-    match value {
-        Some(item) => (name.to_owned(), item),
-        None => (name.to_owned(), Value::Null),
-    }
+    value.map_or_else(
+        || (name.to_owned(), Value::Null),
+        |item| (name.to_owned(), item),
+    )
 }
 
 // The chat chunk the text wrapper converts: usage gains the detail block litellm fills in, model restamped
