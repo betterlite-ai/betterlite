@@ -12,6 +12,15 @@ pub struct HealthRouting<'settings> {
     pub scoped_groups: Option<&'settings BTreeSet<String>>,
 }
 
+// the health routing settings and the snapshot's verdicts, as one route service answers them
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HealthInputs {
+    pub enabled: bool,
+    pub has_allowed_fails_policy: bool,
+    pub scoped_groups: Option<BTreeSet<String>>,
+    pub unhealthy: BTreeSet<String>,
+}
+
 // _filter_cooldown_deployments: a deployment that is cooling down right now is not a candidate
 #[must_use]
 pub fn without_cooling_down(
@@ -63,13 +72,16 @@ pub fn without_unhealthy(
     kept
 }
 
+// _is_deployment_blocked: an admin-paused deployment never serves a request, whichever route asks
+#[must_use]
+pub fn is_blocked(deployment: &DeploymentSpec) -> bool {
+    matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)))
+}
+
 // _are_all_deployments_blocked, and _is_model_fully_blocked over one model's deployments
 #[must_use]
 pub fn all_blocked(deployments: &[DeploymentSpec]) -> bool {
-    !deployments.is_empty()
-        && deployments.iter().all(|deployment| {
-            matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)))
-        })
+    !deployments.is_empty() && deployments.iter().all(is_blocked)
 }
 
 // get_fully_blocked_model_names: the model names whose every deployment an admin paused
@@ -81,7 +93,7 @@ pub fn fully_blocked_model_names(deployments: &[DeploymentSpec]) -> BTreeSet<Str
         if name.is_empty() {
             continue;
         }
-        let paused = matches!(deployment.model_info.get("blocked"), Some(Json::Bool(true)));
+        let paused = is_blocked(deployment);
         blocked
             .entry(name)
             .and_modify(|every| *every = *every && paused)

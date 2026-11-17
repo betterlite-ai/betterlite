@@ -95,20 +95,23 @@ impl DeploymentHealthCache {
         let seconds = ttl
             .to_i64()
             .ok_or(HealthSnapshotError::Expiry { seconds: expiry })?;
-        let expires_at = ttl.mul_add(1.0_f64, (self.tier.clock)());
-        let mut tier = self
-            .tier
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        tier.entries.insert(
+        let tier = &self.tier;
+        let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
+        // InMemoryCache.set_cache prunes a TTL that ends exactly now before it writes, so such an expiry is replaced
+        let kept_expiry = state
+            .entries
+            .get(&self.key)
+            .map(|entry| entry.expires_at)
+            .filter(|expires_at| *expires_at > now);
+        let expires_at = kept_expiry.unwrap_or_else(|| ttl.mul_add(1.0_f64, now));
+        state.entries.insert(
             self.key.clone(),
             LocalEntry {
                 value: merged.clone(),
                 expires_at,
             },
         );
-        drop(tier);
+        drop(state);
         self.shared.write(&merged, seconds);
         Ok(())
     }
@@ -150,6 +153,23 @@ impl DeploymentHealthCache {
         let local = self.tier.batch_get(std::slice::from_ref(&self.key));
         let stored = local.into_iter().next().flatten();
         stored.or_else(|| self.backfilled(self.shared.read_raw()))
+    }
+
+    // the local tier's absolute expiry for the one snapshot key, the way InMemoryCache.ttl_dict answers it
+    #[must_use]
+    pub fn local_expiry(&self) -> Option<f64> {
+        let now = (self.clock)();
+        let tier = &self.tier;
+        let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let expiry = state
+            .entries
+            .get(&self.key)
+            .map(|entry| entry.expires_at)
+            .filter(|expiry| now <= *expiry);
+        if expiry.is_none() {
+            state.entries.remove(&self.key);
+        }
+        expiry
     }
 
     // _extract_unhealthy_ids: the stored snapshot wins, and a fetched one lands in memory when it answers

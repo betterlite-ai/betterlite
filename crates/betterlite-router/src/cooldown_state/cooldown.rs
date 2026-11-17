@@ -55,7 +55,9 @@ impl CooldownCache {
         }
     }
 
-    // add_deployment_to_cooldown: the entry lands in both tiers with a TTL equal to its cooldown time
+    // add_deployment_to_cooldown: the entry lands in both tiers with a TTL equal to its cooldown time, and a local
+    // TTL still running after this moment stays as it is the way InMemoryCache.set_cache keeps it, which prunes a
+    // TTL ending exactly now first, so that one is replaced
     pub fn add(
         &self,
         model_id: &str,
@@ -65,13 +67,16 @@ impl CooldownCache {
     ) -> Result<(), StoreError> {
         let ttl = cooldown_time.unwrap_or(self.default_cooldown_time);
         let key = RouteKey::parse(&format!("{KEY_PREFIX}{model_id}{KEY_SUFFIX}"))?;
-        let record = CooldownRecord::new(exception, status_code, (self.clock)(), ttl, &self.masker);
-        let expires_at = ttl.mul_add(1.0_f64, (self.tier.clock)());
-        let mut state = self
-            .tier
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let now = (self.clock)();
+        let record = CooldownRecord::new(exception, status_code, now, ttl, &self.masker);
+        let tier = &self.tier;
+        let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let kept_expiry = state
+            .entries
+            .get(&key)
+            .map(|entry| entry.expires_at)
+            .filter(|expiry| *expiry > now);
+        let expires_at = kept_expiry.unwrap_or_else(|| ttl.mul_add(1.0_f64, now));
         state.entries.insert(
             key.clone(),
             LocalEntry {
@@ -117,6 +122,27 @@ impl CooldownCache {
         Ok(results.cooldown)
     }
 
+    // the local tier's absolute expiry per model, the way InMemoryCache.ttl_dict answers it, pruned like a read
+    pub fn local_expiries(&self, model_ids: &[String]) -> Result<Vec<Option<f64>>, StoreError> {
+        let now = (self.clock)();
+        let tier = &self.tier;
+        let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut expiries = Vec::with_capacity(model_ids.len());
+        for model_id in model_ids {
+            let key = RouteKey::parse(&format!("{KEY_PREFIX}{model_id}{KEY_SUFFIX}"))?;
+            let expiry = state
+                .entries
+                .get(&key)
+                .map(|entry| entry.expires_at)
+                .filter(|expiry| now <= *expiry);
+            if expiry.is_none() {
+                state.entries.remove(&key);
+            }
+            expiries.push(expiry);
+        }
+        Ok(expiries)
+    }
+
     // active_cooldowns_from_results: correct every answered entry and keep the cooldowns that are still running
     pub fn active_from_results(
         &self,
@@ -147,11 +173,8 @@ impl CooldownCache {
     ) -> Option<ActiveCooldown> {
         let deadline = record.cooldown_time.mul_add(1.0_f64, record.timestamp);
         let remaining = (-now).mul_add(1.0_f64, deadline);
-        let mut state = self
-            .tier
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let tier = &self.tier;
+        let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
         if remaining <= 0.0 {
             state.entries.remove(key);
             return None;

@@ -39,18 +39,6 @@ enum RawFlag {
     Other(IgnoredAny),
 }
 
-impl RawFlag {
-    fn resolve(&self, path: &str) -> Result<bool, ConfigError> {
-        match self {
-            Self::Boolean(flag) => Ok(*flag),
-            Self::Other(_) => Err(ConfigError::InvalidScalar {
-                path: path.to_owned(),
-                value: false,
-            }),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub enable_health_check_routing: bool,
@@ -79,46 +67,42 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let enable = general
-            .enable_health_check_routing
-            .as_ref()
-            .map(|raw| raw.resolve(ENABLE_PATH))
-            .transpose()?
-            .unwrap_or(false);
-        let ignore = general
-            .ignore_transient_errors
-            .as_ref()
-            .map(|raw| raw.resolve(IGNORE_PATH))
-            .transpose()?
-            .unwrap_or(false);
+        let enable = flag(general.enable_health_check_routing.as_ref(), ENABLE_PATH)?;
+        let ignore = flag(general.ignore_transient_errors.as_ref(), IGNORE_PATH)?;
         let configured = resolve_number(
             general.staleness_threshold,
             STALENESS_PATH,
             lookup,
             parse_float,
         )?;
-        let read_interval = betterlite_env::number::<f64>(
-            READ_INTERVAL_VARIABLE,
-            &lookup.lookup(READ_INTERVAL_VARIABLE).unwrap_or_default(),
-        )?
-        .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
-        // LiteLLM reads the interval at import, so a malformed one fails whatever the config says
-        let staleness_default = interval_default(lookup)?;
+        // LiteLLM reads both environment settings at import, so a malformed one fails whatever the config says
+        let interval = environment_seconds(lookup, INTERVAL_VARIABLE)?
+            .unwrap_or(DEFAULT_HEALTH_CHECK_INTERVAL);
+        let read_interval = environment_seconds(lookup, READ_INTERVAL_VARIABLE)?
+            .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
         Ok(Settings {
             enable_health_check_routing: enable,
-            staleness_threshold: configured.unwrap_or(staleness_default),
+            staleness_threshold: configured.unwrap_or(interval.mul_add(STALENESS_MULTIPLIER, 0.0)),
             ignore_transient_errors: ignore,
             read_interval_seconds: read_interval,
         })
     }
 }
 
-fn interval_default<L>(lookup: &L) -> Result<f64, ConfigError>
+fn flag(raw: Option<&RawFlag>, path: &str) -> Result<bool, ConfigError> {
+    match raw {
+        Some(RawFlag::Boolean(flag)) => Ok(*flag),
+        Some(RawFlag::Other(_)) => Err(ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
+        }),
+        None => Ok(false),
+    }
+}
+
+fn environment_seconds<L>(lookup: &L, variable: &str) -> Result<Option<f64>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let text = lookup.lookup(INTERVAL_VARIABLE).unwrap_or_default();
-    let seconds = betterlite_env::number::<f64>(INTERVAL_VARIABLE, &text)?
-        .unwrap_or(DEFAULT_HEALTH_CHECK_INTERVAL);
-    Ok(seconds.mul_add(STALENESS_MULTIPLIER, 0.0))
+    betterlite_env::number::<f64>(variable, &lookup.lookup(variable).unwrap_or_default())
 }
