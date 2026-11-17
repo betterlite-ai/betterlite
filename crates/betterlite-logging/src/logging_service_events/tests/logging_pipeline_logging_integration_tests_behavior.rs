@@ -73,7 +73,9 @@ impl SteppingClock {
 impl SuccessClock for SteppingClock {
     fn now(&self) -> DateTime<FixedOffset> {
         let step = i64::from(self.reads.fetch_add(1, Ordering::SeqCst)).saturating_mul(self.step);
-        self.base + TimeDelta::seconds(step)
+        TimeDelta::try_seconds(step)
+            .and_then(|delta| self.base.checked_add_signed(delta))
+            .unwrap_or(self.base)
     }
 }
 
