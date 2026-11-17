@@ -1,0 +1,26 @@
+kind: helper
+name: whitespace-resolution-retained
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data:
+          parameters: {resolution: '   '}
+        body: {name: operations/generate_1234567890}
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data:
+          parameters: {durationSeconds: 6, resolution: ' 1080P ', sampleCount: 2}
+        body: {name: operations/generate_1234567890}
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data:
+          parameters: {resolution: ''}
+        body: {name: operations/generate_1234567890}
+env: {}
+compare: {ignore: []}

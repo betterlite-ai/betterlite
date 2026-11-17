@@ -1,0 +1,60 @@
+task: B1364
+deviations:
+  - what: >-
+      An operation body over 16 MiB is refused with a typed error before it is decoded, where LiteLLM hands the body to
+      httpx.Response.json() with no size limit.
+    why: >-
+      Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared Vertex response decoder's
+      cap; an operation body that large is not a Veo result any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L60-L62
+  - what: >-
+      A completed operation whose generatedSamples list is empty is a typed error that names the empty list, where
+      LiteLLM indexes element zero and lets an uncaught IndexError escape the content request.
+    why: >-
+      An IndexError is not a failure a working setup can rely on; the task asks for the empty sample list to fail
+      instead of scanning for another artifact, and betterlite's errors are typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L462-L471
+  - what: >-
+      The download target from a completed operation is parsed as an absolute URL before the artifact is fetched, so a
+      relative or malformed URI is a typed error at that point rather than an httpx InvalidURL inside the later GET.
+    why: >-
+      The task's content preparation resolves the provider download target itself, and a URI that cannot name a host is
+      not a video any working setup downloads. docs/compatibility.md keeps our error text and class our own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L458-L471
+  - what: >-
+      The Studio create usage is built by the shared duration, resolution and sample-count builder B1362 added, so a
+      boolean duration or resolution, or a container resolution, is omitted here where LiteLLM renders it through
+      float() or str(), and a parameters block that is not an object is a typed error where LiteLLM raises an
+      AttributeError. docs/deviations/B1362.yaml lists the same departures with their Vertex AI lines.
+    why: >-
+      One usage builder serves both video configs, and a working setup sends a number of seconds and a resolution
+      name. float(True) and str(True) are the duck typing and str text that docs/compatibility.md says betterlite
+      does not port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L65-L72
+  - what: >-
+      The artifact download is buffered up to the outbound transport's body limit, 16 MiB by default, and a
+      generated video larger than that fails with the transport's body limit error, where LiteLLM returns whatever
+      bytes the CDN sends with no cap.
+    why: >-
+      ProxiedClient::send_following followed by buffered enforces TransportLimits::body_bytes on every outbound
+      body. A Veo result can exceed 16 MiB, so the cap can reject a working download until the limit is raised or
+      the artifact is streamed to the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L477-L486
+kept_bugs:
+  - what: >-
+      A completed operation that also carries an error object is reported as completed with no error, and its
+      generated samples are still offered as the download target.
+    why: >-
+      LiteLLM's status transform decides on done alone, and the task keeps that as the Studio projection so a caller
+      polling an operation sees the same status it sees from LiteLLM. The error field is dropped from the video object
+      and from the content preparation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L418-L435
+  - what: >-
+      The artifact download returns its body bytes whatever status carried them, so a 404 error page becomes the
+      video content.
+    why: >-
+      LiteLLM's content transform returns raw_response.content and the generic content handler never calls
+      raise_for_status, and this task's contract is that the content response returns its bytes unchanged. A status
+      check on the artifact GET would be betterlite's own behavior and belongs to the route task that owns the
+      download.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7447-L7468
