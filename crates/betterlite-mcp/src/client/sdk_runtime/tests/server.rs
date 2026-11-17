@@ -8,9 +8,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use http::request::Parts;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitationAction,
-    ErrorData, Implementation, JsonObject, ListToolsResult, PaginatedRequestParams,
-    ProgressNotificationParam, ProtocolVersion, ServerCapabilities, ServerConfig,
-    ServerNotification, ServerRequest, Tool,
+    ErrorData, GetPromptRequestParams, GetPromptResponse, GetPromptResult, Implementation,
+    JsonObject, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult,
+    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, Prompt, PromptMessage,
+    ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+    ResourceContents, ResourceTemplate, Role, ServerCapabilities, ServerConfig, ServerNotification,
+    ServerRequest, Tool,
 };
 use rmcp::service::{Peer, RequestContext};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -139,6 +142,78 @@ impl ServerHandler for TestServer {
         let outcome = tool_outcome(&request.name, &context).await?;
         Ok(CallToolResponse::from(outcome))
     }
+
+    fn list_prompts(
+        &self,
+        request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, ErrorData>> {
+        ready(Ok(prompt_page(request)))
+    }
+
+    fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<GetPromptResponse, ErrorData>> {
+        let name = request
+            .arguments
+            .as_ref()
+            .and_then(|arguments| arguments.get("name"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("stranger");
+        let message = PromptMessage::new_text(Role::User, format!("hello {name}"));
+        let result = GetPromptResult::new(vec![message]);
+        ready(Ok(GetPromptResponse::from(result)))
+    }
+
+    fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> {
+        ready(Ok(resource_listing()))
+    }
+
+    fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, ErrorData>> {
+        ready(Ok(template_listing()))
+    }
+
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> {
+        ready(Ok(read_response(request.uri)))
+    }
+}
+
+fn prompt_page(request: Option<PaginatedRequestParams>) -> ListPromptsResult {
+    let prompt = match request.and_then(|params| params.cursor).as_deref() {
+        Some("more") => Prompt::new("farewell", Some("says goodbye"), None),
+        _ => Prompt::new("greet", Some("says hello"), None),
+    };
+    ListPromptsResult::with_all_items(vec![prompt])
+}
+
+fn resource_listing() -> ListResourcesResult {
+    ListResourcesResult::with_all_items(vec![Resource::new("file:///notes.txt", "notes")])
+}
+
+fn template_listing() -> ListResourceTemplatesResult {
+    ListResourceTemplatesResult::with_all_items(vec![ResourceTemplate::new(
+        "file:///{name}",
+        "file",
+    )])
+}
+
+fn read_response(uri: String) -> ReadResourceResponse {
+    let contents = ResourceContents::text("the notes' text", uri);
+    ReadResourceResponse::from(ReadResourceResult::new(vec![contents]))
 }
 
 fn one_page_listing(server: &TestServer) -> ListToolsResult {

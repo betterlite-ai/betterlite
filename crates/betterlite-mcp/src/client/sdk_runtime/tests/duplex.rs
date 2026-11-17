@@ -1,8 +1,13 @@
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures_util::FutureExt as _;
+use rmcp::model::{
+    GetPromptResult, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult,
+    ReadResourceResult,
+};
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 use rmcp::transport::async_rw::AsyncRwTransport;
@@ -12,11 +17,13 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use crate::client::cleanup::http_client::CleanupScope;
-use crate::client::sdk_runtime::session::SdkSessionContext;
+use crate::client::sdk_runtime::session::calls::WireRequest;
+use crate::client::sdk_runtime::session::{SdkSession, SdkSessionContext};
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::client::SessionClient;
 use crate::client::sessions::error::{ExitFailure, SessionError};
 use crate::client::sessions::factory::{HttpClientConfig, SseRequest};
+use crate::client::sessions::run::run_with_session;
 use crate::client::sessions::runtime::{HttpClientHandle, McpRuntime, SessionOptions};
 use crate::client::sessions::stream::MessageHandler;
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext, TransportType};
@@ -205,4 +212,80 @@ async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
         .expect("the call finished")
         .unwrap_err();
     assert!(matches!(error, SessionError::ReadTimeout(_)), "{error}");
+}
+
+#[tokio::test]
+async fn the_wire_helpers_carry_the_prompt_and_resource_results() {
+    let mut client = duplex_client(support::CALL_TIMEOUT);
+    run_with_session(
+        &mut client,
+        async |session| {
+            check_prompt_wire(session).await;
+            check_resource_wire(session).await;
+            Ok(())
+        },
+        false,
+    )
+    .await
+    .unwrap();
+}
+
+async fn check_prompt_wire(session: &mut SdkSession) {
+    let first: ListPromptsResult = serde_json::from_str(
+        &session
+            .wire_request(WireRequest::ListPrompts(None))
+            .await
+            .expect("the first prompt page"),
+    )
+    .expect("the first prompt page decodes");
+    assert_eq!(first.prompts[0].name, "greet");
+    let second: ListPromptsResult = serde_json::from_str(
+        &session
+            .wire_request(WireRequest::ListPrompts(Some("more")))
+            .await
+            .expect("the second prompt page"),
+    )
+    .expect("the second prompt page decodes");
+    assert_eq!(second.prompts[0].name, "farewell");
+    let mut arguments = BTreeMap::new();
+    arguments.insert("name".to_owned(), "ada".to_owned());
+    let greeting: GetPromptResult = serde_json::from_str(
+        &session
+            .get_prompt_wire("greet", Some(&arguments))
+            .await
+            .expect("the greeting prompt"),
+    )
+    .expect("the greeting prompt decodes");
+    let text = greeting.messages[0]
+        .content
+        .as_text()
+        .expect("a text prompt message");
+    assert_eq!(text.text, "hello ada");
+}
+
+async fn check_resource_wire(session: &mut SdkSession) {
+    let resources: ListResourcesResult = serde_json::from_str(
+        &session
+            .wire_request(WireRequest::ListResources(None))
+            .await
+            .expect("the resource page"),
+    )
+    .expect("the resource page decodes");
+    assert_eq!(resources.resources[0].uri, "file:///notes.txt");
+    let templates: ListResourceTemplatesResult = serde_json::from_str(
+        &session
+            .wire_request(WireRequest::ListResourceTemplates(None))
+            .await
+            .expect("the template page"),
+    )
+    .expect("the template page decodes");
+    assert_eq!(templates.resource_templates[0].name, "file");
+    let contents: ReadResourceResult = serde_json::from_str(
+        &session
+            .wire_request(WireRequest::ReadResource("file:///notes.txt"))
+            .await
+            .expect("the resource contents"),
+    )
+    .expect("the resource contents decode");
+    assert_eq!(contents.contents[0].uri, "file:///notes.txt");
 }
