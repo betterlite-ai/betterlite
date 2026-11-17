@@ -48,6 +48,11 @@ enum StepResult {
     FormatFailure { text: Option<String> },
 }
 
+struct Committed {
+    id: bool,
+    time: bool,
+}
+
 #[derive(serde::Serialize)]
 struct StateView {
     response_id: Option<String>,
@@ -83,14 +88,16 @@ impl Helper for Op {
                     frame: state.mark_emitted(frame.clone()),
                 },
                 Step::FormatFailure { failure } => {
-                    let id_committed = state
-                        .response_id
-                        .as_deref()
-                        .is_some_and(|id| !id.is_empty());
-                    let time_committed = state.created_at.is_some();
+                    let committed = Committed {
+                        id: state
+                            .response_id
+                            .as_deref()
+                            .is_some_and(|id| !id.is_empty()),
+                        time: state.created_at.is_some(),
+                    };
                     let text = state
                         .format_failure(failure)
-                        .map(|frame| mask_frame(&frame, id_committed, time_committed));
+                        .map(|frame| mask_frame(&frame, committed));
                     StepResult::FormatFailure { text }
                 }
             });
@@ -126,7 +133,7 @@ fn build_state(redaction: Redaction) -> Result<ResponsesStreamErrorState, Box<He
     Ok(ResponsesStreamErrorState::new(now, next_id, redactor))
 }
 
-fn mask_frame(frame: &str, id_committed: bool, time_committed: bool) -> String {
+fn mask_frame(frame: &str, committed: Committed) -> String {
     let Some(data) = frame
         .strip_prefix(FRAME_PREFIX)
         .and_then(|rest| rest.strip_suffix(FRAME_SUFFIX))
@@ -140,10 +147,13 @@ fn mask_frame(frame: &str, id_committed: bool, time_committed: bool) -> String {
         return frame.to_owned();
     };
     let mut masked = frame.to_owned();
-    if !id_committed && let Some(id) = response.get("id").and_then(Value::as_str) {
+    if !committed.id
+        && let Some(id) = response.get("id").and_then(Value::as_str)
+    {
         masked = masked.replace(id, MASKED_ID);
     }
-    if !time_committed && let Some(created_at) = response.get("created_at").and_then(Value::as_i64)
+    if !committed.time
+        && let Some(created_at) = response.get("created_at").and_then(Value::as_i64)
     {
         masked = masked.replace(&created_at.to_string(), &MASKED_TIME.to_string());
     }
