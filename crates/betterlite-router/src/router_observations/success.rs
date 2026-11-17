@@ -43,6 +43,7 @@ const SKIPPED_CALL_TYPES: [&str; 4] = [
     "aretrieve_batch",
 ];
 
+#[must_use]
 pub fn on_success(
     observations: &RouterObservations<'_>,
     event: &SuccessEvent<'_>,

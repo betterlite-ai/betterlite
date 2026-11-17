@@ -1,6 +1,8 @@
 import asyncio
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Annotated, ClassVar, Final, Literal, Protocol
 from unittest.mock import patch
 
@@ -232,6 +234,12 @@ def optional(target: dict[str, object], key: str, value: object | None) -> None:
         target[key] = value
 
 
+def dump_diagnostic(name: str, body: str) -> None:
+    directory = Path(__file__).resolve().parents[4] / ".git" / "betterlite" / "B397" / "gate"
+    _ = directory.mkdir(parents=True, exist_ok=True)
+    _ = (directory / f"b397-{name}-{os.getpid()}.txt").write_text(body)
+
+
 def build_exception(failure: FailureInput) -> Exception:
     factory = _FACTORIES.get(failure.class_name)
     if factory is None:
@@ -264,23 +272,30 @@ class RouterObservations(Operation):
 
     @override
     def run(self) -> Output:
+        dump_diagnostic("python-input", self.model_dump_json())
         clock = FixedClock(self.now_millis)
-        with (
-            patch.object(litellm.router, "get_utc_datetime", clock.utc_now),
-            patch.object(litellm, "allowed_fails", self.router.default_allowed_fails),
-            patch.object(cooldown_handlers, "DEFAULT_FAILURE_THRESHOLD_PERCENT", _FAILURE_THRESHOLD_PERCENT),
-            patch.object(
-                cooldown_handlers,
-                "DEFAULT_FAILURE_THRESHOLD_MINIMUM_REQUESTS",
-                _FAILURE_THRESHOLD_MINIMUM,
-            ),
-            patch.object(
-                cooldown_handlers,
-                "SINGLE_DEPLOYMENT_TRAFFIC_FAILURE_THRESHOLD",
-                _SINGLE_DEPLOYMENT_TRAFFIC,
-            ),
-        ):
-            return asyncio.run(self.execute())
+        try:
+            with (
+                patch.object(litellm.router, "get_utc_datetime", clock.utc_now),
+                patch.object(litellm, "allowed_fails", self.router.default_allowed_fails),
+                patch.object(cooldown_handlers, "DEFAULT_FAILURE_THRESHOLD_PERCENT", _FAILURE_THRESHOLD_PERCENT),
+                patch.object(
+                    cooldown_handlers,
+                    "DEFAULT_FAILURE_THRESHOLD_MINIMUM_REQUESTS",
+                    _FAILURE_THRESHOLD_MINIMUM,
+                ),
+                patch.object(
+                    cooldown_handlers,
+                    "SINGLE_DEPLOYMENT_TRAFFIC_FAILURE_THRESHOLD",
+                    _SINGLE_DEPLOYMENT_TRAFFIC,
+                ),
+            ):
+                output = asyncio.run(self.execute())
+        except ProbeError as error:
+            dump_diagnostic("python-error", f"{error.kind}: {error}")
+            raise
+        dump_diagnostic("python-output", output.model_dump_json())
+        return output
 
     async def execute(self) -> Output:
         router = self.build_router()

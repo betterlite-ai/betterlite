@@ -208,7 +208,14 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let scenario = Scenario::new(&input.0)?;
+    dump_diagnostic("payload", &serde_json::to_string(input).unwrap_or_default());
+    let outcome = run_steps(&input.0);
+    dump_diagnostic("outcome", &format!("{outcome:?}"));
+    outcome
+}
+
+fn run_steps(payload: &Payload) -> Result<ProbeOutput, OperationError> {
+    let scenario = Scenario::new(payload)?;
     let mut metadata = ObservationMetadata::default();
     let mut steps = Vec::with_capacity(scenario.payload.steps.len());
     for step in &scenario.payload.steps {
@@ -216,6 +223,15 @@ pub(crate) fn run(
         steps.push(scenario.observe(key, cooldown));
     }
     Ok(ProbeOutput::RouterObservations(Output { steps }))
+}
+
+fn dump_diagnostic(name: &str, body: &str) {
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(".git/betterlite/B397/gate");
+    let _created = std::fs::create_dir_all(&directory);
+    let path = directory.join(format!("b397-{name}-{}.txt", std::process::id()));
+    let _written = std::fs::write(path, body);
 }
 
 fn group_id(target_id: &str, index: u32) -> String {
