@@ -2,7 +2,8 @@
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use crate::tool_permission::types::{PermissionError, mapping_value};
+use crate::guardrail_message_scope::Object;
+use crate::tool_permission::types::{PermissionError, mapping_value, object_list};
 use crate::tool_permission_responses::tests::support::object;
 
 use super::rewrite_openai_responses;
@@ -32,11 +33,11 @@ fn text_of(value: Option<&GuardrailValue>) -> Option<&str> {
     }
 }
 
-fn message(response: &crate::guardrail_message_scope::Object) -> &GuardrailValue {
+fn message(response: &Object) -> &GuardrailValue {
     mapping_value(
         response
             .get("choices")
-            .and_then(crate::tool_permission::types::object_list)
+            .and_then(object_list)
             .expect("choices")
             .first()
             .expect("choice"),
@@ -53,7 +54,7 @@ fn rewrite_openai_responses_removes_a_denied_call_and_keeps_the_finish_reason() 
     rewrite_openai_responses(&mut response, &[denied("c1", "shell")]);
     let choice = response
         .get("choices")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .and_then(|choices| choices.first())
         .expect("choice");
     assert_eq!(
@@ -62,7 +63,7 @@ fn rewrite_openai_responses_removes_a_denied_call_and_keeps_the_finish_reason() 
     );
     let message = message(&response);
     let kept = mapping_value(message, "tool_calls")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .expect("tool calls");
     assert_eq!(kept.len(), 1);
     assert_eq!(
@@ -83,7 +84,7 @@ fn rewrite_openai_responses_stops_when_every_tool_call_is_removed() {
     rewrite_openai_responses(&mut response, &[denied("c1", "shell")]);
     let choice = response
         .get("choices")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .and_then(|choices| choices.first())
         .expect("choice");
     assert_eq!(
@@ -105,7 +106,7 @@ fn rewrite_openai_responses_keeps_a_finish_reason_that_is_not_tool_calling() {
     rewrite_openai_responses(&mut response, &[denied("c1", "shell")]);
     let choice = response
         .get("choices")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .and_then(|choices| choices.first())
         .expect("choice");
     assert_eq!(
@@ -148,7 +149,7 @@ fn rewrite_openai_responses_removes_a_denied_legacy_function_call() {
     rewrite_openai_responses(&mut response, &[denied("legacy_function_call_0", "shell")]);
     let choice = response
         .get("choices")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .and_then(|choices| choices.first())
         .expect("choice");
     assert_eq!(
@@ -169,7 +170,7 @@ fn rewrite_openai_responses_leaves_a_legacy_call_the_denial_does_not_name() {
     rewrite_openai_responses(&mut response, &[denied("call_9", "read")]);
     let choice = response
         .get("choices")
-        .and_then(crate::tool_permission::types::object_list)
+        .and_then(object_list)
         .and_then(|choices| choices.first())
         .expect("choice");
     assert_eq!(

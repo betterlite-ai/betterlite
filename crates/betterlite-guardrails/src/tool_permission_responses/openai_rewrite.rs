@@ -48,7 +48,7 @@ fn rewrite_choice(
     let kept = filter_tool_calls(message, errors, &mut error_messages);
     message.insert("tool_calls".to_owned(), kept);
     drop_legacy_function_call(message, choice_index, errors, &mut error_messages);
-    append_error_messages(message, error_messages);
+    append_error_messages(message, &error_messages);
     let removed_every_tool = no_tools_left(message);
     if removed_every_tool && finish_reason_is_tool {
         choice_fields.insert(
@@ -100,7 +100,7 @@ fn drop_legacy_function_call(
 }
 
 // LiteLLM joins the denials with newlines and appends them two newlines after any existing content.
-fn append_error_messages(message: &mut Object, error_messages: Vec<String>) {
+fn append_error_messages(message: &mut Object, error_messages: &[String]) {
     if error_messages.is_empty() {
         return;
     }
@@ -110,7 +110,7 @@ fn append_error_messages(message: &mut Object, error_messages: Vec<String>) {
         None | Some(_) => None,
     };
     let content = match existing {
-        Some(existing) => format!("{existing}\n\n{joined}"),
+        Some(previous) => format!("{previous}\n\n{joined}"),
         None => joined,
     };
     message.insert("content".to_owned(), GuardrailValue::Text(content));

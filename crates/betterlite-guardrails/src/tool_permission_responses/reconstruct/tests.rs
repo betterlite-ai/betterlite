@@ -59,8 +59,8 @@ fn reconstruct_chunk_defaults_missing_choice_fields_to_null() {
         mapping_value(choice, "finish_reason"),
         Some(&GuardrailValue::Null)
     );
-    assert!(chunk.get("id").is_none());
-    assert!(chunk.get("usage").is_none());
+    assert!(!chunk.contains_key("id"));
+    assert!(!chunk.contains_key("usage"));
 }
 
 #[test]

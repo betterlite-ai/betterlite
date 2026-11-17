@@ -7,7 +7,7 @@ use super::extraction::ToolCallInfo;
 pub fn permission_error_result(call: &ToolCallInfo, error: &PermissionError) -> ToolResult {
     let mut content = format!("Permission denied: {}", error.message);
     if let Some(rule_id) = &error.rule_id {
-        content.push_str(&format!(" (Rule: {rule_id})"));
+        content = format!("{content} (Rule: {rule_id})");
     }
     ToolResult {
         kind: "tool_result".to_owned(),

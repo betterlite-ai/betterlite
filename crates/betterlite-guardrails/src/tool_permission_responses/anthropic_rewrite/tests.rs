@@ -2,6 +2,7 @@
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
+use crate::guardrail_message_scope::Object;
 use crate::tool_permission::types::{PermissionError, mapping_value, object_list};
 use crate::tool_permission_responses::evaluate::DeniedToolCall;
 use crate::tool_permission_responses::extraction::ToolCallInfo;
@@ -25,7 +26,7 @@ fn denied(id: &str, name: &str) -> DeniedToolCall {
     }
 }
 
-fn content_blocks(response: &crate::guardrail_message_scope::Object) -> &[GuardrailValue] {
+fn content_blocks(response: &Object) -> &[GuardrailValue] {
     response
         .get("content")
         .and_then(object_list)

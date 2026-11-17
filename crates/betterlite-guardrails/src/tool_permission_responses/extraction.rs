@@ -49,11 +49,11 @@ fn modern_tool_call(value: &GuardrailValue) -> Option<ToolCallInfo> {
         return None;
     }
     let function = mapping_value(value, "function");
-    let name = function.and_then(|function| match mapping_value(function, "name") {
+    let name = function.and_then(|callee| match mapping_value(callee, "name") {
         Some(GuardrailValue::Text(name)) => Some(name.clone()),
         None | Some(_) => None,
     });
-    let arguments = function.and_then(|function| mapping_value(function, "arguments").cloned());
+    let arguments = function.and_then(|callee| mapping_value(callee, "arguments").cloned());
     let kind = match mapping_value(value, "type") {
         Some(GuardrailValue::Text(kind)) => Some(kind.clone()),
         None | Some(_) => None,
