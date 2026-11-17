@@ -182,6 +182,16 @@ fn buffered_success() {
     });
     assert_eq!(synchronous.posts_pooled, 1);
     assert_reply(&synchronous);
+
+    // a supplied sync client is the one a sync buffered call keeps
+    let kept = execute(Setup {
+        supplied_kind: ClientKind::Sync,
+        optional_params: speed_options(),
+        ..Setup::default()
+    });
+    assert_eq!(kept.posts_supplied, 1);
+    assert_eq!(kept.posts_pooled, 0);
+    assert_reply(&kept);
 }
 
 fn assert_reply(run: &Run) {
