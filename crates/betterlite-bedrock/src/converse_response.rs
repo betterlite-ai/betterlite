@@ -37,6 +37,12 @@ impl ConversionError {
         self,
         headers: &[(String, String)],
     ) -> Result<BedrockError, HeaderError> {
+        // The shared BedrockError keeps HTTP error headers as ASCII text; refuse one it could not carry.
+        for (name, value) in headers {
+            if !name.is_ascii() || !value.is_ascii() {
+                return Err(HeaderError::NotAscii { name: name.clone() });
+            }
+        }
         BedrockError::try_from(ErrorInput {
             status_code: 422,
             message: self.to_string(),

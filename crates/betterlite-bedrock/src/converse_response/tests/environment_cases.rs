@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use crate::bedrock_settings::HeaderError;
 use crate::converse_response::ReplyFieldError;
 use crate::converse_response::environment::{
     get_error_class, should_fake_stream, validate_environment,
@@ -254,12 +255,15 @@ fn an_unreadable_body_is_logged_by_its_byte_count() {
     assert_eq!(run.status(), Some(422));
 }
 
-// The shared BedrockError holds error headers as ASCII, so a 422 whose headers are not ASCII fails as a header error.
+// The conversion refuses an upstream header it cannot encode as ASCII, so the 422 becomes a header error.
 fn a_422_with_non_ascii_headers_is_a_header_error() {
     let mut fixture = fixture();
     fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-\u{e9}"))];
     let run = convert(&fixture, "{not json");
-    assert!(matches!(run.failure(), TransformError::Header(_)));
+    assert!(matches!(
+        run.failure(),
+        TransformError::Header(HeaderError::NotAscii { name }) if name.as_str() == "x-amzn-requestid"
+    ));
 }
 
 fn error_class_delegates_the_supplied_fields() {
