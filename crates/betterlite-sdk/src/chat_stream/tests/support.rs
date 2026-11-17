@@ -129,12 +129,13 @@ fn config(mode: CallMode) -> ChatStreamConfig {
 }
 
 fn usage_config(mode: CallMode) -> ChatStreamConfig {
-    let mut usage = config(mode);
-    usage.stream_options = Some(StreamOptions {
-        include_usage: true,
-    });
-    usage.send_stream_usage = true;
-    usage
+    ChatStreamConfig {
+        stream_options: Some(StreamOptions {
+            include_usage: true,
+        }),
+        send_stream_usage: true,
+        ..config(mode)
+    }
 }
 
 struct FakeClock {

@@ -234,51 +234,27 @@ async fn finalize_usage_only_build_logs_the_fallback() {
 }
 
 #[tokio::test]
-async fn finalize_synthesized_finish_logs_only_for_blocking() {
-    let async_world = World::new();
+async fn finalize_async_synthesized_finish_logs_nothing() {
+    let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
-    let mut stream = start(
-        &async_world,
-        &mut correlation,
-        config(CallMode::Async),
-        source,
-    );
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
 
     assert!(stream.next().await.unwrap().is_some());
     assert!(stream.next().await.unwrap().is_some());
-    assert!(
-        async_world
-            .logging
-            .logged
-            .lock()
-            .unwrap()
-            .successes
-            .is_empty()
-    );
+    assert!(world.logging.logged.lock().unwrap().successes.is_empty());
+}
 
-    let blocking_world = World::new();
-    let mut blocking_correlation = CorrelationContext::default();
+#[tokio::test]
+async fn finalize_blocking_synthesized_finish_logs_once() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
-    let mut blocking = start(
-        &blocking_world,
-        &mut blocking_correlation,
-        config(CallMode::Blocking),
-        source,
-    );
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
 
-    assert!(blocking.next().await.unwrap().is_some());
-    assert!(blocking.next().await.unwrap().is_some());
-    assert_eq!(
-        blocking_world
-            .logging
-            .logged
-            .lock()
-            .unwrap()
-            .successes
-            .len(),
-        1
-    );
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(stream.next().await.unwrap().is_some());
+    assert_eq!(world.logging.logged.lock().unwrap().successes.len(), 1);
 }
 
 #[tokio::test]

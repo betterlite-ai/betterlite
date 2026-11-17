@@ -73,13 +73,13 @@ async fn failure_rules_rejection_becomes_a_fallback() {
     let world = World::new();
     world.rules.reject_with("no good");
     let mut correlation = CorrelationContext::default();
-    let source = FakeSource::new(vec![content_chunk("Hel")]);
+    let source = FakeSource::new(vec![content_chunk("He")]);
     let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
 
     let error = stream.next().await.unwrap_err();
-    assert_eq!(world.rules.seen.lock().unwrap()[0], "Hel");
+    assert_eq!(world.rules.seen.lock().unwrap()[0], "He");
     let details = fallback_of(&error);
-    assert_eq!(details.generated_content, "Hel");
+    assert_eq!(details.generated_content, "He");
     assert!(!details.is_pre_first_chunk);
     assert_eq!(details.original_status.0, 500);
     assert!(details.context.message.contains("rule check"));

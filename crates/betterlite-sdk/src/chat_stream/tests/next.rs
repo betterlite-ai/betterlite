@@ -3,21 +3,21 @@ async fn next_returns_chunks_in_order() {
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![
-        content_chunk("Hel"),
-        content_chunk("lo"),
+        content_chunk("He"),
+        content_chunk("y"),
         finish_chunk(),
     ]);
     let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
 
     let first = only_chunk(stream.next().await);
-    assert_eq!(content_of(&first), "Hel");
+    assert_eq!(content_of(&first), "He");
     assert_eq!(first.id, CHAT_ID);
     assert_eq!(first.model, MODEL);
     assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
     assert!(first.hidden_params.get("usage").is_none());
 
     let second = only_chunk(stream.next().await);
-    assert_eq!(content_of(&second), "lo");
+    assert_eq!(content_of(&second), "y");
     assert!(second.choices[0].delta.role.is_none());
 
     let last = only_chunk(stream.next().await);
@@ -361,12 +361,12 @@ async fn next_stop_iteration_synthesizes_finish() {
 async fn next_rules_see_the_content_so_far() {
     let world = World::new();
     let mut correlation = CorrelationContext::default();
-    let source = FakeSource::new(vec![content_chunk("Hel"), content_chunk("lo")]);
+    let source = FakeSource::new(vec![content_chunk("He"), content_chunk("y")]);
     let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
 
     assert!(stream.next().await.unwrap().is_some());
     assert!(stream.next().await.unwrap().is_some());
     let seen = world.rules.seen.lock().unwrap();
-    assert_eq!(seen[0], "Hel");
-    assert_eq!(seen[1], "Hello");
+    assert_eq!(seen[0], "He");
+    assert_eq!(seen[1], "Hey");
 }

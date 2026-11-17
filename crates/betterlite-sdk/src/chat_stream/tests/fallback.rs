@@ -4,11 +4,11 @@ async fn failing_after_content(class: ErrorClass, provider: Option<&str>) -> Cha
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::scripted(vec![
-        Ok(content_chunk("Hel")),
+        Ok(content_chunk("He")),
         Err(source_error(SourceFailure::Other, class, "upstream died")),
     ]);
     let mut stream = start(&world, &mut correlation, config, source);
-    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hel");
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "He");
     stream.next().await.unwrap_err()
 }
 
@@ -37,7 +37,7 @@ async fn fallback_timeout_status_raises_directly() {
 async fn fallback_bad_gateway_keeps_generated_content() {
     let error = failing_after_content(bad_gateway_class("upstream died"), None).await;
     let details = fallback_of(&error);
-    assert_eq!(details.generated_content, "Hel");
+    assert_eq!(details.generated_content, "He");
     assert!(!details.is_pre_first_chunk);
     assert_eq!(details.original_status.0, 502);
     assert_eq!(details.context.model.as_deref(), Some(MODEL));
