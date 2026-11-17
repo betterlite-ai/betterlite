@@ -187,7 +187,7 @@ pub(super) fn tool_search_tool_name() {
     let tools = json!([
         {"type": "tool_search_tool_regex_20251119"},
         {"type": "tool_search_tool_bm25_20251119", "name": "search_bm25"},
-        {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "eager_input_streaming": true, "custom": {"defer_loading": true}},
     ]);
     let request = chat_request(
         "claude-tools",
@@ -205,7 +205,7 @@ pub(super) fn tool_search_tool_name() {
         body["tools"],
         json!([
             {"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"},
-            {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true},
         ])
     );
     assert_eq!(
