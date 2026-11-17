@@ -9,8 +9,10 @@ use super::support::{
     Fixture, MapFetcher, RefusingFetcher, Session, body_json, catalog, chat_request, headers_of,
     map_of, messages_of, model_cost_of,
 };
-use crate::claude_invoke::ClaudeInvokeError;
 use crate::claude_invoke::request::ClaudeInvokeRequest;
+use crate::claude_invoke::{
+    ClaudeInvokeError, STRIPS_BILLING_METADATA, USES_ASYNC_TRANSFORM_REQUEST,
+};
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 
@@ -505,6 +507,7 @@ pub(super) fn remote_url_inlined() {
 }
 
 pub(super) fn async_media_order() {
+    assert_eq!([USES_ASYNC_TRANSFORM_REQUEST], [true]);
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
     let defaults = OptionDefaults::default();
@@ -617,4 +620,28 @@ pub(super) fn media_fetch() {
     }
     assert_eq!(refusing.transport_attempts(), 0);
     assert_eq!(refusing.calls(), vec!["https://example.test/pic.png"]);
+}
+
+pub(super) fn billing_header() {
+    let fixture = plain_fixture();
+    let mut session = Session::new(&fixture).expect("the session builds");
+    let defaults = OptionDefaults::default();
+    let catalog = catalog();
+    let billing = messages_of(
+        r#"[{"role": "system", "content": "x-anthropic-billing-header: abc"}, {"role": "user", "content": "hello"}]"#,
+    );
+    let request = chat_request(
+        "claude-plain",
+        billing,
+        map_of(r#"{"max_tokens": 64}"#),
+        AnthropicHeaders::default(),
+        &defaults,
+        &catalog,
+    );
+    let fetcher = MapFetcher::default();
+    let prepared = session
+        .transform(&request, &fetcher)
+        .expect("the billing request transforms");
+    assert!(body_json(&prepared).get("system").is_none());
+    assert_eq!([STRIPS_BILLING_METADATA], [true]);
 }

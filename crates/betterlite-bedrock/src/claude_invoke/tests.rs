@@ -24,3 +24,8 @@ fn claude_invoke_cases(#[case] case: fn()) {
 fn claude_invoke_media_fetch() {
     cases::media_fetch();
 }
+
+#[test]
+fn claude_invoke_strips_billing_header() {
+    cases::billing_header();
+}
