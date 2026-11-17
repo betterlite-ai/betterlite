@@ -49,6 +49,7 @@ const VALID_RUN_ID: &[u8] =
     Some("after_cr")
 )]
 #[case::surrounding_spaces_are_trimmed(b"data:   {\"run_id\": \"trimmed\"}  \n", Some("trimmed"))]
+#[case::a_unit_separator_pads_the_frame(b"data:\x1f{\"run_id\": \"unit\"}\x1f\n", Some("unit"))]
 #[case::a_bare_data_line(b"data:\n", None)]
 #[case::no_frames(b"", None)]
 #[case::a_malformed_byte_becomes_a_replacement_character(

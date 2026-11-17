@@ -1,20 +1,14 @@
 task: B3648
 deviations:
-  - what: An unparseable TINYFISH_COST_PER_STEP logs a warning and falls back to 0.016 for that run instead of failing the request.
-    why: LiteLLM catches the float() ValueError, warns and returns the published default, so the run stays billable. betterlite keeps that warn-and-return path and spells the warning in its own words.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L92-L104
-  - what: Malformed UTF-8 in SSE frames is decoded with U+FFFD replacement characters instead of being rejected, so a corrupted frame cannot drop the run's billing.
-    why: LiteLLM decodes with errors="replace" and then splits lines, and SSE processing is best-effort: one bad byte should not cost the whole run.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L82-L83
-  - what: The first SSE frame carrying a run_id wins; later frames are still parsed, and a different run_id in them is ignored.
-    why: LiteLLM returns on the first non-empty run_id. Frames of one run should agree, and the first one is what the stream announced, so this is treated as the authoritative id.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L411-L425
   - what: A TINYFISH_COST_PER_STEP text that Python's float() reads but a decimal number cannot, such as inf, nan, 1_0 or 1e400, logs the warning and uses the default rate.
     why: LiteLLM's float() accepts non-finite values, underscore digit grouping and values that overflow to infinity; betterlite reads the rate as a decimal, so those texts take the same warn-and-default path as any other non-number and the run is billed at 0.016 instead of an infinite or odd rate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L96-L104
   - what: A URL that the parser rejects, such as a request target with an unterminated IPv6 bracket, counts as no match in is_tinyfish_agent_url and in the request-logging and async-route checks, where LiteLLM lets the urlparse ValueError out of the check.
     why: Rust has no exceptions, and the predicates answer "this is not a TinyFish URL" for a target no URL parser can read, so the caller gets a rejection instead of a failed request. The same choice covers the path checks at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L134-L140.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L107-L109
+  - what: A run whose num_of_steps is an integer larger than i64 can hold is treated as a run the record cannot read, so the request is logged raw with no cost, where LiteLLM's unbounded int keeps the step count and bills it.
+    why: The run record stores num_of_steps as i64, and a number past that bound takes the same warn-and-no-cost path as any other shape the record cannot hold. The Agent API caps a run's duration, so a step count that large cannot come from a real run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/tinyfish.py#L33-L42
   - what: A run's response cost is num_of_steps times the rate in decimal arithmetic, so three steps at 0.07 cost exactly 0.21, where LiteLLM's float product is 0.21000000000000002.
     why: Money is a decimal in betterlite. The declared cost is a number and both values are the same rate; only the trailing float error differs, and the oracle cases avoid step counts where the two texts disagree.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L120-L129

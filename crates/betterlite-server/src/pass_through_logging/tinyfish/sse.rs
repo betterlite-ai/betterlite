@@ -12,14 +12,18 @@ pub fn run_id_from_sse_frames(frames: &[u8]) -> Option<String> {
     run_id_from_sse_lines(&split_lines(&text))
 }
 
-// The first frame that carries a non-empty run_id wins; later frames are read but never replace it.
+// The first frame with a non-empty run_id wins, as LiteLLM returns on the first match.
 #[must_use]
 pub fn run_id_from_sse_lines(lines: &[String]) -> Option<String> {
     for line in lines {
         let Some(raw) = line.strip_prefix("data:") else {
             continue;
         };
-        let Ok(value) = serde_json::from_str::<Json>(raw.trim()) else {
+        // Python's strip also removes the information separators that the line split leaves in place.
+        let trimmed = raw.trim_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+        });
+        let Ok(value) = serde_json::from_str::<Json>(trimmed) else {
             continue;
         };
         let Some(run) = parse_run(&value) else {
