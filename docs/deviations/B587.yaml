@@ -1,0 +1,101 @@
+task: B587
+deviations:
+  - what: >-
+      A created_at, ended_at, expires_at, cancel_initiated_at or archived_at
+      string is read with strict ISO 8601 rules, so a value Python's
+      datetime.fromisoformat accepts but RFC 3339 does not, such as
+      "2024-01-01T00:00:00." with a trailing dot, is treated as absent and the
+      field keeps its default instead of becoming the parsed instant.
+    why: >-
+      docs/compatibility.md allows the runtime that parses a declared string
+      field to be ours, and the accepted forms are the same for every value
+      both parsers understand, including epochs, naive date-times read as UTC,
+      fractional seconds, comma fractions and +0200 / +02 offsets. Only the
+      trailing-dot form differs, and it is not a form Anthropic sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L210-L228
+  - what: >-
+      A retrieval body that is not JSON fails with betterlite's parse error
+      over serde's message text, keeping LiteLLM's "Failed to parse Anthropic
+      batch response: " prefix, where LiteLLM interpolates Python's json
+      decoder text.
+    why: >-
+      docs/compatibility.md declares that Python's str() text is not ported.
+      The failure, its kind and the prefix are the same; only the wording of
+      the decoder detail differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L181-L185
+  - what: >-
+      A request_counts value that is not a JSON integer, or one that does not
+      fit a signed 64-bit integer, fails the retrieval with a typed error that
+      names the field, where LiteLLM sums Python's unbounded integers and
+      accepts a float.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that
+      names the field, and betterlite's batch counts are int64 everywhere.
+      Anthropic sends small integer counts, so no working setup reaches the
+      difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L230-L252
+  - what: >-
+      A retrieval that answers with a non-success status fails with a provider
+      error carrying the status and the response body as its message, where
+      LiteLLM lets httpx.HTTPStatusError out with its own rendered text.
+    why: >-
+      betterlite surfaces every provider status through one typed error, which
+      keeps the status, the class of failure and the body text. docs/
+      compatibility.md does not port Python exception text, and httpx's
+      rendering of the request URL is not part of the API's answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L114
+  - what: >-
+      A result row whose result carries no message fails the whole projection
+      with betterlite's decode error, where LiteLLM raises the KeyError from
+      response_json["result"]["message"] through its trailing
+      "except Exception as e: raise e".
+    why: >-
+      Both refuse to project such a row; only the error type and message
+      differ. docs/compatibility.md keeps Python exception text out of the
+      port, and a typed error lets the caller tell a malformed result body
+      from a transport failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L332-L343
+  - what: >-
+      Projecting a result body emits one post_call per projected row and one
+      pre_call for the whole body, each stamped with the injected clock's now,
+      where LiteLLM's transform_response calls neither hook and the handler
+      builds its Logging with start_time=None.
+    why: >-
+      betterlite's other chat paths log through pre_call and post_call, and its
+      timestamps come from the injected clock instead of the wall clock.
+      docs/compatibility.md keeps Python's wall-clock reads out of the port.
+      The projected ModelResponse, its usage and its content are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L58-L77
+kept_bugs:
+  - what: >-
+      get_complete_batch_url strips trailing slashes and appends the route
+      unless the base already ends with it, so a base that ends in
+      "/v1/messages/batches/" gets the route a second time and the request goes
+      to {base}/v1/messages/batches/v1/messages/batches.
+    why: >-
+      A setup whose api_base carries the route plus a trailing slash sends that
+      doubled path through LiteLLM today, and a gateway that rewrites the path
+      can rely on it. betterlite builds the same URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L91-L104
+  - what: >-
+      The handler resolves its key from ANTHROPIC_API_KEY alone, so a setup
+      holding only ANTHROPIC_AUTH_TOKEN fails with "Missing Anthropic API Key"
+      even though validate_environment would have sent that token as a Bearer
+      header.
+    why: >-
+      A retrieval under a token-only environment fails in LiteLLM with that
+      message, and a setup may match on it or treat it as the supported auth
+      path. betterlite keeps the same refusal and the same message; the
+      validate_environment auth rules are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1134-L1149
+  - what: >-
+      request_counts.completed maps succeeded and request_counts.failed maps
+      errored, while total sums processing, succeeded, errored, canceled and
+      expired, so total is not completed plus failed whenever a batch has
+      canceled, expired or processing requests.
+    why: >-
+      LiteLLM's batch object is what dashboards and callers of a working setup
+      read, and they already see a total that includes canceled and expired
+      requests. betterlite reports the same three numbers from the same five
+      counts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L230-L252
