@@ -23,8 +23,16 @@ use super::{fixed_clock, fixed_id, no_elapsed};
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DropCase {
+    pub channel: DropChannel,
     pub body: Value,
     pub data: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DropChannel {
+    Http,
+    Sdk,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,11 +71,11 @@ pub(crate) enum AzureOutcome {
     Timeout,
 }
 
-// a string body is the raw response text of an httpx status error; anything else is the SDK exception's body
+// the HTTP channel is the raw response text of an httpx status error, the SDK channel the exception's body
 pub(crate) fn drop_case(case: &DropCase) -> HelperResult {
-    let body = match &case.body {
-        Value::String(text) => ErrorBody::Http(text.as_bytes()),
-        other => ErrorBody::Sdk(other),
+    let body = match case.channel {
+        DropChannel::Http => ErrorBody::Http(case.body.as_str().unwrap_or_default().as_bytes()),
+        DropChannel::Sdk => ErrorBody::Sdk(&case.body),
     };
     let dropped = drop_params_from_unprocessable_entity_error(body, &case.data)
         .map_err(|error| failure("RejectedFieldsError", None, error.to_string()))?;

@@ -3,9 +3,9 @@ name: openai-output-limits-drop-sdk
 call:
   openai_output_limits:
     drop:
+      channel: sdk
       body:
-        error:
-          message: '{"detail":[{"loc":["body","temperature"]},{"loc":["body","top_p"]}]}'
+        message: '{"detail":[{"loc":["body","temperature"]},{"loc":["body","top_p"]}]}'
       data: {"model": "gpt-3.5-turbo", "temperature": 2, "top_p": 0.5, "messages": []}
 env: {}
 compare: {ignore: []}
