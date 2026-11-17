@@ -107,7 +107,7 @@ where
     Values: Serialize,
 {
     let mut class = LegacyConfig::new(family, default_max_tokens);
-    let mut configs = Vec::with_capacity(calls.len() + 1);
+    let mut configs = Vec::with_capacity(calls.len().saturating_add(1));
     configs.push(attribute_value(&class.get_config())?);
     for call in calls {
         apply(&mut class.attributes, call).map_err(|error| failure("ConstructorError", &error))?;
