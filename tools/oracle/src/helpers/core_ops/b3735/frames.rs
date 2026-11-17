@@ -11,7 +11,6 @@ use serde_json::{Map, Value, json};
 
 use super::{WireError, stream_items};
 
-#[derive(Default)]
 struct Assembled {
     id: Option<String>,
     model: Option<String>,
@@ -26,8 +25,22 @@ pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
     let parsed = parsed_sse_events(&joined_sse_stream(&stream_items(chunks))?);
     let message = serde_json::to_value(anthropic_message_start(&parsed)?).ok()?;
     let events = serde_json::to_value(parsed).ok()?;
-    let mut state = Assembled::default();
-    state.absorb_start(&message);
+    let usage = message.get("usage").filter(|fields| !fields.is_null());
+    let mut state = Assembled {
+        id: message.get("id").and_then(Value::as_str).map(str::to_owned),
+        model: message
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        input_tokens: usage
+            .and_then(|fields| fields.get("input_tokens"))
+            .and_then(integer),
+        output_tokens: usage
+            .and_then(|fields| fields.get("output_tokens"))
+            .and_then(integer),
+        text: String::new(),
+        stop_reason: None,
+    };
     for event in events.as_array()? {
         state.absorb(event);
     }
@@ -43,22 +56,9 @@ impl Assembled {
         }
     }
 
-    fn absorb_start(&mut self, message: &Value) {
-        if let Some(id) = message.get("id").and_then(Value::as_str) {
-            self.id = Some(id.to_owned());
-        }
-        if let Some(model) = message.get("model").and_then(Value::as_str) {
-            self.model = Some(model.to_owned());
-        }
-        if let Some(usage) = message.get("usage").filter(|usage| !usage.is_null()) {
-            self.input_tokens = usage.get("input_tokens").and_then(integer);
-            self.output_tokens = usage.get("output_tokens").and_then(integer);
-        }
-    }
-
     fn absorb_delta(&mut self, event: &Value) {
-        if let Some(text) = event
-            .get("delta")
+        let delta = event.get("delta");
+        if let Some(text) = delta
             .and_then(|fields| fields.get("text"))
             .and_then(Value::as_str)
         {

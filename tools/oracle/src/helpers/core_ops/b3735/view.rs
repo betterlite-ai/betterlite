@@ -6,7 +6,10 @@ use betterlite_core::guardrails::model_armor::streams::wire::OutputParts;
 use betterlite_core::guardrails::streaming_rewrite::shapes::RequestData;
 use serde_json::{Map, Value, json};
 
-use super::{APPLIED_KEY, METADATA_KEY, RESPONSE_KEY, STATUS_KEY};
+use super::{APPLIED_KEY, METADATA_KEY};
+
+const RESPONSE_KEY: &str = "_model_armor_response";
+const STATUS_KEY: &str = "_model_armor_status";
 
 pub(super) fn item(chunk: &Chunk) -> Value {
     match chunk {
@@ -17,20 +20,34 @@ pub(super) fn item(chunk: &Chunk) -> Value {
 
 fn payload_view(payload: &GuardrailValue) -> Value {
     match text_field(field(payload, "type")) {
-        Some(kind) if kind.starts_with("response.") || kind == "error" => event_view(payload),
-        Some(_) | None => chat_view(payload),
+        Some("error") => {
+            let error = field(payload, "error");
+            json!({
+                "kind": "error_item",
+                "error_type": plain(error.and_then(|value| field(value, "type"))),
+                "code": plain(error.and_then(|value| field(value, "code"))),
+                "message": plain(error.and_then(|value| field(value, "message"))),
+                "param": plain(error.and_then(|value| field(value, "param"))),
+            })
+        }
+        Some(kind) if kind.starts_with("response.") => json!({
+            "kind": "event",
+            "type": plain(field(payload, "type")),
+            "delta": plain(field(payload, "delta")),
+            "item_id": plain(field(payload, "item_id")),
+            "output_index": plain(field(payload, "output_index")),
+            "content_index": plain(field(payload, "content_index")),
+            "summary_index": plain(field(payload, "summary_index")),
+        }),
+        Some(_) | None => json!({
+            "kind": "chat",
+            "id": plain(field(payload, "id")),
+            "object": plain(field(payload, "object")),
+            "model": plain(field(payload, "model")),
+            "created": plain(field(payload, "created")),
+            "choices": choices_view(payload),
+        }),
     }
-}
-
-fn chat_view(payload: &GuardrailValue) -> Value {
-    json!({
-        "kind": "chat",
-        "id": plain(field(payload, "id")),
-        "object": plain(field(payload, "object")),
-        "model": plain(field(payload, "model")),
-        "created": plain(field(payload, "created")),
-        "choices": choices_view(payload),
-    })
 }
 
 fn choices_view(payload: &GuardrailValue) -> Value {
@@ -38,46 +55,16 @@ fn choices_view(payload: &GuardrailValue) -> Value {
         return Value::Array(Vec::new());
     };
     let mut views = Vec::with_capacity(items.len());
-    for item in items {
-        views.push(choice_view(item));
+    for choice in items {
+        let delta = field(choice, "delta");
+        views.push(json!({
+            "index": plain(field(choice, "index")),
+            "finish_reason": plain(field(choice, "finish_reason")),
+            "role": plain(delta.and_then(|value| field(value, "role"))),
+            "content": plain(delta.and_then(|value| field(value, "content"))),
+        }));
     }
     Value::Array(views)
-}
-
-fn choice_view(choice: &GuardrailValue) -> Value {
-    let delta = field(choice, "delta");
-    json!({
-        "index": plain(field(choice, "index")),
-        "finish_reason": plain(field(choice, "finish_reason")),
-        "role": plain(delta.and_then(|value| field(value, "role"))),
-        "content": plain(delta.and_then(|value| field(value, "content"))),
-    })
-}
-
-fn event_view(payload: &GuardrailValue) -> Value {
-    if text_field(field(payload, "type")) == Some("error") {
-        return error_view(payload);
-    }
-    json!({
-        "kind": "event",
-        "type": plain(field(payload, "type")),
-        "delta": plain(field(payload, "delta")),
-        "item_id": plain(field(payload, "item_id")),
-        "output_index": plain(field(payload, "output_index")),
-        "content_index": plain(field(payload, "content_index")),
-        "summary_index": plain(field(payload, "summary_index")),
-    })
-}
-
-fn error_view(payload: &GuardrailValue) -> Value {
-    let error = field(payload, "error");
-    json!({
-        "kind": "error_item",
-        "error_type": plain(error.and_then(|value| field(value, "type"))),
-        "code": plain(error.and_then(|value| field(value, "code"))),
-        "message": plain(error.and_then(|value| field(value, "message"))),
-        "param": plain(error.and_then(|value| field(value, "param"))),
-    })
 }
 
 fn bytes_view(bytes: &[u8]) -> Value {
