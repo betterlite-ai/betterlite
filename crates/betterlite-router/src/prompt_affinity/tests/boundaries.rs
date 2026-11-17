@@ -34,11 +34,8 @@ pub(super) async fn run(name: &str) {
             a_tool_result_run_in_a_user_message_counts_once();
         }
         "consecutive_tool_messages_count_once" => consecutive_tool_messages_count_once(),
-        "an_empty_content_list_hashes_like_missing_content" => {
-            an_empty_content_list_hashes_like_missing_content();
-        }
-        "an_empty_content_string_hashes_like_missing_content" => {
-            an_empty_content_string_hashes_like_missing_content();
+        "an_empty_content_hashes_like_missing_content" => {
+            an_empty_content_hashes_like_missing_content();
         }
         "a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions" => {
             a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions();
@@ -161,26 +158,20 @@ fn consecutive_tool_messages_count_once() {
     assert_eq!(position_numbers(&raw), [1, 1, 2]);
 }
 
-fn an_empty_content_list_hashes_like_missing_content() {
-    let empty = json_messages(
+// an empty list or an empty string falls through to the same null unit as a message without content
+fn an_empty_content_hashes_like_missing_content() {
+    let missing = json_messages(
+        r#"[{"role":"user"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    let empty_list = json_messages(
         r#"[{"role":"user","content":[]},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
     );
-    let missing = json_messages(
-        r#"[{"role":"user"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
-    );
-    assert_eq!(positions(&empty), positions(&missing));
-    assert_eq!(position_numbers(&empty), [1, 2]);
-}
-
-fn an_empty_content_string_hashes_like_missing_content() {
-    let empty = json_messages(
+    let empty_string = json_messages(
         r#"[{"role":"user","content":""},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
     );
-    let missing = json_messages(
-        r#"[{"role":"user"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
-    );
-    assert_eq!(positions(&empty), positions(&missing));
-    assert_eq!(position_numbers(&empty), [1, 2]);
+    assert_eq!(positions(&empty_list), positions(&missing));
+    assert_eq!(positions(&empty_string), positions(&missing));
+    assert_eq!(position_numbers(&empty_list), [1, 2]);
 }
 
 // a tool_use run ends where the tool_result run begins, so the two never merge into one position

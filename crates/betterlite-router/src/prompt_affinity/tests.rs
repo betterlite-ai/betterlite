@@ -77,11 +77,8 @@ fn prompt_affinity_behaviors(#[case] name: &str) {
     "a_tool_result_run_in_a_user_message_counts_once"
 )]
 #[case::consecutive_tool_messages_count_once("consecutive_tool_messages_count_once")]
-#[case::an_empty_content_list_hashes_like_missing_content(
-    "an_empty_content_list_hashes_like_missing_content"
-)]
-#[case::an_empty_content_string_hashes_like_missing_content(
-    "an_empty_content_string_hashes_like_missing_content"
+#[case::an_empty_content_hashes_like_missing_content(
+    "an_empty_content_hashes_like_missing_content"
 )]
 #[case::a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions(
     "a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions"
