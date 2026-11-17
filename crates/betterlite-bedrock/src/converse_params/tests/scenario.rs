@@ -2,7 +2,7 @@ use betterlite_anthropic::anthropic_capability_catalog::DropParams;
 
 use crate::model_routes::ParamMap;
 
-use super::support::{Answers, Call, Fixture, Outcome, Session, params, run};
+use super::support::{Answers, Call, Fixture, Outcome, params, run};
 
 pub(super) const MODEL_COST: &str = r#"{
     "anthropic.claude-sonnet-4-20250514-v1:0": {"litellm_provider": "bedrock", "supports_sampling_params": true},
@@ -34,22 +34,45 @@ pub(super) const DROP_GLOBAL: DropParams = DropParams {
     call: false,
 };
 
-pub(super) fn mapped(
-    fixture: &Fixture,
-    session: &mut Session<'_>,
-    answers: &Answers,
-    model: &str,
-    non_default: &str,
-) -> Outcome {
-    run(
-        fixture,
-        session,
-        answers,
-        Call {
-            model,
-            non_default: params(non_default),
-            optional: ParamMap::new(),
-            drop: KEEP,
-        },
-    )
+pub(super) struct Harness {
+    fixture: Fixture,
+    answers: Answers,
+}
+
+impl Harness {
+    pub(super) fn new(model_cost: &str) -> Self {
+        Self::answered(model_cost, &[])
+    }
+
+    pub(super) fn answered(model_cost: &str, entries: &[(&str, &str)]) -> Self {
+        Self {
+            fixture: Fixture::new(model_cost),
+            answers: Answers::new(entries),
+        }
+    }
+
+    pub(super) fn mapped(&self, model: &str, non_default: &str) -> Outcome {
+        self.call(model, params(non_default), ParamMap::new(), KEEP)
+    }
+
+    pub(super) fn call(
+        &self,
+        model: &str,
+        non_default: ParamMap,
+        optional: ParamMap,
+        drop: DropParams,
+    ) -> Outcome {
+        let mut session = self.fixture.session();
+        run(
+            &self.fixture,
+            &mut session,
+            &self.answers,
+            Call {
+                model,
+                non_default,
+                optional,
+                drop,
+            },
+        )
+    }
 }
