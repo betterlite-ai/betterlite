@@ -7,7 +7,7 @@ use std::sync::Arc;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_router::generalization_integration::bounds::MAX_RULES_BYTES;
-use betterlite_router::router_core::services::RouteServices;
+use betterlite_router::router_core::services::RouteServices as _;
 use tempfile::NamedTempFile;
 use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::set_default;

@@ -3,7 +3,7 @@
 use betterlite_config::sections::model_generalizations as config;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_router::generalization_integration::bounds::MAX_RULES_BYTES;
-use betterlite_router::router_core::services::RouteServices;
+use betterlite_router::router_core::services::RouteServices as _;
 
 use super::GeneralizationServices;
 

@@ -184,30 +184,33 @@ fn prepare_route<'route>(
 
 async fn selected(config: &Config, model: &str) -> DeploymentSpec {
     let state = RoutingState::new(config);
-    let deployment = spec(model);
-    let index = catalog(&deployment);
-    let aliases = BTreeMap::new();
-    let view = OpenView;
-    let resolver = CatalogResolver {
-        catalog: &index,
-        model_group_alias: &aliases,
-        model_alias_map: &aliases,
-        view: &view,
-    };
     let facts = RequestFacts::default();
     let request = request(&facts);
     let (limits, params) = (NoLimits, NoParams);
     let inputs = inputs(&request, &limits, &params);
     let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
-    let groups = RoutingGroups::default();
-    let shadowing = BTreeSet::new();
-    let mut routing = strategy_route(&mut dispatch, &groups, &shadowing);
-    let prepared = prepare_route(&state, inputs, &resolver, &mut routing);
+    // the catalog view is not Sync, so its borrow ends before the route's await
+    let prepared = {
+        let deployment = spec(model);
+        let index = catalog(&deployment);
+        let aliases = BTreeMap::new();
+        let view = OpenView;
+        let resolver = CatalogResolver {
+            catalog: &index,
+            model_group_alias: &aliases,
+            model_alias_map: &aliases,
+            view: &view,
+        };
+        let groups = RoutingGroups::default();
+        let shadowing = BTreeSet::new();
+        let mut routing = strategy_route(&mut dispatch, &groups, &shadowing);
+        prepare_route(&state, inputs, &resolver, &mut routing)
+    };
     let mut random = StdRng::seed_from_u64(7);
     route(
         &state,
         inputs,
-        routing.dispatch,
+        &mut dispatch,
         prepared.unwrap(),
         &mut random,
     )

@@ -96,8 +96,8 @@ fn invalid(error: &dyn StdError) -> OperationError {
     }
 }
 
-fn probe_info(info: Option<ModelInfo>) -> Result<Option<Json>, OperationError> {
-    let Some(info) = info else {
+fn probe_info(model_info: Option<ModelInfo>) -> Result<Option<Json>, OperationError> {
+    let Some(info) = model_info else {
         return Ok(None);
     };
     let mut fields = Extra::new();
