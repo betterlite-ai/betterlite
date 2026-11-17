@@ -13,13 +13,13 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L837-L842
   - what: >-
       The 422 retry runs when the call itself carries drop_params true, read from the request's own parameters.
-      LiteLLM decides from the module global litellm.drop_params, or from a drop_params argument that its parameter
-      normalization drops before the OpenAI wrapper sees it: at the pinned release litellm.completion(..., drop_params=True)
-      still raises the 422, while litellm.drop_params = True retries.
+      LiteLLM also retries when the module global litellm.drop_params is true, which the proxy sets from
+      litellm_settings.drop_params, so a proxy configured that way retries while the executor answers the 422.
     why: >-
-      The executor has no module global to read, and the per-call parameter is the only signal a proxy request can
-      carry. A deployment or litellm_settings drop_params default is not wired into the executor yet.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L839
+      The executor has no module global to read, and the call's own parameter is the only signal a proxy request
+      carries inside this task's scope. Wiring the drop_params config section into the executor's constructor needs
+      betterlite-server's chat setup, which this task does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6619
   - what: >-
       A second 422 after the dropped fields were resent reaches the client as the provider's own error. LiteLLM's
       two-iteration loop drops the newly named fields and then falls out of the function, returning None, so the proxy
