@@ -12,9 +12,10 @@ use secrecy::SecretString;
 
 use super::support::{
     FixedCounter, Fixture, NOW, Silent, TIMEOUT, ZONE_SECONDS, batches, clock, config, configured,
-    has_header, header, header_map, instant, logging_env, logging_state, redactor, secret,
+    has_header, header, header_map, instant, logging_env, logging_state, redactor, run_retrieve,
+    secret,
 };
-use crate::batches::config::{AnthropicBatchesConfig, BatchesConfig, Environment};
+use crate::batches::config::{AnthropicBatchesConfig, BatchesConfig as _, Environment};
 use crate::batches::decode::DecodeError;
 use crate::batches::error::BatchesError;
 use crate::batches::handler::{RetrieveRequest, default_batch_logging};
@@ -33,36 +34,36 @@ const LIFECYCLE: &str = r#"{"id":"msgbatch_9","processing_status":"ended","creat
 
 #[derive(Clone, Copy)]
 enum Scenario {
-    BatchCreateRequests,
-    BatchStatusCounts,
-    BatchEndedOutputFileId,
-    BatchErrorCounts,
-    BatchRetrieve,
-    BatchResultResponse,
-    BatchTimestamps,
-    BatchAuthHeaders,
+    CreateRequests,
+    StatusCounts,
+    EndedOutputFileId,
+    ErrorCounts,
+    Retrieve,
+    ResultResponse,
+    Timestamps,
+    AuthHeaders,
 }
 
 #[rstest]
-#[case::case_1_batch_create_requests(Scenario::BatchCreateRequests)]
-#[case::case_2_batch_status_counts(Scenario::BatchStatusCounts)]
-#[case::case_3_batch_ended_output_file_id(Scenario::BatchEndedOutputFileId)]
-#[case::case_4_batch_error_counts(Scenario::BatchErrorCounts)]
-#[case::case_5_batch_retrieve(Scenario::BatchRetrieve)]
-#[case::case_6_batch_result_response(Scenario::BatchResultResponse)]
-#[case::case_7_batch_timestamps(Scenario::BatchTimestamps)]
-#[case::case_8_batch_auth_headers(Scenario::BatchAuthHeaders)]
+#[case::case_1_batch_create_requests(Scenario::CreateRequests)]
+#[case::case_2_batch_status_counts(Scenario::StatusCounts)]
+#[case::case_3_batch_ended_output_file_id(Scenario::EndedOutputFileId)]
+#[case::case_4_batch_error_counts(Scenario::ErrorCounts)]
+#[case::case_5_batch_retrieve(Scenario::Retrieve)]
+#[case::case_6_batch_result_response(Scenario::ResultResponse)]
+#[case::case_7_batch_timestamps(Scenario::Timestamps)]
+#[case::case_8_batch_auth_headers(Scenario::AuthHeaders)]
 #[tokio::test]
 async fn batches_cases(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::BatchCreateRequests => batch_create_requests(),
-        Scenario::BatchStatusCounts => batch_status_counts(),
-        Scenario::BatchEndedOutputFileId => batch_ended_output_file_id(),
-        Scenario::BatchErrorCounts => batch_error_counts(),
-        Scenario::BatchRetrieve => batch_retrieve().await,
-        Scenario::BatchResultResponse => batch_result_response(),
-        Scenario::BatchTimestamps => batch_timestamps(),
-        Scenario::BatchAuthHeaders => batch_auth_headers(),
+        Scenario::CreateRequests => batch_create_requests(),
+        Scenario::StatusCounts => batch_status_counts(),
+        Scenario::EndedOutputFileId => batch_ended_output_file_id(),
+        Scenario::ErrorCounts => batch_error_counts(),
+        Scenario::Retrieve => batch_retrieve().await,
+        Scenario::ResultResponse => batch_result_response(),
+        Scenario::Timestamps => batch_timestamps(),
+        Scenario::AuthHeaders => batch_auth_headers(),
     }
 }
 
@@ -157,8 +158,15 @@ fn count_rules() {
         &batched,
         r#"{"request_counts":{"succeeded":2,"errored":3}}"#,
     );
-    let counts = partial.request_counts.unwrap();
-    assert_eq!((counts.total, counts.completed, counts.failed), (5, 2, 3));
+    let partial_counts = partial.request_counts.unwrap();
+    assert_eq!(
+        (
+            partial_counts.total,
+            partial_counts.completed,
+            partial_counts.failed
+        ),
+        (5, 2, 3)
+    );
 }
 
 fn batch_ended_output_file_id() {
@@ -211,8 +219,6 @@ fn malformed_and_structural() {
     for body in [
         "[]",
         r#"{"request_counts":null}"#,
-        r#"{"request_counts":{"succeeded":"x"}}"#,
-        r#"{"request_counts":{"processing":1.5}}"#,
         r#"{"id":5}"#,
         r#"{"processing_status":7}"#,
     ] {
@@ -221,6 +227,18 @@ fn malformed_and_structural() {
             .unwrap_err();
         assert!(
             matches!(error, DecodeError::Shape { .. }),
+            "{body}: {error}"
+        );
+    }
+    for body in [
+        r#"{"request_counts":{"succeeded":"x"}}"#,
+        r#"{"request_counts":{"processing":1.5}}"#,
+    ] {
+        let error = batched
+            .transform_retrieve_batch_response(body.as_bytes(), &clock())
+            .unwrap_err();
+        assert!(
+            matches!(error, DecodeError::CountField { .. }),
             "{body}: {error}"
         );
     }
@@ -292,15 +310,9 @@ async fn basic_retrieve() {
         config(Some("sk-batches"), Some("https://custom.example/")),
     );
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("msgbatch_9", &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = retrieve("msgbatch_9", Some("https://explicit.example"), None);
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    let batch = handler.retrieve_batch(&request, logging).await.unwrap();
+    let batch = run_retrieve(&handler, &request, &mut state).await.unwrap();
     assert_eq!(batch.id, "msgbatch_9");
     assert_eq!(batch.status, BatchStatus::Completed);
     let sent = fixture.only_request();
@@ -365,16 +377,10 @@ async fn fallback_retrieve() {
     };
     let handler = batches(&fixture, batched);
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("b", &redactor);
-    let env = logging_env(&redactor, &silent);
     let empty = secret("");
     let request = retrieve("a b/c?d", Some(""), Some(&empty));
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    handler.retrieve_batch(&request, logging).await.unwrap();
+    run_retrieve(&handler, &request, &mut state).await.unwrap();
     let sent = fixture.only_request();
     assert_eq!(
         sent.url.as_str(),
@@ -390,15 +396,11 @@ async fn missing_key() {
     };
     let handler = batches(&fixture, batched);
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("b", &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = retrieve("b", None, None);
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    let error = handler.retrieve_batch(&request, logging).await.unwrap_err();
+    let error = run_retrieve(&handler, &request, &mut state)
+        .await
+        .unwrap_err();
     assert!(matches!(error, BatchesError::MissingApiKey));
     assert_eq!(error.to_string(), MISSING_API_KEY);
     assert_eq!(fixture.sent(), 0);
@@ -408,15 +410,11 @@ async fn status_failure() {
     let denied = Fixture::answering_with(429, &[("x-request-id", "req-1")], b"slow down");
     let handler = batches(&denied, config(Some("sk"), None));
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("b", &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = retrieve("b", None, None);
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    let error = handler.retrieve_batch(&request, logging).await.unwrap_err();
+    let error = run_retrieve(&handler, &request, &mut state)
+        .await
+        .unwrap_err();
     let BatchesError::Provider(provider) = &error else {
         panic!("a non-2xx reply is a provider error: {error:?}");
     };
@@ -432,15 +430,11 @@ async fn transport_failure() {
     let failing = Fixture::failing();
     let handler = batches(&failing, config(Some("sk"), None));
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("b", &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = retrieve("b", None, None);
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    let error = handler.retrieve_batch(&request, logging).await.unwrap_err();
+    let error = run_retrieve(&handler, &request, &mut state)
+        .await
+        .unwrap_err();
     assert!(matches!(error, BatchesError::Transport { .. }));
 }
 
@@ -448,16 +442,12 @@ async fn invalid_batch_ids() {
     let fixture = Fixture::answering(200, LIFECYCLE.as_bytes());
     let handler = batches(&fixture, config(Some("sk"), None));
     let redactor = redactor();
-    let silent = Silent;
-    let env = logging_env(&redactor, &silent);
     for batch_id in ["", "."] {
         let mut state = logging_state("b", &redactor);
         let request = retrieve(batch_id, None, None);
-        let logging = Logging {
-            state: &mut state,
-            env: &env,
-        };
-        let error = handler.retrieve_batch(&request, logging).await.unwrap_err();
+        let error = run_retrieve(&handler, &request, &mut state)
+            .await
+            .unwrap_err();
         assert!(matches!(error, BatchesError::Segment(_)), "{batch_id}");
     }
     assert_eq!(fixture.sent(), 0);
@@ -503,8 +493,8 @@ fn batch_result_response() {
     aborts_on_bad_rows();
 }
 
-fn last_row_wins() {
-    let body = [
+fn last_row_body() -> String {
+    [
         row(
             "c1",
             "first",
@@ -520,8 +510,11 @@ fn last_row_wins() {
             r#"{"input_tokens":3,"output_tokens":5,"output_tokens_details":{"thinking_tokens":2}}"#,
         ),
     ]
-    .join("\n");
-    let (envelope, result) = project(body.as_bytes(), 200);
+    .join("\n")
+}
+
+fn last_row_wins() {
+    let (envelope, result) = project(last_row_body().as_bytes(), 200);
     result.unwrap();
     assert_eq!(envelope.model.as_deref(), Some("claude-b"));
     assert_eq!(envelope.created, NOW);
@@ -594,9 +587,8 @@ fn aborts_on_bad_rows() {
     assert_eq!(status, 503);
 }
 
-fn timestamp(value: Json, zone_seconds: i32) -> Option<i64> {
-    let zone = chrono::FixedOffset::east_opt(zone_seconds).unwrap();
-    parse_timestamp(&value, zone)
+fn timestamp(value: &Json, zone_seconds: i32) -> Option<i64> {
+    parse_timestamp(value, chrono::FixedOffset::east_opt(zone_seconds)?)
 }
 
 fn text(value: &str) -> Json {
@@ -609,46 +601,47 @@ fn batch_timestamps() {
     status_timestamps();
 }
 
+const PARSED_FORMS: [(&str, i32, i64); 34] = [
+    ("2024-01-01T00:00:00Z", ZONE_SECONDS, 1_704_067_200),
+    ("2024-01-01T00:00:00+00:00", ZONE_SECONDS, 1_704_067_200),
+    ("2024-01-01T00:00:00.1234567Z", ZONE_SECONDS, 1_704_067_200),
+    ("2024-01-01T00:00:00,5Z", ZONE_SECONDS, 1_704_067_200),
+    ("2024-01-01T00:00Z", ZONE_SECONDS, 1_704_067_200),
+    ("20240301T100000", ZONE_SECONDS, 1_709_280_000),
+    ("2024-01-01T10", ZONE_SECONDS, 1_704_096_000),
+    ("2024-01-01T00:00:00+0200", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01T00:00:00+02", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01T00:00:00+02:00:30", ZONE_SECONDS, 1_704_059_970),
+    ("2024-01-01T00:00:00+00:60", ZONE_SECONDS, 1_704_063_600),
+    ("2024-01-01T00:00:00+23:00", ZONE_SECONDS, 1_703_984_400),
+    ("2024-01-01T00:00:00-02:00", ZONE_SECONDS, 1_704_074_400),
+    ("2024-01-01T00:00:00", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01", ZONE_SECONDS, 1_704_060_000),
+    ("20240101", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01 00:00:00", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01+00:00:00", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01-00:00:00", ZONE_SECONDS, 1_704_060_000),
+    ("2024-01-01T00:00:00", -18_000, 1_704_085_200),
+    ("2024-W09-05:30", ZONE_SECONDS, 1_708_918_200),
+    ("2024-W09-05", ZONE_SECONDS, 1_708_916_400),
+    ("2024-W09-5-10:00:00", ZONE_SECONDS, 1_709_280_000),
+    ("2024-W09-5+00:00:00", ZONE_SECONDS, 1_709_244_000),
+    ("2024-W09T10:00:00", ZONE_SECONDS, 1_708_934_400),
+    ("2024W09+10:00:00", ZONE_SECONDS, 1_708_934_400),
+    ("2024W09123:45", ZONE_SECONDS, 1_708_983_900),
+    ("2024W095123:45", ZONE_SECONDS, 1_709_329_500),
+    ("2024W095T10:00:00", ZONE_SECONDS, 1_709_280_000),
+    ("1969-12-31T23:59:59.5Z", ZONE_SECONDS, 0),
+    ("1970-01-01T00:00:00.5Z", ZONE_SECONDS, 0),
+    ("1969-12-31T23:59:59.5", ZONE_SECONDS, -7_200),
+    ("1969-12-31T23:59:59.0Z", ZONE_SECONDS, -1),
+    ("1969-12-31T23:59:59Z", ZONE_SECONDS, -1),
+];
+
 fn parsed_forms() {
-    let forms = [
-        ("2024-01-01T00:00:00Z", ZONE_SECONDS, 1_704_067_200),
-        ("2024-01-01T00:00:00+00:00", ZONE_SECONDS, 1_704_067_200),
-        ("2024-01-01T00:00:00.1234567Z", ZONE_SECONDS, 1_704_067_200),
-        ("2024-01-01T00:00:00,5Z", ZONE_SECONDS, 1_704_067_200),
-        ("2024-01-01T00:00Z", ZONE_SECONDS, 1_704_067_200),
-        ("20240301T100000", ZONE_SECONDS, 1_709_280_000),
-        ("2024-01-01T10", ZONE_SECONDS, 1_704_096_000),
-        ("2024-01-01T00:00:00+0200", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01T00:00:00+02", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01T00:00:00+02:00:30", ZONE_SECONDS, 1_704_059_970),
-        ("2024-01-01T00:00:00+00:60", ZONE_SECONDS, 1_704_063_600),
-        ("2024-01-01T00:00:00+23:00", ZONE_SECONDS, 1_703_984_400),
-        ("2024-01-01T00:00:00-02:00", ZONE_SECONDS, 1_704_074_400),
-        ("2024-01-01T00:00:00", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01", ZONE_SECONDS, 1_704_060_000),
-        ("20240101", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01 00:00:00", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01+00:00:00", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01-00:00:00", ZONE_SECONDS, 1_704_060_000),
-        ("2024-01-01T00:00:00", -18_000, 1_704_085_200),
-        ("2024-W09-05:30", ZONE_SECONDS, 1_708_918_200),
-        ("2024-W09-05", ZONE_SECONDS, 1_708_916_400),
-        ("2024-W09-5-10:00:00", ZONE_SECONDS, 1_709_280_000),
-        ("2024-W09-5+00:00:00", ZONE_SECONDS, 1_709_244_000),
-        ("2024-W09T10:00:00", ZONE_SECONDS, 1_708_934_400),
-        ("2024W09+10:00:00", ZONE_SECONDS, 1_708_934_400),
-        ("2024W09123:45", ZONE_SECONDS, 1_708_983_900),
-        ("2024W095123:45", ZONE_SECONDS, 1_709_329_500),
-        ("2024W095T10:00:00", ZONE_SECONDS, 1_709_280_000),
-        ("1969-12-31T23:59:59.5Z", ZONE_SECONDS, 0),
-        ("1970-01-01T00:00:00.5Z", ZONE_SECONDS, 0),
-        ("1969-12-31T23:59:59.5", ZONE_SECONDS, -7_200),
-        ("1969-12-31T23:59:59.0Z", ZONE_SECONDS, -1),
-        ("1969-12-31T23:59:59Z", ZONE_SECONDS, -1),
-    ];
-    for (form, zone_seconds, expected) in forms {
+    for (form, zone_seconds, expected) in PARSED_FORMS {
         assert_eq!(
-            timestamp(text(form), zone_seconds),
+            timestamp(&text(form), zone_seconds),
             Some(expected),
             "{form}"
         );
@@ -673,11 +666,11 @@ fn rejected_forms() {
         "2024-01011T00:00:00Z",
         "2024-01-01T0:00:00Z",
     ] {
-        assert_eq!(timestamp(text(form), ZONE_SECONDS), None, "{form}");
+        assert_eq!(timestamp(&text(form), ZONE_SECONDS), None, "{form}");
     }
-    assert_eq!(timestamp(Json::Null, ZONE_SECONDS), None);
+    assert_eq!(timestamp(&Json::Null, ZONE_SECONDS), None);
     assert_eq!(
-        timestamp(Json::Number(serde_json::Number::from(0_u8)), ZONE_SECONDS),
+        timestamp(&Json::Number(serde_json::Number::from(0_u8)), ZONE_SECONDS),
         None
     );
 }

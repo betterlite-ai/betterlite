@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::future::{Future, ready};
+use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -21,10 +22,15 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 
 use crate::batches::config::AnthropicBatchesConfig;
-use crate::batches::handler::{AnthropicBatchesHandler, BatchTransport, default_batch_logging};
+use crate::batches::error::BatchesError;
+use crate::batches::handler::{
+    AnthropicBatchesHandler, BatchTransport, RetrieveRequest, default_batch_logging,
+};
 use crate::batches::timestamps::Clock;
 use crate::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
+use crate::response::Logging;
 use crate::usage::ReasoningTokenCounter;
+use betterlite_openai::batches::records::BatchObject;
 
 pub(super) const NOW: i64 = 1_704_067_200;
 pub(super) const ZONE_SECONDS: i32 = 7_200;
@@ -131,7 +137,7 @@ impl Fixture {
     }
 
     pub(super) fn take_requests(&self) -> Vec<OutboundRequest> {
-        std::mem::take(&mut *self.seen.lock().unwrap())
+        mem::take(&mut *self.seen.lock().unwrap())
     }
 }
 
@@ -170,7 +176,7 @@ pub(super) fn logging_state(batch_id: &str, redactor: &Redactor) -> LoggingState
         },
         redactor,
         || "trace-b587".to_owned(),
-        || Duration::default(),
+        Duration::default,
     )
     .unwrap()
 }
@@ -197,6 +203,24 @@ pub(super) fn logging_env<'env>(
 
 pub(super) fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
+// the logging environment borrows plain trait objects, so it is built and dropped before the call's future is awaited
+pub(super) async fn run_retrieve<T>(
+    handler: &AnthropicBatchesHandler<T>,
+    request: &RetrieveRequest<'_>,
+    state: &mut LoggingState,
+) -> Result<BatchObject, BatchesError>
+where
+    T: BatchTransport,
+{
+    let masker = redactor();
+    let silent = Silent;
+    let pending = {
+        let env = logging_env(&masker, &silent);
+        handler.retrieve_batch(request, Logging { state, env: &env })
+    };
+    pending.await
 }
 
 pub(super) struct Silent;

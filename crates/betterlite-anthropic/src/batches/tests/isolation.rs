@@ -3,12 +3,11 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::BatchObject;
 
 use super::support::{
-    Fixture, Silent, batches, config, configured, header, logging_env, logging_state, redactor,
+    Fixture, batches, config, configured, header, logging_state, redactor, run_retrieve,
 };
 use crate::batches::config::AnthropicBatchesConfig;
 use crate::batches::error::BatchesError;
 use crate::batches::handler::{AnthropicBatchesHandler, BatchTransport, RetrieveRequest};
-use crate::response::Logging;
 
 const FIRST_KEY: &str = "sk-id-a";
 const SECOND_KEY: &str = "sk-id-b";
@@ -17,14 +16,15 @@ fn lifecycle(id: &str) -> String {
     format!(r#"{{"id":"{id}","processing_status":"in_progress"}}"#)
 }
 
-async fn fetch<T: BatchTransport>(
+async fn fetch<T>(
     handler: &AnthropicBatchesHandler<T>,
     batch_id: &str,
-) -> Result<BatchObject, BatchesError> {
+) -> Result<BatchObject, BatchesError>
+where
+    T: BatchTransport,
+{
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state(batch_id, &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = RetrieveRequest {
         batch_id,
         api_base: None,
@@ -32,11 +32,7 @@ async fn fetch<T: BatchTransport>(
         timeout: None,
         max_retries: None,
     };
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    handler.retrieve_batch(&request, logging).await
+    run_retrieve(handler, &request, &mut state).await
 }
 
 #[tokio::test]
@@ -136,9 +132,7 @@ async fn recorded_headers_are_masked(key: &str) {
     let fixture = Fixture::answering(200, br#"{"id":"b"}"#);
     let handler = batches(&fixture, config(Some(key), None));
     let redactor = redactor();
-    let silent = Silent;
     let mut state = logging_state("b", &redactor);
-    let env = logging_env(&redactor, &silent);
     let request = RetrieveRequest {
         batch_id: "b",
         api_base: None,
@@ -146,11 +140,7 @@ async fn recorded_headers_are_masked(key: &str) {
         timeout: None,
         max_retries: None,
     };
-    let logging = Logging {
-        state: &mut state,
-        env: &env,
-    };
-    handler.retrieve_batch(&request, logging).await.unwrap();
+    run_retrieve(&handler, &request, &mut state).await.unwrap();
     let details = state.model_call_details.get("additional_args").unwrap();
     let shown = serde_json::to_string(details).unwrap();
     assert!(!shown.contains(key), "{shown}");
