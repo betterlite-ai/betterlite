@@ -75,13 +75,14 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
     match input.function {
         Function::AsyncRun => {
             let result = result_text(input)?;
+            let log = Arc::clone(&fixture.recorder);
             polled_answer(fixture, &runtime, || {
                 fixture.billing.start_async_run_billing(AsyncRun {
                     logging_obj: Arc::clone(&fixture.logging_obj),
                     response_body: input.run.as_ref(),
                     result,
                     kwargs: PassThroughLoggingKwargs::default(),
-                    log: Arc::clone(&fixture.recorder),
+                    log,
                     start_time: fixture.start_time,
                 })
             })
@@ -91,11 +92,12 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 .run_id
                 .clone()
                 .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
+            let log = Arc::clone(&fixture.recorder);
             polled_answer(fixture, &runtime, || {
                 fixture.billing.start_sse_run_billing(SseRun {
                     run_id,
                     logging_obj: Arc::clone(&fixture.logging_obj),
-                    log: Arc::clone(&fixture.recorder),
+                    log,
                     start_time: fixture.start_time,
                 })
             })
