@@ -1,0 +1,19 @@
+kind: helper
+name: selection_exclusive
+call:
+  key_fields:
+    calls:
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k1", "k2"], update_fields: {tags: []}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: [], all_keys_in_team: true, update_fields: {tags: []}}}
+      - {function: team_keys, body: {team_id: "t", all_keys_in_team: true, update_fields: {metadata: {}}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k"], all_keys_in_team: true, update_fields: {tags: []}}}
+      - {function: team_keys, body: {team_id: "t", update_fields: {tags: []}}}
+      - {function: team_keys, body: {key_ids: ["k"], update_fields: {tags: []}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: [], all_keys_in_team: false, update_fields: {tags: []}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k"], all_keys_in_team: false, update_fields: {budget_limits: [{budget_duration: "1d", max_budget: 2.5}]}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k"], update_fields: {}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: null, all_keys_in_team: true, update_fields: {tags: null}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k"], update_fields: {spend: 1.0}}}
+      - {function: team_keys, body: {team_id: "t", key_ids: ["k"], all_keys_in_team: false, update_fields: {tags: ["a"], metadata: {a: 1}}}}
+env: {}
+compare: {ignore: []}
