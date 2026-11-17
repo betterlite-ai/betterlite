@@ -135,15 +135,14 @@ impl AdaptiveSelection {
                     request_type,
                     model: model.clone(),
                 })?;
-            let cost_score = normalized_cost(self.model_cost(model), &all_costs)?;
+            let economy_score = normalized_cost(self.model_cost(model), &all_costs)?;
             candidates.push(Candidate {
                 model,
                 cell,
-                cost_score,
+                economy_score,
             });
         }
-        let selected = pick_best(&candidates, self.weights, &mut self.sampler)?;
-        Ok(selected)
+        Ok(pick_best(&candidates, self.weights, &mut self.sampler)?)
     }
 
     #[must_use]
@@ -175,9 +174,9 @@ impl AdaptiveSelection {
         }
     }
 
-    pub fn pre_route<'messages, 'request>(
+    pub fn pre_route<'messages>(
         &mut self,
-        request: PreRoutingRequest<'messages, 'request>,
+        request: PreRoutingRequest<'messages, '_>,
     ) -> Result<PreRoutingResponse<'messages>, AdaptiveSelectionError> {
         let text = request
             .messages

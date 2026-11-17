@@ -69,7 +69,10 @@ fn selection(
         },
         &preference_map,
         &cost_map,
-        QualitySampler::Scripted(ScriptedSampler::new(samples.to_vec())),
+        QualitySampler::Scripted(Box::new(ScriptedSampler {
+            samples: samples.to_vec(),
+            position: 0,
+        })),
     )
     .unwrap()
 }
@@ -436,9 +439,13 @@ fn an_unsupported_preference_tier_is_refused() {
         &config,
         &preferences,
         &empty,
-        QualitySampler::Scripted(ScriptedSampler::new(Vec::new())),
+        QualitySampler::Scripted(Box::new(ScriptedSampler {
+            samples: Vec::new(),
+            position: 0,
+        })),
     )
-    .unwrap_err();
+    .err()
+    .unwrap();
     match error {
         AdaptiveSelectionError::Bandit(BanditMathError::UnsupportedTier { tier }) => {
             assert_eq!(tier, 4);

@@ -64,8 +64,11 @@ impl BanditCell {
 
     #[must_use]
     pub const fn quality_mean(self) -> f64 {
-        let total = self.alpha + self.beta;
-        if total > 0.0 { self.alpha / total } else { 0.0 }
+        if self.alpha + self.beta > 0.0 {
+            self.mean()
+        } else {
+            0.0
+        }
     }
 }
 
@@ -132,7 +135,7 @@ pub const fn score(
 pub struct Candidate<'model> {
     pub model: &'model str,
     pub cell: BanditCell,
-    pub cost_score: f64,
+    pub economy_score: f64,
 }
 
 pub fn pick_best(
@@ -143,7 +146,7 @@ pub fn pick_best(
     let mut best: Option<(&str, f64)> = None;
     for candidate in candidates {
         let quality = sampler.sample(candidate.cell)?;
-        let candidate_score = score(quality, candidate.cost_score, weights)?;
+        let candidate_score = score(quality, candidate.economy_score, weights)?;
         let improves = best.is_none_or(|(_model, best_score)| candidate_score > best_score);
         if improves {
             best = Some((candidate.model, candidate_score));

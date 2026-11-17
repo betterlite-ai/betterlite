@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
 
 use super::error::BanditMathError;
@@ -204,13 +206,16 @@ fn pick(samples: &[f64], costs: &[f64]) -> Result<String, BanditMathError> {
         .map(|(index, cost)| Candidate {
             model: names[index],
             cell: cell(5.0, 5.0),
-            cost_score: *cost,
+            economy_score: *cost,
         })
         .collect::<Vec<_>>();
     pick_best(
         &candidates,
         weights(0.7, 0.3),
-        &mut QualitySampler::Scripted(ScriptedSampler::new(samples.to_vec())),
+        &mut QualitySampler::Scripted(Box::new(ScriptedSampler {
+            samples: samples.to_vec(),
+            position: 0,
+        })),
     )
 }
 
@@ -236,7 +241,10 @@ fn no_candidate_has_a_best_model() {
 
 #[test]
 fn an_exhausted_scripted_sampler_says_so() {
-    let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(vec![0.25, 0.75]));
+    let mut sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
+        samples: vec![0.25, 0.75],
+        position: 0,
+    }));
     let fifth = cell(5.0, 5.0);
     assert_eq!(format!("{:.6}", sampler.sample(fifth).unwrap()), "0.250000");
     assert_eq!(format!("{:.6}", sampler.sample(fifth).unwrap()), "0.750000");
@@ -248,7 +256,10 @@ fn an_exhausted_scripted_sampler_says_so() {
 
 #[test]
 fn a_non_finite_scripted_sample_is_refused() {
-    let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(vec![f64::NAN]));
+    let mut sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
+        samples: vec![f64::NAN],
+        position: 0,
+    }));
     assert_eq!(
         sampler.sample(cell(5.0, 5.0)),
         Err(BanditMathError::NonFinite {
@@ -260,8 +271,8 @@ fn a_non_finite_scripted_sample_is_refused() {
 #[test]
 fn a_seeded_beta_sampler_repeats_inside_the_unit_interval() {
     let fifth = cell(5.0, 5.0);
-    let mut first = QualitySampler::seeded(7);
-    let mut second = QualitySampler::seeded(7);
+    let mut first = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(7)));
+    let mut second = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(7)));
     let sample = first.sample(fifth).unwrap();
     assert_eq!(sample.to_bits(), second.sample(fifth).unwrap().to_bits());
     assert!((0.0_f64..=1.0_f64).contains(&sample));
@@ -271,8 +282,18 @@ fn a_seeded_beta_sampler_repeats_inside_the_unit_interval() {
 }
 
 #[test]
+fn a_seeded_beta_draw_follows_the_shape_orientation() {
+    let mut low = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(11)));
+    let mut high = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(11)));
+    let low_sample = low.sample(cell(1.0, 99.0)).unwrap();
+    let high_sample = high.sample(cell(99.0, 1.0)).unwrap();
+    assert!(low_sample < 0.5, "Beta(1, 99) drew {low_sample}");
+    assert!(high_sample > 0.5, "Beta(99, 1) drew {high_sample}");
+}
+
+#[test]
 fn a_non_positive_shape_is_refused_by_the_beta_draw() {
-    let mut sampler = QualitySampler::seeded(1);
+    let mut sampler = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(1)));
     let error = sampler.sample(cell(0.0, 5.0)).unwrap_err();
     match error {
         BanditMathError::Distribution { alpha, beta, .. } => {
