@@ -120,6 +120,7 @@ enum BuilderBehavior {
     AutorouterSuppression,
     ExceptionHeaders,
     EndUserFallback,
+    OverheadTiming,
 }
 
 #[rstest]
@@ -133,6 +134,7 @@ enum BuilderBehavior {
 #[case::autorouter_savings_stay_off(BuilderBehavior::AutorouterSuppression)]
 #[case::exception_headers_and_tracebacks_follow_the_source(BuilderBehavior::ExceptionHeaders)]
 #[case::end_user_falls_back_to_the_proxy_body(BuilderBehavior::EndUserFallback)]
+#[case::overhead_timing_fills_only_on_success(BuilderBehavior::OverheadTiming)]
 #[tokio::test]
 async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: BuilderBehavior) {
     match behavior {
@@ -265,6 +267,22 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             );
         }
         BuilderBehavior::CombinedUsage => {
+            let response_usage = StandardPayloadBuilder::build(
+                &builder(Settings::default()),
+                &state(None),
+                &chat_response(),
+                start(),
+                end(),
+            )
+            .expect("the payload builds");
+            assert_eq!(
+                (
+                    response_usage.prompt_tokens,
+                    response_usage.completion_tokens,
+                    response_usage.total_tokens
+                ),
+                (2, 3, 5)
+            );
             let mut state = state(None);
             state.model_call_details.insert(
                 "combined_usage_object".to_owned(),
@@ -547,6 +565,44 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             );
             let payload = built(PayloadSources::default(), configuration, chat_response());
             assert_eq!(payload.end_user.as_deref(), Some("end-user-1"));
+        }
+        BuilderBehavior::OverheadTiming => {
+            let mut state = state(None);
+            state
+                .response_timing_metrics
+                .insert("litellm_overhead_time_ms".to_owned(), 12.5);
+            let payload = StandardPayloadBuilder::build(
+                &builder(Settings::default()),
+                &state,
+                &chat_response(),
+                start(),
+                end(),
+            )
+            .expect("the payload builds");
+            assert_eq!(
+                payload
+                    .hidden_params
+                    .litellm_overhead_time_ms
+                    .map(|value| value.0.to_string()),
+                Some("12.5".to_owned())
+            );
+            let exception: ExceptionFacts = serde_json::from_str(r#"{"message": "nope"}"#).unwrap();
+            let failed = FailurePayloadSource::build(
+                &builder_with(
+                    PayloadSources::default(),
+                    PayloadSettings::default(),
+                    Settings::default(),
+                ),
+                FailurePayloadInput {
+                    state: &state,
+                    exception: &exception,
+                    start_time: start(),
+                    end_time: end(),
+                    error_str: "the request failed",
+                },
+            )
+            .expect("the failure payload builds");
+            assert!(failed.hidden_params.litellm_overhead_time_ms.is_none());
         }
     }
 }
