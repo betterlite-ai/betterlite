@@ -64,7 +64,7 @@ enum Field {
     FinishReason,
 }
 
-fn field(chunk: &InvokeChunk, field: Field) -> Option<&str> {
+fn chunk_field(chunk: &InvokeChunk, field: Field) -> Option<&str> {
     match chunk {
         InvokeChunk::Base(projection) => match projection.as_ref() {
             ChunkProjection::Converse(converse) => match field {
@@ -448,14 +448,14 @@ fn case_3_converse_stream_headers() {
     let text: String = outcome
         .chunks
         .iter()
-        .filter_map(|chunk| field(chunk, Field::Content))
+        .filter_map(|chunk| chunk_field(chunk, Field::Content))
         .collect();
     assert_eq!(text, "hello world");
     // Every event chunk carries the model the call passed, which the decoder stores at construction.
     let models: Vec<&str> = outcome
         .chunks
         .iter()
-        .filter_map(|chunk| field(chunk, Field::Model))
+        .filter_map(|chunk| chunk_field(chunk, Field::Model))
         .collect();
     assert_eq!(models.len(), outcome.chunks.len());
     assert!(
@@ -467,7 +467,7 @@ fn case_3_converse_stream_headers() {
     let reasons: Vec<&str> = outcome
         .chunks
         .iter()
-        .filter_map(|chunk| field(chunk, Field::FinishReason))
+        .filter_map(|chunk| chunk_field(chunk, Field::FinishReason))
         .filter(|reason| !reason.is_empty())
         .collect();
     assert_eq!(reasons, vec!["stop"]);
@@ -550,7 +550,7 @@ fn case_3_converse_stream_headers() {
     let contents: Vec<&str> = json_outcome
         .chunks
         .iter()
-        .filter_map(|chunk| field(chunk, Field::Content))
+        .filter_map(|chunk| chunk_field(chunk, Field::Content))
         .collect();
     assert!(
         contents
@@ -572,7 +572,7 @@ fn case_3_converse_stream_headers() {
     let plain_contents: Vec<&str> = plain_outcome
         .chunks
         .iter()
-        .filter_map(|chunk| field(chunk, Field::Content))
+        .filter_map(|chunk| chunk_field(chunk, Field::Content))
         .collect();
     assert!(
         !plain_contents
