@@ -3,10 +3,14 @@
 use std::time::{Duration, UNIX_EPOCH};
 
 use opentelemetry::trace::SpanId;
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor};
+use opentelemetry_sdk::trace::{
+    InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor, SpanData,
+};
 
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
+use betterlite_logging::otel::v2_callback::guardrail::emit_guardrail_span;
+use betterlite_logging::otel::v2_callback::proxy;
 use betterlite_logging::otel::v2_callback::registered;
 use betterlite_logging::otel::v2_callback::registry::V2Registry;
 
@@ -57,12 +61,8 @@ fn the_instance_method_parents_under_the_anchored_root() {
     let harness = harness(settings());
     let root = harness.span("root");
     let mut trace = RequestTraceContext::default();
-    harness
-        .callback
-        .mark_request_root_span(&root, None, &mut trace);
-    harness
-        .callback
-        .emit_guardrail_span(&guardrail_entry("pii"), &trace);
+    proxy::mark_request_root_span(&harness.callback, &root, None, &mut trace);
+    emit_guardrail_span(&harness.callback, &guardrail_entry("pii"), &trace);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].parent_span_id, root.context.span_id());
@@ -77,7 +77,7 @@ fn the_instance_method_parents_under_the_anchored_root() {
     assert_entry_times(&spans[0]);
 }
 
-fn assert_entry_times(span: &opentelemetry_sdk::trace::SpanData) {
+fn assert_entry_times(span: &SpanData) {
     assert_eq!(
         span.start_time
             .duration_since(UNIX_EPOCH)
@@ -104,9 +104,7 @@ fn assert_entry_times(span: &opentelemetry_sdk::trace::SpanData) {
 fn the_instance_method_starts_a_root_without_an_anchor() {
     let harness = harness(settings());
     let trace = RequestTraceContext::default();
-    harness
-        .callback
-        .emit_guardrail_span(&guardrail_entry("pii"), &trace);
+    emit_guardrail_span(&harness.callback, &guardrail_entry("pii"), &trace);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].parent_span_id, SpanId::INVALID);

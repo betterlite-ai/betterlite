@@ -5,8 +5,10 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSp
 
 use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
+use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
 use betterlite_logging::otel::v2_callback::error::CallbackError;
+use betterlite_logging::otel::v2_callback::phase;
 use betterlite_logging::otel::v2_callback::registry::V2Registry;
 use betterlite_models::decisions::Json;
 
@@ -17,7 +19,7 @@ use super::support::{
 #[test]
 fn injected_provider_receives_the_emitted_span() {
     let harness = harness(settings());
-    let phase = harness.callback.start_phase_span("auth");
+    let phase = phase::start_phase_span(&harness.callback, "auth", &RequestTraceContext::default());
     drop(phase);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
@@ -45,7 +47,7 @@ fn builds_a_provider_when_none_is_injected() {
     let mut config = settings();
     config.exporters = vec![exporter_spec("b3853_memory")];
     let harness = built_harness(config);
-    let phase = harness.callback.start_phase_span("auth");
+    let phase = phase::start_phase_span(&harness.callback, "auth", &RequestTraceContext::default());
     drop(phase);
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
@@ -88,7 +90,8 @@ fn pre_api_call_stores_the_open_call() {
         details: &details,
     };
     harness.callback.log_pre_api_call(&event).expect("pre call");
-    assert_eq!(harness.callback.open_call_ids(), vec!["call-1".to_owned()]);
+    let ids: Vec<String> = harness.callback.open_call_ids();
+    assert_eq!(ids, vec!["call-1".to_owned()]);
 }
 
 #[test]

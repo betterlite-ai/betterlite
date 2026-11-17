@@ -208,38 +208,41 @@ pub(crate) struct Harness {
     tracer: SdkTracer,
 }
 
-// a logger whose provider is handed in, so a test owns both the tracer and the sink it exports to
+// a logger whose tracer and sink the test owns, built from the parts either harness hands it
+fn assemble(
+    settings: Settings,
+    spans: &InMemorySpanExporter,
+    provider: Option<SdkTracerProvider>,
+    tracer: SdkTracer,
+) -> Harness {
+    let registry = V2Registry::default();
+    let parts = construction_parts(settings, spans, provider);
+    let callback = V2Callback::new(parts, &registry).expect("callback");
+    Harness {
+        callback,
+        registry,
+        spans: spans.clone(),
+        tracer,
+    }
+}
+
+// an injected provider, so a test owns both the tracer and the sink it exports to
 pub(crate) fn harness(settings: Settings) -> Harness {
     let spans = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
         .with_span_processor(SimpleSpanProcessor::new(spans.clone()))
         .build();
     let tracer = provider.tracer("litellm");
-    let registry = V2Registry::default();
-    let parts = construction_parts(settings, &spans, Some(provider));
-    let callback = V2Callback::new(parts, &registry).expect("callback");
-    Harness {
-        callback,
-        registry,
-        spans,
-        tracer,
-    }
+    assemble(settings, &spans, Some(provider), tracer)
 }
 
-// a logger with no provider handed in, so construction builds one against the memory exporter
+// no provider handed in, so construction builds one against the memory exporter
 pub(crate) fn built_harness(settings: Settings) -> Harness {
     let spans = InMemorySpanExporter::default();
-    let registry = V2Registry::default();
-    let parts = construction_parts(settings, &spans, None);
-    let callback = V2Callback::new(parts, &registry).expect("callback");
-    Harness {
-        callback,
-        registry,
-        spans,
-        tracer: SdkTracerProvider::builder()
-            .build()
-            .tracer("built-elsewhere"),
-    }
+    let tracer = SdkTracerProvider::builder()
+        .build()
+        .tracer("built-elsewhere");
+    assemble(settings, &spans, None, tracer)
 }
 
 impl Harness {
@@ -269,24 +272,27 @@ pub(crate) fn timing(end: Option<SystemTime>) -> ServiceSpanTiming {
     }
 }
 
-pub(crate) fn hook<'a>(
-    payload: &'a ServiceLoggerPayload,
-    parent: Option<&'a SpanContext>,
+pub(crate) fn hook<'hook>(
+    payload: &'hook ServiceLoggerPayload,
+    parent: Option<&'hook SpanContext>,
     start: Option<SystemTime>,
     timing: ServiceSpanTiming,
-) -> ServiceHook<'a> {
+    event_metadata: Option<&'hook BTreeMap<String, OtelModelValue>>,
+) -> ServiceHook<'hook> {
     ServiceHook {
         payload,
         parent_otel_span: parent,
         start_time: start,
         timing,
-        event_metadata: None,
+        event_metadata,
     }
 }
 
+// LiteLLM's span keeps a dict of attributes, so a repeated key carries the last value it was given
 pub(crate) fn attribute(span: &SpanData, key: &str) -> Option<String> {
     span.attributes
         .iter()
+        .rev()
         .find(|pair| pair.key.as_str() == key)
         .map(|pair| pair.value.to_string())
 }
@@ -344,7 +350,10 @@ pub(crate) fn exception_facts(status: u16) -> ExceptionFacts {
 
 pub(crate) fn error(message: &str) -> SpanError {
     SpanError {
+        error_type: None,
         message: Some(message.to_owned()),
-        ..SpanError::default()
+        code: None,
+        stack_trace: None,
+        llm_provider: None,
     }
 }

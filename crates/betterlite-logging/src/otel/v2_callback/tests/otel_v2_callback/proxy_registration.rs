@@ -5,7 +5,7 @@ use std::sync::Arc;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor};
 
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
-use betterlite_logging::otel::v2_callback::registry::{CallbackEntry, CallbackList, V2Registry};
+use betterlite_logging::otel::v2_callback::registry::{CALLBACK_LISTS, CallbackEntry, V2Registry};
 
 use super::support::{construction_parts, settings};
 
@@ -13,6 +13,13 @@ fn provider(spans: &InMemorySpanExporter) -> SdkTracerProvider {
     SdkTracerProvider::builder()
         .with_span_processor(SimpleSpanProcessor::new(spans.clone()))
         .build()
+}
+
+fn list_entries(registry: &V2Registry) -> Vec<Vec<CallbackEntry>> {
+    CALLBACK_LISTS
+        .iter()
+        .map(|list| registry.entries(*list))
+        .collect()
 }
 
 #[test]
@@ -30,11 +37,13 @@ fn one_entry_per_list_and_the_first_callback_keeps_the_slot() {
         &registry,
     )
     .expect("second callback");
-    for list in CallbackList::ALL {
-        let entries = registry.entries(list);
-        assert_eq!(entries.len(), 1);
-        assert!(matches!(entries[0], CallbackEntry::OpenTelemetry(_)));
-    }
+    let entries = list_entries(&registry);
+    assert_eq!(entries.len(), CALLBACK_LISTS.len());
+    assert!(
+        entries
+            .iter()
+            .all(|list| list.len() == 1 && matches!(list[0], CallbackEntry::OpenTelemetry(_)))
+    );
     let slot = registry.registered_v2_logger().expect("slot");
     assert!(Arc::ptr_eq(&slot, &first));
 }
@@ -49,11 +58,13 @@ fn an_otel_module_entry_blocks_the_lists_but_not_the_slot() {
         &registry,
     )
     .expect("callback");
-    for list in CallbackList::ALL {
-        let entries = registry.entries(list);
-        assert_eq!(entries.len(), 1);
-        assert!(matches!(entries[0], CallbackEntry::Named(_)));
-    }
+    let entries = list_entries(&registry);
+    assert_eq!(entries.len(), CALLBACK_LISTS.len());
+    assert!(
+        entries
+            .iter()
+            .all(|list| list.len() == 1 && matches!(list[0], CallbackEntry::Named(_)))
+    );
     let slot = registry.registered_v2_logger().expect("slot");
     assert!(Arc::ptr_eq(&slot, &callback));
 }
@@ -68,11 +79,10 @@ fn a_foreign_callback_keeps_the_otel_registration() {
         &registry,
     )
     .expect("callback");
-    for list in CallbackList::ALL {
-        let entries = registry.entries(list);
-        assert_eq!(entries.len(), 2);
-        assert!(matches!(entries[0], CallbackEntry::Named(_)));
-        assert!(matches!(entries[1], CallbackEntry::OpenTelemetry(_)));
-    }
+    let entries = list_entries(&registry);
+    assert_eq!(entries.len(), CALLBACK_LISTS.len());
+    assert!(entries.iter().all(|list| list.len() == 2
+        && matches!(list[0], CallbackEntry::Named(_))
+        && matches!(list[1], CallbackEntry::OpenTelemetry(_))));
     assert!(registry.registered_v2_logger().is_some());
 }
