@@ -1,0 +1,8 @@
+kind: helper
+name: openai-output-limits-marker
+call:
+  openai_output_limits:
+    marker:
+      message: "Could not finish the message because max_tokens or model output limit was reached."
+env: {}
+compare: {ignore: []}
