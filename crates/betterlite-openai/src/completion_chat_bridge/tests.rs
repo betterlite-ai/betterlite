@@ -160,7 +160,7 @@ fn the_fine_tuned_models_select_the_raw_text_endpoint() {
 fn a_stream_carries_the_usage_option_the_proxy_injects() {
     let request =
         chat(r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true}"#);
-    let built = text_request(&deployment("gpt-4o"), &request, "gpt-4o").expect("request");
+    let built = text_request(&deployment("openai/gpt-4o"), &request, "gpt-4o").expect("request");
     assert_eq!(built.model.as_deref(), Some("gpt-4o"));
     assert_eq!(
         built.messages,
@@ -183,13 +183,15 @@ fn a_client_usage_choice_is_kept_and_a_non_stream_sends_an_explicit_false() {
     let kept = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true,"stream_options":{"include_usage":false}}"#,
     );
-    let streaming_built = text_request(&deployment("gpt-4o"), &kept, "gpt-4o").expect("request");
+    let streaming_built =
+        text_request(&deployment("openai/gpt-4o"), &kept, "gpt-4o").expect("request");
     assert_eq!(
         streaming_built.optional_params.get("stream_options"),
         Some(&fixture(r#"{"include_usage": false}"#))
     );
     let buffered = chat(r#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#);
-    let buffered_built = text_request(&deployment("gpt-4o"), &buffered, "gpt-4o").expect("request");
+    let buffered_built =
+        text_request(&deployment("openai/gpt-4o"), &buffered, "gpt-4o").expect("request");
     assert_eq!(
         buffered_built.optional_params.get("stream"),
         Some(&Value::Bool(false))
@@ -205,7 +207,7 @@ fn a_client_usage_choice_is_kept_and_a_non_stream_sends_an_explicit_false() {
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream_options":{"include_usage":false}}"#,
     );
     let options_built =
-        text_request(&deployment("gpt-4o"), &buffered_options, "gpt-4o").expect("request");
+        text_request(&deployment("openai/gpt-4o"), &buffered_options, "gpt-4o").expect("request");
     assert_eq!(
         options_built.optional_params.get("stream_options"),
         Some(&fixture(r#"{"include_usage": false}"#))
@@ -217,7 +219,7 @@ fn control_kwargs_and_internal_keys_stay_off_the_provider_body() {
     let request = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream_chunk_size":5,"_hidden":true,"temperature":0.5}"#,
     );
-    let built = text_request(&deployment("gpt-4o"), &request, "gpt-4o").expect("request");
+    let built = text_request(&deployment("openai/gpt-4o"), &request, "gpt-4o").expect("request");
     assert!(
         !built.optional_params.contains_key("stream_chunk_size"),
         "stream_chunk_size leaked"
@@ -296,7 +298,7 @@ fn a_parameter_the_text_config_does_not_support_is_a_400() {
     let request = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":4}"#,
     );
-    let Err(failure) = text_request(&deployment("gpt-4o"), &request, "gpt-4o") else {
+    let Err(failure) = text_request(&deployment("openai/gpt-4o"), &request, "gpt-4o") else {
         panic!("max_completion_tokens must be refused");
     };
     assert_eq!(failure.status, 400);
@@ -306,7 +308,8 @@ fn a_parameter_the_text_config_does_not_support_is_a_400() {
     let headers = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"extra_headers":{"x-trace":"1"}}"#,
     );
-    let built = text_request(&deployment("gpt-4o"), &headers, "gpt-4o").expect("extra_headers");
+    let built =
+        text_request(&deployment("openai/gpt-4o"), &headers, "gpt-4o").expect("extra_headers");
     assert_eq!(
         built.optional_params.get("extra_headers"),
         Some(&fixture(r#"{"x-trace": "1"}"#))
