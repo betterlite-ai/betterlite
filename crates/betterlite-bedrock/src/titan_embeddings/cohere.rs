@@ -47,10 +47,10 @@ pub fn transform_request(model: &str, input: &[String], inference_params: &Objec
 }
 
 fn mapped_types(value: &Json) -> Vec<Json> {
-    match value {
-        Json::List(items) => items.iter().map(encoded_type).collect(),
-        single => vec![encoded_type(single)],
-    }
+    let Json::List(items) = value else {
+        return vec![encoded_type(value)];
+    };
+    items.iter().map(encoded_type).collect()
 }
 
 // only base64 becomes float; every other encoding survives as given

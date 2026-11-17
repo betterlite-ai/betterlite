@@ -4,7 +4,7 @@ use serde_json::Number;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 // A class attribute as get_config sees it: a plain value, or one of the callables it skips
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClassAttribute {
     Value(Json),
     Function,
@@ -39,7 +39,7 @@ pub struct TitanV2Settings {
 
 impl TitanV2Settings {
     // AmazonTitanV2Config.__init__ writes only its non-None arguments to the class, so None leaves a prior setting alone
-    pub fn apply(&mut self, normalize: Option<bool>, dimensions: Option<i64>) {
+    pub const fn apply(&mut self, normalize: Option<bool>, dimensions: Option<i64>) {
         if let Some(flag) = normalize {
             self.normalize = Some(flag);
         }
