@@ -1,7 +1,7 @@
 id: B601
 milestone: M3 providers
 title: Bedrock Converse tool choice and structured outputs
-status: todo
+status: done
 depends_on: [B600, B688, B231, B2202, B171, B2221]
 file: tasks/B601-bedrock-converse-tools.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/bedrock.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2249
