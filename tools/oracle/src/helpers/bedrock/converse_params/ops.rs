@@ -97,7 +97,7 @@ fn cache_point(call: &CachePointInput) -> HelperResult {
         .map_err(|error| helper_error(&error, error.status_code()))?;
     let built = build_cache_point_block(call.control.as_ref(), model, &call.model_cost)
         .map_err(|error| helper_error(&error, error.status_code()))?;
-    Ok(json!({ "block": block.clone(), "content": block, "built": built }))
+    Ok(json!({ "block": block, "content": block, "built": built }))
 }
 
 fn top_k(call: &TopKInput) -> HelperResult {
@@ -114,14 +114,14 @@ fn top_k(call: &TopKInput) -> HelperResult {
     Ok(json!({ "mapped": mapped, "remaining": remaining, "transformed": transformed }))
 }
 
-fn parallel_config(call: &ParallelConfigInput) -> HelperResult {
+fn parallel_config(call: &ParallelConfigInput) -> serde_json::Value {
     let merged = merge_parallel_tool_use_config(
         &call.additional_request_params,
         &call.parallel_tool_use_config,
     );
     let mut dropped = merged.clone();
     drop_tool_choice_type(&mut dropped);
-    Ok(json!({ "merged": merged, "dropped": dropped }))
+    json!({ "merged": merged, "dropped": dropped })
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -129,6 +129,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::MapParams(call) => map_params(call),
         Input::CachePoint(call) => cache_point(call),
         Input::TopK(call) => top_k(call),
-        Input::ParallelConfig(call) => parallel_config(call),
+        Input::ParallelConfig(call) => Ok(parallel_config(call)),
     }
 }
