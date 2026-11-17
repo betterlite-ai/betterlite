@@ -11,7 +11,7 @@ description: >-
 
   B1004 owns decoder/close records, B1005 beta conversion, B1006 storage/usage and success logs,
   B1110 sender/client normalization, B1124 buffer flush and B1007 guardrail execution. B2455 detects
-  audio guardrails. B012/B191 supply failure callback dispatch and its bounded queue. Keep the
+  audio guardrails. B251/B191 supply failure callback dispatch and its bounded queue. Keep the
   transformed and raw paths distinct: only the raw path calls backend transcription-session detection,
   and it bypasses guardrails entirely for transcription-only completed events. The transformed path
   still invokes the guardrail runner but suppresses response.create for known transcription sessions.

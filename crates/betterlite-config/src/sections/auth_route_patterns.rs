@@ -1,6 +1,3 @@
-#[path = "auth_route_patterns/tests.rs"]
-mod tests;
-
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};

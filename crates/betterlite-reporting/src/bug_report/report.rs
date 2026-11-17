@@ -1,7 +1,6 @@
 use std::any::type_name_of_val;
 use std::error::Error;
-
-use backtrace::Backtrace;
+use std::panic::Location;
 
 use crate::bug_report::environment::{Host, build_environment_report};
 use crate::bug_report::frames::litellm_frames;
@@ -17,11 +16,11 @@ pub struct CallContext {
     pub config_lines: Vec<String>,
 }
 
-// The backtrace is the one captured where the error was created, as Python keeps it on the exception
+// The location is the one captured where the error was created, as Python keeps it on the exception
 #[must_use]
 pub fn build_bug_report<E>(
     exception: &E,
-    backtrace: &Backtrace,
+    location: &Location<'_>,
     context: CallContext,
     host: Host<'_>,
 ) -> BugReport
@@ -36,7 +35,7 @@ where
     BugReport {
         environment: build_environment_report(context.surface, host, context.config_lines),
         exception_type: exception_type.to_owned(),
-        litellm_frames: litellm_frames(backtrace),
+        litellm_frames: litellm_frames(location.file(), location.line()),
         call_type: context.call_type,
         custom_llm_provider: context.custom_llm_provider.filter(|provider| {
             KNOWN_PROVIDERS

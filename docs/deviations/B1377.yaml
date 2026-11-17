@@ -1,0 +1,18 @@
+task: B1377
+deviations:
+  - what: A caller's own Content-Length header on the streamed embeddings path is replaced by the recalculated length. LiteLLM spreads the caller's header mapping and adds a content-length key, so a caller that spelled the name Content-Length gets two entries with different values.
+    why: Two Content-Length headers are invalid HTTP, and LiteLLM's mapping answers a case-insensitive lookup with whichever entry is visited last. betterlite's header map holds one value per name, so the recalculated length is the one a client reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1324-L1327
+  - what: 'A row whose conversion fails carries betterlite''s own error text after "Failed to transform response: ", where LiteLLM appends the text of its pydantic, validation or usage error.'
+    why: The suffix names a detail of each runtime's decoder, and no wording of another runtime's exception can be reproduced. The error code, the custom_id and the null response of that row match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1507-L1512
+  - what: A streamed generation download emits the rows converted from one network chunk together, where LiteLLM yields one item per JSONL line.
+    why: The bytes and their order are identical; only the boundaries of the chunks the caller iterates differ, and a client reading the body sees the same JSONL either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1337-L1345
+  - what: Rows of a whole download are trimmed with Rust's str::trim, which follows the Unicode White_Space property, where LiteLLM strips each decoded row with Python's str.strip, which also drops U+001C to U+001F.
+    why: Those four control characters cannot appear in valid JSON outside a string, so only a payload that is not valid JSON before stripping can differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L733
+  - what: Streamed rows and the first-row probe are trimmed with Rust's trim_ascii, which follows the WhatWG ASCII whitespace set, where LiteLLM strips each bytes line with Python's bytes.strip, which also drops the vertical tab U+000B.
+    why: A vertical tab cannot appear in valid JSON outside a string, so only a payload that is not valid JSON before stripping can differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L336
+kept_bugs: []

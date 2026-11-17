@@ -41,7 +41,7 @@ description: >-
   team_members_with_roles choose the LAST member with nonnull user_id matching key.user_id; email-only
   rows do not match. Construct B2314 VerificationTokenView with last_refreshed_at=current epoch seconds,
   and convert a datetime expires to isoformat; missing row stays None. Typed validation errors propagate.
-  On each failed get_data attempt, emit diagnostics, schedule the B012 failure hook with original
+  On each failed get_data attempt, emit diagnostics, schedule the B8395 failure hook with original
   exception, elapsed duration and call_type=get_data, then rethrow the original. Scheduling precedes
   backoff. The source embeds raw args/hash in diagnostics; native logs redact token/hash while retaining
   error classification and ordering. Do not make a failed query look like an unknown key.

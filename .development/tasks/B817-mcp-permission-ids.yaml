@@ -59,7 +59,7 @@ description: >-
 
 
   The stored JSON boundary is capped at 1048576 bytes and depth 64, with typed limit errors and the native
-  mcp_tool_json_limits case outside oracle equality. Register mcp_tool_grants in B770's server fuzz workspace
+  mcp_tool_json_limits case outside oracle equality. Register mcp_tool_grants in B003's server fuzz workspace
   and replay valid/falsey/malformed/deep inputs in replays_the_mcp_tool_grants_corpus. No HTTP schema is added.
 
 

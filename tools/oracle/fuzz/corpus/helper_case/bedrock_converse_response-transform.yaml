@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-converse-response-transform-seed
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "seed"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: [[x-amzn-requestid, seed]]
+        model: seed-model
+        messages: [{role: user, content: seed}]
+        data: {model: seed-model}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: seed_tool}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-seed, model: seed-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: ["01234567-89ab-cdef-0123-456789abcdef"]
+        now: 1700000000
+env: {}
+compare: {ignore: []}

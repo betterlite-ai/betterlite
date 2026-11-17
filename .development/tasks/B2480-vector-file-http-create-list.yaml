@@ -3,7 +3,7 @@ title: Attached-file HTTP create and list execution
 description: >-
   Own the four complete create/list handlers at llm_http_handler.py:10756-11036, below B1072's public
   wrappers. Implement core::api::vector_file_http_create_list using B173 pools, B1071 contracts,
-  B527 provider transforms, B012 logging and B2402 _handle_error. Reuse a supplied client only when
+  B527 provider transforms, B249 logging and B2402 _handle_error. Reuse a supplied client only when
   its sync/async mode matches; otherwise choose the pool with ssl_verify from litellm_params, default null.
   Async forwarding passes a matching async client or null. Validate extra_headers or {}, then overlay
   the now-mutated extra_headers, and resolve the provider URL with api_base,vector_store_id,litellm_params.
