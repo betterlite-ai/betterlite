@@ -132,6 +132,10 @@ impl ReasoningTokenCounter for FixedCounter {
 }
 
 pub(super) fn run(fixture: &Fixture, body: &str) -> Run {
+    run_bytes(fixture, body.as_bytes())
+}
+
+pub(super) fn run_bytes(fixture: &Fixture, body: &[u8]) -> Run {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     let init: LoggingInit = serde_json::from_str(INIT).expect("the logging fixture is valid");
     let mut state = LoggingState::new(
@@ -176,7 +180,7 @@ pub(super) fn run(fixture: &Fixture, body: &str) -> Run {
     };
     let reply = RawReply {
         headers: &fixture.headers,
-        body: body.as_bytes(),
+        body,
     };
     let response = transform_response(
         TransformCall {

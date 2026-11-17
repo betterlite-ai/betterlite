@@ -9,7 +9,7 @@ use crate::converse_response::environment::{
 use crate::converse_response::transform::TransformError;
 use crate::request_policy::{BedrockRequestPolicy, Params, RequestValue};
 
-use super::support::{Fixture, run};
+use super::support::{Fixture, run, run_bytes};
 
 pub(super) fn fake_stream_capability() {
     let cases: [(Option<&str>, Option<bool>, Option<bool>, bool); 11] = [
@@ -45,6 +45,9 @@ pub(super) fn malformed_json() {
     missing_output_members_keep_their_own_failure();
     missing_later_members_keep_their_own_failure();
     a_non_list_content_is_not_a_block_list();
+    a_reply_missing_usage_and_stop_reason_names_the_stop_reason();
+    an_unreadable_body_is_logged_by_its_byte_count();
+    a_422_with_non_ascii_headers_is_a_header_error();
     error_class_delegates_the_supplied_fields();
 }
 
@@ -178,19 +181,56 @@ fn missing_later_members_keep_their_own_failure() {
     ));
 }
 
+// LiteLLM iterates a string content character by character and answers with empty content; a typed error names the field instead.
 fn a_non_list_content_is_not_a_block_list() {
+    for body in [
+        r#"{"output": {"message": {"content": "just text"}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
+        r#"{"output": {"message": {"content": 42}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
+    ] {
+        let run = super::support::run(&Fixture::default(), body);
+        assert_eq!(run.status(), None);
+        assert!(matches!(
+            run.failure(),
+            TransformError::Reply(ReplyFieldError::NotA {
+                path: "output.message.content",
+                expected: "a list of content blocks"
+            })
+        ));
+    }
+}
+
+// The conversion reads stopReason before usage, so a reply missing both names stopReason; LiteLLM reads usage first.
+fn a_reply_missing_usage_and_stop_reason_names_the_stop_reason() {
     let run = super::support::run(
         &Fixture::default(),
-        r#"{"output": {"message": {"content": "just text"}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
+        r#"{"output": {"message": {"content": []}}}"#,
     );
     assert_eq!(run.status(), None);
     assert!(matches!(
         run.failure(),
-        TransformError::Reply(ReplyFieldError::NotA {
-            path: "output.message.content",
-            expected: "a list of content blocks"
-        })
+        TransformError::Reply(ReplyFieldError::Missing { path: "stopReason" })
     ));
+}
+
+// LiteLLM logs httpx's replacement-character text; betterlite names the body by its byte count.
+fn an_unreadable_body_is_logged_by_its_byte_count() {
+    let body: &[u8] = b"{\"output\": \"\xff\"}";
+    let run = run_bytes(&Fixture::default(), body);
+    assert_eq!(
+        run.detail("original_response"),
+        &super::support::json(&format!("\"{} bytes that are not UTF-8\"", body.len()))
+    );
+    assert_eq!(run.status(), Some(422));
+}
+
+// The shared BedrockError holds error headers as ASCII, so a 422 whose headers are not ASCII fails as a header error.
+fn a_422_with_non_ascii_headers_is_a_header_error() {
+    let fixture = Fixture {
+        headers: vec![(String::from("x-amzn-requestid"), String::from("req-é"))],
+        ..Fixture::default()
+    };
+    let run = run(&fixture, "{not json");
+    assert!(matches!(run.failure(), TransformError::Header(_)));
 }
 
 fn error_class_delegates_the_supplied_fields() {
