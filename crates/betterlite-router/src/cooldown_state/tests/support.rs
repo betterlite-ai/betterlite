@@ -181,7 +181,7 @@ impl MemoryHealth {
 }
 
 impl SharedHealth for MemoryHealth {
-    fn read<'store>(&'store self) -> HealthReadFuture<'store> {
+    fn read(&self) -> HealthReadFuture<'_> {
         Box::pin(async move {
             self.reads.fetch_add(1, Ordering::Relaxed);
             self.raw

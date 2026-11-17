@@ -139,6 +139,7 @@ impl CooldownCache {
             }
             expiries.push(expiry);
         }
+        drop(state);
         Ok(expiries)
     }
 
@@ -174,7 +175,7 @@ impl CooldownCache {
         let remaining = now.mul_add(-1.0_f64, deadline);
         let tier = &self.tier;
         let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if remaining <= 0.0 {
+        if remaining <= 0.0_f64 {
             state.entries.remove(key);
             return None;
         }

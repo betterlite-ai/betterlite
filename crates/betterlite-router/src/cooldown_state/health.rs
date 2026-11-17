@@ -112,13 +112,11 @@ impl DeploymentHealthCache {
 
     // a snapshot the shared read answered lands in the memory tier, so the next read answers without one
     fn backfilled(&self, snapshot: Option<HealthSnapshot>) -> Option<HealthSnapshot> {
-        let Some(snapshot) = snapshot else {
-            return None;
-        };
-        let mut fetched = BTreeMap::new();
-        fetched.insert(self.key.clone(), snapshot.clone());
-        self.tier.apply(from_ref(&self.key), &[None], &fetched);
-        Some(snapshot)
+        let fetched = snapshot?;
+        let mut to_store = BTreeMap::new();
+        to_store.insert(self.key.clone(), fetched.clone());
+        self.tier.apply(from_ref(&self.key), &[None], &to_store);
+        Some(fetched)
     }
 
     // async_get_unhealthy_deployment_ids: memory first, and the shared snapshot only when memory has none
@@ -184,10 +182,10 @@ pub fn extract_unhealthy(
     now: f64,
     staleness_threshold: f64,
 ) -> BTreeSet<String> {
-    let Some(snapshot) = snapshot else {
+    let Some(stored) = snapshot else {
         return BTreeSet::new();
     };
-    snapshot
+    stored
         .iter()
         .filter(|(_model_id, state)| {
             !state.is_healthy && state.timestamp.mul_add(-1.0_f64, now) < staleness_threshold

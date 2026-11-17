@@ -22,7 +22,7 @@ pub trait SharedCooldowns: Send + Sync {
 
 // the shared tier the one health snapshot lives in, with the raw read its merge does before the local fallback
 pub trait SharedHealth: Send + Sync {
-    fn read<'store>(&'store self) -> HealthReadFuture<'store>;
+    fn read(&self) -> HealthReadFuture<'_>;
 
     fn read_raw(&self) -> Option<HealthSnapshot>;
 

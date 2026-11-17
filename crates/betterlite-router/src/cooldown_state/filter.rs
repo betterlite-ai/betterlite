@@ -13,7 +13,7 @@ pub struct HealthRouting<'settings> {
 }
 
 // the health routing settings and the snapshot's verdicts, as one route service answers them
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HealthInputs {
     pub enabled: bool,
     pub has_allowed_fails_policy: bool,

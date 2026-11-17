@@ -39,7 +39,7 @@ pub(crate) async fn run(name: &str) {
         "set_states_prefers_the_shared_snapshot" => set_states_prefers_shared(),
         "set_states_falls_back_to_the_local_copy" => set_states_falls_back(),
         "a_missing_health_snapshot_marks_nothing_unhealthy" => {
-            missing_snapshot_marks_nothing().await
+            missing_snapshot_marks_nothing().await;
         }
         "an_explicitly_healthy_state_is_not_unhealthy" => a_healthy_state_is_not_unhealthy().await,
         "the_sync_facade_answers_from_the_shared_snapshot" => the_sync_facade_answers(),
@@ -129,7 +129,7 @@ fn add_uses_an_explicit_cooldown_time() {
     let shared = Arc::new(MemoryCooldowns::default());
     let cache = cache(&clock, Arc::clone(&shared), &settings());
     cache
-        .add("a", "rate limited", 500, Some(2.0))
+        .add("a", "rate limited", 500, Some(2.0_f64))
         .expect("the cooldown is stored");
     assert_eq!(
         shared.writes(),
@@ -230,10 +230,13 @@ fn a_second_add_keeps_the_local_ttl() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryCooldowns::default());
     let cache = cache(&clock, Arc::clone(&shared), &settings());
-    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    cache.add("a", "boom", 429, Some(5.0_f64)).unwrap();
     clock.set(2.0);
-    cache.add("a", "boom again", 500, Some(30.0)).unwrap();
-    assert_eq!(cache.local_expiries(&ids(&["a"])).unwrap(), vec![Some(5.0)]);
+    cache.add("a", "boom again", 500, Some(30.0_f64)).unwrap();
+    assert_eq!(
+        cache.local_expiries(&ids(&["a"])).unwrap(),
+        vec![Some(5.0_f64)]
+    );
     assert_eq!(shared.writes()[1].ttl_seconds.to_bits(), 30.0_f64.to_bits());
     assert_eq!(
         shared.writes()[1].record,
@@ -250,12 +253,12 @@ fn a_second_add_after_expiry() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryCooldowns::default());
     let cache = cache(&clock, Arc::clone(&shared), &settings());
-    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    cache.add("a", "boom", 429, Some(5.0_f64)).unwrap();
     clock.set(6.0);
-    cache.add("a", "boom again", 429, Some(30.0)).unwrap();
+    cache.add("a", "boom again", 429, Some(30.0_f64)).unwrap();
     assert_eq!(
         cache.local_expiries(&ids(&["a"])).unwrap(),
-        vec![Some(36.0)]
+        vec![Some(36.0_f64)]
     );
 }
 
@@ -263,12 +266,12 @@ fn local_expiries_report() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryCooldowns::default());
     let cache = cache(&clock, Arc::clone(&shared), &settings());
-    cache.add("a", "boom", 429, Some(5.0)).unwrap();
-    cache.add("b", "boom", 429, Some(9.0)).unwrap();
+    cache.add("a", "boom", 429, Some(5.0_f64)).unwrap();
+    cache.add("b", "boom", 429, Some(9.0_f64)).unwrap();
     clock.set(5.0);
     assert_eq!(
         cache.local_expiries(&ids(&["a", "b", "c"])).unwrap(),
-        vec![Some(5.0), Some(9.0), None]
+        vec![Some(5.0_f64), Some(9.0_f64), None]
     );
     clock.set(9.5);
     assert_eq!(
@@ -284,17 +287,17 @@ fn set_states_keeps_the_local_ttl() {
     cache
         .set_states(&snapshot(&[("a", unhealthy(0.0))]))
         .unwrap();
-    assert_eq!(cache.local_expiry(), Some(15.0));
+    assert_eq!(cache.local_expiry(), Some(15.0_f64));
     clock.set(1.0);
     cache
         .set_states(&snapshot(&[("b", unhealthy(1.0))]))
         .unwrap();
-    assert_eq!(cache.local_expiry(), Some(15.0));
+    assert_eq!(cache.local_expiry(), Some(15.0_f64));
     clock.set(16.0);
     cache
         .set_states(&snapshot(&[("c", unhealthy(16.0))]))
         .unwrap();
-    assert_eq!(cache.local_expiry(), Some(31.0));
+    assert_eq!(cache.local_expiry(), Some(31.0_f64));
 }
 
 fn minimum_cooldown_is_smallest() {
@@ -314,7 +317,7 @@ fn minimum_cooldown_is_smallest() {
 fn minimum_cooldown_falls_back() {
     let clock = TestClock::new();
     let mut configured = settings();
-    configured.default_cooldown_time = 12.0;
+    configured.default_cooldown_time = 12.0_f64;
     let cache = cache(&clock, Arc::new(MemoryCooldowns::default()), &configured);
     assert_eq!(
         cache.minimum_cooldown(&[None, None]).to_bits(),
