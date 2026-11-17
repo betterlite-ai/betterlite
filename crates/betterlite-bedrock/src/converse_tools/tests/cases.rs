@@ -189,8 +189,8 @@ fn malformed_choices(catalogs: &CatalogSources<'_>) {
     assert!(matches!(bad_name, ConverseToolsError::ToolChoiceName));
     assert_eq!(
         ConverseToolsError::ToolChoiceName.status_code(),
-        None,
-        "a malformed name is not a 400"
+        Some(400),
+        "a malformed name is a bad request"
     );
 }
 
@@ -676,9 +676,25 @@ fn parameter_errors() {
     ));
     assert_eq!(
         ConverseToolsError::MissingParameterType.status_code(),
-        None,
-        "a missing type is not a 400"
+        Some(400),
+        "a missing type is a bad request"
     );
+}
+
+#[test]
+fn malformed_request_tool_parameters_answer_400() {
+    let parameters = json(r#"{"properties": {}}"#);
+    let error = BedrockToolSpec {
+        name: "tool",
+        description: "d",
+        parameters: &parameters,
+        strict: None,
+        supports_strict_tools: false,
+    }
+    .into_block()
+    .expect_err("parameters without a type are rejected");
+    assert!(matches!(&error, ConverseToolsError::MissingParameterType));
+    assert_eq!(error.status_code(), Some(400));
 }
 
 pub(crate) fn supported_media_types() {
