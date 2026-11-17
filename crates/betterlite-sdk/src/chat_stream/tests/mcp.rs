@@ -155,6 +155,52 @@ async fn mcp_list_tools_skip_after_a_shaped_first_chunk() {
 }
 
 #[tokio::test]
+async fn mcp_list_tools_skip_after_a_shaped_first_chunk_without_final_metadata() {
+    let mut config = config(CallMode::Blocking);
+    config.stream_options = Some(StreamOptions {
+        include_usage: false,
+    });
+    config.mcp_metadata = Some(object(MCP_METADATA));
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    assert!(delta_fields(&only_chunk(stream.next().await)).is_none());
+    assert!(delta_fields(&only_chunk(stream.next().await)).is_none());
+}
+
+#[tokio::test]
+async fn mcp_list_tools_follows_python_truthiness() {
+    for (value, expected) in [
+        ("5", true),
+        ("0", false),
+        ("\"abc\"", true),
+        ("\"\"", false),
+        ("{\"a\":1}", true),
+        ("{}", false),
+        ("null", false),
+    ] {
+        let mut config = config(CallMode::Blocking);
+        config.stream_options = Some(StreamOptions {
+            include_usage: false,
+        });
+        config.mcp_metadata = Some(object(&format!(r#"{{"mcp_list_tools":{value}}}"#)));
+        let world = World::new();
+        let mut correlation = CorrelationContext::default();
+        let source = FakeSource::new(vec![finish_chunk()]);
+        let mut stream = start(&world, &mut correlation, config, source);
+
+        let chunk = only_chunk(stream.next().await);
+        assert_eq!(
+            delta_fields(&chunk).is_some(),
+            expected,
+            "mcp_list_tools {value}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn mcp_hook_sees_only_the_final_chunk() {
     let (world, hook) = world_with_hook(HookAction::Keep);
     let mut correlation = CorrelationContext::default();

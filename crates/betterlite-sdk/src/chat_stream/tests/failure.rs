@@ -69,6 +69,24 @@ async fn failure_blocking_skips_partial_usage() {
 }
 
 #[tokio::test]
+async fn failure_blocking_read_after_finish_raises() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::scripted(vec![
+        Ok(finish_chunk()),
+        Err(source_error(
+            SourceFailure::Read,
+            connection_class("cut"),
+            "cut",
+        )),
+    ]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
+
+    assert!(stream.next().await.unwrap().is_some());
+    assert!(stream.next().await.is_err());
+}
+
+#[tokio::test]
 async fn failure_rules_rejection_becomes_a_fallback() {
     let world = World::new();
     world.rules.reject_with("no good");
