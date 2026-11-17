@@ -2528,6 +2528,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-sdk",
  "betterlite-server",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
  "betterlite-websearch",
