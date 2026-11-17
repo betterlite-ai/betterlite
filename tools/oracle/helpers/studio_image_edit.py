@@ -270,17 +270,17 @@ def cost_value(case: CostCase) -> JsonObject:
     else:
         image_tokens = usage.get("image_tokens")
         text_tokens = usage.get("text_tokens")
-        response.usage = ImageUsage.model_validate(
-            {
-                "input_tokens": usage["input_tokens"],
-                "input_tokens_details": {
-                    "image_tokens": 0 if image_tokens is None else image_tokens,
-                    "text_tokens": 0 if text_tokens is None else text_tokens,
-                },
-                "output_tokens": usage["output_tokens"],
-                "total_tokens": usage["total_tokens"],
-            }
-        )
+        # an explicit object type keeps pydantic's Any parameter from typing the literal
+        fields: JsonObject = {
+            "input_tokens": usage["input_tokens"],
+            "input_tokens_details": {
+                "image_tokens": 0 if image_tokens is None else image_tokens,
+                "text_tokens": 0 if text_tokens is None else text_tokens,
+            },
+            "output_tokens": usage["output_tokens"],
+            "total_tokens": usage["total_tokens"],
+        }
+        response.usage = ImageUsage.model_validate(fields)
     cost = edit_cost_calculator(case["model"], response)
     return {"cost": format(Decimal(repr(cost)).normalize(), "f")}
 

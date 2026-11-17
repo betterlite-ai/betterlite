@@ -70,6 +70,10 @@ pub(super) struct CostCase {
     pub(super) usage: Option<CostUsage>,
 }
 
+#[expect(
+    clippy::struct_field_names,
+    reason = "the fields keep the case's JSON keys, and the edit usage carries nothing but token counts"
+)]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CostUsage {
