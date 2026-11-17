@@ -66,7 +66,9 @@ where
 
 async fn next_frame(mut state: FrameState) -> Option<(Result<String, Infallible>, FrameState)> {
     loop {
+        // biased keeps LiteLLM's order: a frame that is ready wins over a ping
         let next = tokio::select! {
+            biased;
             frame = state.frames.recv() => NextFrame::Frame(frame),
             () = &mut state.producer, if !state.producer_done => NextFrame::ProducerDone,
             () = ping_due(state.interval) => NextFrame::Ping,
