@@ -86,6 +86,39 @@ fn translate_returns_older_tool_events_when_nothing_else_is_pending() {
 }
 
 #[test]
+fn driver_pending_response_events_come_before_queued_tool_events() {
+    let (mut stream, _received) = driver(Vec::new(), Reply::None, "{}", &["u1"]);
+    stream.state.progress.pending_tool_events.push(queued(3, 7));
+    stream
+        .state
+        .progress
+        .pending_response_events
+        .push(output_item_event(5, Extra::new(), 8, true));
+    for _initial in 0..2 {
+        stream
+            .next_event()
+            .expect("the initial event builds")
+            .expect("the stream emits the initial event");
+    }
+    let response = stream
+        .next_event()
+        .expect("the response event builds")
+        .expect("the queued response event comes first");
+    assert!(matches!(
+        response,
+        KnownResponseEvent::OutputItemDone(event) if event.output_index == 5
+    ));
+    let tool = stream
+        .next_event()
+        .expect("the tool event builds")
+        .expect("the queued tool event follows");
+    assert!(matches!(
+        tool,
+        KnownResponseEvent::OutputItemDone(event) if event.output_index == 3
+    ));
+}
+
+#[test]
 fn ensure_output_item_runs_once() {
     let (mut stream, _received) = driver(Vec::new(), Reply::None, "{}", &["u1"]);
     let chunk = json(r#"{"id":"chat_a","choices":[{"index":0,"delta":{"content":"hi"}}]}"#);
