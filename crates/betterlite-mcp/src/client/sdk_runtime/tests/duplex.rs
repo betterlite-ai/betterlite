@@ -230,7 +230,7 @@ async fn the_wire_helpers_carry_the_prompt_and_resource_results() {
     .unwrap();
 }
 
-async fn check_prompt_wire(session: &mut SdkSession) {
+async fn check_prompt_wire(session: &SdkSession) {
     for (cursor, expected) in [(None, "greet"), (Some("more"), "farewell")] {
         let wire = session
             .wire_request(WireRequest::ListPrompts(cursor))
@@ -255,7 +255,7 @@ async fn check_prompt_wire(session: &mut SdkSession) {
     assert_eq!(text.text, "hello ada");
 }
 
-async fn check_resource_wire(session: &mut SdkSession) {
+async fn check_resource_wire(session: &SdkSession) {
     let resources: ListResourcesResult = serde_json::from_str(
         &session
             .wire_request(WireRequest::ListResources(None))
