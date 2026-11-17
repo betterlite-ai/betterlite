@@ -57,6 +57,24 @@ enum Behavior {
     metadata: br#"{"confidence":0.99,"time":"MEM"}"#,
     expected: "cloud-fast-1",
 })]
+// the metadata reader keeps the exact decimal text, where LiteLLM's float keeps 1e-30 and rounds
+// 1.0000000000000001 to 1.0; the first two values fall back to the declared 0.5 default
+#[case::decimal_scale_confidence(Behavior::Selection {
+    pool: &[("cloud-smart-1", "cloud-smart"), ("local-1", "local")],
+    metadata: br#"{"confidence":1e-30}"#,
+    expected: "local-1",
+})]
+#[case::decimal_over_one(Behavior::Selection {
+    pool: &[("deep-1", "deep"), ("local-1", "local")],
+    metadata: br#"{"confidence":1.0000000000000001}"#,
+    expected: "local-1",
+})]
+// 0.29999999999999999 is exactly below the 0.3 default low threshold, where Python keeps the 0.3 double
+#[case::decimal_below_low(Behavior::Selection {
+    pool: &[("cloud-fast-1", "cloud-fast"), ("cloud-smart-1", "cloud-smart")],
+    metadata: br#"{"confidence":0.29999999999999999}"#,
+    expected: "cloud-smart-1",
+})]
 #[case::single_deployment(Behavior::SingleDeployment)]
 #[case::empty_pool(Behavior::EmptyPool)]
 #[case::no_router(Behavior::NoRouter)]
@@ -143,6 +161,21 @@ async fn wire_enums() {
         Lar1Metadata::parse(br#"{"act":"gen"}"#),
         Err(MetadataError::Invalid { .. })
     ));
+}
+
+// the parse keeps the exact decimal text of the confidence, so each value lands where its text says
+#[test]
+fn decimal_confidence_reading() {
+    assert!(matches!(
+        Lar1Metadata::parse(br#"{"confidence":1e-30}"#),
+        Err(MetadataError::Invalid { .. })
+    ));
+    assert!(matches!(
+        Lar1Metadata::parse(br#"{"confidence":1.0000000000000001}"#),
+        Err(MetadataError::Confidence { .. })
+    ));
+    let below = Lar1Metadata::parse(br#"{"confidence":0.29999999999999999}"#).unwrap();
+    assert_eq!(below.confidence, dec("0.29999999999999999"));
 }
 
 async fn unverified_first() {
