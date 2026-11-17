@@ -61,9 +61,10 @@ class LoggingView(BaseModel):
 
 
 def record_stream_chunk_builder(
-    *_args: Json, messages: Json = None, **_kwargs: Json
+    *_args: object, messages: object = None, **_kwargs: object
 ) -> ModelResponse:
-    RECORDED.append(messages)
+    # parameters take the top type so the stand-in is assignable to LiteLLM's own signature
+    RECORDED.append(steps.JSON.validate_python(messages))
     return ModelResponse()
 
 
