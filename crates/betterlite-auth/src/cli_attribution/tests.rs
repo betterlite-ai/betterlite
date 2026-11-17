@@ -212,7 +212,7 @@ fn build_prefers_extra_fields_before_the_identity_document() {
 
 #[test]
 fn build_skips_unsafe_destinations_and_values() {
-    let events = Errors::capture();
+    let events = CapturedEvents::capture();
     let metadata = builds(
         r#"{"jwt_claim": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature", "plain": "eyJhbGciOiJIUzI1NiJ9", "safe": "value", "note": "shown"}"#,
         "jwt_claim->token_note,plain->token_shape_ok,safe->api_key,note->secret_santa",
@@ -403,14 +403,14 @@ impl<S: Subscriber> Layer<S> for LevelCounter {
     }
 }
 
-struct Errors {
+struct CapturedEvents {
     errors: Arc<AtomicUsize>,
     infos: Arc<AtomicUsize>,
     debugs: Arc<AtomicUsize>,
     _guard: DefaultGuard,
 }
 
-impl Errors {
+impl CapturedEvents {
     fn capture() -> Self {
         let errors = Arc::new(AtomicUsize::new(0));
         let infos = Arc::new(AtomicUsize::new(0));
@@ -451,14 +451,14 @@ impl Errors {
 
 #[tokio::test]
 async fn persist_without_attribution_never_reaches_the_database() {
-    let errors = Errors::capture();
+    let errors = CapturedEvents::capture();
     persist_attribution_metadata(&PostgresStore { pool: None }, "cli-user", &BTreeMap::new()).await;
     assert_eq!(errors.count(), 0);
 }
 
 #[tokio::test]
 async fn persist_logs_and_continues_when_the_database_is_unavailable() {
-    let errors = Errors::capture();
+    let errors = CapturedEvents::capture();
     persist_attribution_metadata(
         &PostgresStore { pool: None },
         "cli-user",
@@ -559,7 +559,7 @@ async fn persist_merges_attribution_into_the_stored_user_metadata() {
         r#"{"employment_type": "full_time", "region": "us"}"#,
         "employment_type->acme_employment_type,region->profile.region",
     );
-    let events = Errors::capture();
+    let events = CapturedEvents::capture();
     persist_attribution_metadata(&postgres, "cli-user", &attribution).await;
     assert_eq!(
         document(&stored_metadata(&postgres, "cli-user").await),
