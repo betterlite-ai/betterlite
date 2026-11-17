@@ -44,7 +44,7 @@ fn a_numeric_string_survives_the_merge() {
     assert_eq!(merged["count"], "42");
     assert_eq!(merged["note"], "keep");
     assert_eq!(merged["profile"]["count"], "42");
-    assert_eq!(merged["profile"]["tier"], 2);
+    assert_eq!(merged["profile"]["tier"], 2_i64);
 }
 
 #[test]
