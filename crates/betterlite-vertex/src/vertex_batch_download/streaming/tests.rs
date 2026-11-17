@@ -109,7 +109,7 @@ fn split_utf8() {
     let (head, tail) = UTF8_ROW.as_bytes().split_at(position);
     let mut completed = tail.to_vec();
     completed.push(b'\n');
-    let (decoder, output) = drain(decoder(1), &[head, completed.as_slice()]);
+    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[head, completed.as_slice()]);
     assert_eq!(decoder.mode, DownloadMode::Lines);
     assert!(from_utf8(&output).unwrap().contains("café"));
 }
