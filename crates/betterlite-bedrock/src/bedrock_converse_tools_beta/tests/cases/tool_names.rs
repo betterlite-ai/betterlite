@@ -98,7 +98,7 @@ pub(super) fn failures(session: &mut Session<'_>) {
         None,
         "{}",
     )) {
-        Err(ToolsAndBetaError::Tools(error)) => assert_eq!(error.status_code(), None),
+        Err(ToolsAndBetaError::Tools(error)) => assert_eq!(error.status_code(), Some(400)),
         Err(_) | Ok(_) => panic!("a non-string tool type must fail as a tool error"),
     }
     match session.process(&Request::new(
@@ -113,7 +113,7 @@ pub(super) fn failures(session: &mut Session<'_>) {
         Err(_) | Ok(_) => panic!("a non-string tool name must fail as a tool spec error"),
     }
     match session.process(&Request::new(ADAPTIVE_MODEL, r#"["text"]"#, None, "{}")) {
-        Err(ToolsAndBetaError::Tools(error)) => assert_eq!(error.status_code(), None),
+        Err(ToolsAndBetaError::Tools(error)) => assert_eq!(error.status_code(), Some(400)),
         Err(_) | Ok(_) => panic!("a tool that is not an object must be refused"),
     }
 }
