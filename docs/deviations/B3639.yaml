@@ -15,9 +15,12 @@ deviations:
   - what: A predict body whose "predictions" is null or another non-list fails in the image detection step with B1349's shape error, where LiteLLM fails with the TypeError from subscripting or iterating that value.
     why: B1349's image detection runs before the multimodal check and rejects the shape, and the task states that a predictions value that is not a list of entries counts as no multimodal reply. Both paths fail the reply and drop the dispatch, and a malformed predictions value is outside what a working setup sends.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L275-L279
-  - what: An embedding reply without usageMetadata falls back to a character count over the joined input text, where LiteLLM's token_counter tokenizes it.
-    why: betterlite has no tokenizer at this layer; the B1340 step takes an injected counter, and the character counter is what the server has. A reply that carries usageMetadata is counted from it, as LiteLLM does, and every oracle case that reads the counts carries that metadata.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L356
+  - what: An embedding reply without usageMetadata is counted with the bundled cl100k_base tokenizer whatever the URL's model is, where LiteLLM's token_counter picks the encoding from the model name.
+    why: LiteLLM normalizes a model it does not know to gpt-3.5-turbo, whose encoding is cl100k_base, and a Vertex passthrough route names a Vertex model, so a working setup gets the same count. Only a route named after a model LiteLLM maps to another encoding, such as gpt-4o, would count differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L663-L675
+  - what: An image prediction is priced through the cost trait with a response that carries neither image data nor an image count, so the vertex_ai output_cost_per_image times the images cannot be computed here.
+    why: B3638 owns the cost trait and its CompletionResponse, which holds an id, a model and the token usage only. The count belongs to that type and to B3638's image pricing step, so this path prices the response with the counts it has and the images are not priced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/cost_calculator.py#L44-L46
   - what: The Lyria audio price is read from the bundled model catalog only, with no runtime litellm.model_cost overlay.
     why: betterlite has no runtime mutation of the model cost map, so the bundled catalog is what a working setup on the pinned map gets. A model that is not a Lyria model, or carries no price, takes no audio branch.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L79-L99
