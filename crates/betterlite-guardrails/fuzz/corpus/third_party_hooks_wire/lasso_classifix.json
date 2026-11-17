@@ -1,0 +1,1 @@
+{"violations_detected":true,"deputies":{"pattern-detection":true},"findings":{"pattern-detection":[{"action":"AUTO_MASKING"}]},"messages":[{"role":"user","content":"my email is [EMAIL]"}]}

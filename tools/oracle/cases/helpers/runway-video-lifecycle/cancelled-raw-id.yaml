@@ -1,0 +1,26 @@
+kind: helper
+name: runway-video-lifecycle-cancelled-raw-id
+call:
+  runway_video_lifecycle:
+    operation: response
+    params:
+      - kind: delete
+        provider: null
+        body: '{"id":"task_1","status":"RUNNING","output":["https://cdn.test/a.mp4"],"progress":0.5,"failure":"boom","createdAt":"1970-01-01T00:00:05Z"}'
+      - kind: delete
+        provider: null
+        body: '{"id":"task_1"}'
+      - kind: delete
+        provider: null
+        body: '{"id":"task_1","createdAt":null}'
+      - kind: delete
+        provider: null
+        body: '{"id":"task_1","createdAt":"yesterday"}'
+      - kind: delete
+        provider: runwayml
+        body: '{"id":"task_1","createdAt":"2025-11-11T21:48:50.448Z","completedAt":"2025-11-11T21:49:50.448Z"}'
+      - kind: delete
+        provider: runwayml
+        body: '{"id":"video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv","status":"FAILED","failure":"boom"}'
+env: {}
+compare: {ignore: []}

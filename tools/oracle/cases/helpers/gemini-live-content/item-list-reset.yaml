@@ -1,0 +1,42 @@
+kind: helper
+name: item-list-reset
+call:
+  gemini_live_content:
+    calls:
+      - op: update
+        chunks: item
+        steps:
+          - kind: single
+            event:
+              type: response.output_item.done
+              item:
+                id: item-1
+                type: message
+          - kind: single
+            event:
+              type: response.output_item.done
+              item:
+                id: item-2
+                type: function_call
+          - kind: list
+            events:
+              - type: response.done
+              - type: response.output_item.done
+                item:
+                  id: item-3
+          - kind: single
+            event:
+              type: response.output_text.delta
+              delta: x
+          - kind: list
+            events:
+              - type: response.output_text.delta
+                delta: y
+          - kind: single
+            event:
+              type: response.output_item.done
+              item:
+                id: item-4
+                type: message
+env: {}
+compare: {ignore: []}

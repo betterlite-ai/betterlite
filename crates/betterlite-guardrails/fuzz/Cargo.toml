@@ -206,3 +206,10 @@ path = "fuzz_targets/presidio_streams_sse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "third_party_hooks_wire"
+path = "fuzz_targets/third_party_hooks_wire.rs"
+test = false
+doc = false
+bench = false

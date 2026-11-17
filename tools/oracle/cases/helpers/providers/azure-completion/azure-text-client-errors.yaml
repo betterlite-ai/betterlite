@@ -1,0 +1,55 @@
+kind: helper
+name: azure-text-client-errors
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        client: async
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        acompletion: true
+        client: sync
+calls:
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          client: async
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, stream: true}
+          answer:
+            events:
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+              - "data: [DONE]\n\n"
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          acompletion: true
+          client: sync
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, stream: true}
+          answer:
+            events:
+              - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
+              - "data: [DONE]\n\n"
+env: {}
+compare: {ignore: []}
