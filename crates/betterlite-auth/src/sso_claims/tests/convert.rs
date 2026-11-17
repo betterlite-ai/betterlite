@@ -202,6 +202,19 @@ fn the_role_claim_fills_a_missing_mapping() {
 }
 
 #[test]
+fn an_unmatched_group_falls_through_to_the_role_claim() {
+    let jwt_handler = handler(JwtAuthSettings::default());
+    let role_mappings = mappings(None, &[(UserRole::ProxyAdmin, &["admins"])]);
+    let converted = convert(
+        r#"{"groups":["staff"],"role":"internal_user"}"#,
+        &config(&jwt_handler, None, Some(&role_mappings), None),
+        &[],
+    )
+    .unwrap();
+    assert_eq!(converted.user_role, Some(UserRole::InternalUser));
+}
+
+#[test]
 fn sso_teams_come_before_the_ordinary_handler_teams() {
     let sso = team_handler("team_ids");
     let ordinary = team_handler("jwt_teams");
