@@ -11,8 +11,6 @@ pub enum ChatStreamError {
     Stream { failure: StreamFailure },
     #[error("the stream state rejected a chunk: {0}")]
     State(#[from] StreamStateError),
-    #[error("the event cannot be encoded as an Anthropic SSE frame: {0}")]
-    Encode(#[from] ChatStreamEncodeError),
 }
 
 impl ChatStreamError {
@@ -22,9 +20,6 @@ impl ChatStreamError {
         match self {
             Self::Stream { failure } => failure,
             Self::State(error) => StreamFailure::Unclassified {
-                text: error.to_string(),
-            },
-            Self::Encode(error) => StreamFailure::Unclassified {
                 text: error.to_string(),
             },
         }
