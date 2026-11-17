@@ -135,7 +135,7 @@ impl<L: EnvironmentLookup + Sync> ConfigLoader<L> {
     }
 }
 
-pub(crate) fn parse_view<View>(source: &str) -> Result<(View, BTreeSet<String>), ConfigError>
+pub fn parse_view<View>(source: &str) -> Result<(View, BTreeSet<String>), ConfigError>
 where
     View: DeserializeOwned,
 {
@@ -177,13 +177,13 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
 }
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-// sections read the drop-params env through this lookup, so the loader resolves it once, warn-and-on included
-struct DropParamsLookup<'lookup, L> {
-    lookup: &'lookup L,
+// every section reads the env, drop-params resolved once by the loader, through this one type, so convert compiles once
+struct DropParamsLookup<'lookup> {
+    lookup: Lookup<'lookup>,
     enabled: bool,
 }
 
-impl<L: EnvironmentLookup> EnvironmentLookup for DropParamsLookup<'_, L> {
+impl EnvironmentLookup for DropParamsLookup<'_> {
     fn lookup(&self, name: &str) -> Option<String> {
         if name == "LITELLM_DROP_PARAMS" {
             return Some(self.enabled.to_string());
