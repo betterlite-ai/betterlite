@@ -126,10 +126,10 @@ struct Fixture {
 impl Fixture {
     fn new(target: Option<&str>, request_body: &str) -> Self {
         let mut headers = HeaderMap::new();
-        if let Some(target) = target {
+        if let Some(header) = target {
             headers.insert(
                 "x-amz-target",
-                HeaderValue::from_str(target).expect("a valid header value"),
+                HeaderValue::from_str(header).expect("a valid header value"),
             );
         }
         Self {
@@ -380,7 +380,7 @@ fn comprehend_reads_a_missing_text_as_one_unit(#[case] body: &str) {
 
 #[test]
 fn comprehend_counts_characters_rather_than_bytes() {
-    let body = format!(r#"{{"Text": "{}"}}"#, "é".repeat(101));
+    let body = format!(r#"{{"Text": "{}"}}"#, "\u{e9}".repeat(101));
     let fixture = Fixture::new(Some("ComprehendMedical_V20181030.DetectPHI"), &body);
     let outcome = run(&fixture);
 

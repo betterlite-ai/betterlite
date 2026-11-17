@@ -513,9 +513,22 @@ fn typesafe_logs_a_chat_completion_envelope_as_the_response() {
     assert_eq!(text(field(response, "model")), "typesafe/gpt-4o");
     assert_eq!(text(field(response, "object")), "chat.completion");
     assert!(matches!(field(response, "system_fingerprint"), Json::Null));
+}
+
+#[test]
+fn typesafe_logs_one_default_chat_completion_choice() {
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"model": "gpt-4o", "usage": {"input_tokens": 100, "output_tokens": 20}}"#,
+        "{}",
+    );
+    let outcome = run(&fixture);
+    let payload = payload(&outcome);
+    let response = field(&payload, "response");
     let Json::List(choices) = field(response, "choices") else {
         panic!("the choices field is a list");
     };
+
     assert_eq!(choices.len(), 1);
     let choice = &choices[0];
     assert_eq!(text(field(choice, "finish_reason")), "stop");
