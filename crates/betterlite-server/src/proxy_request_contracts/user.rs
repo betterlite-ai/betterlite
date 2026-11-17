@@ -84,9 +84,7 @@ pub struct NewUserRequest {
 
 impl NewUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let mut fields = require_object(value)?;
-        blank_to_null(&mut fields, &["max_budget"]);
-        let request: Self = decode(&fields)?;
+        let request: Self = decode(&user_fields(value)?)?;
         check_user_role(request.user_role)?;
         if request.password.is_some() {
             return Err(ContractError::from(PASSWORD_UNSUPPORTED));
@@ -118,8 +116,7 @@ pub struct UpdateUserFields {
 
 impl UpdateUserFields {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let mut fields = require_object(value)?;
-        blank_to_null(&mut fields, &["max_budget"]);
+        let fields = user_fields(value)?;
         let mut request: Self = decode(&fields)?;
         check_user_role(request.user_role)?;
         request.supplied = supplied_fields(&fields, &USER_FIELDS);
@@ -139,14 +136,20 @@ pub struct UpdateUserRequest {
 
 impl UpdateUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let mut fields = require_object(value)?;
-        blank_to_null(&mut fields, &["max_budget"]);
+        let fields = user_fields(value)?;
         check_user_info(&fields)?;
         let mut request: Self = decode(&fields)?;
-        check_user_role(request.fields.user_role)?;
         request.fields.supplied = supplied_fields(&fields, &USER_FIELDS);
+        check_user_role(request.fields.user_role)?;
         Ok(request)
     }
+}
+
+// GenerateRequestBase's max_budget validator runs before decoding on both user requests, so a blank string becomes null.
+fn user_fields(value: &JsonValue) -> Result<Fields, ContractError> {
+    let mut fields = require_object(value)?;
+    blank_to_null(&mut fields, &["max_budget"]);
+    Ok(fields)
 }
 
 // The before-validator tests `is None`, so an empty string selects the user and a null does not.
@@ -167,9 +170,9 @@ fn check_user_role(role: Option<UserRole>) -> Result<(), ContractError> {
             | UserRole::InternalUser
             | UserRole::InternalUserViewer,
         ) => Ok(()),
-        Some(other) => Err(ContractError::from(format!(
-            "user_role {other} is not allowed"
-        ))),
+        Some(role @ (UserRole::OrgAdmin | UserRole::Team | UserRole::Customer)) => Err(
+            ContractError::from(format!("user_role {role} is not allowed")),
+        ),
     }
 }
 
@@ -207,5 +210,4 @@ impl ChangePasswordResponse {
 
 pub mod info;
 
-#[cfg(test)]
 mod tests;
