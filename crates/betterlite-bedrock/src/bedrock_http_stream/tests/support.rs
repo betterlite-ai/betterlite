@@ -381,7 +381,7 @@ pub(super) fn logging_state(redactor: &Redactor) -> LoggingState {
         },
         redactor,
         || "generated".to_owned(),
-        Duration::default(),
+        Duration::default,
     )
     .unwrap()
 }
