@@ -25,10 +25,10 @@ pub(crate) fn split_key_path(key_path: &str) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn value_at<'a>(
-    metadata: &'a BTreeMap<String, JsonData>,
+pub(crate) fn value_at<'metadata>(
+    metadata: &'metadata BTreeMap<String, JsonData>,
     key_path: &[String],
-) -> Option<&'a JsonData> {
+) -> Option<&'metadata JsonData> {
     let mut parts = key_path.iter();
     let mut current = metadata.get(parts.next()?)?;
     for part in parts {

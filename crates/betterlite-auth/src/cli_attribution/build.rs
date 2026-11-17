@@ -47,7 +47,10 @@ pub fn build_attribution_metadata(
 }
 
 // A literal key beats a dotted traversal at every level, and the extra claims beat the identity fields.
-fn claim_value<'a>(document: &'a JsonData, claim_path: &str) -> Option<&'a JsonData> {
+fn claim_value<'document>(
+    document: &'document JsonData,
+    claim_path: &str,
+) -> Option<&'document JsonData> {
     let JsonData::Object(fields) = document else {
         return None;
     };

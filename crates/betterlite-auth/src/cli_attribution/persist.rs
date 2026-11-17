@@ -88,11 +88,11 @@ async fn find_user_metadata(
     user_id: &str,
 ) -> Result<Option<BTreeMap<String, JsonData>>, PersistError> {
     let client = store.session().await?;
-    let row = client
+    let found = client
         .query_opt(SELECT_METADATA_SQL, &[&user_id])
         .await
         .map_err(backend)?;
-    let Some(row) = row else {
+    let Some(row) = found else {
         return Ok(None);
     };
     let text: String = row.try_get("metadata").map_err(backend)?;

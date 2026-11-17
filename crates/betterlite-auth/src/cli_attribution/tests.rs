@@ -200,7 +200,7 @@ fn build_prefers_extra_fields_before_the_identity_document() {
         claim_map,
     );
     assert_eq!(from_extra, document(r#"{"email": "extra@example.com"}"#));
-    let from_identity = builds(r#"{}"#, claim_map);
+    let from_identity = builds("{}", claim_map);
     assert_eq!(
         from_identity,
         document(r#"{"email": "cli@example.com", "profile_picture": "https://img.example/p.png"}"#)

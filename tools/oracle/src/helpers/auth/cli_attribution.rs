@@ -18,7 +18,7 @@ use serde::Deserialize;
 pub(crate) enum Input {
     Build {
         claim_map: String,
-        identity: OpenIdIdentity,
+        identity: Box<OpenIdIdentity>,
     },
     Merge {
         existing_metadata: BTreeMap<String, JsonData>,
