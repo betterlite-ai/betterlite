@@ -117,11 +117,11 @@ fn content_of(chunks: &[InvokeChunk]) -> Vec<&str> {
 }
 
 #[rstest]
-#[case::case_1_invoke_stream_url(case_1_invoke_stream_url)]
-#[case::case_2_http_error_before_frame(case_2_http_error_before_frame)]
-#[case::case_3_converse_stream_headers(case_3_converse_stream_headers)]
-#[case::case_4_fake_stream_projection(case_4_fake_stream_projection)]
-#[case::case_5_post_call_before_consumption(case_5_post_call_before_consumption)]
+#[case::invoke_stream_url(case_1_invoke_stream_url)]
+#[case::http_error_before_frame(case_2_http_error_before_frame)]
+#[case::converse_stream_headers(case_3_converse_stream_headers)]
+#[case::fake_stream_projection(case_4_fake_stream_projection)]
+#[case::post_call_before_consumption(case_5_post_call_before_consumption)]
 fn bedrock_http_stream_cases(#[case] case: fn()) {
     case();
 }
