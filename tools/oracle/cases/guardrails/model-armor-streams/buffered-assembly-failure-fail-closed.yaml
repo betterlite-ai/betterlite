@@ -1,0 +1,15 @@
+kind: helper
+name: buffered-assembly-failure-fail-closed
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: anthropic
+    chunks:
+    - "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"The \"}}\n\n"
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND", "filterResults": {}}}'
+env: {}
+compare:
+  ignore: []

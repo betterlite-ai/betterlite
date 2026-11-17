@@ -9,6 +9,11 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 filter = "package(betterlite-db) & test(/^(migration_(deploy|drift|ledger|recovery)|request_log_indexes)::/)"
 test-group = "db-migration-locks"
 
+# the packaged catalog's constraint guards scan every schema, so these fixtures run one at a time
+[[profile.default.overrides]]
+filter = "((package(betterlite-server) | package(betterlite-db-admin)) & test(/^database_startup::tests::/)) | (package(betterlite-config) & test(/^sections::database_startup::tests::migrations::/))"
+test-group = "db-migration-locks"
+
 [test-groups]
 db-migration-locks = { max-threads = 1 }
 

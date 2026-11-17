@@ -1206,6 +1206,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
@@ -1408,9 +1409,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "uuid",
 ]
 
 [[package]]
@@ -1882,7 +1885,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -1898,6 +1903,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2766,6 +2772,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -2956,7 +2964,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -3625,10 +3635,12 @@ dependencies = [
  "betterlite-server",
  "betterlite-tracing",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "flate2",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "quick-xml",

@@ -1,0 +1,15 @@
+kind: helper
+name: buffered-terminal-error
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: anthropic
+    chunks:
+    - "data: {\"error\": {\"message\": \"blocked upstream\", \"code\": \"400\"}}\n\n"
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND", "filterResults": {}}}'
+env: {}
+compare:
+  ignore: []

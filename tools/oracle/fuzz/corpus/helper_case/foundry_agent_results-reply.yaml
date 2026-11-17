@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-agent-results-reply-seed
+call:
+  foundry_agent_results:
+    replies:
+      - model: azure_ai/agents/seeded
+        content: seeded reply
+        thread_id: thread-seed
+        messages: [{role: user, content: hi}]
+        annotations: null
+        existing_usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+        hidden_params: {request-id: seed, thread_id: old}
+        fail: false
+      - model: azure_ai/agents/seeded
+        content: seeded reply
+        thread_id: thread-seed
+        messages: []
+        annotations: []
+        existing_usage: null
+        hidden_params: null
+        fail: true
+env: {}
+compare: {ignore: []}
