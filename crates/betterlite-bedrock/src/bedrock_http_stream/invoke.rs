@@ -195,7 +195,7 @@ fn projection_failure(error: TransformError<Infallible>) -> HttpStreamError<Infa
     }
 }
 
-fn transport_timed_out(error: &TransportError) -> bool {
+const fn transport_timed_out(error: &TransportError) -> bool {
     matches!(
         error,
         TransportError::ConnectTimeout(_)
