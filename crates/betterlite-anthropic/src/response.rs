@@ -79,11 +79,11 @@ pub fn decode_anthropic_reply(body: &[u8]) -> Result<AnthropicReply, DecodeError
     let Some(content) = fields.shift_remove("content") else {
         return Err(DecodeError::MissingContent);
     };
-    let Json::List(content) = content else {
+    let Json::List(blocks) = content else {
         return Err(DecodeError::ContentType);
     };
     Ok(AnthropicReply::Success(AnthropicCompletionResponse {
-        content,
+        content: blocks,
         fields,
     }))
 }
@@ -98,12 +98,9 @@ pub fn transform_response<Counter>(
 where
     Counter: ReasoningTokenCounter,
 {
+    let Logging { state, env } = logging;
     let text = replaced_text(raw.body);
-    post_call(
-        logging.state,
-        &post_request(request, text.clone()),
-        logging.env,
-    );
+    post_call(state, &post_request(request, text.clone()), env);
     match decode_anthropic_reply(raw.body) {
         Ok(reply) => transform_parsed_response(envelope, raw, request, reply, counter),
         Err(DecodeError::MalformedJson { source }) => Err(ResponseError::Anthropic {
@@ -160,7 +157,7 @@ where
 
 // LiteLLM's get_error_class hands the message, status and headers to AnthropicError unchanged
 #[must_use]
-pub fn get_error_class<CounterFailure>(
+pub const fn get_error_class<CounterFailure>(
     message: String,
     status: u16,
     headers: HeaderMap,
