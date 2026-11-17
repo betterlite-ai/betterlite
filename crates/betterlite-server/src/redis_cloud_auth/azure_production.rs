@@ -15,7 +15,7 @@ use betterlite_azure::azure_default_chain::provider::{
 };
 use betterlite_azure::azure_hosted_identity::request::HostedIo;
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
-use betterlite_azure::azure_managed_identity::runtime::{FsTokenFiles, ImdsIo};
+use betterlite_azure::azure_managed_identity::runtime::{FsTokenFiles, ImdsIo, Scheduler};
 use betterlite_azure::oidc_exchange::AzureOidcExchange;
 use betterlite_config::sections::azure_client_secret::Settings as ClientSecretSettings;
 use betterlite_config::sections::azure_default_chain::AzureCredentialType;
@@ -24,7 +24,7 @@ use secrecy::SecretString;
 
 use super::azure::{AzureGrantError, AzureGrants};
 use super::azure_http::AzureIo;
-use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
+use super::azure_runtime::{ProductionClock, ProductionHost};
 
 pub struct SdkAzureGrants<H: AzureIo> {
     pub http: Arc<H>,
@@ -32,7 +32,7 @@ pub struct SdkAzureGrants<H: AzureIo> {
     pub files: StdFiles,
     pub ids: Arc<RandomIds>,
     pub token_files: FsTokenFiles,
-    pub scheduler: ThreadScheduler,
+    pub scheduler: Box<dyn Scheduler>,
     pub host: ProductionHost,
     pub redactor: Redactor,
     pub environment: ManagedIdentityEnvironment,
@@ -160,7 +160,7 @@ impl<H: AzureIo> SdkAzureGrants<H> {
                     arc: &*self.http,
                     imds: ImdsIo {
                         transport: &*self.http,
-                        scheduler: &self.scheduler,
+                        scheduler: &*self.scheduler,
                         ids: &*self.ids,
                         clock: &*self.clock,
                     },

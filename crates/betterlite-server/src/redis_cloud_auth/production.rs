@@ -91,9 +91,9 @@ fn azure_grants(
         files: StdFiles,
         ids: Arc::new(RandomIds),
         token_files: FsTokenFiles,
-        scheduler: ThreadScheduler {
+        scheduler: Box::new(ThreadScheduler {
             runtime: runtime.clone(),
-        },
+        }),
         host: ProductionHost {
             environment: environment.clone(),
         },
