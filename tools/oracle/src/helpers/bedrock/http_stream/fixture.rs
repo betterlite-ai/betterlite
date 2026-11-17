@@ -2,7 +2,7 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_bedrock::agentcore_stream::transport::{
-    Chunks, HandlerKind, PostRequest, StreamHandler, StreamHead,
+    HandlerKind, PostRequest, StreamHandler, StreamHead,
 };
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -65,7 +65,8 @@ impl StreamHandler for Fixture {
         Ok(StreamHead {
             status: self.status,
             headers: self.headers.clone(),
-            chunks: chunk_stream(&self.body),
+            // One transport read of the whole fixture body, the way a buffered HTTP client delivers it.
+            chunks: stream::iter(vec![Ok(self.body.clone())]).boxed(),
         })
     }
 }
@@ -75,10 +76,4 @@ fn transport_error(failure: Failure) -> TransportError {
         Failure::Timeout => TransportError::Rejected(HttpError::Timeout),
         Failure::Other => TransportError::Closed,
     }
-}
-
-// One transport read of the whole fixture body, the way a buffered HTTP client delivers it.
-fn chunk_stream(body: &[u8]) -> Chunks {
-    let reads: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(body.to_vec())];
-    stream::iter(reads).boxed()
 }

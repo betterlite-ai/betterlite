@@ -1,5 +1,4 @@
 use betterlite_bedrock::bedrock_http_stream::error::HttpStreamError;
-use betterlite_bedrock::bedrock_http_stream::stream::StreamFailure;
 use betterlite_bedrock::converse_events::ChunkProjection;
 use betterlite_bedrock::invoke_events::InvokeChunk;
 use betterlite_http::error::HttpError;
@@ -9,29 +8,25 @@ use serde_json::{Value, json};
 
 use super::types::Case;
 
-pub(super) fn failure_view(failure: &StreamFailure) -> Value {
-    json!({ "status": failure.status() })
-}
-
 pub(super) fn error_view(error: &HttpStreamError, case: &Case) -> Value {
-    match error {
-        HttpStreamError::Provider { status, error } => {
-            let mut headers = error.response_headers.clone();
-            headers.sort();
-            json!({
-                "kind": "provider",
-                "status": status,
-                "message": if case.compare_message { json!(error.error.message) } else { Value::Null },
-                "headers": if case.compare_headers { json!(headers) } else { Value::Null },
-                "category": Value::Null,
-            })
-        }
-        HttpStreamError::Transport(source) => raised_view(category(source)),
-        HttpStreamError::Url(_)
-        | HttpStreamError::Body(_)
-        | HttpStreamError::Transform(_)
-        | HttpStreamError::Header(_) => raised_view("other"),
-    }
+    let HttpStreamError::Provider { status, error } = error else {
+        return raised_view(match error {
+            HttpStreamError::Transport(source) => category(source),
+            HttpStreamError::Url(_)
+            | HttpStreamError::Body(_)
+            | HttpStreamError::Transform(_)
+            | HttpStreamError::Header(_) => "other",
+        });
+    };
+    let mut headers = error.response_headers.clone();
+    headers.sort();
+    json!({
+        "kind": "provider",
+        "status": status,
+        "message": if case.compare_message { json!(error.error.message) } else { Value::Null },
+        "headers": if case.compare_headers { json!(headers) } else { Value::Null },
+        "category": Value::Null,
+    })
 }
 
 // Converse passes a transport failure through untouched; only its timeout category is comparable.

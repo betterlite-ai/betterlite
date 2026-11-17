@@ -1,24 +1,31 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_bedrock::agentcore_stream::IdSource;
 use betterlite_bedrock::agentcore_stream::adapter::header_pairs;
-use betterlite_logging::logging_pre_post::env::{LogRecord, LogSink};
+use betterlite_bedrock::agentcore_stream::transport::StreamHandler;
+use betterlite_bedrock::bedrock_http_stream::StreamDeps;
+use betterlite_bedrock::invoke_events::DecoderClock;
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::Redactor;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use uuid::Uuid;
 
 use betterlite_oracle_helper_api::error::HelperError;
 
 const INIT: &str = r#"{"model":"bedrock/amazon.titan","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-const NOW: &str = "2026-01-01T00:00:00+00:00";
+pub(super) const NOW: &str = "2026-01-01T00:00:00+00:00";
 pub(super) const SECONDS: u64 = 1_767_225_600;
 pub(super) const TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -28,26 +35,12 @@ impl LogSink for Quiet {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) struct Counter(AtomicUsize);
-
-impl Counter {
-    pub(super) fn new() -> Self {
-        Self(AtomicUsize::new(0))
-    }
-}
+pub(super) struct Counter(pub(super) AtomicUsize);
 
 impl IdSource for Counter {
     fn next_id(&self) -> Uuid {
         Uuid::from_u128(u128::from(self.0.fetch_add(1, Ordering::Relaxed)))
     }
-}
-
-pub(super) fn fixed_id() -> Uuid {
-    Uuid::from_u128(0x5EED_0000_u128)
-}
-
-pub(super) fn fixed_seconds() -> i64 {
-    i64::try_from(SECONDS).unwrap_or(0)
 }
 
 pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {
@@ -64,10 +57,6 @@ pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<Hel
     .map_err(failure)
 }
 
-pub(super) fn env_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339(NOW).map_err(failure)
-}
-
 pub(super) fn header_map(pairs: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
     for (name, value) in pairs {
@@ -82,6 +71,47 @@ pub(super) fn sorted_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
     let mut pairs = header_pairs(headers);
     pairs.sort();
     pairs
+}
+
+// The env a helper logs through: no callbacks or sentry, and the case's fixed clock.
+pub(super) fn pre_post_env<'env>(
+    redactor: &'env Redactor,
+    sink: &'env Quiet,
+    logger: LoggerFn<'env>,
+) -> Result<PrePostEnv<'env>, Box<HelperError>> {
+    Ok(PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: Some(logger),
+        now: DateTime::parse_from_rfc3339(NOW).map_err(failure)?,
+    })
+}
+
+// One handler answers both the supplied and the default slot, with fixed ids and the case's fixed time.
+pub(super) fn stream_deps<'deps>(
+    handler: Arc<dyn StreamHandler>,
+    redactor: &'deps Redactor,
+) -> StreamDeps<'deps> {
+    StreamDeps {
+        supplied: Some(Arc::clone(&handler)),
+        default: Arc::clone(&handler),
+        ids: Arc::new(Counter(AtomicUsize::new(0))),
+        clock: DecoderClock {
+            next_id: || Uuid::from_u128(0x5EED_0000_u128),
+            now: || i64::try_from(SECONDS).unwrap_or(0),
+        },
+        redactor,
+        timeout: TIMEOUT,
+        now: UNIX_EPOCH + Duration::from_secs(SECONDS),
+    }
 }
 
 pub(super) fn failure<E: Display>(error: E) -> Box<HelperError> {
