@@ -73,33 +73,21 @@ async fn a_counting_gate_compares_the_prompt_against_the_minimum() {
 }
 
 async fn an_unknown_model_uses_the_default_minimum() {
+    the_default_minimum_applies(["unknown-model", "unknown-model"]).await;
+}
+
+async fn a_deployment_without_a_model_name_uses_the_default() {
+    the_default_minimum_applies(["", ""]).await;
+}
+
+async fn the_default_minimum_applies(models: [&str; 2]) {
     let pins = Arc::new(FakePins::default());
     let raw = json_messages(MARKED_MESSAGES);
     pins.seed(&cache_key(&raw, None).unwrap(), pin("dep-a"));
     let pool = [
-        deployment("dep-a", "unknown-model"),
-        deployment("dep-b", "unknown-model"),
+        deployment("dep-a", models[0]),
+        deployment("dep-b", models[1]),
     ];
-    let typed = messages(MARKED_MESSAGES);
-    let at = service(Arc::clone(&pins), 1024, false);
-    let selected = at
-        .filter_deployments(&request(&pool, Some(&typed)))
-        .await
-        .unwrap();
-    assert_eq!(ids(&selected), ["dep-a"]);
-    let below = service(Arc::clone(&pins), 1023, false);
-    let untouched = below
-        .filter_deployments(&request(&pool, Some(&typed)))
-        .await
-        .unwrap();
-    assert_eq!(ids(&untouched), ["dep-a", "dep-b"]);
-}
-
-async fn a_deployment_without_a_model_name_uses_the_default() {
-    let pins = Arc::new(FakePins::default());
-    let raw = json_messages(MARKED_MESSAGES);
-    pins.seed(&cache_key(&raw, None).unwrap(), pin("dep-a"));
-    let pool = [deployment("dep-a", ""), deployment("dep-b", "")];
     let typed = messages(MARKED_MESSAGES);
     let at = service(Arc::clone(&pins), 1024, false);
     let selected = at

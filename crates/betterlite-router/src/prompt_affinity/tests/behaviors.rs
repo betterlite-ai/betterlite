@@ -51,27 +51,26 @@ async fn filter_cases(name: &str) -> bool {
 }
 
 async fn prefix_cases(name: &str) {
-    match name {
-        "default_breakpoints_are_injected_when_the_global_flag_is_on" => {
-            default_breakpoints_are_injected_when_the_global_flag_is_on().await;
-        }
-        "request_kwargs_enable_prompt_caching_injects_without_the_flag" => {
-            request_kwargs_enable_prompt_caching_injects_without_the_flag().await;
-        }
-        "a_message_level_mark_ignores_later_messages" => {
-            a_message_level_mark_ignores_later_messages();
-        }
-        "a_message_key_order_never_changes_the_digest" => {
-            a_message_key_order_never_changes_the_digest();
-        }
-        "only_the_blocks_up_to_the_last_mark_are_hashed" => {
-            only_the_blocks_up_to_the_last_mark_are_hashed();
-        }
-        "cache_control_markers_never_change_the_digest" => {
-            cache_control_markers_never_change_the_digest();
-        }
-        "tools_seed_the_prefix_digest" => tools_seed_the_prefix_digest(),
-        _ => panic!("unknown case {name}"),
+    if name == "default_breakpoints_are_injected_when_the_global_flag_is_on" {
+        default_breakpoints_are_injected_when_the_global_flag_is_on().await;
+    } else if name == "request_kwargs_enable_prompt_caching_injects_without_the_flag" {
+        request_kwargs_enable_prompt_caching_injects_without_the_flag().await;
+    } else if name == "tools_marks_suppress_the_default_breakpoints" {
+        tools_marks_suppress_the_default_breakpoints().await;
+    } else if name == "request_kwargs_without_the_flag_do_not_inject" {
+        request_kwargs_without_the_flag_do_not_inject().await;
+    } else if name == "a_message_level_mark_ignores_later_messages" {
+        a_message_level_mark_ignores_later_messages();
+    } else if name == "a_message_key_order_never_changes_the_digest" {
+        a_message_key_order_never_changes_the_digest();
+    } else if name == "only_the_blocks_up_to_the_last_mark_are_hashed" {
+        only_the_blocks_up_to_the_last_mark_are_hashed();
+    } else if name == "cache_control_markers_never_change_the_digest" {
+        cache_control_markers_never_change_the_digest();
+    } else if name == "tools_seed_the_prefix_digest" {
+        tools_seed_the_prefix_digest();
+    } else {
+        panic!("unknown case {name}");
     }
 }
 
@@ -141,25 +140,14 @@ async fn a_prompt_below_the_minimum_never_reads_the_pin() {
 }
 
 async fn a_priority_group_keeps_every_deployment() {
-    let pins = Arc::new(FakePins::default());
-    let affinity = service(Arc::clone(&pins), 2000, false);
-    let raw = json_messages(MARKED_MESSAGES);
-    pins.seed(
-        &cache_key(&raw, None).unwrap(),
-        super::support::pin("dep-a"),
-    );
-    let pool = [
-        deployment("dep-a", "claude-min"),
-        deployment("dep-b", "claude-min"),
-    ];
-    let typed = messages(MARKED_MESSAGES);
-    let mut selection = request(&pool, Some(&typed));
-    selection.priority_group = true;
-    let selected = affinity.filter_deployments(&selection).await.unwrap();
-    assert_eq!(ids(&selected), ["dep-a", "dep-b"]);
+    keeps_every_deployment_with(true, None).await;
 }
 
 async fn a_target_order_keeps_every_deployment() {
+    keeps_every_deployment_with(false, Some(2)).await;
+}
+
+async fn keeps_every_deployment_with(priority_group: bool, target_order: Option<i64>) {
     let pins = Arc::new(FakePins::default());
     let affinity = service(Arc::clone(&pins), 2000, false);
     let raw = json_messages(MARKED_MESSAGES);
@@ -173,7 +161,8 @@ async fn a_target_order_keeps_every_deployment() {
     ];
     let typed = messages(MARKED_MESSAGES);
     let mut selection = request(&pool, Some(&typed));
-    selection.target_order = Some(2);
+    selection.priority_group = priority_group;
+    selection.target_order = target_order;
     let selected = affinity.filter_deployments(&selection).await.unwrap();
     assert_eq!(ids(&selected), ["dep-a", "dep-b"]);
 }
@@ -204,21 +193,18 @@ async fn another_call_type_never_pins() {
 }
 
 async fn a_success_event_without_a_model_id_never_pins() {
-    let pins = Arc::new(FakePins::default());
-    let affinity = service(Arc::clone(&pins), 2000, false);
-    let raw = json_messages(MARKED_MESSAGES);
-    affinity
-        .record_success(&success("completion", None, Some(&raw)))
-        .await
-        .unwrap();
-    assert!(pins.keys().is_empty());
+    never_pins(None, Some(&json_messages(MARKED_MESSAGES))).await;
 }
 
 async fn a_success_event_without_messages_never_pins() {
+    never_pins(Some("dep-a"), None).await;
+}
+
+async fn never_pins(model_id: Option<&str>, messages: Option<&[Json]>) {
     let pins = Arc::new(FakePins::default());
     let affinity = service(Arc::clone(&pins), 2000, false);
     affinity
-        .record_success(&success("anthropic_messages", Some("dep-a"), None))
+        .record_success(&success("anthropic_messages", model_id, messages))
         .await
         .unwrap();
     assert!(pins.keys().is_empty());
@@ -267,6 +253,36 @@ async fn request_kwargs_enable_prompt_caching_injects_without_the_flag() {
     let typed = messages(PLAIN_MESSAGES);
     let mut selection = request(&pool, Some(&typed));
     selection.request_kwargs = Some(&kwargs);
+    let selected = affinity.filter_deployments(&selection).await.unwrap();
+    assert_eq!(ids(&selected), ["dep-a"]);
+}
+
+async fn tools_marks_suppress_the_default_breakpoints() {
+    let kwargs = request_kwargs(
+        r#"{"tools":[{"type":"function","function":{"name":"lookup"},"cache_control":{"type":"ephemeral"}}]}"#,
+    );
+    narrows_with_request_kwargs(true, &kwargs).await;
+}
+
+async fn request_kwargs_without_the_flag_do_not_inject() {
+    narrows_with_request_kwargs(false, &Object::new()).await;
+}
+
+async fn narrows_with_request_kwargs(global_enabled: bool, kwargs: &Object) {
+    let pins = Arc::new(FakePins::default());
+    let affinity = service(Arc::clone(&pins), 2000, global_enabled);
+    let raw = json_messages(PLAIN_MESSAGES);
+    pins.seed(
+        &cache_key(&raw, None).unwrap(),
+        super::support::pin("dep-a"),
+    );
+    let pool = [
+        deployment("dep-a", "claude-min"),
+        deployment("dep-b", "claude-min"),
+    ];
+    let typed = messages(PLAIN_MESSAGES);
+    let mut selection = request(&pool, Some(&typed));
+    selection.request_kwargs = Some(kwargs);
     let selected = affinity.filter_deployments(&selection).await.unwrap();
     assert_eq!(ids(&selected), ["dep-a"]);
 }

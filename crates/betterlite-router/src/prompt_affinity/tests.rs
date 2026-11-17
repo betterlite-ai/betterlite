@@ -35,6 +35,12 @@ fn runtime() -> Runtime {
 #[case::request_kwargs_enable_prompt_caching_injects_without_the_flag(
     "request_kwargs_enable_prompt_caching_injects_without_the_flag"
 )]
+#[case::tools_marks_suppress_the_default_breakpoints(
+    "tools_marks_suppress_the_default_breakpoints"
+)]
+#[case::request_kwargs_without_the_flag_do_not_inject(
+    "request_kwargs_without_the_flag_do_not_inject"
+)]
 #[case::a_message_level_mark_ignores_later_messages("a_message_level_mark_ignores_later_messages")]
 #[case::a_message_key_order_never_changes_the_digest(
     "a_message_key_order_never_changes_the_digest"

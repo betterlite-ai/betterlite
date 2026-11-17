@@ -154,7 +154,7 @@ impl CacheFacts for ClaudeFacts {
 
 pub(super) fn service(pins: Arc<FakePins>, counted: u64, global_enabled: bool) -> PromptAffinity {
     let catalog = catalog();
-    PromptAffinity::new(PromptAffinityDependencies {
+    PromptAffinity::from(PromptAffinityDependencies {
         pins,
         gate: Arc::new(FakeGate {
             counted,
@@ -295,10 +295,9 @@ pub(super) fn token_counter() -> Counter {
 }
 
 pub(super) fn text_blocks_source(count: usize) -> String {
-    let mut blocks = Vec::new();
-    for index in 0..count.saturating_sub(1) {
-        blocks.push(format!(r#"{{"type":"text","text":"block {index}"}}"#));
-    }
+    let mut blocks: Vec<String> = (0..count.saturating_sub(1))
+        .map(|index| format!(r#"{{"type":"text","text":"block {index}"}}"#))
+        .collect();
     blocks.push(r#"{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}"#.to_owned());
     format!(r#"[{{"role":"user","content":[{}]}}]"#, blocks.join(","))
 }
@@ -306,8 +305,10 @@ pub(super) fn text_blocks_source(count: usize) -> String {
 pub(super) fn tool_result_blocks_source(count: usize) -> String {
     let mut blocks = Vec::new();
     for index in 0..count.saturating_sub(1) {
+        let id = format!("call {index}");
+        let value = format!("value {index}");
         blocks.push(format!(
-            r#"{{"type":"tool_result","tool_use_id":"call {index}","content":"value {index}"}}"#
+            r#"{{"type":"tool_result","tool_use_id":"{id}","content":"{value}"}}"#
         ));
     }
     blocks.push(
