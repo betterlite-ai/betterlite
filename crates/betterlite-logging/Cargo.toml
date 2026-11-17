@@ -139,3 +139,7 @@ path = "src/otel/plumbing/metrics/tests/suite.rs"
 [[test]]
 name = "otel_lifecycle"
 path = "src/otel/logger/tests/suite.rs"
+
+[[test]]
+name = "v2_callback_tests"
+path = "src/otel/v2_callback/tests/suite.rs"
