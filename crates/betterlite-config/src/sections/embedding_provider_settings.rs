@@ -38,28 +38,35 @@ pub struct Settings {
 }
 
 impl Settings {
-    // `api_key or litellm.cohere_key or COHERE_API_KEY or CO_API_KEY or litellm.api_key`: every
-    // operand but the last falls through when falsey, and the last is returned even when falsey
+    // the chain's last operand is returned as-is, even empty; the earlier ones fall through
     #[must_use]
-    pub fn resolve_api_key(&self, explicit: Option<&SecretString>) -> Option<SecretString> {
-        let present =
-            |key: Option<&SecretString>| key.filter(|key| !key.expose_secret().is_empty());
-        present(explicit)
-            .or_else(|| present(self.cohere_key.as_ref()))
-            .or_else(|| present(self.cohere_api_key.as_ref()))
-            .or_else(|| present(self.co_api_key.as_ref()))
-            .or(self.api_key.as_ref())
-            .cloned()
+    pub fn resolve_api_key(&self, supplied: Option<&SecretString>) -> Option<SecretString> {
+        let chain = [
+            supplied,
+            self.cohere_key.as_ref(),
+            self.cohere_api_key.as_ref(),
+            self.co_api_key.as_ref(),
+        ];
+        for candidate in chain {
+            if let Some(key) = candidate.filter(|key| !key.expose_secret().is_empty()) {
+                return Some(key.clone());
+            }
+        }
+        self.api_key.clone()
     }
 
     // `api_base or litellm.api_base or COHERE_API_BASE`, with the route's default applied only after
     #[must_use]
-    pub fn resolve_api_base(&self, explicit: Option<&str>) -> Option<String> {
-        let present = |value: Option<&'_ str>| value.filter(|text| !text.is_empty());
-        present(explicit)
-            .or_else(|| present(self.api_base.as_deref()))
-            .or_else(|| present(self.cohere_api_base.as_deref()))
-            .map(str::to_owned)
+    pub fn resolve_api_base(&self, supplied: Option<&str>) -> Option<String> {
+        let base = supplied
+            .filter(|text| !text.is_empty())
+            .or_else(|| self.api_base.as_deref().filter(|text| !text.is_empty()))
+            .or_else(|| {
+                self.cohere_api_base
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+            });
+        base.map(str::to_owned)
     }
 
     // `headers = headers or litellm.headers or {}` followed by `headers.update(extra_headers)`
