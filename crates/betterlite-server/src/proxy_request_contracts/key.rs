@@ -53,5 +53,4 @@ fn reject_boolean(fields: &Fields) -> Result<(), ContractError> {
     Err(ContractError::from(BOOLEAN_RESET))
 }
 
-#[cfg(test)]
 mod tests;

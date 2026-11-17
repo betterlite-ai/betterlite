@@ -76,5 +76,4 @@ impl UserInfoV2Response {
     }
 }
 
-#[cfg(test)]
 mod tests;

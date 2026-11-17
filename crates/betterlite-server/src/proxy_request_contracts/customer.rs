@@ -53,5 +53,4 @@ fn check_budget_choice(fields: &Fields) -> Result<(), ContractError> {
     Ok(())
 }
 
-#[cfg(test)]
 mod tests;

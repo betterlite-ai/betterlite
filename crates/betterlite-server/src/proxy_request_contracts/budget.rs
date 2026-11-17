@@ -84,5 +84,4 @@ impl BudgetDeleteRequest {
     }
 }
 
-#[cfg(test)]
 mod tests;
