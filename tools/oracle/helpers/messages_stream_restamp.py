@@ -3,18 +3,17 @@ import base64
 import datetime as dt
 import logging
 from collections.abc import AsyncIterator, Mapping
-from typing import Final, Literal, TypedDict, TypeAlias
+from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.caching.base_cache import BaseCache
-from litellm.caching.caching import Cache
+from litellm.caching.caching import DEFAULT_CACHING_SUPPORTED_CALL_TYPES, Cache
 from litellm.caching.caching_handler import LLMCachingHandler
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages.response_cache import (
-    CACHED_STREAM_EVENTS_KEY,
     AnthropicMessagesStreamCacheWriter,
-    CachedAnthropicMessagesStreamIterator as CachedStream,
+    CachedAnthropicMessagesStreamIterator,
     convert_cached_anthropic_messages_result,
 )
 from litellm.proxy.anthropic_endpoints.streaming_model_restamp import (
@@ -22,6 +21,8 @@ from litellm.proxy.anthropic_endpoints.streaming_model_restamp import (
 )
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
+
+litellm.suppress_debug_info = True
 
 LOGGER_NAME: Final = "LiteLLM"
 REQUEST_MODEL: Final = "claude-3"
@@ -32,7 +33,6 @@ SETTLE_TURNS: Final = 8
 PROCESSED: TypeAdapter[bytes | str | dict[str, JsonValue]] = TypeAdapter(
     bytes | str | dict[str, JsonValue]
 )
-EVENT_LIST: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
 
 
 class EventChunk(TypedDict):
@@ -100,7 +100,7 @@ class WarningCollector(logging.Handler):
 
 class RecordingCache(Cache):
     def __init__(self, fail: str | None) -> None:
-        super().__init__()
+        self.supported_call_types = list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES)
         self.fail = fail
         self.writes: list[Write] = []
 
@@ -163,10 +163,7 @@ def cached_hit(logging_obj: Logging) -> bool:
 
 
 def write_view(write: Write) -> dict[str, JsonValue]:
-    events: list[JsonValue] = EVENT_LIST.validate_python(
-        write["payload"][CACHED_STREAM_EVENTS_KEY]
-    )
-    return {"events": events, "kwargs": write["kwargs"]}
+    return {"payload": write["payload"], "kwargs": write["kwargs"]}
 
 
 async def feed(reads: list[str]) -> AsyncIterator[bytes]:
@@ -208,11 +205,9 @@ async def replay_written(
         cache.writes[0]["payload"], logging_obj, {"model": REQUEST_MODEL}
     )
     match converted:
-        case CachedStream():
+        case CachedAnthropicMessagesStreamIterator():
             hit = cached_hit(logging_obj)
-            replayed: list[JsonValue] = []
-            async for chunk in converted:
-                replayed.append(chunk.decode("utf-8"))
+            replayed: list[JsonValue] = [chunk.decode("utf-8") async for chunk in converted]
             await GLOBAL_LOGGING_WORKER.stop()
             return (replayed, hit)
         case Mapping():

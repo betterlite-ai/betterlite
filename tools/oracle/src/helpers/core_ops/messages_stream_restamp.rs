@@ -128,9 +128,9 @@ fn cache_stream_answer(input: &CacheStreamInput) -> Result<Value, Box<HelperErro
     let guard = subscriber::set_default(
         tracing_subscriber::registry().with(capture::Capture(Arc::clone(&events))),
     );
-    let recorded = runtime.block_on(write_stream(input, Arc::clone(&cache)));
+    let attempt = runtime.block_on(write_stream(input, Arc::clone(&cache)));
     drop(guard);
-    let recorded = recorded?;
+    let recorded = attempt?;
     let captured = events
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -170,14 +170,14 @@ async fn write_stream(
     );
     let yielded = drain(&mut writer).await?;
     tracker.wait_idle().await;
-    let writes = take(&mut *cache.writes.lock().unwrap_or_else(PoisonError::into_inner));
-    let (replayed, cache_hit) = replay_written(input.replay, &writes).await?;
+    let stored = take(&mut *cache.writes.lock().unwrap_or_else(PoisonError::into_inner));
+    let (replayed, cache_hit) = replay_written(input.replay, &stored).await?;
     Ok(Recorded {
         yielded: yielded
             .into_iter()
             .map(|chunk| String::from_utf8(chunk).or_value_error())
             .collect::<Result<Vec<_>, _>>()?,
-        writes,
+        writes: stored,
         replayed,
         cache_hit,
     })

@@ -12,7 +12,6 @@ use betterlite_cache::handler::state::OriginalFunction;
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_context::call_context::{CallContext, CallInputs};
 use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream;
-use betterlite_core::api::messages_stream_restamp::CACHED_STREAM_EVENTS_KEY;
 use betterlite_core::api::messages_stream_restamp::MessagesStreamChunk;
 use betterlite_core::api::messages_stream_restamp::cache_stream::{
     CacheWriteFailure, MessagesStreamCacheSettings, MessagesStreamCacheTarget,
@@ -40,17 +39,11 @@ pub(super) fn chunk_value(chunk: &MessagesStreamChunk) -> Value {
 }
 
 pub(super) fn writes_value(writes: &[(Value, KeyObject)]) -> Value {
-    Value::Array(
-        writes
-            .iter()
-            .map(|(payload, kwargs)| {
-                json!({
-                    "events": payload.get(CACHED_STREAM_EVENTS_KEY).cloned().unwrap_or(Value::Null),
-                    "kwargs": key_object(kwargs),
-                })
-            })
-            .collect(),
-    )
+    let entries: Vec<Value> = writes
+        .iter()
+        .map(|(payload, kwargs)| json!({ "payload": payload, "kwargs": key_object(kwargs) }))
+        .collect();
+    Value::Array(entries)
 }
 
 fn key_object(kwargs: &KeyObject) -> Value {
@@ -126,7 +119,7 @@ pub(super) struct RecordingCache {
 }
 
 impl RecordingCache {
-    pub(super) fn new(failure: Option<String>) -> Self {
+    pub(super) const fn new(failure: Option<String>) -> Self {
         Self {
             writes: Mutex::new(Vec::new()),
             failure,
