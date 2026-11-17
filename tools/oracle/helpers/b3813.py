@@ -239,7 +239,8 @@ Streamed = ModelResponseStream | bytes | str
 
 
 async def collect_stream(stream: AsyncIterator[Streamed]) -> list[Streamed]:
-    return [item async for item in stream]
+    collected: list[Streamed] = [item async for item in stream]
+    return collected
 
 
 def streamed_view(item: Streamed) -> JsonValue:
