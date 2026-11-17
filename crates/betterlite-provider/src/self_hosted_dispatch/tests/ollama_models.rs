@@ -270,6 +270,10 @@ fn tags_request_targets_the_server_base() {
         ),
         "http://env/api/tags"
     );
+}
+
+#[test]
+fn tags_request_falls_through_an_empty_passed_base() {
     assert_eq!(
         tags_url(
             Some(""),

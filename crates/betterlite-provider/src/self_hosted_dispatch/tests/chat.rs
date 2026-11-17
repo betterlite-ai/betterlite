@@ -11,7 +11,7 @@ use serde_json::Number;
 use crate::petals::error::{ENGINE_MISSING_MESSAGE, PetalsSetupError};
 use crate::self_hosted_dispatch::call::{CompletionCall, SelfHostedConfig};
 use crate::self_hosted_dispatch::chat::{complete_lemonade, dispatch};
-use crate::self_hosted_dispatch::context::CallLogging;
+use crate::self_hosted_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
 use crate::self_hosted_dispatch::error::DispatchError;
 use crate::self_hosted_dispatch::handler::HandlerError;
 use crate::vllm::completion::ENGINE_ERROR;
@@ -19,6 +19,24 @@ use crate::vllm::error::VllmError;
 
 use super::section::SectionFixture;
 use super::support::{Fixture, Recorder, logging, redactor, secret, secret_text};
+
+// the request context one chat arm reads, built from the fixture's values
+fn chat_context(fixture: &Fixture) -> DispatchContext<'_> {
+    DispatchContext {
+        acompletion: fixture.acompletion,
+        api_base: fixture.api_base.as_deref(),
+        api_key: fixture.api_key.as_ref(),
+        custom_llm_provider: &fixture.provider,
+        headers: fixture.headers.as_ref(),
+        litellm_params: &fixture.litellm_params,
+        messages: &fixture.messages,
+        model: &fixture.model,
+        optional_params: &fixture.optional_params,
+        stream: fixture.stream,
+        timeout: fixture.timeout,
+        settings: DispatchSettings::from(&fixture.settings),
+    }
+}
 
 fn run(
     tag: ChatConfigTag,
@@ -32,7 +50,7 @@ fn run(
             state: &mut state,
             env: &env,
         };
-        dispatch(tag, &fixture.chat_context(), handler, &mut log)
+        dispatch(tag, &chat_context(fixture), handler, &mut log)
     };
     (outcome, state)
 }
@@ -99,6 +117,7 @@ fn dispatch_routes_each_self_hosted_provider_to_its_arm(
 ) {
     let mut fixture = Fixture::new();
     fixture.api_base = Some(String::from("http://host:8000"));
+    fixture.provider = String::from(provider);
     let handler = Recorder::succeeding();
     let (outcome, _state) = run(tag, &fixture, &handler);
     assert_eq!(succeeded(outcome), "reply", "{tag:?}");
@@ -487,8 +506,8 @@ fn ollama_chat_reads_the_ollama_base_chain() {
     );
 }
 
-#[test]
-fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
+// the caller's own request values, every one of which the triton arm must carry through
+fn triton_fixture() -> Fixture {
     let mut fixture = Fixture::new();
     fixture.provider = String::from("triton");
     fixture.api_base = Some(String::from("http://passed"));
@@ -507,8 +526,13 @@ fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
     fixture.acompletion = true;
     fixture.timeout = Some(Duration::from_secs(12));
     fixture.configure(SectionFixture::default().api_base(Some("http://litellm")));
+    fixture
+}
+
+#[test]
+fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
     let handler = Recorder::succeeding();
-    let (outcome, _state) = run(ChatConfigTag::Triton, &fixture, &handler);
+    let (outcome, _state) = run(ChatConfigTag::Triton, &triton_fixture(), &handler);
     succeeded(outcome);
     let call = only_call(&handler);
     assert_eq!(call.api_base, Some(String::from("http://litellm")));
@@ -516,7 +540,12 @@ fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
         secret_text(call.api_key.as_ref()),
         Some(String::from("sk-passed"))
     );
-    assert_eq!(authorization(&call), Some(String::from("Bearer sk-passed")));
+    assert_eq!(
+        call.headers
+            .as_ref()
+            .and_then(|headers| headers.get("X-Extra")),
+        Some(&String::from("one"))
+    );
     assert_eq!(call.model, "model");
     assert_eq!(call.messages.len(), 1);
     assert!(call.acompletion);
@@ -661,7 +690,7 @@ fn lemonade_key(passed: Option<&str>, base: Option<&str>, section: SectionFixtur
     fixture.api_key = passed.map(secret);
     fixture.configure(section);
     let handler = Recorder::succeeding();
-    complete_lemonade(&fixture.chat_context(), &handler)
+    complete_lemonade(&chat_context(&fixture), &handler)
         .expect("the lemonade arm answers without a log");
     let call = only_call(&handler);
     assert_eq!(call.config, SelfHostedConfig::Lemonade);

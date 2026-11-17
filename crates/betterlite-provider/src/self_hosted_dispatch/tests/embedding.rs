@@ -9,12 +9,38 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde_json::Number;
 
-use crate::self_hosted_dispatch::call::{EmbeddingProvider, EmbeddingRequest};
+use crate::self_hosted_dispatch::call::{EmbeddingCall, EmbeddingProvider, EmbeddingRequest};
+use crate::self_hosted_dispatch::context::{DispatchSettings, EmbeddingContext};
 use crate::self_hosted_dispatch::embedding::dispatch;
 use crate::self_hosted_dispatch::error::DispatchError;
 
 use super::section::SectionFixture;
 use super::support::{Fixture, environment, secret, secret_text};
+
+// the request context one embedding arm reads, built from the fixture's values
+fn embedding_context(fixture: &Fixture) -> EmbeddingContext<'_> {
+    EmbeddingContext {
+        settings: DispatchSettings::from(&fixture.settings),
+        environment: &fixture.environment,
+        compatible: &fixture.compatible,
+        globals: &fixture.globals,
+    }
+}
+
+// the call every embedding arm reads, with the shared 600 s default timeout
+fn embedding_call(fixture: &Fixture) -> EmbeddingCall {
+    EmbeddingCall {
+        model: fixture.model.clone(),
+        input: fixture.input.clone(),
+        optional_params: fixture.optional_params.clone(),
+        litellm_params: fixture.litellm_params.clone(),
+        api_key: fixture.api_key.clone(),
+        api_base: fixture.api_base.clone(),
+        headers: fixture.headers.clone(),
+        timeout: fixture.timeout.unwrap_or(Duration::from_secs(600)),
+        aembedding: fixture.aembedding,
+    }
+}
 
 struct Resolved {
     provider: EmbeddingProvider,
@@ -26,8 +52,8 @@ struct Resolved {
 }
 
 fn request(provider: ProviderId, fixture: &Fixture) -> Result<EmbeddingRequest, DispatchError> {
-    let call = fixture.embedding_call();
-    let context = fixture.embedding_context();
+    let call = embedding_call(fixture);
+    let context = embedding_context(fixture);
     dispatch(provider, &call, &context).expect("the dispatch owns this provider")
 }
 
@@ -59,8 +85,8 @@ fn compatible(provider: ProviderId, fixture: &Fixture) -> Resolved {
 #[case::openai_like(ProviderId::OpenaiLike)]
 fn embedding_dispatch_leaves_other_providers_alone(#[case] provider: ProviderId) {
     let fixture = Fixture::new();
-    let call = fixture.embedding_call();
-    let context = fixture.embedding_context();
+    let call = embedding_call(&fixture);
+    let context = embedding_context(&fixture);
     assert!(
         dispatch(provider, &call, &context).is_none(),
         "{provider:?}"
