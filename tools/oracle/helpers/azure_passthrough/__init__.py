@@ -30,18 +30,18 @@ class Dumpable(Protocol):
 class AzurePassthroughConfigView(Protocol):
     def is_streaming_request(self, endpoint: str, request_data: dict[str, Json]) -> bool: ...
 
-    def get_complete_url(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L109-L140
+    def get_complete_url(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L109-L140
         self, api_base: str | None, api_key: str | None, model: str, endpoint: str,
         request_query_params: dict[str, Json] | None, litellm_params: dict[str, Json],
     ) -> tuple[httpx.URL, str]: ...
 
-    def validate_environment(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L142-L155
+    def validate_environment(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L142-L155
         self, headers: dict[str, str], model: str, messages: list[Json],
         optional_params: dict[str, Json], litellm_params: dict[str, Json],
         api_key: str | None = None,
     ) -> dict[str, str]: ...
 
-    def logging_non_streaming_response(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L207
+    def logging_non_streaming_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L207
         self, model: str, custom_llm_provider: str, httpx_response: httpx.Response,
         request_data: dict[str, Json], logging_obj: Logging, endpoint: str,
     ) -> Dumpable | None: ...

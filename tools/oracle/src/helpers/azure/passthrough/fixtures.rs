@@ -29,7 +29,7 @@ pub(crate) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig 
     }
 }
 
-pub(crate) fn config_with_reply<Reply>(reply: Reply) -> AzurePassthroughConfig<Reply> {
+pub(crate) const fn config_with_reply<Reply>(reply: Reply) -> AzurePassthroughConfig<Reply> {
     AzurePassthroughConfig {
         api_base_env: None,
         api_key_env: None,
@@ -39,7 +39,7 @@ pub(crate) fn config_with_reply<Reply>(reply: Reply) -> AzurePassthroughConfig<R
     }
 }
 
-pub(crate) fn config_with_stream<Stream>(
+pub(crate) const fn config_with_stream<Stream>(
     stream: Stream,
 ) -> AzurePassthroughConfig<NoChatReplyProjection, Stream> {
     AzurePassthroughConfig {
@@ -51,7 +51,7 @@ pub(crate) fn config_with_stream<Stream>(
     }
 }
 
-pub(crate) fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
+pub(crate) const fn target<'a>(model: &'a str, endpoint: &'a str) -> PassthroughTarget<'a> {
     PassthroughTarget {
         model,
         custom_llm_provider: "azure",

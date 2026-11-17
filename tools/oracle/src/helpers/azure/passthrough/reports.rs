@@ -15,8 +15,6 @@ use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::helper::HelperResult;
-
 use super::fixtures::{
     NoSources, OracleChatProjection, RecordingLogging, RecordingStream, base_config,
     config_with_reply, config_with_stream, deployment, target,
@@ -26,8 +24,8 @@ use super::{
     StreamStep, UrlStep, ValidationStep,
 };
 
-pub(super) fn run(input: &Input) -> HelperResult {
-    Ok(match input {
+pub(super) fn run(input: &Input) -> Value {
+    match input {
         Input::BodyModelInferenceEndpoint { inference_steps } => inference_report(inference_steps),
         Input::RouterModelInPath { router_steps } => router_report(router_steps),
         Input::ForeignDeployment { deployment_steps } => json!({
@@ -50,7 +48,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             key_steps,
             validation_steps,
         } => auth_report(key_steps, validation_steps),
-    })
+    }
 }
 
 fn inference_report(steps: &[InferenceStep]) -> Value {
@@ -136,7 +134,9 @@ fn terminal_view(event: &ResponsesTerminalEvent) -> Value {
 
 fn relay_step(step: &RelayStep) -> Value {
     let mut config = config_with_stream(RecordingStream::default());
-    config.model_call_details = step.model_call_details.clone();
+    config
+        .model_call_details
+        .clone_from(&step.model_call_details);
     let mut logging_obj = RecordingLogging::default();
     let logged = config.handle_collected_chunks(
         &step.chunks,
@@ -176,7 +176,7 @@ fn nonstream_step(step: &NonstreamStep) -> Value {
         "result_some": logged.is_some(),
         "call_type": call_type(&logging_obj),
         "logging_input": input.as_ref().map(|(messages, _body)| messages.clone()),
-        "complete_input_dict": input.map(|(_messages, body)| body),
+        "complete_input_dict": input.map(|(_messages, logged_body)| logged_body),
     })
 }
 
