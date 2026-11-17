@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::Arc;
 
 use betterlite_http::proxy::ProxiedClient;
@@ -56,7 +57,7 @@ impl PassthroughSender for ProxiedClient {
                 .await
                 .map_err(|error| PassthroughStreamError::Send(Box::new(error)))?;
             let status_code = response.response.status().as_u16();
-            let headers = std::mem::take(response.response.headers_mut());
+            let headers = take(response.response.headers_mut());
             Ok(AsyncResponse {
                 status_code,
                 headers,

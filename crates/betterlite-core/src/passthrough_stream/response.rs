@@ -2,6 +2,7 @@ use betterlite_http::error::HttpError;
 use futures_util::StreamExt as _;
 use futures_util::future::BoxFuture;
 use futures_util::stream::BoxStream;
+use futures_util::stream::empty;
 use http::HeaderMap;
 
 use super::error::PassthroughStreamError;
@@ -47,26 +48,29 @@ impl AsyncChunkSource for StreamBody {
     }
 
     fn read_body(&mut self) -> BoxFuture<'_, Result<Vec<u8>, HttpError>> {
-        Box::pin(async move {
-            let mut body = Vec::new();
-            while let Some(chunk) = self.chunks.next().await {
-                let bytes = chunk?;
-                let total = body.len().checked_add(bytes.len());
-                if total.is_none_or(|total| total > self.body_limit) {
-                    return Err(HttpError::TooLarge {
-                        limit: self.body_limit,
-                    });
-                }
-                body.extend_from_slice(&bytes);
-            }
-            Ok(body)
-        })
+        Box::pin(read_capped_body(&mut self.chunks, self.body_limit))
     }
 
     fn close(&mut self) -> BoxFuture<'_, Result<(), HttpError>> {
         Box::pin(async move {
-            self.chunks = futures_util::stream::empty().boxed();
+            self.chunks = empty().boxed();
             Ok(())
         })
     }
+}
+
+async fn read_capped_body(
+    chunks: &mut BoxStream<'static, Result<Vec<u8>, HttpError>>,
+    body_limit: usize,
+) -> Result<Vec<u8>, HttpError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = chunks.next().await {
+        let bytes = chunk?;
+        let grown = body.len().checked_add(bytes.len());
+        if grown.is_none_or(|total| total > body_limit) {
+            return Err(HttpError::TooLarge { limit: body_limit });
+        }
+        body.extend_from_slice(&bytes);
+    }
+    Ok(body)
 }
