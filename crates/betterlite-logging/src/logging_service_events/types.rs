@@ -1,7 +1,7 @@
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
-mod wire_names;
+pub(crate) mod wire_names;
 
 pub const CANCELLED_ERROR: &str = "the request was cancelled";
 

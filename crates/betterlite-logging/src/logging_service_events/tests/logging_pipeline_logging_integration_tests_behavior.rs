@@ -25,7 +25,7 @@ use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
 use crate::logging_service_events::stream::{STREAM_FAILED_ERROR, ServiceEventStream, failure_for};
 use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
-    ServiceMetric, ServiceType, TerminalOutcome,
+    ServiceMetric, ServiceType, TerminalOutcome, wire_names,
 };
 use crate::logging_service_events::wiring::LoggingWiring;
 use crate::logging_service_events::worker_link::Delivery;
@@ -379,7 +379,7 @@ fn service_kinds_come_from_the_request_path(
     "redis_window_spend_update_queue"
 )]
 fn service_types_round_trip_their_wire_names(#[case] service: ServiceType, #[case] wire: &str) {
-    assert_eq!(service.as_str(), wire);
+    assert_eq!(wire_names::as_str(service), wire);
     assert_eq!(
         serde_json::to_string(&service).unwrap(),
         format!("\"{wire}\"")

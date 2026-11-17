@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::logging_service_events::types::ServiceEvent;
+use crate::logging_service_events::types::wire_names;
 
 #[derive(Debug, Error)]
 pub enum ServiceEventError {
@@ -20,7 +21,7 @@ impl ServiceEventSink for TracingSink {
         let payload = &event.payload;
         tracing::info!(
             call_id = %event.call_id,
-            service = payload.service.as_str(),
+            service = wire_names::as_str(payload.service),
             call_type = %payload.call_type,
             is_error = payload.is_error,
             duration = payload.duration,
