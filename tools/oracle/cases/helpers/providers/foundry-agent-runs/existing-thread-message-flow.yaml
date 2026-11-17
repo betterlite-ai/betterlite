@@ -1,0 +1,72 @@
+kind: helper
+name: foundry-agent-runs-existing-thread-message-flow
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/agent-1
+        messages:
+          - {role: user, content: one}
+          - {role: system, content: two}
+          - {role: assistant, content: skip}
+          - {role: tool, content: skip}
+          - {role: user}
+          - {role: user, content: null}
+          - {content: no-role}
+          - {role: user, content: [{type: text, text: {value: block}}]}
+        optional_params: {thread_id: "thread-9", instructions: ""}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 200, body: '{"id": "msg-1"}'}
+          - {status: 201, body: '{"id": "msg-2"}'}
+          - {status: 200, body: '{"id": "msg-3"}'}
+          - {status: 201, body: '{"id": "msg-4"}'}
+          - {status: 200, body: '{"id": "msg-5"}'}
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "done"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9", instructions: null}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 200, body: '{"id": "run-2"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "null-instructions"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9", instructions: []}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 200, body: '{"id": "run-3"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "empty-instructions"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 200, body: '{"id": "run-4"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "no-instructions"}}]}]}'}
+env: {}
+compare: {ignore: []}
