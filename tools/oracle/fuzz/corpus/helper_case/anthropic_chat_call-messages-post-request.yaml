@@ -1,0 +1,43 @@
+kind: helper
+name: anthropic-chat-call-messages-post-request-seed
+call:
+  anthropic_chat_call:
+    scenario: messages_post_request
+    api_base: https://api.anthropic.com/v1/messages
+    model: claude-3-5-sonnet-20241022
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      max_tokens: 16
+      stream: null
+      json_mode: false
+      vertex_count_tokens_location: us-east5
+    litellm_params: {}
+    caller_headers: {}
+    api_key: sk-ant-api03-fixture
+    acompletion: true
+    transform_body:
+      model: claude-3-5-sonnet-20241022
+      max_tokens: 16
+      messages:
+        - role: user
+          content: hi
+      anthropic_beta:
+        - context-1m-2025-08-07
+        - bash_20241022
+    transform_failure: null
+    beta_matrix:
+      anthropic:
+        context-1m-2025-08-07: context-1m-2025-08-07
+        bash_20241022: null
+    upstream_status: 200
+    upstream_headers: {}
+    upstream_body: '{"id":"msg_1","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3}}'
+    upstream_lines: []
+    failure_message: null
+    request_header_names: [x-api-key, anthropic-version, anthropic-beta]
+    response_header_names: []
+env:
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
+compare: {ignore: []}

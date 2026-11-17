@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-chat-call-unsupported-embedding
+call:
+  anthropic_chat_call:
+    scenario: unsupported_embedding
+    api_base: https://api.anthropic.com/v1/messages
+    model: claude-3-5-sonnet-20241022
+    messages: []
+    optional_params: {}
+    litellm_params: {}
+    caller_headers: {}
+    api_key: sk-ant-api03-fixture
+    acompletion: true
+    transform_body: {}
+    transform_failure: null
+    beta_matrix:
+      anthropic: {}
+    upstream_status: null
+    upstream_headers: {}
+    upstream_body: null
+    upstream_lines: []
+    failure_message: null
+    request_header_names: []
+    response_header_names: []
+env:
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
+compare: {ignore: []}
