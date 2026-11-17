@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::mem::replace;
 
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -48,11 +49,13 @@ impl<C, Context> ChatResponseStream<C, Context> {
             return Ok(Some(event));
         }
         let progress = &mut self.state.progress;
-        if let Some(event) = progress.pending_response_events.drain(..1).next() {
+        if let Some(event) = progress.pending_response_events.pop_front() {
             return Ok(Some(event));
         }
-        let tool = progress.pending_tool_events.drain(..1).next();
-        Ok(tool.map(|queued| queued.event))
+        Ok(progress
+            .pending_tool_events
+            .pop_front()
+            .map(|queued| queued.event))
     }
 
     fn begin_chunk(&mut self, chunk: &Json) -> Result<(), ChatResponseStreamError> {
@@ -76,15 +79,7 @@ impl<C, Context> ChatResponseStream<C, Context> {
             translate::transform(&mut self.state, &self.sources, chunk, &mut self.annotations)?;
         let progress = &mut self.state.progress;
         progress.pending_response_events.extend(event);
-        Ok(progress.pending_response_events.drain(..1).next())
-    }
-
-    // A buffered chunk comes before the source, and an exhausted stream never reads it again
-    fn buffered_chunk(&mut self) -> Option<Option<Json>> {
-        if let Some(buffered) = self.state.progress.buffered_chunk.take() {
-            return Some(Some(buffered));
-        }
-        self.state.progress.upstream_exhausted.then_some(None)
+        Ok(progress.pending_response_events.pop_front())
     }
 
     // The assembly is the iteration's last step; a null one ends the stream without a completed event
@@ -120,16 +115,20 @@ where
         if let Some(event) = self.ready_event()? {
             return Ok(Some(event));
         }
-        let Some(chunk) = self.next_chunk()? else {
+        let Some(chunk) = self.pull_chunk()? else {
             return self.end_of_stream();
         };
         self.begin_chunk(&chunk)?;
         self.finish_chunk(&chunk)
     }
 
-    fn next_chunk(&mut self) -> Result<Option<Json>, ChatResponseStreamError> {
-        if let Some(chunk) = self.buffered_chunk() {
-            return Ok(chunk);
+    // A buffered chunk comes before the source, and an exhausted stream never reads it again
+    fn pull_chunk(&mut self) -> Result<Option<Json>, ChatResponseStreamError> {
+        if let Some(buffered) = self.state.progress.buffered_chunk.take() {
+            return Ok(Some(buffered));
+        }
+        if self.state.progress.upstream_exhausted {
+            return Ok(None);
         }
         let next = self.source.next_chunk()?;
         self.state.progress.upstream_exhausted |= next.is_none();
@@ -138,7 +137,7 @@ where
 
     // Pull the first chunk before response.created so that event carries the chat completion id
     pub(super) fn prime_id(&mut self) -> PrimeResult {
-        if std::mem::replace(&mut self.state.progress.response_id_primed, true) {
+        if replace(&mut self.state.progress.response_id_primed, true) {
             return Ok(());
         }
         while !settle(&mut self.state.progress, self.source.next_chunk()?) {}
@@ -172,7 +171,7 @@ where
     }
 
     pub(super) async fn prime_id_async(&mut self) -> PrimeResult {
-        if std::mem::replace(&mut self.state.progress.response_id_primed, true) {
+        if replace(&mut self.state.progress.response_id_primed, true) {
             return Ok(());
         }
         while !settle(&mut self.state.progress, self.source.next_chunk().await?) {}
@@ -185,14 +184,17 @@ where
             if let Some(event) = self.ready_event()? {
                 return Ok(Some(event));
             }
-            let chunk = if let Some(chunk) = self.buffered_chunk() {
-                chunk
+            let buffered = self.state.progress.buffered_chunk.take();
+            let pulled = if buffered.is_some() {
+                buffered
+            } else if self.state.progress.upstream_exhausted {
+                None
             } else {
                 let next = self.source.next_chunk().await?;
                 self.state.progress.upstream_exhausted |= next.is_none();
                 next
             };
-            let Some(chunk) = chunk else {
+            let Some(chunk) = pulled else {
                 return self.end_of_stream();
             };
             // The async iterator skips a null chunk; the sync one reads it as an invalid chunk
@@ -211,19 +213,19 @@ where
 
 // True once priming has its chunk or has seen the end; a null chunk is not a provider answer and is skipped
 fn settle(progress: &mut StreamProgress, chunk: Option<Json>) -> bool {
-    let Some(chunk) = chunk else {
+    let Some(answer) = chunk else {
         progress.upstream_exhausted = true;
         return true;
     };
-    if matches!(chunk, Json::Null) {
+    if matches!(answer, Json::Null) {
         return false;
     }
     if progress.cached_response_id.is_none()
-        && let Some(Json::Text(id)) = object(&chunk).and_then(|fields| fields.get("id"))
+        && let Some(Json::Text(id)) = object(&answer).and_then(|fields| fields.get("id"))
         && !id.is_empty()
     {
         progress.cached_response_id = Some(id.clone());
     }
-    progress.buffered_chunk = Some(chunk);
+    progress.buffered_chunk = Some(answer);
     true
 }

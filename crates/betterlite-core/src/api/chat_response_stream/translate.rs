@@ -94,10 +94,11 @@ pub(crate) fn transform<Context>(
     let delta = chunk::delta(chunk);
     queue_first_annotations(state, &item_id, delta, annotations)?;
     if let Some(reasoning) = delta_text(delta, "reasoning_content")? {
-        let item_id = generated_id(&mut state.progress.cached_reasoning_item_id, "rs", sources);
+        let reasoning_id =
+            generated_id(&mut state.progress.cached_reasoning_item_id, "rs", sources);
         return Ok(Some(KnownResponseEvent::ReasoningSummaryTextDelta(
             ReasoningSummaryTextDeltaEvent {
-                item_id,
+                item_id: reasoning_id,
                 output_index: 0,
                 summary_index: 0,
                 delta: reasoning.to_owned(),
@@ -184,9 +185,11 @@ fn text_delta_event<Context>(
 }
 
 fn pop_tool_event<Context>(state: &mut ChatStreamState<Context>) -> Option<KnownResponseEvent> {
-    let progress = &mut state.progress;
-    let next = progress.pending_tool_events.drain(..1).next();
-    next.map(|queued| queued.event)
+    state
+        .progress
+        .pending_tool_events
+        .pop_front()
+        .map(|queued| queued.event)
 }
 
 fn queue_first_annotations<Context>(
