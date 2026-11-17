@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::{Future, ready};
+use std::io;
 use std::mem::take;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -49,7 +51,7 @@ use crate::cache_lookup::target::CacheProvider;
 use crate::cache_lookup::transport::CacheTransport;
 use crate::gemini_media::gcs_metadata::{
     GcsDeps, GcsMetadataError, GcsTransport, METADATA_DEADLINE, MetadataFuture, auth_values,
-    bucket_is_valid, metadata_url, object_content_type,
+    bucket_is_valid, metadata_url, object_content_type, read_content_type,
 };
 use crate::model_policy::capabilities::{
     CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
@@ -530,6 +532,29 @@ fn gcs_metadata_anonymous_request() {
     assert_eq!(requests.len(), 1);
     assert_eq!(header(&requests[0], AUTHORIZATION), None);
     assert!(mint.projects().is_empty());
+}
+
+#[test]
+fn replays_the_gcs_metadata_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/gcs_metadata");
+    fs::read_dir(corpus)
+        .expect("corpus folder")
+        .try_for_each(|entry| {
+            let path = entry?.path();
+            let bytes = fs::read(&path)?;
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("utf-8 file name");
+            let decoded = read_content_type(&bytes, true);
+            if name.starts_with("valid") {
+                decoded.expect("this seed is a metadata reply");
+            } else {
+                decoded.expect_err("this seed is not a metadata reply");
+            }
+            Ok::<(), io::Error>(())
+        })
+        .expect("readable corpus");
 }
 
 pub(crate) struct SilentLogger;

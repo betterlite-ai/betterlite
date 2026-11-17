@@ -228,7 +228,7 @@ async fn bearer_headers(
     Ok(headers)
 }
 
-fn read_content_type(body: &[u8], explicit: bool) -> Result<Option<String>, GcsMetadataError> {
+pub fn read_content_type(body: &[u8], explicit: bool) -> Result<Option<String>, GcsMetadataError> {
     let value: Json = match serde_json::from_slice(body) {
         Ok(value) => value,
         Err(source) => return failed(explicit, GcsMetadataError::Decode(source)),
