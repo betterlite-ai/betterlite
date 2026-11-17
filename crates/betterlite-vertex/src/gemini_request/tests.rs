@@ -790,17 +790,19 @@ fn assert_fetched(harness: &Harness, asynchronous: bool, urls: &[&str]) {
 }
 
 #[rstest]
-#[case::sequential(false)]
-#[case::concurrent(true)]
-fn media_download(#[case] asynchronous: bool) {
-    let harness = Harness::new().with_fetch(&[(REMOTE_HTTPS, FETCHED)]);
-    let input = media_input(
-        VertexCapabilityProvider::VertexAi,
-        r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"https://example.com/cat"}}]}]"#,
+#[case::sequential(false, REMOTE_HTTPS)]
+#[case::concurrent(true, REMOTE_HTTPS)]
+#[case::http_extension(false, REMOTE_HTTP_PNG)]
+#[case::http_extension_concurrent(true, REMOTE_HTTP_PNG)]
+fn media_download(#[case] asynchronous: bool, #[case] url: &str) {
+    let harness = Harness::new().with_fetch(&[(url, FETCHED)]);
+    let messages = format!(
+        r#"[{{"role":"user","content":[{{"type":"text","text":"what"}},{{"type":"image_url","image_url":{{"url":"{url}"}}}}]}}]"#
     );
+    let input = media_input(VertexCapabilityProvider::VertexAi, &messages);
     let transformed = run_entry(&harness, &input, asynchronous).expect("the media is fetched");
     assert_body(&transformed, INLINE_CAT_BODY);
-    assert_fetched(&harness, asynchronous, &[REMOTE_HTTPS]);
+    assert_fetched(&harness, asynchronous, &[url]);
     assert_eq!(harness.transport.calls(), 0);
 }
 
@@ -825,20 +827,6 @@ fn media_https_hint_passes_mime(
     );
     assert_body(&transformed, &expected);
     assert_no_io(&harness);
-}
-
-#[test]
-fn media_http_extension_downloads() {
-    for asynchronous in [false, true] {
-        let harness = Harness::new().with_fetch(&[(REMOTE_HTTP_PNG, FETCHED)]);
-        let input = media_input(
-            VertexCapabilityProvider::VertexAi,
-            r#"[{"role":"user","content":[{"type":"text","text":"what"},{"type":"image_url","image_url":{"url":"http://example.com/cat.png"}}]}]"#,
-        );
-        let transformed = run_entry(&harness, &input, asynchronous).expect("the media is fetched");
-        assert_body(&transformed, INLINE_CAT_BODY);
-        assert_fetched(&harness, asynchronous, &[REMOTE_HTTP_PNG]);
-    }
 }
 
 #[test]
@@ -953,7 +941,9 @@ fn media_refused_fetch_fails_once(#[case] asynchronous: bool) {
     let error = run_entry(&harness, &input, asynchronous).expect_err("the download is refused");
     let url = match error {
         RequestError::Inline(MediaError::Fetch(ImageFetchError::Attempts { url })) => url,
-        other => panic!("a refused download is an inline media error, got {other:?}"),
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("a refused download is an inline media error, got {other:?}")
+        }
     };
     assert_eq!(url, REMOTE_HTTP);
     assert_fetched(&harness, asynchronous, &[REMOTE_HTTP]);
@@ -967,7 +957,9 @@ fn media_studio_file_fetch_failure() {
     let error = harness.run(&input).expect_err("the download is refused");
     let url = match error {
         RequestError::Inline(MediaError::Fetch(ImageFetchError::Attempts { url })) => url,
-        other => panic!("a refused studio file download is not inline media: {other:?}"),
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("a refused studio file download is not inline media: {other:?}")
+        }
     };
     assert_eq!(url, REMOTE_PDF);
     assert_fetched(&harness, false, &[REMOTE_PDF]);
