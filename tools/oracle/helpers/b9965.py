@@ -125,12 +125,10 @@ def _inline(input_value: Case) -> list[JsonObject]:
     return asyncio.run(ASYNC_INLINE(input_value["messages"], predicate))
 
 
+# the compared value carries the failing stage and attempted urls, since compare_helper drops the error class and message
 def _failure(stage: Stage, attempted: list[Json], status: int) -> JsonObject:
-    return {
-        "failure": {"status": status, "type": None, "param": None, "code": None},
-        "stage": stage,
-        "fetched": attempted,
-    }
+    failure: JsonObject = {"status": status, "type": None, "param": None, "code": None}
+    return {"failure": failure, "stage": stage, "fetched": attempted}
 
 
 def run(input_value: Case) -> JsonObject:

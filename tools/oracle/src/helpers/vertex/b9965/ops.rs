@@ -189,7 +189,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
     }
 }
 
-// LiteLLM's download failures are BadRequestError subclasses and its conversion failures are BadRequestError, so both report 400 with no type, param or code; the stage and the attempted urls are what shows prepare ran
+// A failure travels in the compared value, not in HelperError, because compare_helper drops the error class and message; LiteLLM's download failures are BadRequestError subclasses and its conversion failures are BadRequestError, so both report 400 with no type, param or code, and the stage and attempted urls show that prepare ran
 fn failure(fetcher: &MapFetch, stage: &str) -> Value {
     json!({
         "failure": {"status": 400, "type": null, "param": null, "code": null},
