@@ -1,0 +1,12 @@
+task: B3869
+deviations:
+  - what: "response_cost is recorded only when it is greater than zero. LiteLLM records any truthy cost, so a negative cost is a datapoint there and none here."
+    why: "The task's definition of done reads 'Cost is recorded only when response_cost > 0', and LiteLLM zeroes response_cost on a failure, so only a negative cost is affected; no working setup relies on a negative spend series."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L234-L236"
+  - what: "A call time, response cost or token count of the wrong type is an error that names the field, decided before anything is recorded. LiteLLM's to_seconds returns None and the recorder silently skips the metric, and its token-count comparison raises a TypeError from inside the recorder."
+    why: "docs/compatibility.md reads a value of the wrong type as an error that names the field, and an explicit 0, empty string or empty list as the value given."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/utils.py#L92-L106"
+kept_bugs:
+  - what: "time_per_output_token falls back to the whole call duration when completion_start_time or api_call_start_time is present but not parseable, so the series exists for a billed call either way."
+    why: "A working setup relies on the every-billed-call series and cannot tell the fallback from a missing timestamp. The legacy recorder has the same fallback, and B3857 kept it there."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/metrics.py#L399-L415"

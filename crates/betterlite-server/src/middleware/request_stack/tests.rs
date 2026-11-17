@@ -23,6 +23,7 @@ use crate::server::application;
 use crate::server::chat_setup::chat_executor;
 
 use super::wrap;
+use tokio_util::task::TaskTracker;
 
 const MIB: usize = 1024 * 1024;
 
@@ -205,7 +206,13 @@ fn server_application(source: &str, environment: &[(&str, &str)]) -> Router {
     .load(source)
     .unwrap();
     let executor = chat_executor(&config, &lookup, StdRng::seed_from_u64(1)).unwrap();
-    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+    application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .unwrap()
 }
 
 #[tokio::test]

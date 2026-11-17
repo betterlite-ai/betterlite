@@ -28,6 +28,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::{sleep, timeout};
+use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream-model","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}"#;
@@ -882,7 +883,13 @@ async fn normalization_gateway(enabled: bool) -> (ProxiedClient, String, JoinSet
         "http://{}/v1/chat/completions",
         listener.local_addr().unwrap()
     );
-    let application = application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap();
+    let application = application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .unwrap();
     tasks.spawn(async move {
         axum::serve(listener, application).await.unwrap();
     });

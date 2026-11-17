@@ -29,6 +29,7 @@ use super::normalize::normalize_root_paths;
 use super::{RootPaths, RootSlashRedirect, get_request_root_path, redirect_root_slash};
 use crate::server::application;
 use crate::server::chat_setup::chat_executor;
+use tokio_util::task::TaskTracker;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Seen {
@@ -277,7 +278,13 @@ fn server_application(source: &str) -> Router {
     .load(source)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+    application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .unwrap()
 }
 
 #[rstest]
