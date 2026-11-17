@@ -1,3 +1,5 @@
+use std::mem;
+
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_models::decisions::Json;
 
@@ -38,7 +40,7 @@ pub fn run_id_from_sse_lines(lines: &[String]) -> Option<String> {
         let run_id = run
             .run_id
             .as_ref()
-            .and_then(|value| value.as_deref())
+            .and_then(Option::as_deref)
             .filter(|found| !found.is_empty());
         if let Some(found) = run_id {
             return Some(found.to_owned());
@@ -76,13 +78,11 @@ pub(super) fn split_lines(text: &str) -> Vec<String> {
     while let Some(character) = characters.next() {
         match character {
             '\r' => {
-                if characters.peek() == Some(&'\n') {
-                    drop(characters.next());
-                }
-                lines.push(std::mem::take(&mut line));
+                characters.next_if_eq(&'\n');
+                lines.push(mem::take(&mut line));
             }
             '\n' | '\u{b}' | '\u{c}' | '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{85}' | '\u{2028}'
-            | '\u{2029}' => lines.push(std::mem::take(&mut line)),
+            | '\u{2029}' => lines.push(mem::take(&mut line)),
             other => line.push(other),
         }
     }

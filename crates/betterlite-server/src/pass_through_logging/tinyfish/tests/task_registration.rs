@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use std::future::pending;
 use std::time::Duration;
 
 use tokio::sync::oneshot;
+use tokio::time::timeout;
 
 use super::support::capture_logs;
 use super::tasks::BillingTasks;
@@ -26,8 +28,8 @@ async fn a_cancelled_poller_warns_that_the_run_may_go_unbilled() {
     let tasks = BillingTasks::default();
     let (started, started_receiver) = oneshot::channel::<()>();
     let handle = tasks.spawn(async move {
-        drop(started.send(()));
-        std::future::pending::<()>().await;
+        started.send(()).expect("the poller started");
+        pending::<()>().await;
     });
 
     started_receiver.await.expect("the poller started");
@@ -64,11 +66,11 @@ async fn shutdown_waits_for_the_pending_pollers() {
     let (done, done_receiver) = oneshot::channel::<()>();
     let handle = tasks.spawn(async move {
         drop(receiver.await);
-        drop(done.send(()));
+        done.send(()).expect("the poller recorded its completion");
     });
 
     let mut shutdown = std::pin::pin!(tasks.shutdown());
-    let early = tokio::time::timeout(Duration::from_millis(10), &mut shutdown).await;
+    let early = timeout(Duration::from_millis(10), &mut shutdown).await;
     assert!(early.is_err());
     drop(sender);
     shutdown.await;

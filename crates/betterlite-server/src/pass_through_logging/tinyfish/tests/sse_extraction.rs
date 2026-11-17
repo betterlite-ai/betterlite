@@ -77,6 +77,8 @@ fn reads_a_collected_stream_as_lines() {
 #[case::a_unix_break("a\nb", &["a", "b"])]
 #[case::a_crlf_pair("a\r\nb", &["a", "b"])]
 #[case::a_lone_carriage_return("a\rb", &["a", "b"])]
+#[case::two_carriage_returns_in_a_row("a\r\rb", &["a", "", "b"])]
+#[case::crlf_pairs_back_to_back("a\r\n\r\nb", &["a", "", "b"])]
 #[case::a_blank_line_between("a\n\nb", &["a", "", "b"])]
 #[case::a_line_separator("a\u{2028}b", &["a", "b"])]
 #[case::no_trailing_empty_line("a\n", &["a"])]
