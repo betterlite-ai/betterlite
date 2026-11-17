@@ -6,8 +6,8 @@ use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_core::api::api_boundaries::ApiLimits;
 
 use super::shared::{
-    Events, Harness, Kind, START_FRAME, bytes, capture_logs, chat, logged_text, ok, request_data,
-    spawn_person_analyzer, upstream_failure,
+    DELTA_FRAME, Events, Harness, Kind, START_FRAME, bytes, capture_logs, chat, logged_text, ok,
+    request_data, spawn_person_analyzer, upstream_failure,
 };
 use crate::presidio_actions::error::PresidioActionsError;
 use crate::presidio_streams::error::PresidioStreamError;
@@ -57,7 +57,7 @@ async fn a_reader_that_went_away_is_never_swallowed() {
 }
 
 #[tokio::test]
-async fn a_chunk_past_the_byte_ceiling_is_raised_not_flushed() {
+async fn over_budget_bytes_in_the_mask_buffer_are_raised() {
     let harness = Harness::new();
     let mut request = request_data("{}");
     let huge = "x".repeat(ApiLimits::default().max_json_bytes);
@@ -72,7 +72,7 @@ async fn a_chunk_past_the_byte_ceiling_is_raised_not_flushed() {
 }
 
 #[tokio::test]
-async fn the_chunk_count_ceiling_is_raised_not_flushed() {
+async fn over_budget_items_in_the_mask_buffer_are_raised() {
     let harness = Harness::new();
     let mut request = request_data("{}");
     let events = ok(vec![chat("a"); ApiLimits::default().max_items + 1]);
@@ -95,7 +95,7 @@ async fn a_chunk_count_at_the_ceiling_is_masked() {
 }
 
 #[tokio::test]
-async fn an_anthropic_stream_past_the_byte_ceiling_is_raised() {
+async fn over_budget_bytes_in_the_anthropic_buffer_are_raised() {
     let harness = Harness::new();
     let mut request = request_data("{}");
     let huge = format!(
@@ -109,6 +109,31 @@ async fn an_anthropic_stream_past_the_byte_ceiling_is_raised() {
         PresidioStreamError::OverBudget { .. }
     ));
     assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn over_budget_items_in_the_anthropic_buffer_are_raised() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let mut events = vec![bytes(START_FRAME)];
+    events.extend(vec![bytes(DELTA_FRAME); ApiLimits::default().max_items]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, ok(events)).await;
+    assert!(matches!(
+        result.unwrap_err(),
+        PresidioStreamError::OverBudget { .. }
+    ));
+    assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn an_anthropic_stream_at_the_item_ceiling_is_masked() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let mut events = vec![bytes(START_FRAME)];
+    events.extend(vec![bytes(DELTA_FRAME); ApiLimits::default().max_items - 1]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, ok(events)).await;
+    result.unwrap();
+    assert_eq!(sent, ["bytes rebuilt:MASKED"]);
 }
 
 #[test]

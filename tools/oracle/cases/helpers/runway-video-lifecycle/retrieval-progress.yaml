@@ -1,0 +1,83 @@
+kind: helper
+name: runway-video-lifecycle-retrieval-progress
+call:
+  runway_video_lifecycle:
+    operation: response
+    params:
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.0}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.001}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.125}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.25}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.333}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.375}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.5}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.75}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":0.999}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":1.0}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":1.5}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":-0.2}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING","progress":null}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"RUNNING"}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"SUCCEEDED","createdAt":"2025-11-11T21:48:50.448Z","completedAt":"2025-11-11T21:49:50.448Z"}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"CANCELLED","completedAt":null}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"FAILED","completedAt":"soon","failure":"boom","failureCode":"E1"}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"PENDING","failure":""}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"THROTTLED","failureCode":""}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"weird","estimatedCost":{"credits":4}}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t","status":"succeeded","createdAt":5}'
+      - kind: retrieve
+        provider: null
+        body: '{"id":"t"}'
+      - kind: retrieve
+        provider: runwayml
+        body: '{"id":"task_1","status":"RUNNING","progress":0.5,"createdAt":"2025-11-11T21:48:50.448Z"}'
+      - kind: retrieve
+        provider: runwayml
+        body: '{"id":"video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv","status":"RUNNING"}'
+      - kind: retrieve
+        provider: ""
+        body: '{"id":"task_1","status":"RUNNING"}'
+env: {}
+compare: {ignore: []}

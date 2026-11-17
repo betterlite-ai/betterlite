@@ -1,0 +1,9 @@
+task: B1381
+deviations:
+  - what: The transcription estimate divides the unbilled byte count by 48000 and scales it in exact integer ratios before rounding to the even neighbour, where LiteLLM rounds the result of float division and multiplication.
+    why: The task pins exact rational arithmetic, so a float error can no longer push a tie to the wrong neighbour; the two agree on every count the oracle case lists, and at 104640 bytes LiteLLM's float round bills 55 audio tokens where the exact 54.5 ties to 54, and at 110400 it bills 57 where the exact 57.5 ties to 58.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1218-L1221
+  - what: A session setup whose JSON has a wrongly typed field anywhere, not only inside generationConfig, fails with the setup decoder's typed error when response.done is built, where LiteLLM reads only the generationConfig keys it needs and ignores the rest.
+    why: The setup text is the one LiteLLM's own setup transform produced, so a working session never holds such a field, and sharing the typed setup decoder keeps one reader of that text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L112-L115
+kept_bugs: []
