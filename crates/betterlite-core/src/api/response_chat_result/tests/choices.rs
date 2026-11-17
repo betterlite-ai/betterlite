@@ -506,7 +506,7 @@ fn text_flushes_reasoning_so_the_tool_choice_does_not_carry_it() {
 fn fallback_collects_typed_and_raw_reasoning() {
     let choice = fallback(
         json!([
-            reasoning_item("rs_1", json!([summary_block("one")]), None),
+            reasoning_item("rs_1", json!([summary_block("one")]), Some("enc_typed")),
             {
                 "type": "reasoning",
                 "summary": [{"text": "three"}],
@@ -518,7 +518,7 @@ fn fallback_collects_typed_and_raw_reasoning() {
     let mut expected = chat_message("", "assistant");
     expected["reasoning_content"] = json!("one three");
     expected["reasoning_items"] = json!([
-        reasoning_record("rs_1", json!([summary_block("one")]), None),
+        reasoning_record("rs_1", json!([summary_block("one")]), Some("enc_typed")),
         reasoning_record("", json!([summary_block("three")]), Some("enc_raw")),
     ]);
     assert_eq!(

@@ -130,6 +130,7 @@ calls:
             encrypted_content: enc-raw
           - type: reasoning
             id: rs_2
+            encrypted_content: enc-typed
             summary:
               - {type: summary_text, text: typed}
       caller_extra: {}
