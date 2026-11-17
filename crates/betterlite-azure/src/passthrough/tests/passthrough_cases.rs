@@ -458,6 +458,7 @@ fn wrong_version_types_name_the_field() {
 fn environment_base_fallbacks() {
     environment_base_fallback();
     explicit_base_beats_the_environment();
+    empty_caller_base_is_unset();
     empty_environment_base_is_unset();
     missing_base_is_named();
 }
@@ -488,6 +489,14 @@ fn explicit_base_beats_the_environment() {
     )
     .unwrap();
     assert_eq!(base_target, "https://caller.test");
+}
+
+// get_api_base(api_base) is api_base or the environment, so an empty argument is unset
+fn empty_caller_base_is_unset() {
+    let (url, base_target) =
+        completed_base(&base_config(Some("https://env.test")), Some("")).unwrap();
+    assert_eq!(base_target, "https://env.test");
+    assert_eq!(url.as_str(), "https://env.test/chat/completions");
 }
 
 fn empty_environment_base_is_unset() {
