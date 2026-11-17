@@ -3,7 +3,7 @@ use std::mem::take;
 use betterlite_models::decisions::Json;
 
 use super::MessagesStreamChunk;
-use super::python_text::{decode_utf8_ignore, is_space, splitlines_keepends};
+use super::python_text::{decode_utf8_ignore, is_space, sse_lines_keepends};
 
 pub const MESSAGE_START_EVENT: &str = "message_start";
 const MESSAGE_START_MARKER: &[u8] = b"message_start";
@@ -207,7 +207,7 @@ fn restamped_data_line(line: &str, requested_model: &str) -> Option<String> {
 }
 
 fn restamped_frame(frame: &str, requested_model: &str) -> Option<String> {
-    let lines = splitlines_keepends(frame);
+    let lines = sse_lines_keepends(frame);
     let restamped: Vec<Option<String>> = lines
         .iter()
         .map(|line| restamped_data_line(line, requested_model))
