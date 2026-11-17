@@ -96,7 +96,11 @@ fn write_betas(
 ) {
     let listed: Vec<Json> = betas.iter().map(|beta| Json::Text(beta.clone())).collect();
     body.insert(ANTHROPIC_BETA.to_owned(), Json::List(listed));
-    let joined = betas.iter().cloned().collect::<Vec<String>>().join(",");
+    let joined = betas
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<&str>>()
+        .join(",");
     headers
         .values
         .insert(ANTHROPIC_BETA_HEADER.to_owned(), joined);

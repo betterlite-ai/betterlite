@@ -12,6 +12,7 @@ from pydantic import JsonValue as Json
 from typing_extensions import override
 
 BETA_LIST: Final = TypeAdapter(list[str])
+BETA_VALUES: Final = TypeAdapter(list[Json])
 JSON: Final = TypeAdapter(Json)
 
 
@@ -153,12 +154,15 @@ def request_answer(transformer: Transformer, step: RequestStep) -> Json:
         headers=headers,
     )
     betas: list[str] = sorted(BETA_LIST.validate_python(body.pop("anthropic_beta", [])))
-    beta_header: list[str] = [
+    beta_header: list[str] = sorted(
         part for part in headers.pop("anthropic-beta", "").split(",") if part
-    ]
-    return JSON.validate_python(
-        {"body": body, "anthropic_beta": betas, "beta_header": sorted(beta_header)}
     )
+    answer: dict[str, Json] = {
+        "body": body,
+        "anthropic_beta": BETA_VALUES.validate_python(betas),
+        "beta_header": BETA_VALUES.validate_python(beta_header),
+    }
+    return JSON.validate_python(answer)
 
 
 def response_answer(responder: Responder, step: ResponseStep) -> Json:

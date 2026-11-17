@@ -69,24 +69,8 @@ where
 {
     let tools = prompt_list(params, "tools")?;
     let mcp_servers = prompt_list(params, "mcp_servers")?;
-    let prompt_messages: Vec<PromptJson> = messages.iter().map(prompt_json).collect();
-    let mut flags = BTreeSet::new();
-    if is_file_id_used(&prompt_messages)? {
-        flags.insert(Feature::FileId);
-    }
-    if is_mcp_server_used(Some(mcp_servers.as_slice())) {
-        flags.insert(Feature::McpServer);
-    }
-    let features = AnthropicFeatures {
-        flags,
-        computer_tool: tools.iter().find_map(computer_tool_version),
-    };
-    let feature_params = FeatureParams {
-        compaction: params.get("compaction").cloned(),
-        container: params.get("container").cloned(),
-        output_config: params.get("output_config").cloned(),
-        reasoning_effort: params.get("reasoning_effort").cloned(),
-    };
+    let features = detect_features(&tools, &mcp_servers, messages)?;
+    let feature_params = beta_params(params);
     let mut betas: BTreeSet<String> = beta_list(
         &BetaRequest {
             model,
@@ -112,6 +96,35 @@ where
         merge_extra_headers(&mut betas, extra_headers)?;
     }
     Ok(betas)
+}
+
+// The flags and the first computer_ tool version that B568's automatic betas read.
+fn detect_features(
+    tools: &[PromptJson],
+    mcp_servers: &[PromptJson],
+    messages: &[Json],
+) -> Result<AnthropicFeatures, BetaError> {
+    let prompt_messages: Vec<PromptJson> = messages.iter().map(prompt_json).collect();
+    let mut flags = BTreeSet::new();
+    if is_file_id_used(&prompt_messages)? {
+        flags.insert(Feature::FileId);
+    }
+    if is_mcp_server_used(Some(mcp_servers)) {
+        flags.insert(Feature::McpServer);
+    }
+    Ok(AnthropicFeatures {
+        flags,
+        computer_tool: tools.iter().find_map(computer_tool_version),
+    })
+}
+
+fn beta_params(params: &IndexMap<String, Json>) -> FeatureParams {
+    FeatureParams {
+        compaction: params.get("compaction").cloned(),
+        container: params.get("container").cloned(),
+        output_config: params.get("output_config").cloned(),
+        reasoning_effort: params.get("reasoning_effort").cloned(),
+    }
 }
 
 // Only compact_20260112 selects the compact beta; every other edit type, "compaction" included, selects context management.
@@ -162,9 +175,8 @@ fn merge_extra_headers(
             return Err(BetaError::ExtraHeadersNotObject);
         }
     };
-    let value = match fields.get("anthropic-beta") {
-        None | Some(Json::Null) => return Ok(()),
-        Some(value) => value,
+    let Some(value) = fields.get("anthropic-beta") else {
+        return Ok(());
     };
     match value {
         Json::Text(text) => {
@@ -185,6 +197,6 @@ fn merge_extra_headers(
             }
             Ok(())
         }
-        Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(()),
     }
 }
