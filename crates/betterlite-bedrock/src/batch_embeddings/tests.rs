@@ -359,7 +359,8 @@ fn single_input_coercion() {
 
 fn invalid_multi_input() {
     assert_multiple_inputs();
-    assert_tokenized_and_typed_inputs();
+    assert_tokenized_inputs();
+    assert_typed_inputs();
 }
 
 fn assert_multiple_inputs() {
@@ -391,20 +392,24 @@ fn assert_multiple_inputs() {
     }
 }
 
-fn assert_tokenized_and_typed_inputs() {
+fn assert_tokenized_inputs() {
     let cases = [
-        (
-            list(vec![list(vec![int(1)])]),
-            format!("{TOKENIZED_INPUT} Pass `input` as a string (model=m)."),
-        ),
-        (
-            Json::Bool(true),
-            format!("{TOKENIZED_INPUT} Pass `input` as a string (model=m)."),
-        ),
-        (
-            int(5),
-            format!("{TOKENIZED_INPUT} Pass `input` as a string (model=m)."),
-        ),
+        (list(vec![list(vec![int(1)])]), TOKENIZED_INPUT),
+        (Json::Bool(true), TOKENIZED_INPUT),
+        (int(5), TOKENIZED_INPUT),
+        // a negative int is still an int even though it is not a u64
+        (int(-1), TOKENIZED_INPUT),
+    ];
+    for (raw, message) in cases {
+        assert_eq!(
+            message_of(coerce_input_to_string(Some(&raw), "m")),
+            format!("{message} Pass `input` as a string (model=m).")
+        );
+    }
+}
+
+fn assert_typed_inputs() {
+    let cases = [
         (
             float(1.5),
             format!("{INPUT_NOT_STRING} Got type float for model=m."),
