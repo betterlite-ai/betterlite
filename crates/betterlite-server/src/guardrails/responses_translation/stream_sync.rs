@@ -19,19 +19,18 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
-use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_field;
 use serde_json::Value;
 
+use crate::guardrails::responses_translation::input_provenance::is_tool_call_output_item;
 use crate::guardrails::responses_translation::stream_scan::{
-    OUTPUT_ITEM_EVENT_TYPES, TOOL_CALL_ITEM_TYPES, TOOL_PAYLOAD_EVENT_TYPES, event_item,
-    integer_field, item_text,
+    OUTPUT_ITEM_EVENT_TYPES, TOOL_PAYLOAD_EVENT_TYPES, event_item, integer_field,
+    is_tool_call_stream_item, item_text, output_item,
 };
 use crate::guardrails::tool_call_identity::ToolCallShape;
 // ast-grep-ignore: no-long-names
 use delivery::{
-    tool_call_call_ids, tool_call_item_count, tool_call_rewrite_map,
-    undeliverable_tool_call_rewrite, write_event_rewrites, write_item_rewrites,
+    tool_call_call_ids, tool_call_rewrite_map, undeliverable_tool_call_rewrite,
+    write_event_rewrites, write_item_rewrites,
 };
 use error::StreamSyncError;
 use positions::{placeable_positions, scanned_text_positions};
@@ -166,13 +165,10 @@ pub fn tool_call_ids_by_item_id(events: &[Value]) -> BTreeMap<String, String> {
         if !is_output_item_event {
             continue;
         }
-        let Some(inner) = stream_item_field(&item, "item") else {
+        let Some(inner) = output_item(&item) else {
             continue;
         };
-        let inner = StreamItem::Json(inner.clone());
-        let is_tool_call_item = item_text(&inner, "type")
-            .is_some_and(|inner_type| TOOL_CALL_ITEM_TYPES.contains(&inner_type));
-        if !is_tool_call_item {
+        if !is_tool_call_stream_item(&inner) {
             continue;
         }
         let (Some(item_id), Some(call_id)) =
@@ -199,10 +195,8 @@ pub fn tool_call_event_call_id(
     if !OUTPUT_ITEM_EVENT_TYPES.contains(&event_type) {
         return None;
     }
-    let inner = StreamItem::Json(stream_item_field(&item, "item")?.clone());
-    let is_tool_call_item = item_text(&inner, "type")
-        .is_some_and(|inner_type| TOOL_CALL_ITEM_TYPES.contains(&inner_type));
-    if !is_tool_call_item {
+    let inner = output_item(&item)?;
+    if !is_tool_call_stream_item(&inner) {
         return None;
     }
     item_text(&inner, "call_id").map(str::to_owned)
@@ -226,11 +220,15 @@ pub fn deliver_ended_stream_tool_call_rewrites(
         .map(|event| tool_call_event_call_id(event, &call_id_by_item_id))
         .collect();
     let rewrites = tool_call_rewrite_map(&call_ids, pre, post);
+    let tool_call_items = output
+        .iter()
+        .filter(|item| is_tool_call_output_item(item))
+        .count();
     // ast-grep-ignore: no-long-names
     let undeliverable = undeliverable_tool_call_rewrite(
         earlier,
         &call_ids,
-        tool_call_item_count(output),
+        tool_call_items,
         post,
         &event_call_ids,
         &rewrites,

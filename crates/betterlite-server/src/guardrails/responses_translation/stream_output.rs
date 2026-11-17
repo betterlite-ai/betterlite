@@ -23,6 +23,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::guardrail_message_scope::Object;
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
 use super::output_rewrite::error::OutputRewriteError;
@@ -52,10 +53,6 @@ struct GuardrailAnswer {
     post: Vec<ToolCallShape>,
 }
 
-fn event_type(event: &Value) -> Option<&str> {
-    event.get("type").and_then(Value::as_str)
-}
-
 fn model_of(response: &Value) -> Option<String> {
     response
         .get("model")
@@ -70,11 +67,7 @@ fn scan_envelope(response: &Value) -> Result<EnvelopeScan, StreamOutputError> {
         .get("output")
         .and_then(Value::as_array)
         .map_or(empty, Vec::as_slice);
-    let value =
-        serde_json::from_value(response.clone()).map_err(|source| StreamOutputError::Convert {
-            target: "response",
-            source,
-        })?;
+    let value: GuardrailValue = convert(response, "response")?;
     Ok(EnvelopeScan {
         extracted: extract_output(outputs)?,
         model: model_of(response),
@@ -82,20 +75,12 @@ fn scan_envelope(response: &Value) -> Result<EnvelopeScan, StreamOutputError> {
     })
 }
 
-fn guardrail_values(
-    values: &[Value],
-    target: &'static str,
-) -> Result<Vec<GuardrailValue>, StreamOutputError> {
-    let value = serde_json::to_value(values)
-        .map_err(|source| StreamOutputError::Convert { target, source })?;
-    serde_json::from_value(value).map_err(|source| StreamOutputError::Convert { target, source })
-}
-
-fn json_values(
-    values: &[GuardrailValue],
-    target: &'static str,
-) -> Result<Vec<Value>, StreamOutputError> {
-    let value = serde_json::to_value(values)
+fn convert<Source, Target>(value: Source, target: &'static str) -> Result<Target, StreamOutputError>
+where
+    Source: Serialize,
+    Target: DeserializeOwned,
+{
+    let value = serde_json::to_value(value)
         .map_err(|source| StreamOutputError::Convert { target, source })?;
     serde_json::from_value(value).map_err(|source| StreamOutputError::Convert { target, source })
 }
@@ -108,7 +93,7 @@ fn post_shapes(
     let Some(calls) = answer.tool_calls.as_ref() else {
         return Ok(post_guardrail_shapes(None, pre, guardrail_name));
     };
-    let returned = json_values(calls, "returned tool calls")?;
+    let returned: Vec<Value> = convert(calls, "returned tool calls")?;
     Ok(post_guardrail_shapes(Some(&returned), pre, guardrail_name))
 }
 
@@ -117,15 +102,7 @@ fn tool_call_inputs(
     index: usize,
 ) -> Result<GuardrailApiInputs, StreamOutputError> {
     let chunk = output_tool_fields(item, index).map_err(OutputRewriteError::from)?;
-    let value = serde_json::to_value(&chunk).map_err(|source| StreamOutputError::Convert {
-        target: "tool call",
-        source,
-    })?;
-    let tool_call: GuardrailValue =
-        serde_json::from_value(value).map_err(|source| StreamOutputError::Convert {
-            target: "tool call",
-            source,
-        })?;
+    let tool_call: GuardrailValue = convert(&chunk, "tool call")?;
     Ok(GuardrailApiInputs {
         texts: None,
         images: None,
@@ -150,10 +127,10 @@ where
     let mut fresh = Object::new();
     let prepared = request_data.unwrap_or(&mut fresh);
     add_response_context(prepared, &scan.response, context.user_api_key_dict);
-    let tool_calls = if scan.extracted.tool_calls.is_empty() {
+    let tool_calls: Option<Vec<GuardrailValue>> = if scan.extracted.tool_calls.is_empty() {
         None
     } else {
-        Some(guardrail_values(&scan.extracted.tool_calls, "tool calls")?)
+        Some(convert(&scan.extracted.tool_calls, "tool calls")?)
     };
     let inputs = GuardrailApiInputs {
         texts: Some(scan.extracted.texts.clone()),
@@ -192,7 +169,7 @@ where
     if !last.is_object() {
         return Ok(true);
     }
-    let last_type = event_type(last).map(str::to_owned);
+    let last_type = last.get("type").and_then(Value::as_str).map(str::to_owned);
     match last_type.as_deref() {
         Some(kind) if TERMINAL_ENVELOPE_EVENT_TYPES.contains(&kind) => {
             terminal_scan(last, earlier, guardrail, context, logging_obj, request_data).await

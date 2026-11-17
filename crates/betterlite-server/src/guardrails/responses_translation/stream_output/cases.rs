@@ -14,21 +14,6 @@ use crate::guardrails::responses_translation::stream_sync;
 use super::error::StreamOutputError;
 use super::{GuardrailAnswer, StreamContext, scan_envelope, terminal_answer, tool_call_inputs};
 
-fn text_rewrites(
-    scanned: &[String],
-    rewritten: &[String],
-    mappings: &[(usize, usize)],
-) -> BTreeMap<(usize, usize), String> {
-    let mut rewrites = BTreeMap::new();
-    for ((scanned_text, mapping), rewritten_text) in scanned.iter().zip(mappings).zip(rewritten) {
-        if scanned_text == rewritten_text {
-            continue;
-        }
-        rewrites.insert(*mapping, rewritten_text.clone());
-    }
-    rewrites
-}
-
 fn deliver_terminal_rewrites(
     response: &mut Value,
     earlier: &mut [Value],
@@ -38,7 +23,12 @@ fn deliver_terminal_rewrites(
     answer: &GuardrailAnswer,
     guardrail_name: Option<&str>,
 ) -> Result<(), StreamOutputError> {
-    let rewrites = text_rewrites(scanned, rewritten, mappings);
+    let mut rewrites = BTreeMap::new();
+    for ((scanned_text, mapping), rewritten_text) in scanned.iter().zip(mappings).zip(rewritten) {
+        if scanned_text != rewritten_text {
+            rewrites.insert(*mapping, rewritten_text.clone());
+        }
+    }
     if !rewrites.is_empty() {
         stream_sync::sync_stream_events_with_rewrites(earlier, &rewrites);
     }

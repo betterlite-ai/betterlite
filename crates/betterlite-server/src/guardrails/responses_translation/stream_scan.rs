@@ -66,6 +66,14 @@ pub(crate) fn item_text<'item>(item: &'item StreamItem, field: &str) -> Option<&
     }
 }
 
+pub(crate) fn output_item(item: &StreamItem) -> Option<StreamItem> {
+    Some(StreamItem::Json(stream_item_field(item, "item")?.clone()))
+}
+
+pub(crate) fn is_tool_call_stream_item(item: &StreamItem) -> bool {
+    item_text(item, "type").is_some_and(|kind| TOOL_CALL_ITEM_TYPES.contains(&kind))
+}
+
 #[derive(Clone, PartialEq)]
 struct PartPosition {
     item_id: Option<GuardrailValue>,
@@ -160,13 +168,10 @@ pub fn has_streamed_tool_call_events(events: &[Value]) -> bool {
         if !OUTPUT_ITEM_EVENT_TYPES.contains(&event_type) {
             continue;
         }
-        let Some(inner) = stream_item_field(&item, "item") else {
+        let Some(inner) = output_item(&item) else {
             continue;
         };
-        let inner = StreamItem::Json(inner.clone());
-        if item_text(&inner, "type")
-            .is_some_and(|inner_type| TOOL_CALL_ITEM_TYPES.contains(&inner_type))
-        {
+        if is_tool_call_stream_item(&inner) {
             return true;
         }
     }
@@ -184,14 +189,9 @@ pub fn completed_response_scan_key(response: Option<&Value>) -> StreamingScanKey
     let mut tool_calls = Vec::new();
     for item in items {
         let item = StreamItem::Json(item.clone());
-        let is_tool_call = item_text(&item, "type")
-            .is_some_and(|event_type| TOOL_CALL_ITEM_TYPES.contains(&event_type));
-        if is_tool_call {
-            match stream_item_fingerprint(&item) {
-                Ok(fingerprint) => tool_calls.push(fingerprint),
-                Err(error) => {
-                    tracing::debug!(%error, "OpenAI Responses API: a tool call item could not be fingerprinted");
-                }
+        if is_tool_call_stream_item(&item) {
+            if let Ok(fingerprint) = stream_item_fingerprint(&item) {
+                tool_calls.push(fingerprint);
             }
             continue;
         }

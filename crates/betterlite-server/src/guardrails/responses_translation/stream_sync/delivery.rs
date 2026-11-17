@@ -21,13 +21,6 @@ fn is_payload_event(event: &Value) -> bool {
         .is_some_and(|event_type| TOOL_PAYLOAD_EVENT_TYPES.contains(&event_type))
 }
 
-pub(super) fn tool_call_item_count(output: &[Value]) -> usize {
-    output
-        .iter()
-        .filter(|item| is_tool_call_output_item(item))
-        .count()
-}
-
 pub(super) fn tool_call_call_ids(output: &[Value]) -> Vec<String> {
     let mut call_ids = Vec::new();
     for item in output {

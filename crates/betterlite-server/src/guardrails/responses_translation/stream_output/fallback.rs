@@ -11,14 +11,8 @@ use super::StreamContext;
 use super::error::StreamOutputError;
 
 fn response_model(events: &[Value]) -> Option<String> {
-    events
-        .last()
-        .and_then(|last| last.get("response"))
-        .and_then(Value::as_object)
-        .and_then(|response| response.get("model"))
-        .and_then(Value::as_str)
-        .filter(|model| !model.is_empty())
-        .map(str::to_owned)
+    let response = events.last()?.get("response")?;
+    super::model_of(response)
 }
 
 fn fallback_inputs(text: String, model: Option<String>) -> GuardrailApiInputs {
