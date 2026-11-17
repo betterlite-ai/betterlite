@@ -1,0 +1,25 @@
+kind: helper
+name: titan-g1-request
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_g1_request
+    non_default:
+      dimensions: 256
+      encoding_format: base64
+    optional_params:
+      dimensions: 512
+      inputText: original
+    input: hello titan
+    inference_params:
+      inputText: ignored
+      normalize: true
+calls:
+  - bedrock_other_titan_embeddings:
+      function: titan_g1_request
+      non_default: {}
+      optional_params: {}
+      input: ""
+      inference_params: {}
+env: {}
+compare:
+  ignore: []
