@@ -31,8 +31,9 @@ use uuid::Uuid;
 
 use super::answered_result;
 use super::completion_failure;
-use super::relay::{Pump, RelaySource, TextSource, next_frame};
+use super::relay::{RelaySource, TextSource};
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
+use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::server::chat_setup::chat_executor;
 
 fn executor_for(source: &str) -> ChatExecutor {

@@ -19,7 +19,7 @@ fuzz_target!(|bytes: &[u8]| {
         };
         let (before, after) = rest.split_at(boundary);
         let mut parser = SseParser::default();
-        for piece in [before, after] {
+        for piece in std::iter::once(before).chain(std::iter::once(after)) {
             if let Ok(events) = parser.push(piece) {
                 let _piece_chunks = decode_chat_events(&events, "model", true);
             }

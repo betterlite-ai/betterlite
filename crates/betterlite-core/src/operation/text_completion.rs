@@ -109,6 +109,7 @@ impl TextCompletionFailure {
     }
 
     // a 500 the route writes itself, which names no parameter
+    #[must_use]
     pub fn internal(message: &str) -> Self {
         Self {
             status: 500,
