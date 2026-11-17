@@ -91,7 +91,7 @@ impl Call<'_> {
         body: Option<&Object>,
         expectation: Expectation,
     ) -> Result<UpstreamResponse, AgentRunError> {
-        let body = match body {
+        let encoded = match body {
             Some(payload) => Some(serde_json::to_vec(payload).map_err(AgentRunError::Body)?),
             None => None,
         };
@@ -99,7 +99,7 @@ impl Call<'_> {
             method,
             url,
             headers: self.prepared.headers.clone(),
-            body,
+            body: encoded,
         };
         let response = self
             .client
@@ -265,7 +265,7 @@ pub async fn completion(
         content: &extracted.content,
         thread_id: &thread_id,
         messages: call.messages,
-        annotations: extracted.annotations.clone(),
+        annotations: extracted.annotations,
     };
     Ok(build_model_response(call.reply.clone(), &input, counter).await)
 }
