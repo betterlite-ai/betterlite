@@ -30,14 +30,14 @@ pub(super) const RESPONSES_ENDPOINT: &str = "openai/responses";
 const NO_SOURCES: NoSources = NoSources;
 
 #[rstest]
-#[case::case_1_body_model_inference_endpoint(body_model_inference_endpoint_case)]
-#[case::case_2_router_model_in_path(router_model_in_path_case)]
-#[case::case_3_foreign_deployment(foreign_deployment_case)]
-#[case::case_4_api_version_removal(api_version_removal_case)]
-#[case::case_5_responses_stream_log(responses_stream_log_case)]
-#[case::case_6_messages_relay_log(messages_relay_log_case)]
-#[case::case_7_nonstream_usage(nonstream_usage_case)]
-#[case::case_8_passthrough_auth_inputs(passthrough_auth_inputs_case)]
+#[case::body_model_inference_endpoint(body_model_inference_endpoint_case)]
+#[case::router_model_in_path(router_model_in_path_case)]
+#[case::foreign_deployment(foreign_deployment_case)]
+#[case::api_version_removal(api_version_removal_case)]
+#[case::responses_stream_log(responses_stream_log_case)]
+#[case::messages_relay_log(messages_relay_log_case)]
+#[case::nonstream_usage(nonstream_usage_case)]
+#[case::passthrough_auth_inputs(passthrough_auth_inputs_case)]
 fn passthrough_cases(#[case] case: fn()) {
     case();
 }
