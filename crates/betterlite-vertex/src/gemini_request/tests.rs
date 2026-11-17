@@ -69,6 +69,8 @@ const REMOTE_HTTPS: &str = "https://example.com/cat";
 const REMOTE_HTTPS_PNG: &str = "https://example.com/cat.png";
 const REMOTE_A: &str = "https://example.com/a";
 const REMOTE_B: &str = "https://example.com/b";
+const REMOTE_PDF: &str = "https://example.com/doc.pdf";
+const FETCHED_PDF: &str = "data:application/pdf;base64,YWJj";
 
 struct SilentLogger;
 
@@ -978,6 +980,39 @@ fn media_refused_fetch_fails_once(#[case] asynchronous: bool) {
             assert_eq!(url, REMOTE_HTTP);
         }
         other => panic!("a refused download is an inline media error, got {other:?}"),
+    }
+    assert_eq!(harness.fetcher.calls(), 1);
+    assert_eq!(harness.transport.calls(), 0);
+}
+
+#[test]
+fn media_studio_file_download() {
+    let harness = Harness::new().with_fetch(&[(REMOTE_PDF, FETCHED_PDF)]);
+    let input = media_input(
+        VertexCapabilityProvider::Gemini,
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/doc.pdf","format":"application/pdf"}}]}]"#,
+    );
+    let transformed = harness.run(&input).expect("the studio file is downloaded");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"inline_data":{"data":"YWJj","mime_type":"application/pdf"}},{"text":" "}]}]}"#,
+    );
+    assert_eq!(harness.fetcher.converted(), vec![REMOTE_PDF.to_owned()]);
+}
+
+#[test]
+fn media_studio_file_fetch_failure() {
+    let harness = Harness::new();
+    let input = media_input(
+        VertexCapabilityProvider::Gemini,
+        r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/doc.pdf","format":"application/pdf"}}]}]"#,
+    );
+    let error = harness.run(&input).expect_err("the download is refused");
+    match error {
+        RequestError::Inline(MediaError::Fetch(ImageFetchError::Attempts { url })) => {
+            assert_eq!(url, REMOTE_PDF);
+        }
+        other => panic!("a refused studio file download is an inline media error, got {other:?}"),
     }
     assert_eq!(harness.fetcher.calls(), 1);
     assert_eq!(harness.transport.calls(), 0);
