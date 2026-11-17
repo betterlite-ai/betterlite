@@ -352,6 +352,10 @@ fn assert_logged_call(state: &LoggingState, batch_id: &str) {
         masked.get("x-api-key"),
         Some(&Json::Text("sk-batches".to_owned()))
     );
+    assert_eq!(
+        masked.get("accept"),
+        Some(&Json::Text("application/json".to_owned()))
+    );
 }
 
 async fn fallback_retrieve() {
@@ -625,6 +629,18 @@ fn utc_forms() {
         timestamp(text("1969-12-31T23:59:59.5Z"), ZONE_SECONDS),
         Some(0)
     );
+    assert_eq!(
+        timestamp(text("1970-01-01T00:00:00.5Z"), ZONE_SECONDS),
+        Some(0)
+    );
+    assert_eq!(
+        timestamp(text("1969-12-31T23:59:59Z"), ZONE_SECONDS),
+        Some(-1)
+    );
+    assert_eq!(
+        timestamp(text("1969-12-31T23:59:59.0Z"), ZONE_SECONDS),
+        Some(-1)
+    );
 }
 
 fn local_forms() {
@@ -644,6 +660,18 @@ fn local_forms() {
         );
     }
     assert_eq!(
+        timestamp(text("2024-01-01T00:00:00+23:00"), ZONE_SECONDS),
+        Some(1_703_984_400)
+    );
+    assert_eq!(
+        timestamp(text("2024-01-01T00:00:00+00:59"), ZONE_SECONDS),
+        Some(1_704_063_660)
+    );
+    assert_eq!(
+        timestamp(text("2024-01-01T00:00:00-02:00"), ZONE_SECONDS),
+        Some(1_704_074_400)
+    );
+    assert_eq!(
         timestamp(text("2024-01-01T00:00:00"), -18_000),
         Some(1_704_085_200)
     );
@@ -656,8 +684,14 @@ fn rejected_forms() {
         "2024-02-30T00:00:00Z",
         "2024-01-01T24:00:00Z",
         "2024-01-01T00:00:00+24:00",
+        "2024-01-01T00:00:00+00:60",
         "2024-01-01T00:00:00.",
         "2024-01-01T",
+        "2024-01-011T00:00:00Z",
+        "202401011T00:00:00Z",
+        "2024/01-01T00:00:00Z",
+        "2024-01011T00:00:00Z",
+        "2024-01-01T0:00:00Z",
     ] {
         assert_eq!(timestamp(text(form), ZONE_SECONDS), None, "{form}");
     }

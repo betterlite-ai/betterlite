@@ -132,6 +132,8 @@ impl BatchesConfig for AnthropicBatchesConfig {
         ))
     }
 
+    // the empty map LiteLLM returns is Default's value too, so no test can tell its mutants apart
+    #[cfg_attr(test, mutants::skip)]
     // ast-grep-ignore: no-long-names
     fn transform_retrieve_batch_request(&self) -> IndexMap<String, Json> {
         IndexMap::new()

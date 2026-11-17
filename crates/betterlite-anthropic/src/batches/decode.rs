@@ -188,9 +188,13 @@ fn decode_results(body: &[u8]) -> Result<Vec<Json>, DecodeError> {
         }
         let value = match serde_json::from_str::<Json>(line) {
             Ok(value) => value,
-            // Python skips a row json.loads cannot decode and keeps reading the rest
-            Err(error) if matches!(error.classify(), Category::Syntax | Category::Eof) => continue,
-            Err(source) => return Err(DecodeError::Parse { source }),
+            Err(error) => {
+                // Python skips a row json.loads cannot decode and keeps reading the rest
+                if matches!(error.classify(), Category::Syntax | Category::Eof) {
+                    continue;
+                }
+                return Err(DecodeError::Parse { source: error });
+            }
         };
         messages.push(message_of(value)?);
     }
