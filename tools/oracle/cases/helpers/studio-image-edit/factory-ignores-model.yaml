@@ -1,0 +1,10 @@
+kind: helper
+name: studio-image-edit-factory-ignores-model
+call:
+  studio_image_edit:
+    factories: [gemini-2.5-flash-image, imagen-3.0-generate-002, gpt-image-1]
+    requests: []
+    responses: []
+    costs: []
+env: {}
+compare: {ignore: []}
