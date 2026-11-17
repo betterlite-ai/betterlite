@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic-buffered-mask
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: anthropic
+    chunks:
+    - "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_1\", \"model\": \"claude-3\", \"role\": \"assistant\", \"content\": [], \"usage\": {\"input_tokens\": 3, \"output_tokens\": 1}}}\n\n"
+    - "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+    - "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"The \"}}\n\n"
+    - "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"secret\"}}\n\n"
+    - "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+    - "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}, \"usage\": {\"output_tokens\": 2}}\n\n"
+    - "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "MATCH_FOUND", "filterResults": {"sdp": {"sdpFilterResult": {"deidentifyResult": {"matchState": "MATCH_FOUND", "data": {"text": "The [REDACTED]"}}}}}}}'
+env: {}
+compare:
+  ignore: []

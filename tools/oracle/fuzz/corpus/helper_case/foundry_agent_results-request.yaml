@@ -1,0 +1,29 @@
+kind: helper
+name: foundry-agent-results-request-seed
+call:
+  foundry_agent_results:
+    requests:
+      - model: azure_ai/agents/seeded
+        messages: [{role: user, content: hi}]
+        optional_params: {instructions: seeded}
+        litellm_params: {ssl_verify: false}
+        headers: {}
+        api_base: "https://base.example"
+        api_key: fixture-key
+        status: 200
+        body: "data: [DONE]\n\n"
+        id: chatcmpl-5eed5eed
+        created: 1700000000
+      - model: azure_ai/agents/seeded
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example"
+        api_key: fixture-key
+        status: 503
+        body: seeded failure
+        id: chatcmpl-5eed5eed
+        created: 1700000000
+env: {}
+compare: {ignore: []}
