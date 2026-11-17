@@ -151,9 +151,7 @@ fn malformed_metadata() {
 fn threshold_order() {
     let error =
         Thresholds::from_args(Some(&args(Some("0.7"), Some("0.5"), Some("0.9")))).unwrap_err();
-    let ThresholdError::Order { low, medium, high } = &error else {
-        panic!("an unordered set of thresholds reports its own error");
-    };
+    let ThresholdError::Order { low, medium, high } = &error;
     assert_eq!(*low, dec("0.7"));
     assert_eq!(*medium, dec("0.5"));
     assert_eq!(*high, dec("0.9"));
@@ -171,10 +169,7 @@ fn threshold_equality(low: &str, medium: &str, high: &str) {
         low: got_low,
         medium: got_medium,
         high: got_high,
-    } = &error
-    else {
-        panic!("equal thresholds report the order error");
-    };
+    } = &error;
     assert_eq!(*got_low, dec(low));
     assert_eq!(*got_medium, dec(medium));
     assert_eq!(*got_high, dec(high));
