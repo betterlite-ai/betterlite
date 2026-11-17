@@ -1,0 +1,26 @@
+task: B1608
+deviations:
+  - what: >-
+      The email of an OpenID identity record is a plain string. LiteLLM extends fastapi_sso's OpenID, whose email is
+      pydantic's EmailStr, so a malformed address fails the record where betterlite keeps the text.
+    why: >-
+      betterlite's one validated Email type lives in betterlite-server, which depends on betterlite-auth; a second
+      address parser here would compete with it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/types.py#L94-L97
+  - what: >-
+      DefaultTeamSSOParams.team_member_permissions keeps its route paths as strings. LiteLLM types the list as
+      KeyManagementRoutes, so pydantic refuses a path that is not a key management route.
+    why: >-
+      KeyManagementRoute lives in B867's management_routes module and derives Serialize only, so it cannot decode
+      a stored setting; deriving Deserialize there and reusing it is B867's change, not this record module's.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L229-L232
+  - what: >-
+      An SSO settings record and an OpenID identity record are refused above 1 MiB before JSON parsing. LiteLLM
+      parses whatever length the caller supplies.
+    why: >-
+      The bytes come from a stored row and from a request body, and every other record decoder in betterlite-auth
+      bounds its input the same way.
+    link: ""
+kept_bugs: []

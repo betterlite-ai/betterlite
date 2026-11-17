@@ -11,7 +11,8 @@ use super::Op;
 use super::input::Input;
 
 const OPERATION: &str = "bedrock_converse_tools";
-const SEED_PREFIX: &str = "bedrock_converse_tools";
+// Seeds are named <operation>-<case>.yaml, so the dash keeps a longer operation's seeds out.
+const SEED_PREFIX: &str = "bedrock_converse_tools-";
 
 #[test]
 fn helper_seeds_select_bedrock_converse_tools() {

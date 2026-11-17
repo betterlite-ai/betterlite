@@ -52,10 +52,13 @@ args=${L}/flows/${id}.args
 jq -n --arg run "${run}" --arg note "${note}" --arg grant "${grant}" --arg ci_rounds "${CI_ROUNDS:-0}" --arg conflicts "${CONFLICTS:-0}" --arg land_only "${LAND_ONLY:-}" '$ARGS.named' > "${args}"
 trap 'rm -f -- "$args"' EXIT
 worktree=${worktrees}/${id}
+rm -f -- "${main}/.git/betterlite/${id}/parked"
 events=${L}/flow-events.log
 say() { printf '%(%H:%M)T %s\n' -1 "${id} $*" >> "${events}"; }
 park() {
   say "blocked: $*"
+  # the gate does not count a parked task as running, so tasks it blocks can go first; the flow clears the mark when it starts again
+  [[ -d "${main}/.git/betterlite/${id}" ]] && : > "${main}/.git/betterlite/${id}/parked"
   # the reason column ends with a space, as every earlier parked.tsv row does
   printf '%(%F %H:%M)T\t%s\t%s\t%s\t%s \n' -1 "${id}" "${run}" "${main}/.git/betterlite/${id}" "${*//[$'\t\n']/ }" >> "${L}/parked.tsv"
 }
