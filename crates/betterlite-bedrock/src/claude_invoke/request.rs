@@ -165,14 +165,7 @@ where
         request: &ClaudeInvokeRequest<'_>,
         body: &mut Object,
     ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
-        {
-            let mut capabilities = InvokeCapabilities {
-                environment: &mut *self.environment,
-                catalogs: self.catalogs,
-            };
-            apply_structured_output(request.model, body, &mut capabilities).await;
-            strip_unsupported_config_keys(request.model, body, &mut capabilities).await;
-        }
+        self.apply_schema_rewrites(request, body).await;
         if !body.contains_key("anthropic_version") {
             body.insert(
                 "anthropic_version".to_owned(),
@@ -184,6 +177,20 @@ where
         strip_eager_streaming_tools(body);
         convert_document_url_sources(body, self.prompts.fetcher).await?;
         Ok(())
+    }
+
+    // The schema helpers read both capability answers through the Bedrock provider.
+    async fn apply_schema_rewrites(
+        &mut self,
+        request: &ClaudeInvokeRequest<'_>,
+        body: &mut Object,
+    ) {
+        let mut capabilities = InvokeCapabilities {
+            environment: &mut *self.environment,
+            catalogs: self.catalogs,
+        };
+        apply_structured_output(request.model, body, &mut capabilities).await;
+        strip_unsupported_config_keys(request.model, body, &mut capabilities).await;
     }
 
     // The parent transform merged its optional betas into these headers before it returned them.
@@ -215,7 +222,7 @@ where
     }
 
     async fn normalize_output_config_effort(
-        &mut self,
+        &self,
         model: &str,
         optional_params: &mut IndexMap<String, Json>,
     ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {

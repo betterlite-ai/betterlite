@@ -113,8 +113,28 @@ where
         environment,
     )
     .await?;
-    thinking::translate_thinking(
+    translate_requested_thinking(request, optional_params, environment).await?;
+    thinking::apply_display_updates(display_updates, optional_params);
+    remove_forced_tool_choice(
+        has_response_format,
         original_model,
+        optional_params,
+        request.catalogs,
+    );
+    Ok(())
+}
+
+async fn translate_requested_thinking<'environment, Source, Transport, Lookup>(
+    request: &MapParamsRequest<'environment, Lookup>,
+    optional_params: &mut IndexMap<String, Json>,
+    environment: &mut CapabilityEnvironment<'environment, Source, Transport>,
+) -> Result<(), MapParamsError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    thinking::translate_thinking(
+        request.model,
         EffortThresholds {
             medium: request.budgets.medium,
             high: request.budgets.high,
@@ -124,15 +144,7 @@ where
         environment,
         request.catalogs,
     )
-    .await?;
-    thinking::apply_display_updates(display_updates, optional_params);
-    remove_forced_tool_choice(
-        has_response_format,
-        original_model,
-        optional_params,
-        request.catalogs,
-    );
-    Ok(())
+    .await
 }
 
 // The stub model hides the original from the parent's own native-schema probe.

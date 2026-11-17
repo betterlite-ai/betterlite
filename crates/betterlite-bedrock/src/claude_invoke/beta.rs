@@ -71,17 +71,33 @@ where
     Transport: ModelInfoClient,
 {
     let user_betas = user_betas(request.headers);
+    let generated = generated_betas(request, environment, catalogs).await?;
+    let auto_betas: Vec<String> = generated.difference(&user_betas).cloned().collect();
+    let filtered = filter_beta_tokens(matrix, CUSTOM_LLM_PROVIDER, &auto_betas)?;
+    let mut computed = user_betas;
+    computed.extend(filtered.tokens);
+    Ok(computed.into_iter().collect())
+}
+
+async fn generated_betas<Source, Transport>(
+    request: &InvokeBetaRequest<'_>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    catalogs: &CatalogSources<'_>,
+) -> Result<BTreeSet<String>, InvokeBetaError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
     let tools = tools(request.optional_params)?;
     let messages: Vec<Json> = serde_json::from_value(serde_json::to_value(request.messages)?)?;
     let features = features(request, &messages, &tools)?;
-    let mut betas = user_betas.clone();
     let params = FeatureParams {
         compaction: None,
         container: None,
         output_config: request.optional_params.get("output_config").cloned(),
         reasoning_effort: request.optional_params.get("reasoning_effort").cloned(),
     };
-    let generated = beta_list(
+    let mut betas: BTreeSet<String> = beta_list(
         &BetaRequest {
             model: request.model,
             custom_llm_provider: CUSTOM_LLM_PROVIDER,
@@ -92,8 +108,10 @@ where
         environment,
         catalogs,
     )
-    .await;
-    betas.extend(generated.into_iter().map(str::to_owned));
+    .await
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
     adjust_tool_search_beta(
         request.model,
         beta_mode(&tools),
@@ -105,11 +123,7 @@ where
     if is_eager_input_streaming_used(&tools)? {
         betas.insert(FINE_GRAINED_STREAMING_BETA.to_owned());
     }
-    let auto_betas: Vec<String> = betas.difference(&user_betas).cloned().collect();
-    let filtered = filter_beta_tokens(matrix, CUSTOM_LLM_PROVIDER, &auto_betas)?;
-    let mut computed = user_betas;
-    computed.extend(filtered.tokens);
-    Ok(computed.into_iter().collect())
+    Ok(betas)
 }
 
 fn features(

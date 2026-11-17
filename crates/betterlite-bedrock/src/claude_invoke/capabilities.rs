@@ -11,13 +11,13 @@ use crate::invoke_schema::InvokeSchemaCapabilities;
 use super::CUSTOM_LLM_PROVIDER;
 
 // B597's schema helpers read both capability answers through the Bedrock provider.
-pub struct InvokeCapabilities<'context, 'environment, Source, Transport>
+pub(super) struct InvokeCapabilities<'context, 'environment, Source, Transport>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    pub environment: &'context mut CapabilityEnvironment<'environment, Source, Transport>,
-    pub catalogs: &'context CatalogSources<'environment>,
+    pub(super) environment: &'context mut CapabilityEnvironment<'environment, Source, Transport>,
+    pub(super) catalogs: &'context CatalogSources<'environment>,
 }
 
 impl<Source, Transport> InvokeSchemaCapabilities for InvokeCapabilities<'_, '_, Source, Transport>
