@@ -100,6 +100,7 @@ fn recovery_only_matches_an_offered_tool() {
 
 fn json_mode_filters_synthetic_calls() {
     an_explicit_false_json_mode_suppresses_the_option();
+    a_json_tool_call_survives_without_json_mode();
     let mixed = Fixture {
         optional: optional_params(
             r#"{"tools": [{"toolSpec": {"name": "real", "inputSchema": {"json": {"type": "object"}}}}]}"#,
@@ -139,6 +140,23 @@ pub(super) fn an_explicit_false_json_mode_suppresses_the_option() {
         ..Fixture::default()
     };
     let body = r#"{"output": {"message": {"content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&fixture, body);
+    assert_eq!(run.finish(), "tool_calls");
+    assert_eq!(run.message().content.as_deref(), Some(""));
+    assert_eq!(
+        rendered(&run.message().tool_calls),
+        json(
+            r#"[{"index": 0, "function": {"arguments": "{\"answer\": 42}", "name": "json_tool_call"}, "id": "tooluse_json", "type": "function"}]"#
+        )
+    );
+}
+
+fn a_json_tool_call_survives_without_json_mode() {
+    let fixture = Fixture {
+        optional: optional_params(r#"{"tools": [{"toolSpec": {"name": "real"}}]}"#),
+        ..Fixture::default()
+    };
+    let body = r#"{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
     let run = run(&fixture, body);
     assert_eq!(run.finish(), "tool_calls");
     assert_eq!(run.message().content.as_deref(), Some(""));

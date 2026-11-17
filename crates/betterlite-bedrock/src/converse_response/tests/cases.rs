@@ -117,7 +117,21 @@ const STOP_REASONS: [(&str, &str); 10] = [
 fn stop_reasons() {
     mapped_stop_reasons();
     json_mode_forces_stop_when_every_tool_was_synthetic();
+    json_mode_keeps_the_mapped_finish_without_synthetic_tools();
     textual_recovery_restores_tool_calls();
+}
+
+fn json_mode_keeps_the_mapped_finish_without_synthetic_tools() {
+    let fixture = Fixture {
+        optional: optional_params(
+            r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#,
+        ),
+        ..Fixture::default()
+    };
+    let body = r#"{"output": {"message": {"content": [{"text": "ok"}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
+    let run = run(&fixture, body);
+    assert_eq!(run.finish(), "tool_calls");
+    assert_eq!(run.message().content.as_deref(), Some("ok"));
 }
 
 fn mapped_stop_reasons() {
