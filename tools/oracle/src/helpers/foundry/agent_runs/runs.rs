@@ -50,7 +50,7 @@ async fn run_answer(call: &RunCall) -> Calls {
         messages: &call.messages,
         optional_params: &call.optional_params,
         prepared,
-        ssl_verify: ssl.clone(),
+        ssl_verify: ssl,
         reply: AgentReply::default(),
         mode: match call.mode {
             Mode::Sync => AgentRunMode::Sync,
@@ -59,7 +59,7 @@ async fn run_answer(call: &RunCall) -> Calls {
         supplied,
     };
     let outcome = finished(&completion_call, &factory, &sleeper).await;
-    answered(&factory, &scripted, &sleeper, call.supplied, ssl, outcome)
+    answered(&completion_call, &factory, &scripted, &sleeper, outcome)
 }
 
 async fn finished(
@@ -78,22 +78,26 @@ async fn finished(
 }
 
 fn answered(
+    completion_call: &CompletionCall<'_>,
     factory: &RecordingFactory,
     scripted: &ScriptedTransport,
     sleeper: &RecordingSleeper,
-    supplied: bool,
-    ssl: Json,
     outcome: Value,
 ) -> Calls {
+    let supplied = completion_call.supplied.is_some();
     let client = if supplied {
         "supplied"
     } else {
         *factory.kind.lock().unwrap_or_else(PoisonError::into_inner)
     };
-    let answered_ssl = if supplied { Json::Null } else { ssl };
+    let ssl = if supplied {
+        Json::Null
+    } else {
+        completion_call.ssl_verify.clone()
+    };
     Ok(json!({
         "client": client,
-        "ssl_verify": answered_ssl,
+        "ssl_verify": ssl,
         "requests": scripted.requests(),
         "sleeps": sleeper.values(),
         "outcome": outcome,
