@@ -96,6 +96,7 @@ class Transformer(Protocol):
         optional_params: dict[str, JsonValue],
         litellm_params: dict[str, JsonValue],
         encoding: None,
+        *,
         api_key: str | None = None,
         json_mode: bool | None = None,
     ) -> ModelResponse: ...
@@ -104,7 +105,7 @@ class Transformer(Protocol):
 class Failure(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     status_code: int
-    headers: httpx.Headers
+    headers: dict[str, str]
 
 
 class Warnings(logging.Handler):
@@ -119,7 +120,7 @@ class Warnings(logging.Handler):
 
 
 @dataclass
-class Logging(LoggingSink):
+class Logging:
     kwargs: dict[str, JsonValue] = field(default_factory=dict)
 
     def post_call(self, **kwargs: JsonValue) -> None:
@@ -130,7 +131,7 @@ ENVELOPE: Final = TypeAdapter(EnvelopeView)
 HIDDEN: Final = TypeAdapter(HiddenView)
 ADDITIONAL: Final = TypeAdapter(AdditionalArgsView)
 HEADER_FIELDS: Final = TypeAdapter(dict[str, JsonValue])
-TRANSFORMER: Final[Transformer] = TypeAdapter[Transformer](Transformer, config=ARBITRARY)
+TRANSFORMER: Final = TypeAdapter[Transformer](Transformer, config=ARBITRARY)
 
 
 def _transform(input_value: Input, logging_object: Logging) -> ModelResponse:
@@ -216,7 +217,7 @@ def _logged(logging_object: Logging) -> dict[str, JsonValue]:
 
 
 def _failure(failure: Failure, logging_object: Logging, *, warned: bool) -> JsonValue:
-    headers = HEADER_FIELDS.validate_python(dict(failure.headers))
+    headers = HEADER_FIELDS.validate_python(failure.headers)
     outcome: JsonValue = {"kind": "error", "status": failure.status_code, "headers": headers}
     return {"outcome": outcome, "logged": _logged(logging_object), "warned": warned}
 
