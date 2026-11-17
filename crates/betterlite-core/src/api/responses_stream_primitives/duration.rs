@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::python_text::python_float_text;
+use super::python_text::float_text;
 use super::state::ResponsesStreamBaseState;
 
 pub const STREAM_TIMEOUT_STATUS: u16 = 408;
@@ -36,7 +36,7 @@ impl ResponsesStreamBaseState {
             status_code: STREAM_TIMEOUT_STATUS,
             message: format!(
                 "litellm.Timeout: Stream exceeded max streaming duration of {}s (elapsed {elapsed:.1}s)",
-                python_float_text(limit)
+                float_text(limit)
             ),
             model: self.model.clone(),
             custom_llm_provider: self.custom_llm_provider.clone().unwrap_or_default(),

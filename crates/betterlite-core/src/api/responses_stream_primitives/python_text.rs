@@ -1,12 +1,12 @@
 use betterlite_logging::analytics::python::repr;
 use betterlite_models::decisions::Json;
 
-// Python's str() switches to exponent notation outside this magnitude range
+// Python's str() switches to exponent notation outside this magnitude range, and LiteLLM's error message carries that text
 const FIXED_MIN: f64 = 1e-4;
 const FIXED_MAX: f64 = 1e16;
 
 #[must_use]
-pub fn python_float_text(value: f64) -> String {
+pub fn float_text(value: f64) -> String {
     if value.is_nan() {
         return "nan".to_owned();
     }
@@ -38,13 +38,13 @@ pub fn python_float_text(value: f64) -> String {
 }
 
 #[must_use]
-pub fn python_value_text(value: &Json) -> String {
+pub fn value_text(value: &Json) -> String {
     match value {
         Json::Text(text) => text.clone(),
         Json::Null => "None".to_owned(),
         Json::Bool(true) => "True".to_owned(),
         Json::Bool(false) => "False".to_owned(),
-        Json::Number(number) => python_number_text(number),
+        Json::Number(number) => number_text(number),
         Json::List(_) | Json::Object(_) => {
             // the formatter writes into a Vec, so its io error branch is unreachable
             repr(value).unwrap_or_default()
@@ -52,10 +52,10 @@ pub fn python_value_text(value: &Json) -> String {
     }
 }
 
-fn python_number_text(number: &serde_json::Number) -> String {
+fn number_text(number: &serde_json::Number) -> String {
     let text = number.to_string();
     if text.contains(['.', 'e', 'E']) {
-        return number.as_f64().map_or(text, python_float_text);
+        return number.as_f64().map_or(text, float_text);
     }
     if text == "-0" {
         return "0".to_owned();

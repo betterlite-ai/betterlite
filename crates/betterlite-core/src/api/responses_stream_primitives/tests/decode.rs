@@ -61,8 +61,9 @@ fn decode_propagates_a_json_error(#[case] payload: &str) {
 #[test]
 fn decode_rejects_a_payload_over_the_event_limit() {
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
         max_event_bytes: 3,
-        ..ApiLimits::default()
+        max_items: 64 * 1024,
     };
     let error = decode_responses_stream_value(b"\"abc\"", &limits)
         .expect_err("the payload is over the event limit");

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod decode;
 mod duration;
 mod error_fields;

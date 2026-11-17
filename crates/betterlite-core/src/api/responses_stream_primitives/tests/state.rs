@@ -52,7 +52,7 @@ fn base_stream_state_starts_with_the_source_defaults() {
     assert!(!state.completed_response_cached);
     assert!(!state.completed_response_logged);
     assert_eq!(state.completed_response_cache_hit, None);
-    assert!(state.persist_completed_response_before_logging);
+    assert!(state.persist_before_logging);
     assert_eq!(state.generated_content, "");
     assert_eq!(state.generated_tool_arguments, "");
     assert!(state.pending_tasks.is_empty());

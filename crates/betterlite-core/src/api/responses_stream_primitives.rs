@@ -6,5 +6,4 @@ pub mod python_text;
 pub mod state;
 pub mod tasks;
 
-#[cfg(test)]
 mod tests;

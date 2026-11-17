@@ -5,8 +5,7 @@ use serde_json::Number;
 
 use crate::api::responses_stream_primitives::error_fields::{
     DEFAULT_STREAM_ERROR_MESSAGE, StreamErrorAttributes, StreamErrorFields, StreamErrorObject,
-    error_code_status, error_event_fields, status_code_for_error_fields,
-    stream_error_status_and_message,
+    error_code_status, error_event_fields, error_status_and_message, status_code_for_error_fields,
 };
 
 fn text(value: &str) -> Json {
@@ -89,11 +88,8 @@ fn error_event_fields_keeps_only_a_string_type(
     #[case] given: Option<Json>,
     #[case] expected: Option<&str>,
 ) {
-    let mut pairs = Vec::new();
-    if let Some(value) = given {
-        pairs.push(("type", value));
-    }
-    assert_eq!(fields(&pairs).error_type.as_deref(), expected);
+    let read = given.map_or_else(|| fields(&[]), |value| fields(&[("type", value)]));
+    assert_eq!(read.error_type.as_deref(), expected);
 }
 
 #[rstest]
@@ -109,11 +105,8 @@ fn error_event_fields_keeps_a_string_or_integer_code(
     #[case] given: Option<Json>,
     #[case] expected: Option<&str>,
 ) {
-    let mut pairs = Vec::new();
-    if let Some(value) = given {
-        pairs.push(("code", value));
-    }
-    assert_eq!(fields(&pairs).code.as_deref(), expected);
+    let read = given.map_or_else(|| fields(&[]), |value| fields(&[("code", value)]));
+    assert_eq!(read.code.as_deref(), expected);
 }
 
 #[rstest]
@@ -170,36 +163,32 @@ fn a_non_ascii_decimal_code_is_not_a_status() {
     assert_eq!(status_code_for_error_fields(None, Some(&code)), 500);
 }
 
-#[test]
-fn every_named_invalid_request_code_maps_to_400() {
-    let codes = [
-        "invalid_prompt",
-        "invalid_image",
-        "invalid_image_format",
-        "invalid_base64_image",
-        "invalid_image_url",
-        "image_too_large",
-        "image_too_small",
-        "image_parse_error",
-        "image_content_policy_violation",
-        "invalid_image_mode",
-        "image_file_too_large",
-        "unsupported_image_media_type",
-        "empty_image_file",
-        "failed_to_download_image",
-        "image_file_not_found",
-        "invalid_request_error",
-        "context_length_exceeded",
-        "content_policy_violation",
-        "model_not_found",
-    ];
-    for code in codes {
-        assert_eq!(
-            status_code_for_error_fields(None, Some(code)),
-            400,
-            "{code}"
-        );
-    }
+#[rstest]
+#[case::invalid_prompt("invalid_prompt")]
+#[case::invalid_image("invalid_image")]
+#[case::invalid_image_format("invalid_image_format")]
+#[case::invalid_base64_image("invalid_base64_image")]
+#[case::invalid_image_url("invalid_image_url")]
+#[case::image_too_large("image_too_large")]
+#[case::image_too_small("image_too_small")]
+#[case::image_parse_error("image_parse_error")]
+#[case::image_content_policy_violation("image_content_policy_violation")]
+#[case::invalid_image_mode("invalid_image_mode")]
+#[case::image_file_too_large("image_file_too_large")]
+#[case::unsupported_image_media_type("unsupported_image_media_type")]
+#[case::empty_image_file("empty_image_file")]
+#[case::failed_to_download_image("failed_to_download_image")]
+#[case::image_file_not_found("image_file_not_found")]
+#[case::invalid_request_error("invalid_request_error")]
+#[case::context_length_exceeded("context_length_exceeded")]
+#[case::content_policy_violation("content_policy_violation")]
+#[case::model_not_found("model_not_found")]
+fn every_named_invalid_request_code_maps_to_400(#[case] code: &str) {
+    assert_eq!(
+        status_code_for_error_fields(None, Some(code)),
+        400,
+        "{code}"
+    );
 }
 
 #[rstest]
@@ -222,19 +211,19 @@ fn the_table_answers_each_named_code(#[case] field: &str, #[case] expected: Opti
 }
 
 #[test]
-fn stream_error_status_and_message_reports_both() {
+fn error_status_and_message_reports_both() {
     let mapping = object(&[
         ("message", text("slow")),
         ("code", text("rate_limit_exceeded")),
     ]);
     assert_eq!(
-        stream_error_status_and_message(StreamErrorObject::Mapping(&mapping)),
+        error_status_and_message(StreamErrorObject::Mapping(&mapping)),
         (429, "slow".to_owned())
     );
     let message = text("late");
     let code = text("vector_store_timeout");
     assert_eq!(
-        stream_error_status_and_message(StreamErrorObject::Attributes(StreamErrorAttributes {
+        error_status_and_message(StreamErrorObject::Attributes(StreamErrorAttributes {
             message: Some(&message),
             error_type: None,
             code: Some(&code),

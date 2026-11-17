@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
-use crate::api::responses_stream_primitives::python_text::{python_float_text, python_value_text};
+use crate::api::responses_stream_primitives::python_text::{float_text, value_text};
 
 #[rstest]
 #[case::a_whole_number(2.0, "2.0")]
@@ -19,8 +19,8 @@ use crate::api::responses_stream_primitives::python_text::{python_float_text, py
 #[case::nan(f64::NAN, "nan")]
 #[case::infinity(f64::INFINITY, "inf")]
 #[case::negative_infinity(f64::NEG_INFINITY, "-inf")]
-fn python_float_text_matches_str(#[case] value: f64, #[case] expected: &str) {
-    assert_eq!(python_float_text(value), expected);
+fn float_text_matches_str(#[case] value: f64, #[case] expected: &str) {
+    assert_eq!(float_text(value), expected);
 }
 
 #[rstest]
@@ -41,6 +41,6 @@ fn python_float_text_matches_str(#[case] value: f64, #[case] expected: &str) {
     )])),
     "{'a': 1}"
 )]
-fn python_value_text_matches_str(#[case] value: Json, #[case] expected: &str) {
-    assert_eq!(python_value_text(&value), expected);
+fn value_text_matches_str(#[case] value: Json, #[case] expected: &str) {
+    assert_eq!(value_text(&value), expected);
 }
