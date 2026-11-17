@@ -1,0 +1,35 @@
+use std::collections::BTreeSet;
+
+use serde::Serialize;
+use serde_json::Value;
+
+use super::{MemberContractError, json_object, required_field};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeleteTeamRequest {
+    pub team_ids: Vec<String>,
+}
+
+impl DeleteTeamRequest {
+    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+        let object = json_object(value)?;
+        let team_ids: Vec<String> = required_field(object, "team_ids")?;
+        Ok(Self {
+            team_ids: distinct_team_ids(team_ids),
+        })
+    }
+}
+
+fn distinct_team_ids(team_ids: Vec<String>) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut kept = Vec::new();
+    for team_id in team_ids {
+        let first = seen.insert(team_id.clone());
+        if first {
+            kept.push(team_id);
+        }
+    }
+    kept
+}
+
+mod tests;
