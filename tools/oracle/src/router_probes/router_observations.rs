@@ -208,13 +208,6 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    // diagnostic: the oracle only prints the differing pointer, so a failing case leaves no payload to read
-    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(".git/betterlite/B397/gate");
-    drop(std::fs::create_dir_all(&directory));
-    let dump = directory.join(format!("b397-native-{}.json", std::process::id()));
-    drop(std::fs::write(dump, format!("{input:#?}")));
     let scenario = Scenario::new(&input.0)?;
     let mut metadata = ObservationMetadata::default();
     let mut steps = Vec::with_capacity(scenario.payload.steps.len());
