@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-claude-chat-policy
+call:
+  vertex_claude_chat:
+    fixture:
+      model_cost:
+        claude-haiku-4-5: {litellm_provider: vertex_ai}
+        claude-opus-4-5: {litellm_provider: vertex_ai, supports_output_config: true}
+      packaged: {}
+    steps:
+      - {function: transform_request, model: claude-haiku-4-5, messages: [{role: user, content: look}], optional_params: {output_config: {effort: high, format: {type: json_schema}}, extra_headers: {anthropic-beta: "one,two"}}, headers: {}, drop_params: false, global_drop_params: false}
+      - {function: transform_request, model: claude-opus-4-5, messages: [{role: user, content: look}], optional_params: {context_management: {edits: [{type: compact_20260112}]}}, headers: {}, drop_params: false, global_drop_params: false}
+      - {function: map_openai_params, model: claude-haiku-4-5, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

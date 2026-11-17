@@ -1,0 +1,25 @@
+kind: helper
+name: sso-roles-case-and-nonstring-claims
+call:
+  sso_roles:
+    claims:
+      - PROXY_ADMIN
+      - Proxy_Admin_Viewer
+      - INTERNAL_USER
+      - superuser
+      - ""
+      - 42
+      - null
+      - true
+      - {}
+      - []
+      - [interNAL_user, 5, null, true, {role: proxy_admin}, [proxy_admin], proxy_admin]
+      - [7, null, false, [proxy_admin], {role: proxy_admin}]
+      - [[internal_user]]
+      - [customer, superuser]
+      - " proxy_admin"
+    role_names: [PROXY_ADMIN, Proxy_Admin_Viewer, internal_user_viewer, proxy_admin_view_only, "", " proxy_admin", administrator]
+    ui_roles: [PROXY_ADMIN, proxy_admin_view_only, "", internal_user, proxy_admin_viewer]
+    access_modes: [ADMIN_ONLY]
+env: {}
+compare: {ignore: []}

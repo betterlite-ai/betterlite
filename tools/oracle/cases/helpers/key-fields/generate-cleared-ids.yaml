@@ -1,0 +1,18 @@
+kind: helper
+name: generate_cleared_ids
+call:
+  key_fields:
+    calls:
+      - {function: generate, body: {team_id: "", organization_id: "", project_id: ""}}
+      - {function: generate, body: {team_id: null, organization_id: null, project_id: null}}
+      - {function: generate, body: {team_id: "", organization_id: "", project_id: "", key: "k"}}
+      - {function: generate, body: {}}
+      - {function: generate, body: {key_type: llm_api, auto_rotate: true, rotation_interval: 30d}}
+      - {function: generate, body: {key_type: management}}
+      - {function: generate, body: {key_type: read_only}}
+      - {function: generate, body: {key_type: admin}}
+      - {function: generate, body: {auto_rotate: null, key_type: null}}
+      - {function: generate, body: {soft_budget: 1.5, send_invite_email: true}}
+      - {function: generate, body: {team_id: "", organization_id: null, project_id: "", max_budget: ""}}
+env: {}
+compare: {ignore: []}

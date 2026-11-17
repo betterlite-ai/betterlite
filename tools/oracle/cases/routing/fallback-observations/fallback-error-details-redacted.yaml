@@ -1,0 +1,68 @@
+kind: probe
+name: fallback-error-details-redacted
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_observations:
+        details:
+          - {family: rate_limit, message: rate limited, body_param: model}
+          - {family: rate_limit, message: rate limited, body_param: null}
+          - {family: bad_request, message: bad input}
+          - {family: bad_request, message: bad input, body_type: invalid_request_error, body_param: messages}
+          - {family: budget, message: null, current_cost: "1.5", max_budget: "2.25"}
+          - {family: budget, message: "", current_cost: "1.5", max_budget: "2.25"}
+          - {family: budget, message: spent too much, current_cost: "12.75", max_budget: "10"}
+          - {family: guardrail, message: blocked, guardrail_name: pii}
+          - {family: guardrail, message: blocked, guardrail_name: null}
+          - {family: json_schema, raw_response: '{"id": "x"}', json_schema: '{"type": "object"}'}
+          - {family: plain, message: call failed with key sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+          - {family: plain, message: plain failure}
+          - {family: plain, message: value failure, exception_class: value_error}
+          - family: plain
+            message: |-
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+              the fallback failed and this detail keeps growing because every level records the failure below it
+        no_fallback:
+          - lookup_groups: [gpt-4, claude-3]
+            fallbacks:
+              - {gpt-4: [claude-3]}
+              - {claude-3: [gpt-3.5-turbo]}
+          - {lookup_groups: [gpt-4], fallbacks: []}
+        outcomes:
+          - {model_group: gpt-4, fallback_model_group: null, fallback_failure_detail: boom}
+          - {model_group: gpt-4, fallback_model_group: [], fallback_failure_detail: boom}
+          - {model_group: gpt-4, fallback_model_group: [claude-3], fallback_failure_detail: ""}
+          - {model_group: gpt-4, fallback_model_group: [claude-3, 5], fallback_failure_detail: "litellm.RateLimitError: slow down"}
+          - {model_group: null, fallback_model_group: null, fallback_failure_detail: ""}
+compare:
+  expected_difference:
+    - pointer: /output/fallback_observations/details/12/info/type
+      reference: ValueError
+      rust: Exception
+      why: betterlite keeps one family for an exception outside every known class, so it reports that family's class name where LiteLLM reports the raised class
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L230
+  ignore: []

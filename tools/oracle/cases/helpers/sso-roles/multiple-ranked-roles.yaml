@@ -1,0 +1,18 @@
+kind: helper
+name: sso-roles-multiple-ranked-roles
+call:
+  sso_roles:
+    claims:
+      - proxy_admin
+      - [internal_user, proxy_admin]
+      - [proxy_admin, internal_user]
+      - [internal_user_viewer, internal_user]
+      - [internal_user, proxy_admin_viewer]
+      - [proxy_admin_viewer, proxy_admin]
+      - [customer, proxy_admin_viewer, team]
+      - [proxy_admin, proxy_admin]
+    role_names: [proxy_admin, proxy_admin_viewer, internal_user, internal_user_viewer]
+    ui_roles: [proxy_admin, proxy_admin_viewer, internal_user, internal_user_viewer]
+    access_modes: [admin_only]
+env: {}
+compare: {ignore: []}

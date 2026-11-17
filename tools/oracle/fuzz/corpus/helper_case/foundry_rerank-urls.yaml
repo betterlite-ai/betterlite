@@ -1,0 +1,12 @@
+kind: helper
+name: foundry_rerank-urls-seed
+call:
+  foundry_rerank:
+    urls:
+    - {api_base: "https://res.services.ai.azure.com"}
+    - {api_base: "https://res.services.ai.azure.com/v2/rerank/"}
+    - {api_base: "https://res.services.ai.azure.com/providers/cohere/v2"}
+    - {api_base: "https://res.services.ai.azure.com/v1?api-version=2024-05-01"}
+    - {api_base: null}
+env: {}
+compare: {ignore: []}
