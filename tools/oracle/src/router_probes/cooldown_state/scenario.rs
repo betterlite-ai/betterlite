@@ -117,7 +117,10 @@ impl<'case> Scenario<'case> {
                         step.cooldown_time.map(|time| time.0),
                     )
                     .map_err(|_error| ScenarioError::CooldownKey)?;
-                output.local_expiry = self.expiries(&[step.model_id.clone()])?.pop().flatten();
+                output.local_expiry = self
+                    .expiries(std::slice::from_ref(&step.model_id))?
+                    .pop()
+                    .flatten();
             }
             StepKind::Read => {
                 let results = self.fetched(&step.model_ids).await?;
