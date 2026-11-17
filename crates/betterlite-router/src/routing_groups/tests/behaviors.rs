@@ -7,8 +7,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    GroupServices, Supports, Unresolved, capture_logs, cost_map, deployment, group, info, object,
-    priority_group, raw, raw_priority, text,
+    GroupServices, SUPPORTS_SEED, SUPPORTS_TEMPERATURE, UNRESOLVED, capture_logs, cost_map,
+    deployment, group, info, object, priority_group, raw, text, with_priorities,
 };
 use crate::context::{self, RouteStage};
 use crate::router_core::candidates::CandidateSet;
@@ -75,9 +75,8 @@ fn parse_reads_a_strategy_group() {
 
 fn parse_reads_a_priority_group() {
     let groups = parsed(
-        &[raw_priority(
-            "tiers",
-            &["a", "b"],
+        &[with_priorities(
+            raw("tiers", &["a", "b"], "priority"),
             &[("a", number(2)), ("b", number(1))],
         )],
         &[],
@@ -131,7 +130,13 @@ fn no_groups_parse_to_nothing() {
 }
 
 fn priority_order_is_written_on_the_member() {
-    let groups = parsed(&[raw_priority("tiers", &["a"], &[("a", number(7))])], &[]);
+    let groups = parsed(
+        &[with_priorities(
+            raw("tiers", &["a"], "priority"),
+            &[("a", number(7))],
+        )],
+        &[],
+    );
     let deployment = deployment("a", "a1");
     let ordered = prioritized(&groups[0], &deployment);
     assert_eq!(ordered.litellm_params.get("order"), Some(&number(7)));
@@ -334,24 +339,21 @@ fn explicit_false_empties_even_with_levels() {
     );
 }
 
-fn the_bare_twin_supplies_the_flags() {
-    let map = cost_map(&[("gpt-5-mini", r#"{"supports_low_reasoning_effort": false}"#)]);
+fn the_own_flag_wins_over_the_bare_twin() {
+    let bare_only = cost_map(&[("gpt-5-mini", r#"{"supports_low_reasoning_effort": false}"#)]);
     let model_info = info(&[
         ("key", text("azure/gpt-5-mini")),
         ("litellm_provider", text("azure")),
         ("supports_reasoning", Json::Bool(true)),
     ]);
     assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &bare_only),
         Some(vec![
             ReasoningEffort::Minimal,
             ReasoningEffort::Medium,
             ReasoningEffort::High,
         ])
     );
-}
-
-fn the_own_flag_wins_over_the_bare_twin() {
     let map = cost_map(&[(
         "gpt-5-mini",
         r#"{"supports_low_reasoning_effort": false, "supports_xhigh_reasoning_effort": true}"#,
@@ -585,7 +587,7 @@ fn classifier_detection_reads_both_metadata_keys() {
     assert!(!is_classifier_internal_call(&JsonMap::new()));
 }
 
-fn a_classifier_effort_the_target_refuses_is_dropped() {
+fn a_classifier_effort_follows_the_target() {
     let deployment = deployment("m", "m1");
     let mut kwargs = info(&[
         ("reasoning_effort", text("high")),
@@ -601,7 +603,7 @@ fn a_classifier_effort_the_target_refuses_is_dropped() {
             )]),
         ),
     ]);
-    let warning = drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"]));
+    let warning = drop_classifier_effort(&deployment, "m", &mut kwargs, &SUPPORTS_SEED);
     assert_eq!(
         warning.as_deref(),
         Some(
@@ -613,9 +615,6 @@ fn a_classifier_effort_the_target_refuses_is_dropped() {
         kwargs.get("proxy_server_request"),
         Some(&object(&[("body", object(&[("model", text("m"))]))]))
     );
-}
-
-fn a_classifier_effort_the_target_declares_stays() {
     let mut deployment = deployment("m", "m1");
     deployment.litellm_params.insert(
         "allowed_openai_params".to_owned(),
@@ -629,7 +628,7 @@ fn a_classifier_effort_the_target_declares_stays() {
         ),
     ]);
     assert_eq!(
-        drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"])),
+        drop_classifier_effort(&deployment, "m", &mut kwargs, &SUPPORTS_SEED),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&text("high")));
@@ -645,7 +644,7 @@ fn a_request_that_is_not_a_classifier_call_keeps_its_effort() {
         ),
     ]);
     assert_eq!(
-        drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"])),
+        drop_classifier_effort(&deployment, "m", &mut kwargs, &SUPPORTS_SEED),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&text("high")));
@@ -654,13 +653,8 @@ fn a_request_that_is_not_a_classifier_call_keeps_its_effort() {
 fn tier_params_drop_what_no_deployment_takes() {
     let tier = info(&[("temperature", number(1)), ("max_tokens", number(5))]);
     let deployments = vec![deployment("m", "m1")];
-    let accepted = tier_params_the_target_accepts(
-        "m",
-        &tier,
-        &JsonMap::new(),
-        &deployments,
-        &Supports(&["seed"]),
-    );
+    let accepted =
+        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &SUPPORTS_SEED);
     assert_eq!(accepted.params, info(&[("max_tokens", number(5))]));
     assert_eq!(
         accepted.dropped,
@@ -672,13 +666,8 @@ fn a_tier_drop_warns_with_the_sorted_names() {
     let (logs, _guard) = capture_logs();
     let tier = info(&[("temperature", number(1)), ("top_k", number(3))]);
     let deployments = vec![deployment("m", "m1")];
-    let _accepted = tier_params_the_target_accepts(
-        "m",
-        &tier,
-        &JsonMap::new(),
-        &deployments,
-        &Supports(&["seed"]),
-    );
+    let _accepted =
+        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &SUPPORTS_SEED);
     let logged = logs.text();
     assert!(
         logged.contains(
@@ -696,7 +685,7 @@ fn a_param_one_deployment_takes_survives() {
         &tier,
         &JsonMap::new(),
         &deployments,
-        &Supports(&["temperature"]),
+        &SUPPORTS_TEMPERATURE,
     );
     assert_eq!(accepted.params, tier);
     assert!(accepted.dropped.is_empty());
@@ -711,13 +700,8 @@ fn an_allowlisted_tier_param_survives() {
         ),
     ]);
     let deployments = vec![deployment("m", "m1")];
-    let accepted = tier_params_the_target_accepts(
-        "m",
-        &tier,
-        &JsonMap::new(),
-        &deployments,
-        &Supports(&["seed"]),
-    );
+    let accepted =
+        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &SUPPORTS_SEED);
     assert_eq!(accepted.params, tier);
 }
 
@@ -729,12 +713,11 @@ fn a_request_allowlist_and_an_unresolvable_provider_keep_the_param() {
     )]);
     let deployments = vec![deployment("m", "m1")];
     assert_eq!(
-        tier_params_the_target_accepts("m", &tier, &request, &deployments, &Supports(&["seed"]))
-            .params,
+        tier_params_the_target_accepts("m", &tier, &request, &deployments, &SUPPORTS_SEED).params,
         tier
     );
     assert_eq!(
-        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &Unresolved)
+        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &deployments, &UNRESOLVED)
             .params,
         tier
     );
@@ -742,8 +725,7 @@ fn a_request_allowlist_and_an_unresolvable_provider_keep_the_param() {
 
 fn tier_params_without_deployments_are_untouched() {
     let tier = info(&[("temperature", number(1))]);
-    let accepted =
-        tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &[], &Supports(&["seed"]));
+    let accepted = tier_params_the_target_accepts("m", &tier, &JsonMap::new(), &[], &SUPPORTS_SEED);
     assert_eq!(accepted.params, tier);
     assert!(accepted.dropped.is_empty());
 }
@@ -861,7 +843,6 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
     a_mapped_model_without_flags_is_known_empty
 ))]
 #[case::explicit_false_empties_even_with_levels(settled(explicit_false_empties_even_with_levels))]
-#[case::the_bare_twin_supplies_the_flags(settled(the_bare_twin_supplies_the_flags))]
 #[case::the_own_flag_wins_over_the_bare_twin(settled(the_own_flag_wins_over_the_bare_twin))]
 #[case::declared_levels_read_the_prefixed_entry_then_the_bare_one(settled(
     declared_levels_read_the_prefixed_entry_then_the_bare_one
@@ -897,12 +878,7 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
 #[case::classifier_detection_reads_both_metadata_keys(settled(
     classifier_detection_reads_both_metadata_keys
 ))]
-#[case::a_classifier_effort_the_target_refuses_is_dropped(settled(
-    a_classifier_effort_the_target_refuses_is_dropped
-))]
-#[case::a_classifier_effort_the_target_declares_stays(settled(
-    a_classifier_effort_the_target_declares_stays
-))]
+#[case::a_classifier_effort_follows_the_target(settled(a_classifier_effort_follows_the_target))]
 #[case::a_request_that_is_not_a_classifier_call_keeps_its_effort(settled(
     a_request_that_is_not_a_classifier_call_keeps_its_effort
 ))]

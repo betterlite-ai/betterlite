@@ -6,38 +6,48 @@ use crate::router_predicates::JsonMap;
 use crate::routing_groups::error::RoutingGroupError;
 use crate::routing_groups::group::MAX_MODEL_PRIORITY;
 
-fn text_field(map: &JsonMap, field: &'static str) -> Result<String, RoutingGroupError> {
+fn field<'map>(
+    map: &'map JsonMap,
+    field: &'static str,
+    expected: &'static str,
+) -> Result<&'map Json, RoutingGroupError> {
     match map.get(field) {
-        Some(Json::Text(text)) => Ok(text.clone()),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+        Some(value) => Ok(value),
+        None => Err(RoutingGroupError::Field { field, expected }),
+    }
+}
+
+fn text_field(map: &JsonMap, key: &'static str) -> Result<String, RoutingGroupError> {
+    match field(map, key, "a string")? {
+        Json::Text(text) => Ok(text.clone()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(RoutingGroupError::Field {
-                field,
+                field: key,
                 expected: "a string",
             })
         }
     }
 }
 
+fn models_shape() -> RoutingGroupError {
+    RoutingGroupError::Field {
+        field: "models",
+        expected: "a list of strings",
+    }
+}
+
 fn models_field(map: &JsonMap) -> Result<Vec<String>, RoutingGroupError> {
-    let Some(Json::List(entries)) = map.get("models") else {
-        return Err(RoutingGroupError::Field {
-            field: "models",
-            expected: "a list of strings",
-        });
+    let Json::List(entries) = field(map, "models", "a list of strings")? else {
+        return Err(models_shape());
     };
-    entries
-        .iter()
-        .map(|entry| match entry {
-            Json::Text(text) => Ok(text.clone()),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                Err(RoutingGroupError::Field {
-                    field: "models",
-                    expected: "a list of strings",
-                })
-            }
-        })
-        .collect()
+    let mut models = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Json::Text(model) = entry else {
+            return Err(models_shape());
+        };
+        models.push(model.clone());
+    }
+    Ok(models)
 }
 
 fn args_field(map: &JsonMap) -> Result<Option<JsonMap>, RoutingGroupError> {

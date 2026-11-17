@@ -61,8 +61,7 @@ pub(super) fn raw(name: &str, models: &[&str], strategy: &str) -> JsonMap {
     ])
 }
 
-pub(super) fn raw_priority(name: &str, models: &[&str], priorities: &[(&str, Json)]) -> JsonMap {
-    let mut group = raw(name, models, "priority");
+pub(super) fn with_priorities(mut group: JsonMap, priorities: &[(&str, Json)]) -> JsonMap {
     group.insert(
         "model_priorities".to_owned(),
         Json::Object(info(priorities)),
@@ -102,10 +101,13 @@ pub(super) fn deployment(model_name: &str, id: &str) -> DeploymentSpec {
     .unwrap()
 }
 
-// A provider registry that declares exactly the given supported params.
-pub(super) struct Supports(pub(super) &'static [&'static str]);
+// A provider registry that resolves the provider when `resolves` is set, else keeps every param.
+pub(super) struct Registry {
+    pub(super) resolves: bool,
+    pub(super) params: &'static [&'static str],
+}
 
-impl ParamSupport for Supports {
+impl ParamSupport for Registry {
     fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
         false
     }
@@ -115,7 +117,7 @@ impl ParamSupport for Supports {
         model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> Option<ResolvedProvider> {
-        Some(ResolvedProvider {
+        self.resolves.then(|| ResolvedProvider {
             model: model.to_owned(),
             custom_llm_provider: "openai".to_owned(),
         })
@@ -127,35 +129,25 @@ impl ParamSupport for Supports {
         _custom_llm_provider: &str,
         _base_model: Option<&str>,
     ) -> Option<Vec<String>> {
-        Some(self.0.iter().map(|name| (*name).to_owned()).collect())
+        self.resolves
+            .then(|| self.params.iter().map(|name| (*name).to_owned()).collect())
     }
 }
 
-// A provider registry that cannot resolve the provider at all, which keeps every param.
-pub(super) struct Unresolved;
+pub(super) const SUPPORTS_SEED: Registry = Registry {
+    resolves: true,
+    params: &["seed"],
+};
 
-impl ParamSupport for Unresolved {
-    fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
-        false
-    }
+pub(super) const SUPPORTS_TEMPERATURE: Registry = Registry {
+    resolves: true,
+    params: &["temperature"],
+};
 
-    fn resolve_provider(
-        &self,
-        _model: &str,
-        _custom_llm_provider: Option<&str>,
-    ) -> Option<ResolvedProvider> {
-        None
-    }
-
-    fn supported_openai_params(
-        &self,
-        _model: &str,
-        _custom_llm_provider: &str,
-        _base_model: Option<&str>,
-    ) -> Option<Vec<String>> {
-        None
-    }
-}
+pub(super) const UNRESOLVED: Registry = Registry {
+    resolves: false,
+    params: &[],
+};
 
 // The router's services with one callable group, which answers only for its own name.
 pub(super) struct GroupServices {

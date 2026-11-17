@@ -7,8 +7,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    Supports, cost_map, deployment, group, info, object, priority_group, raw, raw_priority, text,
-    with_args,
+    SUPPORTS_SEED, SUPPORTS_TEMPERATURE, cost_map, deployment, group, info, object, priority_group,
+    raw, text, with_args, with_priorities,
 };
 use crate::router_predicates::JsonMap;
 use crate::routing_groups::effort::{
@@ -118,7 +118,7 @@ fn empty_priorities_pass_a_strategy_group() {
 
 fn an_empty_priority_group_is_rejected() {
     assert_eq!(
-        parse_error(&[raw_priority("tiers", &[], &[])], &[]),
+        parse_error(&[with_priorities(raw("tiers", &[], "priority"), &[])], &[]),
         "Priority routing groups require nonempty, distinct models"
     );
 }
@@ -126,7 +126,10 @@ fn an_empty_priority_group_is_rejected() {
 fn duplicate_priority_members_are_rejected() {
     assert_eq!(
         parse_error(
-            &[raw_priority("tiers", &["a", "a"], &[("a", number(1))])],
+            &[with_priorities(
+                raw("tiers", &["a", "a"], "priority"),
+                &[("a", number(1))]
+            )],
             &[],
         ),
         "Priority routing groups require nonempty, distinct models"
@@ -143,9 +146,8 @@ fn a_priority_group_needs_priorities() {
 fn priorities_must_cover_exactly_the_members() {
     assert_eq!(
         parse_error(
-            &[raw_priority(
-                "tiers",
-                &["a"],
+            &[with_priorities(
+                raw("tiers", &["a"], "priority"),
                 &[("a", number(1)), ("b", number(2))],
             )],
             &[],
@@ -154,28 +156,28 @@ fn priorities_must_cover_exactly_the_members() {
     );
     assert_eq!(
         parse_error(
-            &[raw_priority("tiers", &["a", "b"], &[("a", number(1))])],
+            &[with_priorities(
+                raw("tiers", &["a", "b"], "priority"),
+                &[("a", number(1))]
+            )],
             &[],
         ),
         "model_priorities must contain exactly the group's models"
     );
 }
 
-fn a_priority_group_rejects_strategy_args() {
-    let raw = with_args(
-        raw_priority("tiers", &["a"], &[("a", number(1))]),
+fn a_priority_group_checks_its_strategy_args() {
+    let rejected = with_args(
+        with_priorities(raw("tiers", &["a"], "priority"), &[("a", number(1))]),
         &[("ttl", number(5))],
     );
     assert_eq!(
-        parse_error(&[raw], &[]),
+        parse_error(&[rejected], &[]),
         "Priority routing groups use model_priorities, not routing_strategy_args"
     );
-}
-
-fn empty_args_pass_a_priority_group() {
     let mut groups = parse_routing_groups(
         Some(&[with_args(
-            raw_priority("tiers", &["a"], &[("a", number(1))]),
+            with_priorities(raw("tiers", &["a"], "priority"), &[("a", number(1))]),
             &[],
         )]),
         &BTreeSet::new(),
@@ -229,7 +231,7 @@ fn a_priority_member_does_not_conflict() {
     let parsed = parse_routing_groups(
         Some(&[
             raw("one", &["a"], "simple-shuffle"),
-            raw_priority("tiers", &["a"], &[("a", number(1))]),
+            with_priorities(raw("tiers", &["a"], "priority"), &[("a", number(1))]),
         ]),
         &BTreeSet::new(),
     )
@@ -240,8 +242,11 @@ fn a_priority_member_does_not_conflict() {
 fn priority_bounds_are_accepted() {
     let parsed = parse_routing_groups(
         Some(&[
-            raw_priority("one", &["a"], &[("a", number(1))]),
-            raw_priority("top", &["b"], &[("b", number(MAX_MODEL_PRIORITY))]),
+            with_priorities(raw("one", &["a"], "priority"), &[("a", number(1))]),
+            with_priorities(
+                raw("top", &["b"], "priority"),
+                &[("b", number(MAX_MODEL_PRIORITY))],
+            ),
         ]),
         &BTreeSet::new(),
     )
@@ -264,7 +269,13 @@ fn a_priority_outside_the_bounds_is_rejected() {
         text("2"),
     ] {
         assert_eq!(
-            parse_error(&[raw_priority("tiers", &["a"], &[("a", value)])], &[]),
+            parse_error(
+                &[with_priorities(
+                    raw("tiers", &["a"], "priority"),
+                    &[("a", value)]
+                )],
+                &[]
+            ),
             expected
         );
     }
@@ -471,12 +482,7 @@ fn a_null_classifier_effort_is_not_dropped() {
         ),
     ]);
     assert_eq!(
-        drop_classifier_effort(
-            &deployment("m", "m1"),
-            "m",
-            &mut kwargs,
-            &Supports(&["seed"])
-        ),
+        drop_classifier_effort(&deployment("m", "m1"), "m", &mut kwargs, &SUPPORTS_SEED),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&Json::Null));
@@ -492,13 +498,7 @@ fn a_non_object_body_keeps_the_drop_to_the_top_level() {
         ("proxy_server_request", text("kept")),
     ]);
     assert!(
-        drop_classifier_effort(
-            &deployment("m", "m1"),
-            "m",
-            &mut kwargs,
-            &Supports(&["seed"])
-        )
-        .is_some()
+        drop_classifier_effort(&deployment("m", "m1"), "m", &mut kwargs, &SUPPORTS_SEED).is_some()
     );
     assert_eq!(kwargs.get("reasoning_effort"), None);
     assert_eq!(kwargs.get("proxy_server_request"), Some(&text("kept")));
@@ -510,7 +510,7 @@ fn an_empty_tier_has_nothing_to_drop() {
         &JsonMap::new(),
         &JsonMap::new(),
         &[deployment("m", "m1")],
-        &Supports(&["seed"]),
+        &SUPPORTS_SEED,
     );
     assert_eq!(accepted.params, JsonMap::new());
     assert!(accepted.dropped.is_empty());
@@ -523,7 +523,7 @@ fn a_tier_whose_params_all_drop_keeps_none() {
         &tier,
         &JsonMap::new(),
         &[deployment("m", "m1")],
-        &Supports(&["seed"]),
+        &SUPPORTS_SEED,
     );
     assert_eq!(accepted.params, JsonMap::new());
     assert_eq!(
@@ -539,7 +539,7 @@ fn a_kept_tier_param_keeps_its_value() {
         &tier,
         &JsonMap::new(),
         &[deployment("m", "m1")],
-        &Supports(&["temperature"]),
+        &SUPPORTS_TEMPERATURE,
     );
     assert_eq!(accepted.params, info(&[("temperature", number(2))]));
     assert_eq!(accepted.dropped, BTreeSet::from([String::from("top_p")]));
@@ -561,8 +561,9 @@ fn a_kept_tier_param_keeps_its_value() {
 #[case::priorities_must_cover_exactly_the_members(settled(
     priorities_must_cover_exactly_the_members
 ))]
-#[case::a_priority_group_rejects_strategy_args(settled(a_priority_group_rejects_strategy_args))]
-#[case::empty_args_pass_a_priority_group(settled(empty_args_pass_a_priority_group))]
+#[case::a_priority_group_checks_its_strategy_args(settled(
+    a_priority_group_checks_its_strategy_args
+))]
 #[case::a_model_in_two_groups_names_both(settled(a_model_in_two_groups_names_both))]
 #[case::every_owner_is_named(settled(every_owner_is_named))]
 #[case::conflicts_join_with_semicolons(settled(conflicts_join_with_semicolons))]
