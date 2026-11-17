@@ -50,7 +50,7 @@ impl ClientFactory {
         }
     }
 
-    fn build(&self, connection: ZerobusConnection) -> Arc<dyn RowIngest> {
+    pub(super) fn build(&self, connection: ZerobusConnection) -> Arc<dyn RowIngest> {
         Arc::new(ZerobusIngestClient {
             connection,
             http: self.http.clone(),
