@@ -1,0 +1,15 @@
+kind: helper
+name: google-identity-verified-user-fields
+call:
+  google_identity:
+    userinfo:
+      sub: '10769150350006150715113082367'
+      email: ann@example.com
+      email_verified: true
+      given_name: Ann
+      family_name: Lee
+      name: Ann Lee
+      picture: https://img.example.com/ann.png
+      locale: en
+env: {}
+compare: {ignore: []}
