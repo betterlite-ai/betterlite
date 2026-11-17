@@ -55,7 +55,10 @@ def request_body(content: bytes) -> JsonValue:
 def selected(headers: httpx.Headers, names: list[str]) -> JsonValue:
     answer: JsonObject = {}
     for name in names:
-        answer[name] = headers[name] if name in headers else None
+        if name in headers:
+            answer[name] = headers[name]
+        else:
+            answer[name] = None
     return answer
 
 
