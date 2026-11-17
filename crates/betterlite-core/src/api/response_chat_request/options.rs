@@ -93,7 +93,7 @@ pub fn effective_stream(
     requested_flag(litellm_params.get("stream"))
 }
 
-fn requested_flag(value: Option<&Value>) -> Result<bool, RequestError> {
+const fn requested_flag(value: Option<&Value>) -> Result<bool, RequestError> {
     match value {
         None | Some(Value::Null) => Ok(false),
         Some(Value::Bool(flag)) => Ok(*flag),

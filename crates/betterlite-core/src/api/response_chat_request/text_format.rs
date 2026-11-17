@@ -42,14 +42,14 @@ fn json_schema_format(fields: &Map<String, Value>) -> Result<Value, RequestError
         schema
             .get("name")
             .cloned()
-            .unwrap_or(Value::String("response_schema".to_owned())),
+            .unwrap_or_else(|| Value::String("response_schema".to_owned())),
     );
     format.insert(
         "schema".to_owned(),
         schema
             .get("schema")
             .cloned()
-            .unwrap_or(Value::Object(Map::new())),
+            .unwrap_or_else(|| Value::Object(Map::new())),
     );
     format.insert(
         "strict".to_owned(),

@@ -5,13 +5,13 @@ use serde_json::{Map, Value};
 use super::error::RequestError;
 
 pub fn converted_tools(tools: &Value) -> Result<Vec<Value>, RequestError> {
-    let Value::Array(tools) = tools else {
+    let Value::Array(items) = tools else {
         return Err(RequestError::FieldType {
             field: "tools",
             expected: "a list of objects",
         });
     };
-    tools.iter().map(converted_tool).collect()
+    items.iter().map(converted_tool).collect()
 }
 
 // a tool LiteLLM doesn't recognize keeps its chat shape, which the Responses API passes through
@@ -108,8 +108,8 @@ pub fn add_web_search_tool(
     };
     let mut tool = Map::new();
     tool.insert("type".to_owned(), Value::String("web_search".to_owned()));
-    if let Value::Object(options) = options {
-        for (key, value) in options {
+    if let Value::Object(fields) = options {
+        for (key, value) in fields {
             tool.insert(key.clone(), value.clone());
         }
     }

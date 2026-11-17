@@ -14,21 +14,24 @@ use crate::api::response_chat_history::history::{HistoryMessage, convert_history
 // CallTypes.responses.value in LiteLLM, which is also how CallType::Responses serializes
 const RESPONSES_CALL_TYPE: &str = "responses";
 
-struct RequestParts<'a> {
-    model: &'a str,
+struct RequestParts<'request> {
+    model: &'request str,
     input_items: Vec<Value>,
     instructions: Option<String>,
     input_count: usize,
     params: Map<String, Value>,
-    litellm_params: &'a IndexMap<String, Value>,
-    headers: &'a IndexMap<String, String>,
+    litellm_params: &'request IndexMap<String, Value>,
+    headers: &'request IndexMap<String, String>,
 }
 
-pub fn build_request<'a, Client: ?Sized>(
+pub fn build_request<'state, Client>(
     request: ChatRequestInput<'_>,
-    logging: &'a mut LoggingState,
-    client: Option<&'a Client>,
-) -> Result<ResponsesChatRequest<'a, Client>, RequestError> {
+    logging: &'state mut LoggingState,
+    client: Option<&'state Client>,
+) -> Result<ResponsesChatRequest<'state, Client>, RequestError>
+where
+    Client: ?Sized,
+{
     let ChatRequestInput {
         model,
         messages,
@@ -51,7 +54,7 @@ pub fn build_request<'a, Client: ?Sized>(
         params.insert("stream".to_owned(), Value::Bool(true));
     }
     log_ignored_response_id(optional_params);
-    logging.call_type = RESPONSES_CALL_TYPE.to_owned();
+    RESPONSES_CALL_TYPE.clone_into(&mut logging.call_type);
     let parts = RequestParts {
         model,
         input_items,
@@ -88,21 +91,24 @@ fn converted_input(
 }
 
 fn log_ignored_response_id(optional_params: &IndexMap<String, Json>) {
-    if let Some(Json::Text(id)) = optional_params.get("previous_response_id") {
-        if !id.is_empty() {
-            tracing::debug!(
-                "Chat provider: Warning ignoring previous response ID: {}",
-                id
-            );
-        }
+    if let Some(Json::Text(id)) = optional_params.get("previous_response_id")
+        && !id.is_empty()
+    {
+        tracing::debug!(
+            "Chat provider: Warning ignoring previous response ID: {}",
+            id
+        );
     }
 }
 
-fn assemble<'a, Client: ?Sized>(
-    logging: &'a mut LoggingState,
-    client: Option<&'a Client>,
+fn assemble<'state, Client>(
+    logging: &'state mut LoggingState,
+    client: Option<&'state Client>,
     parts: RequestParts<'_>,
-) -> Result<ResponsesChatRequest<'a, Client>, RequestError> {
+) -> Result<ResponsesChatRequest<'state, Client>, RequestError>
+where
+    Client: ?Sized,
+{
     // the flat request LiteLLM builds spreads the SDK params after model and input, so they win there
     let mut litellm_params = build_sanitized_litellm_params(parts.litellm_params);
     let model = litellm_params
@@ -111,18 +117,20 @@ fn assemble<'a, Client: ?Sized>(
     let input = litellm_params
         .shift_remove("input")
         .unwrap_or(Value::Array(parts.input_items));
-    let mut extra_headers = litellm_params
-        .shift_remove("extra_headers")
-        .map(|value| {
-            serde_json::from_value(value).map_err(|_| RequestError::FieldType {
-                field: "extra_headers",
-                expected: "a map of strings",
+    let sdk_extra_headers = litellm_params.shift_remove("extra_headers");
+    // LiteLLM replaces the SDK's extra_headers with the caller's headers whenever those are present
+    let extra_headers = if parts.headers.is_empty() {
+        sdk_extra_headers
+            .map(|value| {
+                serde_json::from_value(value).map_err(|_error| RequestError::FieldType {
+                    field: "extra_headers",
+                    expected: "a map of strings",
+                })
             })
-        })
-        .transpose()?;
-    if !parts.headers.is_empty() {
-        extra_headers = Some(parts.headers.clone());
-    }
+            .transpose()?
+    } else {
+        Some(parts.headers.clone())
+    };
     tracing::debug!(
         "Chat provider: Final request model={}, input_items={}",
         parts.model,

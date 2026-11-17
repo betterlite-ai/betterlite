@@ -70,6 +70,7 @@ impl<Inner: Subscriber> Layer<Inner> for Logs {
     }
 }
 
+#[derive(Debug)]
 struct Projection {
     params: Value,
     litellm_params: Value,
@@ -125,7 +126,7 @@ fn build_with(
     let mut state = logging_state();
     let mut optional_params = json_map(optional);
     let litellm_params = map(litellm);
-    let headers = string_map(headers);
+    let provided = string_map(headers);
     let history = chat_messages(messages);
     let logs = Logs::default();
     let subscriber = registry().with(logs.clone());
@@ -136,7 +137,7 @@ fn build_with(
                 messages: &history,
                 optional_params: &mut optional_params,
                 litellm_params: &litellm_params,
-                headers: &headers,
+                headers: &provided,
                 reasoning_auto_summary: auto_summary,
             },
             &mut state,
@@ -313,19 +314,14 @@ fn keeps_text_across_the_mapping(#[case] optional: &str, #[case] expected: Value
     assert_eq!(options(&projection.params), expected);
 }
 
-#[test]
-fn truncates_a_long_user_to_64_characters() {
-    let sixty_four = "u".repeat(64);
-    let sixty_five = "u".repeat(65);
-    let built = build(&format!(r#"{{"user": "{sixty_four}"}}"#));
+#[rstest]
+#[case::exactly_64("u".repeat(64), "u".repeat(64))]
+#[case::one_character_longer("u".repeat(65), "u".repeat(64))]
+#[case::multibyte_characters("é".repeat(65), "é".repeat(64))]
+fn truncates_a_long_user_to_64_characters(#[case] user: String, #[case] expected: String) {
+    let built = build(&format!(r#"{{"user": "{user}"}}"#));
     let projection = built.outcome.expect("the request builds");
-    assert_eq!(options(&projection.params)["user"], json!(sixty_four));
-    let built = build(&format!(r#"{{"user": "{sixty_five}"}}"#));
-    let projection = built.outcome.expect("the request builds");
-    assert_eq!(options(&projection.params)["user"], json!(sixty_four));
-    let built = build(&format!(r#"{{"user": "{}"}}"#, "é".repeat(65)));
-    let projection = built.outcome.expect("the request builds");
-    assert_eq!(options(&projection.params)["user"], json!("é".repeat(64)));
+    assert_eq!(options(&projection.params)["user"], Value::String(expected));
 }
 
 #[rstest]
