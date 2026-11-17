@@ -93,6 +93,30 @@ fn driver_primed_identity_and_text_order() {
     assert_eq!(deltas, [Json::Text(String::from("hi"))]);
 }
 
+#[test]
+fn driver_reads_only_the_first_choice_delta() {
+    let two_choices = json(
+        r#"{"id":"chat_a","choices":[{"index":0,"delta":{"content":"first"}},{"index":1,"delta":{"content":"second"}}]}"#,
+    );
+    let (mut stream, _received) = driver(
+        vec![Ok(two_choices), Ok(json(FINISH_STOP))],
+        Reply::Text,
+        "{}",
+        &["u1", "u2", "u3"],
+    );
+    let events = drain(&mut stream);
+    let deltas: Vec<Json> = events
+        .iter()
+        .filter(|event| event_type(event) == Json::Text(String::from("response.output_text.delta")))
+        .map(|event| field(event, "delta"))
+        .collect();
+    assert_eq!(
+        deltas,
+        [Json::Text(String::from("first"))],
+        "only the first choice of a chunk reaches the stream"
+    );
+}
+
 #[rstest]
 #[case::numeric_id(r#"{"id":5,"created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#)]
 #[case::empty_id(r#"{"id":"","created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#)]

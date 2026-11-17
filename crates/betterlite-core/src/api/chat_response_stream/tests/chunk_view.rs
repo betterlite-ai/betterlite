@@ -17,6 +17,19 @@ fn chunk_helpers_read_the_first_choice_delta() {
 }
 
 #[test]
+fn chunk_helpers_read_only_the_first_choice() {
+    let two_choices = json(
+        r#"{"id":"chat_a","choices":[{"index":0,"delta":{"content":"first"}},{"index":1,"delta":{"content":"second"}}]}"#,
+    );
+    let delta = chunk::delta(&two_choices).expect("the first choice carries a delta");
+    assert_eq!(
+        delta.get("content"),
+        Some(&json(r#""first""#)),
+        "a later choice never reaches the stream"
+    );
+}
+
+#[test]
 fn chunk_view_folds_hidden_params_and_hoists_usage() {
     let raw = r#"{"id":"chat_a","created":0,"model":"gpt-4o-mini","choices":[],"usage":null,"hidden_params":{"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5},"additional_headers":{"x":"y"}}}"#;
     let parsed: StreamChunk = serde_json::from_str(raw).expect("the chunk decodes");
