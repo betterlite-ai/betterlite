@@ -22,8 +22,8 @@ use crate::logging_service_events::pipeline::{
 use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
 use crate::logging_service_events::stream::STREAM_FAILED_ERROR;
 use crate::logging_service_events::types::{
-    CANCELLED_ERROR, ServiceEvent, ServiceKind, ServiceLoggerPayload, ServiceMetric, ServiceType,
-    TerminalOutcome,
+    CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
+    ServiceMetric, ServiceType, TerminalOutcome,
 };
 use crate::logging_service_events::wiring::LoggingWiring;
 use crate::logging_service_events::worker_link::Delivery;
@@ -419,6 +419,20 @@ fn metric_sets_follow_the_service_config() {
         };
         assert_eq!(service.metrics(), expected, "{service:?}");
     }
+}
+
+#[test]
+fn service_event_metadata_carries_only_the_fields_it_sets() {
+    let filled = ServiceEventMetadata {
+        gauge_labels: Some("worker".to_owned()),
+        gauge_value: Some(2.5),
+    };
+    assert_eq!(
+        serde_json::to_value(&filled).unwrap(),
+        serde_json::json!({"gauge_labels": "worker", "gauge_value": 2.5})
+    );
+    let empty = ServiceEventMetadata::default();
+    assert_eq!(serde_json::to_value(&empty).unwrap(), serde_json::json!({}));
 }
 
 #[test]
