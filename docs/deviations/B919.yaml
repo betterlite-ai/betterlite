@@ -27,10 +27,10 @@ deviations:
 kept_bugs:
 - what: Typed function calls all carry tool_calls index 0 in their converted chunk even when several are accumulated, while apply_patch and raw tool calls number them sequentially.
   why: The converter hardcodes index 0 and B912's converter preserves that, and the task pins this behavior.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2363
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2364
 - what: A raw message item keeps only its first output_text content part and drops every later part, while a typed message emits one choice per part.
   why: The raw callback returns at the first output_text part, the task pins it, and a working setup only sees the difference for raw items LiteLLM never builds itself.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L336-L352
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L338-L353
 - what: A raw reasoning item is ignored on the normal path, so its summary never reaches a text choice, while the incomplete fallback collects it.
   why: The raw callback discards reasoning items and the task pins the normal-path behavior, so a working setup's raw reasoning keeps being dropped.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L332-L334

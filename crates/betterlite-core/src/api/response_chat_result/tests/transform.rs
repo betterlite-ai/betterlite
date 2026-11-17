@@ -91,6 +91,20 @@ fn transform_recovers_a_recorded_terminal_message() {
 }
 
 #[test]
+fn transform_drops_recovered_items_that_are_not_objects() {
+    let mut response = decoded(envelope(json!([])));
+    let recording = r#"data: {"type":"response.completed","response":{"output":[1,{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}}"#;
+    let (result, lines) = run(&mut response, &recorded_state(recording));
+    let record = result.expect("the recovered response converts");
+    assert_eq!(
+        choices_value(&record),
+        json!([text_choice("hi", "assistant", 0)])
+    );
+    assert_eq!(response.output.len(), 1);
+    assert_eq!(lines.len(), 1);
+}
+
+#[test]
 fn transform_ignores_the_recording_when_output_is_present() {
     let mut response = decoded(envelope(json!([typed_message("a")])));
     let (result, lines) = run(&mut response, &recorded_state(RECOVERED));
