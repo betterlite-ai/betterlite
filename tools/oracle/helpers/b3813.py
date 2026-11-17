@@ -238,11 +238,6 @@ async def raw_source(chunks: list[str]) -> AsyncIterator[str]:
 Streamed = ModelResponseStream | bytes | str
 
 
-async def collect_stream(stream: AsyncIterator[Streamed]) -> list[Streamed]:
-    collected: list[Streamed] = [item async for item in stream]
-    return collected
-
-
 def streamed_view(item: Streamed) -> JsonValue:
     match item:
         case bytes():
@@ -253,7 +248,7 @@ def streamed_view(item: Streamed) -> JsonValue:
             return dump_view(item)
 
 
-def streaming(input_value: Input) -> JsonValue:
+async def streaming(input_value: Input) -> JsonValue:
     guardrail = build_guardrail(input_value)
     data = dict(input_value["data"])
     blocked: dict[str, JsonValue] | None = None
@@ -263,14 +258,14 @@ def streaming(input_value: Input) -> JsonValue:
         )
     else:
         source = openai_source(input_value["chunks"])
-    collected: list[Streamed] = []
+    chunks: list[JsonValue] = []
     try:
         hook = guardrail.async_post_call_streaming_iterator_hook(UserAPIKeyAuth(), source, data)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L892-L970
-        collected = asyncio.run(collect_stream(hook))
+        chunks = [streamed_view(item) async for item in hook]
     except GuardrailRaisedException as error:
         blocked = blocked_of(error)
     answer: dict[str, JsonValue] = {
-        "chunks": [streamed_view(item) for item in collected],
+        "chunks": chunks,
         "blocked": blocked,
     }
     return answer
@@ -281,4 +276,4 @@ def run(input_value: Input) -> JsonValue:
     with contextlib.redirect_stdout(io.StringIO()):
         if input_value["mode"] == "success":
             return success(input_value)
-        return streaming(input_value)
+        return asyncio.run(streaming(input_value))
