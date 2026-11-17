@@ -261,13 +261,7 @@ pub(super) fn token_counter() -> Counter {
         Arc::clone(&service),
         false,
     ));
-    Counter::new(
-        selector,
-        fetcher,
-        service,
-        catalog,
-        TokenizerSettings::default(),
-    )
+    Counter::new(selector, service, catalog, TokenizerSettings::default())
 }
 
 // a hub on a dead local port, since the bundled vocabulary never needs a download

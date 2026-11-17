@@ -69,7 +69,7 @@ pub(crate) fn counting_pieces() -> Result<(Counter, Arc<ModelCatalog>), Operatio
         Arc::clone(&service),
         true,
     ));
-    let counter = Counter::new(selector, fetcher, service, Arc::clone(&catalog), settings);
+    let counter = Counter::new(selector, service, Arc::clone(&catalog), settings);
     Ok((counter, catalog))
 }
 
