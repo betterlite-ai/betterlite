@@ -10,6 +10,7 @@ from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
     tinyfish_passthrough_logging_handler as tinyfish,
 )
 from pydantic import JsonValue
+from typing_extensions import override
 
 API_KEY_VARIABLE: Final = "TINYFISH_API_KEY"
 API_BASE_VARIABLE: Final = "TINYFISH_AGENT_API_BASE"
@@ -25,7 +26,7 @@ class Request(TypedDict):
     api_key: str | None
 
 
-# the clock surface the poller reads off the handler module: time.monotonic, asyncio.sleep and asyncio.create_task
+# the clock surface the poller reads off its module: monotonic, sleep and create_task
 class Timer(Protocol):
     def monotonic(self) -> float: ...
     def create_task(self, coro: Coroutine[None, None, None]) -> asyncio.Task[None]: ...
@@ -48,8 +49,8 @@ class Script:
         return self.replies[0]
 
     def summary(self, api_base: str) -> dict[str, JsonValue]:
-        paths: list[str] = []
-        keys: list[str | None] = []
+        paths: list[JsonValue] = []
+        keys: list[JsonValue] = []
         for request in self.requests:
             path = request["path"].removeprefix(api_base)
             if path not in paths:
@@ -123,20 +124,23 @@ class Clock(Timer):
         self.now = 0.0
         self.tasks: list[asyncio.Task[None]] = []
 
+    @override
     def monotonic(self) -> float:
         return self.now
 
+    @override
     def create_task(self, coro: Coroutine[None, None, None]) -> asyncio.Task[None]:
         task = asyncio.ensure_future(coro)
         self.tasks.append(task)
         return task
 
+    @override
     async def sleep(self, delay: float) -> None:
         self.now += delay
         await asyncio.sleep(0)
 
 
-# the poller reads time and asyncio off its own module, so the fake clock goes in there and nowhere else
+# the poller reads time and asyncio off its own module, so the fake clock goes there
 def install(clock: Clock) -> None:
     handlers: Final[Handlers] = cast(Handlers, tinyfish)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L13-L14
     handlers.time = SimpleNamespace(monotonic=clock.monotonic)

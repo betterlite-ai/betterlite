@@ -7,7 +7,6 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
     tinyfish_passthrough_logging_handler as tinyfish,
 )
-from litellm.types.utils import StandardPassThroughResponseObject
 from pydantic import BaseModel, ConfigDict, JsonValue
 from typing_extensions import override
 
@@ -47,14 +46,13 @@ def cost_text(cost: float | None) -> str | None:
 class Recorder(CustomLogger):
     @override
     def __init__(self) -> None:
-        super().__init__()
         self.calls: list[Call] = []
 
     @override
     async def async_log_success_event(
         self,
         kwargs: dict[str, JsonValue],
-        response_obj: StandardPassThroughResponseObject,
+        response_obj: dict[str, JsonValue],
         start_time: datetime,
         end_time: datetime,
     ) -> None:
@@ -70,9 +68,10 @@ class Recorder(CustomLogger):
 
 def billing_view(
     logging_obj: Logging,
-    cache_hit: bool | None,
     response: JsonValue,
     requests: dict[str, JsonValue],
+    *,
+    cache_hit: bool | None,
 ) -> dict[str, JsonValue]:
     view = LoggingView.model_validate(logging_obj)
     details = view.model_call_details
