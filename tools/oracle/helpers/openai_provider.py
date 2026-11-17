@@ -1,9 +1,11 @@
 import os
+from collections.abc import Awaitable
 from typing import TypedDict
 
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
 from pydantic import JsonValue, TypeAdapter
@@ -31,7 +33,7 @@ class Defaults(TypedDict, total=False):
     top_p: int
 
 
-# The per-case parameters the helper passes through; embedding's declared parameters must match their types
+# Per-case parameters the helper forwards; an embedding's field types must match LiteLLM's
 class OptionalParams(TypedDict, total=False):
     dimensions: int
     encoding_format: str
@@ -152,7 +154,10 @@ def call(
         )
         return TypeAdapter(EmbeddingResponse).validate_python(embedding)
     if family == "text":
-        text = litellm.completion(
+        # litellm.completion's decorated return is Any to mypy, so its type is named here.
+        text: (
+            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+        ) = litellm.completion(
             model=f"text-completion-openai/{case['model']}",
             messages=case["messages"],
             api_base=case["api_base"],
@@ -168,7 +173,10 @@ def call(
     flag = os.environ.get(EXPERIMENTAL_HANDLER_FLAG)
     if flag is not None and flag.strip().lower() == "true":
         client = HTTPHandler(client=httpx.Client(transport=transport))
-        experimental = litellm.completion(
+        # litellm.completion's decorated return is Any to mypy, so its type is named here.
+        experimental: (
+            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+        ) = litellm.completion(
             model=case["model"],
             messages=case["messages"],
             api_base=case["api_base"],
@@ -182,7 +190,10 @@ def call(
             **case["optional_params"],
         )
         return TypeAdapter(ModelResponse).validate_python(experimental)
-    chat = litellm.completion(
+    # litellm.completion's decorated return is Any to mypy, so its type is named here.
+    chat: (
+        ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+    ) = litellm.completion(
         model=case["model"],
         messages=case["messages"],
         api_base=case["api_base"],
