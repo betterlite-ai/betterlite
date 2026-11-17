@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::StandardCallbackDynamicParams;
