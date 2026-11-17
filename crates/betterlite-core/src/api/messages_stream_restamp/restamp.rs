@@ -190,7 +190,7 @@ fn restamped_event(event: &Json, requested_model: &str) -> Option<Json> {
 
 fn restamped_data_line(line: &str, requested_model: &str) -> Option<String> {
     let payload = strip(strip(line).strip_prefix(SSE_DATA_FIELD)?);
-    if payload.is_empty() || payload == SSE_DONE_PAYLOAD {
+    if matches!(payload, "" | SSE_DONE_PAYLOAD) {
         return None;
     }
     let event: Json = serde_json::from_str(payload).ok()?;
@@ -234,8 +234,7 @@ fn contains_marker(haystack: &[u8], needle: &[u8]) -> bool {
 fn frame_end_positions(bytes: &[u8]) -> Vec<usize> {
     let mut ends = Vec::new();
     let mut index = 0_usize;
-    while index < bytes.len() {
-        let rest = bytes.get(index..).unwrap_or_default();
+    while let Some(rest) = bytes.get(index..).filter(|window| !window.is_empty()) {
         let width = SSE_FRAME_ENDS
             .iter()
             .find_map(|end| rest.starts_with(end).then_some(end.len()));

@@ -247,17 +247,13 @@ fn split_sse_events(text: &str) -> Vec<String> {
     let bytes = text.as_bytes();
     let mut events = Vec::new();
     let mut start = 0_usize;
-    let mut index = 0_usize;
-    while index <= bytes.len() {
+    for index in 0..bytes.len() {
         if boundary_at(bytes, index) {
-            if let Some(event) = text.get(start..index)
-                && !event.is_empty()
-            {
+            if let Some(event) = text.get(start..index) {
                 events.push(event.to_owned());
             }
             start = index;
         }
-        index = index.saturating_add(1);
     }
     if let Some(event) = text.get(start..)
         && !event.is_empty()
