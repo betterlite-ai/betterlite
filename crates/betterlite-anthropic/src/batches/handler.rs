@@ -8,7 +8,7 @@ use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingInit;
 use betterlite_logging::logging_state::types::{
-    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
+    CallbackPolicy, DynamicCallbacks, Messages, RequestLoggingFlags,
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::BatchObject;
@@ -100,9 +100,18 @@ impl<T: BatchTransport> AnthropicBatchesHandler<T> {
             env,
         )
         .map_err(|source| BatchesError::Logging { source })?;
+        self.fetch_batch(&url, headers).await
+    }
+
+    // the one GET and the reply mapping every retrieval shares
+    async fn fetch_batch(
+        &self,
+        url: &str,
+        headers: HeaderMap,
+    ) -> Result<BatchObject, BatchesError> {
         let outbound = OutboundRequest {
             method: Method::GET,
-            url: Url::parse(&url).map_err(|source| BatchesError::InvalidBase { source })?,
+            url: Url::parse(url).map_err(|source| BatchesError::InvalidBase { source })?,
             query: Vec::new(),
             headers,
             body: RequestBody::Empty,
@@ -192,7 +201,7 @@ impl BatchLogging {
             start_time: self.start_time.unwrap_or(now),
             litellm_call_id: self.litellm_call_id,
             function_id: self.function_id,
-            messages: Some(self.messages),
+            messages: Some(Messages::Values(self.messages)),
             stream: Some(self.stream),
             litellm_trace_id: None,
             kwargs: IndexMap::new(),
