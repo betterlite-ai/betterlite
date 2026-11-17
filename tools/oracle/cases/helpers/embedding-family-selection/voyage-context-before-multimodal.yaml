@@ -1,0 +1,17 @@
+kind: helper
+name: embedding-family-selection-voyage-context-before-multimodal
+call:
+  embedding_family_selection:
+    calls:
+      - provider: voyage
+        model: voyage-context-multimodal-1
+      - provider: voyage
+        model: voyage-context-3
+      - provider: voyage
+        model: voyage-multimodal-3
+      - provider: voyage
+        model: voyage-3
+      - provider: voyage
+        model: MULTIMODAL-CONTEXT
+env: {}
+compare: {ignore: []}

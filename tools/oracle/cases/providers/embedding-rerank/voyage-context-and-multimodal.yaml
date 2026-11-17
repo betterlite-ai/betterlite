@@ -1,0 +1,21 @@
+kind: helper
+name: voyage-context-and-multimodal
+call:
+  embedding_family_selection:
+    calls:
+      - provider: voyage
+        model: voyage-context-3
+      - provider: voyage
+        model: voyage-multimodal-3
+      - provider: voyage
+        model: voyage-context-multimodal-1
+      - provider: voyage
+        model: VOYAGE-CONTEXT-1
+      - provider: voyage
+        model: voyage-3-large
+calls:
+  - voyage_contextual:
+      text: {model: voyage-3-large, input: [hello], options: {}, base: null}
+      contextual: {model: voyage-context-3, input: [hello, world], options: {}, base: null}
+env: {}
+compare: {ignore: []}

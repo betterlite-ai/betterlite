@@ -1,0 +1,38 @@
+kind: helper
+name: auth-status-and-error-fields
+call:
+  cohere_rerank_plan:
+    calls:
+      - version: v1
+        model: rerank-v3.0
+        api_key: invalid-key
+        headers: {}
+        settings: {}
+        options: {query: why, documents: [first]}
+        non_default: {}
+        responses:
+          - {status: 401, body: 'invalid api key'}
+calls:
+  - cohere_rerank_plan:
+      calls:
+        - version: v2
+          model: rerank-v4.0
+          api_key: invalid-key
+          headers: {Authorization: "Bearer invalid"}
+          settings: {}
+          options: {query: why, documents: [first]}
+          non_default: {}
+          responses:
+            - {status: 403, body: 'forbidden'}
+  - embedding_host_plan:
+      jina:
+        model: jina-v3
+        input: [hello]
+        base: https://jina.test/v1
+      infinity:
+        model: bge
+        input: [hello]
+        base: https://infinity.test
+        error: {status: 401, message: invalid api key, headers: {www-authenticate: Bearer}}
+env: {}
+compare: {ignore: []}

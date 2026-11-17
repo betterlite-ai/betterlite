@@ -1,0 +1,24 @@
+kind: helper
+name: embedding-family-selection-providers
+call:
+  embedding_family_selection:
+    calls:
+      - provider: cohere
+        model: embed-v4.0
+        present_version_params: [max_chunks_per_doc]
+      - provider: voyage
+        model: voyage-context-3
+        api_base: https://api.voyageai.com/v1/embeddings
+        present_version_params: []
+      - provider: voyage
+        model: voyage-multimodal-3
+        api_base: https://api.voyageai.com/v1/embeddings
+      - provider: jina_ai
+        model: jina-embeddings-v3
+        api_base: https://api.jina.ai/v1/embeddings
+        present_version_params: [max_tokens_per_doc]
+      - provider: infinity
+        model: BAAI/bge-small-en
+        api_base: https://infinity.test/v1
+compare: {ignore: []}
+env: {}

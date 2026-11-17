@@ -1,0 +1,43 @@
+kind: helper
+name: cohere-chat-aliases
+call:
+  embedding_family_selection:
+    calls:
+      - provider: cohere
+        model: command-r
+        api_base: https://api.cohere.ai/v1/rerank
+      - provider: cohere_chat
+        model: v1/command-r
+        api_base: https://api.cohere.ai/v1/rerank
+      - provider: cohere_chat
+        model: command-r
+        api_base: https://api.cohere.ai/v1/rerank/
+        present_version_params: [max_chunks_per_doc]
+      - provider: cohere
+        model: command-r
+        api_base: https://api.cohere.com/v2/rerank
+        present_version_params: [max_chunks_per_doc]
+      - provider: cohere_chat
+        model: command-r
+        present_version_params: [max_chunks_per_doc]
+calls:
+  - cohere_v1_chat:
+      function: request
+      requests:
+        - model: command-r
+          messages:
+            - {role: system, content: be brief}
+            - {role: user, content: first question}
+          non_default_params: {temperature: 0.2}
+          optional_params: {}
+  - cohere_v1_chat:
+      function: reply
+      requests:
+        - body: '{"text":"answer","meta":{"billed_units":{"input_tokens":3,"output_tokens":1}}}'
+          status: 200
+          model: command-r
+          created: 7
+          id: chatcmpl-alias
+          finish_reason: COMPLETE
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: embedding-family-selection-cohere-no-base-and-version-suffix
+call:
+  embedding_family_selection:
+    calls:
+      - provider: cohere
+        model: command-r
+        api_base: null
+        present_version_params: [max_chunks_per_doc]
+      - provider: cohere
+        model: command-r
+        api_base: ""
+        present_version_params: [max_chunks_per_doc]
+      - provider: cohere
+        model: command-r
+        api_base: https://co.test/v1/rerank
+        present_version_params: [max_tokens_per_doc]
+      - provider: cohere
+        model: command-r
+        api_base: https://co.test/v1/rerank/
+      - provider: cohere
+        model: command-r
+        api_base: https://co.test/v2/rerank
+        present_version_params: [max_chunks_per_doc]
+      - provider: cohere
+        model: command-r
+        api_base: https://co.test/rerank
+        present_version_params: [max_chunks_per_doc, max_tokens_per_doc]
+env: {}
+compare: {ignore: []}
