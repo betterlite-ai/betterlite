@@ -278,6 +278,19 @@ fn custom_keywords_replace_and_extend_the_baseline_lists() {
 }
 
 #[test]
+fn a_repeated_custom_keyword_keeps_its_first_position_and_last_spelling() {
+    let mut input = blank();
+    input.technical_keywords = Some(strings(&["gizmo"]));
+    input.custom_technical_keywords = Some(strings(&["Cog", "Sprocket", "sprocket"]));
+    let outcome = classify(&input, "gizmo cog sprocket", None);
+    assert_eq!(
+        outcome.signals,
+        strings(&["short (4 tokens)", "technical (gizmo, Cog, sprocket)"])
+    );
+    assert_eq!(fixed(outcome.score), "0.025000");
+}
+
+#[test]
 fn an_empty_keyword_list_is_used_as_given() {
     let mut input = blank();
     input.code_keywords = Some(Vec::new());
@@ -763,6 +776,21 @@ fn a_custom_pattern_reads_only_the_first_2048_characters() {
     assert_eq!(fixed(both.score), "1.100000");
     let keyword_only = scored_with(config, &format!("{} target", "x".repeat(2050)));
     assert_eq!(fixed(keyword_only.score), "0.600000");
+}
+
+#[test]
+fn a_custom_dimension_with_no_hit_is_not_scored() {
+    let mut config = resolved(&blank());
+    config.custom_dimensions = vec![CustomDimension {
+        name: "domain".to_owned(),
+        weight: 1.0,
+        keywords: strings(&["nomatch"]),
+        patterns: Vec::new(),
+        scoring_mode: ScoringMode::MatchCount,
+    }];
+    let outcome = scored_with(config, "gizmo cog");
+    assert_eq!(outcome.signals, strings(&["short (2 tokens)"]));
+    assert_eq!(fixed(outcome.score), "-0.100000");
 }
 
 #[test]
