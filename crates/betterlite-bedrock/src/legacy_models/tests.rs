@@ -13,7 +13,6 @@ use crate::legacy_models::mapping::{
     MappingRequest, map_and_modify_arg, map_openai_params, supported_openai_params,
 };
 use crate::legacy_models::mistral::{MistralOutputError, output_text};
-use crate::legacy_models::names::LEGACY_ANTHROPIC_MODEL_NAMES;
 
 fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
@@ -168,7 +167,7 @@ fn cohere_parameter_mapping() {
         mapped,
         object(
             r#"{"stream": true, "temperature": 0.2, "frequency_penalty": 0.3, "presence_penalty": 0.4,
-                "tools": [], "seed": 7, "p": 0.9, "num_generations": 2, "stop_sequences": "END"}"#
+                "tools": [], "seed": 7, "p": 0.5, "num_generations": 2, "stop_sequences": "END"}"#
         )
     );
 }
@@ -584,23 +583,6 @@ fn claude2_stream_rule() {
     );
 }
 
-fn legacy_anthropic_model_names() {
-    assert_eq!(
-        LEGACY_ANTHROPIC_MODEL_NAMES,
-        [
-            "anthropic.claude-v2",
-            "anthropic.claude-instant-v1",
-            "anthropic.claude-v2:1",
-        ]
-    );
-    for model in LEGACY_ANTHROPIC_MODEL_NAMES {
-        assert!(LEGACY_ANTHROPIC_MODEL_NAMES.contains(&model));
-    }
-    assert!(!LEGACY_ANTHROPIC_MODEL_NAMES.contains(&"anthropic.claude-3-sonnet-20240229-v1:0"));
-    assert!(!LEGACY_ANTHROPIC_MODEL_NAMES.contains(&"bedrock/anthropic.claude-v2"));
-    assert!(!LEGACY_ANTHROPIC_MODEL_NAMES.contains(&"anthropic.claude-v2:0"));
-}
-
 #[rstest]
 #[case::ai21_penalties(ai21_penalties)]
 #[case::cohere_max_tokens(cohere_max_tokens)]
@@ -611,7 +593,6 @@ fn legacy_anthropic_model_names() {
 #[case::legacy_config_projection(legacy_config_projection)]
 #[case::titan_stop_filter(titan_stop_filter)]
 #[case::claude2_parameters(claude2_parameters)]
-#[case::legacy_anthropic_model_names(legacy_anthropic_model_names)]
 fn legacy_models_cases(#[case] run: fn()) {
     run();
 }

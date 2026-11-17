@@ -9,7 +9,7 @@ use crate::sections::bedrock_legacy_models::families::{
     TitanValues,
 };
 
-// Every configured key keeps the class dictionary spelling it writes; the family views above group them.
+// Every configured key keeps the class dictionary spelling it writes; resolve groups them into the family views.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct ModelValues {
     pub(super) max_tokens_camel: Option<i64>,
@@ -100,11 +100,38 @@ impl Settings {
     pub fn resolve(&self, index: usize, default_max_tokens: i64) -> Resolved {
         let values = self.values_for(index);
         Resolved {
-            ai21: ai21_view(&values),
-            cohere: cohere_view(&values),
-            llama: llama_view(&values),
-            mistral: mistral_view(&values),
-            titan: titan_view(&values),
+            ai21: Ai21Values {
+                max_tokens: values.max_tokens_camel,
+                temperature: values.temperature.clone(),
+                top_p: values.top_p_camel.clone(),
+                stop_sequences: values.stop_sequences_camel.clone(),
+                frequence_penalty: values.frequence_penalty.clone(),
+                presence_penalty: values.presence_penalty.clone(),
+                count_penalty: values.count_penalty.clone(),
+            },
+            cohere: CohereValues {
+                max_tokens: values.max_tokens,
+                temperature: values.temperature.clone(),
+                return_likelihood: values.return_likelihood.clone(),
+            },
+            llama: LlamaValues {
+                max_token_count: values.max_token_count,
+                temperature: values.temperature.clone(),
+                top_p: values.top_p_camel.clone(),
+            },
+            mistral: MistralValues {
+                max_tokens: values.max_tokens,
+                temperature: values.temperature.clone(),
+                top_p: values.top_p.clone(),
+                top_k: values.top_k.clone(),
+                stop: values.stop.clone(),
+            },
+            titan: TitanValues {
+                max_token_count: values.max_token_count,
+                stop_sequences: values.stop_sequences_camel.clone(),
+                temperature: values.temperature.clone(),
+                top_p: values.top_p_camel.clone(),
+            },
             anthropic: anthropic_view(&values, default_max_tokens),
         }
     }
@@ -123,53 +150,6 @@ where
 {
     if let Some(found) = value.cloned() {
         *target = Some(found);
-    }
-}
-
-fn ai21_view(values: &ModelValues) -> Ai21Values {
-    Ai21Values {
-        max_tokens: values.max_tokens_camel,
-        temperature: values.temperature.clone(),
-        top_p: values.top_p_camel.clone(),
-        stop_sequences: values.stop_sequences_camel.clone(),
-        frequence_penalty: values.frequence_penalty.clone(),
-        presence_penalty: values.presence_penalty.clone(),
-        count_penalty: values.count_penalty.clone(),
-    }
-}
-
-fn cohere_view(values: &ModelValues) -> CohereValues {
-    CohereValues {
-        max_tokens: values.max_tokens,
-        temperature: values.temperature.clone(),
-        return_likelihood: values.return_likelihood.clone(),
-    }
-}
-
-fn llama_view(values: &ModelValues) -> LlamaValues {
-    LlamaValues {
-        max_token_count: values.max_token_count,
-        temperature: values.temperature.clone(),
-        top_p: values.top_p_camel.clone(),
-    }
-}
-
-fn mistral_view(values: &ModelValues) -> MistralValues {
-    MistralValues {
-        max_tokens: values.max_tokens,
-        temperature: values.temperature.clone(),
-        top_p: values.top_p.clone(),
-        top_k: values.top_k.clone(),
-        stop: values.stop.clone(),
-    }
-}
-
-fn titan_view(values: &ModelValues) -> TitanValues {
-    TitanValues {
-        max_token_count: values.max_token_count,
-        stop_sequences: values.stop_sequences_camel.clone(),
-        temperature: values.temperature.clone(),
-        top_p: values.top_p_camel.clone(),
     }
 }
 
