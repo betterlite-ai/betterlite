@@ -67,6 +67,7 @@ enum Case {
     AnEmptyLanguageUsesTheDefault,
     ReturnsWhenMessagesAreNull,
     SkipsNonObjectContentParts,
+    FailsWhenMetadataIsNotAnObject,
 }
 
 #[rstest]
@@ -130,6 +131,7 @@ enum Case {
 #[case::an_empty_language_uses_the_default(Case::AnEmptyLanguageUsesTheDefault)]
 #[case::returns_when_messages_are_null(Case::ReturnsWhenMessagesAreNull)]
 #[case::skips_non_object_content_parts(Case::SkipsNonObjectContentParts)]
+#[case::fails_when_metadata_is_not_an_object(Case::FailsWhenMetadataIsNotAnObject)]
 #[tokio::test]
 async fn presidio_runtime_cases(#[case] case: Case) {
     match case {
@@ -223,5 +225,8 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         Case::AnEmptyLanguageUsesTheDefault => construction::an_empty_language_uses_the_default(),
         Case::ReturnsWhenMessagesAreNull => masking::returns_when_messages_are_null().await,
         Case::SkipsNonObjectContentParts => masking::skips_non_object_content_parts().await,
+        Case::FailsWhenMetadataIsNotAnObject => {
+            masking::fails_when_metadata_is_not_an_object().await;
+        }
     }
 }

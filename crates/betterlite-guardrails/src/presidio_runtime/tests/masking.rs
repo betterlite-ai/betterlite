@@ -116,6 +116,17 @@ pub(super) async fn skips_non_object_content_parts() {
     assert_eq!(analyzer_requests(&server).len(), 1);
 }
 
+pub(super) async fn fails_when_metadata_is_not_an_object() {
+    let server = masking();
+    let mut data = request(r#"{"metadata":42,"messages":[]}"#);
+    let error = guard_at(&server)
+        .pre_call(&mut data, "completion")
+        .await
+        .expect_err("a number is not a metadata object");
+    assert_eq!(error.to_string(), "request metadata must be a JSON object");
+    assert!(matches!(error, GuardrailFailure::Http { status: 400, .. }));
+}
+
 pub(super) async fn fails_when_messages_are_not_a_list() {
     let server = masking();
     let guard = guard_at(&server);
