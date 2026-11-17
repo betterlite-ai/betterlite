@@ -1,5 +1,6 @@
 use std::fs;
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -12,7 +13,9 @@ use betterlite_models::provider_metadata_factory::adapters::{LemonadeSettings, S
 use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
 use betterlite_prompts::arguments::json::Json as ConfigJson;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use serde_json::Number;
 
 use crate::self_hosted_dispatch::error::LemonadeError;
 use crate::self_hosted_dispatch::lemonade::{
@@ -20,8 +23,6 @@ use crate::self_hosted_dispatch::lemonade::{
 };
 
 use super::support::secret;
-
-struct Offline;
 
 #[derive(Clone)]
 enum Reply {
@@ -36,12 +37,12 @@ struct FakeClient {
 
 impl FakeClient {
     fn answering(status: u16, body: &str) -> Self {
+        Self::raw(status, body.as_bytes())
+    }
+
+    fn raw(status: u16, body: &[u8]) -> Self {
         Self {
-            reply: Reply::Fetched(FetchResponse::new(
-                status,
-                Vec::new(),
-                body.as_bytes().to_vec(),
-            )),
+            reply: Reply::Fetched(FetchResponse::new(status, Vec::new(), body.to_vec())),
             requests: Mutex::new(Vec::new()),
         }
     }
@@ -62,7 +63,7 @@ impl FakeClient {
 }
 
 impl ModelInfoClient for FakeClient {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn get(
         &self,
@@ -74,7 +75,7 @@ impl ModelInfoClient for FakeClient {
             .push(request.clone());
         let result = match &self.reply {
             Reply::Fetched(response) => Ok(response.clone()),
-            Reply::Failed => Err(std::io::Error::other("offline")),
+            Reply::Failed => Err(IoError::other("offline")),
         };
         ready(result)
     }
@@ -84,7 +85,7 @@ fn stored_credentials(api_base: Option<&str>, lemonade_key: Option<&str>) -> Lem
     LemonadeCredentials {
         api_base: api_base.map(str::to_owned),
         api_key: None,
-        lemonade_key: lemonade_key.and_then(secret),
+        lemonade_key: lemonade_key.map(secret),
     }
 }
 
@@ -103,7 +104,7 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
         functions: Some(vec![DecisionsJson::Text(String::from("f"))]),
         logit_bias: Some(IndexMap::from([(
             String::from("50256"),
-            DecisionsJson::Number(1.into()),
+            DecisionsJson::Number(Number::from(1)),
         )])),
         max_completion_tokens: Some(20),
         max_tokens: Some(10),
@@ -149,7 +150,7 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
             "tool"
         ))]))
     );
-    assert_eq!(config.get("n"), Some(&ConfigJson::Number(2.into())));
+    assert_eq!(config.get("n"), Some(&ConfigJson::Number(Number::from(2))));
     assert_eq!(PROVIDER, "lemonade");
 }
 
@@ -159,7 +160,18 @@ fn get_config_skips_the_unset_fields() {
     assert!(config.is_empty());
     let config = get_config(&LemonadeSettings {
         repeat_penalty: Some(0.5),
-        ..LemonadeSettings::default()
+        functions: None,
+        logit_bias: None,
+        max_completion_tokens: None,
+        max_tokens: None,
+        number: None,
+        presence_penalty: None,
+        stop: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        response_format: None,
+        tools: None,
     })
     .expect("the set field converts");
     assert_eq!(config.len(), 1);
@@ -229,7 +241,7 @@ async fn get_models_keeps_the_placeholder_key_for_an_explicit_base_without_one()
     let credentials = LemonadeCredentials {
         api_base: None,
         api_key: None,
-        lemonade_key: secret("sk-lemon"),
+        lemonade_key: Some(secret("sk-lemon")),
     };
     list(
         &client,
@@ -270,6 +282,29 @@ async fn get_models_reports_a_non_200_status_with_the_body() {
 }
 
 #[tokio::test]
+async fn get_models_refuses_a_status_body_that_is_not_utf8() {
+    let client = FakeClient::raw(500, &[0xff, 0xfe]);
+    let error = list(
+        &client,
+        &stored_credentials(Some("http://host"), None),
+        DeploymentCredentials {
+            api_base: None,
+            api_key: None,
+        },
+    )
+    .await
+    .expect_err("a 500 fails the listing");
+    assert_eq!(
+        error.to_string(),
+        "the 500 Lemonade models answer is not UTF-8 text: invalid utf-8 sequence of 1 bytes from index 0"
+    );
+    assert!(matches!(
+        error,
+        LemonadeError::StatusBody { status: 500, .. }
+    ));
+}
+
+#[tokio::test]
 async fn get_models_reports_a_transport_failure() {
     let client = FakeClient::failing();
     let error = list(
@@ -289,50 +324,63 @@ async fn get_models_reports_a_transport_failure() {
     assert!(matches!(error, LemonadeError::Request { .. }));
 }
 
+fn is_reply(error: &LemonadeError) -> bool {
+    matches!(error, LemonadeError::Reply { .. })
+}
+
+fn is_shape(error: &LemonadeError) -> bool {
+    matches!(error, LemonadeError::Shape)
+}
+
+fn is_entry(error: &LemonadeError) -> bool {
+    matches!(error, LemonadeError::Entry)
+}
+
+#[rstest]
+#[case::not_json("not json", is_reply, "the Lemonade models reply is not valid JSON: ")]
+#[case::empty_list(
+    "[]",
+    is_shape,
+    "the Lemonade models reply is not an object with a data list"
+)]
+#[case::data_object(
+    r#"{"data":{}}"#,
+    is_shape,
+    "the Lemonade models reply is not an object with a data list"
+)]
+#[case::entry_without_id(
+    r#"{"data":[{"name":"no-id"}]}"#,
+    is_entry,
+    "a Lemonade model entry holds no string id"
+)]
+#[case::entry_not_object(
+    r#"{"data":["x"]}"#,
+    is_entry,
+    "a Lemonade model entry holds no string id"
+)]
 #[tokio::test]
-async fn get_models_reports_replies_it_cannot_read() {
-    let cases: [(&str, fn(&LemonadeError) -> bool, &str); 5] = [
-        (
-            "not json",
-            |error| matches!(error, LemonadeError::Reply { .. }),
-            "the Lemonade models reply is not valid JSON: ",
-        ),
-        (
-            "[]",
-            |error| matches!(error, LemonadeError::Shape),
-            "the Lemonade models reply is not an object with a data list",
-        ),
-        (
-            r#"{"data":{}}"#,
-            |error| matches!(error, LemonadeError::Shape),
-            "the Lemonade models reply is not an object with a data list",
-        ),
-        (
-            r#"{"data":[{"name":"no-id"}]}"#,
-            |error| matches!(error, LemonadeError::Entry),
-            "a Lemonade model entry holds no string id",
-        ),
-        (
-            r#"{"data":["x"]}"#,
-            |error| matches!(error, LemonadeError::Entry),
-            "a Lemonade model entry holds no string id",
-        ),
-    ];
-    for (body, variant, message) in cases {
-        let client = FakeClient::answering(200, body);
-        let error = list(
-            &client,
-            &stored_credentials(Some("http://host"), None),
-            DeploymentCredentials {
-                api_base: None,
-                api_key: None,
-            },
-        )
-        .await
-        .expect_err("the reply cannot be read");
-        assert!(variant(&error), "{body}");
-        assert!(error.to_string().starts_with(message), "{body}");
-    }
+async fn get_models_reports_replies_it_cannot_read(
+    #[case] body: &str,
+    #[case] variant: fn(&LemonadeError) -> bool,
+    #[case] message: &str,
+) {
+    let client = FakeClient::answering(200, body);
+    let error = list(
+        &client,
+        &stored_credentials(Some("http://host"), None),
+        DeploymentCredentials {
+            api_base: None,
+            api_key: None,
+        },
+    )
+    .await
+    .expect_err("the reply cannot be read");
+    assert!(variant(&error), "{body}");
+    assert!(error.to_string().starts_with(message), "{body}");
+}
+
+#[tokio::test]
+async fn get_models_lists_nothing_for_a_reply_without_data() {
     let client = FakeClient::answering(200, "{}");
     let names = list(
         &client,

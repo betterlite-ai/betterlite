@@ -61,6 +61,15 @@ pub enum EmbeddingProvider {
     LmStudio,
 }
 
+// ollama's embedding request: its own base and the prompts its input turned into
+#[derive(Debug, Clone)]
+pub struct OllamaRequest {
+    pub api_base: String,
+    pub model: String,
+    pub prompts: Vec<String>,
+    pub optional_params: Object,
+}
+
 // what an embedding arm hands on: the values its provider config reads, or B1440's prepared shared call
 pub enum EmbeddingRequest {
     Compatible {
@@ -71,12 +80,7 @@ pub enum EmbeddingRequest {
         optional_params: Object,
         headers: Option<BTreeMap<String, String>>,
     },
-    Ollama {
-        api_base: String,
-        model: String,
-        prompts: Vec<String>,
-        optional_params: Object,
-    },
+    Ollama(OllamaRequest),
     Shared {
         provider: EmbeddingProvider,
         call: Box<SharedEmbeddingCall>,
@@ -94,12 +98,10 @@ impl fmt::Debug for EmbeddingRequest {
                 .field("provider", provider)
                 .field("api_base", api_base)
                 .finish_non_exhaustive(),
-            Self::Ollama {
-                api_base, model, ..
-            } => formatter
+            Self::Ollama(request) => formatter
                 .debug_struct("Ollama")
-                .field("api_base", api_base)
-                .field("model", model)
+                .field("api_base", &request.api_base)
+                .field("model", &request.model)
                 .finish_non_exhaustive(),
             Self::Shared { provider, call } => formatter
                 .debug_struct("Shared")

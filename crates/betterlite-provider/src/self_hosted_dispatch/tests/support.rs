@@ -20,9 +20,10 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use secrecy::SecretString;
 
-use crate::self_hosted_dispatch::call::{CompletionCall, EmbeddingCall};
-use crate::self_hosted_dispatch::context::{DispatchContext, DispatchSettings, EmbeddingContext};
+use crate::self_hosted_dispatch::call::CompletionCall;
 use crate::self_hosted_dispatch::handler::{ChatCompletionHandler, HandlerError};
+
+use super::section::SectionFixture;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 
@@ -78,36 +79,6 @@ pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 fn user_message() -> Message {
     serde_json::from_str(r#"{"role":"user","content":"hi"}"#).expect("the fixture message parses")
-}
-
-// the config section's values, before the dispatch borrows them for one call
-#[derive(Default)]
-pub(super) struct SectionFixture {
-    pub(super) hosted_vllm_api_base: Option<String>,
-    pub(super) hosted_vllm_api_key: Option<String>,
-    pub(super) ollama_api_base: Option<String>,
-    pub(super) ollama_api_key: Option<String>,
-    pub(super) lemonade_api_key: Option<String>,
-    pub(super) api_base: Option<String>,
-    pub(super) api_key: Option<String>,
-    pub(super) ollama_key: Option<String>,
-    pub(super) lemonade_key: Option<String>,
-}
-
-impl SectionFixture {
-    pub(super) fn settings(&self) -> SectionSettings {
-        SectionSettings {
-            hosted_vllm_api_base: self.hosted_vllm_api_base.clone(),
-            hosted_vllm_api_key: self.hosted_vllm_api_key.as_deref().map(SecretString::from),
-            ollama_api_base: self.ollama_api_base.clone(),
-            ollama_api_key: self.ollama_api_key.as_deref().map(SecretString::from),
-            lemonade_api_key: self.lemonade_api_key.as_deref().map(SecretString::from),
-            api_base: self.api_base.clone(),
-            api_key: self.api_key.as_deref().map(SecretString::from),
-            ollama_key: self.ollama_key.as_deref().map(SecretString::from),
-            lemonade_key: self.lemonade_key.as_deref().map(SecretString::from),
-        }
-    }
 }
 
 pub(super) struct Fixture {
@@ -168,46 +139,6 @@ impl Fixture {
         };
         self
     }
-
-    pub(super) fn chat_context(&self) -> DispatchContext<'_> {
-        DispatchContext {
-            acompletion: self.acompletion,
-            api_base: self.api_base.as_deref(),
-            api_key: self.api_key.as_ref(),
-            custom_llm_provider: &self.provider,
-            headers: self.headers.as_ref(),
-            litellm_params: &self.litellm_params,
-            messages: &self.messages,
-            model: &self.model,
-            optional_params: &self.optional_params,
-            stream: self.stream,
-            timeout: self.timeout,
-            settings: DispatchSettings::from(&self.settings),
-        }
-    }
-
-    pub(super) fn embedding_context(&self) -> EmbeddingContext<'_> {
-        EmbeddingContext {
-            settings: DispatchSettings::from(&self.settings),
-            environment: &self.environment,
-            compatible: &self.compatible,
-            globals: &self.globals,
-        }
-    }
-
-    pub(super) fn embedding_call(&self) -> EmbeddingCall {
-        EmbeddingCall {
-            model: self.model.clone(),
-            input: self.input.clone(),
-            optional_params: self.optional_params.clone(),
-            litellm_params: self.litellm_params.clone(),
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            headers: self.headers.clone(),
-            timeout: self.timeout.unwrap_or(Duration::from_secs(600)),
-            aembedding: self.aembedding,
-        }
-    }
 }
 
 pub(super) struct Recorder {
@@ -253,8 +184,8 @@ impl ChatCompletionHandler for Recorder {
     }
 }
 
-pub(super) fn secret(value: &str) -> Option<SecretString> {
-    Some(SecretString::from(value))
+pub(super) fn secret(value: &str) -> SecretString {
+    SecretString::from(value)
 }
 
 pub(super) fn secret_text(value: Option<&SecretString>) -> Option<String> {

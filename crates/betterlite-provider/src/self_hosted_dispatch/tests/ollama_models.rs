@@ -1,13 +1,14 @@
 use std::fs;
+use std::io::Error as IoError;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_models::ollama_model_metadata::{LiteLlmGlobals, OllamaSettings};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::self_hosted_dispatch::ollama_models::{
-    OllamaModels, TAGS_TIMEOUT, TagsRequest, TagsResponse, TagsTransport, base_model, decode_tags,
-    validate_environment,
+    OllamaModels, TAGS_TIMEOUT, TagsRequest, TagsResponse, TagsTransport, decode_tags,
 };
 
 use super::support::secret;
@@ -47,7 +48,7 @@ impl FakeTransport {
 }
 
 impl TagsTransport for FakeTransport {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn get_tags(&self, request: &TagsRequest) -> Result<TagsResponse, Self::Error> {
         self.requests
@@ -55,7 +56,7 @@ impl TagsTransport for FakeTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.clone());
         if self.failing {
-            return Err(std::io::Error::other("offline"));
+            return Err(IoError::other("offline"));
         }
         Ok(TagsResponse {
             status: self.status,
@@ -74,7 +75,7 @@ fn no_globals() -> LiteLlmGlobals {
 
 fn ollama_settings(api_base: Option<&str>, api_key: Option<&str>) -> OllamaSettings {
     OllamaSettings {
-        api_key: api_key.and_then(secret),
+        api_key: api_key.map(secret),
         api_base: api_base.map(str::to_owned),
     }
 }
@@ -147,21 +148,26 @@ fn listing_falls_back_to_the_catalog_after_a_transport_failure() {
     assert_eq!(names, ["ollama/m1", "ollama/m2"]);
 }
 
-#[test]
-fn listing_falls_back_on_a_non_2xx_status() {
+#[rstest]
+#[case::moved(300)]
+#[case::not_found(404)]
+#[case::server_error(500)]
+fn listing_falls_back_on_a_non_2xx_status(#[case] status: u16) {
+    let transport = FakeTransport::answering(status, r#"{"models":[{"name":"a"}]}"#);
     let catalog = vec![String::from("m1")];
-    for status in [300, 404, 500] {
-        let transport = FakeTransport::answering(status, r#"{"models":[{"name":"a"}]}"#);
-        let names = list(
-            &ollama_settings(None, None),
-            &no_globals(),
-            &catalog,
-            &transport,
-            None,
-            None,
-        );
-        assert_eq!(names, ["ollama/m1"], "{status}");
-    }
+    let names = list(
+        &ollama_settings(None, None),
+        &no_globals(),
+        &catalog,
+        &transport,
+        None,
+        None,
+    );
+    assert_eq!(names, ["ollama/m1"], "{status}");
+}
+
+#[test]
+fn listing_reads_a_2xx_answer() {
     let transport = FakeTransport::answering(204, r#"{"models":[{"name":"a"}]}"#);
     let names = list(
         &ollama_settings(None, None),
@@ -174,21 +180,23 @@ fn listing_falls_back_on_a_non_2xx_status() {
     assert_eq!(names, ["ollama/a"], "a 2xx answer is read");
 }
 
-#[test]
-fn listing_returns_the_empty_list_for_bodies_without_models() {
-    for body in ["{}", r#"{"models":"x"}"#, "[]", "\"text\""] {
-        let transport = FakeTransport::answering(200, body);
-        let catalog = vec![String::from("m1")];
-        let names = list(
-            &ollama_settings(None, None),
-            &no_globals(),
-            &catalog,
-            &transport,
-            None,
-            None,
-        );
-        assert!(names.is_empty(), "{body}");
-    }
+#[rstest]
+#[case::empty_object("{}")]
+#[case::models_not_a_list(r#"{"models":"x"}"#)]
+#[case::bare_list("[]")]
+#[case::bare_text("\"text\"")]
+fn listing_returns_the_empty_list_for_bodies_without_models(#[case] body: &str) {
+    let transport = FakeTransport::answering(200, body);
+    let catalog = vec![String::from("m1")];
+    let names = list(
+        &ollama_settings(None, None),
+        &no_globals(),
+        &catalog,
+        &transport,
+        None,
+        None,
+    );
+    assert!(names.is_empty(), "{body}");
 }
 
 #[test]
@@ -212,6 +220,25 @@ fn tags_url(passed: Option<&str>, section: OllamaSettings, globals: LiteLlmGloba
     transport.requests().remove(0).url
 }
 
+#[rstest]
+#[case::generate("/api/generate")]
+#[case::chat("/api/chat")]
+#[case::embed("/api/embed")]
+#[case::embeddings("/api/embeddings")]
+#[case::show("/api/show")]
+#[case::tags("/api/tags")]
+fn tags_request_strips_a_known_server_suffix(#[case] suffix: &str) {
+    assert_eq!(
+        tags_url(
+            Some(format!("http://host:11434{suffix}").as_str()),
+            ollama_settings(None, None),
+            no_globals()
+        ),
+        "http://host:11434/api/tags",
+        "{suffix}"
+    );
+}
+
 #[test]
 fn tags_request_targets_the_server_base() {
     assert_eq!(
@@ -222,24 +249,6 @@ fn tags_request_targets_the_server_base() {
         ),
         "http://host:11434/api/tags"
     );
-    for suffix in [
-        "/api/generate",
-        "/api/chat",
-        "/api/embed",
-        "/api/embeddings",
-        "/api/show",
-        "/api/tags",
-    ] {
-        assert_eq!(
-            tags_url(
-                Some(format!("http://host:11434{suffix}").as_str()),
-                ollama_settings(None, None),
-                no_globals()
-            ),
-            "http://host:11434/api/tags",
-            "{suffix}"
-        );
-    }
     assert_eq!(
         tags_url(
             Some("http://host:11434/"),
@@ -286,7 +295,7 @@ fn tags_headers(
     globals: LiteLlmGlobals,
 ) -> Vec<(String, String)> {
     let transport = FakeTransport::answering(200, "{}");
-    let key = passed_key.and_then(secret);
+    let key = passed_key.map(secret);
     list(
         &section,
         &globals,
@@ -332,9 +341,9 @@ fn tags_request_carries_the_first_resolved_key() {
             None,
             ollama_settings(None, None),
             LiteLlmGlobals {
-                api_key: secret("sk-litellm"),
-                openai_key: secret("sk-openai"),
-                secret_manager_api_key: secret("sk-secret"),
+                api_key: Some(secret("sk-litellm")),
+                openai_key: Some(secret("sk-openai")),
+                secret_manager_api_key: Some(secret("sk-secret")),
             }
         ),
         expected("sk-litellm")
@@ -346,8 +355,8 @@ fn tags_request_carries_the_first_resolved_key() {
             ollama_settings(None, None),
             LiteLlmGlobals {
                 api_key: None,
-                openai_key: secret("sk-openai"),
-                secret_manager_api_key: secret("sk-secret"),
+                openai_key: Some(secret("sk-openai")),
+                secret_manager_api_key: Some(secret("sk-secret")),
             }
         ),
         expected("sk-openai")
@@ -360,7 +369,7 @@ fn tags_request_carries_the_first_resolved_key() {
             LiteLlmGlobals {
                 api_key: None,
                 openai_key: None,
-                secret_manager_api_key: secret("sk-secret"),
+                secret_manager_api_key: Some(secret("sk-secret")),
             }
         ),
         expected("sk-secret")
@@ -393,16 +402,6 @@ fn tags_request_carries_the_first_resolved_key() {
 #[test]
 fn tags_request_keeps_the_httpx_default_timeout() {
     assert_eq!(TAGS_TIMEOUT, Duration::from_secs(5));
-}
-
-#[test]
-fn validate_environment_adds_nothing() {
-    assert!(validate_environment().is_empty());
-}
-
-#[test]
-fn base_model_returns_the_model() {
-    assert_eq!(base_model("ollama/llama3"), "ollama/llama3");
 }
 
 // every corpus file goes through the tags decoder the fuzzer feeds

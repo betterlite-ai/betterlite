@@ -1,3 +1,5 @@
+use std::string::FromUtf8Error;
+
 use betterlite_openai::compatible_wire::error::CompatibleWireError;
 use thiserror::Error;
 
@@ -15,6 +17,12 @@ pub enum LemonadeError {
     Request { message: String },
     #[error("Failed to fetch models from Lemonade. Status code: {status}, Response: {body}")]
     Status { status: u16, body: String },
+    #[error("the {status} Lemonade models answer is not UTF-8 text: {source}")]
+    StatusBody {
+        status: u16,
+        #[source]
+        source: FromUtf8Error,
+    },
     #[error("the Lemonade models reply is not valid JSON: {source}")]
     Reply {
         #[source]

@@ -90,10 +90,10 @@ where
             message: error.to_string(),
         })?;
     if response.status != 200 {
-        return Err(LemonadeError::Status {
-            status: response.status,
-            body: String::from_utf8_lossy(&response.body).into_owned(),
-        });
+        let status = response.status;
+        let body = String::from_utf8(response.body)
+            .map_err(|source| LemonadeError::StatusBody { status, source })?;
+        return Err(LemonadeError::Status { status, body });
     }
     decode_model_names(&response.body)
 }
@@ -111,7 +111,6 @@ pub fn transform_response(
 }
 
 // LemonadeChatConfig.get_models's reply: the data list's string ids, each prefixed with lemonade/
-#[must_use]
 pub fn decode_model_names(body: &[u8]) -> Result<Vec<String>, LemonadeError> {
     let reply: DecisionsJson =
         serde_json::from_slice(body).map_err(|source| LemonadeError::Reply { source })?;

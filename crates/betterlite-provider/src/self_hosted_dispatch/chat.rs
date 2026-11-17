@@ -31,12 +31,12 @@ pub fn dispatch<R>(
     log: &mut CallLogging<'_, '_>,
 ) -> Option<Result<R, DispatchError>> {
     match tag {
-        ChatConfigTag::HostedVllmChat => Some(complete_hosted_vllm(context, handler, log)),
-        ChatConfigTag::Oobabooga => Some(complete_oobabooga(context, handler)),
-        ChatConfigTag::Ollama => Some(complete_ollama(context, handler)),
-        ChatConfigTag::OllamaChat => Some(complete_ollama_chat(context, handler)),
-        ChatConfigTag::Petals => Some(complete_petals(context, handler)),
-        ChatConfigTag::Triton => Some(complete_triton(context, handler)),
+        ChatConfigTag::HostedVllmChat => Some(logged_hosted_vllm(context, handler, log)),
+        ChatConfigTag::Oobabooga => Some(handler.complete(&oobabooga(context)).map_err(DispatchError::Handler)),
+        ChatConfigTag::Ollama => Some(handler.complete(&ollama(context, SelfHostedConfig::Ollama)).map_err(DispatchError::Handler)),
+        ChatConfigTag::OllamaChat => Some(handler.complete(&ollama(context, SelfHostedConfig::OllamaChat)).map_err(DispatchError::Handler)),
+        ChatConfigTag::Petals => Some(petals(context, handler)),
+        ChatConfigTag::Triton => Some(handler.complete(&triton(context)).map_err(DispatchError::Handler)),
         ChatConfigTag::Vllm => Some(Err(DispatchError::Vllm(ENGINE_ERROR))),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
@@ -83,141 +83,115 @@ fn resolved(context: &DispatchContext<'_>, config: SelfHostedConfig) -> Completi
 }
 
 // _complete_hosted_vllm: get_llm_provider resolves HOSTED_VLLM_API_BASE before the arm's chain, so the environment base wins over litellm.api_base; the key is the passed key, then HOSTED_VLLM_API_KEY
-pub fn complete_hosted_vllm<R>(
+fn hosted_vllm(context: &DispatchContext<'_>) -> CompletionCall {
+    let mut call = resolved(context, SelfHostedConfig::HostedVllm);
+    call.api_base = first_nonempty([
+        context.api_base,
+        context.settings.hosted_vllm_api_base,
+        context.settings.api_base,
+    ]);
+    call.api_key = first_secret([context.api_key, context.settings.hosted_vllm_api_key]);
+    call
+}
+
+// _complete_hosted_vllm runs the handler and then logs the response; the handler's reply has no JSON form at this seam (docs/deviations/B8157.yaml)
+fn logged_hosted_vllm<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError> {
-    let call = CompletionCall {
-        api_base: first_nonempty([
-            context.api_base,
-            context.settings.hosted_vllm_api_base,
-            context.settings.api_base,
-        ]),
-        api_key: first_secret([context.api_key, context.settings.hosted_vllm_api_key]),
-        ..resolved(context, SelfHostedConfig::HostedVllm)
-    };
-    let reply = handler.complete(&call).map_err(DispatchError::Handler)?;
-    // main.py logs the provider response; the handler's reply has no JSON form at this seam (docs/deviations/B8157.yaml)
+    let reply = handler
+        .complete(&hosted_vllm(context))
+        .map_err(DispatchError::Handler)?;
     logging::post(log, context.messages, LogJson::Null)?;
     Ok(reply)
 }
 
 // _complete_oobabooga: the base and the context's own provider string, with no key and no headers
-pub fn complete_oobabooga<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let call = CompletionCall {
-        api_key: None,
-        headers: None,
-        custom_llm_provider: OOBABOOGA_PROVIDER.to_owned(),
-        ..resolved(context, SelfHostedConfig::Oobabooga)
-    };
-    handler.complete(&call).map_err(DispatchError::Handler)
+fn oobabooga(context: &DispatchContext<'_>) -> CompletionCall {
+    let mut call = resolved(context, SelfHostedConfig::Oobabooga);
+    call.api_key = None;
+    call.headers = None;
+    call.custom_llm_provider = OOBABOOGA_PROVIDER.to_owned();
+    call
 }
 
-// _complete_vllm runs inside the process, so B8153's engine error goes back without a handler call
-
-// _complete_ollama: litellm.api_base, the passed base, OLLAMA_API_BASE, then the local server, and the bearer header
-pub fn complete_ollama<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let api_key = first_secret([context.api_key, context.settings.ollama_api_key]);
-    let headers = authorized_headers(context.headers, api_key.as_ref());
-    let call = CompletionCall {
-        api_base: Some(ollama_api_base(context.settings, context.api_base)),
-        api_key,
-        headers,
-        custom_llm_provider: OLLAMA_PROVIDER.to_owned(),
-        ..resolved(context, SelfHostedConfig::Ollama)
+// _complete_ollama and _complete_ollama_chat: litellm.api_base, the passed base, OLLAMA_API_BASE, then the local server, and the chat key chain continues through OLLAMA_API_KEY and litellm.api_key
+fn ollama(context: &DispatchContext<'_>, config: SelfHostedConfig) -> CompletionCall {
+    let api_key = if config == SelfHostedConfig::OllamaChat {
+        first_secret([
+            context.api_key,
+            context.settings.ollama_key,
+            context.settings.ollama_api_key,
+            context.settings.api_key,
+        ])
+    } else {
+        first_secret([context.api_key, context.settings.ollama_api_key])
     };
-    handler.complete(&call).map_err(DispatchError::Handler)
-}
-
-// _complete_ollama_chat: the same base chain, and the key chain continues through OLLAMA_API_KEY and litellm.api_key
-pub fn complete_ollama_chat<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let api_key = first_secret([
-        context.api_key,
-        context.settings.ollama_key,
-        context.settings.ollama_api_key,
-        context.settings.api_key,
-    ]);
-    let headers = authorized_headers(context.headers, api_key.as_ref());
-    let call = CompletionCall {
-        api_base: Some(ollama_api_base(context.settings, context.api_base)),
-        api_key,
-        headers,
-        custom_llm_provider: OLLAMA_CHAT_PROVIDER.to_owned(),
-        ..resolved(context, SelfHostedConfig::OllamaChat)
-    };
-    handler.complete(&call).map_err(DispatchError::Handler)
+    let mut call = resolved(context, config);
+    call.api_base = Some(ollama_api_base(context.settings, context.api_base));
+    call.headers = authorized_headers(context.headers, api_key.as_ref());
+    call.api_key = api_key;
+    call.custom_llm_provider = if config == SelfHostedConfig::OllamaChat {
+        OLLAMA_CHAT_PROVIDER
+    } else {
+        OLLAMA_PROVIDER
+    }
+    .to_owned();
+    call
 }
 
 // _complete_triton: litellm.api_base first, then the passed base, with the context's provider string
-pub fn complete_triton<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let call = CompletionCall {
-        api_base: first_nonempty([context.settings.api_base, context.api_base]),
-        ..resolved(context, SelfHostedConfig::Triton)
-    };
-    handler.complete(&call).map_err(DispatchError::Handler)
+fn triton(context: &DispatchContext<'_>) -> CompletionCall {
+    let mut call = resolved(context, SelfHostedConfig::Triton);
+    call.api_base = first_nonempty([context.settings.api_base, context.api_base]);
+    call
 }
 
 // _complete_petals: the passed base, then litellm.api_base, with stream popped out of optional_params and neither the caller's headers nor a key in the call
-pub fn complete_petals<R>(
+fn petals<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
 ) -> Result<R, DispatchError> {
-    let api_base = first_nonempty([context.api_base, context.settings.api_base]);
     let (stream, optional_params) = take_stream(context.optional_params)?;
-    let call = CompletionCall {
-        api_base: api_base.clone(),
-        stream,
-        optional_params,
-        api_key: None,
-        headers: None,
-        custom_llm_provider: PETALS_PROVIDER.to_owned(),
-        ..resolved(context, SelfHostedConfig::Petals)
-    };
-    match api_base {
-        Some(_) => handler.complete(&call).map_err(DispatchError::Handler),
-        None => Err(DispatchError::Petals(PetalsSetupError::Engine {
+    let Some(api_base) = first_nonempty([context.api_base, context.settings.api_base]) else {
+        return Err(DispatchError::Petals(PetalsSetupError::Engine {
             status_code: ENGINE_STATUS,
             message: ENGINE_MISSING_MESSAGE,
-        })),
-    }
+        }));
+    };
+    let mut call = resolved(context, SelfHostedConfig::Petals);
+    call.api_base = Some(api_base);
+    call.stream = stream;
+    call.optional_params = optional_params;
+    call.custom_llm_provider = PETALS_PROVIDER.to_owned();
+    handler.complete(&call).map_err(DispatchError::Handler)
 }
 
-// _complete_lemonade: get_llm_provider settles the key against the passed base first, so an explicit base without a key sends the default sentinel; otherwise the passed key, litellm.lemonade_key and LEMONADE_API_KEY decide
-pub fn complete_lemonade<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-) -> Result<R, DispatchError> {
-    let key_allowed = context.api_base.is_none()
+// get_llm_provider settles the key against the passed base first, so an explicit base without a key sends the default sentinel; otherwise the passed key, litellm.lemonade_key and LEMONADE_API_KEY decide
+fn lemonade_key(context: &DispatchContext<'_>) -> SecretString {
+    let allowed = context.api_base.is_none()
         || context
             .api_key
             .is_some_and(|key| !key.expose_secret().is_empty());
-    let api_key = if key_allowed {
+    let resolved = if allowed {
         first_secret([
             context.api_key,
             context.settings.lemonade_key,
             context.settings.lemonade_api_key,
         ])
-        .unwrap_or_else(|| SecretString::from(LEMONADE_DEFAULT_API_KEY))
     } else {
-        SecretString::from(LEMONADE_DEFAULT_API_KEY)
+        None
     };
-    let call = CompletionCall {
-        api_key: Some(api_key),
-        ..resolved(context, SelfHostedConfig::Lemonade)
-    };
+    resolved.unwrap_or_else(|| SecretString::from(LEMONADE_DEFAULT_API_KEY))
+}
+
+pub fn complete_lemonade<R>(
+    context: &DispatchContext<'_>,
+    handler: &dyn ChatCompletionHandler<Reply = R>,
+) -> Result<R, DispatchError> {
+    let mut call = resolved(context, SelfHostedConfig::Lemonade);
+    call.api_key = Some(lemonade_key(context));
     handler.complete(&call).map_err(DispatchError::Handler)
 }
 

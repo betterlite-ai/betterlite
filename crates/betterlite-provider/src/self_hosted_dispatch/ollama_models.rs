@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::time::Duration;
 
@@ -18,7 +18,7 @@ const AUTHORIZATION: &str = "Authorization";
 // httpx.get's default timeout, which OllamaModelInfo.get_models relies on by passing none
 pub const TAGS_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct TagsRequest {
     pub url: String,
     pub headers: Vec<(&'static str, SecretString)>,
@@ -53,57 +53,40 @@ impl<Transport: TagsTransport> OllamaModels<'_, Transport> {
         api_base: Option<&str>,
         api_key: Option<&SecretString>,
     ) -> Vec<String> {
-        let request = self.tags_request(api_base, api_key);
-        let listed = match self.transport.get_tags(&request) {
-            Ok(response) if (200..300).contains(&response.status) => decode_tags(&response.body),
-            Ok(_) | Err(_) => None,
-        };
-        match listed {
-            Some(names) => names.into_iter().collect(),
-            None => {
-                tracing::warn!(
-                    "Error retrieving ollama tag endpoint, falling back to the catalog's ollama models"
-                );
-                self.catalog
-                    .iter()
-                    .map(|model| format!("{OLLAMA_PREFIX}{model}"))
-                    .collect()
-            }
-        }
-    }
-
-    // a base alone drops every key, so only a call without one or with its own key resolves credentials
-    fn tags_request(&self, api_base: Option<&str>, api_key: Option<&SecretString>) -> TagsRequest {
-        let resolved =
+        // a base alone drops every key, so only a call without one or with its own key resolves credentials
+        let key =
             if api_base.is_none() || api_key.is_some_and(|key| !key.expose_secret().is_empty()) {
                 selected_key(self.settings, self.globals, api_key)
             } else {
                 None
             };
-        let headers = resolved.map_or_else(Vec::new, |key| {
-            vec![(
-                AUTHORIZATION,
-                SecretString::from(format!("Bearer {}", key.expose_secret())),
-            )]
-        });
-        TagsRequest {
+        let request = TagsRequest {
             url: format!("{}{TAGS_PATH}", server_api_base(self.settings, api_base)),
-            headers,
+            headers: key.map_or_else(Vec::new, |key| {
+                vec![(
+                    AUTHORIZATION,
+                    SecretString::from(format!("Bearer {}", key.expose_secret())),
+                )]
+            }),
             timeout: TAGS_TIMEOUT,
+        };
+        match self.transport.get_tags(&request) {
+            Ok(response) if (200..300).contains(&response.status) => decode_tags(&response.body),
+            Ok(_) | Err(_) => None,
         }
+        .unwrap_or_else(|| self.catalog_models())
     }
-}
 
-// validate_environment is a no-op that returns an empty map
-#[must_use]
-pub fn validate_environment() -> BTreeMap<String, String> {
-    BTreeMap::new()
-}
-
-// get_base_model returns the model unchanged
-#[must_use]
-pub fn base_model<'model>(model: &'model str) -> &'model str {
-    model
+    // a failed or unreadable reply leaves the catalog as the only list
+    fn catalog_models(&self) -> Vec<String> {
+        tracing::warn!(
+            "Error retrieving ollama tag endpoint, falling back to the catalog's ollama models"
+        );
+        self.catalog
+            .iter()
+            .map(|model| format!("{OLLAMA_PREFIX}{model}"))
+            .collect()
+    }
 }
 
 // a dict with a models list or a bare list gives the entries; a body that is not JSON falls back
@@ -123,12 +106,13 @@ pub fn decode_tags(body: &[u8]) -> Option<Vec<String>> {
         let Json::Object(fields) = entry else {
             continue;
         };
-        // Python's `entry.get("name") or entry.get("model")`: an empty or falsy name falls through
-        let name = fields
-            .get(NAME_KEY)
-            .filter(|value| value.is_truthy())
-            .or_else(|| fields.get(MODEL_KEY));
-        if let Some(Json::Text(name)) = name {
+        // Python's `entry.get("name") or entry.get("model")`: an empty name falls through to the model
+        let name = match (fields.get(NAME_KEY), fields.get(MODEL_KEY)) {
+            (Some(Json::Text(name)), _) if !name.is_empty() => Some(name.as_str()),
+            (_, Some(Json::Text(name))) => Some(name.as_str()),
+            _ => None,
+        };
+        if let Some(name) = name {
             names.insert(prefixed(name));
         }
     }

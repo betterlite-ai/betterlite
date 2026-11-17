@@ -1,4 +1,5 @@
-use betterlite_config::loader::EnvironmentLookup;
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json as DecisionsJson;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::compatible_embedding::Mode;
@@ -8,7 +9,7 @@ use secrecy::SecretString;
 
 use crate::compatible_embedding_call::SharedEmbedding;
 
-use super::call::{EmbeddingCall, EmbeddingProvider, EmbeddingRequest};
+use super::call::{EmbeddingCall, EmbeddingProvider, EmbeddingRequest, OllamaRequest};
 use super::context::{EmbeddingContext, first_nonempty, first_secret, ollama_api_base};
 use super::error::DispatchError;
 use super::logging;
@@ -18,6 +19,8 @@ const XINFERENCE_API_KEY: &str = "XINFERENCE_API_KEY";
 const XINFERENCE_DEFAULT_API_BASE: &str = "http://127.0.0.1:9997/v1";
 const XINFERENCE_DEFAULT_KEY: &str = "stub-xinference-key";
 
+type Request = Result<EmbeddingRequest, DispatchError>;
+
 // main.py's embedding arms: five resolve base and key, llamafile/lm_studio go through B1440; the skip keeps the exhaustive no-op arm within clippy's 40-line limit
 #[rustfmt::skip]
 #[must_use]
@@ -25,15 +28,15 @@ pub fn dispatch(
     provider: ProviderId,
     call: &EmbeddingCall,
     context: &EmbeddingContext<'_>,
-) -> Option<Result<EmbeddingRequest, DispatchError>> {
+) -> Option<Request> {
     match provider {
         ProviderId::HostedVllm => Some(Ok(hosted_vllm(call, context))),
         ProviderId::Triton => Some(triton(call)),
         ProviderId::Oobabooga => Some(Ok(oobabooga(call))),
         ProviderId::Ollama => Some(ollama(call, context)),
-        ProviderId::Xinference => Some(xinference(call, context)),
-        ProviderId::Llamafile => Some(shared(EmbeddingProvider::Llamafile, call, context)),
-        ProviderId::LmStudio => Some(shared(EmbeddingProvider::LmStudio, call, context)),
+        ProviderId::Xinference => Some(Ok(xinference(call, context))),
+        ProviderId::Llamafile => Some(EmbeddingProvider::Llamafile.shared(call, context)),
+        ProviderId::LmStudio => Some(EmbeddingProvider::LmStudio.shared(call, context)),
         ProviderId::Openai | ProviderId::Chatgpt | ProviderId::OpenaiLike | ProviderId::JinaAi | ProviderId::Xai | ProviderId::Zai | ProviderId::CustomOpenai | ProviderId::TextCompletionOpenai | ProviderId::Cohere | ProviderId::CohereChat | ProviderId::Clarifai | ProviderId::Anthropic
         | ProviderId::AnthropicText | ProviderId::Bytez | ProviderId::Replicate | ProviderId::Reducto | ProviderId::AwsTextract | ProviderId::Runwayml | ProviderId::AwsPolly | ProviderId::Transcribe | ProviderId::Huggingface | ProviderId::TogetherAi | ProviderId::Openrouter | ProviderId::Datarobot
         | ProviderId::VertexAi | ProviderId::VertexAiBeta | ProviderId::Gemini | ProviderId::Ai21 | ProviderId::Baseten | ProviderId::BlackForestLabs | ProviderId::Azure | ProviderId::AzureText | ProviderId::AzureAi | ProviderId::Sagemaker | ProviderId::SagemakerChat | ProviderId::SagemakerNova
@@ -51,109 +54,177 @@ pub fn dispatch(
     }
 }
 
-// hosted_vllm: the passed base, then HOSTED_VLLM_API_BASE, then litellm.api_base; the key falls back to the env
-fn hosted_vllm(call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> EmbeddingRequest {
-    EmbeddingRequest::Compatible {
-        provider: EmbeddingProvider::HostedVllm,
-        api_base: first_nonempty([
+// the compatible request fields every arm starts from, before it overrides its own resolution
+struct CompatibleDraft {
+    api_base: Option<String>,
+    api_key: Option<SecretString>,
+    headers: Option<BTreeMap<String, String>>,
+}
+
+impl CompatibleDraft {
+    fn from_call(call: &EmbeddingCall) -> Self {
+        Self {
+            api_base: call.api_base.clone(),
+            api_key: call.api_key.clone(),
+            headers: call.headers.clone(),
+        }
+    }
+
+    fn request(self, provider: EmbeddingProvider, call: &EmbeddingCall) -> EmbeddingRequest {
+        EmbeddingRequest::Compatible {
+            provider,
+            api_base: self.api_base,
+            api_key: self.api_key,
+            input: call.input.clone(),
+            optional_params: call.optional_params.clone(),
+            headers: self.headers,
+        }
+    }
+
+    fn hosted_vllm(mut self, call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> Self {
+        self.api_base = first_nonempty([
             call.api_base.as_deref(),
             context.settings.hosted_vllm_api_base,
             context.settings.api_base,
-        ]),
-        api_key: first_secret([call.api_key.as_ref(), context.settings.hosted_vllm_api_key]),
-        input: call.input.clone(),
-        optional_params: call.optional_params.clone(),
-        headers: call.headers.clone(),
+        ]);
+        self.api_key = first_secret([call.api_key.as_ref(), context.settings.hosted_vllm_api_key]);
+        self
     }
-}
 
-// triton: the passed base is required and the passed key goes through with no headers of its own
-fn triton(call: &EmbeddingCall) -> Result<EmbeddingRequest, DispatchError> {
-    let Some(api_base) = call.api_base.clone() else {
-        return Err(DispatchError::MissingTritonApiBase);
-    };
-    Ok(EmbeddingRequest::Compatible {
-        provider: EmbeddingProvider::Triton,
-        api_base: Some(api_base),
-        api_key: call.api_key.clone(),
-        input: call.input.clone(),
-        optional_params: call.optional_params.clone(),
-        headers: None,
-    })
-}
-
-// oobabooga: no base or key fallback at all, and the caller's headers never reach this arm
-fn oobabooga(call: &EmbeddingCall) -> EmbeddingRequest {
-    EmbeddingRequest::Compatible {
-        provider: EmbeddingProvider::Oobabooga,
-        api_base: call.api_base.clone(),
-        api_key: call.api_key.clone(),
-        input: call.input.clone(),
-        optional_params: call.optional_params.clone(),
-        headers: None,
-    }
-}
-
-// ollama: the chat base chain, prompts made of strings only, and no key on the request
-fn ollama(
-    call: &EmbeddingCall,
-    context: &EmbeddingContext<'_>,
-) -> Result<EmbeddingRequest, DispatchError> {
-    // all() over an empty token list is true, so Python sends it as an empty prompt list
-    let prompts = match &call.input {
-        EmbeddingInput::Text(text) => vec![text.clone()],
-        EmbeddingInput::Texts(texts) => texts.clone(),
-        EmbeddingInput::Tokens(tokens) if tokens.is_empty() => Vec::new(),
-        EmbeddingInput::TokenLists(lists) if lists.is_empty() => Vec::new(),
-        EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => {
-            return Err(DispatchError::OllamaEmbeddingInput);
+    fn triton(mut self) -> Result<Self, DispatchError> {
+        if self.api_base.is_none() {
+            return Err(DispatchError::MissingTritonApiBase);
         }
-    };
-    Ok(EmbeddingRequest::Ollama {
-        api_base: ollama_api_base(context.settings, call.api_base.as_deref()),
-        model: call.model.clone(),
-        prompts,
-        optional_params: call.optional_params.clone(),
-    })
+        self.headers = None;
+        Ok(self)
+    }
+
+    fn oobabooga(mut self) -> Self {
+        self.headers = None;
+        self
+    }
+
+    fn xinference(mut self, call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> Self {
+        let (api_base, api_key) = xinference_values(call, context);
+        self.api_base = api_base;
+        self.api_key = api_key;
+        self.headers = None;
+        self
+    }
 }
 
-// xinference: the passed values, litellm's globals, then the environment, then the local stub base and key
-fn xinference(
+// main.py resolves each arm's base, key and headers before it hands the values to the provider config
+fn hosted_vllm(call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> EmbeddingRequest {
+    CompatibleDraft::from_call(call)
+        .hosted_vllm(call, context)
+        .request(EmbeddingProvider::HostedVllm, call)
+}
+
+fn triton(call: &EmbeddingCall) -> Request {
+    Ok(CompatibleDraft::from_call(call)
+        .triton()?
+        .request(EmbeddingProvider::Triton, call))
+}
+
+fn oobabooga(call: &EmbeddingCall) -> EmbeddingRequest {
+    CompatibleDraft::from_call(call)
+        .oobabooga()
+        .request(EmbeddingProvider::Oobabooga, call)
+}
+
+fn xinference(call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> EmbeddingRequest {
+    CompatibleDraft::from_call(call)
+        .xinference(call, context)
+        .request(EmbeddingProvider::Xinference, call)
+}
+
+fn xinference_values(
     call: &EmbeddingCall,
     context: &EmbeddingContext<'_>,
-) -> Result<EmbeddingRequest, DispatchError> {
+) -> (Option<String>, Option<SecretString>) {
     let api_key = first_secret([call.api_key.as_ref(), context.settings.api_key])
         .or_else(|| {
-            environment_value(context.environment, XINFERENCE_API_KEY).map(SecretString::from)
+            let found = context
+                .environment
+                .lookup(XINFERENCE_API_KEY)
+                .filter(|value| !value.is_empty());
+            found.map(SecretString::from)
         })
         .unwrap_or_else(|| SecretString::from(XINFERENCE_DEFAULT_KEY));
     let api_base = first_nonempty([call.api_base.as_deref(), context.settings.api_base])
-        .or_else(|| environment_value(context.environment, XINFERENCE_API_BASE))
+        .or_else(|| {
+            context
+                .environment
+                .lookup(XINFERENCE_API_BASE)
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or_else(|| String::from(XINFERENCE_DEFAULT_API_BASE));
-    Ok(EmbeddingRequest::Compatible {
-        provider: EmbeddingProvider::Xinference,
-        api_base: Some(api_base),
-        api_key: Some(api_key),
-        input: call.input.clone(),
-        optional_params: call.optional_params.clone(),
-        headers: None,
-    })
+    (Some(api_base), Some(api_key))
 }
 
-// llamafile and lm_studio hand their resolution and request to B1440's shared openai_like embedding call
-fn shared(
-    provider: EmbeddingProvider,
-    call: &EmbeddingCall,
-    context: &EmbeddingContext<'_>,
-) -> Result<EmbeddingRequest, DispatchError> {
-    let input: DecisionsJson = logging::convert(&call.input)?;
-    let optional_params: IndexMap<String, DecisionsJson> = logging::convert(&call.optional_params)?;
-    let embedding = SharedEmbedding {
+// ollama's arm: the chat base chain, prompts made of strings only, and no key on the request
+fn ollama(call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> Request {
+    let api_base = ollama_api_base(context.settings, call.api_base.as_deref());
+    Ok(EmbeddingRequest::Ollama(OllamaRequest {
+        api_base,
+        model: call.model.clone(),
+        prompts: prompts(&call.input)?,
+        optional_params: call.optional_params.clone(),
+    }))
+}
+
+// all() over an empty token list is true, so Python sends it as an empty prompt list
+fn prompts(input: &EmbeddingInput) -> Result<Vec<String>, DispatchError> {
+    match input {
+        EmbeddingInput::Text(text) => Ok(vec![text.clone()]),
+        EmbeddingInput::Texts(texts) => Ok(texts.clone()),
+        EmbeddingInput::Tokens(tokens) if tokens.is_empty() => Ok(Vec::new()),
+        EmbeddingInput::TokenLists(lists) if lists.is_empty() => Ok(Vec::new()),
+        EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => {
+            Err(DispatchError::OllamaEmbeddingInput)
+        }
+    }
+}
+
+// the json forms B1440's shared call reads, kept alive while its handler call is prepared
+struct SharedInputs {
+    input: DecisionsJson,
+    optional_params: IndexMap<String, DecisionsJson>,
+}
+
+impl SharedInputs {
+    fn convert(call: &EmbeddingCall) -> Result<Self, DispatchError> {
+        Ok(Self {
+            input: logging::convert(&call.input)?,
+            optional_params: logging::convert(&call.optional_params)?,
+        })
+    }
+}
+
+impl EmbeddingProvider {
+    // llamafile and lm_studio hand their resolution and request to B1440's shared openai_like embedding call
+    fn shared(self, call: &EmbeddingCall, context: &EmbeddingContext<'_>) -> Request {
+        let inputs = SharedInputs::convert(call)?;
+        let view = shared_view(call, context, &inputs.input, &inputs.optional_params);
+        Ok(EmbeddingRequest::Shared {
+            provider: self,
+            call: Box::new(view.handler_call()),
+        })
+    }
+}
+
+fn shared_view<'source>(
+    call: &'source EmbeddingCall,
+    context: &'source EmbeddingContext<'source>,
+    input: &'source DecisionsJson,
+    optional_params: &'source IndexMap<String, DecisionsJson>,
+) -> SharedEmbedding<'source> {
+    SharedEmbedding {
         model: &call.model,
-        input: &input,
+        input,
         api_base: call.api_base.as_deref(),
         api_key: call.api_key.as_ref(),
-        optional_params: &optional_params,
+        optional_params,
         headers: call.headers.as_ref(),
         custom_endpoint: false,
         timeout: call.timeout,
@@ -164,13 +235,5 @@ fn shared(
         },
         globals: context.globals,
         settings: context.compatible,
-    };
-    Ok(EmbeddingRequest::Shared {
-        provider,
-        call: Box::new(embedding.handler_call()),
-    })
-}
-
-fn environment_value(environment: &dyn EnvironmentLookup, name: &str) -> Option<String> {
-    environment.lookup(name).filter(|value| !value.is_empty())
+    }
 }
