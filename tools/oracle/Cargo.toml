@@ -28,6 +28,7 @@ betterlite-oracle-helper-api = { path = "helper-api" }
 betterlite-oracle-runner = { path = "runner" }
 betterlite-oracle-tokenizer = { path = "src/helpers/tokenizer" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
+betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../crates/betterlite-provider" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }

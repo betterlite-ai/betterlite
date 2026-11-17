@@ -1,0 +1,113 @@
+kind: probe
+name: adaptive-selection-no-eligible-default
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["fast", "top"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+          - {"model": "top", "quality_tier": 3, "strengths": []}
+        costs:
+          - {"model": "fast", "amount": "0"}
+          - {"model": "top", "amount": "0"}
+        min_quality_tier: 3
+        samples: ["0.5"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["fast", "default"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+        min_quality_tier: 2
+        samples: ["0.1"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["fast", "default"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+        costs:
+          - {"model": "fast", "amount": "0"}
+          - {"model": "default", "amount": "0"}
+        weights: {"quality": "1", "cost": "0"}
+        samples: ["0.2", "0.9"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["a", "a", "b"]
+        samples: ["0.1", "0.9", "0.2"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["plain"]
+        min_quality_tier: 3
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick_model
+        available_models: ["fast"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+        min_quality_tier: -1
+        samples: ["0.3"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pre_routing
+        available_models: ["fast"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+        messages:
+          - {"role": "user", "content": "Write a Python function that reverses a list."}
+        metadata: {"min_quality_tier": 3}
+        metadata_present: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pre_routing
+        available_models: ["fast", "top"]
+        preferences:
+          - {"model": "fast", "quality_tier": 1, "strengths": []}
+          - {"model": "top", "quality_tier": 3, "strengths": []}
+        costs:
+          - {"model": "fast", "amount": "0"}
+          - {"model": "top", "amount": "0"}
+        headers: {"x-litellm-min-quality-tier": "2"}
+        metadata: {"keep": "yes"}
+        metadata_present: true
+        messages:
+          - {"role": "user", "content": "Write a Python function that reverses a list."}
+        samples: ["0.9"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pre_routing
+        available_models: ["solo"]
+        messages:
+          - {"role": "user", "content": "Hello."}
+        samples: ["0.4"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pre_routing
+        available_models: ["solo"]
+        metadata: null
+        metadata_present: true
+        samples: ["0.4"]
+compare: {ignore: []}

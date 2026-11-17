@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret;
 
 use super::cases::{Run, call, params, request, run_with_source, text};
@@ -24,7 +25,7 @@ fn params_for(access: &str, secret_key: &str) -> ParamMap {
     ])
 }
 
-fn identity_run(access: &str, secret_key: &str, source: &Source) -> Run {
+fn identity_run(access: &str, secret_key: &str, source: &Source, redactor: &Redactor) -> Run {
     let documented = request(
         "arn:aws:bedrock:us-east-1:123456789012:rerank-model/test",
         "q",
@@ -35,6 +36,7 @@ fn identity_run(access: &str, secret_key: &str, source: &Source) -> Run {
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
         source,
+        redactor,
     )
 }
 
@@ -50,8 +52,9 @@ fn secrets_in(text: &str, secrets: &[&str]) -> Vec<String> {
 fn rerank_credential_identity_isolation() {
     let first_source = Source::with(FIRST_ACCESS, FIRST_SECRET);
     let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
-    let first = identity_run(FIRST_ACCESS, FIRST_SECRET, &first_source);
-    let second = identity_run(SECOND_ACCESS, SECOND_SECRET, &second_source);
+    let redactor = super::fixture::redactor();
+    let first = identity_run(FIRST_ACCESS, FIRST_SECRET, &first_source, &redactor);
+    let second = identity_run(SECOND_ACCESS, SECOND_SECRET, &second_source, &redactor);
     let first_headers = first.headers();
     let second_headers = second.headers();
     let first_authorization = first_headers.get("Authorization").expect("signed");
@@ -101,6 +104,7 @@ fn rerank_secret_safe_failure() {
         Reply::status(403, &[("x-amzn-errortype", "AccessDenied")], "denied"),
         Some(ClientKind::Sync),
         &source,
+        &super::fixture::redactor(),
     );
     let error = run.result.as_ref().unwrap_err();
     let request_debug = format!("{:?}", run.posted());

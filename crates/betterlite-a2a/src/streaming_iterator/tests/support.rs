@@ -122,5 +122,5 @@ pub(super) fn counter() -> Counter {
         Arc::clone(&service),
         false,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, catalog, settings)
 }
