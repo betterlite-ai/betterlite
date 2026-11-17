@@ -186,8 +186,8 @@ fn the_score_is_the_weighted_sum(
 #[test]
 fn the_weighted_score_fuses_the_quality_product() {
     let fused = score(0.75, 0.25, weights(0.7, 0.3)).unwrap();
-    let quality_term = 0.7_f64 * 0.75;
-    let economy_term = 0.3_f64 * 0.25;
+    let quality_term = 0.7_f64 * 0.75_f64;
+    let economy_term = 0.3_f64 * 0.25_f64;
     let separate = quality_term + economy_term;
     assert_eq!(fused.to_bits(), 0.6_f64.to_bits());
     assert_ne!(fused.to_bits(), separate.to_bits());
@@ -321,10 +321,10 @@ fn a_non_positive_shape_is_refused_by_the_beta_draw() {
             assert_eq!(alpha.to_bits(), 0.0_f64.to_bits());
             assert_eq!(beta.to_bits(), 5.0_f64.to_bits());
         }
-        other @ BanditMathError::NonFinite { .. }
-        | other @ BanditMathError::UnsupportedTier { .. }
-        | other @ BanditMathError::NoModels
-        | other @ BanditMathError::SamplesExhausted => {
+        other @ (BanditMathError::NonFinite { .. }
+        | BanditMathError::UnsupportedTier { .. }
+        | BanditMathError::NoModels
+        | BanditMathError::SamplesExhausted) => {
             panic!("expected a refused Beta draw, got {other:?}");
         }
     }

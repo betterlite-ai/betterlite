@@ -195,10 +195,10 @@ fn adaptive_selection_boundaries(
                         format!("AdaptiveRouter[probe]: no models meet min_quality_tier={tier}")
                     );
                 }
-                other @ AdaptiveSelectionError::Classification(_)
-                | other @ AdaptiveSelectionError::Bandit(_)
-                | other @ AdaptiveSelectionError::CostNormalization
-                | other @ AdaptiveSelectionError::MissingCell { .. } => {
+                other @ (AdaptiveSelectionError::Classification(_)
+                | AdaptiveSelectionError::Bandit(_)
+                | AdaptiveSelectionError::CostNormalization
+                | AdaptiveSelectionError::MissingCell { .. }) => {
                     panic!("expected a refused tier, got {other:?}");
                 }
             }
@@ -466,11 +466,11 @@ fn an_unsupported_preference_tier_is_refused() {
         AdaptiveSelectionError::Bandit(BanditMathError::UnsupportedTier { tier }) => {
             assert_eq!(tier, 4);
         }
-        other @ AdaptiveSelectionError::Classification(_)
-        | other @ AdaptiveSelectionError::Bandit(_)
-        | other @ AdaptiveSelectionError::CostNormalization
-        | other @ AdaptiveSelectionError::NoEligibleModels { .. }
-        | other @ AdaptiveSelectionError::MissingCell { .. } => {
+        other @ (AdaptiveSelectionError::Classification(_)
+        | AdaptiveSelectionError::Bandit(_)
+        | AdaptiveSelectionError::CostNormalization
+        | AdaptiveSelectionError::NoEligibleModels { .. }
+        | AdaptiveSelectionError::MissingCell { .. }) => {
             panic!("expected an unsupported tier, got {other:?}");
         }
     }
@@ -494,11 +494,11 @@ fn a_non_finite_scripted_sample_is_refused() {
         AdaptiveSelectionError::Bandit(BanditMathError::NonFinite { field }) => {
             assert_eq!(field, "scripted sample");
         }
-        other @ AdaptiveSelectionError::Classification(_)
-        | other @ AdaptiveSelectionError::Bandit(_)
-        | other @ AdaptiveSelectionError::CostNormalization
-        | other @ AdaptiveSelectionError::NoEligibleModels { .. }
-        | other @ AdaptiveSelectionError::MissingCell { .. } => {
+        other @ (AdaptiveSelectionError::Classification(_)
+        | AdaptiveSelectionError::Bandit(_)
+        | AdaptiveSelectionError::CostNormalization
+        | AdaptiveSelectionError::NoEligibleModels { .. }
+        | AdaptiveSelectionError::MissingCell { .. }) => {
             panic!("expected a refused sample, got {other:?}");
         }
     }
