@@ -89,13 +89,7 @@ fn result_header(index: usize, result: &VectorStoreSearchResult) -> String {
 }
 
 // all chunks stay in input order: repeated results are kept, as OpenAI's native file_search surfaces every chunk
-pub fn search_results_for_include(
-    results: &[VectorStoreSearchResult],
-) -> Result<Vec<SearchResultRecord>, FileSearchToolsError> {
-    results.iter().map(include_record).collect()
-}
-
-fn include_record(
+pub(super) fn include_record(
     result: &VectorStoreSearchResult,
 ) -> Result<SearchResultRecord, FileSearchToolsError> {
     let attributes = match result.attributes.as_ref() {

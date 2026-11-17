@@ -32,7 +32,6 @@ use super::preparation::{
 };
 use super::results::{
     NO_DEFAULT, NO_RESULTS, field, format_results_as_tool_output, joined_content_text,
-    search_results_for_include,
 };
 use super::synthesis::{
     OriginalModel, OriginalResponse, OutputItems, SynthesizedResponse, synthesize_response,
@@ -74,8 +73,6 @@ fn names(values: &[&str]) -> Vec<String> {
 fn seconds(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture clock is a decimal")
 }
-
-// 1. Tool conversion
 
 #[test]
 fn tool_schema() {
@@ -187,8 +184,6 @@ fn unknown_ids_type() {
     }
 }
 
-// 2. Result formatting
-
 #[test]
 fn result_rendering() {
     field_lookup();
@@ -241,40 +236,32 @@ fn formatted_output() {
     );
 }
 
+fn included(results: &[VectorStoreSearchResult]) -> Json {
+    let output = build_file_search_call_output(CALL_ID, &names(&["q1"]), Some(results), true)
+        .expect("the call output builds");
+    wire(&output.search_results).expect("the include records are JSON")
+}
+
 fn include_records() {
-    let repeated: Json = wire(&search_results_for_include(&[report(), report()]).expect("include"))
-        .expect("the include records are JSON");
-    assert_eq!(repeated, json(&format!("[{RECORD_JSON},{RECORD_JSON}]")));
-    let defaults: Json =
-        wire(&search_results_for_include(&[result(r#"{"attributes":null}"#)]).expect("include"))
-            .expect("the include record is JSON");
     assert_eq!(
-        defaults,
+        included(&[report(), report()]),
+        json(&format!("[{RECORD_JSON},{RECORD_JSON}]"))
+    );
+    assert_eq!(
+        included(&[result(r#"{"attributes":null}"#)]),
         json(r#"[{"file_id":"","filename":"","score":null,"text":"","attributes":{}}]"#)
     );
-    let attributes: Json = wire(
-        &search_results_for_include(&[result(r#"{"file_id":"f","attributes":{"key":"value"}}"#)])
-            .expect("include"),
-    )
-    .expect("the include record is JSON");
     assert_eq!(
-        attributes,
+        included(&[result(r#"{"file_id":"f","attributes":{"key":"value"}}"#)]),
         json(
             r#"[{"file_id":"f","filename":"","score":null,"text":"","attributes":{"key":"value"}}]"#
         )
     );
-    let empty_attributes: Json = wire(
-        &search_results_for_include(&[result(r#"{"file_id":"f","attributes":{}}"#)])
-            .expect("include"),
-    )
-    .expect("the include record is JSON");
     assert_eq!(
-        empty_attributes,
+        included(&[result(r#"{"file_id":"f","attributes":{}}"#)]),
         json(r#"[{"file_id":"f","filename":"","score":null,"text":"","attributes":{}}]"#)
     );
 }
-
-// 3. Output items
 
 #[test]
 fn output_items() {
@@ -338,8 +325,6 @@ fn message_annotations() {
         )
     );
 }
-
-// 4. Response synthesis
 
 fn extracted(output: &str) -> String {
     let items: Vec<ResponseOutputItem> = serde_json::from_str(output).expect("the output decodes");
@@ -415,8 +400,7 @@ fn response_synthesis() {
     synthesized_output();
     generated_defaults();
     null_model();
-    hidden_merge_sums();
-    hidden_merge_copies();
+    hidden_merge();
     clock_overflow();
     cost_overflow();
 }
@@ -628,60 +612,56 @@ fn null_model() {
     assert_eq!(synthesized.response.created_at, 0);
 }
 
-fn hidden_merge_sums() {
-    assert_eq!(
-        merged_hidden(
-            Some(r#"{"response_cost":2.5}"#),
-            Some(r#"{"response_cost":1.25}"#)
-        )
-        .expect("the hidden params merge"),
-        fields(r#"{"response_cost":3.75}"#)
-    );
-    assert_eq!(
-        merged_hidden(Some(r#"{"other":true}"#), Some(r#"{"response_cost":1.25}"#))
-            .expect("the hidden params merge"),
-        fields(r#"{"other":true,"response_cost":1.25}"#)
-    );
+const HIDDEN_MERGES: [(Option<&str>, Option<&str>, &str); 7] = [
+    (
+        Some(r#"{"response_cost":2.5}"#),
+        Some(r#"{"response_cost":1.25}"#),
+        r#"{"response_cost":3.75}"#,
+    ),
+    (
+        Some(r#"{"other":true}"#),
+        Some(r#"{"response_cost":1.25}"#),
+        r#"{"other":true,"response_cost":1.25}"#,
+    ),
     // a decimal sum is exact here where Python's float sum of 0.1 and 0.2 is 0.30000000000000004
-    assert_eq!(
-        merged_hidden(
-            Some(r#"{"response_cost":0.1}"#),
-            Some(r#"{"response_cost":0.2}"#)
-        )
-        .expect("the decimal sum is exact"),
-        fields(r#"{"response_cost":0.3}"#)
-    );
-    assert_eq!(
-        merged_hidden(
-            Some(r#"{"response_cost":null}"#),
-            Some(r#"{"response_cost":1.25}"#)
-        )
-        .expect("a null current cost counts as zero"),
-        fields(r#"{"response_cost":1.25}"#)
-    );
-}
+    (
+        Some(r#"{"response_cost":0.1}"#),
+        Some(r#"{"response_cost":0.2}"#),
+        r#"{"response_cost":0.3}"#,
+    ),
+    (
+        Some(r#"{"response_cost":null}"#),
+        Some(r#"{"response_cost":1.25}"#),
+        r#"{"response_cost":1.25}"#,
+    ),
+    (
+        Some(r#"{"response_cost":2.5}"#),
+        None,
+        r#"{"response_cost":2.5}"#,
+    ),
+    (
+        Some(r#"{"response_cost":2.5}"#),
+        Some(r#"{}"#),
+        r#"{"response_cost":2.5}"#,
+    ),
+    (
+        Some(r#"{"response_cost":2.5}"#),
+        Some(r#"{"response_cost":null}"#),
+        r#"{"response_cost":2.5}"#,
+    ),
+];
 
-fn hidden_merge_copies() {
-    assert_eq!(
-        merged_hidden(Some(r#"{"response_cost":2.5}"#), None).expect("the hidden params copy"),
-        fields(r#"{"response_cost":2.5}"#)
-    );
-    assert_eq!(
-        merged_hidden(Some(r#"{"response_cost":2.5}"#), Some(r#"{}"#)).expect("no first cost"),
-        fields(r#"{"response_cost":2.5}"#)
-    );
+fn hidden_merge() {
+    for (original_hidden, first_hidden, expected) in HIDDEN_MERGES {
+        assert_eq!(
+            merged_hidden(original_hidden, first_hidden).expect("the hidden params merge"),
+            fields(expected)
+        );
+    }
     assert!(
         merged_hidden(None, Some(r#"{"response_cost":1.25}"#))
             .expect("no hidden attribute")
             .is_empty()
-    );
-    assert_eq!(
-        merged_hidden(
-            Some(r#"{"response_cost":2.5}"#),
-            Some(r#"{"response_cost":null}"#)
-        )
-        .expect("a null first cost adds nothing"),
-        fields(r#"{"response_cost":2.5}"#)
     );
     assert!(matches!(
         merged_hidden(
@@ -694,8 +674,6 @@ fn hidden_merge_copies() {
         })
     ));
 }
-
-// 5. Argument preparation
 
 #[derive(Clone, Default)]
 struct CapturedLogs(Arc<Mutex<Vec<String>>>);
@@ -897,8 +875,14 @@ fn query_fallbacks() {
             .expect("a null query falls through"),
         names(&["42"])
     );
-    assert!(matches!(
-        resolve_queries_from_args(&fields("{}"), &json("true")),
-        Err(FileSearchToolsError::WrongType { field: "input", .. })
-    ));
+    assert_eq!(
+        resolve_queries_from_args(&fields("{}"), &json("true"))
+            .expect("a bool renders as its Python name"),
+        names(&["True"])
+    );
+    assert_eq!(
+        resolve_queries_from_args(&fields("{}"), &json("[1,2]"))
+            .expect("a list renders as its JSON text"),
+        names(&["[1, 2]"])
+    );
 }

@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use tracing::debug;
 
+use crate::api::chat_response_stream_tools::fields::string_value;
 use crate::api::responses_tool_namespaces::values::{Fields, has_value};
 
 use super::error::FileSearchToolsError;
@@ -76,7 +77,7 @@ pub fn resolve_queries_from_args(
         return if has_value(single) {
             Ok(vec![value_text(&single, "query")?])
         } else {
-            Ok(vec![value_text(input, "input")?])
+            Ok(vec![string_value(input)])
         };
     }
     match queries {

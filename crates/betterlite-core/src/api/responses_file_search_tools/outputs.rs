@@ -10,7 +10,7 @@ use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSe
 use serde::Serialize;
 
 use super::error::FileSearchToolsError;
-use super::results::{SearchResultRecord, search_results_for_include};
+use super::results::{SearchResultRecord, include_record};
 
 pub const COMPLETED: &str = "completed";
 const FILE_SEARCH_CALL_TYPE: &str = "file_search_call";
@@ -58,7 +58,11 @@ pub fn build_file_search_call_output(
 ) -> Result<FileSearchCallOutput, FileSearchToolsError> {
     let search_results = match results {
         Some(results) if include_search_results && !results.is_empty() => {
-            Some(search_results_for_include(results)?)
+            let records = results
+                .iter()
+                .map(include_record)
+                .collect::<Result<Vec<_>, _>>()?;
+            Some(records)
         }
         None | Some(_) => None,
     };
