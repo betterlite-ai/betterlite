@@ -36,10 +36,11 @@ use tokio::sync::OnceCell;
 
 use super::CallContext;
 use super::headers::stream_headers;
+use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::routes::completions::streaming::{StreamUsage, provider_stream};
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
-use self::relay::{Pump, TextSource, next_frame, relay_bytes};
+use self::relay::{TextSource, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(super) struct ChatCalls {
