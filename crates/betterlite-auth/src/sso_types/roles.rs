@@ -29,7 +29,7 @@ where
             return Some(ranked);
         }
     }
-    resolved.into_iter().min_by_key(|role| role.to_string())
+    resolved.into_iter().min_by_key(ToString::to_string)
 }
 
 #[must_use]
@@ -46,21 +46,13 @@ pub fn is_valid_litellm_user_role(role: &str) -> bool {
 #[must_use]
 pub fn role_from_claim(claim: &TypedValue) -> Option<UserRole> {
     let Some(members) = claim.json.as_array() else {
-        return role_from_claim_value(claim);
+        return role_from_name(claim.json.as_str()?);
     };
     highest_privilege_role(
         members
             .iter()
             .filter_map(|member| role_from_name(member.as_str()?)),
     )
-}
-
-#[must_use]
-pub fn role_from_claim_value(claim: &TypedValue) -> Option<UserRole> {
-    let Some(text) = claim.json.as_str() else {
-        return None;
-    };
-    role_from_name(text)
 }
 
 #[must_use]

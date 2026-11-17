@@ -1,7 +1,7 @@
 from typing import TypedDict
 
 from litellm.proxy.management_endpoints.sso_helper_utils import (
-    check_is_admin_only_access,
+    check_is_admin_only_access,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso_helper_utils.py#L4
     has_admin_ui_access,
 )
 from litellm.proxy.management_endpoints.types import (
@@ -27,7 +27,7 @@ class Output(TypedDict):
 
 def run(input_value: Input) -> Output:
     resolved = [get_litellm_user_role(claim) for claim in input_value["claims"]]
-    roles = [role.value if role is not None else None for role in resolved]
+    roles = [str(role) if role is not None else None for role in resolved]
     valid = [is_valid_litellm_user_role(name) for name in input_value["role_names"]]
     admin_ui = [has_admin_ui_access(role) for role in input_value["ui_roles"]]
     admin_only = [check_is_admin_only_access(mode) for mode in input_value["access_modes"]]

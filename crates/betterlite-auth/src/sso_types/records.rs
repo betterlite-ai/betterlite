@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use serde_with::{Map, serde_as};
 
 use crate::sso_types::exposed_secret::ExposedSecret;
 use crate::user_roles::UserRole;
@@ -41,53 +39,15 @@ pub struct SsoConfig {
     pub team_mappings: Option<TeamMappings>,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RoleMappings {
     pub provider: String,
     pub group_claim: String,
     pub default_role: Option<UserRole>,
     #[serde(default)]
-    pub roles: RoleGroups,
-}
-
-#[derive(Debug, Error)]
-pub enum RoleGroupsError {
-    #[error("`{role}` is not a LiteLLM user role")]
-    UnknownRole { role: String },
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(
-    try_from = "BTreeMap<String, Vec<String>>",
-    into = "BTreeMap<String, Vec<String>>"
-)]
-pub struct RoleGroups {
-    pub entries: Vec<(UserRole, Vec<String>)>,
-}
-
-impl TryFrom<BTreeMap<String, Vec<String>>> for RoleGroups {
-    type Error = RoleGroupsError;
-
-    fn try_from(groups: BTreeMap<String, Vec<String>>) -> Result<Self, Self::Error> {
-        let mut entries = Vec::with_capacity(groups.len());
-        for (name, members) in groups {
-            let role = name
-                .parse::<UserRole>()
-                .map_err(|_unrecognized| RoleGroupsError::UnknownRole { role: name })?;
-            entries.push((role, members));
-        }
-        Ok(Self { entries })
-    }
-}
-
-impl From<RoleGroups> for BTreeMap<String, Vec<String>> {
-    fn from(groups: RoleGroups) -> Self {
-        groups
-            .entries
-            .into_iter()
-            .map(|(role, members)| (role.to_string(), members))
-            .collect()
-    }
+    #[serde_as(as = "Map<_, _>")]
+    pub roles: Vec<(UserRole, Vec<String>)>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]

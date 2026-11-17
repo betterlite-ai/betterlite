@@ -11,7 +11,7 @@ use crate::user_roles::UserRole;
 // The OAuth bearer credentials LiteLLM keeps out of SSO debug responses, while it keeps token_type, expires_in and scope.
 pub const OAUTH_TOKEN_FIELDS: [&str; 3] = ["access_token", "id_token", "refresh_token"];
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OpenIdIdentity {
     pub id: Option<String>,
     pub email: Option<String>,

@@ -21,7 +21,7 @@ use crate::sso_types::records::{
 };
 use crate::sso_types::roles::{
     has_admin_ui_access, highest_privilege_role, is_valid_litellm_user_role, role_from_claim,
-    role_from_claim_value, role_from_name,
+    role_from_name,
 };
 use crate::user_roles::UserRole;
 
@@ -134,16 +134,11 @@ fn conflicting_app_roles_resolve_to_the_highest_privilege() {
 #[test]
 fn a_claim_that_is_not_a_string_or_array_resolves_to_no_role() {
     assert_eq!(role_from_claim(&claim("42")), None);
+    assert_eq!(role_from_claim(&claim("3.5")), None);
     assert_eq!(role_from_claim(&claim("null")), None);
     assert_eq!(role_from_claim(&claim("true")), None);
     assert_eq!(role_from_claim(&claim("{}")), None);
     assert_eq!(role_from_claim(&claim("[]")), None);
-    assert_eq!(
-        role_from_claim_value(&claim("\"proxy_admin\"")),
-        Some(UserRole::ProxyAdmin)
-    );
-    assert_eq!(role_from_claim_value(&claim(r#"["proxy_admin"]"#)), None);
-    assert_eq!(role_from_claim_value(&claim("3.5")), None);
 }
 
 #[test]
@@ -295,9 +290,9 @@ fn role_mappings_start_with_no_roles_and_no_default_role() {
     assert_eq!(mappings.provider, "google");
     assert_eq!(mappings.group_claim, "groups");
     assert_eq!(mappings.default_role, None);
-    assert!(mappings.roles.entries.is_empty());
+    assert!(mappings.roles.is_empty());
     let written = serde_json::to_value(&mappings).unwrap();
-    assert_eq!(written["roles"], serde_json::json!({}));
+    assert!(matches!(written["roles"].as_object(), Some(groups) if groups.is_empty()));
     assert_eq!(written["default_role"], serde_json::json!(null));
 }
 
@@ -310,7 +305,7 @@ fn role_mappings_read_groups_by_their_role_value() {
     let mappings = config.role_mappings.unwrap();
     assert_eq!(mappings.default_role, Some(UserRole::InternalUser));
     assert_eq!(
-        mappings.roles.entries,
+        mappings.roles,
         vec![
             (UserRole::ProxyAdmin, vec!["admins".to_owned()]),
             (
@@ -456,7 +451,7 @@ fn default_team_params_read_a_float_budget_and_route_paths() {
     );
     assert_eq!(params.organization_id.as_deref(), Some("org-1"));
     let written = serde_json::to_value(&params).unwrap();
-    assert_eq!(written["max_budget"], 25.5);
+    assert_eq!(written["max_budget"], 25.5_f64);
     let open_routes: DefaultTeamSsoParams =
         serde_json::from_str(r#"{"team_member_permissions":["/not/a/key/route"]}"#).unwrap();
     assert_eq!(
@@ -476,7 +471,7 @@ fn upperbound_key_params_default_to_no_limits_and_read_a_budget() {
     assert!(params.tpm_limit.is_none());
     assert!(params.rpm_limit.is_none());
     let written = serde_json::to_value(&params).unwrap();
-    assert_eq!(written["max_budget"], 5.0);
+    assert_eq!(written["max_budget"], 5.0_f64);
 }
 
 #[test]
@@ -600,7 +595,8 @@ fn a_record_over_the_size_limit_is_refused_before_parsing() {
     at_limit.push(b'{');
     at_limit.push(b'}');
     assert_eq!(at_limit.len(), MAX_SSO_RECORD_BYTES);
-    assert!(decode_sso_record(&at_limit).is_ok());
+    let config = decode_sso_record(&at_limit).expect("a record of exactly the size limit");
+    assert!(config.role_mappings.is_none());
 }
 
 #[test]
@@ -609,16 +605,32 @@ fn a_record_with_bytes_after_its_json_is_refused() {
         decode_sso_record(b"{} trailing"),
         Err(SsoRecordError::Trailing(_))
     ));
-    assert!(decode_sso_record(b"{}  \n").is_ok());
+    let config = decode_sso_record(b"{}  \n").expect("trailing whitespace is allowed");
+    assert!(config.google_client_id.is_none());
 }
 
 #[test]
 fn a_record_that_is_not_a_json_object_is_refused() {
-    assert!(decode_sso_record(b"[]").is_err());
-    assert!(decode_sso_record(b"\"text\"").is_err());
-    assert!(decode_sso_record(b"null").is_err());
-    assert!(decode_sso_record(b"").is_err());
-    assert!(decode_sso_record(b"{").is_err());
+    assert!(matches!(
+        decode_sso_record(b"[]"),
+        Err(SsoRecordError::Record(_))
+    ));
+    assert!(matches!(
+        decode_sso_record(b"\"text\""),
+        Err(SsoRecordError::Record(_))
+    ));
+    assert!(matches!(
+        decode_sso_record(b"null"),
+        Err(SsoRecordError::Record(_))
+    ));
+    assert!(matches!(
+        decode_sso_record(b""),
+        Err(SsoRecordError::Record(_))
+    ));
+    assert!(matches!(
+        decode_sso_record(b"{"),
+        Err(SsoRecordError::Record(_))
+    ));
 }
 
 #[test]
@@ -647,7 +659,10 @@ fn a_kind_tag_selects_the_record_the_bytes_decode_into() {
         Err(SsoRecordError::UnknownKind { tag: 2 })
     ));
     let wrong_shape = SsoRecordKind::try_from(1).expect("the identity tag");
-    assert!(wrong_shape.decode(b"{}").is_err());
+    assert!(matches!(
+        wrong_shape.decode(b"{}"),
+        Err(SsoRecordError::Record(_))
+    ));
 }
 
 #[rstest::rstest]
