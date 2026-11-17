@@ -69,6 +69,20 @@ async fn next_moves_inline_usage_to_hidden_params() {
 }
 
 #[tokio::test]
+async fn next_keeps_a_second_content_usage_chunk_that_only_carries_content() {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), content_usage_chunk()]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    let second = only_chunk(stream.next().await);
+    assert_eq!(content_of(&second), "Hi");
+    assert!(second.usage.is_none());
+    assert_eq!(hidden_usage_total(&second), Some(10));
+}
+
+#[tokio::test]
 async fn next_keeps_a_stripped_usage_chunk_that_a_choice_keeps_alive() {
     let finish_usage = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
     let world = World::new();
