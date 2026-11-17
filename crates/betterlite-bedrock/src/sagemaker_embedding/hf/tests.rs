@@ -207,6 +207,16 @@ fn an_integer_reply_names_its_python_type() {
 }
 
 #[test]
+fn a_float_reply_names_its_python_type() {
+    let error = transform_response(b"7.5", 200, "model", &Object::new()).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Unexpected response format. Expected list or dict with 'embedding' key, got: float"
+    );
+}
+
+#[test]
 fn a_boolean_reply_names_its_python_type() {
     let error = transform_response(b"true", 200, "model", &Object::new()).unwrap_err();
 

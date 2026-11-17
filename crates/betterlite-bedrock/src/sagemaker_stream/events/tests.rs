@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::VecDeque;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -14,7 +15,8 @@ use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 
-use crate::sagemaker_stream::events::EventItem;
+use crate::sagemaker_stream::error::SagemakerStreamError;
+use crate::sagemaker_stream::events::{EventItem, EventState};
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
 
 const MODEL: &str = "sagemaker-model";
@@ -459,6 +461,21 @@ fn a_final_projection_failure_is_logged_and_yields_nothing() {
         "{}",
         lines.text()
     );
+}
+
+// a caller that finishes after absorb reported the failure gets the same error from the buffer
+#[test]
+fn a_final_projection_failure_ends_a_propagating_stream() {
+    let mut state = EventState::new(MODEL, false, ErrorPolicy::Propagate);
+    let mut failed = VecDeque::new();
+    assert!(!state.absorb(&event(br#"{"token": 5}"#), &mut failed));
+    let mut pending = VecDeque::new();
+    state.finish(&mut pending);
+
+    assert!(matches!(
+        pending.pop_front(),
+        Some(Err(SagemakerStreamError::Field { field: "token" }))
+    ));
 }
 
 #[test]
