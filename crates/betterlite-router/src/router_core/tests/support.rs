@@ -4,6 +4,8 @@ use std::time::SystemTime;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::message_content::Message;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
@@ -118,6 +120,8 @@ pub(crate) fn route_request<'request>(
         affinity_pinned: false,
         excluded_deployment_ids: &[],
         retry_skipped_deployment_ids: &[],
+        messages: None,
+        request_kwargs: None,
     }
 }
 
@@ -320,6 +324,9 @@ pub(super) struct RequestSetup {
     pub(super) pinned: bool,
     pub(super) excluded: Vec<String>,
     pub(super) retry_skipped: Vec<String>,
+    // the typed prompt and request arguments the prompt caching check reads
+    pub(super) messages: Option<Vec<Message>>,
+    pub(super) request_kwargs: Option<Object>,
     // the request's routing_strategy entry, which LiteLLM reads before the router's own strategy
     pub(super) routing_strategy: Option<String>,
     pub(super) clients: Option<CachedClients>,
@@ -335,6 +342,8 @@ impl RequestSetup {
             pinned: false,
             excluded: Vec::new(),
             retry_skipped: Vec::new(),
+            messages: None,
+            request_kwargs: None,
             routing_strategy: None,
             clients: None,
         }
@@ -350,6 +359,8 @@ impl RequestSetup {
             affinity_pinned: self.pinned,
             excluded_deployment_ids: &self.excluded,
             retry_skipped_deployment_ids: &self.retry_skipped,
+            messages: self.messages.as_deref(),
+            request_kwargs: self.request_kwargs.as_ref(),
         }
     }
 

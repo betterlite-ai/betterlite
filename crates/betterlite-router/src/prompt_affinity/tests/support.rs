@@ -44,7 +44,7 @@ use crate::prompt_affinity::service::{
     TokenGate,
 };
 
-pub(super) const MARKED_MESSAGES: &str = r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue","cache_control":{"type":"ephemeral"}}]"#;
+pub(crate) const MARKED_MESSAGES: &str = r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue","cache_control":{"type":"ephemeral"}}]"#;
 
 const CATALOG: &str = r#"{
   "claude-min": {"litellm_provider": "anthropic", "supports_prompt_caching": true, "prompt_cache_min_tokens": 400},
@@ -59,11 +59,11 @@ pub(super) fn truncator() -> Base64Truncator {
     Base64Truncator::new(64).unwrap()
 }
 
-pub(super) fn messages(source: &str) -> Vec<Message> {
+pub(crate) fn messages(source: &str) -> Vec<Message> {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn json_messages(source: &str) -> Vec<Json> {
+pub(crate) fn json_messages(source: &str) -> Vec<Json> {
     serde_json::from_str(source).unwrap()
 }
 
@@ -82,19 +82,19 @@ pub(super) fn deployment(id: &str, model: &str) -> DeploymentSpec {
     .unwrap()
 }
 
-pub(super) fn pin(model_id: &str) -> Json {
+pub(crate) fn pin(model_id: &str) -> Json {
     let mut fields = IndexMap::new();
     fields.insert("model_id".to_owned(), Json::Text(model_id.to_owned()));
     Json::Object(fields)
 }
 
 #[derive(Default)]
-pub(super) struct FakePins {
+pub(crate) struct FakePins {
     values: Mutex<BTreeMap<String, Json>>,
 }
 
 impl FakePins {
-    pub(super) fn seed(&self, key: &str, value: Json) {
+    pub(crate) fn seed(&self, key: &str, value: Json) {
         self.values.lock().unwrap().insert(key.to_owned(), value);
     }
 
@@ -152,7 +152,7 @@ impl CacheFacts for ClaudeFacts {
     }
 }
 
-pub(super) fn service(pins: Arc<FakePins>, counted: u64, global_enabled: bool) -> PromptAffinity {
+pub(crate) fn service(pins: Arc<FakePins>, counted: u64, global_enabled: bool) -> PromptAffinity {
     let catalog = catalog();
     PromptAffinity::from(PromptAffinityDependencies {
         pins,
@@ -207,7 +207,7 @@ pub(super) fn ids(deployments: &[DeploymentSpec]) -> Vec<&str> {
         .collect()
 }
 
-pub(super) fn cache_key(messages: &[Json], tools: Option<&[Json]>) -> Option<String> {
+pub(crate) fn cache_key(messages: &[Json], tools: Option<&[Json]>) -> Option<String> {
     prompt_caching_cache_key(Some(messages), tools, &truncator()).unwrap()
 }
 
