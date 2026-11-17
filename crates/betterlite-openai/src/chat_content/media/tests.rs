@@ -161,6 +161,21 @@ fn fetches_pdf_url_for_user_file_part() {
 }
 
 #[test]
+fn fetches_in_content_item_order() {
+    let first = "https://example.com/z.pdf";
+    let second = "https://example.com/a.pdf";
+    let second_data = "data:application/pdf;base64,QQ==";
+    let source = user_content(Value::Array(vec![file_item(first), file_item(second)]));
+    let urls = url_map(&[(first, DATA_URL), (second, second_data)]);
+    let fetcher = MapFetcher::new(&urls);
+    let body = Fixture::new(&source).body(Mode::Sync, &fetcher);
+    assert_eq!(fetcher.calls(), [first, second]);
+    let content = body["messages"][0]["content"].clone();
+    assert_eq!(content[0]["file"]["file_data"], DATA_URL);
+    assert_eq!(content[1]["file"]["file_data"], second_data);
+}
+
+#[test]
 fn fetches_for_http_and_www_prefixes() {
     assert_eq!(
         fetched_file("https://example.com/report")["file"]["file_data"],
