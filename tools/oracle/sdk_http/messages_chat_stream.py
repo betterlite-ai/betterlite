@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Sized
-from typing import Literal, NamedTuple, NoReturn, Protocol, TypedDict
+from typing import Final, Literal, NamedTuple, NoReturn, Protocol, TypedDict
 
 import httpx
 from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
@@ -29,6 +29,14 @@ from messages_sync_stream import (
     Wrapper,
     frames,
 )
+
+
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+
+
+class ReportedError(BaseModel):
+    status_code: int
+    message: str
 
 
 class EmptyChunkError(Exception):
@@ -138,10 +146,11 @@ async def next_event(stream: AsyncEventStream) -> EventOutcome:
         event = await stream.__anext__()
     except StopAsyncIteration:
         return EventOutcome(None, None)
-    except BaseLLMException as error:
+    except PROVIDER_ERROR as raised:
+        record = ReportedError.model_validate(raised, from_attributes=True)
         return EventOutcome(
             None,
-            FailureOutcome(kind="reported", status_code=error.status_code, message=error.message),
+            FailureOutcome(kind="reported", status_code=record.status_code, message=record.message),
         )
     except EmptyChunkError as error:
         return EventOutcome(
@@ -149,14 +158,6 @@ async def next_event(stream: AsyncEventStream) -> EventOutcome:
             FailureOutcome(kind="unclassified", status_code=None, message=str(error)),
         )
     return EventOutcome(EVENT.validate_python(event), None)
-
-
-async def next_frame(stream: AsyncIterator[bytes]) -> bytes | None:
-    try:
-        frame = await anext(stream)
-    except StopAsyncIteration:
-        return None
-    return frame
 
 
 def take_diagnostics(errors: AdapterErrors) -> list[Diagnostic]:
@@ -168,7 +169,7 @@ def take_diagnostics(errors: AdapterErrors) -> list[Diagnostic]:
 async def wrapper_step(
     step: Literal["next", "drain", "close"],
     stream: AsyncEventStream,
-    source: AsyncProviderChunks,
+    source: ProviderChunks,
     errors: AdapterErrors,
 ) -> StepOutcome:
     events: list[dict[str, Json]] = []
@@ -196,7 +197,7 @@ async def wrapper_step(
 async def frame_step(
     step: Literal["next", "drain", "close"],
     stream: AsyncIterator[bytes],
-    source: AsyncProviderChunks,
+    source: ProviderChunks,
     errors: AdapterErrors,
     view: AnthropicSSEStream | None,
 ) -> StepOutcome:
@@ -208,11 +209,11 @@ async def frame_step(
         else:
             await view.aclose()
     else:
-        frame = await next_frame(stream)
+        frame = await anext(stream, None)
         if frame is not None:
             collected.append(frame.decode())
         while step == "drain" and frame is not None:
-            frame = await next_frame(stream)
+            frame = await anext(stream, None)
             if frame is not None:
                 collected.append(frame.decode())
     view_meta: ViewOutcome | None = None
