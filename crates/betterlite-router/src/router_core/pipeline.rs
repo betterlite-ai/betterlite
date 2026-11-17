@@ -127,7 +127,7 @@ where
 {
     let Resolved { route, candidates } = resolved;
     match candidates {
-        Candidates::Single(deployment) => single_route(context, route, deployment).await,
+        Candidates::Single(deployment) => single_route(context, route, *deployment).await,
         Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
@@ -149,13 +149,13 @@ pub fn resolve_catalog(
 async fn single_route(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
-    deployment: Box<DeploymentSpec>,
+    deployment: DeploymentSpec,
 ) -> Result<AttemptResult, RoutingError> {
     // get_model_info fills every registered deployment from the rules, a named one included
     let candidates = context::run(
         RouteStage::GeneralizationIntegration,
         CandidateSet {
-            deployments: vec![*deployment],
+            deployments: vec![deployment],
         },
         context,
     )
