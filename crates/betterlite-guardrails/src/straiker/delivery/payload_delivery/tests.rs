@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
@@ -447,11 +448,15 @@ fn request<'request>(
 // A mutant that stops the client from connecting must fail its test, not leave this accepted forever.
 const SERVE_TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn serve_one(listener: TcpListener, reply: &'static [u8]) -> Vec<u8> {
-    let (mut stream, _) = timeout(SERVE_TIMEOUT, listener.accept())
+async fn accept(listener: &TcpListener) -> (TcpStream, SocketAddr) {
+    timeout(SERVE_TIMEOUT, listener.accept())
         .await
         .expect("the client connected")
-        .unwrap();
+        .unwrap()
+}
+
+async fn serve_one(listener: TcpListener, reply: &'static [u8]) -> Vec<u8> {
+    let (mut stream, _) = accept(&listener).await;
     let mut received = Vec::new();
     let mut chunk = [0_u8; 4096];
     while !received.ends_with(BODY.as_bytes()) {
@@ -672,10 +677,7 @@ async fn a_pooled_url_error_retries_and_fails_open() {
 async fn serve_requests(listener: TcpListener, reply: &'static [u8], count: usize) -> Vec<String> {
     let mut requests = Vec::new();
     for _ in 0..count {
-        let (mut stream, _) = timeout(SERVE_TIMEOUT, listener.accept())
-            .await
-            .expect("the client connected")
-            .unwrap();
+        let (mut stream, _) = accept(&listener).await;
         let mut received = Vec::new();
         let mut chunk = [0_u8; 4096];
         loop {
