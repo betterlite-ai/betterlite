@@ -10,7 +10,7 @@ use betterlite_prompts::media::parts::RemoteMedia;
 use betterlite_prompts::message_content::Message;
 
 use crate::gemini_history::content::{CONTENT_TYPE, FORMAT, MIME_TYPE};
-use crate::gemini_history::media_source::text_of;
+use crate::gemini_history::media_source::{generated_image, text_of};
 use crate::gemini_media::mime::MimeHints;
 use crate::gemini_media::policy::{GoogleProvider, inlines_remote};
 use crate::model_policy::capabilities::VertexCapabilityProvider;
@@ -100,13 +100,12 @@ fn images_of(message: &Message) -> &[Json] {
 
 fn image_entry(image: &Json) -> Option<(&Object, RemoteMedia)> {
     let entry = image.as_object()?;
-    let image_url = entry.get(IMAGE_URL)?.as_object()?;
-    let url = text_of(image_url, URL).filter(|url| !url.is_empty())?;
+    let (url, fields) = generated_image(image)?;
     Some((
         entry,
         RemoteMedia {
             url,
-            fields: image_url.clone(),
+            fields,
             part_type: IMAGE_URL.to_owned(),
         },
     ))
