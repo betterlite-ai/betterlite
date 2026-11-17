@@ -1,15 +1,19 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
+
 use super::support::chunks;
 use super::{Harness, chat_of, response_of};
 
-pub(super) async fn simple_text_path() {
-    simple_text_join().await;
-    simple_delta_shapes().await;
-    simple_first_choice_content().await;
-    simple_disabled_by_fields().await;
-    simple_no_parts().await;
+pub(super) async fn simple_text_path(redactor: &Arc<Redactor>) {
+    simple_text_join(redactor).await;
+    simple_delta_shapes(redactor).await;
+    simple_first_choice_content(redactor).await;
+    simple_disabled_by_fields(redactor).await;
+    simple_no_parts(redactor).await;
 }
 
-pub(super) async fn simple_text_join() {
+pub(super) async fn simple_text_join(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -18,7 +22,7 @@ pub(super) async fn simple_text_join() {
         {"choices": [{"index": 0, "delta": {"content": "B"}, "finish_reason": "stop"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.messages = true;
     harness.counter.messages = 5;
     harness.counter.response_text = 3;
@@ -37,7 +41,7 @@ pub(super) async fn simple_text_join() {
     assert_eq!(details.text_tokens, Some(3));
 }
 
-pub(super) async fn simple_delta_shapes() {
+pub(super) async fn simple_delta_shapes(redactor: &Arc<Redactor>) {
     let unsupported = r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
          "choices": [{"index": 0, "delta": {"content": "A"}}]},
@@ -59,7 +63,7 @@ pub(super) async fn simple_delta_shapes() {
         (later_choice_tools, "AB", 2, Some(0)),
     ];
     for (source, content, text_tokens, tool_calls) in cases {
-        let response = response_of(source, text_tokens).await;
+        let response = response_of(source, text_tokens, redactor).await;
         let message = &response.choices[0].message;
         assert_eq!(message.content.as_deref(), Some(content));
         assert_eq!(message.tool_calls.as_ref().map(Vec::len), tool_calls);
@@ -71,7 +75,7 @@ pub(super) async fn simple_delta_shapes() {
     }
 }
 
-pub(super) async fn simple_first_choice_content() {
+pub(super) async fn simple_first_choice_content(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -80,7 +84,7 @@ pub(super) async fn simple_first_choice_content() {
         {"choices": [{"index": 0, "delta": {"content": "B"}}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.messages = true;
     harness.counter.response_text = 2;
     let response = chat_of(&harness).await;
@@ -105,9 +109,9 @@ const DISABLED_STREAM: &str = r#"[
 ]"#;
 
 // Any of these fields, even empty, sends the stream through the complex path, which leaves no zero reasoning stamp.
-pub(super) async fn simple_disabled_by_fields() {
+pub(super) async fn simple_disabled_by_fields(redactor: &Arc<Redactor>) {
     for field in DISABLING {
-        let response = response_of(&DISABLED_STREAM.replace("FIELD", field), 2).await;
+        let response = response_of(&DISABLED_STREAM.replace("FIELD", field), 2, redactor).await;
         let content = response.choices[0].message.content.as_deref();
         assert_eq!(content, Some("AB"), "{field}");
         assert!(
@@ -117,7 +121,7 @@ pub(super) async fn simple_disabled_by_fields() {
     }
 }
 
-pub(super) async fn simple_no_parts() {
+pub(super) async fn simple_no_parts(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -125,7 +129,7 @@ pub(super) async fn simple_no_parts() {
         {"choices": [{"index": 0, "delta": {}}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.messages = true;
     harness.counter.response_text = 0;
     let response = chat_of(&harness).await;

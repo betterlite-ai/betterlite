@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -12,7 +15,7 @@ mod support;
 
 use support::{
     Call, FixtureCounter, UsageCase, chunks, fixture_completion_details, fixture_details,
-    fixture_messages, fixture_usage, simple_case, simple_usage,
+    fixture_messages, fixture_usage, redactor, simple_case, simple_usage,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -36,31 +39,33 @@ enum Proof {
 #[case::usage_detail_copying(Proof::UsageDetailCopying)]
 #[tokio::test]
 async fn stream_usage_assembly_cases(#[case] proof: Proof) {
+    let redactor = &redactor();
     match proof {
-        Proof::UsageSourceAndCounts => usage_source_and_counts().await,
-        Proof::CacheAndDetails => cache_and_details().await,
-        Proof::GroundingAndPricing => grounding_and_pricing().await,
-        Proof::AnthropicCursorReset => anthropic_cursor_reset().await,
-        Proof::TokenFallbackAndFailures => estimation::token_fallback_and_failures().await,
-        Proof::ReasoningUsage => estimation::reasoning_usage().await,
-        Proof::UsageDetailCopying => estimation::usage_detail_copying().await,
+        Proof::UsageSourceAndCounts => usage_source_and_counts(redactor).await,
+        Proof::CacheAndDetails => cache_and_details(redactor).await,
+        Proof::GroundingAndPricing => grounding_and_pricing(redactor).await,
+        Proof::AnthropicCursorReset => anthropic_cursor_reset(redactor).await,
+        Proof::TokenFallbackAndFailures => estimation::token_fallback_and_failures(redactor).await,
+        Proof::ReasoningUsage => estimation::reasoning_usage(redactor).await,
+        Proof::UsageDetailCopying => estimation::usage_detail_copying(redactor).await,
     }
 }
 
-async fn usage_source_and_counts() {
-    counts_replace_and_report_zero().await;
-    absent_usage_is_estimated().await;
-    usage_sources_are_preferred().await;
-    hidden_usage_needs_a_response_object().await;
-    usage_record_cache_mappings_are_applied().await;
-    usage_record_reasoning_is_filled().await;
+async fn usage_source_and_counts(redactor: &Arc<Redactor>) {
+    counts_replace_and_report_zero(redactor).await;
+    absent_usage_is_estimated(redactor).await;
+    usage_sources_are_preferred(redactor).await;
+    hidden_usage_needs_a_response_object(redactor).await;
+    usage_record_cache_mappings_are_applied(redactor).await;
+    usage_record_reasoning_is_filled(redactor).await;
 }
 
-async fn usage_record_cache_mappings_are_applied() {
+async fn usage_record_cache_mappings_are_applied(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let hits = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"prompt_cache_hit_tokens":5}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -71,6 +76,7 @@ async fn usage_record_cache_mappings_are_applied() {
     let creation = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"cache_creation_tokens":5}}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -80,10 +86,7 @@ async fn usage_record_cache_mappings_are_applied() {
         ))
     );
 
-    let nested = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"cache_creation_input_tokens":4}}}]"#,
-    )
+    let nested = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"cache_creation_input_tokens":4}}}]"#, redactor)
     .await;
     assert_eq!(
         nested.prompt_tokens_details,
@@ -93,12 +96,9 @@ async fn usage_record_cache_mappings_are_applied() {
     );
 }
 
-async fn usage_record_reasoning_is_filled() {
+async fn usage_record_reasoning_is_filled(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let filled = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":10,"reasoning_tokens":4,"completion_tokens_details":{"image_tokens":2,"audio_tokens":1}}}]"#,
-    )
+    let filled = simple_usage(&counter, r#"[{"usage":{"completion_tokens":10,"reasoning_tokens":4,"completion_tokens_details":{"image_tokens":2,"audio_tokens":1}}}]"#, redactor)
     .await;
     assert_eq!(
         filled.completion_tokens_details,
@@ -108,12 +108,9 @@ async fn usage_record_reasoning_is_filled() {
     );
 }
 
-async fn counts_replace_and_report_zero() {
+async fn counts_replace_and_report_zero(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let usage = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":0,"completion_tokens":2}},{"usage":{"prompt_tokens":5,"completion_tokens":0}}]"#,
-    )
+    let usage = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":0,"completion_tokens":2}},{"usage":{"prompt_tokens":5,"completion_tokens":0}}]"#, redactor)
     .await;
     assert_eq!(
         usage,
@@ -121,10 +118,7 @@ async fn counts_replace_and_report_zero() {
     );
     assert!(counter.calls().is_empty());
 
-    let negative = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":-2,"completion_tokens":4}},{"usage":{"prompt_tokens":0,"completion_tokens":-1}}]"#,
-    )
+    let negative = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":-2,"completion_tokens":4}},{"usage":{"prompt_tokens":0,"completion_tokens":-1}}]"#, redactor)
     .await;
     assert_eq!(
         negative,
@@ -134,6 +128,7 @@ async fn counts_replace_and_report_zero() {
     let unreported = simple_usage(
         &counter,
         r#"[{"choices":[]},{"usage":{"completion_tokens":-1}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -141,7 +136,7 @@ async fn counts_replace_and_report_zero() {
         fixture_usage(r#"{"prompt_tokens":0,"completion_tokens":-1,"total_tokens":-1}"#)
     );
 
-    let empty_record = simple_usage(&counter, r#"[{"usage":{}}]"#).await;
+    let empty_record = simple_usage(&counter, r#"[{"usage":{}}]"#, redactor).await;
     assert_eq!(
         empty_record,
         fixture_usage(r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}"#)
@@ -149,7 +144,7 @@ async fn counts_replace_and_report_zero() {
     assert!(counter.calls().is_empty());
 }
 
-async fn absent_usage_is_estimated() {
+async fn absent_usage_is_estimated(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
@@ -160,7 +155,7 @@ async fn absent_usage_is_estimated() {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, verbose) = case.run().await;
+    let (result, verbose) = case.run(redactor).await;
     assert_eq!(
         result.expect("an absent usage record is estimated"),
         fixture_usage(r#"{"prompt_tokens":4,"completion_tokens":7,"total_tokens":11}"#)
@@ -181,12 +176,9 @@ async fn absent_usage_is_estimated() {
     assert!(verbose.is_empty());
 }
 
-async fn usage_sources_are_preferred() {
+async fn usage_sources_are_preferred(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let preferred = simple_usage(
-        &counter,
-        r#"[{"form":"model_response_stream","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":3},"_hidden_params":{"usage":{"prompt_tokens":9,"completion_tokens":9}}}]"#,
-    )
+    let preferred = simple_usage(&counter, r#"[{"form":"model_response_stream","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":3},"_hidden_params":{"usage":{"prompt_tokens":9,"completion_tokens":9}}}]"#, redactor)
     .await;
     assert_eq!(
         preferred,
@@ -194,20 +186,14 @@ async fn usage_sources_are_preferred() {
     );
     assert!(counter.calls().is_empty());
 
-    let hidden = simple_usage(
-        &counter,
-        r#"[{"form":"model_response","choices":[],"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
-    )
+    let hidden = simple_usage(&counter, r#"[{"form":"model_response","choices":[],"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#, redactor)
     .await;
     assert_eq!(
         hidden,
         fixture_usage(r#"{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}"#)
     );
 
-    let stream_hidden = simple_usage(
-        &counter,
-        r#"[{"form":"model_response_stream","choices":[],"_hidden_params":{"usage":{"prompt_tokens":2,"completion_tokens":1}}}]"#,
-    )
+    let stream_hidden = simple_usage(&counter, r#"[{"form":"model_response_stream","choices":[],"_hidden_params":{"usage":{"prompt_tokens":2,"completion_tokens":1}}}]"#, redactor)
     .await;
     assert_eq!(
         stream_hidden,
@@ -215,21 +201,25 @@ async fn usage_sources_are_preferred() {
     );
 }
 
-async fn hidden_usage_needs_a_response_object() {
+async fn hidden_usage_needs_a_response_object(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     assert_hidden_usage_ignored(
         &counter,
         r#"[{"choices":[],"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
+        redactor,
     )
     .await;
     assert_hidden_usage_ignored(
         &counter,
-        r#"[{"form":"model_response_stream","choices":[],"usage":null,"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#,
-    )
+        r#"[{"form":"model_response_stream","choices":[],"usage":null,"_hidden_params":{"usage":{"prompt_tokens":4,"completion_tokens":3}}}]"#, redactor)
     .await;
 }
 
-async fn assert_hidden_usage_ignored(counter: &FixtureCounter, source: &str) {
+async fn assert_hidden_usage_ignored(
+    counter: &FixtureCounter,
+    source: &str,
+    redactor: &Arc<Redactor>,
+) {
     let messages = fixture_messages();
     let parsed = chunks(source);
     let case = UsageCase {
@@ -239,28 +229,24 @@ async fn assert_hidden_usage_ignored(counter: &FixtureCounter, source: &str) {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, _) = case.run().await;
+    let (result, _) = case.run(redactor).await;
     assert_eq!(
         result.expect("hidden usage stays unused"),
         fixture_usage(r#"{"prompt_tokens":4,"completion_tokens":7,"total_tokens":11}"#)
     );
 }
 
-async fn cache_and_details() {
-    cache_counts_follow_prompt_side_reporting().await;
-    cache_counts_retain_earlier_values().await;
-    details_are_last_wins().await;
-    empty_details_never_clear_earlier_ones().await;
-    nested_details_survive_replacement().await;
-    server_tool_use_is_coerced().await;
+async fn cache_and_details(redactor: &Arc<Redactor>) {
+    cache_counts_follow_prompt_side_reporting(redactor).await;
+    cache_counts_retain_earlier_values(redactor).await;
+    details_are_last_wins(redactor).await;
+    prompt_details_across_records(redactor).await;
+    server_tool_use_is_coerced(redactor).await;
 }
 
-async fn cache_counts_retain_earlier_values() {
+async fn cache_counts_retain_earlier_values(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let creation = simple_usage(
-        &counter,
-        r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":0}}]"#,
-    )
+    let creation = simple_usage(&counter, r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":0}}]"#, redactor)
     .await;
     assert_eq!(creation.cache_creation_input_tokens, Some(7));
     assert_eq!(
@@ -273,6 +259,7 @@ async fn cache_counts_retain_earlier_values() {
     let read = simple_usage(
         &counter,
         r#"[{"usage":{"cache_read_input_tokens":2}},{"usage":{"cache_read_input_tokens":0}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(read.cache_read_input_tokens, Some(2));
@@ -281,10 +268,7 @@ async fn cache_counts_retain_earlier_values() {
         Some(fixture_details(r#"{"cached_tokens":2}"#))
     );
 
-    let replaced = simple_usage(
-        &counter,
-        r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":0,"prompt_tokens":3}}]"#,
-    )
+    let replaced = simple_usage(&counter, r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":0,"prompt_tokens":3}}]"#, redactor)
     .await;
     assert_eq!(replaced.cache_creation_input_tokens, Some(0));
     assert_eq!(
@@ -295,35 +279,43 @@ async fn cache_counts_retain_earlier_values() {
     );
 }
 
-async fn empty_details_never_clear_earlier_ones() {
+async fn prompt_details_across_records(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let kept = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        kept.prompt_tokens_details,
-        Some(fixture_details(r#"{"cached_tokens":2}"#))
-    );
-
-    let cleared = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":null}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        cleared.prompt_tokens_details,
-        Some(PromptTokensDetails::default())
-    );
+    let cases = [
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{}}}]"#,
+            fixture_details(r#"{"cached_tokens":2}"#),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":null}}}]"#,
+            PromptTokensDetails::default(),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":1,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2}}}]"#,
+            fixture_details(
+                r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}"#,
+            ),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cache_creation_token_details":{"ephemeral_5m_input_tokens":1}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}}}]"#,
+            fixture_details(
+                r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}"#,
+            ),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"google_maps_grounding_requests":2}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}]"#,
+            fixture_details(r#"{"cached_tokens":3,"google_maps_grounding_requests":2}"#),
+        ),
+    ];
+    for (source, expected) in cases {
+        let usage = simple_usage(&counter, source, redactor).await;
+        assert_eq!(usage.prompt_tokens_details, Some(expected), "{source}");
+    }
 }
 
-async fn cache_counts_follow_prompt_side_reporting() {
+async fn cache_counts_follow_prompt_side_reporting(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let creation = simple_usage(
-        &counter,
-        r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":9,"prompt_tokens":3}},{"usage":{"cache_creation_input_tokens":11}}]"#,
-    )
+    let creation = simple_usage(&counter, r#"[{"usage":{"cache_creation_input_tokens":7}},{"usage":{"cache_creation_input_tokens":9,"prompt_tokens":3}},{"usage":{"cache_creation_input_tokens":11}}]"#, redactor)
     .await;
     assert_eq!(
         creation.prompt_tokens_details,
@@ -333,10 +325,7 @@ async fn cache_counts_follow_prompt_side_reporting() {
     );
     assert_eq!(creation.cache_creation_input_tokens, Some(11));
 
-    let read = simple_usage(
-        &counter,
-        r#"[{"usage":{"cache_read_input_tokens":2}},{"usage":{"cache_read_input_tokens":5,"prompt_tokens":1}},{"usage":{"cache_read_input_tokens":8}}]"#,
-    )
+    let read = simple_usage(&counter, r#"[{"usage":{"cache_read_input_tokens":2}},{"usage":{"cache_read_input_tokens":5,"prompt_tokens":1}},{"usage":{"cache_read_input_tokens":8}}]"#, redactor)
     .await;
     assert_eq!(
         read.prompt_tokens_details,
@@ -345,12 +334,9 @@ async fn cache_counts_follow_prompt_side_reporting() {
     assert_eq!(read.cache_read_input_tokens, Some(8));
 }
 
-async fn details_are_last_wins() {
+async fn details_are_last_wins(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let completion = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":4,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":5}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":3}}}]"#,
-    )
+    let completion = simple_usage(&counter, r#"[{"usage":{"completion_tokens":4,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":5}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":3}}}]"#, redactor)
     .await;
     assert_eq!(completion.completion_tokens, 6);
     assert_eq!(
@@ -360,20 +346,14 @@ async fn details_are_last_wins() {
         Some(3)
     );
 
-    let empty = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{}}}]"#,
-    )
+    let empty = simple_usage(&counter, r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{}}}]"#, redactor)
     .await;
     assert_eq!(
         empty.completion_tokens_details,
         Some(fixture_completion_details(r#"{"reasoning_tokens":2}"#))
     );
 
-    let all_null = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":null}}}]"#,
-    )
+    let all_null = simple_usage(&counter, r#"[{"usage":{"completion_tokens":5,"completion_tokens_details":{"reasoning_tokens":2}}},{"usage":{"completion_tokens":6,"completion_tokens_details":{"reasoning_tokens":null}}}]"#, redactor)
     .await;
     assert_eq!(
         all_null.completion_tokens_details,
@@ -381,48 +361,15 @@ async fn details_are_last_wins() {
     );
 }
 
-async fn nested_details_survive_replacement() {
+async fn server_tool_use_is_coerced(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let preserved = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":1,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        preserved.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}"#
-        ))
-    );
-
-    let own = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cache_creation_token_details":{"ephemeral_5m_input_tokens":1}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        own.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}"#
-        ))
-    );
-}
-
-async fn server_tool_use_is_coerced() {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let usage = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2}}},{"usage":{"prompt_tokens":2,"server_tool_use":null}},{"usage":{"prompt_tokens":3,"server_tool_use":{"web_search_requests":4,"browser_open_requests":1}}}]"#,
-    )
+    let usage = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2}}},{"usage":{"prompt_tokens":2,"server_tool_use":null}},{"usage":{"prompt_tokens":3,"server_tool_use":{"web_search_requests":4,"browser_open_requests":1}}}]"#, redactor)
     .await;
     let tool_use = usage.server_tool_use.expect("a server tool use record");
     assert_eq!(tool_use.web_search_requests, Some(4));
     assert_eq!(tool_use.browser_open_requests, Some(1));
 
-    let extra_key = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2,"code_execution_requests":1}}}]"#,
-    )
+    let extra_key = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2,"code_execution_requests":1}}}]"#, redactor)
     .await;
     assert_eq!(
         extra_key
@@ -432,7 +379,7 @@ async fn server_tool_use_is_coerced() {
     );
 
     let malformed = chunks(r#"[{"usage":{"prompt_tokens":1,"server_tool_use":"x"}}]"#);
-    let (result, _) = simple_case(&counter, &malformed).run().await;
+    let (result, _) = simple_case(&counter, &malformed).run(redactor).await;
     assert!(matches!(
         result,
         Err(UsageAssemblyError::ServerToolUse { field }) if field == "server_tool_use"
@@ -441,25 +388,21 @@ async fn server_tool_use_is_coerced() {
     let bad_count = chunks(
         r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":"two"}}}]"#,
     );
-    let (rejected, _) = simple_case(&counter, &bad_count).run().await;
+    let (rejected, _) = simple_case(&counter, &bad_count).run(redactor).await;
     assert!(matches!(
         rejected,
         Err(UsageAssemblyError::ServerToolUse { field }) if field == "web_search_requests"
     ));
 }
 
-async fn grounding_and_pricing() {
-    grounding_counts_are_retained().await;
-    google_maps_counts_are_retained().await;
-    cost_and_pricing_fields_are_last_wins().await;
+async fn grounding_and_pricing(redactor: &Arc<Redactor>) {
+    grounding_counts_are_retained(redactor).await;
+    cost_and_pricing_fields_are_last_wins(redactor).await;
 }
 
-async fn grounding_counts_are_retained() {
+async fn grounding_counts_are_retained(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let usage = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"web_search_requests":1}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"google_maps_grounding_requests":0,"cached_tokens":3}}}]"#,
-    )
+    let usage = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"web_search_requests":1}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"google_maps_grounding_requests":0,"cached_tokens":3}}}]"#, redactor)
     .await;
     assert_eq!(
         usage.prompt_tokens_details,
@@ -468,10 +411,7 @@ async fn grounding_counts_are_retained() {
         ))
     );
 
-    let replaced = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"web_search_requests":1}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"web_search_requests":5}}}]"#,
-    )
+    let replaced = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"web_search_requests":1}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"web_search_requests":5}}}]"#, redactor)
     .await;
     assert_eq!(
         replaced
@@ -488,26 +428,12 @@ async fn grounding_counts_are_retained() {
     );
 }
 
-async fn google_maps_counts_are_retained() {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let maps_kept = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"google_maps_grounding_requests":2}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}]"#,
-    )
-    .await;
-    assert_eq!(
-        maps_kept.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":3,"google_maps_grounding_requests":2}"#
-        ))
-    );
-}
-
-async fn cost_and_pricing_fields_are_last_wins() {
+async fn cost_and_pricing_fields_are_last_wins(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let replaced = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"cost":0.5}},{"usage":{"prompt_tokens":2,"cost":0}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(replaced.cost, Some(Decimal::ZERO));
@@ -515,72 +441,52 @@ async fn cost_and_pricing_fields_are_last_wins() {
     let kept = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"cost":1.25}},{"usage":{"prompt_tokens":2,"cost":null}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(kept.cost, Some(Decimal::new(125, 2)));
 
-    let pricing = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"inference_geo":"us","speed":"fast"}},{"usage":{"prompt_tokens":2,"inference_geo":5,"speed":""}}]"#,
-    )
+    let pricing = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"inference_geo":"us","speed":"fast"}},{"usage":{"prompt_tokens":2,"inference_geo":5,"speed":""}}]"#, redactor)
     .await;
     assert_eq!(pricing.inference_geo.as_deref(), Some("us"));
     assert_eq!(pricing.speed.as_deref(), Some(""));
 
-    let nulls = simple_usage(
-        &counter,
-        r#"[{"usage":{"prompt_tokens":1,"speed":"slow","inference_geo":"eu"}},{"usage":{"prompt_tokens":2,"speed":null,"inference_geo":null}}]"#,
-    )
+    let nulls = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"speed":"slow","inference_geo":"eu"}},{"usage":{"prompt_tokens":2,"speed":null,"inference_geo":null}}]"#, redactor)
     .await;
     assert_eq!(nulls.speed.as_deref(), Some("slow"));
     assert_eq!(nulls.inference_geo.as_deref(), Some("eu"));
 }
 
-async fn anthropic_cursor_reset() {
-    lone_cursor_is_estimated().await;
-    completion_updates_keep_the_count().await;
-    finish_reasons_are_evidence().await;
-    cursor_evidence_is_positioned().await;
-    other_providers_keep_their_counts().await;
+async fn anthropic_cursor_reset(redactor: &Arc<Redactor>) {
+    lone_cursor_is_estimated(redactor).await;
+    completion_updates_keep_the_count(redactor).await;
+    finish_reasons_are_evidence(redactor).await;
+    cursor_evidence_is_positioned(redactor).await;
+    other_providers_keep_their_counts(redactor).await;
 }
 
-async fn cursor_evidence_is_positioned() {
+async fn cursor_evidence_is_positioned(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let later_chunk = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"usage":{"completion_tokens":0},"choices":[{"finish_reason":"stop"}]}]"#,
-    )
+    let later_chunk = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"usage":{"completion_tokens":0},"choices":[{"finish_reason":"stop"}]}]"#, redactor)
     .await;
     assert_eq!(later_chunk.completion_tokens, 8);
 
-    let second_choice = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{},{"finish_reason":"stop"}]}]"#,
-    )
+    let second_choice = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{},{"finish_reason":"stop"}]}]"#, redactor)
     .await;
     assert_eq!(second_choice.completion_tokens, 8);
 
-    let provider_on_first = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"usage":{"completion_tokens":0}}]"#,
-    )
+    let provider_on_first = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"usage":{"completion_tokens":0}}]"#, redactor)
     .await;
     assert_eq!(provider_on_first.completion_tokens, 7);
 
-    let provider_on_later = simple_usage(
-        &counter,
-        r#"[{"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0}}]"#,
-    )
+    let provider_on_later = simple_usage(&counter, r#"[{"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0}}]"#, redactor)
     .await;
     assert_eq!(provider_on_later.completion_tokens, 8);
 }
 
-async fn lone_cursor_is_estimated() {
+async fn lone_cursor_is_estimated(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let usage = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":2}},"choices":[]}]"#,
-    )
+    let usage = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8,"completion_tokens_details":{"reasoning_tokens":2}},"choices":[]}]"#, redactor)
     .await;
     assert_eq!(usage.completion_tokens, 7);
     assert!(usage.completion_tokens_details.is_none());
@@ -592,82 +498,56 @@ async fn lone_cursor_is_estimated() {
         }]
     );
 
-    let zero = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0},"choices":[]}]"#,
-    )
+    let zero = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0},"choices":[]}]"#, redactor)
     .await;
     assert_eq!(zero.completion_tokens, 7);
 }
 
-async fn completion_updates_keep_the_count() {
+async fn completion_updates_keep_the_count(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let two = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}}]"#,
-    )
+    let two = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}}]"#, redactor)
     .await;
     assert_eq!(two.completion_tokens, 8);
     assert!(counter.calls().is_empty());
 
-    let one = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0}}]"#,
-    )
+    let one = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8}},{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":0}}]"#, redactor)
     .await;
     assert_eq!(one.completion_tokens, 7);
 }
 
-async fn finish_reasons_are_evidence() {
+async fn finish_reasons_are_evidence(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let finished = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":"stop"}]}]"#,
-    )
+    let finished = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":"stop"}]}]"#, redactor)
     .await;
     assert_eq!(finished.completion_tokens, 8);
 
-    let empty = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":""}]}]"#,
-    )
+    let empty = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":""}]}]"#, redactor)
     .await;
     assert_eq!(empty.completion_tokens, 8);
 
-    let missing = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":null}]}]"#,
-    )
+    let missing = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{"finish_reason":null}]}]"#, redactor)
     .await;
     assert_eq!(missing.completion_tokens, 7);
 
-    let response_without_choices = simple_usage(
-        &counter,
-        r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[]}]"#,
-    )
+    let response_without_choices = simple_usage(&counter, r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[]}]"#, redactor)
     .await;
     assert_eq!(response_without_choices.completion_tokens, 7);
 
-    let response_choice = simple_usage(
-        &counter,
-        r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{}]}]"#,
-    )
+    let response_choice = simple_usage(&counter, r#"[{"form":"model_response","_hidden_params":{"custom_llm_provider":"anthropic"},"usage":{"completion_tokens":8},"choices":[{}]}]"#, redactor)
     .await;
     assert_eq!(response_choice.completion_tokens, 8);
 }
 
-async fn other_providers_keep_their_counts() {
+async fn other_providers_keep_their_counts(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let other = simple_usage(
-        &counter,
-        r#"[{"_hidden_params":{"custom_llm_provider":"openai"},"usage":{"completion_tokens":8},"choices":[]}]"#,
-    )
+    let other = simple_usage(&counter, r#"[{"_hidden_params":{"custom_llm_provider":"openai"},"usage":{"completion_tokens":8},"choices":[]}]"#, redactor)
     .await;
     assert_eq!(other.completion_tokens, 8);
 
     let no_provider = simple_usage(
         &counter,
         r#"[{"usage":{"completion_tokens":8},"choices":[]}]"#,
+        redactor,
     )
     .await;
     assert_eq!(no_provider.completion_tokens, 8);

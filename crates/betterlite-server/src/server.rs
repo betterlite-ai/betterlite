@@ -148,8 +148,10 @@ pub(crate) fn application(
     tasks: &TaskTracker,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    let vertex = vertex_embedding_calls(config, &executor.client, &executor.deployments, tasks)?;
-    let shared = Arc::new(Shared);
+    let vertex = vertex_embedding_calls(config, &executor, tasks)?;
+    let shared = Arc::new(Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+    });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
     let routed = router(
         state,

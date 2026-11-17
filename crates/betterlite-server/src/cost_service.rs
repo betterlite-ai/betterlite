@@ -9,7 +9,7 @@ use betterlite_core::cost::completion::args::{
     CompletionArgs, CostCalculator, SpecialBorrows, SyncImage, ToolBorrows,
 };
 use betterlite_core::cost::completion::error::CompletionCostError;
-use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupError, LookupSettings};
+use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupError};
 use betterlite_core::cost::completion::{completion_cost, reading};
 use betterlite_core::cost::image_dispatch::error::ImageDispatchError;
 use betterlite_core::cost::image_dispatch::options::SizePattern;
@@ -100,13 +100,11 @@ where
     Formulas: GroundingFormulas + Copy + Send + Sync + 'static,
 {
     pub fn new(
-        model_cost: &[u8],
-        settings: LookupSettings,
+        lookup: CatalogLookup,
         adjustments: &AdjustmentSettings,
         policies: Policies<Formulas>,
         database: TimeZoneDatabase,
     ) -> Result<Self, CostServiceError> {
-        let lookup = CatalogLookup::new(model_cost, settings)?;
         let mut models = ProviderModelSets::default();
         models.add_known_models(lookup.resolution().catalog);
         Ok(Self {

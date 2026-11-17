@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
@@ -8,6 +10,7 @@ use betterlite_core::cost::completion::args::{
 };
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_core::cost::image_dispatch::options::SizePattern;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_metadata_resolution::names::NameNormalizers;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -40,8 +43,11 @@ pub(super) struct Stage {
 pub(super) fn build_stage(input: &Input) -> Result<Stage, Box<HelperError>> {
     let catalog_bytes = serde_json::to_vec(&input.catalog)
         .map_err(|error| failure("CatalogError", error.to_string()))?;
+    let catalog = ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn)
+        .map_err(|error| failure("CatalogError", error.to_string()))?;
     let lookup = CatalogLookup::new(
         &catalog_bytes,
+        Arc::new(catalog),
         LookupSettings {
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),
