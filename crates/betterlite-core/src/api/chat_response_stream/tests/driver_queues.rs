@@ -94,12 +94,14 @@ fn driver_pending_response_events_come_before_queued_tool_events() {
         .progress
         .pending_response_events
         .push(output_item_event(5, Extra::new(), 8, true));
-    for _initial in 0..2 {
-        stream
-            .next_event()
-            .expect("the initial event builds")
-            .expect("the stream emits the initial event");
-    }
+    stream
+        .next_event()
+        .expect("the created event builds")
+        .expect("the stream emits the created event");
+    stream
+        .next_event()
+        .expect("the in-progress event builds")
+        .expect("the stream emits the in-progress event");
     let response = stream
         .next_event()
         .expect("the response event builds")

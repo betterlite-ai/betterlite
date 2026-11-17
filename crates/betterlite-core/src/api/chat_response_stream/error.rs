@@ -8,8 +8,9 @@ use crate::api::responses_chat_output::error::ChatOutputError;
 
 #[derive(Debug, Error)]
 pub enum ChatResponseStreamError {
+    // StreamFailure records the provider's status and wording rather than an Error, so the variant carries it as is
     #[error("the provider stream failed before its next chunk")]
-    Stream(#[from] StreamFailure),
+    Stream(StreamFailure),
     #[error("the provider chunk is not a JSON object")]
     InvalidChunk,
     #[error("the provider chunk could not be read: {source}")]
@@ -31,4 +32,10 @@ pub enum ChatResponseStreamError {
     Output(#[from] ChatOutputError),
     #[error(transparent)]
     Traversal(#[from] TraversalError),
+}
+
+impl From<StreamFailure> for ChatResponseStreamError {
+    fn from(failure: StreamFailure) -> Self {
+        Self::Stream(failure)
+    }
 }

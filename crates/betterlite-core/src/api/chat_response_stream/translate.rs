@@ -20,13 +20,12 @@ use crate::api::chat_response_stream_tools::state::{
     ChatStreamState, StreamProgress, next_sequence,
 };
 use crate::api::chat_response_stream_tools::tool_calls::queue_tool_delta_events;
-use crate::api::responses_output_details::{ChatAnnotation, citation_fields};
+use crate::api::responses_output_details::citation_fields;
 use crate::api::responses_tool_namespaces::values::has_value;
 
 use super::chunk;
 use super::error::ChatResponseStreamError;
 
-// The first chunk that carries a choice decides what the stream's first output item is
 pub(crate) fn ensure_output_item_for_chunk<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
@@ -148,7 +147,6 @@ fn delta_text<'chunk>(
     }
 }
 
-// A generated id the stream mints on first use and keeps for the rest of its life
 fn generated_id(slot: &mut Option<String>, prefix: &str, sources: &EventSources) -> String {
     slot.get_or_insert_with(|| format!("{prefix}_{}", (sources.ids)()))
         .clone()
@@ -229,6 +227,7 @@ fn queue_first_annotations<Context>(
             content_index: 0,
             annotation_index,
             annotation: serde_json::from_str(&encoded)?,
+            extra: Extra::new(),
         };
         queue.push_back(KnownResponseEvent::OutputTextAnnotationAdded(event));
     }

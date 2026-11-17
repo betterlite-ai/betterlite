@@ -2,7 +2,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::event_types::{Extra, ResponseEvent};
 use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
 use betterlite_openai::api::responses_objects::ResponseOutputItem;
-use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -26,7 +25,6 @@ use crate::api::responses_chat_output::records::{ChatCompletionResponse, Request
 use super::chunk;
 use super::error::ChatResponseStreamError;
 
-// The end of the provider stream: the assembled response, then any tool, text and item done events it owes
 pub(crate) fn common_done_event<Context>(
     state: &mut ChatStreamState<Context>,
     sources: &EventSources,
@@ -57,7 +55,10 @@ fn completed_event<Context>(
     sources: &EventSources,
     completion: &Json,
 ) -> Result<KnownResponseEvent, ChatResponseStreamError> {
-    let chat = chat_completion(completion)?;
+    let fields = serde_json::from_str(&serde_json::to_string(completion)?)?;
+    let text = serde_json::to_string(&chunk::fold_hidden_params(fields))?;
+    let chat: ChatCompletionResponse = serde_json::from_str(&text)
+        .map_err(|source| ChatResponseStreamError::Completion { source })?;
     let request_text = serde_json::to_string(&state.responses_api_request)?;
     let request: RequestFields = serde_json::from_str(&request_text)
         .map_err(|source| ChatResponseStreamError::Request { source })?;
@@ -121,17 +122,12 @@ fn json_record(value: Json) -> Record {
 }
 
 // Every conversion here crosses JSON, so one serde pass each way and a failure names its field
-fn transcode<Source: Serialize + ?Sized, Target: DeserializeOwned>(
-    source: &Source,
-) -> Result<Target, StreamItemsError> {
+fn transcode<Source, Target>(source: &Source) -> Result<Target, StreamItemsError>
+where
+    Source: Serialize + ?Sized,
+    Target: DeserializeOwned,
+{
     let encoded = serde_json::to_vec(source)?;
     let mut decoder = serde_json::Deserializer::from_slice(&encoded);
     serde_path_to_error::deserialize(&mut decoder).map_err(StreamItemsError::from)
-}
-
-// The assembled response is a chat completion object, whose hidden parameters carry the private name
-fn chat_completion(completion: &Json) -> Result<ChatCompletionResponse, ChatResponseStreamError> {
-    let fields: IndexMap<String, Json> = serde_json::from_str(&serde_json::to_string(completion)?)?;
-    let text = serde_json::to_string(&chunk::fold_hidden_params(fields))?;
-    serde_json::from_str(&text).map_err(|source| ChatResponseStreamError::Completion { source })
 }

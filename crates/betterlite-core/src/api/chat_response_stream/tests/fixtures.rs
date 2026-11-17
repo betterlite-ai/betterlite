@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -7,7 +7,9 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue};
 use betterlite_streaming::stream_content_assembly::wire::ThinkingBlock;
-use betterlite_streaming::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
+use betterlite_streaming::stream_tool_assembly::records::{
+    FunctionOutput, JsonValue as ToolJsonValue, ToolOutput,
+};
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::AssemblyError;
 use betterlite_streaming::streamed_response_assembly::response::{
@@ -162,9 +164,9 @@ impl StreamAssembly for FixtureAssembly {
                         .tool_calls
                         .as_mut()
                         .expect("the fixture reply carries one tool call")[0];
-                    tool.provider_specific_fields = Some(JsonObject::from([(
+                    tool.provider_specific_fields = Some(BTreeMap::from([(
                         "score".to_owned(),
-                        JsonValue::Number(
+                        ToolJsonValue::Number(
                             serde_json::Number::from_f64(0.5).expect("0.5 is finite"),
                         ),
                     )]));
