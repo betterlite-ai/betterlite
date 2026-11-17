@@ -8,7 +8,6 @@ use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call};
 use betterlite_anthropic::credentials::AnthropicSettings;
-use betterlite_anthropic::headers::HeadersError;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -21,6 +20,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use super::Input;
+use super::failures::FailureShape;
 use super::fixture::runtime::{FixtureCounter, FixtureIds, Silent, logging_env, logging_state};
 use super::fixture::{
     FixtureConfig, FixtureFailure, FixtureReply, FixtureTransport, Logger, LoggerCall, Trip,
@@ -44,41 +44,12 @@ enum RunOutcome {
     Failed,
 }
 
-struct Run {
+pub(super) struct Run {
     outcome: RunOutcome,
-    failure: Option<FailureShape>,
+    pub(super) failure: Option<FailureShape>,
     posts: Vec<StreamPost>,
     details: IndexMap<String, Json>,
     logger_calls: Vec<LoggerCall>,
-}
-
-// the exception LiteLLM raises for the same call, named the way Python names it
-struct FailureShape {
-    class: &'static str,
-    status: Option<u16>,
-    message: String,
-}
-
-impl FailureShape {
-    fn of(error: &ChatCallError<FixtureFailure, Infallible>) -> Self {
-        let class = match error {
-            ChatCallError::Anthropic { .. } => "AnthropicError",
-            ChatCallError::Headers(HeadersError::Authentication { .. }) => "AuthenticationError",
-            ChatCallError::Headers(_) => "HeadersError",
-            ChatCallError::Prepare { .. } | ChatCallError::Filter { .. } => "ValueError",
-            ChatCallError::PreCall(_) => "PreCallError",
-            ChatCallError::Response(_) | ChatCallError::Parameter(_) => "ValueError",
-            ChatCallError::Open(_) => "AnthropicError",
-            ChatCallError::Endpoint { .. }
-            | ChatCallError::HeaderName { .. }
-            | ChatCallError::HeaderValue { .. } => "ValueError",
-        };
-        Self {
-            class,
-            status: error.status_code(),
-            message: error.to_string(),
-        }
-    }
 }
 
 impl Run {
@@ -101,7 +72,7 @@ impl Run {
     }
 }
 
-const fn client_kind(acompletion: bool) -> ClientKind {
+pub(super) const fn client_kind(acompletion: bool) -> ClientKind {
     if acompletion {
         ClientKind::Async
     } else {
@@ -186,7 +157,11 @@ fn run_of(
     }
 }
 
-fn execute(input: &Input, acompletion: bool, kind: ClientKind) -> Result<Run, Box<HelperError>> {
+pub(super) fn execute(
+    input: &Input,
+    acompletion: bool,
+    kind: ClientKind,
+) -> Result<Run, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let silent = Silent;
     let env = logging_env(&redactor, &silent)?;
@@ -282,43 +257,4 @@ pub(super) fn stream_request(input: &Input) -> HelperResult {
     let async_answer = stream_answer(input, &asynchronous)?;
     let sync_answer = stream_answer(input, &synchronous)?;
     Ok(json!({"async": async_answer, "sync": sync_answer}))
-}
-
-// the case compares the exception LiteLLM raises, so the answer is that error, not a value
-fn failure_answer(run: &Run) -> HelperResult {
-    match &run.failure {
-        Some(failure) => Err(Box::new(HelperError {
-            class: failure.class.to_owned(),
-            status: failure.status,
-            error_type: None,
-            param: None,
-            code: None,
-            message: failure.message.clone(),
-        })),
-        None => "the call was expected to fail and did not"
-            .to_owned()
-            .or_value_error(),
-    }
-}
-
-pub(super) fn pre_stream_error(input: &Input) -> HelperResult {
-    let acompletion = input.acompletion;
-    let run = execute(input, acompletion, client_kind(acompletion))?;
-    failure_answer(&run)
-}
-
-pub(super) fn native_error_body(input: &Input) -> HelperResult {
-    let acompletion = input.acompletion;
-    let run = execute(input, acompletion, client_kind(acompletion))?;
-    failure_answer(&run)
-}
-
-pub(super) fn chat_failure_projection(input: &Input) -> HelperResult {
-    let asynchronous = execute(input, true, ClientKind::Async)?;
-    if asynchronous.failure.is_none() {
-        return "the call was expected to fail and did not"
-            .to_owned()
-            .or_value_error();
-    }
-    failure_answer(&asynchronous)
 }

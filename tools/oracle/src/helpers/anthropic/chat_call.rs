@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
+mod failures;
 mod fixture;
 mod scenarios;
 mod support;
@@ -57,10 +58,10 @@ impl Helper for Op {
             Scenario::MessagesPostRequest => scenarios::messages_post_request(input),
             Scenario::BufferedSuccess => scenarios::buffered_success(input),
             Scenario::StreamRequest => scenarios::stream_request(input),
-            Scenario::PreStreamError => scenarios::pre_stream_error(input),
-            Scenario::NativeErrorBody => scenarios::native_error_body(input),
+            Scenario::PreStreamError => failures::pre_stream_error(input),
+            Scenario::NativeErrorBody => failures::native_error_body(input),
             Scenario::UnsupportedEmbedding => Ok(json!({"reply": EMBEDDING_REPLY, "posted": 0})),
-            Scenario::ChatFailureProjection => scenarios::chat_failure_projection(input),
+            Scenario::ChatFailureProjection => failures::chat_failure_projection(input),
         }
     }
 }
