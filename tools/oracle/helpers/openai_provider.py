@@ -1,11 +1,9 @@
 import os
-from collections.abc import Awaitable
 from typing import TypedDict
 
 import httpx
 import litellm
 import openai
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
 from pydantic import JsonValue, TypeAdapter
@@ -33,6 +31,15 @@ class Defaults(TypedDict, total=False):
     top_p: int
 
 
+# The per-case parameters the helper passes through; embedding's declared parameters must match their types
+class OptionalParams(TypedDict, total=False):
+    dimensions: int
+    encoding_format: str
+    input: list[str]
+    max_tokens: int
+    temperature: int
+
+
 class ProviderCase(TypedDict):
     case: str
     model: str
@@ -48,7 +55,7 @@ class ProviderCase(TypedDict):
     chat_defaults: Defaults | None
     text_defaults: Defaults | None
     messages: list[dict[str, JsonValue]]
-    optional_params: dict[str, JsonValue]
+    optional_params: OptionalParams
     status: int
     reply: dict[str, JsonValue]
     text_completion: bool
@@ -133,8 +140,7 @@ def call(
 ) -> ModelResponse | TextCompletionResponse | EmbeddingResponse:
     family = case["case"]
     if family == "embedding":
-        # litellm.embedding's decorated return is Any to mypy, so its type is named here.
-        embedding: EmbeddingResponse | Awaitable[EmbeddingResponse] = litellm.embedding(
+        embedding = litellm.embedding(
             model=case["model"],
             api_base=case["api_base"],
             api_key=case["api_key"],
@@ -146,8 +152,7 @@ def call(
         )
         return TypeAdapter(EmbeddingResponse).validate_python(embedding)
     if family == "text":
-        # litellm.completion's decorated return is Any to mypy, so its type is named here.
-        text: ModelResponse | TextCompletionResponse | CustomStreamWrapper = litellm.completion(
+        text = litellm.completion(
             model=f"text-completion-openai/{case['model']}",
             messages=case["messages"],
             api_base=case["api_base"],
@@ -163,7 +168,7 @@ def call(
     flag = os.environ.get(EXPERIMENTAL_HANDLER_FLAG)
     if flag is not None and flag.strip().lower() == "true":
         client = HTTPHandler(client=httpx.Client(transport=transport))
-        experimental: ModelResponse | CustomStreamWrapper = litellm.completion(
+        experimental = litellm.completion(
             model=case["model"],
             messages=case["messages"],
             api_base=case["api_base"],
@@ -177,7 +182,7 @@ def call(
             **case["optional_params"],
         )
         return TypeAdapter(ModelResponse).validate_python(experimental)
-    chat: ModelResponse | CustomStreamWrapper = litellm.completion(
+    chat = litellm.completion(
         model=case["model"],
         messages=case["messages"],
         api_base=case["api_base"],
@@ -224,6 +229,7 @@ def reply_view(
             "total_tokens": total_tokens(dump),
         }
     first = first_object(dump.get("choices"))
+    content: JsonValue = None
     match first.get("message"):
         case dict():
             content = OBJECT.validate_python(first.get("message")).get("content")

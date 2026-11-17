@@ -5,8 +5,7 @@ use betterlite_config::sections::Section;
 use betterlite_config::sections::openai_credentials::Raw as CredentialsRaw;
 use betterlite_config::sections::openai_provider::Raw as ProviderRaw;
 use betterlite_openai::credentials::LiteLlmGlobals;
-use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object, OpenAiSettings};
-use betterlite_openai::text_completion_policy::TextCompletionSettings;
+use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::openai_dispatch::OpenAiRequest;
@@ -21,7 +20,7 @@ use betterlite_provider::openai_dispatch::transport::Deps;
 use betterlite_provider::operation::OperationRequest;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, DeserializeOwned};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -179,8 +178,8 @@ fn composition(case: &Case) -> Result<Composition, Box<HelperError>> {
             .get("OPENAI_API_KEY")
             .filter(|value| !value.is_empty())
             .map(|value| SecretString::from(value.clone())),
-        chat_defaults: chat_defaults(case.chat_defaults.as_ref())?,
-        text_defaults: text_defaults(case.text_defaults.as_ref())?,
+        chat_defaults: defaults(case.chat_defaults.as_ref())?,
+        text_defaults: defaults(case.text_defaults.as_ref())?,
         catalog: CatalogCapabilities {
             chat_models: BTreeSet::new(),
             text_models: BTreeSet::new(),
@@ -188,22 +187,10 @@ fn composition(case: &Case) -> Result<Composition, Box<HelperError>> {
     })
 }
 
-fn chat_defaults(defaults: Option<&Object>) -> Result<OpenAiSettings, Box<HelperError>> {
-    defaults.map_or_else(
-        || Ok(OpenAiSettings::default()),
-        |fields| {
-            serde_json::from_value(Value::Object(fields.clone()))
-                .map_err(|error| failure("ValueError", error))
-        },
-    )
-}
-
-fn text_defaults(defaults: Option<&Object>) -> Result<TextCompletionSettings, Box<HelperError>> {
-    defaults.map_or_else(
-        || Ok(TextCompletionSettings::default()),
-        |fields| {
-            serde_json::from_value(Value::Object(fields.clone()))
-                .map_err(|error| failure("ValueError", error))
-        },
-    )
+fn defaults<T: Default + DeserializeOwned>(fields: Option<&Object>) -> Result<T, Box<HelperError>> {
+    let Some(object) = fields else {
+        return Ok(T::default());
+    };
+    serde_json::from_value(Value::Object(object.clone()))
+        .map_err(|error| failure("ValueError", error))
 }

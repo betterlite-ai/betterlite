@@ -117,7 +117,13 @@ pub(super) fn reply_view(outcome: OperationResult) -> Result<Value, Box<HelperEr
         }
         OperationResult::Embedding(reply) => {
             let dump = serde_json::to_value(&reply).map_err(|error| failure("Fixture", error))?;
-            Ok(embedding_view(&dump))
+            let first = first_entry(&dump, "data");
+            Ok(serde_json::json!({
+                "object": dump.get("object").cloned().unwrap_or(Value::Null),
+                "model": dump.get("model").cloned().unwrap_or(Value::Null),
+                "embedding": first.get("embedding").cloned().unwrap_or(Value::Null),
+                "total_tokens": total_tokens(&dump),
+            }))
         }
         OperationResult::OpenAi(OpenAiResult::Text(reply)) => {
             let dump = serde_json::to_value(&reply).map_err(|error| failure("Fixture", error))?;
@@ -137,13 +143,16 @@ pub(super) fn reply_view(outcome: OperationResult) -> Result<Value, Box<HelperEr
     }
 }
 
-fn chat_view(dump: &Value) -> Value {
-    let first = dump
-        .get("choices")
+fn first_entry(dump: &Value, field: &str) -> Value {
+    dump.get(field)
         .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
+        .and_then(|entries| entries.first())
         .cloned()
-        .unwrap_or(Value::Null);
+        .unwrap_or(Value::Null)
+}
+
+fn chat_view(dump: &Value) -> Value {
+    let first = first_entry(dump, "choices");
     let content = match first.get("message") {
         Some(Value::Object(message)) => message.get("content").cloned().unwrap_or(Value::Null),
         _other => first.get("text").cloned().unwrap_or(Value::Null),
@@ -154,21 +163,6 @@ fn chat_view(dump: &Value) -> Value {
         "model": dump.get("model").cloned().unwrap_or(Value::Null),
         "content": content,
         "finish_reason": first.get("finish_reason").cloned().unwrap_or(Value::Null),
-        "total_tokens": total_tokens(dump),
-    })
-}
-
-fn embedding_view(dump: &Value) -> Value {
-    let first = dump
-        .get("data")
-        .and_then(Value::as_array)
-        .and_then(|data| data.first())
-        .cloned()
-        .unwrap_or(Value::Null);
-    serde_json::json!({
-        "object": dump.get("object").cloned().unwrap_or(Value::Null),
-        "model": dump.get("model").cloned().unwrap_or(Value::Null),
-        "embedding": first.get("embedding").cloned().unwrap_or(Value::Null),
         "total_tokens": total_tokens(dump),
     })
 }
