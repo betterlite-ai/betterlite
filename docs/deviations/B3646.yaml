@@ -24,8 +24,10 @@ deviations:
       configuration, so a bad value cannot occur in normal use, and this check keeps one away from the signer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L655
   - what: >-
-      An Err from the pricer or from the dispatcher is logged at the tracing error level and ends the task; the pricer's
-      error means no spend row. LiteLLM's task raises instead and asyncio reports the exception when nobody retrieves it.
+      An Err from the pricer is logged at the tracing error level and ends the task, so the job gets no spend row; a
+      logging state another owner has already taken is logged the same way. B3605's StreamSuccessDispatch cannot fail,
+      so there is no dispatch error to report. LiteLLM's task raises instead and asyncio reports the exception when
+      nobody retrieves it.
     why: Rust has no unobserved task exceptions, so the error line is the equivalent of that report.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L636-L683
   - what: >-
