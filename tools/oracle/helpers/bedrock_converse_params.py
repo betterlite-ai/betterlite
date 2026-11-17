@@ -78,16 +78,18 @@ class ConverseParamsConfig(AmazonConverseConfig):
 
 
 def run(input_value: Input) -> JsonValue:
-    litellm.model_cost = input_value["model_cost"]
     config = ConverseParamsConfig()
     if input_value["function"] == "map_params":
+        litellm.model_cost = input_value["model_cost"]
         litellm.drop_params = input_value["global_drop"]
         return {"params": config.compose(input_value)}
     if input_value["function"] == "cache_point":
+        litellm.model_cost = input_value["model_cost"]
         system, content = config.cache_point_blocks(input_value)
         built = config.cache_point_built(input_value)
         return {"block": system, "content": content, "built": built}
     if input_value["function"] == "top_k":
+        litellm.model_cost = input_value["model_cost"]
         litellm.drop_params = input_value["global_drop"]
         mapped, remaining, transformed = config.top_k_parts(input_value)
         return {"mapped": mapped, "remaining": remaining, "transformed": transformed}
