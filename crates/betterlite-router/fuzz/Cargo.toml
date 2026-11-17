@@ -47,3 +47,10 @@ path = "fuzz_targets/retry_after.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "model_rules"
+path = "fuzz_targets/model_rules.rs"
+test = false
+doc = false
+bench = false
