@@ -259,12 +259,12 @@ async fn narrows_with_request_kwargs(
     enable: Option<bool>,
     expected: &[&str],
 ) {
-    let injected = injected_json(PLAIN_MESSAGES, kwargs, enable, global_enabled);
-    assert!(cache_key(&injected, None).is_some());
-    let pins = Arc::new(FakePins::default());
-    let affinity = service(Arc::clone(&pins), 2000, global_enabled);
-    affinity
-        .record_success(&success("completion", Some("dep-a"), Some(&injected)))
+    let sent = injected_json(PLAIN_MESSAGES, kwargs, enable, global_enabled);
+    assert!(cache_key(&sent, None).is_some());
+    let store = Arc::new(FakePins::default());
+    let check = service(Arc::clone(&store), 2000, global_enabled);
+    check
+        .record_success(&success("completion", Some("dep-a"), Some(&sent)))
         .await
         .unwrap();
     let pool = [
@@ -274,8 +274,8 @@ async fn narrows_with_request_kwargs(
     let typed = messages(PLAIN_MESSAGES);
     let mut selection = request(&pool, Some(&typed));
     selection.request_kwargs = Some(kwargs);
-    let selected = affinity.filter_deployments(&selection).await.unwrap();
-    assert_eq!(ids(&selected), expected);
+    let kept = check.filter_deployments(&selection).await.unwrap();
+    assert_eq!(ids(&kept), expected);
 }
 
 fn a_message_level_mark_ignores_later_messages() {
