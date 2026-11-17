@@ -134,6 +134,79 @@ async fn next_drops_stripped_usage_chunks_that_carry_nothing(#[case] raw: &str) 
 }
 
 #[tokio::test]
+async fn next_keeps_a_stripped_usage_chunk_with_a_null_valued_provider_field() {
+    let with_field = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"provider_specific_fields":{"trace":null}}"#;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![
+        content_chunk("Hi"),
+        finish_chunk(),
+        provider_json(with_field),
+    ]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    assert_eq!(
+        finish_of(&only_chunk(stream.next().await)).as_deref(),
+        Some("stop")
+    );
+    let kept = only_chunk(stream.next().await);
+    assert!(kept.usage.is_none());
+    assert_eq!(
+        kept.provider_specific_fields,
+        Some(object(r#"{"trace":null}"#))
+    );
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn next_drops_a_stripped_usage_chunk_with_only_an_empty_role() {
+    let empty_role = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":""},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![
+        content_chunk("Hi"),
+        finish_chunk(),
+        provider_json(empty_role),
+    ]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    assert_eq!(
+        finish_of(&only_chunk(stream.next().await)).as_deref(),
+        Some("stop")
+    );
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn next_keeps_a_stripped_usage_chunk_with_a_delta_extra_field() {
+    let vendor_delta = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"vendor_note":"kept"},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#;
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![
+        content_chunk("Hi"),
+        finish_chunk(),
+        provider_json(vendor_delta),
+    ]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    assert_eq!(
+        finish_of(&only_chunk(stream.next().await)).as_deref(),
+        Some("stop")
+    );
+    let kept = only_chunk(stream.next().await);
+    assert!(kept.usage.is_none());
+    let delta = &kept.choices[0].delta;
+    assert_eq!(
+        delta.extra.get("vendor_note"),
+        Some(&JsonValue::String("kept".to_owned()))
+    );
+    assert!(stream.next().await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn next_records_usage_chunk_after_finish() {
     let world = World::new();
     let mut correlation = CorrelationContext::default();
