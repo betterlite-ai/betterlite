@@ -120,6 +120,7 @@ enum BuilderBehavior {
     ExceptionHeaders,
     EndUserFallback,
     OverheadTiming,
+    NonTextSystemIgnored,
 }
 
 #[rstest]
@@ -134,6 +135,7 @@ enum BuilderBehavior {
 #[case::exception_headers_and_tracebacks_follow_the_source(BuilderBehavior::ExceptionHeaders)]
 #[case::end_user_falls_back_to_the_proxy_body(BuilderBehavior::EndUserFallback)]
 #[case::overhead_timing_fills_only_on_success(BuilderBehavior::OverheadTiming)]
+#[case::non_text_system_is_ignored(BuilderBehavior::NonTextSystemIgnored)]
 #[tokio::test]
 async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: BuilderBehavior) {
     match behavior {
@@ -602,6 +604,39 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Build
             )
             .expect("the failure payload builds");
             assert!(failed.hidden_params.litellm_overhead_time_ms.is_none());
+        }
+        BuilderBehavior::NonTextSystemIgnored => {
+            let mut configuration = init(None);
+            configuration.messages = Some(Messages::Values(vec![Json::Object(IndexMap::from([
+                ("role".to_owned(), Json::Text("user".to_owned())),
+                ("content".to_owned(), Json::Text("hello".to_owned())),
+            ]))]));
+            let mut state = state_from(configuration);
+            state.model_call_details.insert(
+                "system".to_owned(),
+                serde_json::from_str(r#"[{"type": "text", "text": "block system prompt"}]"#)
+                    .unwrap(),
+            );
+            let payload = StandardPayloadBuilder::build(
+                &builder(Settings::default()),
+                &state,
+                &chat_response(),
+                start(),
+                end(),
+            )
+            .expect("a block-list system does not fail the payload");
+            let Json::List(messages) = payload.messages.expect("the messages are logged") else {
+                panic!("messages stay a list");
+            };
+            assert_eq!(messages.len(), 1);
+            assert_eq!(
+                object_field(&messages[0], "role"),
+                Some(&Json::Text("user".to_owned()))
+            );
+            assert_eq!(
+                object_field(&messages[0], "content"),
+                Some(&Json::Text("hello".to_owned()))
+            );
         }
     }
 }

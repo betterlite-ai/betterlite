@@ -185,7 +185,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
         ContractBehavior::WallClockSeconds => {
             let now = SystemPayloadClock.now_epoch_seconds();
             assert!(
-                now > 1_700_000_000.0,
+                (1_700_000_000.0..10_000_000_000.0).contains(&now),
                 "the wall clock reads epoch seconds, got {now}"
             );
         }

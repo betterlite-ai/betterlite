@@ -15,17 +15,13 @@ use crate::payload::error::PayloadError;
 
 // _get_response_headers: exception.headers, then response.headers, then the litellm response headers
 pub(crate) fn exception_headers(exception: Option<&ExceptionFacts>) -> Option<AdditionalHeaders> {
-    let Some(facts) = exception else {
-        return None;
-    };
+    let facts = exception?;
     let candidates = facts
         .headers
         .as_ref()
         .or(facts.response_headers.as_ref())
         .or(facts.litellm_response_headers.as_ref());
-    let Some(headers) = candidates else {
-        return None;
-    };
+    let headers = candidates?;
     let record: IndexMap<String, Json> = headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
