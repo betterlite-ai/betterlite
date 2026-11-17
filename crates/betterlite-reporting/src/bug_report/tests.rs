@@ -110,7 +110,7 @@ fn bug_report_frames_come_from_the_creation_site() {
 #[case::absolute_registry(
     "/home/user/.cargo/registry/src/index.crates.io-1/serde-1.0.228/src/lib.rs"
 )]
-#[case::absolute_other_checkout("/home/user/Desktop/betterlite/crates/betterlite-core/src/lib.rs")]
+#[case::absolute_other_checkout("/srv/other-checkout/crates/betterlite-core/src/lib.rs")]
 fn bug_report_creation_site_outside_the_crates_directory_gives_no_frames(#[case] file: &str) {
     let frames = litellm_frames(file, 7);
     assert!(frames.is_empty(), "{frames:?}");
