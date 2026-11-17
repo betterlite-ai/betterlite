@@ -1,0 +1,18 @@
+kind: helper
+name: temporary_budget_expiry
+call:
+  key_fields:
+    calls:
+      - {function: update, body: {key: "k", temp_budget_increase: 2.5, temp_budget_expiry: "2030-01-01T00:00:00"}}
+      - {function: update, body: {key: "k", temp_budget_increase: 2.5}}
+      - {function: update, body: {key: "k", temp_budget_expiry: "2030-01-01T00:00:00"}}
+      - {function: update, body: {key: "k", temp_budget_increase: null, temp_budget_expiry: null}}
+      - {function: update, body: {key: "k", temp_budget_increase: null}}
+      - {function: update, body: {key: "k", temp_budget_expiry: null}}
+      - {function: update, body: {key: "k", temp_budget_increase: -1.5, temp_budget_expiry: "2020-01-01T00:00:00"}}
+      - {function: broadcast, body: {temp_budget_increase: 2.5, temp_budget_expiry: "2030-01-01T00:00:00"}}
+      - {function: broadcast, body: {temp_budget_increase: 2.5}}
+      - {function: broadcast, body: {temp_budget_expiry: "2030-01-01T00:00:00"}}
+      - {function: broadcast, body: {temp_budget_increase: null, temp_budget_expiry: null, duration: "1d"}}
+env: {}
+compare: {ignore: []}
