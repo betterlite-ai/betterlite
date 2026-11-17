@@ -1,0 +1,382 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::time::Duration;
+
+use betterlite_config::sections::guardrail_identity::enums::PiiAction;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
+use betterlite_config::sections::presidio_runtime::Settings as RuntimeSettings;
+use tempfile::NamedTempFile;
+
+use super::support::{
+    GUARDRAIL_NAME, Mock, args, build, defaults, guard, guard_args, guard_with, logging_only_guard,
+    quiet, roleless,
+};
+use crate::guardrail_initializers::presidio::{PresidioArgs, PresidioRole};
+use crate::presidio_actions::error::PresidioActionsError;
+use crate::presidio_analysis::{DEFAULT_ANALYZE_TIMEOUT, DEFAULT_CHUNK_SIZE_BYTES};
+use crate::presidio_runtime::PresidioDefaults;
+use crate::presidio_runtime::PresidioGuard;
+use crate::presidio_runtime::error::PresidioRuntimeError;
+
+fn failing(args: &PresidioArgs) -> PresidioRuntimeError {
+    build(
+        args,
+        PresidioDefaults::default(),
+        RuntimeSettings::default(),
+        false,
+        Some(args.role),
+    )
+    .err()
+    .expect("the constructor error")
+}
+
+fn failing_with(recognizers: &str) -> PresidioRuntimeError {
+    let mut args = args("", "");
+    args.presidio_ad_hoc_recognizers = Some(recognizers.to_owned());
+    failing(&args)
+}
+
+fn built_with(args: &PresidioArgs, server: &Mock) -> PresidioGuard {
+    build(
+        args,
+        defaults(&server.base, &server.base),
+        RuntimeSettings::default(),
+        false,
+        Some(args.role),
+    )
+    .expect("the guard")
+}
+
+fn endpoints(guard: &PresidioGuard) -> (String, String) {
+    (
+        guard.analyzer.settings.analyzer_api_base.clone(),
+        guard.anonymizer.settings.anonymizer_api_base.clone(),
+    )
+}
+
+fn url(server: &Mock) -> String {
+    format!("{}/", server.base)
+}
+
+fn widened() -> LitellmParamsMode {
+    LitellmParamsMode::Many(vec!["pre_call".to_owned(), "post_call".to_owned()])
+}
+
+fn single(hook: &str) -> LitellmParamsMode {
+    LitellmParamsMode::One(hook.to_owned())
+}
+
+fn kept(args: &PresidioArgs) -> Option<LitellmParamsMode> {
+    roleless(args).base.settings.event_hook
+}
+
+fn temp_file(contents: &str) -> NamedTempFile {
+    let file = NamedTempFile::new().expect("the temp file");
+    fs::write(file.path(), contents).expect("the file contents");
+    file
+}
+
+fn missing_path() -> String {
+    format!(
+        "{}/presidio-runtime-no-such-recognizer.json",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
+pub(super) fn defaults_are_applied() {
+    let server = quiet();
+    let guard = guard(&guard_args(&server));
+    let settings = &guard.analyzer.settings;
+    assert_eq!(
+        (
+            settings.guardrail_name.as_str(),
+            settings.analyzer_api_base.as_str(),
+            settings.language.as_str(),
+            settings.chunk_size_bytes,
+            settings.timeout,
+        ),
+        (
+            GUARDRAIL_NAME,
+            url(&server).as_str(),
+            "en",
+            DEFAULT_CHUNK_SIZE_BYTES,
+            DEFAULT_ANALYZE_TIMEOUT,
+        )
+    );
+    assert_eq!(
+        (
+            settings.output_parse_pii,
+            settings.apply_to_output,
+            settings.score_thresholds.is_empty(),
+            settings.entities_deny_list.is_empty(),
+            settings.pii_entities.is_empty(),
+            settings.ad_hoc_recognizers.is_none(),
+            settings.mock_redacted_text.is_none(),
+        ),
+        (false, false, true, true, true, true, true)
+    );
+    anonymizer_defaults_are_applied(&server, &guard);
+}
+
+fn anonymizer_defaults_are_applied(server: &Mock, guard: &PresidioGuard) {
+    assert_eq!(
+        (
+            guard.anonymizer.settings.anonymizer_api_base.as_str(),
+            guard.anonymizer.settings.timeout,
+            guard.pii_entities_config.is_empty(),
+            guard.global_output_parse_pii,
+            guard.callback_role,
+        ),
+        (
+            url(server).as_str(),
+            DEFAULT_ANALYZE_TIMEOUT,
+            true,
+            false,
+            Some(PresidioRole::Scan),
+        )
+    );
+}
+
+pub(super) fn configured_values_are_applied() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.apply_to_output = true;
+    args.presidio_language = Some("de".to_owned());
+    args.presidio_score_thresholds = Some(BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5_f64)]));
+    args.presidio_entities_deny_list = Some(vec!["US_SSN".to_owned()]);
+    args.pii_entities_config = Some(BTreeMap::from([("US_SSN".to_owned(), PiiAction::Block)]));
+    args.analyze_chunk_size_bytes = Some(10);
+    args.timeout = Some(12.5_f64);
+    args.mock_redacted_text = Some(BTreeMap::from([(
+        "text".to_owned(),
+        GuardrailValue::Text("redacted".to_owned()),
+    )]));
+    let settings = RuntimeSettings {
+        output_parse_pii: true,
+    };
+    let guard = guard_with(&args, settings);
+    let analyzer = &guard.analyzer.settings;
+    assert_eq!(analyzer.language, "de");
+    assert!(analyzer.output_parse_pii);
+    assert!(analyzer.apply_to_output);
+    assert_eq!(
+        analyzer.score_thresholds,
+        BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5_f64)])
+    );
+    assert_eq!(analyzer.entities_deny_list, vec!["US_SSN".to_owned()]);
+    assert_eq!(analyzer.pii_entities, vec!["US_SSN".to_owned()]);
+    assert_eq!(analyzer.chunk_size_bytes, 10_usize);
+    assert_eq!(analyzer.timeout, Duration::from_millis(12_500));
+    assert_eq!(
+        analyzer
+            .mock_redacted_text
+            .as_ref()
+            .map(|mock| mock.text.as_str()),
+        Some("redacted")
+    );
+    assert!(guard.pii_entities_config.contains_key("US_SSN"));
+    assert!(guard.global_output_parse_pii);
+}
+
+pub(super) fn hook_widens_for_a_roleless_output_callback() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    assert_eq!(kept(&args), Some(widened()));
+}
+
+pub(super) fn hook_widens_for_a_roleless_output_mask_callback() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.apply_to_output = true;
+    assert_eq!(kept(&args), Some(widened()));
+}
+
+pub(super) fn hook_widening_appends_to_a_list() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.event_hook = LitellmParamsMode::Many(vec!["pre_call".to_owned()]);
+    assert_eq!(kept(&args), Some(widened()));
+}
+
+pub(super) fn hook_widening_keeps_a_list_that_has_post_call() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.event_hook = LitellmParamsMode::Many(vec!["pre_call".to_owned(), "post_call".to_owned()]);
+    assert_eq!(kept(&args), Some(args.event_hook));
+}
+
+pub(super) fn hook_widening_skips_a_callback_with_a_role() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    assert_eq!(
+        guard(&args).base.settings.event_hook,
+        Some(single("pre_call"))
+    );
+}
+
+pub(super) fn hook_widening_skips_a_roleless_callback_without_output() {
+    let server = quiet();
+    let args = guard_args(&server);
+    assert_eq!(kept(&args), Some(single("pre_call")));
+}
+
+pub(super) fn hook_widening_keeps_a_tagged_mode() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.event_hook = LitellmParamsMode::Tagged(Mode {
+        tags: BTreeMap::from([("beta".to_owned(), ModeTarget::One("pre_call".to_owned()))]),
+        default: None,
+    });
+    assert_eq!(kept(&args), Some(args.event_hook));
+}
+
+pub(super) fn hook_widening_keeps_a_post_call_hook() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.output_parse_pii = Some(true);
+    args.event_hook = LitellmParamsMode::One("post_call".to_owned());
+    assert_eq!(kept(&args), Some(args.event_hook));
+}
+
+pub(super) fn logging_only_sets_the_event_hook() {
+    let server = quiet();
+    let args = guard_args(&server);
+    assert_eq!(
+        logging_only_guard(&args).base.settings.event_hook,
+        Some(single("logging_only"))
+    );
+}
+
+pub(super) fn missing_recognizer_file_reports_the_path() {
+    let path = missing_path();
+    let error = failing_with(&path);
+    assert_eq!(
+        error.to_string(),
+        format!("File not found. file_path={path}")
+    );
+    assert!(matches!(error, PresidioRuntimeError::FileNotFound { path: found } if found == path));
+}
+
+pub(super) fn invalid_recognizer_json_reports_the_decode_error() {
+    let file = temp_file("{not json");
+    let path = file.path().display().to_string();
+    let message = failing_with(&path).to_string();
+    assert!(message.starts_with("Error decoding JSON file: "));
+    assert!(message.ends_with(&format!(", file_path={path}")));
+}
+
+pub(super) fn unreadable_recognizer_file_reports_the_error() {
+    let directory = tempfile::tempdir().expect("the temp directory");
+    let path = directory.path().display().to_string();
+    let message = failing_with(&path).to_string();
+    assert!(message.starts_with("An error occurred: "));
+    assert!(message.ends_with(&format!(", file_path={path}")));
+}
+
+pub(super) fn recognizer_file_that_is_not_a_list_reports_the_decode_error() {
+    let file = temp_file(r#"{"name": "a recognizer"}"#);
+    let path = file.path().display().to_string();
+    let error = failing_with(&path);
+    assert!(matches!(error, PresidioRuntimeError::Decode { .. }));
+    assert!(error.to_string().starts_with("Error decoding JSON file: "));
+}
+
+pub(super) fn recognizer_file_is_read_before_the_api_bases() {
+    let error = failing_with(&missing_path());
+    assert!(matches!(error, PresidioRuntimeError::FileNotFound { .. }));
+}
+
+pub(super) fn missing_bases_report_the_analyzer_first() {
+    let mut args = args("", "");
+    args.presidio_analyzer_api_base = None;
+    args.presidio_anonymizer_api_base = None;
+    assert!(matches!(
+        failing(&args),
+        PresidioRuntimeError::Actions(PresidioActionsError::MissingAnalyzerApiBase)
+    ));
+}
+
+pub(super) fn a_missing_anonymizer_base_is_reported() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_anonymizer_api_base = None;
+    assert!(matches!(
+        failing(&args),
+        PresidioRuntimeError::Actions(PresidioActionsError::MissingAnonymizerApiBase)
+    ));
+}
+
+pub(super) fn defaults_supply_the_api_bases() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_analyzer_api_base = None;
+    args.presidio_anonymizer_api_base = None;
+    let guard = built_with(&args, &server);
+    assert_eq!(endpoints(&guard), (url(&server), url(&server)));
+}
+
+pub(super) fn an_explicit_base_wins_over_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_analyzer_api_base = Some("http://argument.test".to_owned());
+    let guard = built_with(&args, &server);
+    assert_eq!(
+        endpoints(&guard),
+        ("http://argument.test/".to_owned(), url(&server))
+    );
+}
+
+pub(super) fn empty_bases_fall_back_to_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_analyzer_api_base = Some(String::new());
+    args.presidio_anonymizer_api_base = Some(String::new());
+    let guard = built_with(&args, &server);
+    assert_eq!(endpoints(&guard), (url(&server), url(&server)));
+}
+
+pub(super) fn unrepresentable_timeout() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.timeout = Some(-1.0_f64);
+    assert!(matches!(
+        failing(&args),
+        PresidioRuntimeError::Timeout { seconds, .. } if seconds.to_bits() == (-1.0_f64).to_bits()
+    ));
+}
+
+pub(super) fn zero_timeout_uses_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.timeout = Some(0.0_f64);
+    let guard = guard(&args);
+    assert_eq!(guard.analyzer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
+    assert_eq!(guard.anonymizer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
+}
+
+pub(super) fn malformed_mock_redacted_text_fails_construction() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.mock_redacted_text = Some(BTreeMap::from([(
+        "text".to_owned(),
+        GuardrailValue::SignedInteger(1),
+    )]));
+    assert!(matches!(
+        failing(&args),
+        PresidioRuntimeError::MockRedactedText { .. }
+    ));
+}
+
+pub(super) fn an_empty_language_uses_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_language = Some(String::new());
+    assert_eq!(guard(&args).analyzer.settings.language, "en");
+}

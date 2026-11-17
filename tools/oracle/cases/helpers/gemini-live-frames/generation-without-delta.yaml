@@ -1,0 +1,15 @@
+kind: helper
+name: generation-without-delta
+call:
+  gemini_live_frames:
+    frames:
+      - '{"serverContent": {"generationComplete": true}}'
+      - '{"serverContent": {"modelTurn": {"parts": [{"text": "hi"}]}}}'
+      - '{"serverContent": {"generationComplete": true}}'
+calls:
+  - gemini_live_frames:
+      state: {delta_type: text}
+      frames:
+        - '{"serverContent": {"generationComplete": true}}'
+env: {}
+compare: {ignore: []}

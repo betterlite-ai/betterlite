@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-server-utils-merge-headers
+call:
+  b6594:
+    function: merge_headers
+    extra_headers:
+      Authorization: "Bearer extra"
+      X-Trace: extra
+    static_headers:
+      authorization: "Bearer static"
+      X-Trace: static
+calls:
+  - b6594:
+      function: merge_headers
+  - b6594:
+      function: merge_headers
+      extra_headers: {}
+      static_headers: {X-Only: one}
+env: {}
+compare: {ignore: []}

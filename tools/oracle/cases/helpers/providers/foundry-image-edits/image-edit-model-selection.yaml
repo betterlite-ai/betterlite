@@ -1,0 +1,7 @@
+kind: helper
+name: foundry-image-edits-image-edit-model-selection
+call:
+  foundry_image_edits:
+    models: [MAI-Image-2.5, mai-image-2, FLUX.2-pro, flux-2-flex, FLUX-1-kontext-pro, flux, '', gpt-image-1]
+env: {}
+compare: {ignore: []}
