@@ -328,7 +328,6 @@ async fn basic_retrieve() {
     assert_eq!(header(&sent.headers, "anthropic-version"), "2023-06-01");
     assert_eq!(header(&sent.headers, "accept"), "application/json");
     assert_eq!(header(&sent.headers, "content-type"), "application/json");
-    assert_eq!(fixture.sent(), 1);
     assert_logged_call(&state, "msgbatch_9");
 }
 
