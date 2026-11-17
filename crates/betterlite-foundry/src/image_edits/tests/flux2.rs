@@ -115,9 +115,9 @@ fn reference_limits() {
             &ImageParams::new(),
         )
         .expect("the reference limit");
-        assert_eq!(built.data.len(), limit + 2, "{model}");
+        assert_eq!(built.data.len(), limit.saturating_add(2), "{model}");
 
-        let mut over_limit = bytes_sources(limit + 1);
+        let mut over_limit = bytes_sources(limit.saturating_add(1));
         let error = form(
             model,
             Some("draw"),
