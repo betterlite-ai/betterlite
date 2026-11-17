@@ -1,0 +1,13 @@
+kind: helper
+name: otel-v2-guardrail-single-emission
+call:
+  b3853:
+    function: guardrail
+    call_type: completion
+    error: null
+    metrics_only: false
+    status: 0
+    second_status: 0
+env: {}
+compare:
+  ignore: []

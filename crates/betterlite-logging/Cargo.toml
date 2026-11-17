@@ -82,6 +82,7 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true
 h2 = "0.4.20"
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
+mutants = "0.0.4"
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
@@ -140,3 +141,7 @@ path = "src/otel/plumbing/metrics/tests/suite.rs"
 [[test]]
 name = "otel_lifecycle"
 path = "src/otel/logger/tests/suite.rs"
+
+[[test]]
+name = "v2_callback_tests"
+path = "src/otel/v2_callback/tests/suite.rs"
