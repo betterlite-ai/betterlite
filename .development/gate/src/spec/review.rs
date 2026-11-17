@@ -19,6 +19,7 @@ pub(crate) struct Review {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub(crate) enum ReviewVerdict {
     Approve,
     Changes,
@@ -26,6 +27,7 @@ pub(crate) enum ReviewVerdict {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
+#[schemars(inline)]
 pub(crate) enum FindingOrigin {
     Ours,
     Litellm,
