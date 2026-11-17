@@ -36,10 +36,8 @@ fn rejects_a_wrong_type() {
         .expect_err("a string is not a flag");
     let text = error.to_string();
     assert!(text.contains("litellm_settings.output_parse_pii"));
-    match error {
-        ConfigError::InvalidScalar { path, .. } => {
-            assert_eq!(path, "litellm_settings.output_parse_pii");
-        }
-        other => panic!("expected an invalid scalar, got {other:?}"),
-    }
+    let ConfigError::InvalidScalar { path, .. } = &error else {
+        panic!("expected an invalid scalar");
+    };
+    assert_eq!(path, "litellm_settings.output_parse_pii");
 }

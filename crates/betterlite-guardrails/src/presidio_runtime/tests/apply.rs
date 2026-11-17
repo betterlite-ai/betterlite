@@ -1,53 +1,70 @@
-use betterlite_config::sections::presidio_runtime::Settings as RuntimeSettings;
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::support::{
-    Replies, SOCIAL_SECURITY_FOUND, analyzer_requests, block, build, field, guard_args, guard_at,
-    inputs, masking, mock, request, seen, text, tokens,
+    MASKED, Replies, SOCIAL_SECURITY_FOUND, analyzer_requests, block, field, guard, guard_args,
+    guard_at, inputs, masking, mock, output_masking_roleless_guard, request, restore_guard,
+    roleless, seen, text, tokens,
 };
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
-use crate::guardrail_initializers::presidio::PresidioRole;
-use crate::presidio_runtime::PresidioDefaults;
+use crate::presidio_runtime::PresidioGuard;
 
+type Data = BTreeMap<String, GuardrailValue>;
+type Kind = GuardrailInputType;
+
+const MODEL_REQUEST: &str = r#"{"model":"gpt-4o"}"#;
 const CALL_TEXT: &str = "call me at 555-0100";
+const RESTORE_TEXT: &str = "call <PHONE_NUMBER_1>";
+const TOKEN: &str = "<PHONE_NUMBER_1>";
+const ORIGINAL: &str = "555-0100";
+
+async fn masked_texts(
+    guard: &PresidioGuard,
+    wanted: Option<Vec<&str>>,
+    data: &mut Data,
+    kind: Kind,
+) -> Option<Vec<String>> {
+    guard
+        .apply_guardrail(inputs(wanted), data, kind, None)
+        .await
+        .expect("the guardrail runs")
+        .texts
+}
+
+fn phone() -> Vec<String> {
+    vec!["<PHONE_NUMBER>".to_owned()]
+}
+
+fn phones() -> Vec<String> {
+    vec!["<PHONE_NUMBER>".to_owned(), "<PHONE_NUMBER>".to_owned()]
+}
+
+fn restored() -> Vec<String> {
+    vec!["call 555-0100".to_owned()]
+}
+
+async fn restored_by(guard: &PresidioGuard) -> Option<Vec<String>> {
+    let mut data = tokens(&[(TOKEN, ORIGINAL)]);
+    masked_texts(guard, Some(vec![RESTORE_TEXT]), &mut data, Kind::Response).await
+}
 
 pub(super) async fn masks_texts() {
     let server = masking();
     let guard = guard_at(&server);
-    let mut data = request(r#"{"model":"gpt-4o"}"#);
-    let masked = guard
-        .apply_guardrail(
-            inputs(Some(vec![CALL_TEXT])),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .expect("the text is masked");
-    assert_eq!(masked.texts, Some(vec!["<PHONE_NUMBER>".to_owned()]));
+    let mut data = request(MODEL_REQUEST);
+    let texts = masked_texts(&guard, Some(vec![CALL_TEXT]), &mut data, Kind::Request).await;
+    assert_eq!(texts, Some(phone()));
 }
 
 pub(super) async fn masks_texts_in_order() {
     let server = masking();
-    let guard = guard_at(&server);
-    let mut data = request(r#"{"model":"gpt-4o"}"#);
-    let masked = guard
-        .apply_guardrail(
-            inputs(Some(vec!["first 555-0100", "second 555-0199"])),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .expect("the texts are masked");
-    assert_eq!(
-        masked.texts,
-        Some(vec![
-            "<PHONE_NUMBER>".to_owned(),
-            "<PHONE_NUMBER>".to_owned()
-        ])
-    );
+    let mut data = request(MODEL_REQUEST);
+    let wanted = Some(vec!["first 555-0100", "second 555-0199"]);
+    let texts = masked_texts(&guard_at(&server), wanted, &mut data, Kind::Request).await;
+    assert_eq!(texts, Some(phones()));
     let analyzer_texts: Vec<String> = analyzer_requests(&server)
         .iter()
         .map(|request| text(field(request, "text")).to_owned())
@@ -57,140 +74,61 @@ pub(super) async fn masks_texts_in_order() {
 
 pub(super) async fn adds_empty_texts() {
     let server = masking();
-    let guard = guard_at(&server);
-    let mut data = request(r#"{"model":"gpt-4o"}"#);
-    let added = guard
-        .apply_guardrail(inputs(None), &mut data, GuardrailInputType::Request, None)
-        .await
-        .expect("the answer gains an empty texts list");
-    assert_eq!(added.texts, Some(Vec::new()));
+    let mut data = request(MODEL_REQUEST);
+    let texts = masked_texts(&guard_at(&server), None, &mut data, Kind::Request).await;
+    assert_eq!(texts, Some(Vec::new()));
     assert!(seen(&server).is_empty());
 }
 
 pub(super) async fn restores_on_a_restore_callback() {
     let server = masking();
-    let mut args = guard_args(&server);
-    args.role = PresidioRole::Restore;
-    let guard = super::support::guard(&args);
-    let mut data = tokens(&[("<PHONE_NUMBER_1>", "555-0100")]);
-    let restored = guard
-        .apply_guardrail(
-            inputs(Some(vec!["call <PHONE_NUMBER_1>"])),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("the text is restored");
-    assert_eq!(restored.texts, Some(vec!["call 555-0100".to_owned()]));
+    let texts = restored_by(&restore_guard(&server)).await;
+    assert_eq!(texts, Some(restored()));
     assert!(seen(&server).is_empty());
 }
 
 pub(super) async fn restores_on_a_roleless_callback() {
     let server = masking();
-    let args = guard_args(&server);
-    let guard = build(
-        &args,
-        PresidioDefaults::default(),
-        &RuntimeSettings::default(),
-        false,
-        None,
-    )
-    .expect("the roleless guard");
-    let mut data = tokens(&[("<PHONE_NUMBER_1>", "555-0100")]);
-    let restored = guard
-        .apply_guardrail(
-            inputs(Some(vec!["call <PHONE_NUMBER_1>"])),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("the text is restored");
-    assert_eq!(restored.texts, Some(vec!["call 555-0100".to_owned()]));
+    let texts = restored_by(&roleless(&guard_args(&server))).await;
+    assert_eq!(texts, Some(restored()));
     assert!(seen(&server).is_empty());
 }
 
 pub(super) async fn masks_a_roleless_callback_without_tokens() {
     let server = masking();
-    let args = guard_args(&server);
-    let guard = build(
-        &args,
-        PresidioDefaults::default(),
-        &RuntimeSettings::default(),
-        false,
-        None,
-    )
-    .expect("the roleless guard");
-    let mut data = request(r#"{"model":"gpt-4o"}"#);
-    let masked = guard
-        .apply_guardrail(
-            inputs(Some(vec![CALL_TEXT])),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("the text is masked");
-    assert_eq!(masked.texts, Some(vec!["<PHONE_NUMBER>".to_owned()]));
+    let mut data = request(MODEL_REQUEST);
+    let guard = roleless(&guard_args(&server));
+    let texts = masked_texts(&guard, Some(vec![CALL_TEXT]), &mut data, Kind::Response).await;
+    assert_eq!(texts, Some(phone()));
 }
 
 pub(super) async fn masks_a_roleless_callback_that_masks_output() {
     let server = masking();
-    let mut args = guard_args(&server);
-    args.apply_to_output = true;
-    let guard = build(
-        &args,
-        PresidioDefaults::default(),
-        &RuntimeSettings::default(),
-        false,
-        None,
-    )
-    .expect("the roleless guard");
-    let mut data = tokens(&[("<PHONE_NUMBER_1>", "555-0100")]);
-    let masked = guard
-        .apply_guardrail(
-            inputs(Some(vec![CALL_TEXT])),
-            &mut data,
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .expect("the text is masked");
-    assert_eq!(masked.texts, Some(vec!["<PHONE_NUMBER>".to_owned()]));
+    let guard = output_masking_roleless_guard(&server);
+    let mut data = tokens(&[(TOKEN, ORIGINAL)]);
+    let texts = masked_texts(&guard, Some(vec![CALL_TEXT]), &mut data, Kind::Response).await;
+    assert_eq!(texts, Some(phone()));
 }
 
 pub(super) async fn masks_on_a_request_input() {
     let server = masking();
-    let mut args = guard_args(&server);
-    args.role = PresidioRole::Restore;
-    let guard = super::support::guard(&args);
-    let mut data = tokens(&[("<PHONE_NUMBER_1>", "555-0100")]);
-    let masked = guard
-        .apply_guardrail(
-            inputs(Some(vec![CALL_TEXT])),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .expect("a request input is masked");
-    assert_eq!(masked.texts, Some(vec!["<PHONE_NUMBER>".to_owned()]));
+    let guard = restore_guard(&server);
+    let mut data = tokens(&[(TOKEN, ORIGINAL)]);
+    let texts = masked_texts(&guard, Some(vec![CALL_TEXT]), &mut data, Kind::Request).await;
+    assert_eq!(texts, Some(phone()));
 }
 
 pub(super) async fn blocked_entity_fails_apply() {
     let server = mock(Replies {
         analyze: (200, SOCIAL_SECURITY_FOUND),
-        anonymize: (200, super::support::MASKED),
+        anonymize: (200, MASKED),
     });
     let mut args = guard_args(&server);
     args.pii_entities_config = Some(block("US_SSN"));
-    let guard = super::support::guard(&args);
-    let mut data = request(r#"{"model":"gpt-4o"}"#);
-    let error = guard
+    let error = guard(&args)
         .apply_guardrail(
             inputs(Some(vec!["1234 is secret"])),
-            &mut data,
+            &mut request(MODEL_REQUEST),
             GuardrailInputType::Request,
             None,
         )

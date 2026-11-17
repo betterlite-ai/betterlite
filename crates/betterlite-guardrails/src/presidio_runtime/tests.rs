@@ -208,7 +208,7 @@ async fn presidio_runtime_cases(#[case] case: Case) {
             construction::hook_widening_keeps_a_post_call_hook();
         }
         Case::PostCallUnmasksResponse => response::post_call_unmasks_the_response().await,
-        Case::LoggingHookMasksRequest => response::logging_hook_masks_the_request().await,
+        Case::LoggingHookMasksRequest => response::logging_hook_masks_the_request(),
         Case::AsyncLoggingHookMasksRequest => {
             response::async_logging_hook_masks_the_request().await
         }

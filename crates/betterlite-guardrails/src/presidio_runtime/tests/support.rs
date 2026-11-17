@@ -6,7 +6,9 @@ use std::thread::{self, JoinHandle};
 
 use axum::Router;
 use axum::body::Bytes;
+use axum::extract::State;
 use axum::http::{StatusCode, Uri};
+use axum::response::IntoResponse;
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -41,6 +43,7 @@ pub(super) struct Seen {
     pub(super) body: GuardrailValue,
 }
 
+#[derive(Clone)]
 pub(super) struct Replies {
     pub(super) analyze: Reply,
     pub(super) anonymize: Reply,
@@ -50,6 +53,12 @@ pub(super) struct Mock {
     pub(super) base: String,
     seen: Arc<Mutex<Vec<Seen>>>,
     _server: JoinHandle<()>,
+}
+
+#[derive(Clone)]
+struct MockState {
+    seen: Arc<Mutex<Vec<Seen>>>,
+    replies: Replies,
 }
 
 pub(super) fn mock(replies: Replies) -> Mock {
@@ -90,6 +99,21 @@ fn reply_for(path: &str, replies: &Replies) -> Reply {
     }
 }
 
+async fn answer(State(state): State<MockState>, uri: Uri, bytes: Bytes) -> impl IntoResponse {
+    let body = serde_json::from_slice::<GuardrailValue>(&bytes).unwrap_or(GuardrailValue::Null);
+    state
+        .seen
+        .lock()
+        .expect("the captured requests")
+        .push(Seen {
+            path: uri.path().to_owned(),
+            body,
+        });
+    let reply = reply_for(uri.path(), &state.replies);
+    let status = StatusCode::from_u16(reply.0).expect("the reply status");
+    (status, [("content-type", "application/json")], reply.1)
+}
+
 fn serve(listener: StdTcpListener, seen: Arc<Mutex<Vec<Seen>>>, replies: Replies) {
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -97,24 +121,14 @@ fn serve(listener: StdTcpListener, seen: Arc<Mutex<Vec<Seen>>>, replies: Replies
         .expect("the mock runtime");
     runtime.block_on(async move {
         let tokio_listener = TcpListener::from_std(listener).expect("the tokio listener");
-        let handler = move |uri: Uri, bytes: Bytes| {
-            let sink = Arc::clone(&seen);
-            let reply = reply_for(uri.path(), &replies);
-            async move {
-                let body = serde_json::from_slice::<GuardrailValue>(&bytes)
-                    .unwrap_or(GuardrailValue::Null);
-                sink.lock().expect("the captured requests").push(Seen {
-                    path: uri.path().to_owned(),
-                    body,
-                });
-                let status = StatusCode::from_u16(reply.0).expect("the reply status");
-                (status, [("content-type", "application/json")], reply.1)
-            }
-        };
-        axum::serve(tokio_listener, Router::new().fallback(handler))
-            .into_future()
-            .await
-            .expect("the mock server");
+        let state = MockState { seen, replies };
+        axum::serve(
+            tokio_listener,
+            Router::new().fallback(answer).with_state(state),
+        )
+        .into_future()
+        .await
+        .expect("the mock server");
     });
 }
 
@@ -157,11 +171,13 @@ pub(super) fn guard_args(mock: &Mock) -> PresidioArgs {
 }
 
 pub(super) fn base_for(args: &PresidioArgs) -> GuardrailBase {
+    let guardrail_name = (!args.name.is_empty()).then(|| args.name.clone());
+    let event_hook = Some(args.event_hook.clone());
     GuardrailBase {
         settings: GuardrailSettings {
-            guardrail_name: (!args.name.is_empty()).then(|| args.name.clone()),
+            guardrail_name,
             supported_event_hooks: None,
-            event_hook: Some(args.event_hook.clone()),
+            event_hook,
             default_on: args.default_on,
             mask_request_content: false,
             mask_response_content: false,
@@ -195,17 +211,31 @@ pub(super) fn build(
     logging_only: bool,
     callback_role: Option<PresidioRole>,
 ) -> Result<PresidioGuard, PresidioRuntimeError> {
-    PresidioGuard::new(
+    let params = PresidioGuardParams {
+        defaults,
+        settings,
+        logging_only,
+        callback_role,
+    };
+    let base = base_for(args);
+    let client = base_builder().build().expect("the client");
+    PresidioGuard::new(args, &params, base, client)
+}
+
+fn built(
+    args: &PresidioArgs,
+    settings: &RuntimeSettings,
+    logging_only: bool,
+    callback_role: Option<PresidioRole>,
+) -> PresidioGuard {
+    build(
         args,
-        PresidioGuardParams {
-            defaults,
-            settings,
-            logging_only,
-            callback_role,
-        },
-        base_for(args),
-        base_builder().build().expect("the client"),
+        PresidioDefaults::default(),
+        settings,
+        logging_only,
+        callback_role,
     )
+    .expect("the guard")
 }
 
 pub(super) fn defaults(analyzer_base: &str, anonymizer_base: &str) -> PresidioDefaults {
@@ -216,25 +246,31 @@ pub(super) fn defaults(analyzer_base: &str, anonymizer_base: &str) -> PresidioDe
 }
 
 pub(super) fn guard(args: &PresidioArgs) -> PresidioGuard {
-    build(
-        args,
-        PresidioDefaults::default(),
-        &RuntimeSettings::default(),
-        false,
-        Some(args.role),
-    )
-    .expect("the guard")
+    built(args, &RuntimeSettings::default(), false, Some(args.role))
 }
 
 pub(super) fn guard_with(args: &PresidioArgs, settings: &RuntimeSettings) -> PresidioGuard {
-    build(
-        args,
-        PresidioDefaults::default(),
-        settings,
-        false,
-        Some(args.role),
-    )
-    .expect("the guard")
+    built(args, settings, false, Some(args.role))
+}
+
+pub(super) fn roleless(args: &PresidioArgs) -> PresidioGuard {
+    built(args, &RuntimeSettings::default(), false, None)
+}
+
+pub(super) fn logging_only_guard(args: &PresidioArgs) -> PresidioGuard {
+    built(args, &RuntimeSettings::default(), true, None)
+}
+
+pub(super) fn restore_guard(mock: &Mock) -> PresidioGuard {
+    let mut args = guard_args(mock);
+    args.role = PresidioRole::Restore;
+    guard(&args)
+}
+
+pub(super) fn output_masking_roleless_guard(mock: &Mock) -> PresidioGuard {
+    let mut args = guard_args(mock);
+    args.apply_to_output = true;
+    roleless(&args)
 }
 
 pub(super) fn guard_at(mock: &Mock) -> PresidioGuard {
@@ -277,14 +313,21 @@ pub(super) fn tokens(stored: &[(&str, &str)]) -> BTreeMap<String, GuardrailValue
 }
 
 pub(super) fn messages_of(data: &BTreeMap<String, GuardrailValue>) -> Vec<GuardrailValue> {
-    match data.get("messages") {
-        Some(GuardrailValue::Array(messages)) => messages.clone(),
-        _ => Vec::new(),
-    }
+    let Some(GuardrailValue::Array(messages)) = data.get("messages") else {
+        return Vec::new();
+    };
+    messages.clone()
 }
 
 pub(super) fn content_of(message: &GuardrailValue) -> GuardrailValue {
     field(message, "content").clone()
+}
+
+pub(super) fn content_parts(message: &GuardrailValue) -> Vec<GuardrailValue> {
+    let GuardrailValue::Array(parts) = content_of(message) else {
+        return Vec::new();
+    };
+    parts
 }
 
 pub(super) fn field<'value>(value: &'value GuardrailValue, name: &str) -> &'value GuardrailValue {
