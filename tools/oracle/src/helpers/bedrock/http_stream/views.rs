@@ -10,13 +10,7 @@ use super::types::Case;
 
 pub(super) fn error_view(error: &HttpStreamError, case: &Case) -> Value {
     let HttpStreamError::Provider { status, error } = error else {
-        return raised_view(match error {
-            HttpStreamError::Transport(source) => category(source),
-            HttpStreamError::Url(_)
-            | HttpStreamError::Body(_)
-            | HttpStreamError::Transform(_)
-            | HttpStreamError::Header(_) => "other",
-        });
+        return raised_view(raised_category(error));
     };
     let mut headers = error.response_headers.clone();
     headers.sort();
@@ -29,7 +23,23 @@ pub(super) fn error_view(error: &HttpStreamError, case: &Case) -> Value {
     })
 }
 
-// Converse passes a transport failure through untouched; only its timeout category is comparable.
+// Converse passes a transport failure through untouched, so only its timeout category is comparable.
+fn raised_category(error: &HttpStreamError) -> &'static str {
+    match error {
+        HttpStreamError::Transport(
+            TransportError::ConnectTimeout(_)
+            | TransportError::Deadline(_)
+            | TransportError::Rejected(HttpError::Timeout),
+        ) => "timeout",
+        HttpStreamError::Transport(_)
+        | HttpStreamError::Url(_)
+        | HttpStreamError::Body(_)
+        | HttpStreamError::Transform(_)
+        | HttpStreamError::Header(_)
+        | HttpStreamError::Provider { .. } => "other",
+    }
+}
+
 fn raised_view(category: &str) -> Value {
     json!({
         "kind": "raised",
@@ -38,15 +48,6 @@ fn raised_view(category: &str) -> Value {
         "headers": Value::Null,
         "category": category,
     })
-}
-
-fn category(error: &TransportError) -> &'static str {
-    match error {
-        TransportError::ConnectTimeout(_)
-        | TransportError::Deadline(_)
-        | TransportError::Rejected(HttpError::Timeout) => "timeout",
-        _ => "other",
-    }
 }
 
 pub(super) fn chunk_view(chunk: InvokeChunk) -> Value {
