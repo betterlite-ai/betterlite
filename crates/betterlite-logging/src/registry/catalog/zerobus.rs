@@ -1,10 +1,52 @@
+mod tests;
+
 use std::sync::Arc;
+
+use betterlite_config::sections::callback_settings::names::CallbackName;
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
+use crate::zerobus::logger::connection::EnvironmentSecrets;
+use crate::zerobus::logger::params::configured_params;
+use crate::zerobus::logger::payload::RedactionSettings;
+use crate::zerobus::logger::{ZerobusDeps, ZerobusLogger};
 
-pub fn build(_inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    Err(CatalogError::Unavailable {
-        name: "zerobus".to_owned(),
-    })
+pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+    let name = CallbackName::Zerobus.as_str();
+    let variables = inputs
+        .callback_settings
+        .get(name)
+        .map(|entry| entry.exposed_variables());
+    let params = configured_params(variables.as_ref()).map_err(|error| CatalogError::Init {
+        message: error.to_string(),
+    })?;
+    let deps = ZerobusDeps {
+        params,
+        client: None,
+        secrets: Arc::new(EnvironmentSecrets {
+            environment: Arc::clone(&inputs.env),
+        }),
+        http: inputs.http.clone(),
+        redaction: RedactionSettings {
+            turn_off_message_logging: inputs
+                .config
+                .sections
+                .logging_privacy
+                .turn_off_message_logging,
+            excluded_fields: inputs
+                .config
+                .sections
+                .payload_exclusions
+                .excluded_fields
+                .clone(),
+        },
+        tasks: inputs.tracker.clone(),
+        shutdown: inputs.shutdown.clone(),
+        start_periodic_flush: true,
+        max_queue_size: None,
+    };
+    let logger = ZerobusLogger::new(deps).map_err(|error| CatalogError::Init {
+        message: error.to_string(),
+    })?;
+    Ok(Arc::new(logger))
 }
