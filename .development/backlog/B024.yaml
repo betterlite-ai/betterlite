@@ -1,7 +1,7 @@
 id: B024
 milestone: M3 providers
 title: OpenAI provider, every remaining endpoint
-status: todo
+status: done
 depends_on: [B010, B004, B006, B668, B669, B670, B671, B507, B508, B510, B500, B198, B196, B249, B187, B184, B8500, B002, B171, B2237, B2238, B9960]
 file: tasks/B024-openai-provider.yaml
 covers:
@@ -34,7 +34,7 @@ covers:
   - "litellm/litellm_core_utils/core_helpers.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2247
