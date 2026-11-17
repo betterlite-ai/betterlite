@@ -1,0 +1,14 @@
+kind: helper
+name: close-usage-once
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 48000}
+      - {kind: close, model: gemini-2.5-flash}
+      - {kind: audio, audio_bytes: 48000}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+env: {}
+compare: {ignore: []}

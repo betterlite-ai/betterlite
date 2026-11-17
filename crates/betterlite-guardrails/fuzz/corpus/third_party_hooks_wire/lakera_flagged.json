@@ -1,0 +1,1 @@
+{"model":"lakera-guard-1","results":[{"flagged":true,"categories":{"prompt_injection":true,"jailbreak":false},"category_scores":{"prompt_injection":1.0,"jailbreak":0.0}}]}

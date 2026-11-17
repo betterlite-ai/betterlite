@@ -1,0 +1,15 @@
+kind: helper
+name: fal-video-results-completed-terminal-error
+call:
+  fal_video_results:
+    operation: completed_terminal_error
+    cases:
+      - status_url: "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status"
+        headers: {}
+        body: '{"status": "COMPLETED", "request_id": "req-1"}'
+        probe_status: 400
+        probe_body: '{"detail": "the generation failed"}'
+        provider: null
+env: {}
+compare:
+  ignore: []
