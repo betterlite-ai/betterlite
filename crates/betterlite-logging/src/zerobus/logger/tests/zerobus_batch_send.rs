@@ -1,13 +1,17 @@
 use std::sync::Arc;
+use std::time::Duration;
 
+use tokio::sync::Mutex as AsyncMutex;
+
+use crate::zerobus::client::ZerobusIngestClient;
 use crate::zerobus::client::types::ZerobusIngestFailure;
 use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::connection::SecretSource;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    Buffer, FakeIngest, connection_secrets, deps, expected_ids, logger, params, push, queued_ids,
-    subscribe,
+    Buffer, FakeIngest, connection, connection_secrets, deps, expected_ids, logger, params,
+    proxied_client, push, queued_ids, row, subscribe,
 };
 
 #[tokio::test]
@@ -21,6 +25,24 @@ async fn zerobus_batch_send_sends_the_queued_rows_in_one_insert() {
     assert_eq!(ingest.inserted(), 1);
     assert_eq!(ingest.ids(), expected_ids(&["a", "b"]));
     assert!(queued_ids(&logger).is_empty());
+}
+
+#[tokio::test]
+async fn zerobus_batch_send_reports_the_client_failure() {
+    let client = ZerobusIngestClient {
+        connection: connection("main.traces"),
+        http: proxied_client(),
+        clock: Arc::new(|| 0.0),
+        timeout: Duration::from_secs(1),
+        token: AsyncMutex::new(None),
+    };
+    let ingest: &dyn RowIngest = &client;
+    let failure = ingest
+        .insert(&[row("a")])
+        .await
+        .expect_err("the token form rejects a table that is not fully qualified");
+    assert!(!failure.retryable);
+    assert!(failure.detail.contains("main.traces"), "{}", failure.detail);
 }
 
 #[tokio::test]

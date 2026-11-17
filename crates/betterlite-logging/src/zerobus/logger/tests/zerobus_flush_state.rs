@@ -76,6 +76,24 @@ async fn zerobus_flush_state_skips_a_second_flush_while_one_runs() {
 }
 
 #[tokio::test]
+async fn zerobus_flush_state_clears_the_in_flight_count() {
+    let ingest = FakeIngest::table("main.litellm.traces");
+    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let logger = logger(params(2, 3600, false), client);
+    logger
+        .async_log_success_event(event("a"))
+        .await
+        .expect("the event is accepted");
+    logger
+        .async_log_success_event(event("b"))
+        .await
+        .expect("the event is accepted");
+    settle(&logger).await;
+    assert_eq!(ingest.inserted(), 1);
+    assert_eq!(logger.inner.inflight.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
 async fn zerobus_flush_state_requeues_rows_after_an_aborted_flush() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let gate = ingest.block();

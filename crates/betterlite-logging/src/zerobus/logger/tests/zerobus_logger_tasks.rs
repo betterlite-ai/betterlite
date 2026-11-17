@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::sync::PoisonError;
+use std::time::Duration;
 
 use tokio::task::{Id, JoinHandle};
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use crate::callback_logger::CallbackLogger;
@@ -35,6 +37,22 @@ async fn zerobus_logger_tasks_starts_the_periodic_flush() {
         until(|| !logger.flush_task_is_alive()).await,
         "the periodic task stops on shutdown"
     );
+}
+
+#[tokio::test]
+async fn zerobus_logger_tasks_stops_the_periodic_flush_when_dropped() {
+    let tracker = TaskTracker::new();
+    let client: Arc<dyn RowIngest> = FakeIngest::table("main.litellm.traces");
+    let mut deps = deps(params(100, 3600, false), Some(client));
+    deps.tasks = tracker.clone();
+    deps.start_periodic_flush = true;
+    let logger = ZerobusLogger::new(deps).expect("the logger starts its periodic flush");
+    assert_eq!(tracker.len(), 1);
+    drop(logger);
+    tracker.close();
+    timeout(Duration::from_secs(1), tracker.wait())
+        .await
+        .expect("dropping the logger stops its periodic flush");
 }
 
 #[test]
