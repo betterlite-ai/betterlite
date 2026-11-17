@@ -178,6 +178,33 @@ pub(super) async fn check_text_completion_marker() {
     assert!(logger.calls.is_empty());
 }
 
+// A streamed text call keeps the opened stream and logs its absence beside the resolved headers.
+pub(super) async fn check_text_stream_logging() {
+    let source = FixtureTextSource::new(TextReply::streaming(
+        200,
+        vec![b"data: {\"id\":\"cmpl-1\"}\n\n".to_vec()],
+    ));
+    let mut logger = FixtureLogger::default();
+    let result = support::dispatch_text(
+        &support::composition(),
+        call(r#"{"stream":true}"#, SYNC),
+        &source,
+        &mut logger,
+    )
+    .await
+    .expect("the text stream");
+    assert!(matches!(
+        result,
+        OperationResult::OpenAi(OpenAiResult::TextStream(_))
+    ));
+    assert_eq!(logger.calls.len(), 1);
+    assert!(matches!(
+        &logger.calls[0].original_response,
+        betterlite_models::decisions::Json::Null
+    ));
+    assert!(logger.calls[0].headers.is_none());
+}
+
 pub(super) async fn check_all() {
     check_projection_predicate();
     check_stream_logging().await;
@@ -185,4 +212,5 @@ pub(super) async fn check_all() {
     check_sync_projection().await;
     check_async_logging().await;
     check_text_completion_marker().await;
+    check_text_stream_logging().await;
 }

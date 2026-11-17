@@ -109,8 +109,36 @@ pub(super) async fn check_configured_format() {
     assert_eq!(input.len(), 2);
 }
 
+// An empty explicit format falls through to the request's own value, which wins over the configured default.
+pub(super) async fn check_format_falls_through() {
+    let mut composition = support::composition();
+    composition.provider.embedding_format = Some(String::from("float"));
+    let call = EmbeddingCall {
+        model: String::from("text-embedding-3-small"),
+        request: support::embedding_request(r#"{"input":"hello","encoding_format":"base64"}"#),
+        encoding_format: Some(String::new()),
+        credentials: support::credentials(
+            Some("https://explicit.test/v1"),
+            Some("sk-explicit"),
+            None,
+        ),
+        headers: None,
+        timeout: None,
+    };
+    let answer = FixtureAnswer::new(200, support::EMBEDDING_REPLY.as_bytes().to_vec());
+    let _result = support::dispatch_embedding(&composition, call, &answer)
+        .await
+        .expect("the embedding dispatch");
+    let body = support::body_fields(&answer.requests()[0].body);
+    assert_eq!(
+        support::field(&body, "encoding_format"),
+        &support::text_value("base64")
+    );
+}
+
 pub(super) async fn check_all() {
     check_request().await;
     check_body_and_reply().await;
     check_configured_format().await;
+    check_format_falls_through().await;
 }

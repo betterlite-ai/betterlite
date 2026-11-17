@@ -11,11 +11,16 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 
 use super::support;
-use crate::openai_dispatch::OpenAi;
-use crate::openai_dispatch::call::ChatCall;
+use crate::openai_dispatch::call::{ChatCall, OpenAiOperation};
 use crate::openai_dispatch::compose::chat_plan;
+use crate::openai_dispatch::dispatch::dispatch;
+use crate::openai_dispatch::error::OpenAiProviderError;
 use crate::openai_dispatch::fixtures::answer::RecordedRequest;
-use crate::operation::{ChatCompletion, OperationError, OperationResult};
+use crate::openai_dispatch::fixtures::logger::FixtureLogger;
+use crate::openai_dispatch::fixtures::text_transport::{FixtureTextSource, TextReply};
+use crate::openai_dispatch::transport::{ClientAnswer, Deps};
+use crate::openai_dispatch::{OpenAi, OpenAiRequest};
+use crate::operation::{ChatCompletion, OperationError, OperationRequest, OperationResult};
 use crate::prepared::deployment::Deployment;
 use crate::provider::Adapter as _;
 
@@ -175,9 +180,63 @@ pub(super) fn check_stream() {
     );
 }
 
+// A successful streamed chat call logs the opened stream itself, with a null original response.
+pub(super) async fn check_stream_post_call() {
+    let (result, request, logger) = streamed_chat().await;
+    assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
+    assert!(matches!(result, Ok(OperationResult::Stream(_))));
+    assert_eq!(logger.calls.len(), 1);
+    assert!(matches!(
+        &logger.calls[0].original_response,
+        betterlite_models::decisions::Json::Null
+    ));
+}
+
+async fn streamed_chat() -> (
+    Result<OperationResult, OpenAiProviderError>,
+    String,
+    FixtureLogger,
+) {
+    let (listener, api_base) = loopback().await;
+    let composition = support::composition();
+    let call = ChatCall {
+        request: support::chat_request(
+            r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+        ),
+        ..call(api_base)
+    };
+    let plan = chat_plan(&composition, &call).expect("the chat plan");
+    let expected = RecordedRequest::of(&plan.prepared)
+        .expect("a prepared stream")
+        .body;
+    let answer = ClientAnswer {
+        client: client().await,
+    };
+    let text = FixtureTextSource::new(TextReply::new(200, Vec::new()));
+    let mut logger = FixtureLogger::default();
+    let reply = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\ndata: {\"id\":\"chatcmpl-http\"}\n\n";
+    let (result, request) = tokio::join!(
+        dispatch(
+            OperationRequest::OpenAi(OpenAiRequest),
+            OpenAiOperation::Chat(Box::new(call)),
+            &composition,
+            Deps {
+                answer: &answer,
+                text: &text,
+                now: support::fixed_now,
+                next_id: support::fixed_id,
+            },
+            &mut logger,
+        ),
+        serve_once(listener, &expected, reply),
+    );
+    (result, request, logger)
+}
+
 pub(super) async fn check_all() {
     check_plan_shape();
     check_round_trip().await;
     check_failure().await;
     check_stream();
+    check_stream_post_call().await;
 }
