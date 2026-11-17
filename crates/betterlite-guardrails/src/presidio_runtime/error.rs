@@ -48,10 +48,6 @@ pub enum PresidioRuntimeError {
     Response(#[from] PresidioResponseError),
 }
 
-const fn http_failure(status: u16, detail: String) -> GuardrailFailure {
-    GuardrailFailure::Http { status, detail }
-}
-
 impl From<PresidioActionsError> for GuardrailFailure {
     fn from(error: PresidioActionsError) -> Self {
         // LiteLLM's exception message prints None for a guardrail without a name, so an empty name stays None
@@ -92,9 +88,10 @@ impl From<PresidioActionsError> for GuardrailFailure {
             | PresidioActionsError::SpanOutOfBounds { .. }
             | PresidioActionsError::MissingEntityType
             | PresidioActionsError::Analysis { .. }
-            | PresidioActionsError::Serialize { .. }) => {
-                http_failure(other.status(), other.to_string())
-            }
+            | PresidioActionsError::Serialize { .. }) => Self::Http {
+                status: other.status(),
+                detail: other.to_string(),
+            },
         }
     }
 }
