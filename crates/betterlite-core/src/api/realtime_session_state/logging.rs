@@ -73,11 +73,8 @@ impl RealtimeStreaming {
             );
         }
         let work = logging.dispatch_success_handlers(&self.messages);
-        let queued = self
-            .logging_worker
-            .as_deref()
-            .is_some_and(|worker| worker.enqueue(work));
-        if !queued {
+        let queue = self.logging_worker.as_deref();
+        if !queue.is_some_and(|sender| sender.enqueue(work)) {
             return false;
         }
         logging.record_model_call_detail(SUCCESS_LOGGED_KEY, Json::Bool(true));
