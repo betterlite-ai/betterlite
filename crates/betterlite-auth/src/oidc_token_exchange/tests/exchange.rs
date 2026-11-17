@@ -281,6 +281,22 @@ async fn rejects_a_token_endpoint_url_that_does_not_parse() {
 }
 
 #[rstest]
+#[case::invalid_name("bad header", "value")]
+#[case::invalid_value("x-provider", "bad\nvalue")]
+#[tokio::test]
+async fn maps_an_unusable_additional_header_to_token_exchange_401(
+    #[case] name: &str,
+    #[case] value: &str,
+) {
+    let provider = LocalProvider::start().await;
+    let mut request = base_request(&provider);
+    request.additional_headers = vec![(name.to_owned(), value.to_owned())];
+    let error = run_exchange(&request).await.unwrap_err();
+    assert_token_failure(&error);
+    assert_eq!(provider.requests().len(), 0);
+}
+
+#[rstest]
 #[case::server_error(500, "provider exploded")]
 #[case::invalid_json(200, "not-json")]
 #[case::json_null(200, "null")]
@@ -308,6 +324,31 @@ async fn falls_back_to_the_id_token_without_a_userinfo_endpoint() {
     provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
     let mut request = base_request(&provider);
     request.userinfo_endpoint = None;
+    let claims = run_exchange(&request).await.unwrap();
+    assert_eq!(text(&claims, "sub"), Some("user-1"));
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn falls_back_to_the_id_token_when_the_userinfo_url_does_not_parse() {
+    let provider = LocalProvider::start().await;
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
+    let mut request = base_request(&provider);
+    request.userinfo_endpoint = Some("not a url".to_owned());
+    let claims = run_exchange(&request).await.unwrap();
+    assert_eq!(text(&claims, "sub"), Some("user-1"));
+    assert_eq!(provider.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn falls_back_to_the_id_token_when_userinfo_is_unreachable() {
+    let provider = LocalProvider::start().await;
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let mut request = base_request(&provider);
+    request.userinfo_endpoint = Some(format!("http://{address}/userinfo"));
     let claims = run_exchange(&request).await.unwrap();
     assert_eq!(text(&claims, "sub"), Some("user-1"));
     assert_eq!(provider.requests().len(), 1);
