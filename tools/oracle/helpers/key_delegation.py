@@ -1,17 +1,17 @@
 from typing import Final, Literal, TypeAlias, TypedDict
 
-from fastapi import HTTPException
 from litellm.models.team import BudgetLimitEntry, LiteLLM_TeamTableCachedObj
 from litellm.models.verification_token import LiteLLM_VerificationToken
 from litellm.proxy._types import UpdateKeyRequest, UserAPIKeyAuth
 from litellm.proxy.management_endpoints import key_management_endpoints
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 # the checks read presence off the validated model, so the body arrives as the route decodes it
 UPDATE: Final[TypeAdapter[UpdateKeyRequest]] = TypeAdapter(UpdateKeyRequest)
 # pydantic reads the enum by value, and LiteLLM declares every role in snake_case
 CALLER: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
-_JSON: Final = TypeAdapter(JsonValue)
+_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 Role: TypeAlias = Literal[
     "proxy_admin",
@@ -155,7 +155,7 @@ def routes_update_answer(call: RoutesUpdateCall) -> JsonValue:
 
 def routes_answer(call: RoutesCall) -> JsonValue:
     try:
-        key_management_endpoints._check_allowed_routes_caller_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L919-L959
+        key_management_endpoints._check_allowed_routes_caller_permission(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L919-L959
             allowed_routes=call["allowed_routes"],
             user_api_key_dict=caller_record(call["caller"]),
             allowed_routes_was_provided=call["was_provided"],
@@ -233,4 +233,5 @@ def answer(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return _JSON.validate_python([answer(call) for call in input_value["calls"]])
+    answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
+    return _JSON.validate_python(answers)

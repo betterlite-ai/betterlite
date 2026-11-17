@@ -21,10 +21,6 @@ fn is_safe_preset(route: &JsonData) -> bool {
     }
 }
 
-fn same_preset_set(left: &[JsonData], right: &[JsonData]) -> bool {
-    left.iter().all(|route| right.contains(route)) && right.iter().all(|route| left.contains(route))
-}
-
 // Only a proxy admin sets allowed_routes, unless a key_type preset derived every route the caller sent.
 pub fn check_routes_permission(
     allowed_routes: &Sent<Vec<JsonData>>,
@@ -61,7 +57,9 @@ pub fn is_safe_route_transition(
         && existing.iter().all(|route| {
             matches!(route, JsonData::String(name) if name.as_str() == READ_ONLY_ALLOWED_ROUTE_PRESET)
         });
-    !read_only || same_preset_set(incoming, existing)
+    !read_only
+        || (incoming.iter().all(|route| existing.contains(route))
+            && existing.iter().all(|route| incoming.contains(route)))
 }
 
 // An unsafe transition falls back to the raw-body check so a supplied null or [] is still refused.

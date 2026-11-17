@@ -104,7 +104,11 @@ fn call_outcome(call: &Call) -> HelperResult {
             body,
             existing_user_id,
             caller,
-        } => ownership_outcome(body, existing_user_id.as_deref(), caller),
+        } => row_outcome(
+            body,
+            &ExistingSide::UserId(existing_user_id.clone()),
+            caller,
+        ),
         Call::Routes {
             allowed_routes,
             was_provided,
@@ -124,7 +128,11 @@ fn call_outcome(call: &Call) -> HelperResult {
             body,
             existing_allowed_routes,
             caller,
-        } => routes_update_outcome(body, existing_allowed_routes.as_deref(), caller),
+        } => row_outcome(
+            body,
+            &ExistingSide::AllowedRoutes(existing_allowed_routes.clone()),
+            caller,
+        ),
         Call::Permissions { body, caller } => permissions_outcome(body, caller),
         Call::Budget {
             budget_limits,
@@ -140,17 +148,25 @@ fn call_outcome(call: &Call) -> HelperResult {
     }
 }
 
-fn ownership_outcome(
-    body: &JsonData,
-    existing_user_id: Option<&str>,
-    caller: &CallerInput,
-) -> HelperResult {
+// The row value each row-based check compares the request against.
+enum ExistingSide {
+    UserId(Option<String>),
+    AllowedRoutes(Option<Vec<JsonData>>),
+}
+
+fn row_outcome(body: &JsonData, existing: &ExistingSide, caller: &CallerInput) -> HelperResult {
     let request = projected(body)?;
-    outcome(validate_ownership_change(
-        Some(&request),
-        existing_user_id,
-        caller.to_caller(),
-    ))
+    let checked = match existing {
+        ExistingSide::UserId(user_id) => {
+            validate_ownership_change(Some(&request), user_id.as_deref(), caller.to_caller())
+        }
+        ExistingSide::AllowedRoutes(routes) => enforce_routes_update(
+            &request.allowed_routes,
+            routes.as_deref(),
+            caller.to_caller(),
+        ),
+    };
+    outcome(checked)
 }
 
 fn routes_outcome(
@@ -173,19 +189,6 @@ fn transition_outcome(
         "ok": true,
         "value": is_safe_route_transition(incoming, existing),
     }))
-}
-
-fn routes_update_outcome(
-    body: &JsonData,
-    existing_allowed_routes: Option<&[JsonData]>,
-    caller: &CallerInput,
-) -> HelperResult {
-    let request = projected(body)?;
-    outcome(enforce_routes_update(
-        &request.allowed_routes,
-        existing_allowed_routes,
-        caller.to_caller(),
-    ))
 }
 
 fn permissions_outcome(body: &JsonData, caller: &CallerInput) -> HelperResult {
