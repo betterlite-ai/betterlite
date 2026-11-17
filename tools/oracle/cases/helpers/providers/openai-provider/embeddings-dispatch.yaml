@@ -1,0 +1,45 @@
+kind: helper
+name: openai-provider-embeddings-dispatch
+call:
+  openai_provider:
+    case: embedding
+    model: text-embedding-3-small
+    api_base: https://fixture.test/v1
+    api_key: sk-fixture
+    organization: null
+    headers:
+      x-caller: "1"
+    extra_headers: null
+    metadata: null
+    environment: {}
+    globals:
+      api_base: null
+      api_key: null
+      openai_key: null
+      organization: null
+    preview: false
+    chat_defaults: null
+    text_defaults: null
+    messages: []
+    optional_params:
+      input:
+        - one
+        - two
+      dimensions: 8
+      encoding_format: float
+    status: 200
+    reply:
+      object: list
+      data:
+        - object: embedding
+          index: 0
+          embedding:
+            - 0.25
+            - 0.5
+      model: text-embedding-3-small
+      usage:
+        prompt_tokens: 2
+        total_tokens: 2
+    text_completion: false
+env: {}
+compare: {ignore: []}

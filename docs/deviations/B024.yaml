@@ -1,0 +1,5 @@
+task: B024
+deviations: []
+kept_bugs:
+  - {what: "An embedding call sends no openai-organization header, even when litellm.organization or OPENAI_ORGANIZATION names one.", why: "main.py assigns the module global at L6518 but calls B006's embedding client without an organization, so LiteLLM never sends the header either; betterlite copies the wire behavior a working setup sees, because sending one would change every existing embedding request.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6518-L6522"}
+  - {what: "A text-completion call sends no openai-organization header, even when litellm.organization names one.", why: "main.py sets openai.organization at L1814 and then calls the text completion handler without the organization, so its client carries none and LiteLLM never sends the header; betterlite copies the wire behavior a working setup sees.", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1814-L1818"}
