@@ -26,18 +26,12 @@ fn decode_replacing_invalid(bytes: &[u8]) -> String {
     text
 }
 
-// Python's splitlines and strip: U+001C to U+001E split lines before strip sees them, so a line never holds them. An empty payload or [DONE] is not a JSON object, so parsing drops it.
+// SSE lines end only at CR and LF, so U+001C to U+001F reach the trim and Python's strip removes them; a payload that is no JSON object parses to nothing.
 fn events_from_text(chunk: &str) -> Vec<Object> {
-    let is_blank = |character: char| character.is_whitespace() || character == '\u{1f}';
-    let is_line_break = |character: char| {
-        matches!(
-            character,
-            '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{1c}'
-                ..='\u{1e}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-        )
-    };
+    let is_blank =
+        |character: char| character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}');
     let mut events = Vec::new();
-    for line in chunk.split(is_line_break) {
+    for line in chunk.split(['\r', '\n']) {
         let Some(raw_payload) = line.trim_matches(is_blank).strip_prefix(DATA_PREFIX) else {
             continue;
         };

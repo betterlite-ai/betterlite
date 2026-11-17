@@ -1,0 +1,112 @@
+kind: helper
+name: sso-claims-groups-array-string-scalar
+call:
+  sso_claims:
+    attributes: {}
+    emails: []
+    groups:
+    - - admins
+    - - viewers
+    - - admins
+      - viewers
+    - - unknown
+    - []
+    role_mappings:
+      provider: generic
+      group_claim: groups
+      default_role: internal_user_viewer
+      roles:
+        proxy_admin:
+        - admins
+        internal_user:
+        - viewers
+    merge: []
+    decode_tokens: []
+    process:
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJncm91cHMiOiBbImFkbWlucyIsICJ2aWV3ZXJzIl0sICJyb2xlIjogWyJpbnRlcm5hbF91c2VyIiwgInByb3h5X2FkbWluIl19.c2lnbmF0dXJl
+      sso_settings: null
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJncm91cHMiOiAiYWRtaW5zLCB2aWV3ZXJzICwiLCAicm9sZSI6ICJub25zZW5zZSJ9.c2lnbmF0dXJl
+      sso_settings: null
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJncm91cHMiOiAiYWRtaW5zIn0.c2lnbmF0dXJl
+      sso_settings: null
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+    convert:
+      response:
+        groups:
+        - admins
+        - viewers
+        role: internal_user
+      jwt_settings: {}
+      sso_settings: null
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+      team_mappings: null
+env: {}
+compare:
+  ignore: []
