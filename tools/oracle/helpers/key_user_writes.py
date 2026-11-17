@@ -27,21 +27,22 @@ class JsonInput(TypedDict):
 Input = HashInput | JsonInput
 
 
-def field_view(original: JsonValue, converted: object) -> dict[str, JsonValue]:
-    try:
-        MAPPING.validate_python(original)
-    except ValidationError:
-        return {"kind": "plain", "value": VALUE.validate_python(converted)}
-    encoded = TEXT.validate_python(converted)
-    return {"kind": "encoded", "value": VALUE.validate_json(encoded)}
-
-
 def run(input_value: Input) -> JsonValue:
     client = BlankClient()
     if input_value["function"] == "class_json":
         original = input_value["fields"]
         converted = client.jsonify_object(dict(original))
-        reported = {name: field_view(value, converted[name]) for name, value in original.items()}
+        reported: dict[str, JsonValue] = {}
+        for name, value in original.items():
+            try:
+                MAPPING.validate_python(value)
+            except ValidationError:
+                plain = VALUE.validate_python(converted[name])
+                reported[name] = {"kind": "plain", "value": plain}
+            else:
+                encoded = TEXT.validate_python(converted[name])
+                parsed = VALUE.validate_json(encoded)
+                reported[name] = {"kind": "encoded", "value": parsed}
         return {"fields": reported}
     if input_value["function"] == "class_hash":
         return {"hashes": [client.hash_token(token) for token in input_value["tokens"]]}
