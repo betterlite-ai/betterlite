@@ -179,6 +179,11 @@ fn one_user_message_per_prompt_string() {
     let many = chat_request(&completion(r#"{"model":"m","prompt":["a","b"]}"#)).expect("chat");
     assert_eq!(many.messages.len(), 2);
     assert_eq!(many.model.as_deref(), Some("m"));
+    // the chat endpoint streams only when the completion request asked for a stream
+    assert!(!many.stream);
+    let streaming =
+        chat_request(&completion(r#"{"model":"m","prompt":"hi","stream":true}"#)).expect("chat");
+    assert!(streaming.stream);
 }
 
 #[test]

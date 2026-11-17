@@ -11,15 +11,16 @@ use futures_util::StreamExt as _;
 use http::HeaderMap;
 
 use crate::dispatch::error::DispatchError;
-use crate::dispatch::tests::support::{MODEL_ID, context, deployment};
+use crate::dispatch::log::CallOutcome;
+use crate::dispatch::tests::support::{MODEL_ID, RecordingLog, Trace, context, deployment};
 use crate::dispatch::{Dispatch, NoRules};
 use crate::message_utilities::response_streams::StreamError;
-use crate::operation::Operation;
 use crate::operation::text_completion::{
     ChatCallAnswer, ChatCallMode, TextCompletionCall, TextCompletionCallInput,
     TextCompletionFailure, TextCompletionRequest, TextCompletionResult,
 };
 use crate::operation::text_stream::TextStreamAnswer;
+use crate::operation::{CallResult, Operation};
 
 const FIRST_CHUNK: &str = r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"hi"}}]}"#;
 
@@ -255,6 +256,78 @@ async fn a_failed_chunk_is_the_wrapper_missing_chunk() {
     )
     .await;
     assert!(matches!(body[0], Err(StreamError::MissingChunk)));
+}
+
+// the provider holds its stream open after the first chunk, so the client leaves it unfinished
+struct Pending;
+
+#[async_trait]
+impl TextCompletionCall for Pending {
+    async fn complete(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextCompletionResult, TextCompletionFailure> {
+        Err(unused())
+    }
+
+    async fn stream(
+        &self,
+        _call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        Ok(TextStreamAnswer {
+            body: futures_util::stream::iter(vec![Ok(chunk(FIRST_CHUNK))])
+                .chain(futures_util::stream::pending())
+                .boxed(),
+            upstream_headers: HeaderMap::new(),
+            upstream_time: Duration::ZERO,
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_dropped_text_stream_records_cancellation_once() {
+    let trace = Trace::default();
+    let log = Arc::new(RecordingLog::new(trace));
+    let dispatch = Arc::new(Dispatch::new(
+        vec![deployment(MODEL_ID, Duration::from_mins(100))],
+        Arc::new(NoRules),
+        Arc::clone(&log),
+    ));
+    let request = TextCompletionRequest {
+        call_id: String::from("call"),
+        model_id: MODEL_ID.to_owned(),
+        request: Box::new(
+            CompletionRequest::parse(br#"{"model":"g","prompt":"hello","stream":true}"#)
+                .expect("completion request"),
+        ),
+        dispatch: Arc::clone(&dispatch),
+        calls: Arc::new(Pending),
+    };
+    let result = dispatch
+        .execute(
+            Operation::TextStream(request),
+            &context(None, SystemTime::UNIX_EPOCH),
+        )
+        .await
+        .expect("stream");
+    let CallResult::TextStream(mut result) = result else {
+        panic!("a streamed call answers a stream");
+    };
+    let first = result
+        .body
+        .next()
+        .await
+        .expect("first chunk")
+        .expect("chunk");
+    assert_eq!(
+        json_field(&first, "object"),
+        Some(&Json::Text(String::from("text_completion")))
+    );
+    assert!(log.calls().is_empty());
+    drop(result.body);
+    let recorded = log.calls();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].outcome, CallOutcome::Cancelled);
 }
 
 fn json_field<'json>(value: &'json Json, name: &str) -> Option<&'json Json> {

@@ -16,16 +16,17 @@ use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::oneshot;
+use tokio::sync::{OnceCell, oneshot};
 use tokio::time::timeout;
 use tracing::Level;
 use tracing::subscriber::with_default;
 
 use super::catalog::{CompletionCatalog, CompletionRoute, route_for};
-use super::failure::wrapped_failure;
+use super::failure::{CompletionFailure, wrapped_failure};
 use super::http::HttpCompletionConstructor;
 use super::log::TracingCompletionLog;
 use super::transport_request;
+use super::{CompletionCallAnswer, CompletionExecutor};
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
@@ -358,7 +359,7 @@ async fn serve_text_completion(listener: TcpListener) -> String {
     let _filled = stream.read_exact(&mut body).await;
     let answer = "{}";
     let response = format!(
-        "HTTP/1.1 200 X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+        "HTTP/1.1 200 X\r\ncontent-length: {}\r\nx-upstream: kept\r\nconnection: close\r\n\r\n{answer}",
         answer.len()
     );
     let _written = stream.write_all(response.as_bytes()).await;
@@ -506,5 +507,83 @@ async fn the_http_sdk_streams_provider_events_as_they_arrive() {
             .get("content-type")
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
+    );
+}
+
+// a send whose transport was built for one shape and whose executor was asked for the other
+async fn crossed_send(
+    transport_streamed: bool,
+    send_streamed: bool,
+) -> Result<CompletionCallAnswer, CompletionFailure> {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
+    let executor = CompletionExecutor {
+        client,
+        catalog: OnceCell::new(),
+    };
+    let mut deployment = deployment("openai/gpt-3.5-turbo-instruct");
+    deployment.api_base = format!("http://{address}/v1");
+    let request = completion(r#""hi""#);
+    let transport = executor
+        .text_transport(&deployment, &request, transport_streamed)
+        .await
+        .expect("transport");
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
+    let mut logger = TracingCompletionLog;
+    let (answer, _head) = tokio::join!(
+        executor.send(
+            &deployment,
+            transport,
+            send_streamed,
+            &redactor,
+            &mut logger
+        ),
+        serve_text_completion(listener)
+    );
+    answer
+}
+
+#[tokio::test]
+async fn a_buffered_completion_keeps_the_provider_headers() {
+    let answer = crossed_send(false, false).await.expect("completion answer");
+    let CompletionCallAnswer::Buffered(answer) = answer else {
+        panic!("a buffered request never streams");
+    };
+    assert_eq!(
+        answer
+            .upstream_headers
+            .get("x-upstream")
+            .and_then(|value| value.to_str().ok()),
+        Some("kept")
+    );
+}
+
+#[tokio::test]
+async fn a_streamed_send_never_takes_a_buffered_provider_answer() {
+    let Err(failure) = crossed_send(false, true).await else {
+        panic!("a buffered answer cannot fill a stream");
+    };
+    assert_eq!(failure.status, 500);
+    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
+    assert!(
+        failure.message.contains("without a body"),
+        "{}",
+        failure.message
+    );
+}
+
+#[tokio::test]
+async fn a_buffered_send_never_takes_a_streamed_provider_answer() {
+    let Err(failure) = crossed_send(true, false).await else {
+        panic!("a stream cannot fill a buffered answer");
+    };
+    assert_eq!(failure.status, 500);
+    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
+    assert!(
+        failure.message.contains("byte stream"),
+        "{}",
+        failure.message
     );
 }

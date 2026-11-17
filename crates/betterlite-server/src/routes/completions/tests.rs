@@ -26,6 +26,14 @@ use crate::state::ServerState;
 
 const ANSWER: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 
+const CHAT_ANSWER: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":" hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
+
+const CHAT_STREAM: &str = concat!(
+    "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\" hello\"},\"finish_reason\":null}]}\n\n",
+    "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" there\"},\"finish_reason\":\"stop\"}]}\n\n",
+    "data: [DONE]\n\n"
+);
+
 const STREAM: &str = concat!(
     "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}]}\n\n",
     "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\" there\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n",
@@ -45,6 +53,21 @@ fn state(base: &str) -> Arc<ServerState> {
         "model_list:\n  - model_name: text-model\n    litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: '{base}', api_key: oracle-key}}\n"
     );
     state_for(&config(&source))
+}
+
+// a chat-catalog deployment the completion route reaches through the chat endpoint
+fn chat_state(base: &str) -> Arc<ServerState> {
+    let source = format!(
+        "model_list:\n  - model_name: chat-model\n    litellm_params: {{model: openai/gpt-4o, api_base: '{base}', api_key: oracle-key}}\n"
+    );
+    state_for(&config(&source))
+}
+
+async fn chat_completion(body: &str, upstream: &str) -> Answered {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let state = chat_state(&format!("http://{address}/v1"));
+    answered(state, listener, "/v1/completions", body, (200, upstream)).await
 }
 
 async fn serve(listener: TcpListener, status: u16, body: &str) -> String {
@@ -461,6 +484,82 @@ async fn stream_false() {
 async fn stream_true() {
     let body = r#"{"model":"text-model","prompt":"hi","stream":true}"#;
     let answered = call("/v1/completions", body, 200, STREAM).await;
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(
+        answered
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream; charset=utf-8")
+    );
+    assert!(
+        answered.sent.contains(r#""stream":true"#),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        answered.raw.contains(r#""object":"text_completion""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""text":" hello""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""text":" there""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.ends_with("data: [DONE]\n\n"),
+        "{:?}",
+        answered.raw
+    );
+}
+
+#[tokio::test]
+async fn a_chat_deployment_answers_the_text_shape() {
+    let answered = chat_completion(r#"{"model":"chat-model","prompt":"hi"}"#, CHAT_ANSWER).await;
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(
+        answered
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+    assert_eq!(answered.body.object.as_deref(), Some("text_completion"));
+    assert_eq!(answered.body.model.as_deref(), Some("chat-model"));
+    assert_eq!(
+        answered
+            .body
+            .choices
+            .first()
+            .and_then(|choice| choice.text.as_deref()),
+        Some(" hello")
+    );
+    // the chat endpoint receives the messages the text prompt became, and the buffered call's stream flag
+    assert!(
+        answered.sent.contains(r#""role":"user""#),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        answered.sent.contains(r#""stream":false"#),
+        "{}",
+        answered.sent
+    );
+}
+
+#[tokio::test]
+async fn a_chat_deployment_streams_the_text_shape() {
+    let answered = chat_completion(
+        r#"{"model":"chat-model","prompt":"hi","stream":true}"#,
+        CHAT_STREAM,
+    )
+    .await;
     assert_eq!(answered.status, StatusCode::OK);
     assert_eq!(
         answered
