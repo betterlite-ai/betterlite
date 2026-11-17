@@ -15,19 +15,16 @@ use crate::router_core::candidates::CandidateSet;
 use crate::router_core::tests::support::{NoLimits, Providers, route_context, route_request};
 use crate::router_predicates::JsonMap;
 use crate::routing_groups::effort::declared::{
-    ADVERTISEMENT_ORDER, EffortFlag, declared_reasoning_efforts_for_model, effort_from_wire,
-    effort_wire_name,
+    ADVERTISEMENT_ORDER, EffortFlag, declared_efforts_for_model, effort_from_wire, effort_wire_name,
 };
 use crate::routing_groups::effort::{
-    GroupReasoningEfforts, deployment_is_catalog_mapped, intersect_supported_reasoning_efforts,
-    nearest_declared_reasoning_effort, resolve_supported_reasoning_efforts,
-    supports_none_reasoning_effort,
+    GroupReasoningEfforts, deployment_is_catalog_mapped, intersect_supported_efforts,
+    nearest_declared_effort, resolve_supported_efforts, supports_none_reasoning_effort,
 };
 use crate::routing_groups::group::{RoutingGroup, parse_routing_groups};
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::params::{
-    deployment_params_with_request_reasoning_override,
-    drop_unsupported_classifier_reasoning_effort, is_classifier_internal_call,
+    drop_classifier_effort, is_classifier_internal_call, params_with_reasoning_override,
     tier_params_the_target_accepts,
 };
 use crate::routing_groups::priority::{group_row, prioritized};
@@ -60,7 +57,7 @@ fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> Routing
 
 fn resolve_info(entries: &[(&str, Json)], mapped: bool) -> Option<Vec<ReasoningEffort>> {
     let map = cost_map(&[]);
-    resolve_supported_reasoning_efforts(&info(entries), mapped, &map)
+    resolve_supported_efforts(&info(entries), mapped, &map)
 }
 
 fn parse_reads_a_strategy_group() {
@@ -265,7 +262,7 @@ fn declared_levels_win_over_flags() {
         ),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &map),
         Some(vec![ReasoningEffort::Low, ReasoningEffort::Max])
     );
 }
@@ -278,7 +275,7 @@ fn flags_advertise_the_polarity_of_each_level() {
         ("supports_xhigh_reasoning_effort", Json::Bool(true)),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &map),
         Some(vec![
             ReasoningEffort::None,
             ReasoningEffort::Minimal,
@@ -318,7 +315,7 @@ fn the_bare_twin_supplies_the_flags() {
         ("supports_reasoning", Json::Bool(true)),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &map),
         Some(vec![
             ReasoningEffort::Minimal,
             ReasoningEffort::Medium,
@@ -340,7 +337,7 @@ fn the_own_flag_wins_over_the_bare_twin() {
         ("supports_xhigh_reasoning_effort", Json::Bool(false)),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &map),
         Some(vec![
             ReasoningEffort::Minimal,
             ReasoningEffort::Low,
@@ -359,26 +356,20 @@ fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
         ("openai/s", r#""nope""#),
     ]);
     assert_eq!(
-        declared_reasoning_efforts_for_model("m", "openai", &map),
+        declared_efforts_for_model("m", "openai", &map),
         Some(vec![ReasoningEffort::High])
     );
     assert_eq!(
-        declared_reasoning_efforts_for_model("e", "openai", &map),
+        declared_efforts_for_model("e", "openai", &map),
         Some(vec![ReasoningEffort::Max])
     );
-    assert_eq!(
-        declared_reasoning_efforts_for_model("s", "openai", &map),
-        None
-    );
-    assert_eq!(
-        declared_reasoning_efforts_for_model("absent", "openai", &map),
-        None
-    );
+    assert_eq!(declared_efforts_for_model("s", "openai", &map), None);
+    assert_eq!(declared_efforts_for_model("absent", "openai", &map), None);
 }
 
 fn intersection_keeps_the_advertisement_order() {
     assert_eq!(
-        intersect_supported_reasoning_efforts(
+        intersect_supported_efforts(
             Some(&[ReasoningEffort::High, ReasoningEffort::Low]),
             Some(&[ReasoningEffort::Low, ReasoningEffort::Max]),
         ),
@@ -388,14 +379,14 @@ fn intersection_keeps_the_advertisement_order() {
 
 fn an_unknown_side_never_narrows() {
     assert_eq!(
-        intersect_supported_reasoning_efforts(Some(&[ReasoningEffort::Low]), None),
+        intersect_supported_efforts(Some(&[ReasoningEffort::Low]), None),
         Some(vec![ReasoningEffort::Low])
     );
     assert_eq!(
-        intersect_supported_reasoning_efforts(None, Some(&[ReasoningEffort::Max])),
+        intersect_supported_efforts(None, Some(&[ReasoningEffort::Max])),
         Some(vec![ReasoningEffort::Max])
     );
-    assert_eq!(intersect_supported_reasoning_efforts(None, None), None);
+    assert_eq!(intersect_supported_efforts(None, None), None);
 }
 
 fn the_group_aggregate_intersects_known_deployments() {
@@ -428,14 +419,14 @@ fn catalog_mapping_needs_both_modes() {
 
 fn nearest_rounds_up_to_the_weakest_declared_level() {
     assert_eq!(
-        nearest_declared_reasoning_effort(
+        nearest_declared_effort(
             ReasoningEffort::Low,
             &[ReasoningEffort::High, ReasoningEffort::Minimal],
         ),
         ReasoningEffort::High
     );
     assert_eq!(
-        nearest_declared_reasoning_effort(
+        nearest_declared_effort(
             ReasoningEffort::Xhigh,
             &[ReasoningEffort::High, ReasoningEffort::Max],
         ),
@@ -445,7 +436,7 @@ fn nearest_rounds_up_to_the_weakest_declared_level() {
 
 fn nearest_rounds_down_above_every_level() {
     assert_eq!(
-        nearest_declared_reasoning_effort(
+        nearest_declared_effort(
             ReasoningEffort::Max,
             &[ReasoningEffort::Minimal, ReasoningEffort::Low],
         ),
@@ -455,14 +446,14 @@ fn nearest_rounds_down_above_every_level() {
 
 fn nearest_leaves_a_declared_level_and_none_alone() {
     assert_eq!(
-        nearest_declared_reasoning_effort(
+        nearest_declared_effort(
             ReasoningEffort::Low,
             &[ReasoningEffort::None, ReasoningEffort::Low],
         ),
         ReasoningEffort::Low
     );
     assert_eq!(
-        nearest_declared_reasoning_effort(ReasoningEffort::None, &[ReasoningEffort::Low]),
+        nearest_declared_effort(ReasoningEffort::None, &[ReasoningEffort::Low]),
         ReasoningEffort::None
     );
 }
@@ -517,7 +508,7 @@ fn a_request_effort_drops_every_native_carrier() {
     ]);
     let request = info(&[("reasoning_effort", text("high"))]);
     assert_eq!(
-        deployment_params_with_request_reasoning_override(&deployment_params, &request),
+        params_with_reasoning_override(&deployment_params, &request),
         info(&[
             ("output_config", object(&[("other", Json::Bool(true))])),
             ("extra_body", object(&[("temperature", number(1))])),
@@ -531,11 +522,11 @@ fn without_a_request_effort_every_carrier_stays() {
         ("extra_body", object(&[("reasoning_effort", text("low"))])),
     ]);
     assert_eq!(
-        deployment_params_with_request_reasoning_override(&deployment_params, &JsonMap::new()),
+        params_with_reasoning_override(&deployment_params, &JsonMap::new()),
         deployment_params
     );
     assert_eq!(
-        deployment_params_with_request_reasoning_override(
+        params_with_reasoning_override(
             &deployment_params,
             &info(&[("reasoning_effort", Json::Null)])
         ),
@@ -580,12 +571,7 @@ fn a_classifier_effort_the_target_refuses_is_dropped() {
             )]),
         ),
     ]);
-    let warning = drop_unsupported_classifier_reasoning_effort(
-        &deployment,
-        "m",
-        &mut kwargs,
-        &Supports(&["seed"]),
-    );
+    let warning = drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"]));
     assert_eq!(
         warning.as_deref(),
         Some(
@@ -613,12 +599,7 @@ fn a_classifier_effort_the_target_declares_stays() {
         ),
     ]);
     assert_eq!(
-        drop_unsupported_classifier_reasoning_effort(
-            &deployment,
-            "m",
-            &mut kwargs,
-            &Supports(&["seed"])
-        ),
+        drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"])),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&text("high")));
@@ -634,12 +615,7 @@ fn a_request_that_is_not_a_classifier_call_keeps_its_effort() {
         ),
     ]);
     assert_eq!(
-        drop_unsupported_classifier_reasoning_effort(
-            &deployment,
-            "m",
-            &mut kwargs,
-            &Supports(&["seed"])
-        ),
+        drop_classifier_effort(&deployment, "m", &mut kwargs, &Supports(&["seed"])),
         None
     );
     assert_eq!(kwargs.get("reasoning_effort"), Some(&text("high")));

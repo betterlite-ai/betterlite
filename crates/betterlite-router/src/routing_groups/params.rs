@@ -13,8 +13,8 @@ use crate::router_predicates::params::{
 };
 
 const REASONING_EFFORT: &str = "reasoning_effort";
-const INTERNAL_CALL_ORIGIN_METADATA_KEY: &str = "internal_call_origin";
-const AUTOROUTER_CLASSIFIER_CALL_ORIGIN: &str = "autorouter_classifier";
+const INTERNAL_CALL_ORIGIN_KEY: &str = "internal_call_origin";
+const AUTOROUTER_CLASSIFIER_ORIGIN: &str = "autorouter_classifier";
 const NESTED_EFFORT_CARRIERS: [&str; 2] = ["output_config", "reasoning"];
 
 // Router.TIER_PARAMS_NEVER_DROPPED's own names, on top of every litellm-owned kwarg.
@@ -35,10 +35,9 @@ pub struct TierParams {
     pub dropped: BTreeSet<String>,
 }
 
-// _deployment_params_with_request_reasoning_override: an equivalent native carrier cannot outrank
-// the request's own reasoning_effort, so every carrier a deployment configures is removed.
+// Router._deployment_params_with_request_reasoning_override: the request's own effort outranks every native carrier.
 #[must_use]
-pub fn deployment_params_with_request_reasoning_override(
+pub fn params_with_reasoning_override(
     deployment_params: &JsonMap,
     request_kwargs: &JsonMap,
 ) -> JsonMap {
@@ -91,8 +90,8 @@ pub fn is_classifier_internal_call(kwargs: &JsonMap) -> bool {
         .into_iter()
         .any(|key| match kwargs.get(key) {
             Some(Json::Object(fields)) => matches!(
-                fields.get(INTERNAL_CALL_ORIGIN_METADATA_KEY),
-                Some(Json::Text(origin)) if origin == AUTOROUTER_CLASSIFIER_CALL_ORIGIN
+                fields.get(INTERNAL_CALL_ORIGIN_KEY),
+                Some(Json::Text(origin)) if origin == AUTOROUTER_CLASSIFIER_ORIGIN
             ),
             None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
                 false
@@ -100,10 +99,9 @@ pub fn is_classifier_internal_call(kwargs: &JsonMap) -> bool {
         })
 }
 
-// _drop_unsupported_classifier_reasoning_effort: only a provider that explicitly rejects the
-// param loses it, and the request's log body loses it with the live kwargs.
+// Router._drop_unsupported_classifier_reasoning_effort: a provider that rejects the param loses it from the live kwargs and the log body.
 #[must_use]
-pub fn drop_unsupported_classifier_reasoning_effort<S>(
+pub fn drop_classifier_effort<S>(
     deployment: &DeploymentSpec,
     model: &str,
     kwargs: &mut JsonMap,
@@ -129,8 +127,7 @@ where
     ))
 }
 
-// _tier_params_the_target_accepts: a tier param no deployment behind the model declares would 400
-// every call the tier routes, unless a deployment, the tier or the request allowlists it.
+// Router._tier_params_the_target_accepts: drop each tier param no deployment behind the model declares, unless a deployment, the tier or the request allowlists it.
 #[must_use]
 pub fn tier_params_the_target_accepts<S>(
     model: &str,

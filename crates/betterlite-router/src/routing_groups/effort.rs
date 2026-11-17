@@ -23,10 +23,9 @@ pub const STRENGTH_ORDER: [ReasoningEffort; 6] = [
 
 const AZURE: &str = "azure";
 
-// nearest_declared_reasoning_effort: round up to the weakest declared level that still meets the
-// request, and down to the strongest one when it asks for more than the model has.
+// nearest_declared_reasoning_effort: round up to the weakest declared level that meets the request, and down to the strongest one above every level.
 #[must_use]
-pub fn nearest_declared_reasoning_effort(
+pub fn nearest_declared_effort(
     requested: ReasoningEffort,
     declared: &[ReasoningEffort],
 ) -> ReasoningEffort {
@@ -62,10 +61,9 @@ pub fn deployment_is_catalog_mapped(
     field(resolved, "mode").is_some() && field(operator_model_info, "mode").is_none()
 }
 
-// resolve_supported_reasoning_efforts: None is unknown, Some of an empty list a known model that
-// accepts no effort level.
+// resolve_supported_reasoning_efforts: None is unknown, a Some of an empty list is a known model that accepts no level.
 #[must_use]
-pub fn resolve_supported_reasoning_efforts(
+pub fn resolve_supported_efforts(
     model_info: &JsonMap,
     deployment_is_mapped: bool,
     model_cost: &ModelCostMap,
@@ -126,9 +124,9 @@ pub fn supports_none_reasoning_effort(model_info: &JsonMap, flag: EffortFlag) ->
     flag.is_true()
 }
 
-// intersect_supported_reasoning_efforts: None never narrows, and an effort survives every deployment.
+// intersect_supported_efforts: None never narrows, and an effort survives every deployment.
 #[must_use]
-pub fn intersect_supported_reasoning_efforts(
+pub fn intersect_supported_efforts(
     current: Option<&[ReasoningEffort]>,
     resolved: Option<&[ReasoningEffort]>,
 ) -> Option<Vec<ReasoningEffort>> {
@@ -167,7 +165,7 @@ impl GroupReasoningEfforts {
             }
             Some(levels) if !self.unknown => {
                 self.supported =
-                    intersect_supported_reasoning_efforts(self.supported.as_deref(), Some(&levels));
+                    intersect_supported_efforts(self.supported.as_deref(), Some(&levels));
             }
             Some(_) => {}
         }

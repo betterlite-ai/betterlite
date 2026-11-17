@@ -32,8 +32,9 @@ impl RoutingGroupIndex {
         alias_names: &BTreeSet<String>,
     ) -> Result<Built, RoutingGroupError> {
         let mut index = Self {
+            groups: IndexMap::new(),
+            model_to_group: BTreeMap::new(),
             shadowing: known_model_names.union(alias_names).cloned().collect(),
-            ..Self::default()
         };
         let mut warnings = Vec::new();
         for group in groups {

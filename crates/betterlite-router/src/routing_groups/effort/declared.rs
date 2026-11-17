@@ -154,9 +154,9 @@ pub fn declared_reasoning_efforts(
     )
 }
 
-// declared_reasoning_efforts_for_model: the model string a provider config holds, not a deployment's id.
+// declared_efforts_for_model: the model string a provider config holds, not a deployment's id.
 #[must_use]
-pub fn declared_reasoning_efforts_for_model(
+pub fn declared_efforts_for_model(
     model: &str,
     custom_llm_provider: &str,
     model_cost: &ModelCostMap,

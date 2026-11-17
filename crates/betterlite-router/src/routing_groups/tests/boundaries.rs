@@ -12,16 +12,15 @@ use super::support::{
 };
 use crate::router_predicates::JsonMap;
 use crate::routing_groups::effort::{
-    GroupReasoningEfforts, intersect_supported_reasoning_efforts,
-    nearest_declared_reasoning_effort, resolve_supported_reasoning_efforts,
+    GroupReasoningEfforts, intersect_supported_efforts, nearest_declared_effort,
+    resolve_supported_efforts,
 };
 use crate::routing_groups::group::{
     MAX_MODEL_PRIORITY, RoutingGroup, parse_routing_groups, validate_routing_strategy,
 };
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::params::{
-    deployment_params_with_request_reasoning_override,
-    drop_unsupported_classifier_reasoning_effort, is_classifier_internal_call,
+    drop_classifier_effort, is_classifier_internal_call, params_with_reasoning_override,
     tier_params_the_target_accepts,
 };
 use crate::strategy_dispatch::groups::GroupStrategy;
@@ -371,18 +370,18 @@ fn a_duplicate_group_in_the_index_names_the_group() {
 
 fn an_empty_declared_list_keeps_the_request() {
     assert_eq!(
-        nearest_declared_reasoning_effort(ReasoningEffort::Minimal, &[]),
+        nearest_declared_effort(ReasoningEffort::Minimal, &[]),
         ReasoningEffort::Minimal
     );
 }
 
 fn an_empty_side_empties_the_intersection() {
     assert_eq!(
-        intersect_supported_reasoning_efforts(Some(&[]), Some(&[ReasoningEffort::Low])),
+        intersect_supported_efforts(Some(&[]), Some(&[ReasoningEffort::Low])),
         Some(Vec::new())
     );
     assert_eq!(
-        intersect_supported_reasoning_efforts(Some(&[ReasoningEffort::Low]), Some(&[])),
+        intersect_supported_efforts(Some(&[ReasoningEffort::Low]), Some(&[])),
         Some(Vec::new())
     );
 }
@@ -402,7 +401,7 @@ fn an_empty_declared_list_is_a_known_empty() {
         ("reasoning_effort_levels", Json::List(Vec::new())),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, true, &map),
+        resolve_supported_efforts(&model_info, true, &map),
         Some(Vec::new())
     );
 }
@@ -413,10 +412,7 @@ fn a_declared_value_that_is_not_a_list_falls_back_to_the_flags() {
         ("supports_reasoning", Json::Bool(true)),
         ("reasoning_effort_levels", text("high")),
     ]);
-    assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
-        None
-    );
+    assert_eq!(resolve_supported_efforts(&model_info, false, &map), None);
 }
 
 fn a_flag_that_is_not_a_boolean_still_advertises() {
@@ -426,7 +422,7 @@ fn a_flag_that_is_not_a_boolean_still_advertises() {
         ("supports_minimal_reasoning_effort", text("yes")),
     ]);
     assert_eq!(
-        resolve_supported_reasoning_efforts(&model_info, false, &map),
+        resolve_supported_efforts(&model_info, false, &map),
         Some(vec![
             ReasoningEffort::None,
             ReasoningEffort::Minimal,
@@ -441,7 +437,7 @@ fn an_extra_body_that_empties_is_removed() {
     let deployment_params = info(&[("extra_body", object(&[("reasoning_effort", text("low"))]))]);
     let request = info(&[("reasoning_effort", text("high"))]);
     assert_eq!(
-        deployment_params_with_request_reasoning_override(&deployment_params, &request),
+        params_with_reasoning_override(&deployment_params, &request),
         JsonMap::new()
     );
 }
@@ -450,7 +446,7 @@ fn a_non_object_extra_body_is_left_alone() {
     let deployment_params = info(&[("extra_body", text("keep"))]);
     let request = info(&[("reasoning_effort", text("high"))]);
     assert_eq!(
-        deployment_params_with_request_reasoning_override(&deployment_params, &request),
+        params_with_reasoning_override(&deployment_params, &request),
         deployment_params
     );
 }
@@ -475,7 +471,7 @@ fn a_null_classifier_effort_is_not_dropped() {
         ),
     ]);
     assert_eq!(
-        drop_unsupported_classifier_reasoning_effort(
+        drop_classifier_effort(
             &deployment("m", "m1"),
             "m",
             &mut kwargs,
@@ -496,7 +492,7 @@ fn a_non_object_body_keeps_the_drop_to_the_top_level() {
         ("proxy_server_request", text("kept")),
     ]);
     assert!(
-        drop_unsupported_classifier_reasoning_effort(
+        drop_classifier_effort(
             &deployment("m", "m1"),
             "m",
             &mut kwargs,

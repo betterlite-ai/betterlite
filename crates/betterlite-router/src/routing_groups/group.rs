@@ -134,8 +134,7 @@ pub fn validate_routing_strategy(value: Option<&str>) -> Result<(), RoutingGroup
     }
 }
 
-// parse_routing_groups: pydantic's constructor on every entry, then the pinned name, strategy,
-// ownership and unknown-member checks in LiteLLM's order.
+// parse_routing_groups: pydantic's constructor on every entry, then the pinned name, strategy, ownership and unknown-member checks in order.
 pub fn parse_routing_groups(
     groups_input: Option<&[JsonMap]>,
     known_model_names: &BTreeSet<String>,
