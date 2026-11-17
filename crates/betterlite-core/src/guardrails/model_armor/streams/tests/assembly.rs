@@ -79,6 +79,15 @@ fn assembly_ignores_a_terminal_event_without_an_object_response() {
 }
 
 #[test]
+fn assembly_reads_the_last_terminal_event_that_carries_a_body() {
+    let chunks = [
+        chunk(r#"{"type": "response.completed", "response": {"id": "kept"}}"#),
+        chunk(r#"{"type": "response.failed", "response": "boom"}"#),
+    ];
+    assert_eq!(terminal_body(&chunks), Some(value(r#"{"id": "kept"}"#)));
+}
+
+#[test]
 fn assembly_reads_a_failed_terminal_event_body() {
     let chunks = [chunk(
         r#"{"type": "response.failed", "response": {"id": "resp_1"}}"#,
