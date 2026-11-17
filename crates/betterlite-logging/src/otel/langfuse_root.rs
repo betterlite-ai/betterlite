@@ -61,9 +61,9 @@ impl ApiCallLogger for LangfuseOtel {
             && root.is_recording()
         {
             let kwargs: OtelModelValue = serde_json::from_value(
-                serde_json::to_value(event.details).map_err(callback_failed)?,
+                serde_json::to_value(event.details).map_err(|error| callback_failed(&error))?,
             )
-            .map_err(callback_failed)?;
+            .map_err(|error| callback_failed(&error))?;
             for (key, value) in trace_attributes(&caller_trace_controls(&kwargs)) {
                 root.set_attribute(key, value);
             }
@@ -182,7 +182,7 @@ fn trace_attributes(controls: &TraceControls) -> Vec<(&'static str, String)> {
     attributes
 }
 
-fn callback_failed(error: serde_json::Error) -> PrePostError {
+fn callback_failed(error: &serde_json::Error) -> PrePostError {
     PrePostError::CallbackFailed {
         message: error.to_string(),
     }
