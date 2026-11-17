@@ -91,6 +91,7 @@ pub fn compile_insensitive_patterns(patterns: &[String]) -> Result<Vec<Regex>, S
 }
 
 // _append_custom_keywords: base order first, then each new custom term; a repeat keeps its first position and last spelling
+#[must_use]
 pub fn append_keywords(base: &[String], custom: &[String]) -> Vec<String> {
     let mut merged = base.to_vec();
     let base_lowered: BTreeSet<String> =
@@ -101,11 +102,16 @@ pub fn append_keywords(base: &[String], custom: &[String]) -> Vec<String> {
         if base_lowered.contains(&lowered) {
             continue;
         }
-        let seen = merged[custom_start..]
+        let seen = merged
             .iter()
+            .skip(custom_start)
             .position(|merged_keyword| merged_keyword.to_lowercase() == lowered);
         match seen {
-            Some(offset) => merged[custom_start + offset] = keyword.clone(),
+            Some(offset) => {
+                if let Some(slot) = merged.iter_mut().skip(custom_start).nth(offset) {
+                    *slot = keyword.clone();
+                }
+            }
             None => merged.push(keyword.clone()),
         }
     }
