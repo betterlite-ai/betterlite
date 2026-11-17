@@ -175,10 +175,10 @@ impl SdkRuntime {
         url: &str,
         client: &SdkHttpClient,
     ) -> Result<SdkTransportContext, SdkError> {
-        let url = Url::parse(url).map_err(SdkError::EndpointUrl)?;
+        let endpoint = Url::parse(url).map_err(SdkError::EndpointUrl)?;
         let handler = MessageHandler::default();
         let sdk_transport = SdkTransport::Streamable(StreamableHttp::new(
-            url,
+            endpoint,
             Arc::clone(&client.transport),
             Arc::clone(&client.client),
             handler.clone(),
