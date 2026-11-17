@@ -7,10 +7,10 @@ pub const BEDROCK_COMPUTER_USE_TOOLS: [&str; 4] =
     ["computer_use_preview", "computer_", "bash_", "text_editor_"];
 
 pub fn is_computer_use_tool_used(tools: Option<&[Json]>) -> Result<bool, ConverseToolsError> {
-    let Some(tools) = tools else {
+    let Some(list) = tools else {
         return Ok(false);
     };
-    for tool in tools {
+    for tool in list {
         if tool_type(fields_of(tool)?)?.is_some_and(is_computer_use_type) {
             return Ok(true);
         }
@@ -47,7 +47,7 @@ fn is_computer_use_type(tool_type: &str) -> bool {
         .any(|prefix| tool_type.starts_with(prefix))
 }
 
-fn fields_of(tool: &Json) -> Result<&IndexMap<String, Json>, ConverseToolsError> {
+const fn fields_of(tool: &Json) -> Result<&IndexMap<String, Json>, ConverseToolsError> {
     let Json::Object(fields) = tool else {
         return Err(ConverseToolsError::ToolNotAnObject);
     };
@@ -67,10 +67,7 @@ fn tool_type(fields: &IndexMap<String, Json>) -> Result<Option<&str>, ConverseTo
 // The transformer reads a missing type as "not a computer tool" and copies the tool unchanged.
 fn transform_tool(tool: &Json) -> Result<Json, ConverseToolsError> {
     let fields = fields_of(tool)?;
-    match tool_type(fields)? {
-        None => Ok(tool.clone()),
-        Some(kind) => typed_tool(fields, kind),
-    }
+    tool_type(fields)?.map_or_else(|| Ok(tool.clone()), |kind| typed_tool(fields, kind))
 }
 
 fn typed_tool(
@@ -90,16 +87,16 @@ fn typed_tool(
 
 // The function parameters spread last in LiteLLM, so they can replace the generated type and name.
 fn function_tool(tool_type: &str, function: &Json) -> Result<Json, ConverseToolsError> {
-    let Json::Object(function) = function else {
+    let Json::Object(members) = function else {
         return Err(ConverseToolsError::ToolFunction);
     };
     let mut fields = IndexMap::new();
     fields.insert("type".to_owned(), Json::Text(tool_type.to_owned()));
-    let name = function
+    let name = members
         .get("name")
         .map_or_else(|| Json::Text("computer".to_owned()), Clone::clone);
     fields.insert("name".to_owned(), name);
-    match function.get("parameters") {
+    match members.get("parameters") {
         None => {}
         Some(Json::Object(parameters)) => {
             for (key, value) in parameters {
@@ -116,14 +113,14 @@ fn function_tool(tool_type: &str, function: &Json) -> Result<Json, ConverseTools
 fn direct_tool(fields: &IndexMap<String, Json>, tool_type: &str) -> Json {
     let mut transformed = fields.clone();
     if !transformed.contains_key("name") {
-        let name = if tool_type.starts_with("bash_") {
+        let fallback = if tool_type.starts_with("bash_") {
             Some("bash")
         } else if tool_type.starts_with("text_editor_") {
             Some("str_replace_editor")
         } else {
             None
         };
-        if let Some(name) = name {
+        if let Some(name) = fallback {
             transformed.insert("name".to_owned(), Json::Text(name.to_owned()));
         }
     }

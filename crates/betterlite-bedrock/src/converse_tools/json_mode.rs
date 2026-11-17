@@ -34,8 +34,8 @@ pub fn create_json_tool_call(json_schema: Option<&Json>, description: Option<&st
         Json::Text(RESPONSE_FORMAT_TOOL_NAME.to_owned()),
     );
     function.insert("parameters".to_owned(), parameters);
-    if let Some(description) = description {
-        function.insert("description".to_owned(), Json::Text(description.to_owned()));
+    if let Some(note) = description {
+        function.insert("description".to_owned(), Json::Text(note.to_owned()));
     }
     let mut tool = IndexMap::new();
     tool.insert("type".to_owned(), Json::Text("function".to_owned()));

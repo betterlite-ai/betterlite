@@ -85,11 +85,11 @@ impl Frame {
         let mut fields = shell;
         let mut maps: IndexMap<&'static str, IndexMap<String, Json>> = IndexMap::new();
         let mut lists: IndexMap<&'static str, Vec<Json>> = IndexMap::new();
-        let mut items = None;
+        let mut nested_items = None;
         for (child, value) in results {
             match child {
                 Child::Items => {
-                    items = Some(value);
+                    nested_items = Some(value);
                 }
                 Child::Property(name) => {
                     maps.entry("properties").or_default().insert(name, value);
@@ -108,7 +108,7 @@ impl Frame {
         for (key, list) in lists {
             fields.insert(key.to_owned(), Json::List(list));
         }
-        if let Some(items) = items {
+        if let Some(items) = nested_items {
             fields.insert("items".to_owned(), items);
         }
         Json::Object(fields)

@@ -29,12 +29,14 @@ pub fn map_tool_choice_values(
                 names,
             )?)))
         }
-        other => Err(ConverseToolsError::UnsupportedChoice {
-            value: match other {
-                Json::Text(text) => text.clone(),
-                other => dumps(other),
-            },
+        Json::Text(text) => Err(ConverseToolsError::UnsupportedChoice {
+            value: text.clone(),
         }),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            Err(ConverseToolsError::UnsupportedChoice {
+                value: dumps(tool_choice),
+            })
+        }
     }
 }
 
@@ -72,10 +74,10 @@ fn choice(kind: &str) -> ToolChoiceValuesBlock {
 }
 
 fn tool_choice_name(fields: &IndexMap<String, Json>) -> Result<Option<&Json>, ConverseToolsError> {
-    let Some(function) = fields.get("function") else {
+    let Some(raw) = fields.get("function") else {
         return Ok(None);
     };
-    let Json::Object(function) = function else {
+    let Json::Object(function) = raw else {
         return Err(ConverseToolsError::ToolChoiceFunction);
     };
     Ok(function.get("name"))

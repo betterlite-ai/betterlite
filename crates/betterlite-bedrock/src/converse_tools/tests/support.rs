@@ -69,14 +69,14 @@ pub(crate) struct Query {
 
 #[derive(Default)]
 pub(crate) struct Predicates {
-    supported: Vec<&'static str>,
+    supported: Vec<String>,
     pub(crate) queries: Vec<Query>,
 }
 
 impl Predicates {
     pub(crate) fn with(supported: &[&'static str]) -> Self {
         Self {
-            supported: supported.to_vec(),
+            supported: supported.iter().copied().map(str::to_owned).collect(),
             queries: Vec::new(),
         }
     }
@@ -93,7 +93,7 @@ impl CapabilityPredicates for Predicates {
             provider: request.custom_llm_provider.map(str::to_owned),
             key: key.to_owned(),
         });
-        let supported = self.supported.iter().any(|flag| *flag == key);
+        let supported = self.supported.contains(&key.to_owned());
         ready(supported)
     }
 
