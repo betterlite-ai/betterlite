@@ -164,7 +164,8 @@ fn predict_text_embedding_sums_the_token_counts() {
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the embedding reply is logged");
-    let usage = field(&result_json(&outcome), "usage");
+    let result = result_json(&outcome);
+    let usage = field(&result, "usage");
     assert_eq!(integer(field(usage, "prompt_tokens")), 5);
     assert_eq!(integer(field(usage, "completion_tokens")), 0);
     assert_eq!(integer(field(usage, "total_tokens")), 5);
