@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn cohere_embedding_uses_the_caller_headers_with_the_extras() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    fixture.setup.api_key = key("explicit");
+    fixture.setup.api_key = Some(key("explicit"));
     fixture.setup.headers = Some(headers(&[
         ("authorization", "Bearer caller"),
         ("x-call", "1"),
@@ -32,25 +32,25 @@ fn cohere_embedding_uses_the_caller_headers_with_the_extras() {
 fn cohere_embedding_reads_the_key_chain() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
     fixture.setup.api_key = None;
-    fixture.setup.settings.cohere_key = key("first");
+    fixture.setup.settings.cohere_key = Some(key("first"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer first")
     );
     fixture.setup.settings.cohere_key = None;
-    fixture.setup.settings.cohere_api_key = key("second");
+    fixture.setup.settings.cohere_api_key = Some(key("second"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer second")
     );
     fixture.setup.settings.cohere_api_key = None;
-    fixture.setup.settings.co_api_key = key("third");
+    fixture.setup.settings.co_api_key = Some(key("third"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer third")
     );
     fixture.setup.settings.co_api_key = None;
-    fixture.setup.settings.api_key = key("last");
+    fixture.setup.settings.api_key = Some(key("last"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer last")
@@ -112,7 +112,7 @@ fn cohere_embedding_refuses_input_it_cannot_send_as_text() {
 #[test]
 fn voyage_embedding_sends_only_its_authorization() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Voyage, "voyage-3");
-    fixture.setup.api_key = key("voyage-key");
+    fixture.setup.api_key = Some(key("voyage-key"));
     fixture.setup.headers = Some(headers(&[("x-call", "1")]));
     fixture.setup.extra = headers(&[("x-extra", "2")]);
     let prepared = fixture.prepared();
@@ -217,7 +217,7 @@ fn jina_embedding_resolves_base_and_key_from_the_host_settings() {
     let mut fixture = EmbeddingFixture::new(ProviderId::JinaAi, "jina-embeddings-v3");
     fixture.setup.api_key = None;
     fixture.setup.host.jina_ai_api_base = Some(String::from("https://host.test"));
-    fixture.setup.host.jina_ai_api_key = key("host-key");
+    fixture.setup.host.jina_ai_api_key = Some(key("host-key"));
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://host.test/embeddings");
     assert_eq!(
