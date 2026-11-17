@@ -25,9 +25,9 @@ fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
 fn an_empty_config_takes_the_litellm_defaults() {
     let settings = loaded("{}", &[]);
     assert!(!settings.enable_health_check_routing);
-    assert_eq!(settings.health_check_staleness_threshold, 600.0);
-    assert!(!settings.health_check_ignore_transient_errors);
-    assert_eq!(settings.cooldown_redis_read_interval_seconds, 1.0);
+    assert_eq!(settings.staleness_threshold, 600.0);
+    assert!(!settings.ignore_transient_errors);
+    assert_eq!(settings.read_interval_seconds, 1.0);
 }
 
 #[rstest]
@@ -36,9 +36,9 @@ fn an_empty_config_takes_the_litellm_defaults() {
     &[],
     Settings {
         enable_health_check_routing: true,
-        health_check_staleness_threshold: 600.0,
-        health_check_ignore_transient_errors: false,
-        cooldown_redis_read_interval_seconds: 1.0,
+        staleness_threshold: 600.0,
+        ignore_transient_errors: false,
+        read_interval_seconds: 1.0,
     }
 )]
 #[case::health_check_staleness_threshold(
@@ -46,9 +46,9 @@ fn an_empty_config_takes_the_litellm_defaults() {
     &[],
     Settings {
         enable_health_check_routing: false,
-        health_check_staleness_threshold: 90.0,
-        health_check_ignore_transient_errors: false,
-        cooldown_redis_read_interval_seconds: 1.0,
+        staleness_threshold: 90.0,
+        ignore_transient_errors: false,
+        read_interval_seconds: 1.0,
     }
 )]
 #[case::a_fractional_threshold(
@@ -56,9 +56,9 @@ fn an_empty_config_takes_the_litellm_defaults() {
     &[],
     Settings {
         enable_health_check_routing: false,
-        health_check_staleness_threshold: 2.5,
-        health_check_ignore_transient_errors: false,
-        cooldown_redis_read_interval_seconds: 1.0,
+        staleness_threshold: 2.5,
+        ignore_transient_errors: false,
+        read_interval_seconds: 1.0,
     }
 )]
 #[case::a_threshold_from_the_environment(
@@ -66,9 +66,9 @@ fn an_empty_config_takes_the_litellm_defaults() {
     &[("STALENESS_SECONDS", "45")],
     Settings {
         enable_health_check_routing: false,
-        health_check_staleness_threshold: 45.0,
-        health_check_ignore_transient_errors: false,
-        cooldown_redis_read_interval_seconds: 1.0,
+        staleness_threshold: 45.0,
+        ignore_transient_errors: false,
+        read_interval_seconds: 1.0,
     }
 )]
 #[case::health_check_ignore_transient_errors(
@@ -76,9 +76,9 @@ fn an_empty_config_takes_the_litellm_defaults() {
     &[],
     Settings {
         enable_health_check_routing: false,
-        health_check_staleness_threshold: 600.0,
-        health_check_ignore_transient_errors: true,
-        cooldown_redis_read_interval_seconds: 1.0,
+        staleness_threshold: 600.0,
+        ignore_transient_errors: true,
+        read_interval_seconds: 1.0,
     }
 )]
 fn each_key_alone_is_read(
@@ -116,10 +116,7 @@ fn the_staleness_threshold_defaults_to_twice_the_health_check_interval(
     #[case] environment: &[(&str, &str)],
     #[case] expected: f64,
 ) {
-    assert_eq!(
-        loaded(source, environment).health_check_staleness_threshold,
-        expected
-    );
+    assert_eq!(loaded(source, environment).staleness_threshold, expected);
 }
 
 #[rstest]
@@ -148,10 +145,7 @@ fn the_redis_read_interval_defaults_to_one_second(
     #[case] environment: &[(&str, &str)],
     #[case] expected: f64,
 ) {
-    assert_eq!(
-        loaded(source, environment).cooldown_redis_read_interval_seconds,
-        expected
-    );
+    assert_eq!(loaded(source, environment).read_interval_seconds, expected);
 }
 
 #[rstest]

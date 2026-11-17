@@ -276,8 +276,8 @@ pub(crate) fn settings() -> Settings {
         default_cooldown_time: 5.0,
         redis_read_interval_seconds: 1.0,
         enable_health_check_routing: true,
-        health_check_staleness_threshold: 10.0,
-        health_check_ignore_transient_errors: false,
+        staleness_threshold: 10.0,
+        ignore_transient_errors: false,
     }
 }
 

@@ -26,8 +26,10 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     enable_health_check_routing: Option<RawFlag>,
-    health_check_staleness_threshold: Option<RawNumber>,
-    health_check_ignore_transient_errors: Option<RawFlag>,
+    #[serde(rename = "health_check_staleness_threshold")]
+    staleness_threshold: Option<RawNumber>,
+    #[serde(rename = "health_check_ignore_transient_errors")]
+    ignore_transient_errors: Option<RawFlag>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,9 +54,9 @@ impl RawFlag {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub enable_health_check_routing: bool,
-    pub health_check_staleness_threshold: f64,
-    pub health_check_ignore_transient_errors: bool,
-    pub cooldown_redis_read_interval_seconds: f64,
+    pub staleness_threshold: f64,
+    pub ignore_transient_errors: bool,
+    pub read_interval_seconds: f64,
 }
 
 // the staleness default is LiteLLM's DEFAULT_HEALTH_CHECK_INTERVAL at import time, times its staleness multiplier
@@ -62,9 +64,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enable_health_check_routing: false,
-            health_check_staleness_threshold: DEFAULT_HEALTH_CHECK_INTERVAL * STALENESS_MULTIPLIER,
-            health_check_ignore_transient_errors: false,
-            cooldown_redis_read_interval_seconds: DEFAULT_READ_INTERVAL_SECONDS,
+            staleness_threshold: DEFAULT_HEALTH_CHECK_INTERVAL * STALENESS_MULTIPLIER,
+            ignore_transient_errors: false,
+            read_interval_seconds: DEFAULT_READ_INTERVAL_SECONDS,
         }
     }
 }
@@ -84,13 +86,13 @@ impl Section for Raw {
             .transpose()?
             .unwrap_or(false);
         let ignore = general
-            .health_check_ignore_transient_errors
+            .ignore_transient_errors
             .as_ref()
             .map(|raw| raw.resolve(IGNORE_PATH))
             .transpose()?
             .unwrap_or(false);
         let configured = resolve_number(
-            general.health_check_staleness_threshold,
+            general.staleness_threshold,
             STALENESS_PATH,
             lookup,
             parse_float,
@@ -104,9 +106,9 @@ impl Section for Raw {
         let staleness_default = interval_default(lookup)?;
         Ok(Settings {
             enable_health_check_routing: enable,
-            health_check_staleness_threshold: configured.unwrap_or(staleness_default),
-            health_check_ignore_transient_errors: ignore,
-            cooldown_redis_read_interval_seconds: read_interval,
+            staleness_threshold: configured.unwrap_or(staleness_default),
+            ignore_transient_errors: ignore,
+            read_interval_seconds: read_interval,
         })
     }
 }

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub const KEY_PREFIX: &str = "deployment:";
 pub const KEY_SUFFIX: &str = ":cooldown";
 // the cap on the corrected in-memory TTL, so a shared entry deleted or extended early is noticed within a minute
-pub const MAX_CORRECTED_IN_MEMORY_TTL_SECONDS: f64 = 60.0;
+pub const MAX_CORRECTED_TTL_SECONDS: f64 = 60.0;
 
 // CooldownCacheValue: the entry one deployment's cooldown leaves in the shared cache
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

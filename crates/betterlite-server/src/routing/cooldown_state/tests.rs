@@ -9,9 +9,9 @@ use super::cooldown_settings;
 fn the_router_settings_carry_every_configured_key() {
     let section = config::Settings {
         enable_health_check_routing: true,
-        health_check_staleness_threshold: 90.0,
-        health_check_ignore_transient_errors: true,
-        cooldown_redis_read_interval_seconds: 0.25,
+        staleness_threshold: 90.0,
+        ignore_transient_errors: true,
+        read_interval_seconds: 0.25,
     };
     assert_eq!(
         cooldown_settings(&section, 12.0),
@@ -19,8 +19,8 @@ fn the_router_settings_carry_every_configured_key() {
             default_cooldown_time: 12.0,
             redis_read_interval_seconds: 0.25,
             enable_health_check_routing: true,
-            health_check_staleness_threshold: 90.0,
-            health_check_ignore_transient_errors: true,
+            staleness_threshold: 90.0,
+            ignore_transient_errors: true,
         }
     );
 }

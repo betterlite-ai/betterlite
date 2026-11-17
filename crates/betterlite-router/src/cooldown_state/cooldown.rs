@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_redact::structured::SensitiveDataMasker;
 
 use crate::cooldown_state::record::{
-    CooldownRecord, KEY_PREFIX, KEY_SUFFIX, MAX_CORRECTED_IN_MEMORY_TTL_SECONDS,
+    CooldownRecord, KEY_PREFIX, KEY_SUFFIX, MAX_CORRECTED_TTL_SECONDS,
 };
 use crate::cooldown_state::settings::Settings;
 use crate::cooldown_state::shared::{SharedCooldowns, SharedHandle};
@@ -162,7 +162,7 @@ impl CooldownCache {
             .get(key)
             .is_some_and(|entry| entry.expires_at > longest)
         {
-            let corrected = remaining.min(MAX_CORRECTED_IN_MEMORY_TTL_SECONDS);
+            let corrected = remaining.min(MAX_CORRECTED_TTL_SECONDS);
             state.entries.insert(
                 key.clone(),
                 LocalEntry {
