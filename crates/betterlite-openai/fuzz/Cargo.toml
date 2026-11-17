@@ -691,3 +691,10 @@ path = "fuzz_targets/watsonx_transcription_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_output_limits"
+path = "fuzz_targets/openai_output_limits.rs"
+test = false
+doc = false
+bench = false
