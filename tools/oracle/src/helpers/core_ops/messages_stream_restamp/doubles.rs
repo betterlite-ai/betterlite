@@ -139,12 +139,11 @@ impl MessagesStreamCacheTarget for RecordingCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((recorded, request_kwargs));
-        match &self.failure {
-            Some(message) => Err(CacheWriteFailure {
+        self.failure.as_ref().map_or(Ok(()), |message| {
+            Err(CacheWriteFailure {
                 message: message.clone(),
-            }),
-            None => Ok(()),
-        }
+            })
+        })
     }
 }
 

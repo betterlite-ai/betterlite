@@ -8,7 +8,7 @@ use betterlite_cache::cache_key::value::KeyObject;
 use betterlite_cache::replay::CachedDict;
 use betterlite_cache::write_completion::tracker::CacheWriteTracker;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream;
+use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream as _;
 use betterlite_core::api::messages_stream_restamp::cache_stream::{
     MessagesStreamCacheDeps, MessagesStreamCacheTarget, MessagesStreamCacheWriter,
 };
@@ -152,7 +152,7 @@ async fn write_stream(
         tasks: TaskTracker::new(),
         cancellation: CancellationToken::new(),
     });
-    let target: Arc<dyn MessagesStreamCacheTarget> = cache.clone();
+    let target: Arc<dyn MessagesStreamCacheTarget> = Arc::<RecordingCache>::clone(&cache);
     let reads = input
         .reads
         .iter()
