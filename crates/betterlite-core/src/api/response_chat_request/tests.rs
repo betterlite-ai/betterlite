@@ -29,6 +29,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
+use super::options::map_optional_params;
 use super::records::ChatRequestInput;
 use super::request::build_request;
 use super::tools::add_web_search_tool;
@@ -256,6 +257,14 @@ fn maps_every_option_key(#[case] optional: &str, #[case] expected: Value) {
     let built = build(optional);
     let projection = built.outcome.expect("the request builds");
     assert_eq!(options(&projection.params), expected);
+}
+
+#[test]
+fn leaves_unmapped_option_keys_out_of_the_params() {
+    let optional_params = json_map(r#"{"vendor": {"x": 1}, "functions": [], "temperature": 0.5}"#);
+    let mut params = Map::new();
+    map_optional_params(&optional_params, &mut params, false).expect("the options map");
+    assert_eq!(Value::Object(params), json!({"temperature": 0.5}));
 }
 
 #[rstest]
