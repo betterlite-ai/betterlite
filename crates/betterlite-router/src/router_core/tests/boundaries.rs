@@ -104,8 +104,7 @@ pub(super) async fn prompt_affinity_narrows_the_pool() {
     assert_eq!(services.calls.load(Ordering::SeqCst), 1);
 }
 
-// The check narrows before the pre-call checks: the pinned deployment's own param rejection empties the pool,
-// where running the check after them would leave the other deployment to serve the request.
+// The check narrows before the pre-call checks, so the pinned deployment's own param rejection empties the pool.
 pub(super) async fn prompt_affinity_before_pre_call_checks() {
     let pins = Arc::new(FakePins::default());
     pins.seed(

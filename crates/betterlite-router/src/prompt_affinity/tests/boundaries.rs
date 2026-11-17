@@ -6,9 +6,9 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::support::{
-    FakePins, MARKED_MESSAGES, cache_key, catalog, deployment, ids, image_message_source,
-    json_messages, lookback, messages, pin, positions, request, service, success,
-    text_blocks_source, token_counter, tool_result_blocks_source, tool_use_blocks_source,
+    FakePins, MARKED_MESSAGES, ToolBlocks, cache_key, catalog, deployment, ids,
+    image_message_source, json_messages, lookback, messages, pin, positions, request, service,
+    success, text_blocks_source, token_counter, tool_blocks_source,
 };
 use crate::prompt_affinity::service::{CountingGate, TokenGate};
 
@@ -124,8 +124,8 @@ async fn the_lookback_window_holds_twenty_positions() {
 }
 
 fn a_tool_result_run_counts_as_one_position() {
-    let run = json_messages(&tool_result_blocks_source(21));
-    let used = json_messages(&tool_use_blocks_source(21));
+    let run = json_messages(&tool_blocks_source(21, ToolBlocks::Result));
+    let used = json_messages(&tool_blocks_source(21, ToolBlocks::Use));
     let blocks = json_messages(&text_blocks_source(21));
     assert_eq!(lookback(&run).len(), 21);
     assert_eq!(lookback(&used).len(), 21);

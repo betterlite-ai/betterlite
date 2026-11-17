@@ -299,46 +299,52 @@ pub(super) fn token_counter() -> Counter {
     )
 }
 
+// one message carrying the given content blocks in order
+fn message_with_blocks(role: &str, blocks: Vec<String>) -> String {
+    format!(r#"[{{"role":"{role}","content":[{}]}}]"#, blocks.join(","))
+}
+
 pub(super) fn text_blocks_source(count: usize) -> String {
     let mut blocks: Vec<String> = (0..count.saturating_sub(1))
         .map(|index| format!(r#"{{"type":"text","text":"block {index}"}}"#))
         .collect();
     blocks.push(r#"{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}"#.to_owned());
-    format!(r#"[{{"role":"user","content":[{}]}}]"#, blocks.join(","))
+    message_with_blocks("user", blocks)
 }
 
-pub(super) fn tool_result_blocks_source(count: usize) -> String {
-    let mut blocks = Vec::new();
-    for index in 0..count.saturating_sub(1) {
-        let id = format!("call {index}");
-        let value = format!("value {index}");
-        blocks.push(format!(
-            r#"{{"type":"tool_result","tool_use_id":"{id}","content":"{value}"}}"#
-        ));
-    }
-    blocks.push(
-        r#"{"type":"tool_result","tool_use_id":"last","content":"last","cache_control":{"type":"ephemeral"}}"#
-            .to_owned(),
-    );
-    format!(r#"[{{"role":"tool","content":[{}]}}]"#, blocks.join(","))
+// the tool block kind a lookback fixture repeats, and the message role that carries it
+#[derive(Clone, Copy)]
+pub(super) enum ToolBlocks {
+    Use,
+    Result,
 }
 
-pub(super) fn tool_use_blocks_source(count: usize) -> String {
+// one message of `count` tool blocks of one kind, the last one marked ephemeral
+pub(super) fn tool_blocks_source(count: usize, kind: ToolBlocks) -> String {
     let mut blocks = Vec::new();
-    for index in 0..count.saturating_sub(1) {
+    for index in 0..count {
         let id = format!("call {index}");
-        blocks.push(format!(
-            r#"{{"type":"tool_use","id":"{id}","name":"lookup","input":{{}}}}"#
-        ));
+        let block = match (kind, index == count.saturating_sub(1)) {
+            (ToolBlocks::Use, false) => {
+                format!(r#"{{"type":"tool_use","id":"{id}","name":"lookup","input":{{}}}}"#)
+            }
+            (ToolBlocks::Use, true) => format!(
+                r#"{{"type":"tool_use","id":"{id}","name":"lookup","input":{{}},"cache_control":{{"type":"ephemeral"}}}}"#
+            ),
+            (ToolBlocks::Result, false) => format!(
+                r#"{{"type":"tool_result","tool_use_id":"{id}","content":"value {index}"}}"#
+            ),
+            (ToolBlocks::Result, true) => format!(
+                r#"{{"type":"tool_result","tool_use_id":"{id}","content":"last","cache_control":{{"type":"ephemeral"}}}}"#
+            ),
+        };
+        blocks.push(block);
     }
-    blocks.push(
-        r#"{"type":"tool_use","id":"last","name":"lookup","input":{},"cache_control":{"type":"ephemeral"}}"#
-            .to_owned(),
-    );
-    format!(
-        r#"[{{"role":"assistant","content":[{}]}}]"#,
-        blocks.join(",")
-    )
+    let role = match kind {
+        ToolBlocks::Use => "assistant",
+        ToolBlocks::Result => "tool",
+    };
+    message_with_blocks(role, blocks)
 }
 
 pub(super) fn image_message_source(payload: &str) -> String {

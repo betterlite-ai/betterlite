@@ -76,8 +76,15 @@ async fn a_target_order_keeps_the_pool() {
         affinity: service(pins, 2000, false),
     };
     let facts = RequestFacts {
+        messages: None,
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
         target_order: Some(2),
-        ..RequestFacts::default()
+        input_token_count: None,
+        compaction_pending: false,
     };
     let typed = messages(MARKED_MESSAGES);
     let mut request = route_request("gpt-4o", &facts);

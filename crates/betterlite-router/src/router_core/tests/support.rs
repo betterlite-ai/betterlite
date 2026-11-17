@@ -59,8 +59,7 @@ impl TokenLimits for Windows {
     }
 }
 
-// A provider registry with one entry: the unknown arm knows no provider, the openai arm declares one param,
-// and the mini arm declares response_format only for the models whose name carries it.
+// A provider registry whose unknown arm knows no provider, openai declares temperature, and mini adds response_format.
 #[derive(Clone, Copy)]
 pub(crate) enum Providers {
     Unknown,
@@ -93,15 +92,14 @@ impl ParamSupport for Providers {
         _custom_llm_provider: &str,
         _base_model: Option<&str>,
     ) -> Option<Vec<String>> {
-        match self {
-            Self::Unknown => None,
-            Self::OpenAi => Some(vec![String::from("temperature")]),
-            Self::Mini if model.contains("mini") => Some(vec![
-                String::from("temperature"),
-                String::from("response_format"),
-            ]),
-            Self::Mini => Some(vec![String::from("temperature")]),
+        if matches!(self, Self::Unknown) {
+            return None;
         }
+        let mut params = vec![String::from("temperature")];
+        if matches!(self, Self::Mini) && model.contains("mini") {
+            params.push(String::from("response_format"));
+        }
+        Some(params)
     }
 }
 

@@ -135,7 +135,7 @@ fn prefix_message(message: &Json, content_index: Option<usize>) -> Json {
 }
 
 fn positions_of(prefix: &[Json], tools: Option<&[Json]>) -> Vec<PrefixPosition> {
-    let mut digest = seed(tools);
+    let mut digest = Sha256::digest(tools.map_or_else(Vec::new, canonical_list_bytes)).to_vec();
     let mut position: i64 = 0;
     let mut previous: Option<&'static str> = None;
     let mut positions = Vec::new();
@@ -236,11 +236,6 @@ fn pairs(entries: &[(&str, Json)]) -> Json {
             .map(|(key, value)| Json::List(vec![Json::Text(key.to_string()), value.clone()]))
             .collect(),
     )
-}
-
-fn seed(tools: Option<&[Json]>) -> Vec<u8> {
-    let bytes = tools.map_or_else(Vec::new, canonical_list_bytes);
-    Sha256::digest(&bytes).to_vec()
 }
 
 fn chain(digest: &[u8], unit: &[u8]) -> Vec<u8> {
