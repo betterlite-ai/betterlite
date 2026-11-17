@@ -16,18 +16,20 @@ from probes.tag_matchers import Collector
 # LiteLLM annotates the installer with a bare list and the capability lookup with a bare dict,
 # so strict mode reads both as partially unknown; this protocol states the JSON contract.
 class RuleEngine(Protocol):
-    def set_fallback_generalizations(self, rules: list[JsonValue] | None) -> None: ...
+    @staticmethod
+    def set_fallback_generalizations(rules: list[JsonValue] | None) -> None: ...
 
-    def match_routing_generalization(self, model: str) -> str | None: ...
+    @staticmethod
+    def match_routing_generalization(model: str) -> str | None: ...
 
-    def match_capability_generalizations(self, model: str) -> dict[str, JsonValue] | None: ...
+    @staticmethod
+    def match_capability_generalizations(model: str) -> dict[str, JsonValue] | None: ...
 
-    def match_fill_missing_generalizations(
-        self, model: str, provider: str
-    ) -> Mapping[str, object] | None: ...
+    @staticmethod
+    def match_fill_missing_generalizations(model: str, provider: str) -> Mapping[str, object] | None: ...
 
 
-RULES: Final[RuleEngine] = engine
+ENGINE: RuleEngine = engine
 
 EMPTY_DOCUMENT: Final = "[]"
 INFO: Final = TypeAdapter(JsonValue)
@@ -119,16 +121,16 @@ class Output(Strict):
 def answer_query(query: Query) -> Answer:
     match query:
         case RoutingQuery():
-            return RoutingAnswer(provider=RULES.match_routing_generalization(query.model), warnings=[])
+            return RoutingAnswer(provider=ENGINE.match_routing_generalization(query.model), warnings=[])
         case CapabilitiesQuery():
             return CapabilitiesAnswer(
-                model_info=INFO.validate_python(RULES.match_capability_generalizations(query.model)),
+                model_info=INFO.validate_python(ENGINE.match_capability_generalizations(query.model)),
                 warnings=[],
             )
         case FillMissingQuery():
             return FillMissingAnswer(
                 model_info=INFO.validate_python(
-                    RULES.match_fill_missing_generalizations(query.model, query.provider)
+                    ENGINE.match_fill_missing_generalizations(query.model, query.provider)
                 ),
                 warnings=[],
             )
@@ -142,7 +144,7 @@ def parse_rules(payload: ParsePayload) -> ValidParse:
         raise ProbeError("invalid_request", "the parse payload is shorter than an empty rule list")
     document = EMPTY_DOCUMENT + " " * (payload.bytes - len(EMPTY_DOCUMENT))
     rules = RULE_LIST.validate_json(document)
-    RULES.set_fallback_generalizations(rules)
+    ENGINE.set_fallback_generalizations(rules)
     return ValidParse(rules=len(rules))
 
 
@@ -157,7 +159,7 @@ class ModelGeneralizations(Operation):
         logger = logging.getLogger("LiteLLM")
         logger.addHandler(collector)
         try:
-            RULES.set_fallback_generalizations(self.rules)
+            ENGINE.set_fallback_generalizations(self.rules)
         finally:
             logger.removeHandler(collector)
         return Output(
