@@ -17,4 +17,21 @@ deviations:
       so the argument takes the default the task text names for every non-numeric value. The threshold
       order check still refuses an unordered set of numbers at startup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L27-L30
+  - what: >-
+      A key under router_settings.routing_strategy_args other than the three confidence thresholds
+      fails the load with ConfigError::Unsupported naming its path, where LiteLLM's
+      lar1_thresholds_from_args reads only the three keys it knows and ignores every other key.
+    why: >-
+      The config loader reports unknown keys instead of ignoring them, so a mistyped threshold name
+      cannot quietly keep the default. The three declared keys load exactly as before.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L33-L41
+  - what: >-
+      An os.environ/ threshold reference that names an unset variable fails the load with
+      MissingEnvironment, where the LiteLLM proxy resolves the reference to None and
+      _coerce_threshold keeps the declared default, so LiteLLM starts with the default threshold.
+    why: >-
+      Every betterlite numeric setting resolves os.environ/ references through the same rule, so a
+      mistyped threshold variable cannot quietly become the default. An empty variable still counts
+      as unset and keeps the default, and a variable holding a non-numeric string fails the load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
 kept_bugs: []
