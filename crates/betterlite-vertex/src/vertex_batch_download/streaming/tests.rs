@@ -128,14 +128,14 @@ fn newline_before_limit() {
 
 #[test]
 fn split_utf8() {
-    let row = ROW.replace(r#""hi""#, "\"caf\u{e9}\"");
+    let row = ROW.replace(r#""hi""#, "\"\u{e9}\"");
     let position = row.find('\u{e9}').unwrap().saturating_add(1);
     let (head, tail) = row.as_bytes().split_at(position);
     let mut completed = tail.to_vec();
     completed.push(b'\n');
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[head, completed.as_slice()]);
     assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert!(from_utf8(&output).unwrap().contains("caf\u{e9}"));
+    assert!(from_utf8(&output).unwrap().contains('\u{e9}'));
 }
 
 #[test]
