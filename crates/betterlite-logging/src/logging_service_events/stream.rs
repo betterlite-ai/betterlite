@@ -65,10 +65,5 @@ where
     }
 }
 
-impl<S> Drop for ServiceEventStream<S> {
-    fn drop(&mut self) {
-        if let Some(call) = self.call.take() {
-            call.finish(TerminalOutcome::Cancelled);
-        }
-    }
-}
+// A stream dropped before either end point leaves its call unsettled, and ServiceCall's own Drop
+// records that cancellation, so there is no second Drop here.
