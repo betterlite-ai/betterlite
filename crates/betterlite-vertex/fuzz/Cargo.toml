@@ -75,6 +75,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemini_live_frames"
+path = "fuzz_targets/gemini_live_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemini_live_setup"
 path = "fuzz_targets/gemini_live_setup.rs"
 test = false
@@ -187,6 +194,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_image"
+path = "fuzz_targets/studio_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_interaction"
 path = "fuzz_targets/studio_interaction.rs"
 test = false
@@ -292,6 +306,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_search_payload"
+path = "fuzz_targets/vertex_search_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_speech_audio"
 path = "fuzz_targets/vertex_speech_audio.rs"
 test = false
@@ -322,6 +343,13 @@ bench = false
 [[bin]]
 name = "vertex_tuning_job"
 path = "fuzz_targets/vertex_tuning_job.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_veo_operation"
+path = "fuzz_targets/vertex_veo_operation.rs"
 test = false
 doc = false
 bench = false

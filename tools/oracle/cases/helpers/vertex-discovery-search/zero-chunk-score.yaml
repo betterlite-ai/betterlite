@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-discovery-search-zero-chunk-score
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: find policy
+        api_base: https://host/v1
+        litellm_params: {}
+        response:
+          status: 200
+          body: '{"results":[{"chunk":{"name":"projects/p/locations/l/collections/c/dataStores/d/branches/0/documents/doc-9/chunks/1","content":"tiny passage","relevanceScore":0,"documentMetadata":{"uri":"gs://bucket/doc.pdf","title":"Chunk Doc"}}}]}'
+env: {}
+compare: {ignore: []}

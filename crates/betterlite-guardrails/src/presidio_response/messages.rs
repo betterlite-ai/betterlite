@@ -2,13 +2,13 @@ use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_response::error::PresidioResponseError;
 use crate::presidio_response::wire::{ChatMessage, Content, ContentItem, to_raw};
 
-pub(super) struct TextTask {
-    pub(super) message: usize,
-    pub(super) part: Option<usize>,
-    pub(super) text: String,
+pub(crate) struct TextTask {
+    pub(crate) message: usize,
+    pub(crate) part: Option<usize>,
+    pub(crate) text: String,
 }
 
-pub(super) fn request_messages(
+pub(crate) fn request_messages(
     request: &RequestData,
 ) -> Result<Option<Vec<ChatMessage>>, PresidioResponseError> {
     let Some(raw) = request.get("messages") else {
@@ -26,7 +26,7 @@ pub(super) fn request_messages(
         .map_err(|source| PresidioResponseError::MessagesJson { source })
 }
 
-pub(super) fn collect_text_tasks(messages: &[ChatMessage]) -> Vec<TextTask> {
+pub(crate) fn collect_text_tasks(messages: &[ChatMessage]) -> Vec<TextTask> {
     let mut tasks = Vec::new();
     for (message_index, message) in messages.iter().enumerate() {
         match message.content.as_ref() {
@@ -58,7 +58,7 @@ fn push_part_tasks(items: &[ContentItem], message: usize, tasks: &mut Vec<TextTa
     }
 }
 
-pub(super) fn apply_masked_texts(
+pub(crate) fn apply_masked_texts(
     messages: &mut [ChatMessage],
     tasks: &[TextTask],
     masked: &[Option<String>],
@@ -90,7 +90,7 @@ fn apply_part(message: &mut ChatMessage, index: usize, text: &str) {
     part.set_text(text.to_owned());
 }
 
-pub(super) fn store_messages(
+pub(crate) fn store_messages(
     request: &mut RequestData,
     messages: &[ChatMessage],
 ) -> Result<(), PresidioResponseError> {

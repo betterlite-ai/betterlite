@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-connector-import-sanitize-name
+call:
+  b4716:
+    function: sanitize_name
+    name: my server
+calls:
+  - b4716: {function: sanitize_name, name: "  padded name  "}
+  - b4716: {function: sanitize_name, name: a__b}
+  - b4716: {function: sanitize_name, name: __x__}
+  - b4716: {function: sanitize_name, name: "café"}
+  - b4716: {function: sanitize_name, name: ":::"}
+  - b4716: {function: sanitize_name, name: UPPER_case-9}
+  - b4716: {function: sanitize_name, name: ""}
+  - b4716: {function: sanitize_name, name: _}
+  - b4716: {function: sanitize_name, name: "é"}
+  - b4716: {function: sanitize_name, name: a b_c}
+env: {}
+compare: {ignore: []}

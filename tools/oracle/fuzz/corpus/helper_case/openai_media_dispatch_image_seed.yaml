@@ -1,0 +1,16 @@
+kind: helper
+name: openai-media-dispatch-image-seed
+call:
+  openai_media_dispatch:
+    case: image_generation
+    api_base: https://mock.example/v1
+    model: dall-e-3
+    prompt: a seed image
+    options:
+      n: 1
+    status: 200
+    reply:
+      created: 1700000000
+      data: []
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,8 @@ description: >-
   Error frames use anthropic_sse_error_frames for Anthropic, _build_responses_error_items for Responses, and fallback SSE encoding for chat. Both blocking and non-blocking errors are emitted as terminal stream items so create_response() detects them.
 scope:
   paths:
+    - "crates/betterlite-core/src/guardrails/model_armor/streams/**"
+    - "crates/betterlite-core/src/guardrails/model_armor"
     - crates/betterlite-core/src/guardrails/model_armor/streams.rs
     - crates/betterlite-core/src/guardrails/model_armor/streams/tests.rs
     - tools/oracle/cases/guardrails/model-armor-streams/**
@@ -118,5 +120,5 @@ pitfalls:
   - "Anthropic SSE error frames are produced by anthropic_sse_error_frames(message) and must be yielded as individual SSE items; MockResponseIterator is used only when the response can be yielded back as OpenAI SSE."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0

@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+base64 = "0.23.1"
 betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-config = { path = "../betterlite-config" }
@@ -16,7 +17,9 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
@@ -28,11 +31,11 @@ serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 thiserror.workspace = true
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 mutants = "0.0.4"
 rstest = "=0.27.0"
-serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 tokio.workspace = true
 tracing-subscriber.workspace = true

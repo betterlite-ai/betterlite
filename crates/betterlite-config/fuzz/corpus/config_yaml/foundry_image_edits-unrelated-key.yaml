@@ -1,0 +1,3 @@
+# AZURE_AI_API_VERSION has no YAML key of its own, so an unrelated key still reports its full path
+litellm_settings:
+  foundry_image_edits_api_version: "2025-11-15"

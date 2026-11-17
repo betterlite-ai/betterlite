@@ -1,0 +1,41 @@
+kind: helper
+name: chat-buffered-no-match
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: chat
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: 'The '
+        finish_reason: null
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: secret
+        finish_reason: null
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND", "filterResults": {}}}'
+env: {}
+compare:
+  ignore: []

@@ -1139,13 +1139,16 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-cache",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
@@ -1203,6 +1206,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
@@ -1405,9 +1409,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "uuid",
 ]
 
 [[package]]
@@ -1652,6 +1658,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "selfie",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -1869,6 +1876,7 @@ name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
@@ -1878,7 +1886,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -1894,6 +1904,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1939,6 +1950,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
@@ -2292,6 +2304,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
@@ -2302,7 +2315,9 @@ dependencies = [
  "futures-util",
  "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "pem",
+ "percent-encoding",
  "regex",
  "rmcp",
  "rstest",
@@ -2329,6 +2344,7 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",
@@ -2524,6 +2540,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-sdk",
  "betterlite-server",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
  "betterlite-websearch",
@@ -2758,6 +2775,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -2948,7 +2967,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -3037,17 +3058,21 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-server",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "indexmap 2.14.2",
@@ -3588,6 +3613,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite",
+ "betterlite-analytics",
  "betterlite-auth",
  "betterlite-backend",
  "betterlite-config",
@@ -3612,10 +3638,12 @@ dependencies = [
  "betterlite-server",
  "betterlite-tracing",
  "betterlite-transcribe",
+ "betterlite-vertex",
  "chrono",
  "flate2",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "quick-xml",
@@ -4464,6 +4492,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -10133,6 +10162,15 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "selfie"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7b9062d2ec6c5a972298b4983e1025a59036a0c1af274e5ecf16f183568cdb8"
+dependencies = [
+ "stable_deref_trait",
 ]
 
 [[package]]

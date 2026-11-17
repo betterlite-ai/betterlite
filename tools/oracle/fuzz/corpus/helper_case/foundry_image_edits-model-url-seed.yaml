@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-image-edits-model-url-seed
+call:
+  foundry_image_edits:
+    models: [FLUX-1-kontext-pro, FLUX.2-pro, MAI-Image-2.5, gpt-image-1]
+    urls:
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com, api_version: v1}
+      - {model: FLUX.2-pro, api_base: https://res.services.ai.azure.com}
+env: {}
+compare: {ignore: []}

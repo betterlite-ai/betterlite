@@ -1,0 +1,3 @@
+{"setupComplete":{}}
+{"serverContent":{"modelTurn":{"parts":[{"text":"one"}]},"turnComplete":true},"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"totalTokenCount":3}}
+{"usageMetadata":{"promptTokenCount":5,"totalTokenCount":5}}

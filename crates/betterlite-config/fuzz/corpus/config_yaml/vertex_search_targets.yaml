@@ -1,0 +1,9 @@
+model_list:
+  - model_name: vertex-search
+    litellm_params:
+      model: vertex_ai/search_api
+      vertex_project: project-example
+      vertex_location: us-central1
+      vertex_collection_id: team_collection
+      vertex_engine_id: app-example
+      vector_store_id: store-example

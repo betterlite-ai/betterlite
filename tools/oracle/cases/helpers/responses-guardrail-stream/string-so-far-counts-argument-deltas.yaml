@@ -1,0 +1,6 @@
+kind: helper
+name: responses-stream-string-so-far-counts-argument-deltas
+call:
+  b3672: {"function": "string_so_far", "scenarios": [{"events": [{"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 1, "delta": "{\"a\""}, {"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 1, "delta": ":1}"}, {"type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "output_index": 0, "summary_index": 0, "delta": "think"}, {"type": "response.output_text.done", "item_id": "msg_1", "output_index": 2, "content_index": 0, "text": "answer"}, {"type": "response.function_call_arguments.done", "item_id": "fc_1", "output_index": 1, "arguments": "{\"a\":1}"}]}, {"events": [{"type": "response.custom_tool_call_input.delta", "item_id": "ctc_1", "output_index": 0, "delta": "raw"}, {"type": "response.reasoning_summary_text.done", "item_id": "rs_2", "output_index": 1, "summary_index": 0, "text": "summary"}]}]}
+env: {}
+compare: {ignore: []}
