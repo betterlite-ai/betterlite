@@ -140,6 +140,25 @@ mod eviction {
     }
 
     #[test]
+    fn eviction_waits_for_the_first_overflow_before_shedding() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        route_spaces(
+            &tenants,
+            &default,
+            0,
+            MAX_CACHED_PROVIDERS.saturating_sub(1),
+        );
+        let oldest = tenants
+            .route_for(&default, Some(&creds("S0")), None, &[])
+            .expect("route");
+        // at exactly the cap nothing is shed yet, so the oldest route is still cached and builds nothing
+        assert_eq!(built.builds(), MAX_CACHED_PROVIDERS);
+        assert!(oldest.provider.is_some());
+    }
+
+    #[test]
     fn eviction_keeps_the_newest_provider_cached() {
         let built = Built::default();
         let tenants = cache(owned_http(), Some("arize"), &built);
