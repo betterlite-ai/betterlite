@@ -178,7 +178,7 @@ fn get_config_skips_the_unset_fields() {
     assert_eq!(
         config.get("repeat_penalty"),
         Some(&ConfigJson::Number(
-            serde_json::Number::from_f64(0.5).expect("a finite float")
+            Number::from_f64(0.5).expect("a finite float")
         ))
     );
 }

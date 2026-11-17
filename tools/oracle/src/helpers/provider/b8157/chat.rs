@@ -18,7 +18,6 @@ use betterlite_provider::self_hosted_dispatch::chat::{complete_lemonade, dispatc
 use betterlite_provider::self_hosted_dispatch::context::{
     CallLogging, DispatchContext, DispatchSettings,
 };
-use betterlite_provider::self_hosted_dispatch::error::DispatchError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
@@ -176,7 +175,7 @@ fn pre_resolved(
                 .cloned(),
         }),
         Provider::Triton | Provider::Oobabooga | Provider::Xinference => Err(input_failure(
-            format!("{provider:?} has no chat request to record"),
+            format!("{} has no chat request to record", provider.slug()),
         )),
     }
 }
@@ -210,7 +209,7 @@ fn chat_request(
             ))),
         },
         Provider::Triton | Provider::Oobabooga | Provider::Xinference => Err(input_failure(
-            format!("{provider:?} has no chat request to record"),
+            format!("{} has no chat request to record", provider.slug()),
         )),
     }
 }
