@@ -9,6 +9,6 @@ pub mod fixtures;
 pub mod search_tools;
 pub mod seed;
 mod seed_sql;
-mod sql;
+pub mod sql;
 
 mod tests;
