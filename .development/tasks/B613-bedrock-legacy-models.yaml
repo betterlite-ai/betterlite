@@ -34,7 +34,7 @@ description: >-
   Named case contracts: ai21_penalties: AI21 supports exactly max_tokens,temperature,top_p,stream in that order.
   Map max_tokens to maxTokens, top_p to topP and copy temperature/stream, including False/None. Ignore max_completion_tokens,stop
   and penalties in the mapper; configured penalties still survive get_config and B611 default insertion. cohere_max_tokens:
-  Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
+  Delegate both supported names and mapping to B1415 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
   Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
   strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
   despite their presence in the supported list; preserve input order for alias collisions. llama_generation_length:
@@ -81,8 +81,8 @@ description: >-
 
 
   Load litellm.drop_params through the existing B2201 loader (default False), and litellm.max_tokens through B2202.
-  The cases above exercise their consumers; no second parser or alternative defaults belong here. B037 owns the
-  native CohereChatConfig methods called by this task; add direct dependency by id even while its task file is absent.
+  The cases above exercise their consumers; no second parser or alternative defaults belong here. B1415 owns the
+  native CohereChatConfig methods called by this task, in crates/betterlite-openai/src/cohere_chat_v1.rs.
 
 
   AmazonAnthropicConfig.get_legacy_anthropic_model_names belong to B2231; delegate those calls directly and retain
@@ -170,7 +170,7 @@ dod:
   - case-ai21-penalties
   - oracle
   - helper-python
-- text: 'cohere_max_tokens: Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list
+- text: 'cohere_max_tokens: Delegate both supported names and mapping to B1415 CohereChatConfig. The ordered list
     is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
     Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
     strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
@@ -336,7 +336,7 @@ checks:
       in the mapper; configured penalties still survive get_config and B611 default insertion.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_ai21_penalties$/)'
   - id: case-cohere-max-tokens
-    why: Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
+    why: Delegate both supported names and mapping to B1415 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
       Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
       strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
       despite their presence in the supported list; preserve input order for alias collisions.

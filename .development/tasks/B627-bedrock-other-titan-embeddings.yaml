@@ -37,10 +37,10 @@ description: >-
   raw base64 strings. Copy every inference key afterward so callers can overwrite inputImage/inputText or add both.
   No URL is downloaded or treated specially. cohere_v3_input_type: The no-op Cohere constructor supports encoding_format,dimensions.
   Map a list of encodings elementwise, otherwise treat the value as a singleton: only base64 becomes float, all
-  other values survive; dimensions becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request,
+  other values survive; dimensions becomes output_dimension. Delegate B1417 CohereEmbeddingConfig._transform_request,
   then require input_type and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop
   model and other extra fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
-  image default image, and inference overrides; B037 owns that global loader. token_count_response: G1, V2 and multimodal
+  image default image, and inference overrides; B1417 owns that global loader. token_count_response: G1, V2 and multimodal
   emit object=embedding and contiguous zero-based indices in response order; preserve model, sum required inputTextTokenCount
   into prompt_tokens and total_tokens, and set completion_tokens=0. Empty responses produce empty data and zero
   usage. TypedDict construction does not validate required keys or ignore extras: missing accessed fields fail at
@@ -56,7 +56,7 @@ description: >-
 
 
   The normalize and dimensions loader cases target the AmazonTitanV2Config class configuration only; both default
-  to None and are distinct from request dimensions mapping. B037 owns the shared Cohere embedding input-type setting
+  to None and are distinct from request dimensions mapping. B1417 owns the shared Cohere embedding input-type setting
   and its loader; do not duplicate it here.
 
 
@@ -168,10 +168,10 @@ dod:
   - helper-python
 - text: 'cohere_v3_input_type: The no-op Cohere constructor supports encoding_format,dimensions. Map a list of encodings
     elementwise, otherwise treat the value as a singleton: only base64 becomes float, all other values survive;
-    dimensions becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request, then require input_type
+    dimensions becomes output_dimension. Delegate B1417 CohereEmbeddingConfig._transform_request, then require input_type
     and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop model and other extra
     fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
-    image default image, and inference overrides; B037 owns that global loader.'
+    image default image, and inference overrides; B1417 owns that global loader.'
   proof:
   - case-cohere-v3-input-type
   - oracle
@@ -229,10 +229,10 @@ checks:
   - id: case-cohere-v3-input-type
     why: 'The no-op Cohere constructor supports encoding_format,dimensions. Map a list of encodings elementwise,
       otherwise treat the value as a singleton: only base64 becomes float, all other values survive; dimensions
-      becomes output_dimension. Delegate B037 CohereEmbeddingConfig._transform_request, then require input_type
+      becomes output_dimension. Delegate B1417 CohereEmbeddingConfig._transform_request, then require input_type
       and retain only texts,images,input_type,truncate,embedding_types,output_dimension. Drop model and other extra
       fields. Exercise the parent last-input-only image classification, text default COHERE_DEFAULT_EMBEDDING_INPUT_TYPE=search_document,
-      image default image, and inference overrides; B037 owns that global loader.'
+      image default image, and inference overrides; B1417 owns that global loader.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_cohere_v3_input_type$/)'
   - id: case-token-count-response
     why: 'G1, V2 and multimodal emit object=embedding and contiguous zero-based indices in response order; preserve
