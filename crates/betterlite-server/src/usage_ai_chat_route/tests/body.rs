@@ -23,6 +23,18 @@
     r#"{"messages": [{"role": "system", "content": "hi"}]}"#,
     json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'", "input": "system", "ctx": {"expected": "'user' or 'assistant'"}}]})
 )]
+#[case::role_int(
+    r#"{"messages": [{"role": 5, "content": "hi"}]}"#,
+    json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'", "input": 5, "ctx": {"expected": "'user' or 'assistant'"}}]})
+)]
+#[case::role_null(
+    r#"{"messages": [{"role": null, "content": "hi"}]}"#,
+    json!({"detail": [{"type": "literal_error", "loc": ["body", "messages", 0, "role"], "msg": "Input should be 'user' or 'assistant'", "input": null, "ctx": {"expected": "'user' or 'assistant'"}}]})
+)]
+#[case::messages_object(
+    r#"{"messages": {}}"#,
+    json!({"detail": [{"type": "list_type", "loc": ["body", "messages"], "msg": "Input should be a valid list", "input": {}}]})
+)]
 #[case::missing_content(
     r#"{"messages": [{"role": "user"}]}"#,
     json!({"detail": [{"type": "missing", "loc": ["body", "messages", 0, "content"], "msg": "Field required", "input": {"role": "user"}}]})
