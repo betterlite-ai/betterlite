@@ -19,12 +19,10 @@ pub(super) fn nonstream_usage_case() {
     chat_completion_logs_a_chat_reply();
     chat_log_keeps_the_relayed_request_body();
     relay_branch_builds_embedding_log();
-    relay_branch_parses_images();
-    relay_branch_parses_responses();
+    relay_branches_parse_images_and_responses();
     relay_branch_rejects_other_shapes();
-    failed_relay_status_logs_nothing();
+    failed_or_undecodable_relays_log_nothing();
     unknown_relay_endpoint_logs_nothing();
-    undecodable_relay_logs_nothing();
     default_seams_log_nothing();
     trait_logging_keeps_the_relay_branch();
 }
@@ -39,7 +37,7 @@ fn projecting_config() -> AzurePassthroughConfig<RealChatProjection> {
     }
 }
 
-fn chat_reply<'reply>(reply_headers: &'reply Headers) -> ResponseReply<'reply> {
+fn chat_reply(reply_headers: &Headers) -> ResponseReply<'_> {
     ResponseReply {
         status: 200,
         headers: reply_headers,
@@ -84,17 +82,11 @@ fn relay_outcome(
     (logged, logging.call_type)
 }
 
-fn relay_body(
-    endpoint: &str,
-    model: &str,
-    status: u16,
-    body: &[u8],
-) -> (Object, Option<RelayCallType>) {
-    let (logged, call_type) = relay_outcome(endpoint, model, status, body);
+fn relayed_body(logged: Option<AzureRelayedLog>, endpoint: &str) -> Object {
     let Some(AzureRelayedLog::Relay(relayed)) = logged else {
         panic!("{endpoint} logs the relayed body");
     };
-    (relayed, call_type)
+    relayed
 }
 
 fn chat_request_data() -> Object {
@@ -128,9 +120,13 @@ fn chat_log_keeps_the_relayed_request_body() {
     let request_data = chat_request_data();
     let (_logged, _logging) = project_chat(&config, &reply_headers, &request_data);
     let inputs = config.chat_reply.inputs.lock().unwrap();
+    let expected: Json = serde_json::from_str(
+        r#"[{"role": "user", "content": "no-message-pass-through-endpoint"}]"#,
+    )
+    .unwrap();
     assert_eq!(
         serde_json::to_value(&inputs[0].0).unwrap(),
-        serde_json::json!([{"role": "user", "content": "no-message-pass-through-endpoint"}])
+        serde_json::to_value(&expected).unwrap()
     );
     assert_eq!(
         serde_json::to_value(Json::from(&inputs[0].1)).unwrap(),
@@ -139,39 +135,39 @@ fn chat_log_keeps_the_relayed_request_body() {
 }
 
 fn relay_branch_builds_embedding_log() {
-    let (body, call_type) = relay_body(
+    let (logged, call_type) = relay_outcome(
         EMBEDDINGS_ENDPOINT,
         "text-embedding-3-small",
         200,
         EMBEDDINGS_BODY.as_bytes(),
     );
+    let body = relayed_body(logged, EMBEDDINGS_ENDPOINT);
     assert_eq!(body["object"].as_str(), Some("list"));
     assert_eq!(body["data"][0]["index"].as_u64(), Some(0));
     assert_eq!(call_type.map(RelayCallType::as_str), Some("aembedding"));
 }
 
-fn relay_branch_parses_images() {
+fn relay_branches_parse_images_and_responses() {
     let images = br#"{"created": 1700000000, "data": [{"url": "https://x.test/img.png"}]}"#;
-    let (body, call_type) = relay_body(IMAGES_ENDPOINT, "dall-e-3", 200, images);
+    let (image_logged, image_call) = relay_outcome(IMAGES_ENDPOINT, "dall-e-3", 200, images);
+    let image_body = relayed_body(image_logged, IMAGES_ENDPOINT);
     assert_eq!(
-        body["data"][0]["url"].as_str(),
+        image_body["data"][0]["url"].as_str(),
         Some("https://x.test/img.png")
     );
     assert_eq!(
-        call_type.map(RelayCallType::as_str),
+        image_call.map(RelayCallType::as_str),
         Some("aimage_generation")
     );
-}
-
-fn relay_branch_parses_responses() {
-    let (body, call_type) = relay_body(
+    let (reply_logged, reply_call) = relay_outcome(
         RESPONSES_ENDPOINT,
         "gpt-4.1-mini",
         200,
         RESPONSES_BODY.as_bytes(),
     );
-    assert_eq!(body["id"].as_str(), Some("resp_1"));
-    assert_eq!(call_type.map(RelayCallType::as_str), Some("aresponses"));
+    let reply_body = relayed_body(reply_logged, RESPONSES_ENDPOINT);
+    assert_eq!(reply_body["id"].as_str(), Some("resp_1"));
+    assert_eq!(reply_call.map(RelayCallType::as_str), Some("aresponses"));
 }
 
 fn relay_branch_rejects_other_shapes() {
@@ -190,32 +186,25 @@ fn relay_branch_rejects_other_shapes() {
     }
 }
 
-fn failed_relay_status_logs_nothing() {
-    let rate_limited = br#"{"error": {"code": "429", "message": "rate limited"}}"#;
-    let (logged, call_type) = relay_outcome(
-        EMBEDDINGS_ENDPOINT,
-        "text-embedding-3-small",
-        429,
-        rate_limited,
-    );
-    assert!(logged.is_none());
-    assert_eq!(call_type, None);
+fn failed_or_undecodable_relays_log_nothing() {
+    let cases: [(&[u8], u16); 2] = [
+        (
+            br#"{"error": {"code": "429", "message": "rate limited"}}"#,
+            429,
+        ),
+        (b"not json", 200),
+    ];
+    for (body, status) in cases {
+        let (logged, call_type) =
+            relay_outcome(EMBEDDINGS_ENDPOINT, "text-embedding-3-small", status, body);
+        assert!(logged.is_none());
+        assert_eq!(call_type, None);
+    }
 }
 
 fn unknown_relay_endpoint_logs_nothing() {
     let speech = "openai/deployments/gpt-4o-mini-tts/audio/speech";
     let (logged, call_type) = relay_outcome(speech, "gpt-4o-mini-tts", 200, br#"{"audio": "..."}"#);
-    assert!(logged.is_none());
-    assert_eq!(call_type, None);
-}
-
-fn undecodable_relay_logs_nothing() {
-    let (logged, call_type) = relay_outcome(
-        EMBEDDINGS_ENDPOINT,
-        "text-embedding-3-small",
-        200,
-        b"not json",
-    );
     assert!(logged.is_none());
     assert_eq!(call_type, None);
 }

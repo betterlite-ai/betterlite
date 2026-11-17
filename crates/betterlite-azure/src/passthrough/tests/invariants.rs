@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use crate::credentials::cache::RefreshProviderCache;
 use crate::passthrough::config::{
@@ -35,21 +35,20 @@ fn instance(api_base: &str, api_key: &str) -> AzurePassthroughConfig {
     }
 }
 
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|key| key.expose_secret().to_owned())
-}
-
 fn keys_and_bases_stay_per_instance() {
     let left = instance("https://left.test", "left-key");
     let right = instance("https://right.test", "right-key");
     assert_eq!(left.get_api_base(None), Some("https://left.test"));
     assert_eq!(right.get_api_base(None), Some("https://right.test"));
     assert_eq!(
-        exposed(left.get_api_key(None)),
+        left.get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("left-key"))
     );
     assert_eq!(
-        exposed(right.get_api_key(None)),
+        right
+            .get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("right-key"))
     );
     let left_url = complete(

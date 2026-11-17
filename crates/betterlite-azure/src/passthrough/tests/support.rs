@@ -41,13 +41,13 @@ const NOW: &str = "2026-01-01T00:05:00+00:00";
 const THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH: &str =
     "the recording fixture serves only the SDK refresh";
 
-pub struct Silent;
+pub(super) struct Silent;
 
 impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub fn logging_state(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
+pub(super) fn logging_state(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
     let state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(INIT).unwrap(),
         CorrelationSetup {
@@ -76,15 +76,15 @@ pub fn logging_state(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
     (state, env)
 }
 
-pub fn object(source: &str) -> Object {
+pub(super) fn object(source: &str) -> Object {
     serde_json::from_str(source).unwrap()
 }
 
-pub fn secret(text: &str) -> SecretString {
+pub(super) fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-pub fn deployment() -> DeploymentSettings {
+pub(super) fn deployment() -> DeploymentSettings {
     DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
@@ -96,7 +96,7 @@ pub fn deployment() -> DeploymentSettings {
     }
 }
 
-pub fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
+pub(super) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
         api_base_env: api_base_env.map(str::to_owned),
         api_key_env: None,
@@ -106,7 +106,7 @@ pub fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     }
 }
 
-pub fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
+pub(super) fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'call> {
     PassthroughTarget {
         model,
         custom_llm_provider: "azure",
@@ -114,7 +114,7 @@ pub fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarg
     }
 }
 
-pub fn complete(
+pub(super) fn complete(
     config: &AzurePassthroughConfig,
     api_base: Option<&str>,
     target: PassthroughTarget<'_>,
@@ -130,13 +130,13 @@ pub fn complete(
     })
 }
 
-pub fn terminal_chunks(id: &str) -> Vec<String> {
+pub(super) fn terminal_chunks(id: &str) -> Vec<String> {
     vec![format!(
         r#"data: {{"type":"response.completed","sequence_number":2,"response":{{"id":"{id}","created_at":7,"output":[],"status":"completed","x-extra":{{"kept":true}}}}}}"#
     )]
 }
 
-pub fn chat_chunks() -> Vec<String> {
+pub(super) fn chat_chunks() -> Vec<String> {
     vec![
         String::from(
             r#"data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#,
@@ -146,7 +146,7 @@ pub fn chat_chunks() -> Vec<String> {
 }
 
 #[derive(Debug, Default)]
-pub struct RecordingLogging {
+pub(super) struct RecordingLogging {
     pub call_type: Option<RelayCallType>,
 }
 
@@ -158,7 +158,7 @@ impl PassthroughLogging for RecordingLogging {
 
 // runs the real B668 projection with a passthrough projection that keeps the decoded reply
 #[derive(Debug, Default)]
-pub struct RealChatProjection {
+pub(super) struct RealChatProjection {
     pub models: Mutex<Vec<String>>,
     pub inputs: Mutex<Vec<(Json, RawBody)>>,
 }
@@ -194,21 +194,21 @@ impl ChatReplyProjection for RealChatProjection {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RecordedAssembly {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RecordedAssembly {
     pub model: String,
     pub chunks: Vec<String>,
     pub messages: Option<Vec<Object>>,
 }
 
 #[derive(Debug, Default)]
-pub struct RecordingStream {
+pub(super) struct RecordingStream {
     pub recorded: Mutex<Option<RecordedAssembly>>,
     pub answer: Option<Object>,
 }
 
 impl RecordingStream {
-    pub fn taken(&self) -> Option<RecordedAssembly> {
+    pub(super) fn taken(&self) -> Option<RecordedAssembly> {
         self.recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -241,7 +241,7 @@ fn unavailable(message: &str) -> SourceFailure {
     }
 }
 
-pub struct NoSources;
+pub(super) struct NoSources;
 
 impl CredentialSources for NoSources {
     fn client_secret<'source>(
@@ -277,7 +277,7 @@ impl CredentialSources for NoSources {
     }
 }
 
-pub struct FixedProvider {
+pub(super) struct FixedProvider {
     pub token: SecretString,
 }
 
@@ -287,37 +287,30 @@ impl CallableTokenProvider for FixedProvider {
     }
 }
 
-pub struct FailingProvider {
-    pub message: String,
-}
-
-impl CallableTokenProvider for FailingProvider {
-    fn token(&self) -> Result<TokenReply, ProviderFailure> {
-        Err(ProviderFailure {
-            class: String::from("RuntimeError"),
-            message: self.message.clone(),
-        })
-    }
-}
-
-pub struct RecordingSources {
+pub(super) struct RecordingSources {
     pub label: &'static str,
     pub calls: Mutex<Vec<String>>,
 }
 
 impl RecordingSources {
-    pub fn new(label: &'static str) -> Self {
+    pub(super) fn new(label: &'static str) -> Self {
         Self {
             label,
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn calls(&self) -> Vec<String> {
+    pub(super) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn unsupported<T>() -> Result<T, SourceFailure> {
+        Err(unavailable(
+            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
+        ))
     }
 
     fn provider(&self, scope: &str) -> Arc<dyn CallableTokenProvider + '_> {
@@ -336,18 +329,14 @@ impl CredentialSources for RecordingSources {
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(unavailable(
-            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
-        ))
+        Self::unsupported()
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(unavailable(
-            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
-        ))
+        Self::unsupported()
     }
 
     fn sdk_refresh<'source>(
@@ -371,7 +360,7 @@ impl CredentialSources for RecordingSources {
     }
 }
 
-pub fn provider_token(provider: &(dyn CallableTokenProvider + '_)) -> String {
+pub(super) fn provider_token(provider: &(dyn CallableTokenProvider + '_)) -> String {
     match provider.token() {
         Ok(TokenReply::Text(token)) => token.expose_secret().to_owned(),
         Ok(TokenReply::NonText { type_name }) => type_name,
@@ -379,7 +368,7 @@ pub fn provider_token(provider: &(dyn CallableTokenProvider + '_)) -> String {
     }
 }
 
-pub fn headers(values: &[(&str, &str)]) -> Headers {
+pub(super) fn headers(values: &[(&str, &str)]) -> Headers {
     values
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))

@@ -58,9 +58,10 @@ fn version_text(value: &Json) -> Result<String, PassthroughError> {
     }
 }
 
-pub(crate) fn version_from<Raw: Serialize>(
-    raw: Option<&Raw>,
-) -> Result<Option<String>, PassthroughError> {
+pub(crate) fn version_from<Raw>(raw: Option<&Raw>) -> Result<Option<String>, PassthroughError>
+where
+    Raw: Serialize,
+{
     let Some(value) = raw
         .and_then(|supplied| serde_json::to_value(supplied).ok())
         .and_then(|converted| serde_json::from_value::<Json>(converted).ok())

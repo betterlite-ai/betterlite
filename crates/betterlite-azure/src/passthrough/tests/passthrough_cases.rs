@@ -197,7 +197,7 @@ fn foreign_deployment_casefolds_served_names() {
         endpoint::foreign_azure_deployment(
             "gpt/openai/deployments/STRASSE/chat/completions",
             "gpt",
-            || vec![String::from("straße")]
+            || vec![String::from("stra\u{df}e")]
         ),
         None
     );
@@ -415,7 +415,7 @@ fn model_group_rewrites_one_segment() {
 fn numeric_versions_are_text() {
     let caller = object(r#"{"api-version": 20241021}"#);
     let config = base_config(None);
-    let (url, _base) = complete(
+    let (numeric_url, _numeric_base) = complete(
         &config,
         Some(RESOURCE),
         target("gpt-4.1-mini", CHAT_ENDPOINT),
@@ -424,11 +424,11 @@ fn numeric_versions_are_text() {
     )
     .unwrap();
     assert_eq!(
-        url.as_str(),
+        numeric_url.as_str(),
         format!("{RESOURCE}/{CHAT_ENDPOINT}?api-version=20241021")
     );
     let bad_params = object(r#"{"api_version": ["2024"]}"#);
-    let (url, _base) = complete(
+    let (params_url, _params_base) = complete(
         &config,
         Some(RESOURCE),
         target("gpt-4.1-mini", CHAT_ENDPOINT),
@@ -437,7 +437,7 @@ fn numeric_versions_are_text() {
     )
     .unwrap();
     assert_eq!(
-        url.as_str(),
+        params_url.as_str(),
         format!("{RESOURCE}/{CHAT_ENDPOINT}?api-version=20241021")
     );
 }
@@ -739,10 +739,6 @@ fn passthrough_auth_inputs_case() {
     validation_header_precedence();
 }
 
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|key| key.expose_secret().to_owned())
-}
-
 fn environment<'data>(
     sent: &[(&str, &str)],
     api_key: Option<&'data SecretString>,
@@ -780,21 +776,26 @@ fn configured_keys_stay_per_instance() {
     assert_eq!(left.get_api_base(None), Some("https://left.test"));
     assert_eq!(right.get_api_base(None), Some("https://right.test"));
     assert_eq!(
-        exposed(left.get_api_key(None)),
+        left.get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("left-key"))
     );
     assert_eq!(
-        exposed(right.get_api_key(None)),
+        right
+            .get_api_key(None)
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("right-key"))
     );
     let positional = secret("caller-key");
     assert_eq!(
-        exposed(left.get_api_key(Some(&positional))),
+        left.get_api_key(Some(&positional))
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("caller-key"))
     );
     let empty = secret("");
     assert_eq!(
-        exposed(left.get_api_key(Some(&empty))),
+        left.get_api_key(Some(&empty))
+            .map(|key| key.expose_secret().to_owned()),
         Some(String::from("left-key"))
     );
 }
@@ -842,7 +843,7 @@ fn header_key(
     ))
     .unwrap()
     .get("api-key")
-    .map(|key| key.to_owned())
+    .map(ToOwned::to_owned)
 }
 
 fn validation_header_precedence() {
