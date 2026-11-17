@@ -1,0 +1,30 @@
+kind: helper
+name: cli-attribution-build-seed
+call:
+  cli_attribution:
+    function: build
+    claim_map: 'org_info\.department->flat_department,label->profile.label'
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: null
+      provider: null
+      team_ids: []
+      user_role: null
+      extra_fields:
+        org_info.department: flat-value
+        label: acme
+calls:
+  - cli_attribution:
+      function: merge
+      existing_metadata: {profile: {region: us}, scim_active: false}
+      attribution_metadata: {profile: {region: eu}, employment_type: full_time}
+  - cli_attribution:
+      function: poll
+      session: {attribution_metadata: {profile: {region: eu}}}
+env:
+  CLI_SSO_CLAIM_MAP: 'org_info\.department->flat_department,label->profile.label'
+compare: {ignore: []}
