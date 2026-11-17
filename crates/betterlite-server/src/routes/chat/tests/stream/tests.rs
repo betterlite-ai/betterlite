@@ -108,7 +108,7 @@ async fn paused_provider(
 async fn streams_before_next_chunk_and_cancels_on_disconnect() {
     let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut tasks = JoinSet::new();
-    let (client, url) = gateway(&upstream, &mut tasks).await;
+    let (client, url) = Box::pin(gateway(&upstream, &mut tasks)).await;
     let (advance, resumed) = oneshot::channel();
     let (closed, disconnected) = oneshot::channel();
     tasks.spawn(paused_provider(upstream, resumed, closed));
