@@ -39,10 +39,11 @@ pub fn without_nulls(value: Value) -> Value {
 
 pub const DONE_FRAME: &str = "data: [DONE]\n\n";
 
-// one entry of a JSON object; an absent option is the null without_nulls drops from the client's JSON
 pub(crate) fn field(name: &str, value: Option<Value>) -> (String, Value) {
-    let item = value.unwrap_or(Value::Null);
-    (name.to_owned(), item)
+    match value {
+        Some(item) => (name.to_owned(), item),
+        None => (name.to_owned(), Value::Null),
+    }
 }
 
 // The chat chunk the text wrapper converts: usage gains the detail block litellm fills in, model restamped
