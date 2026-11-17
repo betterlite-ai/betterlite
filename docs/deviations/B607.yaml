@@ -15,4 +15,7 @@ deviations:
   - what: A 422 conversion failure whose upstream headers cannot be encoded as ASCII fails with a header error instead of the 422 error, where LiteLLM carries any header text the HTTP client accepted.
     why: The shared BedrockError stores error headers as ASCII, the encoding an HTTP/1.1 header carries; a reply body that fails to parse while the upstream also sent a header outside that range is a broken transport, not a conversion failure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2554-L2561
+  - what: The 422 message carries serde_json's parse error inside the fixed prefix and suffix, where LiteLLM carries Python's json.JSONDecodeError or TypedDict-constructor text.
+    why: The decoder's own wording is the only faithful <error> each runtime can produce; the stable prefix and issue link callers match on are identical, and downstream members that fail later keep their own typed errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2556-L2559
 kept_bugs: []
