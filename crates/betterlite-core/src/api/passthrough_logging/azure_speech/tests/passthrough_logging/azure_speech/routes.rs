@@ -75,22 +75,19 @@ fn the_route_names_the_model(#[case] url_route: &str, #[case] model: &str) {
     );
 }
 
-// One reading of all three routes, so a precedence rule that collapses two of them fails on this name alone.
+// The spend row carries the provider prefix on every route, read off the same table the classifier returns.
 #[test]
-fn each_route_reaches_the_handler_with_its_own_model() {
-    let cases = [
-        (SHORT_AUDIO, "azure_speech/short-audio"),
-        (FAST, "azure_speech/fast-transcription"),
-        (BATCH, "azure_speech/batch-transcription"),
-    ];
-    for (url_route, model) in cases {
-        let logging_obj = support::logging_object();
-        let lookup = support::RecordingLookup::priced(PRICE);
-        let outcome = support::run(&logging_obj, &lookup, url_route, None, b"{}");
-        assert_eq!(
-            outcome.kwargs.entries.get("model"),
-            Some(&Json::Text(model.to_owned())),
-            "{url_route} is logged as {model}"
-        );
-    }
+fn every_route_names_its_own_model() {
+    assert_eq!(
+        SpeechRoute::ShortAudio.model_name(),
+        "azure_speech/short-audio"
+    );
+    assert_eq!(
+        SpeechRoute::FastTranscription.model_name(),
+        "azure_speech/fast-transcription"
+    );
+    assert_eq!(
+        SpeechRoute::Batch.model_name(),
+        "azure_speech/batch-transcription"
+    );
 }

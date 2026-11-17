@@ -19,7 +19,7 @@ pub(super) fn billed_audio_seconds(
                 .unwrap_or(Decimal::ZERO);
             Ok(uploaded.max(recognized_audio_seconds(response_body)?))
         }
-        SpeechRoute::FastTranscription => fast_transcription_audio_seconds(response_body),
+        SpeechRoute::FastTranscription => fast_audio_seconds(response_body),
         SpeechRoute::Batch => Ok(Decimal::ZERO),
     }
 }
@@ -69,9 +69,8 @@ fn recognized_audio_seconds(response_body: &[u8]) -> Result<Decimal, AzureSpeech
         .ok_or(AzureSpeechLoggingError::DurationRange)
 }
 
-fn fast_transcription_audio_seconds(
-    response_body: &[u8],
-) -> Result<Decimal, AzureSpeechLoggingError> {
+// The fast route reports its length as durationMilliseconds.
+fn fast_audio_seconds(response_body: &[u8]) -> Result<Decimal, AzureSpeechLoggingError> {
     let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(response_body) else {
         return Ok(Decimal::ZERO);
     };
