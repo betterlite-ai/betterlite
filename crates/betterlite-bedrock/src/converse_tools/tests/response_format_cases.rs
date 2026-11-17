@@ -114,6 +114,16 @@ fn response_schema_wins(catalogs: &CatalogSources<'_>) {
         translated(catalogs, &null_schema, &mut native),
         Ok(object(r#"{"json_mode": true}"#))
     );
+    let null_field = call(
+        json(r#"{"type": "json_schema", "json_schema": {"schema": null}}"#),
+        MODEL,
+        false,
+        "true",
+    );
+    assert_eq!(
+        translated(catalogs, &null_field, &mut native),
+        Ok(object(r#"{"json_mode": true}"#))
+    );
 }
 
 fn format_shapes(catalogs: &CatalogSources<'_>) {

@@ -574,11 +574,21 @@ fn strict_flags() {
         }
         .into_block()
         .expect("the strict spec builds");
-        assert_strict_block(&block, strict);
+        assert_strict_block(&block, strict, Some(false));
     }
+    let unsupported = BedrockToolSpec {
+        name: "tool",
+        description: "d",
+        parameters: &parameters,
+        strict: Some(true),
+        supports_strict_tools: false,
+    }
+    .into_block()
+    .expect("the plain spec builds");
+    assert_strict_block(&unsupported, Some(true), None);
 }
 
-fn assert_strict_block(block: &Json, strict: Option<bool>) {
+fn assert_strict_block(block: &Json, strict: Option<bool>, additional: Option<bool>) {
     let Json::Object(fields) = block else {
         panic!("the block is an object");
     };
@@ -599,7 +609,8 @@ fn assert_strict_block(block: &Json, strict: Option<bool>) {
     };
     assert_eq!(
         json_schema.get("additionalProperties"),
-        Some(&Json::Bool(false))
+        additional.map(Json::Bool).as_ref(),
+        "{additional:?}"
     );
 }
 
