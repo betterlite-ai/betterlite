@@ -80,7 +80,7 @@ def make_logging() -> Logging:
 class Plan:
     def __init__(self, replies: list[Reply]) -> None:
         self.replies = replies
-        self.requests: list[dict[str, JsonValue]] = []
+        self.requests: list[JsonValue] = []
 
     def take(self) -> Reply:
         if len(self.replies) > 1:
@@ -109,14 +109,13 @@ class RecordingHandler(BaseHTTPRequestHandler):
         reply = server.plan.take()
         target = urlsplit(self.path)
         pieces = target.path.split("/", 2)
-        server.plan.requests.append(
-            {
-                "base": pieces[1],
-                "path": f"/{pieces[2]}",
-                "authorization": self.headers.get("Authorization"),
-                "content_type": self.headers.get("Content-Type"),
-            }
-        )
+        record: dict[str, JsonValue] = {
+            "base": pieces[1],
+            "path": f"/{pieces[2]}",
+            "authorization": self.headers.get("Authorization"),
+            "content_type": self.headers.get("Content-Type"),
+        }
+        server.plan.requests.append(record)
         payload = json.dumps(reply["body"]).encode("utf-8")
         self.send_response(reply["status"])
         self.send_header("content-length", str(len(payload)))
@@ -161,7 +160,7 @@ def answer_for(call: Call, server: RecordingServer) -> JsonValue:
         "success",
         START,
         END,
-        False,
+        cache_hit=False,
     )
     details = RecordedLogging.model_validate(logging_obj).model_call_details
     return {
