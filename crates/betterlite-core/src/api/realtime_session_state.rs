@@ -17,8 +17,9 @@ use super::realtime_contracts::transport::{
     ClientWebSocket, RealtimeBackend, RealtimeEventNormalizer,
 };
 use error::SessionStateError;
-use logging::{RealtimeLogging, RealtimeSuccessQueue, SessionInput};
+use logging::{RealtimeLogging, RealtimeSuccessQueue, SessionInput, record_details};
 use store::SessionMessage;
+use usage::usage_record;
 
 pub const DEFAULT_LOGGED_EVENT_TYPES: [&str; 5] = [
     "session.created",
@@ -176,45 +177,134 @@ impl RealtimeStreaming {
         }
     }
 
+    // LiteLLM collects response.done tool calls before it applies the event filter, so an unlogged response still bills its functions
     pub fn store_message(&mut self, message: SessionMessage<'_>) -> Result<(), SessionStateError> {
-        store::store_message(self, message)
+        let record = store::decoded_message(message)?;
+        self.collect_response_tool_calls(&record);
+        if self.should_store_message(&record) {
+            if let Err(error) = records::check_session_event(&record) {
+                tracing::debug!("Error parsing message for logging: {error}");
+            }
+            self.messages.push(record);
+        }
+        Ok(())
     }
 
     #[must_use]
     pub fn should_store_message(&self, record: &IndexMap<String, Json>) -> bool {
-        store::should_store_message(self, record)
+        match &self.logged_real_time_event_types {
+            LoggedEventTypes::All => true,
+            LoggedEventTypes::Default => records::event_type(record)
+                .is_some_and(|event| DEFAULT_LOGGED_EVENT_TYPES.contains(&event)),
+            LoggedEventTypes::Only(types) => records::event_type(record)
+                .is_some_and(|event| types.iter().any(|logged| logged == event)),
+        }
     }
 
     pub fn collect_response_tool_calls(&mut self, event: &IndexMap<String, Json>) {
-        store::collect_response_tool_calls(self, event);
+        if records::event_type(event) != Some("response.done") {
+            return;
+        }
+        let Some(Json::Object(response)) = event.get("response") else {
+            return;
+        };
+        let Some(Json::List(output)) = response.get("output") else {
+            return;
+        };
+        for item in output {
+            let Json::Object(entry) = item else {
+                // LiteLLM reads item.get on every entry, and a non-object entry ends its loop
+                break;
+            };
+            if matches!(entry.get("type"), Some(Json::Text(kind)) if kind == "function_call") {
+                self.tool_calls.push(records::tool_call_record(entry));
+            }
+        }
     }
 
+    // LiteLLM ignores a client event it cannot read: malformed JSON, a non-object item and a content entry of the wrong type all leave the log alone
     pub fn collect_client_input(&mut self, message: SessionInput<'_>) {
-        collect::collect_client_input(self, message);
+        match message {
+            SessionInput::Record(record) => collect::collect_record_input(self, record),
+            SessionInput::Text(text) => {
+                let Ok(record) = records::decoded_record(text.as_bytes()) else {
+                    return;
+                };
+                collect::collect_record_input(self, &record);
+            }
+        }
     }
 
     pub fn collect_backend_input(&mut self, event: &IndexMap<String, Json>) {
-        collect::collect_backend_input(self, event);
+        if records::event_type(event) != Some(TRANSCRIPTION_COMPLETED) {
+            return;
+        }
+        let Some(Json::Text(transcript)) = event.get("transcript") else {
+            return;
+        };
+        collect::push_text_message(&mut self.input_messages, "user", transcript);
     }
 
     pub fn detect_transcription_session(&mut self, event: &IndexMap<String, Json>) {
-        collect::detect_transcription_session(self, event);
+        match records::event_type(event) {
+            Some("transcription_session.created" | "transcription_session.updated") => {
+                self.is_transcription_session.0 = true;
+            }
+            Some("session.created" | "session.updated") => {
+                let Some(Json::Object(session)) = event.get("session") else {
+                    return;
+                };
+                collect::mark_transcription_session(self, session);
+            }
+            _ => {}
+        }
     }
 
     pub fn store_input(&mut self, message: SessionInput<'_>) {
-        logging::store_input(self, message);
+        self.input_message = logging::retained_input(message);
+        self.collect_client_input(message);
+        if let Some(logging) = self.logging.as_deref() {
+            logging.pre_call(&message, "");
+        }
     }
 
     #[must_use]
     pub fn log_messages(&self) -> bool {
-        logging::log_messages(self)
+        let Some(logging) = self.logging.as_deref() else {
+            return false;
+        };
+        record_details(logging, self);
+        let work = logging.dispatch_success_handlers(&self.messages);
+        let queue = self.logging_worker.as_deref();
+        if !queue.is_some_and(|sender| sender.enqueue(work)) {
+            return false;
+        }
+        logging.record_model_call_detail(logging::SUCCESS_LOGGED_KEY, Json::Bool(true));
+        true
     }
 
+    // Only the type and usage are kept: the transcript already sits in input_messages, and an event the filter logs needs no second copy
     pub fn capture_transcription_usage(&mut self, event: &IndexMap<String, Json>) {
-        usage::capture_transcription_usage(self, event);
+        let Some(usage) = event.get("usage") else {
+            return;
+        };
+        if matches!(usage, Json::Null) || self.should_store_message(event) {
+            return;
+        }
+        self.messages.push(usage_record(usage.clone()));
     }
 
     pub fn flush_unbilled_usage(&mut self) -> Result<(), SessionStateError> {
-        usage::flush_unbilled_usage(self)
+        let Some(config) = self.provider_config.as_deref() else {
+            return Ok(());
+        };
+        let Some(usage) = config.unbilled_usage_on_close(&self.model) else {
+            return Ok(());
+        };
+        let encoded = serde_json::from_value(serde_json::to_value(usage)?)?;
+        let event = usage_record(encoded);
+        self.store_message(SessionMessage::Record(&event))?;
+        self.capture_transcription_usage(&event);
+        Ok(())
     }
 }

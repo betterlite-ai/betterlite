@@ -27,22 +27,15 @@ pub trait RealtimeSuccessQueue: Send + Sync {
     fn enqueue(&self, work: SuccessWork) -> bool;
 }
 
-pub(crate) fn store_input(state: &mut RealtimeStreaming, message: SessionInput<'_>) {
-    state.input_message = match message {
+// LiteLLM keeps a passed mapping as input_message but an empty mapping for a string input
+pub(crate) fn retained_input(message: SessionInput<'_>) -> IndexMap<String, Json> {
+    match message {
         SessionInput::Record(record) => record.clone(),
         SessionInput::Text(_) => IndexMap::new(),
-    };
-    state.collect_client_input(message);
-    if let Some(logging) = state.logging.as_deref() {
-        logging.pre_call(&message, "");
     }
 }
 
-#[must_use]
-pub(crate) fn log_messages(state: &RealtimeStreaming) -> bool {
-    let Some(logging) = state.logging.as_deref() else {
-        return false;
-    };
+pub(crate) fn record_details(logging: &dyn RealtimeLogging, state: &RealtimeStreaming) {
     if !state.input_messages.is_empty() {
         logging.record_model_call_detail(
             "messages",
@@ -73,11 +66,4 @@ pub(crate) fn log_messages(state: &RealtimeStreaming) -> bool {
             Json::List(state.tool_calls.iter().cloned().map(Json::Object).collect()),
         );
     }
-    let work = logging.dispatch_success_handlers(&state.messages);
-    let queue = state.logging_worker.as_deref();
-    if !queue.is_some_and(|sender| sender.enqueue(work)) {
-        return false;
-    }
-    logging.record_model_call_detail(SUCCESS_LOGGED_KEY, Json::Bool(true));
-    true
 }

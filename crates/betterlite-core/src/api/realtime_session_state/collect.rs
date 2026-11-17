@@ -2,9 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::RealtimeStreaming;
-use super::TRANSCRIPTION_COMPLETED;
-use super::logging::SessionInput;
-use super::records::{decoded_record, event_type};
+use super::records::event_type;
 
 fn message_record(role: &str, content: &str) -> IndexMap<String, Json> {
     IndexMap::from([
@@ -13,56 +11,17 @@ fn message_record(role: &str, content: &str) -> IndexMap<String, Json> {
     ])
 }
 
-fn push_text_message(messages: &mut Vec<IndexMap<String, Json>>, role: &str, text: &str) {
+pub(crate) fn push_text_message(
+    messages: &mut Vec<IndexMap<String, Json>>,
+    role: &str,
+    text: &str,
+) {
     if !text.is_empty() {
         messages.push(message_record(role, text));
     }
 }
 
-// LiteLLM ignores a client event it cannot read: malformed JSON, a non-object item and a content entry of the wrong type all leave the log alone
-pub(crate) fn collect_client_input(state: &mut RealtimeStreaming, message: SessionInput<'_>) {
-    match message {
-        SessionInput::Record(record) => collect_record_input(state, record),
-        SessionInput::Text(text) => {
-            let Ok(record) = decoded_record(text.as_bytes()) else {
-                return;
-            };
-            collect_record_input(state, &record);
-        }
-    }
-}
-
-pub(crate) fn collect_backend_input(state: &mut RealtimeStreaming, event: &IndexMap<String, Json>) {
-    if event_type(event) != Some(TRANSCRIPTION_COMPLETED) {
-        return;
-    }
-    let Some(Json::Text(transcript)) = event.get("transcript") else {
-        return;
-    };
-    push_text_message(&mut state.input_messages, "user", transcript);
-}
-
-pub(crate) fn detect_transcription_session(
-    state: &mut RealtimeStreaming,
-    event: &IndexMap<String, Json>,
-) {
-    match event_type(event) {
-        Some("transcription_session.created" | "transcription_session.updated") => {
-            state.is_transcription_session.0 = true;
-        }
-        Some("session.created" | "session.updated") => {
-            let Some(Json::Object(session)) = event.get("session") else {
-                return;
-            };
-            if matches!(session.get("type"), Some(Json::Text(kind)) if kind == "transcription") {
-                state.is_transcription_session.0 = true;
-            }
-        }
-        _ => {}
-    }
-}
-
-fn collect_record_input(state: &mut RealtimeStreaming, record: &IndexMap<String, Json>) {
+pub(crate) fn collect_record_input(state: &mut RealtimeStreaming, record: &IndexMap<String, Json>) {
     match event_type(record) {
         Some("conversation.item.create") => collect_conversation_item(state, record),
         Some("session.update") => collect_session_update(state, record),
@@ -104,6 +63,13 @@ fn collect_session_update(state: &mut RealtimeStreaming, event: &IndexMap<String
         replace_session_tools(state, tools);
     }
     tracing::debug!("Realtime session.type: {:?}", session.get("type"));
+    mark_transcription_session(state, session);
+}
+
+pub(crate) fn mark_transcription_session(
+    state: &mut RealtimeStreaming,
+    session: &IndexMap<String, Json>,
+) {
     if matches!(session.get("type"), Some(Json::Text(kind)) if kind == "transcription") {
         state.is_transcription_session.0 = true;
     }
