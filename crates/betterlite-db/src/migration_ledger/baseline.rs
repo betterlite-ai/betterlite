@@ -1,3 +1,4 @@
+use std::str::{self, Utf8Error};
 use std::time::Duration;
 
 use sha2::{Digest as _, Sha256};
@@ -23,7 +24,7 @@ use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 const PACKAGED_SCHEMA_SHA256: &str =
     "a17e69687d14d78dc7cee49770f1c1e8b2726cd8823d37c6dff48ae151533342";
 
-const PACKAGED_CATALOGS: [MigrationCatalog; 8] = [
+pub const PACKAGED_CATALOGS: [MigrationCatalog; 8] = [
     BASELINE,
     DAILY_USAGE,
     MANAGED_RESOURCES,
@@ -33,6 +34,14 @@ const PACKAGED_CATALOGS: [MigrationCatalog; 8] = [
     BUDGET_WINDOWS,
     AGENT_IDENTITY,
 ];
+
+pub fn packaged_statements() -> Result<Vec<String>, Utf8Error> {
+    PACKAGED_CATALOGS
+        .iter()
+        .flat_map(|catalog| catalog.files)
+        .map(|file| str::from_utf8(file.bytes).map(str::to_owned))
+        .collect()
+}
 
 #[derive(Debug, Error)]
 pub enum BaselineError {

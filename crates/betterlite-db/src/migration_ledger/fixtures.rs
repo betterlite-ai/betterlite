@@ -17,17 +17,9 @@ use tokio::time::timeout;
 use tokio_postgres::{NoTls, Row};
 
 use crate::migration_deploy::catalog::{Migration, migration_files};
+use crate::migration_ledger::baseline::PACKAGED_CATALOGS;
 use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator};
-use crate::schema_agent_identity::MIGRATION_CATALOG as AGENT_IDENTITY;
-use crate::schema_baseline::MIGRATION_CATALOG as BASELINE;
-use crate::schema_baseline::MigrationCatalog;
-use crate::schema_budget_windows::MIGRATION_CATALOG as BUDGET_WINDOWS;
 use crate::schema_contract::SchemaContract;
-use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE;
-use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY;
-use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES;
-use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES;
-use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 
 pub(super) const PUBLIC_SCHEMA: &str = "public";
 const TEST_TIMEOUT: Duration = Duration::from_secs(240);
@@ -37,17 +29,6 @@ pub(super) const LEDGER_DDL: &str = "CREATE TABLE _prisma_migrations (id varchar
     NOT NULL, checksum varchar(64) NOT NULL, finished_at timestamptz, migration_name varchar(255) \
     NOT NULL, logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), \
     applied_steps_count integer NOT NULL DEFAULT 0)";
-
-const PINNED_CATALOGS: [MigrationCatalog; 8] = [
-    BASELINE,
-    DAILY_USAGE,
-    MANAGED_RESOURCES,
-    IDENTITY_HISTORY,
-    POLICY_RESOURCES,
-    ROUTING_STATE,
-    BUDGET_WINDOWS,
-    AGENT_IDENTITY,
-];
 
 #[derive(Parser)]
 struct Environment {
@@ -267,7 +248,7 @@ fn pinned_statements() -> Vec<Vec<u8>> {
 }
 
 fn compiled_statements() -> Vec<Vec<u8>> {
-    PINNED_CATALOGS
+    PACKAGED_CATALOGS
         .iter()
         .flat_map(|catalog| catalog.files.iter())
         .map(|file| file.bytes.to_vec())
