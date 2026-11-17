@@ -151,8 +151,8 @@ impl UsageChatModel for FakeModel {
             .expect("a scripted reply");
         let gate = self.state.gate.lock().expect("the model gate").clone();
         async move {
-            if let Some(gate) = gate {
-                gate.notified().await;
+            if let Some(notify) = gate {
+                notify.notified().await;
             }
             Ok(reply)
         }

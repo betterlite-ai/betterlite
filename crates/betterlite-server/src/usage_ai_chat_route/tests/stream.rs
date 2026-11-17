@@ -20,7 +20,7 @@ async fn stream_passes_the_engine_frames_through_in_order() {
 #[tokio::test(start_paused = true)]
 async fn stream_pings_while_the_model_holds_the_answer() {
     let gate = Arc::new(Notify::new());
-    let model = FakeModel::new().waiting(gate.clone());
+    let model = FakeModel::new().waiting(Arc::clone(&gate));
     let factory = FakeFactory::new(model, FakeSource::new());
     let request = with_principal(post(STREAM_BODY), master_principal());
     let response = send(
@@ -48,7 +48,7 @@ async fn stream_pings_while_the_model_holds_the_answer() {
 #[tokio::test(start_paused = true)]
 async fn stream_pings_again_after_each_interval() {
     let gate = Arc::new(Notify::new());
-    let model = FakeModel::new().waiting(gate.clone());
+    let model = FakeModel::new().waiting(Arc::clone(&gate));
     let factory = FakeFactory::new(model, FakeSource::new());
     let request = with_principal(post(STREAM_BODY), master_principal());
     let response = send(
@@ -76,7 +76,7 @@ async fn stream_pings_again_after_each_interval() {
 #[tokio::test(start_paused = true)]
 async fn stream_adds_no_ping_without_an_interval() {
     let gate = Arc::new(Notify::new());
-    let model = FakeModel::new().waiting(gate.clone());
+    let model = FakeModel::new().waiting(Arc::clone(&gate));
     let factory = FakeFactory::new(model, FakeSource::new());
     let request = with_principal(post(STREAM_BODY), master_principal());
     let response = send(state(factory, None, FakeCallerId::from_subject()), request).await;
