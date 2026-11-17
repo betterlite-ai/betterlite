@@ -1,0 +1,74 @@
+#![cfg(test)]
+
+use tokio::sync::oneshot;
+
+use super::support::capture_logs;
+use super::tasks::BillingTasks;
+
+#[tokio::test]
+async fn holds_a_billing_task_until_it_finishes() {
+    let tasks = BillingTasks::default();
+    let (sender, receiver) = oneshot::channel::<()>();
+    let handle = tasks.spawn(async move {
+        drop(receiver.await);
+    });
+
+    assert!(!handle.is_finished());
+    sender.send(()).expect("the poller is waiting");
+    handle.await.expect("the poller finishes");
+}
+
+#[tokio::test]
+async fn a_cancelled_poller_warns_that_the_run_may_go_unbilled() {
+    let (logs, _guard) = capture_logs();
+    let tasks = BillingTasks::default();
+    let (started, started_receiver) = oneshot::channel::<()>();
+    let handle = tasks.spawn(async move {
+        drop(started.send(()));
+        std::future::pending::<()>().await;
+    });
+
+    started_receiver.await.expect("the poller started");
+    handle.abort();
+    let error = handle.await.expect_err("the poller was cancelled");
+
+    assert!(error.is_cancelled());
+    assert!(
+        logs.contents()
+            .contains("billing poller cancelled mid-poll")
+    );
+    assert!(logs.contents().contains("the run may go unbilled"));
+}
+
+#[tokio::test]
+async fn a_finished_poller_warns_about_nothing() {
+    let (logs, _guard) = capture_logs();
+    let tasks = BillingTasks::default();
+    let (sender, receiver) = oneshot::channel::<()>();
+    let handle = tasks.spawn(async move {
+        drop(receiver.await);
+    });
+
+    drop(sender);
+    handle.await.expect("the poller finishes");
+
+    assert!(!logs.contents().contains("cancelled mid-poll"));
+}
+
+#[tokio::test]
+async fn shutdown_finishes_the_pending_pollers() {
+    let tasks = BillingTasks::default();
+    let (sender, receiver) = oneshot::channel::<()>();
+    let (done, done_receiver) = oneshot::channel::<()>();
+    let handle = tasks.spawn(async move {
+        drop(receiver.await);
+        drop(done.send(()));
+    });
+
+    drop(sender);
+    tasks.shutdown().await;
+    done_receiver
+        .await
+        .expect("the poller recorded its completion");
+    handle.await.expect("the poller finished");
+}
