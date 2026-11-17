@@ -173,10 +173,10 @@ async fn collected(
         )
         .await
         .expect("stream");
-    let CallResult::TextStream(result) = result else {
+    let CallResult::TextStream(stream) = result else {
         panic!("a streamed call answers a stream");
     };
-    result.body.collect().await
+    stream.body.collect().await
 }
 
 #[tokio::test]
@@ -351,10 +351,10 @@ async fn a_dropped_text_stream_records_cancellation_once() {
         )
         .await
         .expect("stream");
-    let CallResult::TextStream(mut result) = result else {
+    let CallResult::TextStream(mut stream) = result else {
         panic!("a streamed call answers a stream");
     };
-    let first = result
+    let first = stream
         .body
         .next()
         .await
@@ -363,7 +363,7 @@ async fn a_dropped_text_stream_records_cancellation_once() {
     let object = json_field(&first, "object");
     assert_eq!(object, Some(&Json::Text(String::from("text_completion"))));
     assert!(log.calls().is_empty());
-    drop(result.body);
+    drop(stream.body);
     let recorded = log.calls();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].outcome, CallOutcome::Cancelled);

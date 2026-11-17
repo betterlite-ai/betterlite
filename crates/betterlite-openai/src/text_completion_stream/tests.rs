@@ -9,7 +9,7 @@ use betterlite_streaming::stream_chunk_shaping::records::{
     JsonObject, StreamChoice, StreamChunk, StreamDelta, TokenDetails, Usage,
 };
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     DONE_FRAME, TextStreamDecodeError, chat_chunk, decode_chat_events, shaped_chunk, without_nulls,
@@ -18,11 +18,15 @@ use crate::stream::SseParser;
 
 const CORPUS: &str = "fuzz/corpus/text_stream";
 
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("json fixture")
+}
+
 fn usage(prompt: i64, completion: i64) -> Usage {
     Usage {
         prompt_tokens: prompt,
         completion_tokens: completion,
-        total_tokens: prompt + completion,
+        total_tokens: prompt.saturating_add(completion),
         cost: None,
         prompt_tokens_details: None,
         completion_tokens_details: None,
@@ -136,19 +140,22 @@ fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
 }
 
 fn without_nulls_scenario() {
-    let cleaned = without_nulls(json!({
-        "a": null, "b": {"c": null, "d": 1}, "e": [null, {"f": null}], "g": "keep"
-    }));
+    let cleaned = without_nulls(fixture(
+        r#"{"a": null, "b": {"c": null, "d": 1}, "e": [null, {"f": null}], "g": "keep"}"#,
+    ));
     assert_eq!(
         cleaned,
-        json!({"b": {"d": 1}, "e": [null, {}], "g": "keep"})
+        fixture(r#"{"b": {"d": 1}, "e": [null, {}], "g": "keep"}"#)
     );
 }
 
 fn shaped_restamp_scenario() {
     let value = shaped_chunk(chunk(content("hi")), "client").expect("value");
-    assert_eq!(value.get("model"), Some(&json!("client")));
-    assert_eq!(value.get("object"), Some(&json!("chat.completion.chunk")));
+    assert_eq!(value.get("model"), Some(&Value::from("client")));
+    assert_eq!(
+        value.get("object"),
+        Some(&Value::from("chat.completion.chunk"))
+    );
 }
 
 fn shaped_details_filled_scenario() {
@@ -157,11 +164,11 @@ fn shaped_details_filled_scenario() {
     let value = shaped_chunk(shaped, "client").expect("value");
     assert_eq!(
         value.pointer("/usage/completion_tokens_details/reasoning_tokens"),
-        Some(&json!(0))
+        Some(&Value::from(0_i64))
     );
     assert_eq!(
         value.pointer("/usage/completion_tokens_details/text_tokens"),
-        Some(&json!(2))
+        Some(&Value::from(2_i64))
     );
 }
 
@@ -179,7 +186,7 @@ fn shaped_details_kept_scenario() {
     let value = shaped_chunk(shaped, "client").expect("value");
     assert_eq!(
         value.pointer("/usage/completion_tokens_details/cached_tokens"),
-        Some(&json!(1))
+        Some(&Value::from(1_i64))
     );
     assert_eq!(
         value.pointer("/usage/completion_tokens_details/reasoning_tokens"),
@@ -201,8 +208,11 @@ fn chat_usage_asked_scenario() {
     let mut with_usage = chunk(StreamDelta::default());
     with_usage.usage = Some(usage(3, 2));
     let value = emitted(&with_usage, true);
-    assert_eq!(value.pointer("/usage/total_tokens"), Some(&json!(5)));
-    assert_eq!(value.pointer("/choices/0/delta"), Some(&json!({})));
+    assert_eq!(
+        value.pointer("/usage/total_tokens"),
+        Some(&Value::from(5_i64))
+    );
+    assert_eq!(value.pointer("/choices/0/delta"), Some(&fixture("{}")));
 }
 
 fn chat_usage_unasked_scenario() {
@@ -213,7 +223,7 @@ fn chat_usage_unasked_scenario() {
 }
 
 fn chat_role_content_scenario() {
-    let mut first = chunk(StreamDelta {
+    let first = chunk(StreamDelta {
         content: Some(String::from("Hello")),
         role: Some(String::from("assistant")),
         function_call: None,
@@ -226,16 +236,18 @@ fn chat_role_content_scenario() {
         provider_specific_fields: None,
         extra: JsonObject::new(),
     });
-    first.model = String::from("upstream");
     let value = emitted(&first, false);
     assert_eq!(
         value.pointer("/choices/0/delta"),
-        Some(&json!({"role": "assistant", "content": "Hello"}))
+        Some(&fixture(r#"{"role": "assistant", "content": "Hello"}"#))
     );
     assert_eq!(value.pointer("/choices/0/finish_reason"), None);
-    assert_eq!(value.get("id"), Some(&json!("cmpl-1")));
-    assert_eq!(value.get("object"), Some(&json!("chat.completion.chunk")));
-    assert_eq!(value.get("model"), Some(&json!("client")));
+    assert_eq!(value.get("id"), Some(&Value::from("cmpl-1")));
+    assert_eq!(
+        value.get("object"),
+        Some(&Value::from("chat.completion.chunk"))
+    );
+    assert_eq!(value.get("model"), Some(&Value::from("client")));
 }
 
 fn chat_finish_scenario() {
@@ -244,34 +256,41 @@ fn chat_finish_scenario() {
     let value = emitted(&last, false);
     assert_eq!(
         value.pointer("/choices/0/finish_reason"),
-        Some(&json!("stop"))
+        Some(&Value::from("stop"))
     );
-    assert_eq!(value.pointer("/choices/0/delta"), Some(&json!({})));
+    assert_eq!(value.pointer("/choices/0/delta"), Some(&fixture("{}")));
 }
 
 fn chat_done_scenario() {
-    let events = format!(
-        "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
-        json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"a"}}]}),
-        json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
+    let first = fixture(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"a"}}]}"#,
     );
+    let last = fixture(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+    );
+    let events = format!("data: {first}\n\ndata: {last}\n\ndata: [DONE]\n\n");
     let decoded = decode_chat_bytes(events.as_bytes(), "client", false).expect("decode");
     assert_eq!(decoded.len(), 2);
-    let first = value_of(&decoded[0]);
-    assert_eq!(first.pointer("/choices/0/delta/content"), Some(&json!("a")));
-    assert_eq!(first.get("model"), Some(&json!("client")));
+    let first_chunk = value_of(&decoded[0]);
+    assert_eq!(
+        first_chunk.pointer("/choices/0/delta/content"),
+        Some(&Value::from("a"))
+    );
+    assert_eq!(first_chunk.get("model"), Some(&Value::from("client")));
     assert_eq!(
         value_of(&decoded[1]).pointer("/choices/0/finish_reason"),
-        Some(&json!("stop"))
+        Some(&Value::from("stop"))
     );
 }
 
 fn chat_split_boundaries_scenario() {
-    let events = format!(
-        "data: {}\n\ndata: {}\n\n",
-        json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"héllo"}}]}),
-        json!({"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":" wörld"}}]}),
+    let first = fixture(
+        "{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"h\\u00e9llo\"}}]}",
     );
+    let last = fixture(
+        "{\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" w\\u00f6rld\"}}]}",
+    );
+    let events = format!("data: {first}\n\ndata: {last}\n\n");
     let whole = decode_chat_bytes(events.as_bytes(), "client", false).expect("whole");
     for boundary in 1..events.len() {
         let (left, right) = events.as_bytes().split_at(boundary);
@@ -298,11 +317,11 @@ fn chat_invalid_utf8_scenario() {
         b"data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"".to_vec();
     bytes.push(0xff);
     bytes.extend_from_slice(b"\"}}]}\n\n");
-    assert!(decode_chat_bytes(&bytes, "client", false).is_err());
+    decode_chat_bytes(&bytes, "client", false).unwrap_err();
 }
 
 fn chat_malformed_json_scenario() {
-    assert!(decode_chat_bytes(b"data: {\"id\": \n\n", "client", false).is_err());
+    decode_chat_bytes(b"data: {\"id\": \n\n", "client", false).unwrap_err();
 }
 
 #[test]
@@ -338,7 +357,7 @@ fn boundary_failures(file: &Path) -> Result<Vec<String>, io::Error> {
             let (left, right) = bytes.split_at(*boundary);
             let split = split_decode(left, right);
             !match (&split, &whole) {
-                (Ok(split), Ok(whole)) => split == whole,
+                (Ok(split_chunks), Ok(whole_chunks)) => split_chunks == whole_chunks,
                 (Err(_), Err(_)) => true,
                 (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
             }

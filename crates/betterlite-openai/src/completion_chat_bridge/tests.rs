@@ -2,7 +2,7 @@
 
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::answer::{chat_completion_body, text_completion_body, text_completion_response};
 use super::{ChatEndpoint, chat_endpoint, chat_request, text_endpoint_model, text_request};
@@ -53,6 +53,10 @@ fn completion(body: &str) -> CompletionRequest {
 
 fn response(body: &str) -> CompletionResponse {
     serde_json::from_str(body).expect("completion response")
+}
+
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("json fixture")
 }
 
 #[test]
@@ -160,7 +164,7 @@ fn a_stream_carries_the_usage_option_the_proxy_injects() {
     assert_eq!(built.model.as_deref(), Some("gpt-4o"));
     assert_eq!(
         built.messages,
-        Some(vec![json!({"role": "user", "content": "hi"})])
+        Some(vec![fixture(r#"{"role": "user", "content": "hi"}"#)])
     );
     assert_eq!(
         built.optional_params.get("stream"),
@@ -168,7 +172,7 @@ fn a_stream_carries_the_usage_option_the_proxy_injects() {
     );
     assert_eq!(
         built.optional_params.get("stream_options"),
-        Some(&json!({"include_usage": true}))
+        Some(&fixture(r#"{"include_usage": true}"#))
     );
     assert!(!built.optional_params.contains_key("messages"));
     assert!(!built.optional_params.contains_key("model"));
@@ -179,27 +183,32 @@ fn a_client_usage_choice_is_kept_and_a_non_stream_sends_an_explicit_false() {
     let kept = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream":true,"stream_options":{"include_usage":false}}"#,
     );
-    let built = text_request(&deployment("gpt-4o"), &kept, "gpt-4o").expect("request");
+    let streaming_built = text_request(&deployment("gpt-4o"), &kept, "gpt-4o").expect("request");
     assert_eq!(
-        built.optional_params.get("stream_options"),
-        Some(&json!({"include_usage": false}))
+        streaming_built.optional_params.get("stream_options"),
+        Some(&fixture(r#"{"include_usage": false}"#))
     );
     let buffered = chat(r#"{"model":"m","messages":[{"role":"user","content":"hi"}]}"#);
-    let built = text_request(&deployment("gpt-4o"), &buffered, "gpt-4o").expect("request");
+    let buffered_built = text_request(&deployment("gpt-4o"), &buffered, "gpt-4o").expect("request");
     assert_eq!(
-        built.optional_params.get("stream"),
+        buffered_built.optional_params.get("stream"),
         Some(&Value::Bool(false))
     );
-    assert!(!built.optional_params.contains_key("stream_options"));
-    assert_eq!(built.optional_params.get("model"), None);
+    assert!(
+        !buffered_built
+            .optional_params
+            .contains_key("stream_options")
+    );
+    assert_eq!(buffered_built.optional_params.get("model"), None);
     // a non-stream request keeps a caller's stream_options the way LiteLLM's text handler forwards it
     let buffered_options = chat(
         r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream_options":{"include_usage":false}}"#,
     );
-    let built = text_request(&deployment("gpt-4o"), &buffered_options, "gpt-4o").expect("request");
+    let options_built =
+        text_request(&deployment("gpt-4o"), &buffered_options, "gpt-4o").expect("request");
     assert_eq!(
-        built.optional_params.get("stream_options"),
-        Some(&json!({"include_usage": false}))
+        options_built.optional_params.get("stream_options"),
+        Some(&fixture(r#"{"include_usage": false}"#))
     );
 }
 
@@ -217,7 +226,10 @@ fn control_kwargs_and_internal_keys_stay_off_the_provider_body() {
         !built.optional_params.contains_key("_hidden"),
         "_hidden leaked"
     );
-    assert_eq!(built.optional_params.get("temperature"), Some(&json!(0.5)));
+    assert_eq!(
+        built.optional_params.get("temperature"),
+        Some(&Value::from(0.5_f64))
+    );
 }
 
 #[test]
@@ -227,7 +239,7 @@ fn one_user_message_per_prompt_string() {
     assert_eq!(single.messages[0].role, Role::User);
     assert_eq!(
         serde_json::to_value(&single.messages[0].content).expect("content"),
-        json!("hello")
+        Value::from("hello")
     );
     let many = chat_request(&completion(r#"{"model":"m","prompt":["a","b"]}"#)).expect("chat");
     assert_eq!(many.messages.len(), 2);
@@ -262,14 +274,17 @@ fn the_text_logprob_choices_reach_the_chat_call() {
     let chat = chat_request(&request).expect("chat");
     assert_eq!(
         chat.passthrough.get("logit_bias"),
-        Some(&json!({"50256": -100}))
+        Some(&fixture(r#"{"50256": -100}"#))
     );
-    assert_eq!(chat.passthrough.get("logprobs"), Some(&json!(2)));
-    assert_eq!(chat.passthrough.get("top_logprobs"), Some(&json!(3)));
+    assert_eq!(chat.passthrough.get("logprobs"), Some(&Value::from(2_i64)));
+    assert_eq!(
+        chat.passthrough.get("top_logprobs"),
+        Some(&Value::from(3_i64))
+    );
     // the typed flag stays empty, so one logprobs value is written and it is the text request's depth
     assert_eq!(chat.logprobs, None);
     let value = serde_json::to_value(&chat).expect("json");
-    assert_eq!(value.get("logprobs"), Some(&json!(2)));
+    assert_eq!(value.get("logprobs"), Some(&Value::from(2_i64)));
     let plain = chat_request(&completion(r#"{"model":"m","prompt":"hi"}"#)).expect("chat");
     assert!(!plain.passthrough.contains_key("logit_bias"));
     assert!(!plain.passthrough.contains_key("logprobs"));
@@ -294,7 +309,7 @@ fn a_parameter_the_text_config_does_not_support_is_a_400() {
     let built = text_request(&deployment("gpt-4o"), &headers, "gpt-4o").expect("extra_headers");
     assert_eq!(
         built.optional_params.get("extra_headers"),
-        Some(&json!({"x-trace": "1"}))
+        Some(&fixture(r#"{"x-trace": "1"}"#))
     );
 }
 
@@ -307,7 +322,7 @@ fn functions_keep_their_place_in_the_chat_passthrough() {
     let Some(functions) = chat.passthrough.get("functions") else {
         panic!("functions left the chat passthrough");
     };
-    assert_eq!(functions.pointer("/0/name"), Some(&json!("f")));
+    assert_eq!(functions.pointer("/0/name"), Some(&Value::from("f")));
 }
 
 #[test]
@@ -319,18 +334,9 @@ fn the_chat_route_drops_the_nulls_of_a_converted_text_answer() {
     let value: Value = serde_json::from_slice(&body).expect("json");
     assert_eq!(
         value,
-        json!({
-            "id": "cmpl-1",
-            "created": 1_794_865_546,
-            "model": "client-model",
-            "object": "chat.completion",
-            "choices": [{
-                "finish_reason": "stop",
-                "index": 0,
-                "message": {"content": "Hello", "role": "assistant"}
-            }],
-            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}
-        })
+        fixture(
+            r#"{"id": "cmpl-1", "created": 1794865546, "model": "client-model", "object": "chat.completion", "choices": [{"finish_reason": "stop", "index": 0, "message": {"content": "Hello", "role": "assistant"}}], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}"#
+        )
     );
 }
 
@@ -341,10 +347,13 @@ fn the_fine_tuned_answer_keeps_its_text_shape_with_the_client_model() {
     );
     let body = text_completion_body(&text, Some("ft-babbage")).expect("body");
     let value: Value = serde_json::from_slice(&body).expect("json");
-    assert_eq!(value.get("object"), Some(&json!("text_completion")));
-    assert_eq!(value.get("model"), Some(&json!("ft-babbage")));
+    assert_eq!(value.get("object"), Some(&Value::from("text_completion")));
+    assert_eq!(value.get("model"), Some(&Value::from("ft-babbage")));
     assert_eq!(value.get("system_fingerprint"), None);
-    assert_eq!(value.pointer("/choices/0/text"), Some(&json!("Hello")));
+    assert_eq!(
+        value.pointer("/choices/0/text"),
+        Some(&Value::from("Hello"))
+    );
 }
 
 #[test]
