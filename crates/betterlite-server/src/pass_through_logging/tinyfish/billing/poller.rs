@@ -28,9 +28,9 @@ pub(super) fn spawn_poll(
     poll: PollRun,
 ) -> JoinHandle<()> {
     let polled = Arc::clone(deps);
-    let settings = settings.clone();
+    let run_settings = settings.clone();
     deps.tasks
-        .spawn(async move { poll_and_log(&polled, &settings, poll).await })
+        .spawn(async move { poll_and_log(&polled, &run_settings, poll).await })
 }
 
 // Billing must never break the relayed response, so every failure here ends in a log line and no spend row.
