@@ -5,7 +5,7 @@ pub(super) fn response_error_code(details: &FailureDetails) -> String {
     if let Some(code) = special_code(details.code.as_ref()) {
         return code;
     }
-    if let Some(code) = special_code(details.error_type.as_ref()) {
+    if let Some(code) = details.error_type.as_deref().and_then(special_text_code) {
         return code;
     }
     if let Some(FailureCode::Text(code)) = &details.code
@@ -19,15 +19,20 @@ pub(super) fn response_error_code(details: &FailureDetails) -> String {
 
 fn special_code(value: Option<&FailureCode>) -> Option<String> {
     match value {
-        Some(FailureCode::Text(text)) if text == "insufficient_quota" => {
-            Some("insufficient_quota".to_owned())
-        }
         Some(FailureCode::Integer(429)) => Some("rate_limit_exceeded".to_owned()),
-        Some(FailureCode::Text(text)) if text == "429" || text.starts_with("rate_limit") => {
-            Some("rate_limit_exceeded".to_owned())
-        }
+        Some(FailureCode::Text(text)) => special_text_code(text),
         _ => None,
     }
+}
+
+fn special_text_code(text: &str) -> Option<String> {
+    if text == "insufficient_quota" {
+        return Some("insufficient_quota".to_owned());
+    }
+    if text == "429" || text.starts_with("rate_limit") {
+        return Some("rate_limit_exceeded".to_owned());
+    }
+    None
 }
 
 pub(super) fn status_error_code(status_code: Option<i64>) -> String {
@@ -47,7 +52,7 @@ pub(super) fn status_error_code(status_code: Option<i64>) -> String {
     }
 }
 
-// CPython's str.isdecimal(): every character is of general category Nd, and the text is not empty.
+// CPython's str.isdecimal(): non-empty, every character in category Decimal_Number.
 pub(super) fn is_decimal(text: &str) -> bool {
     !text.is_empty()
         && text

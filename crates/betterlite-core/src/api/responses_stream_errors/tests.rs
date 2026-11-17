@@ -562,6 +562,7 @@ fn code_text(value: &str) -> Option<FailureCode> {
 #[case::spaces_are_not_decimal(code_text("  "), None, Some(404), "  ")]
 #[case::superscript_is_not_decimal(code_text("\u{b2}"), None, Some(404), "\u{b2}")]
 #[case::arabic_digits_are_decimal(code_text("\u{660}"), None, Some(400), "invalid_request_error")]
+#[case::type_429(None, Some("429"), Some(400), "rate_limit_exceeded")]
 fn response_codes_follow_code_then_type_then_status(
     #[case] code: Option<FailureCode>,
     #[case] error_type: Option<&str>,
