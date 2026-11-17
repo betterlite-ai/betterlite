@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 
 use super::TINYFISH_POLL_SECONDS;
 use super::billing::AsyncRun;
-use super::poll::{MonotonicClock, PollClock, PollSleeper, TokioSleeper};
+use super::poll::{MonotonicClock, PollClock as _, PollSleeper as _, TokioSleeper};
 use super::support::{
     Fixture, ScriptedReply, capture_logs, dispatch_handle, fixture, json, kwargs,
     shared_logging_object, standard_text, start_time, unreachable,
@@ -38,7 +38,7 @@ async fn poll_to_completion(fixture: &Fixture, logging_obj: Arc<StreamLoggingObj
 #[tokio::test]
 async fn the_monotonic_clock_reads_the_time_since_its_origin() {
     let origin = Instant::now();
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    sleep(Duration::from_millis(20)).await;
     let clock = MonotonicClock { origin };
 
     assert!(clock.now() >= Duration::from_millis(20));
