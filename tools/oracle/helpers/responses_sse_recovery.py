@@ -1,7 +1,7 @@
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.completion_extras.litellm_responses_transformation.transformation import (
-    LiteLLMResponsesTransformationHandler,
+    LiteLLMResponsesTransformationHandler as ResponsesHandler,
 )
 from litellm.responses.sse_output_recovery import parse_sse_json_chunk
 from pydantic import JsonValue as Json
@@ -30,7 +30,7 @@ def run(input_value: Input) -> Json:
     if recordings is None:
         raise ValueError("the recordings field is required")
     recovered = [
-        LiteLLMResponsesTransformationHandler._recover_output_items_from_raw_sse(recording)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L836
+        ResponsesHandler._recover_output_items_from_raw_sse(recording)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L836
         for recording in recordings
     ]
     return JSON.validate_python(recovered)
