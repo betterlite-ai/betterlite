@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use betterlite_bedrock::s3_access::{TrustedModelCredentials, TrustedValue, frozen_mapping};
+use betterlite_logging::gcs_client::gcs_storage_auth::SERVICE_ACCOUNT_ENV;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileContentRequest;
 use indexmap::IndexMap;
@@ -12,8 +13,6 @@ use crate::vertex_batch_download::records::ConversionContext;
 use crate::vertex_file_content::settings::ReadDeployment;
 
 mod support;
-
-use betterlite_logging::gcs_client::gcs_storage_auth::SERVICE_ACCOUNT_ENV;
 
 use self::support::{
     BUCKET, FILE_ID, Harness, LEGACY_FILE_ID, LEGACY_STORAGE_URL, MODEL_FILE_ID, MODEL_STORAGE_URL,
