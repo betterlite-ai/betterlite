@@ -14,6 +14,7 @@ use betterlite_config::sections::pointfive_params::{
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::user_url::error::UserUrlError;
 use betterlite_models::decisions::Json;
+use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use http::Method;
 use secrecy::SecretString;
 use tokio::task::JoinHandle;
@@ -214,6 +215,23 @@ impl UploadClientSource for LapsingSource {
             return Ok(self.client.clone());
         }
         Err(PointFiveError::MissingApiKey)
+    }
+}
+
+pub(super) struct LapsingSecretSource {
+    pub(super) client: PointFiveUploadClient,
+    pub(super) available: Arc<AtomicBool>,
+}
+
+impl UploadClientSource for LapsingSecretSource {
+    fn upload_client(
+        &self,
+        _params: &PointFiveInitParams,
+    ) -> Result<PointFiveUploadClient, PointFiveError> {
+        if self.available.load(Ordering::SeqCst) {
+            return Ok(self.client.clone());
+        }
+        Err(PointFiveError::Secret(SecretLookupError::GoogleOidcFailed))
     }
 }
 
