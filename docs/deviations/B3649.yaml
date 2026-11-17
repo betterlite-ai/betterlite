@@ -1,0 +1,18 @@
+task: B3649
+deviations:
+  - what: The async and SSE billing pollers run detached, so the relayed response returns before the run turns terminal and the charge lands when it does. Only the blocking run bills inline, from a body that is already the terminal run.
+    why: A run-async answer is pending by definition and an SSE stream ends before the run does, so awaiting the poller in the handler would hold the client's response for up to the polling budget. LiteLLM creates the poller with asyncio.create_task and returns; betterlite spawns it on the server's task tracker and returns the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L191-L201
+  - what: The pollers live on a per-server TaskTracker injected through BillingDeps, not on a module-level task set that a done callback discards from.
+    why: A module-level set is process state, and betterlite passes dependencies in through constructors. TaskTracker drops a task when it finishes, reports itself empty in a test, and its close plus wait is what the server's shutdown drain needs. CancellationWarning replaces _warn_if_cancelled and fires when a poller future is dropped before it finishes, so a cancelled poll is logged once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L55-L68
+  - what: A poller dispatch whose logging state was already taken by another dispatch logs an error and writes no spend row.
+    why: betterlite's success sink owns the logging state for the length of a dispatch and puts it back afterwards, where LiteLLM's Logging object is readable at any time. A second, concurrent dispatch of the same request has no state left to bill, so it is logged and skipped rather than reading a half-built payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L242-L258
+kept_bugs:
+  - what: A poll whose answer parses to a run record that rejects the payload counts as a failed poll and increments the consecutive-failure counter; the counter is not reset even though the HTTP request succeeded.
+    why: LiteLLM's _fetch_run returns None when the run adapter rejects the body, and _poll_until_terminal resets the count only for a non-None run, so twelve unreadable answers end the poll. The task text says a successful fetch that parses to None resets the counter, which LiteLLM's code does not do; betterlite follows the code, since a setup pointing at a broken upstream relies on the give-up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L271-L289
+  - what: "An empty run_id is treated exactly like a missing one: the request is logged with no cost and nothing is polled."
+    why: LiteLLM tests `if not run_id` before it polls and `if run_id` in the SSE fallback, so "" takes the same path as None. betterlite checks for a non-empty id in the same two places, so a submitted run carrying run_id "" bills nothing rather than fetching /v1/runs/.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L185-L200
