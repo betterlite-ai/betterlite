@@ -1,0 +1,2 @@
+  
+	{"output": {"message": {"role": "assistant", "content": [{"text": "seed"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}} 

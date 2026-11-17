@@ -1,22 +1,22 @@
 #![cfg(test)]
 
-use betterlite_oracle_runner::case::load_helper_cases;
-use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
-use std::path::Path;
+use std::path::PathBuf;
 
-#[test]
-fn replays_the_langfuse_otel_case_corpora() {
-    let root = Path::new(ORACLE_DIR).join("cases");
-    let folders = [
-        root.join("logging/langfuse-otel"),
-        root.join("helpers/langfuse-otel"),
-    ];
-    let cases = load_helper_cases(&folders).unwrap();
-    assert!(!cases.is_empty());
-    assert!(cases.iter().all(|helper| {
-        matches!(
-            run_case(&[crate::GROUP], helper, false).unwrap(),
-            HelperRun::Match
-        )
-    }));
+use rstest::rstest;
+
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, run_helper_cases};
+
+#[rstest]
+fn replays_the_langfuse_otel_case_corpora(
+    #[base_dir = "../../.."]
+    #[files("cases/logging/langfuse-otel/*.yaml")]
+    #[files("cases/helpers/langfuse-otel/*.yaml")]
+    path: PathBuf,
+) {
+    let cases = load_helper_cases(&[path]).unwrap();
+    assert!(matches!(
+        run_helper_cases(&[crate::GROUP], &cases, false).unwrap(),
+        HelperRun::Match
+    ));
 }
