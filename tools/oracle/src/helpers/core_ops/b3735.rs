@@ -126,11 +126,6 @@ impl Wire {
             scanned: Mutex::new(None),
         })
     }
-
-    fn scanned_content(&self) -> Option<String> {
-        let scanned = self.scanned.lock().unwrap_or_else(PoisonError::into_inner);
-        scanned.clone()
-    }
 }
 
 impl StreamWire for Wire {
@@ -281,9 +276,14 @@ async fn evaluate(input: &Input) -> HelperResult {
     .await
     .or_value_error()?;
     let views = items.iter().map(view::item).collect::<Vec<Value>>();
+    let scanned = wire
+        .scanned
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     Ok(json!({
         "items": views,
-        "scanned": wire.scanned_content(),
+        "scanned": scanned,
         "metadata": view::metadata(&data),
     }))
 }

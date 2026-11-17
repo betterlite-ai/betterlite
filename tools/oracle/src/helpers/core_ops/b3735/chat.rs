@@ -25,7 +25,10 @@ struct State {
     seen: bool,
 }
 
-// LiteLLM's stream_chunk_builder, reduced to the fields a scan and a replay read.
+// LiteLLM's stream_chunk_builder, reduced to the fields a scan and a replay read: driving
+// betterlite's full builder needs the sinks in chat_response_stream_items' private fixtures
+// module, and its adapter blocks on a runtime this helper already runs inside, so reaching it
+// would mean copying that code out of another task's files.
 pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
     let mut state = State::default();
     for chunk in chunks {
