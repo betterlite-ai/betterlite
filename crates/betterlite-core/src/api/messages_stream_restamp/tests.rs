@@ -238,6 +238,17 @@ fn torn_after_ping() -> RestampCase {
     bytes(b""),
 ))]
 #[case::torn_after_ping(torn_after_ping())]
+#[case::frame_without_data_keeps_the_stream_armed(restamp_case(
+    vec![
+        text("event: comment\n\n"),
+        text(&start_frame("upstream-model")),
+    ],
+    vec![
+        bytes(b"event: comment\n\n"),
+        bytes(start_frame(REQUESTED_MODEL).as_bytes()),
+    ],
+    bytes(b""),
+))]
 fn ping_frame(#[case] case: RestampCase) {
     let input = MessagesStreamRestampInput {
         requested_model: REQUESTED_MODEL.to_owned(),
@@ -271,6 +282,10 @@ fn splitlines_keeps_python_line_endings() {
             "five\u{2028}",
             "six",
         ]
+    );
+    assert_eq!(
+        splitlines_keepends("one\n\ntwo"),
+        vec!["one\n", "\n", "two"]
     );
 }
 
