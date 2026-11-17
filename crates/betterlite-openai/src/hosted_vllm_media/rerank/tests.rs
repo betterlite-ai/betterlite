@@ -14,6 +14,7 @@ use super::{
     validate_environment, validated_truncation_params,
 };
 use crate::api::rerank_contracts::records::{RerankDocument, TruncationSide};
+use crate::hosted_vllm_media::API_KEY_ENV;
 use crate::openai_base_config::Headers;
 use crate::together_ai_rerank::ReturnDocuments;
 
@@ -24,7 +25,7 @@ fn value(text: &str) -> Value {
 }
 
 fn environment(key: Option<&str>) -> Environment {
-    key.map(|value| BTreeMap::from([(String::from(super::API_KEY_ENV), String::from(value))]))
+    key.map(|value| BTreeMap::from([(String::from(API_KEY_ENV), String::from(value))]))
         .unwrap_or_default()
 }
 
