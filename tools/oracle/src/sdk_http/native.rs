@@ -133,6 +133,7 @@ pub(crate) fn executor(
         mock_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
             .map_err(|error| SdkHttpError::Invalid(error.to_string()))?,
+        bundled_catalog: Arc::default(),
     })
 }
 
@@ -157,7 +158,9 @@ pub(crate) async fn send(
         Ok(outcome) => Ok(SdkResult::Success {
             value: completion(outcome.response),
         }),
-        Err(ChatError::Provider { response }) => project_failure(&chat.model, &response),
+        Err(ChatError::Provider { response }) => {
+            failure(&chat.model, &response).map(SdkResult::Failure)
+        }
         Err(other) => Err(SdkHttpError::Chat(Box::new(other))),
     }
 }
@@ -180,7 +183,7 @@ fn completion(response: ChatResponse) -> ChatCompletion {
 }
 
 // the OpenAI SDK reads type/param/code from `body["error"]` when it is a mapping, else from the body itself
-fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult, SdkHttpError> {
+pub(crate) fn failure(model: &str, response: &UpstreamResponse) -> Result<Failure, SdkHttpError> {
     let text = String::from_utf8(response.body.clone()).map_err(SdkHttpError::ErrorBodyUtf8)?;
     let flat = match serde_json::from_str::<Value>(&text).ok() {
         Some(Value::Object(mut object)) => match object.remove("error") {
@@ -204,14 +207,14 @@ fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult
     let class = map_openai_exception(&input);
     let (name, message) = class_name(&class)?;
     let metadata = class.metadata();
-    Ok(SdkResult::Failure(Failure {
+    Ok(Failure {
         class: name.to_owned(),
         status: metadata.status_code,
         kind: field(metadata.error_type),
         param: field(metadata.param),
         code: Some(metadata.openai_code),
         message: message.to_owned(),
-    }))
+    })
 }
 
 fn field(wire: WireField) -> Nullable {

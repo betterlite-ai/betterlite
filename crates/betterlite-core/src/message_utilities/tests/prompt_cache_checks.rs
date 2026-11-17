@@ -98,8 +98,8 @@ fn cache_request<'request>(
 
 #[tokio::test]
 async fn prompt_cache_requires_messages_or_tools() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let settings = PromptCacheSettings::default();
     // a zero minimum is met by any count, so only the count error for missing messages makes this false
     let mut nothing = cache_request("gpt-4o", None);
@@ -117,8 +117,8 @@ async fn prompt_cache_requires_messages_or_tools() {
 
 #[tokio::test]
 async fn prompt_cache_compares_the_count_with_the_minimum() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let messages = support::values(r#"[{"role": "user", "content": "hello world"}]"#);
     let mut below = cache_request("gpt-4o", Some(&messages));
     below.min_token_count = Some(5);
@@ -149,8 +149,8 @@ async fn prompt_cache_prefixes_the_model_with_the_provider(
     #[case] provider: Option<&str>,
     #[case] expected: bool,
 ) {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let words = "word ".repeat(1100);
     let messages = support::values(&format!(
         r#"[{{"role": "user", "content": "{}"}}]"#,
@@ -172,8 +172,8 @@ async fn prompt_cache_prefixes_the_model_with_the_provider(
 
 #[tokio::test]
 async fn prompt_cache_returns_false_when_the_token_count_fails() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let messages = support::values(
         r#"[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/x.png"}}]}]"#,
     );

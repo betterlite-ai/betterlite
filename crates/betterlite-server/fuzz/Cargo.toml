@@ -255,3 +255,10 @@ path = "fuzz_targets/tinyfish_sse_frames.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "key_fields"
+path = "fuzz_targets/key_fields.rs"
+test = false
+doc = false
+bench = false

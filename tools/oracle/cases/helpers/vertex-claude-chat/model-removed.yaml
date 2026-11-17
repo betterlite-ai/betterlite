@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-claude-chat-model-removed
+call:
+  vertex_claude_chat:
+    fixture:
+      model_cost:
+        claude-haiku-4-5: {litellm_provider: vertex_ai}
+      packaged: {}
+    steps:
+      - {function: transform_request, model: claude-haiku-4-5, messages: [{role: user, content: hi}], optional_params: {}, headers: {}, drop_params: false, global_drop_params: false}
+      - {function: transform_request, model: claude-haiku-4-5, messages: [{role: user, content: hi}], optional_params: {output_format: {type: json_schema, schema: {type: object}}}, headers: {}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

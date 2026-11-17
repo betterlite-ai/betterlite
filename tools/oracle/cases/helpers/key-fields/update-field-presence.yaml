@@ -1,0 +1,21 @@
+kind: helper
+name: update_field_presence
+call:
+  key_fields:
+    calls:
+      - {function: update, body: {key: "k"}}
+      - {function: update, body: {key: "k", team_id: ""}}
+      - {function: update, body: {key: "k", organization_id: ""}}
+      - {function: update, body: {key: "k", project_id: ""}}
+      - {function: update, body: {key: "k", project_id: null}}
+      - {function: update, body: {key: "k", team_id: null}}
+      - {function: update, body: {key: "k", max_budget: ""}}
+      - {function: update, body: {key: "", key_alias: ""}}
+      - {function: update, body: {key_alias: ""}}
+      - {function: update, body: {}}
+      - {function: update, body: {key: null, key_alias: null}}
+      - {function: update, body: {key_alias: "a", duration: "1d", spend: 2.5}}
+      - {function: update, body: {key: "k", team_id: "", organization_id: "", project_id: ""}}
+      - {function: update, body: {key: "k", metadata: {}, config: {}, permissions: {}}}
+env: {}
+compare: {ignore: []}
