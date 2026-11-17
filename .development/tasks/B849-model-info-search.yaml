@@ -31,7 +31,7 @@ description: >-
   Normalize datetime strings with fromisoformat compatibility, no whitespace stripping, replacing
   uppercase Z with +00:00 only if the string ends in Z. Naive values assume UTC; aware values convert
   to UTC. None, other types and caught ValueError/AttributeError yield None. decode_model_info_datetime
-  is the external string boundary; add a B770 fuzz target and seeds for Z, offsets, naive dates,
+  is the external string boundary; add a B003 fuzz target and seeds for Z, offsets, naive dates,
   invalid dates, whitespace and Unicode, comparing accepted forms to the pinned helper.
 
   Sort only model_name, created_at, updated_at, costs or status; other/absent fields return input.

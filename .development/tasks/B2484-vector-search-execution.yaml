@@ -4,7 +4,7 @@ description: >-
   Own _pre_call_direct_vector_store_search and complete sync/async vector_store_search_handler methods
   at llm_http_handler.py:9819-10100. Implement core::api::vector_search_execution beneath B1064's SDK
   wrapper. B1058/B1059 provide provider/executor contracts, B173 clients, B595 AWS signing dispatch,
-  B012 logs and B2402 _handle_error. Direct providers bypass HTTP setup and call their execute/aexecute
+  B249 logs and B2402 _handle_error. Direct providers bypass HTTP setup and call their execute/aexecute
   method with id,query,optional params,logging,litellm_params,embedding executor and timeout.
 
   HTTP providers reuse a mode-matching client or a pool with ssl_verify=null by default, validate headers

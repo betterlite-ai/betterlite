@@ -4,7 +4,7 @@ description: >-
   Implement _prepare_azure_extra_body, _build_fine_tuning_job_data and complete sync/async create functions
   in core::api::fine_tuning_create. B2487 owns _resolve_fine_tuning_timeout and the loaded settings view;
   call B518 OpenAI, B542 Azure or B1384 Vertex execution directly. GenericLiteLLMParams is B010 and
-  client/logging integration B012. Register FineTuningCreate in B2401 so actual SDK calls send HTTP to a
+  client/logging integration B5367. Register FineTuningCreate in B2401 so actual SDK calls send HTTP to a
   mock provider. Pure helper behavior has native tests and is also observed in those request bodies.
   model/training_file are required, hyperparameters defaults {}, all suffix/validation_file/integrations/
   seed/extra_headers/extra_body default null, custom_llm_provider defaults openai. Only true async flag
