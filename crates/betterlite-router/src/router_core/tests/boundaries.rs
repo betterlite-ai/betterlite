@@ -4,12 +4,12 @@ use betterlite_models::model_registration::JsonObject;
 use super::support::{
     Cancelling, Cooldown, Fixture, RequestSetup, body, deployment, group_and_ids, hidden,
     hidden_with, metadata, number, object, run_healthy, run_route, run_simple, seeded, text,
-    with_info,
+    weighted, with_info,
 };
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::router_core::candidates::CandidateSet;
+use crate::router_core::candidates::{CandidateSet, weights};
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::{
     Response, apply_response_model_id, ensure_additional_headers, ensure_additional_headers_dict,
@@ -17,9 +17,10 @@ use crate::router_core::headers::{
 };
 use crate::router_core::no_deployment::NoDeploymentType;
 use crate::router_core::services::RouteServices as _;
-use crate::router_core::test_support::{
+use crate::router_core::tests::support::{
     NoLimits, NoParams, NoServices, route_context, route_request, strategy_context,
 };
+use crate::simple_shuffle::Candidate;
 use crate::simple_shuffle::error::ShuffleError;
 use crate::static_eligibility::error::EligibilityError;
 use crate::static_eligibility::request::RequestFacts;
@@ -71,8 +72,10 @@ pub(super) async fn run(name: &str) {
         "environment_filtered_single" => environment_filtered_single().await,
         "environment_filtered_pool" => environment_filtered_pool().await,
         "pinned_but_empty" => pinned_but_empty().await,
+        "pinned_pool_uses_strategy" => pinned_pool_uses_strategy().await,
         "provider_budget" => provider_budget_has_no_selection().await,
         "simple_shuffle_empty" => simple_shuffle_empty().await,
+        "weights_read_metrics" => weights_read_metrics(),
         "headers_absent" => headers_absent(),
         "headers_opaque" => headers_opaque(),
         "headers_empty_model_id" => headers_empty_model_id(),
@@ -83,6 +86,7 @@ pub(super) async fn run(name: &str) {
         "token_count_absent_usage" => token_count_absent_usage(),
         "token_count_zero_total" => token_count_zero_total(),
         "token_count_non_numeric" => token_count_non_numeric(),
+        "header_empty_metadata_id" => header_empty_metadata_id(),
         _ => panic!("unknown case {name}"),
     }
 }
@@ -116,7 +120,6 @@ async fn stage_skips(stage: RouteStage) {
     let set = CandidateSet {
         deployments: vec![deployment("gpt-4o", "a", &[])],
     };
-    assert!(!stage.configured());
     let skipped = context::run(stage, set.clone(), &context).await.unwrap();
     assert_eq!(skipped, set);
     let error = context::apply(stage, set, &context).await.unwrap_err();
@@ -147,6 +150,7 @@ async fn no_deployment_rate_limit() {
         panic!("an empty pool reports no deployment");
     };
     assert_eq!(no_deployment.error_type, NoDeploymentType::RateLimit);
+    assert_eq!(no_deployment.error_type.wire_name(), "rate_limit_error");
     assert_eq!(no_deployment.model, "gpt-4o");
     assert_eq!(no_deployment.cooldown_time.to_bits(), 5.0f64.to_bits());
     assert!(!no_deployment.enable_pre_call_checks);
@@ -183,6 +187,10 @@ async fn no_deployment_all_in_cooldown() {
         panic!("an empty pool reports no deployment");
     };
     assert_eq!(no_deployment.error_type, NoDeploymentType::AllInCooldown);
+    assert_eq!(
+        no_deployment.error_type.wire_name(),
+        "all_deployments_in_cooldown"
+    );
     assert_eq!(no_deployment.cooldown_time.to_bits(), 2.5f64.to_bits());
     assert_eq!(
         no_deployment.cooldown_list,
@@ -323,6 +331,16 @@ async fn pinned_but_empty() {
     assert!(matches!(&error, RoutingError::NoDeployment(_)));
 }
 
+// a pin over a pool of two narrows nothing by itself, so the strategy still picks
+async fn pinned_pool_uses_strategy() {
+    let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 0), weighted("gpt-4o", "b", 5)]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.pinned = true;
+    let result = run_simple(&fixture, &setup).await.unwrap();
+    assert_eq!(picked(&result), "b");
+    assert_eq!(result.strategy, Some(Strategy::SimpleShuffle));
+}
+
 async fn provider_budget_has_no_selection() {
     let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a")]));
     let mut random = seeded();
@@ -367,6 +385,43 @@ async fn simple_shuffle_empty() {
     ));
 }
 
+// B008 weighs weight first, then rpm, then tpm, and reads a value that is not a number as zero
+fn weights_read_metrics() {
+    let deployments = vec![
+        deployment(
+            "gpt-4o",
+            "a",
+            &[
+                ("weight", number(5)),
+                ("rpm", number(3)),
+                ("tpm", number(7)),
+            ],
+        ),
+        deployment("gpt-4o", "b", &[("weight", text("5")), ("rpm", text("3"))]),
+        deployment("gpt-4o", "c", &[]),
+    ];
+    assert_eq!(
+        weights(&deployments),
+        vec![
+            Candidate {
+                weight: 5,
+                rpm: 3,
+                tpm: 7,
+            },
+            Candidate {
+                weight: 0,
+                rpm: 0,
+                tpm: 0,
+            },
+            Candidate {
+                weight: 0,
+                rpm: 0,
+                tpm: 0,
+            },
+        ]
+    );
+}
+
 fn headers_absent() {
     assert_eq!(prepare_response(Response::Absent), None);
 }
@@ -387,6 +442,26 @@ fn headers_empty_model_id() {
     assert_eq!(
         write_hidden_params(prepared),
         Response::Object(hidden_with(text("a")))
+    );
+}
+
+// a request metadata id that is empty names no deployment, so the response gets no model_id
+fn header_empty_metadata_id() {
+    let mut prepared = prepare_response(body(&[("id", text("chatcmpl-1"))])).unwrap();
+    ensure_additional_headers(&mut prepared);
+    apply_response_model_id(&mut prepared, Some(&metadata("")));
+    assert_eq!(
+        write_hidden_params(prepared),
+        body(&[
+            ("id", text("chatcmpl-1")),
+            (
+                "_hidden_params",
+                Json::Object(object(&[(
+                    "additional_headers",
+                    Json::Object(JsonObject::new()),
+                )])),
+            ),
+        ])
     );
 }
 

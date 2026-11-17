@@ -2,7 +2,7 @@
 
 mod behaviors;
 mod boundaries;
-mod support;
+pub(crate) mod support;
 
 use rstest::rstest;
 
@@ -64,11 +64,14 @@ async fn router_core_behaviors(#[case] name: &str) {
 #[case::environment_filtered_single("environment_filtered_single")]
 #[case::environment_filtered_pool("environment_filtered_pool")]
 #[case::pinned_but_empty("pinned_but_empty")]
+#[case::pinned_pool_uses_strategy("pinned_pool_uses_strategy")]
 #[case::provider_budget("provider_budget")]
 #[case::simple_shuffle_empty("simple_shuffle_empty")]
+#[case::weights_read_metrics("weights_read_metrics")]
 #[case::headers_absent("headers_absent")]
 #[case::headers_opaque("headers_opaque")]
 #[case::headers_empty_model_id("headers_empty_model_id")]
+#[case::header_empty_metadata_id("header_empty_metadata_id")]
 #[case::headers_non_text_model_id("headers_non_text_model_id")]
 #[case::headers_non_text_model_id_kept("headers_non_text_model_id_kept")]
 #[case::headers_non_object_map("headers_non_object_map")]
