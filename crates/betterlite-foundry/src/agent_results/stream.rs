@@ -105,7 +105,7 @@ pub async fn open_stream(
     body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
 ) -> Result<AgentChunkStream, AgentResultError> {
     if setup.status != STATUS_OK && setup.status != STATUS_CREATED {
-        let bytes = read_body(body, MAX_ERROR_BODY_BYTES).await?;
+        let bytes = read_body(body, setup.status, MAX_ERROR_BODY_BYTES).await?;
         let Ok(text) = String::from_utf8(bytes) else {
             return Err(AgentResultError::StreamFailedNotText {
                 status: setup.status,
@@ -121,16 +121,17 @@ pub async fn open_stream(
 
 async fn read_body(
     mut body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
+    status: u16,
     limit: usize,
 ) -> Result<Vec<u8>, AgentResultError> {
     let mut collected = Vec::new();
-    while let Some(chunk) = body.next().await {
-        let chunk = chunk?;
+    while let Some(received) = body.next().await {
+        let chunk = received?;
         let Some(total) = collected.len().checked_add(chunk.len()) else {
-            return Err(AgentResultError::BodyTooLarge { limit });
+            return Err(AgentResultError::BodyTooLarge { status, limit });
         };
         if total > limit {
-            return Err(AgentResultError::BodyTooLarge { limit });
+            return Err(AgentResultError::BodyTooLarge { status, limit });
         }
         collected.extend_from_slice(&chunk);
     }

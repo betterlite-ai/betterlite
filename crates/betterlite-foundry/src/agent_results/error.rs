@@ -13,7 +13,7 @@ pub enum AgentResultError {
     #[error("the streaming response body could not be read")]
     Body(#[from] HttpError),
     #[error("the streaming response body is larger than {limit} bytes")]
-    BodyTooLarge { limit: usize },
+    BodyTooLarge { status: u16, limit: usize },
     #[error("a streaming response line is longer than {limit} bytes")]
     LineTooLong { limit: usize },
     #[error(transparent)]
@@ -25,10 +25,10 @@ impl AgentResultError {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
-            Self::StreamFailed { status, .. } | Self::StreamFailedNotText { status } => {
-                Some(*status)
-            }
-            Self::Body(_) | Self::BodyTooLarge { .. } | Self::LineTooLong { .. } => None,
+            Self::StreamFailed { status, .. }
+            | Self::StreamFailedNotText { status }
+            | Self::BodyTooLarge { status, .. } => Some(*status),
+            Self::Body(_) | Self::LineTooLong { .. } => None,
             Self::Request(error) => error.status(),
         }
     }
