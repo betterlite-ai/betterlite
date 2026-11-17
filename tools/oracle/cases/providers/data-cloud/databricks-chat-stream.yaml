@@ -1,0 +1,16 @@
+kind: helper
+name: databricks-chat-stream
+call:
+  b8330:
+    op: chat
+    provider: databricks
+    model: databricks-meta-llama-3-3-70b-instruct
+    messages:
+      - role: user
+        content: hi
+    api_base: "{{upstream}}/serving-endpoints"
+    api_key: oracle-databricks-key
+    stream: true
+env: {}
+compare:
+  ignore: []

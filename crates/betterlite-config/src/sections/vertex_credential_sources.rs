@@ -21,12 +21,29 @@ struct RawSettings {
     vertex_location: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+pub const VIDEO_DURATION_ENV: &str = "DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS";
+
+const DEFAULT_VIDEO_DURATION_SECONDS: i64 = 8;
+
+#[derive(Debug, Clone)]
 pub struct Settings {
     pub project: Option<String>,
     pub location: Option<String>,
     pub credentials: Option<ConfiguredCredentials>,
     pub adc: AdcEnvironment,
+    pub default_video_duration_seconds: i64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            project: None,
+            location: None,
+            credentials: None,
+            adc: AdcEnvironment::default(),
+            default_video_duration_seconds: DEFAULT_VIDEO_DURATION_SECONDS,
+        }
+    }
 }
 
 pub type VertexSettings = Settings;
@@ -57,6 +74,12 @@ impl Section for Raw {
                     .filter(|text| !text.is_empty()),
             )?,
             adc: adc_environment(lookup),
+            // LiteLLM reads int(os.getenv(name, 8)) once at import; the loader reads it per load
+            default_video_duration_seconds: match lookup.lookup(VIDEO_DURATION_ENV) {
+                Some(text) => betterlite_env::number::<i64>(VIDEO_DURATION_ENV, &text)?
+                    .unwrap_or(DEFAULT_VIDEO_DURATION_SECONDS),
+                None => DEFAULT_VIDEO_DURATION_SECONDS,
+            },
         })
     }
 }

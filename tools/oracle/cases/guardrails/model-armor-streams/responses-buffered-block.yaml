@@ -1,0 +1,61 @@
+kind: helper
+name: responses-buffered-block
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: responses
+    chunks:
+    - type: response.created
+      response:
+        id: resp_1
+        created_at: 1000
+        model: gpt-5
+        object: response
+        status: in_progress
+        output: []
+    - type: response.output_text.delta
+      item_id: msg_1
+      output_index: 0
+      content_index: 0
+      delta: 'The '
+    - type: response.output_text.delta
+      item_id: msg_1
+      output_index: 0
+      content_index: 0
+      delta: answer
+    - type: response.reasoning_summary_text.delta
+      item_id: rs_1
+      output_index: 1
+      summary_index: 0
+      delta: 'thinking '
+    - type: response.function_call_arguments.delta
+      item_id: fc_1
+      output_index: 2
+      delta: '{"secret":'
+    - type: response.function_call_arguments.delta
+      item_id: fc_1
+      output_index: 2
+      delta: 1}
+    - type: response.completed
+      response:
+        id: resp_1
+        created_at: 1000
+        model: gpt-5
+        object: response
+        status: completed
+        output:
+        - type: message
+          id: msg_1
+          status: completed
+          role: assistant
+          content:
+          - type: output_text
+            text: The answer
+            annotations: []
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "MATCH_FOUND", "filterResults": {"rai": {"raiFilterResult": {"matchState": "MATCH_FOUND"}}}}}'
+env: {}
+compare:
+  ignore: []

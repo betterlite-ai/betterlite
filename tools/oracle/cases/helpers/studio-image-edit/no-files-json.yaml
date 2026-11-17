@@ -1,0 +1,28 @@
+kind: helper
+name: studio-image-edit-no-files-json
+call:
+  studio_image_edit:
+    factories: []
+    requests:
+      - model: gemini-2.5-flash-image
+        prompt: repaint the sky
+        image: {kind: one, record: {kind: bytes, data_base64: iVBORw0KGgo=}}
+        params: {n: 2}
+        headers: {x-extra: kept, Content-Type: text/plain}
+        api_key: explicit-key
+        api_base: https://studio.test/v1beta/
+    responses: []
+    costs: []
+calls:
+  - studio_image_edit:
+      factories: []
+      requests:
+        - model: gemini-2.5-flash-image
+          prompt: null
+          image: null
+          params: {}
+          env: {GEMINI_API_KEY: env-key}
+      responses: []
+      costs: []
+env: {}
+compare: {ignore: []}

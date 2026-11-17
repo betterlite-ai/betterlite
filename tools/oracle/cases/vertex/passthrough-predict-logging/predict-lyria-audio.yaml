@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-predict-lyria-audio
+call:
+  b3639:
+    operation: predict_audio
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/lyria-002:predict
+    status: 200
+    body:
+      predictions:
+        - audioContent: QUJD
+        - bytesBase64Encoded: REVG
+    request_body: null
+env: {}
+compare: {ignore: []}

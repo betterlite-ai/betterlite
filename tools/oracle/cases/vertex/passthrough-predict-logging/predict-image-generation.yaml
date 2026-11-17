@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-predict-image-generation
+call:
+  b3639:
+    operation: predict_image
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/imagen-3.0-generate-002:predict
+    status: 200
+    body:
+      predictions:
+        - bytesBase64Encoded: aGVsbG8=
+          mimeType: image/png
+    request_body: null
+env: {}
+compare: {ignore: []}

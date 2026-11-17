@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-image-edits-mai-edit-prompt-images
+call:
+  foundry_image_edits:
+    supported: [MAI-Image-2.5]
+    transforms:
+      - {model: MAI-Image-2.5, prompt: paint, images: [null, {kind: bytes, text: "png body"}, {kind: bytes, text: "jpeg body"}], options: {image: dropped, mask: dropped, n: 2}}
+      - {model: MAI-Image-2.5, image: {kind: bytes, text: only}, options: {prompt: option}}
+      - {model: MAI-Image-2.5, prompt: positional, images: [null, null], options: {prompt: option, model: other-model}}
+      - {model: MAI-Image-2.5, prompt: paint, images: [], options: {}}
+      - {model: MAI-Image-2.5, options: {}}
+env: {}
+compare: {ignore: []}

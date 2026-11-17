@@ -1,14 +1,14 @@
 id: B1382
 milestone: M3 providers
 title: Gemini Live server frame dispatch and cross-frame state
-status: todo
+status: done
 depends_on: [B1378, B1379, B1380, B1381, B1394, B1004, B171]
 file: tasks/B1382-gemini-live-server-frames.yaml
 covers:
   - "litellm/llms/gemini/realtime/transformation.py"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2241

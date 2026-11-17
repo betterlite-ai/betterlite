@@ -1,0 +1,20 @@
+kind: helper
+name: gcs-content-rejected
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: content_response
+        response:
+          done: true
+          response:
+            videos:
+              - {gcsUri: 'gs://bucket/video.mp4'}
+      - function: content_response
+        response:
+          done: false
+          response:
+            videos:
+              - {bytesBase64Encoded: QUJD}
+env: {}
+compare: {ignore: []}

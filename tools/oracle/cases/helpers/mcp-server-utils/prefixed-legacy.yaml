@@ -1,0 +1,12 @@
+kind: helper
+name: mcp-server-utils-prefixed-legacy
+call:
+  b6594:
+    function: is_tool_name_prefixed
+    tool_name: text-to-speech
+calls:
+  - b6594:
+      function: is_tool_name_prefixed
+      tool_name: texttospeech
+env: {}
+compare: {ignore: []}

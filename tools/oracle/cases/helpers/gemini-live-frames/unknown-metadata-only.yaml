@@ -1,0 +1,10 @@
+kind: helper
+name: unknown-metadata-only
+call:
+  gemini_live_frames:
+    frames:
+      - '{"usageMetadata": {"promptTokenCount": 2}, "sessionResumptionUpdate": {"newHandle": "h"}}'
+      - '{"serverContent": {}}'
+calls: []
+env: {}
+compare: {ignore: []}

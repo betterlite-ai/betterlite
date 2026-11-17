@@ -117,5 +117,6 @@ fn resolved_settings(scenario: &Scenario) -> VertexSettings {
             .or_else(|| read("VERTEX_LOCATION")),
         credentials,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     }
 }

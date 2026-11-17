@@ -1,0 +1,18 @@
+task: B980
+deviations:
+  - what: The writer stops collecting once the stream passes the resolved ApiLimits, and writes nothing for it, where LiteLLM keeps every chunk of the stream in collected_chunks.
+    why: betterlite bounds the copy it holds for a stream it may never cache; the task injects B1087's ApiLimits for exactly this. A stream inside the limits collects the same chunks LiteLLM collects, so the cache write is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L77-L93
+  - what: The writer has no chunks, messages or model proxies and copies no _hidden_params, where LiteLLM reads them off the inner stream with getattr and isinstance.
+    why: betterlite's MessagesProviderStream is a typed stream with no duck-typed attributes to proxy, and docs/compatibility.md stops parity at the types LiteLLM declares; has_buffered_provider_output, the one probe the writer owns, is ported as buffered_provider_output().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L48-L72
+  - what: The cache-write failure log line carries Rust's Utf8Error text where LiteLLM logs CPython's UnicodeDecodeError.
+    why: the level and the message prefix match, and each language reports its own decoder's error; neither text is a typed API field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L111-L115
+kept_bugs:
+  - what: The closed-block decider disarms the restamper on the first frame that merely contains message_start anywhere, so a content delta whose text mentions message_start ends restamping for the rest of the stream.
+    why: copied on purpose; LiteLLM's decider is a substring scan and a working setup gets its events through it as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L151-L174
+  - what: A restamped frame is split on Python's universal line breaks, so U+2028, U+001C and the other characters str.splitlines breaks on end a line inside a JSON string.
+    why: copied on purpose; the split decides which line gets re-encoded, and a working setup's frames are newline-delimited ASCII.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L54-L59
