@@ -1,0 +1,33 @@
+kind: helper
+name: mcp-connector-import-aliases
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        test-camel:
+          url: https://camel.example/mcp
+          authorizationToken: test-token
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcp_servers:
+          test-snake:
+            url: https://snake.example/mcp
+            authorization_token: test-token
+        mcpServers:
+          test-ignored:
+            url: https://ignored.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          test-errors:
+            type: grpc
+            url: https://grpc.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

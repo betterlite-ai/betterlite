@@ -2304,6 +2304,7 @@ dependencies = [
  "futures-util",
  "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "pem",
  "regex",
  "rmcp",
@@ -2331,6 +2332,7 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",
