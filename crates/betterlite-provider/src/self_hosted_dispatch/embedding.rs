@@ -18,8 +18,7 @@ const XINFERENCE_API_KEY: &str = "XINFERENCE_API_KEY";
 const XINFERENCE_DEFAULT_API_BASE: &str = "http://127.0.0.1:9997/v1";
 const XINFERENCE_DEFAULT_KEY: &str = "stub-xinference-key";
 
-// main.py's embedding arms: five providers resolve their own base and key, and llamafile/lm_studio go through B1440;
-// the skip keeps the exhaustive no-op arm within clippy's 40-line limit
+// main.py's embedding arms: five resolve base and key, llamafile/lm_studio go through B1440; the skip keeps the exhaustive no-op arm within clippy's 40-line limit
 #[rustfmt::skip]
 #[must_use]
 pub fn dispatch(
