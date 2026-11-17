@@ -157,7 +157,7 @@ async fn incremental() {
     let second_text = String::from_utf8(second_bytes.to_vec()).expect("utf8");
     assert!(second_text.contains(r#""text":" there""#), "{second_text}");
     let done = frames.next().await.expect("done frame").expect("bytes");
-    assert_eq!(&done[..], DONE_FRAME.as_bytes());
+    assert_eq!(&*done, DONE_FRAME.as_bytes());
     assert!(frames.next().await.is_none());
 }
 
