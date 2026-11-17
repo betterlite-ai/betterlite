@@ -13,7 +13,7 @@ use crate::proxy_request_contracts::{
 const REQUIRED: [&str; 4] = ["user_id", "user_info", "keys", "teams"];
 
 // LiteLLM declares every key required, and only user_id and user_info may be null.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct UserInfoResponse {
     #[serde(default)]
     pub user_id: Option<String>,

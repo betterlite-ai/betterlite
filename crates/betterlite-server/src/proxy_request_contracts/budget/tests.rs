@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -58,7 +59,9 @@ fn decodes_every_declared_type() {
     let reset = request.budget_reset_at.expect("a reset time");
     assert_eq!(
         reset.utc(),
-        "2024-06-01T00:00:00Z".parse().expect("a fixed time")
+        "2024-06-01T00:00:00Z"
+            .parse::<DateTime<Utc>>()
+            .expect("a fixed time")
     );
 }
 

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -98,7 +99,9 @@ fn user_info_v2_reads_every_field() {
     let reset = response.budget_reset_at.expect("a reset time");
     assert_eq!(
         reset.utc(),
-        "2024-06-01T00:00:00Z".parse().expect("a fixed time")
+        "2024-06-01T00:00:00Z"
+            .parse::<DateTime<Utc>>()
+            .expect("a fixed time")
     );
     assert!(response.metadata.is_some());
     assert!(response.created_at.is_some());
