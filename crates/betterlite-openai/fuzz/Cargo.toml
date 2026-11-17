@@ -574,6 +574,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "hosted_vllm_rerank_reply"
+path = "fuzz_targets/hosted_vllm_rerank_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "minimax_speech_reply"
 path = "fuzz_targets/minimax_speech_reply.rs"
 test = false

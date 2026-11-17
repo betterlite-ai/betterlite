@@ -1,0 +1,34 @@
+kind: helper
+name: hosted-vllm-media-rerank-request
+call:
+  b8151:
+    function: "rerank_request"
+    calls:
+      - model: "my-model"
+        mapped:
+          query: "q"
+          documents: ["first", {"text": "second"}]
+          top_n: 2
+          rank_fields: ["title"]
+          return_documents: true
+          instruction: "rank by relevance"
+          max_tokens_per_doc: 8
+          truncate_prompt_tokens: 4
+          truncation_side: "right"
+          max_tokens_per_query: 6
+      - model: "my-model"
+        mapped: {query: "q", documents: ["only"], return_documents: false}
+      - model: "my-model"
+        mapped:
+          query: "q"
+          documents: ["first"]
+          top_n: null
+          rank_fields: null
+          return_documents: null
+          instruction: null
+          max_tokens_per_doc: null
+          truncate_prompt_tokens: null
+          truncation_side: null
+          max_tokens_per_query: null
+env: {}
+compare: {ignore: []}
