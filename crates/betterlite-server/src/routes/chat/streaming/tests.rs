@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -294,9 +295,15 @@ async fn stream_error_ends_relay(#[case] input: Result<Vec<u8>, HttpError>) {
         model: String::from("group"),
         include_usage: false,
     };
-    let (event, remaining) = next_frame(Pump::new(source)).await.unwrap();
-    event.unwrap_err();
-    assert!(next_frame(remaining).await.is_none());
+    let (event, remaining) = next_frame::<RelaySource, io::Error>(Pump::new(source))
+        .await
+        .unwrap();
+    let _failure = event.unwrap_err();
+    assert!(
+        next_frame::<RelaySource, io::Error>(remaining)
+            .await
+            .is_none()
+    );
 }
 
 #[rstest]
