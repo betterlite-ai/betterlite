@@ -61,7 +61,12 @@ where
 #[case::stage_model_rate_limits(boundaries::stage_skips(RouteStage::ModelRateLimits))]
 #[case::stage_tag_routing(boundaries::stage_skips(RouteStage::TagRouting))]
 #[case::stage_access_windows(boundaries::stage_skips(RouteStage::AccessWindows))]
-#[case::stage_routing_groups(boundaries::stage_skips(RouteStage::RoutingGroups))]
+#[case::routing_group_priority_reaches_the_pick(
+    boundaries::routing_group_priority_reaches_the_pick()
+)]
+#[case::routing_group_members_missing_from_the_pool_leave_none(
+    boundaries::routing_group_members_missing_from_the_pool_leave_none()
+)]
 #[case::stage_deployment_affinity(boundaries::stage_skips(RouteStage::DeploymentAffinity))]
 #[case::stage_prompt_affinity(boundaries::stage_skips(RouteStage::PromptAffinity))]
 #[case::stage_request_scheduler(boundaries::stage_skips(RouteStage::RequestScheduler))]
