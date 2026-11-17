@@ -1,24 +1,36 @@
 use betterlite_models::decisions::Json;
+use betterlite_openai::base_helpers;
 use indexmap::IndexMap;
-use indexmap::map::Entry;
+use serde::de::DeserializeOwned;
 
 use crate::converse_content::json_mode::RESPONSE_FORMAT_TOOL_NAME;
 use crate::converse_tools::error::ConverseToolsError;
 
 const FAKE_STREAM_MODEL: &str = "meta.llama3-3-70b-instruct-v1:0";
 
-// LiteLLM's _add_tools_to_optional_params: an absent key takes the list, an existing one is extended in place.
+// B2202's base helper owns the append-or-extend rule; the params cross its serde_json map and come back.
 pub fn append_tools(
     optional_params: &mut IndexMap<String, Json>,
     tools: Vec<Json>,
 ) -> Result<(), ConverseToolsError> {
-    match optional_params.entry("tools".to_owned()) {
-        Entry::Vacant(slot) => {
-            slot.insert(Json::List(tools));
-        }
-        Entry::Occupied(mut slot) => extend_tools(slot.get_mut(), tools)?,
-    }
+    let mut base = to_wire(optional_params)?;
+    let encoded = tools
+        .into_iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ConverseToolsError::wire)?;
+    base_helpers::append_tools(&mut base, encoded)?;
+    let rewritten = serde_json::to_value(base).map_err(ConverseToolsError::wire)?;
+    *optional_params = serde_json::from_value(rewritten).map_err(ConverseToolsError::wire)?;
     Ok(())
+}
+
+fn to_wire<T>(params: &IndexMap<String, Json>) -> Result<T, ConverseToolsError>
+where
+    T: DeserializeOwned,
+{
+    let encoded = serde_json::to_value(params).map_err(ConverseToolsError::wire)?;
+    serde_json::from_value(encoded).map_err(ConverseToolsError::wire)
 }
 
 #[must_use]
@@ -30,7 +42,7 @@ pub fn create_json_tool_call(json_schema: Option<&Json>, description: Option<&st
         Json::Text(RESPONSE_FORMAT_TOOL_NAME.to_owned()),
     );
     function.insert("parameters".to_owned(), parameters);
-    if let Some(description) = description.filter(|text| !text.is_empty()) {
+    if let Some(description) = description {
         function.insert("description".to_owned(), Json::Text(description.to_owned()));
     }
     let mut tool = IndexMap::new();
@@ -58,12 +70,4 @@ fn empty_json_schema() -> Json {
     fields.insert("additionalProperties".to_owned(), Json::Bool(true));
     fields.insert("properties".to_owned(), Json::Object(IndexMap::new()));
     Json::Object(fields)
-}
-
-fn extend_tools(existing: &mut Json, tools: Vec<Json>) -> Result<(), ConverseToolsError> {
-    let Json::List(existing) = existing else {
-        return Err(ConverseToolsError::ToolsNotList);
-    };
-    existing.extend(tools);
-    Ok(())
 }

@@ -1,4 +1,5 @@
 use betterlite_anthropic::anthropic_capability_catalog::forced_tool::ForcedToolChoiceError;
+use betterlite_openai::error::OpenAiError;
 
 pub const BAD_REQUEST_STATUS: u16 = 400;
 
@@ -42,9 +43,30 @@ pub enum ConverseToolsError {
     ToolChoiceName,
     #[error("the existing tools value is not a list")]
     ToolsNotList,
+    #[error("the tools could not be appended: {message}")]
+    Append { message: String },
+    #[error("the optional params could not cross to the base helper: {message}")]
+    Wire { message: String },
+}
+
+impl From<OpenAiError> for ConverseToolsError {
+    fn from(error: OpenAiError) -> Self {
+        if matches!(error, OpenAiError::ToolsNotList) {
+            return Self::ToolsNotList;
+        }
+        Self::Append {
+            message: error.to_string(),
+        }
+    }
 }
 
 impl ConverseToolsError {
+    pub(crate) fn wire(error: serde_json::Error) -> Self {
+        Self::Wire {
+            message: error.to_string(),
+        }
+    }
+
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
@@ -63,7 +85,9 @@ impl ConverseToolsError {
             | Self::MissingParameterType
             | Self::ToolChoiceFunction
             | Self::ToolChoiceName
-            | Self::ToolsNotList => None,
+            | Self::ToolsNotList
+            | Self::Append { .. }
+            | Self::Wire { .. } => None,
         }
     }
 }
