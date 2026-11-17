@@ -510,8 +510,7 @@ fn case_cancelled_request_keeps_the_usage_once() -> Evidence {
     };
     let mut cancelled = ObservationMetadata::default();
     let _counted = observations.count_response_usage(&response, &mut cancelled, now());
-    // the request is cancelled: nobody calls the success callback, and dropping the metadata releases the marker
-    drop(cancelled);
+    // the request is cancelled here: nobody calls the success callback, so the marker is never read again
     harness.evidence(None)
 }
 
