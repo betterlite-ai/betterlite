@@ -33,6 +33,19 @@ use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
 
 pub(super) async fn run(name: &str) {
+    if stage_cases(name).await {
+        return;
+    }
+    if strategy_cases(name).await {
+        return;
+    }
+    if selection_cases(name).await {
+        return;
+    }
+    response_cases(name).await;
+}
+
+async fn stage_cases(name: &str) -> bool {
     match name {
         "stage_cooldown_state" => stage_skips(RouteStage::CooldownState).await,
         "stage_cooldown_policy" => stage_skips(RouteStage::CooldownPolicy).await,
@@ -51,6 +64,13 @@ pub(super) async fn run(name: &str) {
         "stage_request_scheduler" => stage_skips(RouteStage::RequestScheduler).await,
         "stage_routing_plugins" => stage_skips(RouteStage::RoutingPlugins).await,
         "stage_responses_stream_fallback" => stage_skips(RouteStage::ResponsesStreamFallback).await,
+        _ => return false,
+    }
+    true
+}
+
+async fn strategy_cases(name: &str) -> bool {
+    match name {
         "least_busy" => strategy_unbuilt(RoutingStrategy::LeastBusy, "least_busy").await,
         "latency_routing" => {
             strategy_unbuilt(RoutingStrategy::LatencyBasedRouting, "latency_routing").await
@@ -63,6 +83,13 @@ pub(super) async fn run(name: &str) {
             strategy_unbuilt(RoutingStrategy::UsageBasedRoutingV2, "usage_routing_v2").await
         }
         "lar1_routing" => strategy_unbuilt(RoutingStrategy::Lar1, "lar1_routing").await,
+        _ => return false,
+    }
+    true
+}
+
+async fn selection_cases(name: &str) -> bool {
+    match name {
         "no_deployment_rate_limit" => no_deployment_rate_limit().await,
         "no_deployment_all_in_cooldown" => no_deployment_all_in_cooldown().await,
         "default_min_cooldown" => default_min_cooldown(),
@@ -79,6 +106,13 @@ pub(super) async fn run(name: &str) {
         "pinned_pool_uses_strategy" => pinned_pool_uses_strategy().await,
         "provider_budget" => provider_budget_has_no_selection().await,
         "simple_shuffle_empty" => simple_shuffle_empty().await,
+        _ => return false,
+    }
+    true
+}
+
+async fn response_cases(name: &str) {
+    match name {
         "weights_read_metrics" => weights_read_metrics(),
         "headers_absent" => headers_absent(),
         "headers_opaque" => headers_opaque(),
@@ -542,6 +576,11 @@ async fn simple_shuffle_empty() {
 
 // LiteLLM reads weight, rpm and tpm as numbers, an absent or null one as zero, and names anything else
 fn weights_read_metrics() {
+    numeric_weights();
+    non_numeric_weights();
+}
+
+fn numeric_weights() {
     let numeric = vec![
         deployment(
             "gpt-4o",
@@ -575,6 +614,10 @@ fn weights_read_metrics() {
             },
         ]
     );
+}
+
+// a metric that is not a number is named by the field it was read from
+fn non_numeric_weights() {
     let text_weight = vec![deployment("gpt-4o", "d", &[("weight", text("5"))])];
     assert!(matches!(
         weights(&text_weight),
