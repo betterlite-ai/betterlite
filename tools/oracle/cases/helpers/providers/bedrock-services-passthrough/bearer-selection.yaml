@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-passthrough-bearer-selection
+call:
+  bedrock_services_passthrough:
+    kind: sign
+    bearer: bedrock-env-token
+    runs:
+      - {headers: {}, data: {input: hi}}
+      - {headers: {x-custom: "1"}}
+      - {headers: {Content-Type: text/plain}, data: {a: 1}}
+env: {AWS_BEARER_TOKEN_BEDROCK: bedrock-env-token}
+compare: {ignore: []}

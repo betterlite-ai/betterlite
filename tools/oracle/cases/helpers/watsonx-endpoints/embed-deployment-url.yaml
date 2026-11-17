@@ -1,0 +1,30 @@
+kind: helper
+name: watsonx-embed-deployment-url
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: embed
+    env: {WATSONX_API_BASE: "https://env-host/"}
+    step: {model: deployment/space-1, input: hello, options: {}, api_base: null, reply: null}
+calls:
+  - b5842:
+      family: embed
+      env: {}
+      step: {model: deployment/space-1, input: hello, options: {api_version: v2}, api_base: "https://host/", reply: null}
+  - b5842:
+      family: embed
+      env: {}
+      step: {model: deployment/space-1, input: hello, options: {api_version: ""}, api_base: "https://host", reply: null}
+  - b5842:
+      family: embed
+      env: {}
+      step: {model: deployment/space-1, input: hello, options: {api_version: null}, api_base: "https://host", reply: null}
+  - b5842:
+      family: embed
+      env: {}
+      step: {model: deployment/space-1, input: hello, options: {}, api_base: null, reply: null}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: null}

@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-embedding-aliases-and-env
+call:
+  b1395:
+    config: '{"litellm_settings": {"vertex_location": "settings-location"}}'
+    environment:
+      VERTEXAI_API_BASE: "https://env-base.example"
+      VERTEX_PROJECT: env-project
+      VERTEX_CREDENTIALS: env-creds.json
+    model: text-embedding-005
+    input: hello
+    optional_params:
+      vertex_project: option-project
+      vertex_ai_project: second-project
+    api_key: gemini-key
+    extra_headers:
+      x-goog-request-params: a=b
+    timeout_seconds: 600
+    litellm_params:
+      custom_llm_provider: vertex_ai
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-services-passthrough-native-reply-log
+call:
+  bedrock_services_passthrough:
+    kind: reply
+    runs:
+      - {provider: bedrock, endpoint: /model/m/converse, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+      - {provider: bedrock, endpoint: /model/m/invoke, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+      - {provider: bedrock, endpoint: /model/m/invoke/converse, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+      - {provider: transcribe, endpoint: /model/m/invoke, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+      - {provider: not-a-provider, endpoint: /model/m/invoke, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+      - {provider: bedrock, endpoint: /model/m/tag, body: '{"output": {"message": {"content": [{"text": "hi"}], "role": "assistant"}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'}
+env: {}
+compare: {ignore: []}

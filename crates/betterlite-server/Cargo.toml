@@ -84,7 +84,7 @@ regex.workspace = true
 rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
 rust_decimal.workspace = true
 scrypt = { version = "0.11.0", default-features = false }
-secrecy.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
@@ -123,6 +123,7 @@ tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tower = { workspace = true, features = ["util"] }
+zip = { version = "9.1.0", default-features = false, features = ["bzip2", "deflate-flate2-zlib", "lzma"] }
 
 [lints]
 workspace = true

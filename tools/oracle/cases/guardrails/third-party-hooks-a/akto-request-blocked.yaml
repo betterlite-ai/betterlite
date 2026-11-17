@@ -1,0 +1,26 @@
+kind: helper
+name: akto-request-blocked
+call:
+  b9451:
+    vendor: akto
+    akto_api_key: akto-key
+    unreachable_fallback: fail_closed
+    event_hook: pre_call
+    texts: [hello there]
+    request_data:
+      messages:
+        - {role: user, content: hello there}
+      model: gpt-4o
+      proxy_server_request:
+        headers: {x-forwarded-for: "203.0.113.7, 10.0.0.1", user-agent: oracle}
+      metadata: {user_api_key_user_id: user-1, user_api_key_team_id: team-1}
+    input_type: request
+    answers:
+      - status: 200
+        headers: {}
+        body: {data: {guardrailsResult: {Allowed: false, Reason: PII detected}}}
+      - status: 200
+        headers: {}
+        body: {}
+env: {}
+compare: {ignore: []}

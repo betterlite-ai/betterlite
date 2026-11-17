@@ -1,0 +1,79 @@
+kind: helper
+name: watsonx-audio-form-fields
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: audio
+    env: {}
+    step:
+      model: whisper-large-v3-turbo
+      headers: {Authorization: "Bearer caller"}
+      api_base: "https://host"
+      api_key: null
+      options:
+        project_id: p-param
+        language: en
+        prompt: hi
+        response_format: json
+        temperature: 0.5
+        timestamp_granularities: [word]
+        extra: ignored
+      file: {filename: a.wav, content_type: audio/wav, content: sample}
+      reply: null
+calls:
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {watsonx_project: wp-legacy, language: en}
+        file: {filename: a.wav, content_type: audio/wav, content: sample}
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {space_id: s-param}
+        file: {filename: a.wav, content_type: audio/wav, content: sample}
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {project_id: null, space_id: s-param}
+        file: {filename: a.wav, content_type: audio/wav, content: sample}
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {project_id: p-param, space_id: s-param}
+        file: {filename: a.wav, content_type: audio/wav, content: sample}
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {}
+        file: {filename: a.wav, content_type: audio/wav, content: sample}
+        reply: null

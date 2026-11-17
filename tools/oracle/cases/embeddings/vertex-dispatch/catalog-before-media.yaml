@@ -1,0 +1,27 @@
+kind: helper
+name: vertex-embedding-catalog-before-media
+call:
+  b1395:
+    config: "{}"
+    environment:
+      VERTEXAI_PROJECT: env-ai-project
+    model: gemini-embedding-2
+    input: hello
+    optional_params:
+      image: "gs://bucket/cat.png"
+      vertex_location: option-location
+    api_base: "https://explicit.example"
+    api_key: gemini-key
+    extra_headers:
+      x-goog-request-params: a=b
+    timeout_seconds: 600
+    litellm_params:
+      custom_llm_provider: vertex_ai
+    catalog:
+      vertex_ai/gemini-embedding-2:
+        litellm_provider: vertex_ai
+        mode: embedding
+        uses_embed_content: true
+env: {}
+compare:
+  ignore: []

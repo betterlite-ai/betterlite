@@ -1,0 +1,31 @@
+kind: helper
+name: sibling-event-isolation
+call:
+  gemini_live_content:
+    calls:
+      - op: map_event
+        key: toolCall
+        value:
+          functionCalls:
+            - name: lookup
+              args: {}
+          turnComplete: true
+      - op: map_event
+        key: toolCall
+        value:
+          functionCalls:
+            - name: lookup
+              args: {}
+      - op: map_event
+        key: setupComplete
+        value:
+          turnComplete: true
+      - op: map_event
+        key: serverContent
+        value:
+          turnComplete: true
+          modelTurn:
+            parts:
+              - text: nested
+env: {}
+compare: {ignore: []}

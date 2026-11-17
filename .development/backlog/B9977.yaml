@@ -1,0 +1,13 @@
+id: B9977
+milestone: R2 bug fixes
+title: Presidio stream masking is bounded and masks Anthropic tool input
+status: done
+depends_on: [B3807]
+file: tasks/B9977-presidio-stream-fixes.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2218

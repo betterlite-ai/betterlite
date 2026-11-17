@@ -1,0 +1,19 @@
+kind: helper
+name: chat-pre-call-pass
+call:
+  b3740:
+    function: pre_call
+    guardrail: {guardrail_name: purview, tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, purview_app_name: LiteLLM, user_id_field: user_id, timeout_seconds: 5}
+    replies:
+    - status: 200
+      body: {policyActions: []}
+    identity: {user_id: user-1, end_user_id: null}
+    call_type: completion
+    data:
+      model: gpt-4o
+      messages:
+      - {role: user, content: Sensitive prompt}
+    result: null
+    chunks: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: pending-usage-once
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: standalone_usage
+        usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+      - kind: response_done
+        frame: {serverContent: {turnComplete: true}}
+      - kind: response_done
+        frame: {serverContent: {turnComplete: true}}
+calls:
+  - gemini_live_accounting:
+      op: steps
+      steps:
+        - kind: standalone_usage
+          usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+        - kind: standalone_usage
+          usage: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+        - kind: response_done
+          frame: {}
+        - kind: standalone_usage
+          usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+        - kind: response_done
+          frame: {usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}}
+        - kind: response_done
+          frame: {}
+env: {}
+compare: {ignore: []}

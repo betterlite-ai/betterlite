@@ -1,0 +1,17 @@
+kind: helper
+name: akto-mode-mismatch
+call:
+  b9451:
+    vendor: akto
+    akto_api_key: akto-key
+    unreachable_fallback: fail_closed
+    event_hook: post_call
+    texts: [hello there]
+    request_data:
+      messages:
+        - {role: user, content: hello there}
+      model: gpt-4o
+    input_type: request
+    answers: []
+env: {}
+compare: {ignore: []}

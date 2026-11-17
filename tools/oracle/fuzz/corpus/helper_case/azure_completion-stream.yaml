@@ -1,0 +1,17 @@
+kind: helper
+name: azure_completion-stream-seed
+call:
+  azure_completion:
+    function: stream
+    cases:
+      - model: gpt-35-turbo-instruct
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        data: {model: gpt-35-turbo-instruct, prompt: Hi, stream: true}
+        answer:
+          events:
+            - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hi\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\n"
+            - "data: [DONE]\n\n"
+env: {}
+compare: {ignore: []}
