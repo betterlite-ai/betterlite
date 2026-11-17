@@ -74,3 +74,23 @@ fn the_route_names_the_model(#[case] url_route: &str, #[case] model: &str) {
         Some(&Json::Text(model.to_owned()))
     );
 }
+
+// One reading of all three routes, so a precedence rule that collapses two of them fails on this name alone.
+#[test]
+fn each_route_reaches_the_handler_with_its_own_model() {
+    let cases = [
+        (SHORT_AUDIO, "azure_speech/short-audio"),
+        (FAST, "azure_speech/fast-transcription"),
+        (BATCH, "azure_speech/batch-transcription"),
+    ];
+    for (url_route, model) in cases {
+        let logging_obj = support::logging_object();
+        let lookup = support::RecordingLookup::priced(PRICE);
+        let outcome = support::run(&logging_obj, &lookup, url_route, None, b"{}");
+        assert_eq!(
+            outcome.kwargs.entries.get("model"),
+            Some(&Json::Text(model.to_owned())),
+            "{url_route} is logged as {model}"
+        );
+    }
+}
