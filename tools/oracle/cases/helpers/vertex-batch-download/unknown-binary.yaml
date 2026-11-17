@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-batch-download-unknown-binary
+call:
+  vertex_batch_download:
+    operation: buffer
+    content: 'AAF7Im5vdCI6anNvbn3/CgI='
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare: {ignore: []}
