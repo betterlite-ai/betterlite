@@ -59,10 +59,6 @@ impl From<OpenAiError> for ConverseToolsError {
 }
 
 impl ConverseToolsError {
-    pub(crate) const fn wire(error: serde_json::Error) -> Self {
-        Self::Wire(error)
-    }
-
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {

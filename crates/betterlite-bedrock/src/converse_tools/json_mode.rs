@@ -12,16 +12,16 @@ pub fn append_tools(
     optional_params: &mut IndexMap<String, Json>,
     tools: Vec<Json>,
 ) -> Result<(), ConverseToolsError> {
-    let wire = serde_json::to_value(&*optional_params).map_err(ConverseToolsError::wire)?;
-    let mut base = serde_json::from_value(wire).map_err(ConverseToolsError::wire)?;
+    let wire = serde_json::to_value(&*optional_params).map_err(ConverseToolsError::Wire)?;
+    let mut base = serde_json::from_value(wire).map_err(ConverseToolsError::Wire)?;
     let encoded = tools
         .into_iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(ConverseToolsError::wire)?;
+        .map_err(ConverseToolsError::Wire)?;
     base_helpers::append_tools(&mut base, encoded)?;
-    let rewritten = serde_json::to_value(base).map_err(ConverseToolsError::wire)?;
-    *optional_params = serde_json::from_value(rewritten).map_err(ConverseToolsError::wire)?;
+    let rewritten = serde_json::to_value(base).map_err(ConverseToolsError::Wire)?;
+    *optional_params = serde_json::from_value(rewritten).map_err(ConverseToolsError::Wire)?;
     Ok(())
 }
 
