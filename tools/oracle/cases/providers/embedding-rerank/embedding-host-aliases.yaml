@@ -1,0 +1,35 @@
+kind: helper
+name: embedding-host-aliases
+call:
+  embedding_family_selection:
+    calls:
+      - provider: jina_ai
+        model: jina-embeddings-v3
+        api_base: ""
+      - provider: infinity
+        model: BAAI/bge-small-en
+        api_base: https://infinity.test/v1
+      - provider: jina_ai
+        model: jina-clip-v2
+        api_base: https://api.jina.ai/v1/embeddings
+        present_version_params: [max_tokens_per_doc]
+      - provider: infinity
+        model: bge
+        present_version_params: [max_chunks_per_doc]
+calls:
+  - embedding_host_plan:
+      jina:
+        model: jina-embeddings-v3
+        input: [hello]
+        base: ""
+        api_key: ""
+        env: {JINA_AI_API_BASE: "https://env.test/v1", JINA_AI_API_KEY: "", JINA_API_KEY: second, JINA_AI_TOKEN: third}
+        headers: {Authorization: "Bearer mine", X-Caller: kept}
+      infinity:
+        model: BAAI/bge-small-en
+        input: [hello]
+        base: ""
+        env: {INFINITY_API_KEY: inf}
+        headers: {accept: text/plain, Authorization: "Bearer mine"}
+env: {}
+compare: {ignore: []}

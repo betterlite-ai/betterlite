@@ -5,8 +5,11 @@ description: >-
   into B010's closed provider contract and B678's executable operation dispatcher.
   Put bindings in betterlite-provider::xai_mistral and orchestration in
   betterlite-core::xai_mistral; leaf crates receive prepared inputs, never a dependency
-  on core. Supply B323's reasoning-effort selector to B1408 and B1001's prepared audio
-  to B1407/B1410. Use B249 hooks and B186's existing error classification. Cover chat,
+  on core. Implement B1408's ReasoningEffortSelector over
+  betterlite_openai::reasoning_effort_capability (LiteLLM's declared_reasoning_efforts_for_model
+  and nearest_declared_reasoning_effort; B9980 moves B323's build of them there), and supply
+  B1001's prepared audio to B1407/B1410. Use B249 hooks and B186's existing error
+  classification. Cover chat,
   embeddings, Responses, realtime, speech, transcription, files and native batches only
   where the selected provider has the matching leaf. Expose B1401's login service through
   the provider's auth constructor; B8375 still owns the actual CLI. Bind B1402's model and
