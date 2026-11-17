@@ -7,9 +7,13 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-use crate::oidc_token_exchange::exchange::{TOKEN_EXCHANGE_PARAM, exchange_pkce_code};
+use crate::oidc_token_exchange::exchange::{
+    TOKEN_EXCHANGE_PARAM, USERINFO_PARAM, exchange_pkce_code,
+};
 
-use super::support::{LocalProvider, Reply, VALID_ID_TOKEN, base_request, client, text};
+use super::support::{
+    LocalProvider, Reply, VALID_ID_TOKEN, base_request, client, text, token_reply,
+};
 
 #[derive(Clone, Default)]
 struct Logs(Arc<Mutex<Vec<u8>>>);
@@ -138,6 +142,33 @@ async fn logs_a_falsy_id_token_as_absent() {
         .await
         .unwrap();
     assert!(logs.text().contains("id_token_present=false"));
+}
+
+#[tokio::test]
+async fn logs_an_empty_id_token_as_absent_on_the_fallback() {
+    let provider = LocalProvider::start().await;
+    provider.reply(
+        "/token",
+        Reply::json(r#"{"access_token":"access-1","id_token":""}"#),
+    );
+    let mut request = base_request(&provider);
+    request.userinfo_endpoint = None;
+    let (logs, _guard) = Logs::capture();
+    let error = exchange_pkce_code(&client(), &request).await.unwrap_err();
+    assert_eq!(error.response().param, Some(USERINFO_PARAM));
+    assert!(!logs.text().contains("not a decodable JWT"));
+}
+
+#[tokio::test]
+async fn logs_an_empty_userinfo_endpoint_as_no_attempt() {
+    let provider = LocalProvider::start().await;
+    provider.reply("/token", Reply::json(&token_reply(Some(VALID_ID_TOKEN))));
+    let mut request = base_request(&provider);
+    request.userinfo_endpoint = Some(String::new());
+    let (logs, _guard) = Logs::capture();
+    let claims = exchange_pkce_code(&client(), &request).await.unwrap();
+    assert_eq!(text(&claims, "sub"), Some("user-1"));
+    assert!(!logs.text().contains("the SSO userinfo request failed"));
 }
 
 #[tokio::test]
