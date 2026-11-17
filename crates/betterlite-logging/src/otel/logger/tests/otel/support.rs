@@ -216,27 +216,22 @@ pub(crate) fn mcp_list() -> StandardLoggingPayload {
     payload("list_mcp_tools", "success", json_object(Vec::new()))
 }
 
-// key/team config a Phoenix route reads; the identity is trusted, never the caller's carrier
+// key/team config a Phoenix route reads; the identity is trusted, never the caller's carrier, and a tool call also names its tool
+fn mcp_auth_payload(call_type: &str, tool_metadata: Option<Json>) -> StandardLoggingPayload {
+    let mut entries = Vec::new();
+    if let Some(metadata) = tool_metadata {
+        entries.push(("mcp_tool_call_metadata", metadata));
+    }
+    entries.push(("user_api_key_auth_metadata", project_name_metadata()));
+    payload(call_type, "success", json_object(entries))
+}
+
 pub(crate) fn mcp_tool_with_auth() -> StandardLoggingPayload {
-    payload(
-        "call_mcp_tool",
-        "success",
-        json_object(vec![
-            ("mcp_tool_call_metadata", tool_name_metadata()),
-            ("user_api_key_auth_metadata", project_name_metadata()),
-        ]),
-    )
+    mcp_auth_payload("call_mcp_tool", Some(tool_name_metadata()))
 }
 
 pub(crate) fn mcp_list_with_auth() -> StandardLoggingPayload {
-    payload(
-        "list_mcp_tools",
-        "success",
-        json_object(vec![(
-            "user_api_key_auth_metadata",
-            project_name_metadata(),
-        )]),
-    )
+    mcp_auth_payload("list_mcp_tools", None)
 }
 
 pub(crate) fn mcp_list_failure() -> StandardLoggingPayload {
