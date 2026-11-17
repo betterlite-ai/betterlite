@@ -71,6 +71,8 @@ description: >-
   wiring lines; 375 planned, 400 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-foundry/src/responses.rs"
+  - "crates/betterlite-foundry/src/responses/path.rs"
   - crates/betterlite-foundry/Cargo.toml
   - crates/betterlite-foundry/src/rerank.rs
   - crates/betterlite-foundry/src/rerank/**
