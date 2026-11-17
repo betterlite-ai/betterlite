@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use betterlite_anthropic::response::wire::ResponseEnvelope;
-use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
+use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest};
 use betterlite_bedrock::claude_invoke::response::transform_response as claude_transform_response;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;

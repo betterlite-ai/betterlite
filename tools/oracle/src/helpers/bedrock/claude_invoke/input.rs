@@ -4,11 +4,11 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-pub(super) type ModelCost = IndexMap<String, IndexMap<String, Json>>;
+pub(crate) type ModelCost = IndexMap<String, IndexMap<String, Json>>;
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(super) enum Input {
+pub(crate) enum Input {
     Transform {
         model_cost: ModelCost,
         calls: Vec<TransformCall>,
@@ -24,7 +24,7 @@ pub(super) enum Input {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct TransformCall {
+pub(crate) struct TransformCall {
     pub(super) model: String,
     #[serde(default)]
     pub(super) messages: Vec<Json>,
@@ -42,7 +42,7 @@ pub(super) struct TransformCall {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct MapCall {
+pub(crate) struct MapCall {
     pub(super) model: String,
     #[serde(default)]
     pub(super) non_default_params: IndexMap<String, Json>,
@@ -53,7 +53,7 @@ pub(super) struct MapCall {
 }
 
 #[derive(Deserialize)]
-pub(super) struct ResponseCall {
+pub(crate) struct ResponseCall {
     pub(super) raw_text: String,
     #[serde(default)]
     pub(super) messages: Vec<Json>,
