@@ -89,11 +89,6 @@ fn rejects_other_realtime_logged_events(#[case] source: &str, #[case] flagged: b
     BTreeMap::from([("REALTIME_EVENTS".to_owned(), String::new())]),
     LoggedEventTypes::Default
 )]
-#[case::list_item(
-    "[os.environ/REALTIME_EVENT]",
-    BTreeMap::from([("REALTIME_EVENT".to_owned(), "response.done".to_owned())]),
-    LoggedEventTypes::Only(vec!["response.done".to_owned()])
-)]
 fn reads_an_environment_reference_in_logged_events(
     #[case] reference: &str,
     #[case] lookup: BTreeMap<String, String>,
@@ -103,6 +98,38 @@ fn reads_an_environment_reference_in_logged_events(
     let config = ConfigLoader { lookup }
         .load(&source)
         .expect("an environment reference is read into the selection");
+    assert_eq!(
+        config
+            .sections
+            .realtime_session_state
+            .logged_real_time_event_types,
+        expected
+    );
+}
+
+#[rstest]
+#[case::list_item(
+    "[os.environ/REALTIME_EVENT, response.done]",
+    BTreeMap::from([("REALTIME_EVENT".to_owned(), "session.created".to_owned())]),
+    LoggedEventTypes::Only(vec![
+        "os.environ/REALTIME_EVENT".to_owned(),
+        "response.done".to_owned(),
+    ])
+)]
+#[case::unset_list_item(
+    "[os.environ/REALTIME_EVENT]",
+    BTreeMap::<String, String>::new(),
+    LoggedEventTypes::Only(vec!["os.environ/REALTIME_EVENT".to_owned()])
+)]
+fn keeps_an_environment_reference_inside_a_list_literal(
+    #[case] reference: &str,
+    #[case] lookup: BTreeMap<String, String>,
+    #[case] expected: LoggedEventTypes,
+) {
+    let source = format!("litellm_settings:\n  logged_real_time_event_types: {reference}\n");
+    let config = ConfigLoader { lookup }
+        .load(&source)
+        .expect("a string inside a list is stored as written");
     assert_eq!(
         config
             .sections

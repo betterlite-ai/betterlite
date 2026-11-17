@@ -57,13 +57,12 @@ where
     match value {
         JsonValue::Null => Ok(LoggedEventTypes::Default),
         JsonValue::String(text) => string_selection(text, lookup),
+        // LiteLLM's config resolver substitutes os.environ/ in a value but leaves a string entry inside a list as written
         JsonValue::Array(items) => {
             let mut types = Vec::with_capacity(items.len());
             for item in items {
                 match item {
-                    JsonValue::String(event) => {
-                        types.push(resolve_string(event, LOGGED_EVENT_TYPES_PATH, lookup)?);
-                    }
+                    JsonValue::String(event) => types.push(event),
                     other => return Err(invalid_scalar(&other)),
                 }
             }
