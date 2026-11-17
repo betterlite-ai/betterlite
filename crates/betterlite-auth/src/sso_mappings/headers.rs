@@ -23,10 +23,10 @@ const fn is_space(character: char) -> bool {
 
 // Python's header parser splits each segment on every equals sign and unpacks exactly two parts
 pub fn decode_generic_headers(raw: Option<&[u8]>) -> Result<IndexMap<String, String>, HeaderError> {
-    let Some(raw) = raw else {
+    let Some(bytes) = raw else {
         return Ok(IndexMap::new());
     };
-    let Ok(text) = str::from_utf8(raw) else {
+    let Ok(text) = str::from_utf8(bytes) else {
         return Err(HeaderError::NotText);
     };
     let mut headers = IndexMap::new();

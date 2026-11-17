@@ -38,12 +38,12 @@ pub fn decode_role_mapping_literal(
         return Ok(None);
     };
     let mapped = literal_roles(entries)?;
-    let Some(group_claim) = group_claim else {
+    let Some(claim) = group_claim else {
         return Err(RoleMappingError::MissingGroupClaim);
     };
     Ok(Some(RoleMappings {
         provider: "generic".to_owned(),
-        group_claim: group_claim.to_owned(),
+        group_claim: claim.to_owned(),
         default_role: parse_default_role(default_role)?,
         roles: mapped,
     }))
