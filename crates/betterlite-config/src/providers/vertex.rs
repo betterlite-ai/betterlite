@@ -41,6 +41,8 @@ impl Sections {
     }
 }
 
+// the thinking module's env_number reads a number the same way, but it is private to that
+// module and that file is outside this task's scope
 fn number_setting(
     lookup: &dyn EnvironmentLookup,
     name: &str,
