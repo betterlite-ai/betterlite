@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::iter::repeat_with;
+use std::str;
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -382,7 +383,7 @@ async fn the_request_messages_lead_the_inspected_conversation() {
 
     assert_eq!(items, passed_chunks());
     let sent = captured.lock().expect("capture").clone();
-    let text = std::str::from_utf8(&sent).expect("utf8");
+    let text = str::from_utf8(&sent).expect("utf8");
     let Json::Object(payload) = Json::parse(text) else {
         panic!("expected the inspect payload object");
     };
