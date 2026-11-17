@@ -177,7 +177,7 @@ fn log_unrouted_failure(error: &ChatError, call: &CallContext<'_>) {
         .errors
         .redactor
         .redact_internal_details(&error.to_string());
-    tracing::warn!(message, "chat request failed before dispatch");
+    tracing::warn!(error = %message, "chat request failed before dispatch");
 }
 
 async fn execute_chat(
