@@ -64,7 +64,7 @@ pub fn context_management_value(
     match value {
         ParamValue::Mapping(_) => Ok(Some(value.clone())),
         ParamValue::List(_) => map_context_management(&transcode(value)?)?
-            .map(|mapped| transcode::<ParamValue, Json>(&mapped))
+            .map(|mapped| transcode::<ParamValue, Json>(&Json::Object(mapped)))
             .transpose(),
         ParamValue::Null | ParamValue::Bool(_) | ParamValue::Number(_) | ParamValue::Text(_) => {
             Ok(None)
