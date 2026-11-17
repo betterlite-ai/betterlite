@@ -29,6 +29,7 @@ use crate::routing_groups::params::{
 };
 use crate::routing_groups::priority::{group_row, prioritized};
 use crate::static_eligibility::request::RequestFacts;
+use crate::strategy_dispatch::args::{LatencyArgs, SelectorArgs};
 use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroups};
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
@@ -226,7 +227,7 @@ fn dispatch_groups_carry_strategies_and_selectors() {
         &[],
     );
     let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
-    let groups: RoutingGroups = index.dispatch_groups(&mut dispatch).unwrap();
+    let groups: RoutingGroups = index.dispatch_groups(&mut dispatch, &|_| None).unwrap();
     let shadowing = BTreeSet::new();
     let cheap = groups.route("cheap", &shadowing).unwrap();
     assert_eq!(
@@ -238,6 +239,30 @@ fn dispatch_groups_carry_strategies_and_selectors() {
     assert_eq!(tiers.strategy, GroupStrategy::Priority);
     assert_eq!(tiers.selector, None);
     assert_eq!(groups.route("unknown", &shadowing), None);
+}
+
+fn a_groups_selector_takes_the_arguments_its_owner_decoded() {
+    let index = built(
+        vec![group("fast", &["a"], "latency-based-routing")],
+        &["a"],
+        &[],
+    );
+    let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
+    let invalid = SelectorArgs::Latency(LatencyArgs {
+        ttl_seconds: 3600.0,
+        lowest_latency_buffer: 0.0,
+        max_latency_list_size: 10,
+        ttft_percentile: Some(2.0),
+    });
+    let error = index
+        .dispatch_groups(&mut dispatch, &|_| Some(invalid))
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("ttft_percentile must be greater than 0 and at most 1"),
+        "{error}"
+    );
 }
 
 fn alternatives_count_member_deployments() {
@@ -818,6 +843,9 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
 ))]
 #[case::dispatch_groups_carry_strategies_and_selectors(settled(
     dispatch_groups_carry_strategies_and_selectors
+))]
+#[case::the_groups_selector_takes_its_decoded_args(settled(
+    a_groups_selector_takes_the_arguments_its_owner_decoded
 ))]
 #[case::alternatives_count_member_deployments(settled(alternatives_count_member_deployments))]
 #[case::declared_levels_win_over_flags(settled(declared_levels_win_over_flags))]

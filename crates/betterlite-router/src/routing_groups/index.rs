@@ -6,6 +6,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::routing_groups::error::RoutingGroupError;
 use crate::routing_groups::group::RoutingGroup;
 use crate::routing_groups::priority::{group_row, prioritized};
+use crate::strategy_dispatch::args::SelectorArgs;
 use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroupRoute, RoutingGroups};
 use crate::strategy_dispatch::service::StrategyDispatch;
 
@@ -98,17 +99,18 @@ impl RoutingGroupIndex {
         self.groups.keys().map(String::as_str)
     }
 
-    // _replace_routing_groups: each group's own selector, then B019's routes over the same names and members.
+    // _replace_routing_groups: each group's own selector with the args its owner decoded, then B019's routes over the same names and members.
     pub fn dispatch_groups(
         &self,
         dispatch: &mut StrategyDispatch,
+        arguments_of: &dyn Fn(&RoutingGroup) -> Option<SelectorArgs>,
     ) -> Result<RoutingGroups, RoutingGroupError> {
         let mut routes = Vec::with_capacity(self.groups.len());
         for group in self.groups.values() {
             let selector = match group.routing_strategy {
                 GroupStrategy::Priority => None,
                 GroupStrategy::Routing(strategy) => {
-                    dispatch.build_group_selector(strategy, None)?
+                    dispatch.build_group_selector(strategy, arguments_of(group))?
                 }
             };
             routes.push(RoutingGroupRoute {

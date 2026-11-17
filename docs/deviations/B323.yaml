@@ -1,0 +1,47 @@
+task: B323
+deviations:
+  - what: >-
+      An os.environ/ reference inside router_settings.routing_groups[*].models is resolved by the config
+      boundary, so the member is the variable's value.
+    why: >-
+      LiteLLM walks dictionaries and lists of dictionaries only, so a string inside the models list stays
+      the literal text and names a member called os.environ/MODEL; betterlite resolves every string field
+      once at the config boundary, and a literal member name is not something a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5781
+  - what: >-
+      The routing_strategy_args map keeps its os.environ/ references unresolved; LiteLLM resolves the
+      dictionary's values before the Router sees them.
+    why: >-
+      No group selector receives routing_strategy_args yet (see the next entry), so resolving them would
+      change a stored value nothing reads; the settings owner that threads typed args resolves them there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5774
+  - what: >-
+      A non-priority routing group's selector is built from the SelectorArgs its caller supplies, and
+      nothing in this branch decodes the group's routing_strategy_args into them yet.
+    why: >-
+      Decoding routing_strategy_args JSON belongs to the RouterSettingsTarget owner that also decodes the
+      global strategy's args, and no implementor exists yet; dispatch_groups takes the typed result so the
+      owner can pass per-group args without this module parsing JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1475-L1517
+  - what: >-
+      declared_reasoning_efforts_for_model falls back from a non-object prefixed model_cost entry to the
+      bare entry only when the entry is an empty object; any other non-object entry yields None.
+    why: >-
+      LiteLLM's `or` treats an empty list, empty string or zero as falsy too; the bundled map always holds
+      objects, so the difference needs a hand-edited map, and docs/compatibility.md keeps truthiness out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L90-L103
+  - what: >-
+      _bare_model_entry treats a non-object cost-map twin as an empty entry, so the deployment advertises
+      the levels its own flags allow.
+    why: >-
+      LiteLLM returns the non-dict entry from model_cost.get and the next .get raises AttributeError, which
+      fails the call over global map data the deployment never controls; betterlite answers from the
+      deployment's own metadata instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L53-L63
+  - what: >-
+      supports_none_reasoning_effort asks betterlite's azure_model_family for the gpt-5 reasoning family
+      instead of LiteLLM's AzureOpenAIGPT5Config.is_model_gpt_5_model.
+    why: >-
+      Both classify the same azure gpt-5 names today, and the shared family predicate is the B013 service
+      the provider paths already gate on, so the advertisement and the request gate cannot disagree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L125-L137
