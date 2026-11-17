@@ -216,19 +216,18 @@ impl LogSink for DiscardingSink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) fn logging_state() -> LoggingState {
+pub(super) fn logging_state(redactor: &Redactor) -> LoggingState {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"amazon.titan-image-generator-v2:0","call_type":"image_generation","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
     .expect("the logging fixture is valid");
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &redactor,
+        redactor,
         || "generated".to_owned(),
         Duration::default,
     )

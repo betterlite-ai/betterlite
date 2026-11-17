@@ -1,0 +1,53 @@
+kind: probe
+name: lar1-invalid-metadata-defaults
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '{"confidence": 2}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '{"time": "SOON"}'
+  - clock: {unix_millis: 1700000000125, monotonic_millis: 42002}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '"nope"'
+compare:
+  ignore: []

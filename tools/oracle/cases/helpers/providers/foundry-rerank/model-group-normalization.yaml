@@ -1,0 +1,24 @@
+kind: helper
+name: foundry-rerank-model-group-normalization
+call:
+  foundry_rerank:
+    replies:
+    - status: 200
+      body: '{"id":"rerank-id","results":[{"index":0,"relevance_score":0.5,"document":{"text":"first document"}}]}'
+      model_group: offer-cohere-rerank-mul-paygo
+    - status: 200
+      body: '{"id":"rerank-id","results":[]}'
+      model_group: offer-cohere-rerank-eng-paygo
+    - status: 200
+      body: '{"results":[]}'
+      model_group: offer-custom-group
+    - status: 200
+      body: '{"results":[]}'
+      model_group: null
+    - status: 200
+      body: '{"results":[],"model":"azure_ai/cohere-rerank-v3-english"}'
+    - status: 200
+      body: '{"id":null,"results":[{"index":2,"relevance_score":1,"document":{"text":"third","extra":1},"extra":2}],"model":"wire-model"}'
+      model_group: offer-cohere-rerank-mul-paygo
+env: {}
+compare: {ignore: []}

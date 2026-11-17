@@ -172,7 +172,7 @@ fn hub_settings() -> HubSettings {
     }
 }
 
-fn counter() -> Counter {
+fn counter(catalog: &Arc<ModelCatalog>) -> Counter {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -188,7 +188,6 @@ fn counter() -> Counter {
         None,
         Arc::clone(&service),
     ));
-    let catalog = BundledCatalog::default().get();
     let hub = hub_settings();
     let clock = Arc::new(SystemHubClock::default());
     let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
@@ -205,13 +204,13 @@ fn counter() -> Counter {
         Arc::new(Instant::now),
     ));
     let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
+        fetcher,
         downloader,
-        Arc::clone(&catalog),
+        Arc::clone(catalog),
         Arc::clone(&service),
         true,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, Arc::clone(catalog), settings)
 }
 
 pub(crate) struct Harness {
@@ -238,6 +237,7 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) fn new(model: &str, messages: &str) -> Self {
+        let catalog = BundledCatalog::default().get();
         Self {
             model: model.to_owned(),
             provider: CacheProvider::Vertex,
@@ -253,8 +253,8 @@ impl Harness {
             disable_transform: false,
             now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
             minimum_token_override: None,
-            counter: counter(),
-            catalog: BundledCatalog::default().get(),
+            counter: counter(&catalog),
+            catalog,
             capabilities: FixtureLookup { supported: true },
             fetcher: NoFetch,
             hooks: hooks(),
