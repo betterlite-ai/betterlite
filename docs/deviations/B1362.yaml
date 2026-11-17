@@ -1,0 +1,21 @@
+task: B1362
+deviations:
+  - what: >-
+      An operation body over 16 MiB is refused with a typed error before it is decoded, where LiteLLM passes the
+      body to httpx.Response.json() with no size limit.
+    why: >-
+      Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared Vertex reply
+      decoder's cap; an operation body that large is not a Veo result any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L69-L71
+  - what: >-
+      The usage builder keeps a duration that is a number or a decimal string and a resolution that is a string or
+      a number, and omits either one for a boolean or a container, where LiteLLM runs them through float() and
+      str() and reports 1.0 for a true duration or Python's text for a true resolution. A parameters block that is
+      not an object is a typed error instead of the AttributeError LiteLLM raises on it.
+    why: >-
+      float(True) and str(True) are the duck typing and str text that docs/compatibility.md says betterlite does
+      not port, and a working setup sends a number of seconds and a resolution name. An absent parameters block
+      reads as the empty default, as it does in LiteLLM, and a null block takes that same default where LiteLLM
+      raises an AttributeError on it, since docs/compatibility.md reads a null value as the default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L48-L102
+kept_bugs: []
