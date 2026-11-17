@@ -83,7 +83,6 @@ impl BundledCounter {
         Ok(Self {
             counter: Arc::new(Counter::new(
                 selector,
-                fetcher,
                 service,
                 catalog,
                 Settings::default(),

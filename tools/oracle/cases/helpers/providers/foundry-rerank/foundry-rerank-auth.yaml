@@ -1,0 +1,25 @@
+kind: helper
+name: foundry-rerank-auth
+call:
+  foundry_rerank:
+    auths:
+    - {api_key: key-explicit}
+    - {api_key: ""}
+    - {api_key: null}
+    - {environment: {AZURE_AI_API_KEY: env-key}}
+    - {environment: {AZURE_AI_API_KEY: ""}, global_api_key: global-key}
+    - {global_api_key: global-key}
+    - {environment: {AZURE_AI_API_KEY: env-key}, global_api_key: global-key}
+    - {api_key: key-explicit, environment: {AZURE_AI_API_KEY: env-key}}
+    - {api_key: key-explicit, headers: {Authorization: "Bearer caller"}}
+    - {headers: {Authorization: "Bearer caller"}}
+    - {api_key: key-explicit, params: {azure_ad_token: tok}}
+    - {params: {azure_ad_token: tok}}
+    - {params: {tenant_id: 5}}
+    - {api_key: key-explicit, params: {tenant_id: 5}}
+    - {api_key: key-explicit, headers: {accept: text/plain, X-Custom: "1"}}
+    - {params: {azure_ad_token: ""}}
+    - {api_key: key-explicit, headers: {authorization: "Bearer lower"}}
+    - {environment: {AZURE_AI_API_KEY: ""}, global_api_key: ""}
+env: {}
+compare: {ignore: []}

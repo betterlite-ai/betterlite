@@ -1,0 +1,33 @@
+task: B2412
+deviations:
+- what: The recoverers stop at B1087's bounds, so a recorded line past 1 MiB fails with EventTooLarge and a recovery that would hold or pad more than 65536 items fails with TooManyItems, where LiteLLM recovers any size with no limit.
+  why: Recorded provider bytes come from an untrusted upstream and B1087 owns the aggregate bounds; the typed ApiLimitError names the observed size and the limit.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L836-L882
+- what: An index is an i64 here, so a JSON integer or digit string past i64 falls back to the item or content count, where Python's int() keeps the arbitrary-precision value and a recorded 9223372036854775808 sorts after every i64 index.
+  why: The item maps are keyed by i64 and a value that cannot index a Rust map is treated like any other unusable index.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L44-L51
+- what: The index parser reads ASCII digits only, so a string holding "U+0663" (ARABIC-INDIC DIGIT THREE) is 3 to Python's int() and an unusable index here, which falls back to the item count.
+  why: Unicode digit folding needs a decimal-digit table for a value no provider sends, and the ASCII rule stays.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L49
+- what: A line is strict RFC 8259 JSON, so a NaN or Infinity literal, a lone surrogate escape or a document nested more than 128 levels deep yields no object and drops its event, where Python's json.loads takes all of them and parses about a thousand levels.
+  why: serde_json refuses the literals and no recovered value can carry them, and its default recursion limit keeps an adversarial line off the stack; docs/compatibility.md makes standard JSON the rule, so the strict bounded parse stays.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L35-L41
+- what: An Infinity, -Infinity or 1e400 index raises OverflowError out of LiteLLM's int() call and fails the whole recovery, where here the line is dropped or the index falls back and the other lines still recover.
+  why: A recorded response that fails one number should not become a 500; an unbounded float cannot index anything, so it takes the fallback or drops with its line.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L48-L51
+- what: Both entry points take bytes and fail with a typed Utf8 error on invalid UTF-8, where LiteLLM takes an already decoded str and never meets the case.
+  why: The task's signatures take recorded bytes, and the workspace refuses bytes that are not UTF-8 instead of decoding with replacement.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L836-L838
+kept_bugs:
+- what: A missing or unusable output_index falls back to the current item count, which need not be a free slot, so such an item event overwrites the real item already recorded at that index.
+  why: A working setup carries output_index on every item event, so the collision only happens on a recording that lost one, and the fallback is the behavior the task and the oracle pin.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L64-L65
+- what: A truthy item_id becomes the synthetic message id without a type check, so a recorded id of 5 or [1] is copied as the message id.
+  why: LiteLLM takes whatever truthy value is there and a working setup sends a string or nothing, so the recovered object keeps exactly the value LiteLLM would keep.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L90
+- what: A non-null annotations value is copied onto the output_text part without a list check, so a recorded string or number reaches the caller as annotations.
+  why: The field is only replaced when it is non-null and a working setup sends a list or nothing, so the value is carried as recorded.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/sse_output_recovery.py#L122-L123
+- what: A nonempty response.output list is returned as the recovered items after only a list check, so numbers, strings or nulls inside it reach the caller where LiteLLM's cast promises dicts.
+  why: LiteLLM only tests the list and a real terminal output holds objects, so the list is returned as recorded rather than filtered.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L830-L833

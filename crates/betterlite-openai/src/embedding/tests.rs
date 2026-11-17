@@ -194,6 +194,7 @@ fn embedding_executor(base: &str, api_key: &str) -> (ChatExecutor, ChatDeploymen
         mock_chat: unused_chat,
         mock_embedding: unused_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        bundled_catalog: Arc::default(),
     };
     (executor, deployment)
 }

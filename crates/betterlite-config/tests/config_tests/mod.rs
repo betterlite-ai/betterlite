@@ -6,10 +6,11 @@
 
 use std::collections::BTreeMap;
 use std::fs::{read, read_dir, read_to_string};
-use std::io::Error;
+use std::path::PathBuf;
 use std::str::from_utf8;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use rstest::rstest;
 
 // one empty file per unsupported key, so tasks that add different keys delete different files
 fn unsupported_files(snapshot: &str) -> Vec<String> {
@@ -147,22 +148,16 @@ fixture_test!(
     "websearch_interception_config_yaml"
 );
 
-#[test]
-fn replays_the_config_yaml_corpus() {
-    read_dir("fuzz/corpus/config_yaml")
-        .unwrap()
-        .try_for_each(|entry_result| {
-            let entry = entry_result?;
-            let bytes = read(entry.path())?;
-            if let Ok(source) = from_utf8(&bytes) {
-                drop(
-                    ConfigLoader {
-                        lookup: BTreeMap::<String, String>::new(),
-                    }
-                    .load(source),
-                );
-            }
-            Ok::<(), Error>(())
-        })
-        .unwrap();
+#[rstest]
+fn replays_the_config_yaml_corpus(#[files("fuzz/corpus/config_yaml/*")] path: PathBuf) {
+    let bytes = read(path).unwrap();
+    let Ok(source) = from_utf8(&bytes) else {
+        return;
+    };
+    drop(
+        ConfigLoader {
+            lookup: BTreeMap::<String, String>::new(),
+        }
+        .load(source),
+    );
 }

@@ -1,0 +1,10 @@
+kind: helper
+name: sso-roles-seed
+call:
+  sso_roles:
+    claims: [[internal_user, proxy_admin], PROXY_ADMIN_VIEWER, 7, null, [team, customer]]
+    role_names: [proxy_admin, PROXY_ADMIN, proxy_admin_view_only]
+    ui_roles: [proxy_admin, proxy_admin_viewer, internal_user]
+    access_modes: [admin_only, {type: restricted_sso_group, restricted_sso_group: admins, sso_group_jwt_field: groups}]
+env: {}
+compare: {ignore: []}

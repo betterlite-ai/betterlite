@@ -61,7 +61,7 @@ An unfinished implementation or failing lint is work to complete, not by itself 
 
 The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and eleven paths under .claude, such as .claude/commands, .claude/hooks and .claude/settings.json). .gitignore lists them, so committed, scope, hooks and diff-budget skip them. If a check still fails only on those paths inside the sandbox, that alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
 
-The dispatcher provides the test PostgreSQL connection through a private Unix socket in POSTGRES_TEST_URL. Keep that URL unchanged: the socket reaches the fixture even inside the sandbox's separate network. If the transport is unavailable, stop retrying identical database checks and report the infrastructure failure with its first error. Database tests stay required, and CI runs them on the pull request.
+Database tests stay required. CI runs them on the pull request against its own PostgreSQL service, and each test gets its own database.
 
 ## Final answer
 
