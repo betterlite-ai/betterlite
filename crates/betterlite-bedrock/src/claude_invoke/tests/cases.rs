@@ -40,6 +40,25 @@ const OUTPUT_COST: &str = r#"{
 const RESPONSE_FORMAT: &str = r#"{"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}}"#;
 const FORCED_FORMAT: &str = r#"{"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {}}}}"#;
 const OUTPUT_FORMAT: &str = r#"{"type": "json_schema", "schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}"#;
+const BETA_COMPUTER_PARAMS: &str = r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}], "tools": [{"type": "computer_20250124", "name": "computer", "display_width_px": 1024, "display_height_px": 768}]}"#;
+const BETA_COMPUTER_EXPECTED: &str = r#"["computer-use-2025-01-24", "context-1m-2025-08-07"]"#;
+const BETA_MCP_PARAMS: &str = r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}]}"#;
+const BETA_MID_MESSAGES: &str = r#"[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi", "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}}]"#;
+const BETA_MID_EXPECTED: &str = r#"["mid-conversation-output-config-2026-07-01"]"#;
+const BETA_THINKING_PARAMS: &str =
+    r#"{"max_tokens": 64, "thinking": {"type": "adaptive", "display": "updates"}}"#;
+const BETA_THINKING_EXPECTED: &str = r#"["thinking-display-updates-2026-08-18"]"#;
+const BETA_USER_EXPECTED: &str = r#"["mcp-client-2025-11-20"]"#;
+const TOOL_SEARCH_TOOLS: &str = r#"[{"type": "tool_search_tool_regex_20251119"}, {"type": "tool_search_tool_regex_20251119", "name": "custom_search"}, {"type": "tool_search_tool_regex_20251119", "name": null, "input_schema": {"type": "object", "properties": {}}}, {"type": "tool_search_tool_bm25_20251119", "name": "search_bm25"}, {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "eager_input_streaming": true, "custom": {"defer_loading": true}}]"#;
+const TOOL_SEARCH_EXPECTED: &str = r#"[{"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"}, {"name": "custom_search", "type": "tool_search_tool_regex"}, {"name": null, "type": "tool_search_tool_regex", "input_schema": {"type": "object", "properties": {}}}, {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true}]"#;
+const TOOL_SEARCH_BETAS: &str =
+    r#"["fine-grained-tool-streaming-2025-05-14", "tool-search-tool-2025-10-19"]"#;
+const CHOICE_JSON_TOOL: &str = r#"{"type": "function", "function": {"name": "json_tool_call"}}"#;
+const CHOICE_WEATHER: &str = r#"{"type": "function", "function": {"name": "get_weather"}}"#;
+const CHOICE_STUB_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}]}"#;
+const CHOICE_NATIVE_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "tool", "name": "json_tool_call"}}"#;
+const CHOICE_WEATHER_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "tool", "name": "get_weather"}}"#;
+const CHOICE_AUTO_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "auto"}}"#;
 
 fn plain_fixture() -> Fixture {
     Fixture::new(&model_cost_of(PLAIN_COST)).expect("the fixture builds")
@@ -75,16 +94,16 @@ fn structured_params(format: &str) -> IndexMap<String, Json> {
     params
 }
 
-fn beta_body(
+fn model_body(
     fixture: &Fixture,
     session: &mut Session<'_>,
+    model: &str,
     messages: Vec<Json>,
     params: IndexMap<String, Json>,
-    headers: AnthropicHeaders,
 ) -> Json {
-    let request = fixture.request("claude-plain", messages, params, headers);
+    let request = fixture.request(model, messages, params, AnthropicHeaders::default());
     let fetcher = MapFetcher::default();
-    transformed(session, &request, &fetcher, Mode::Sync).expect("the beta request transforms")
+    transformed(session, &request, &fetcher, Mode::Sync).expect("the request transforms")
 }
 
 pub(super) fn bedrock_anthropic_version() {
@@ -168,16 +187,9 @@ pub(super) fn adaptive_effort_ceiling() {
 }
 
 fn output_config_ceiling(fixture: &Fixture, session: &mut Session<'_>) {
-    let fetcher = MapFetcher::default();
-    let request = fixture.request(
-        "claude-config",
-        prompt_message(),
-        map_of(r#"{"max_tokens": 64, "output_config": {"effort": "xhigh"}}"#),
-        AnthropicHeaders::default(),
-    );
-    let caller_params = Json::Object(request.optional_params.clone());
-    let body = transformed(session, &request, &fetcher, Mode::Sync)
-        .expect("the output config request transforms");
+    let params = map_of(r#"{"max_tokens": 64, "output_config": {"effort": "xhigh"}}"#);
+    let caller_params = Json::Object(params.clone());
+    let body = model_body(fixture, session, "claude-config", prompt_message(), params);
     assert_eq!(
         field(&body, "output_config"),
         Some(&json(r#"{"effort": "max"}"#))
@@ -191,111 +203,90 @@ fn output_config_ceiling(fixture: &Fixture, session: &mut Session<'_>) {
 pub(super) fn bedrock_beta_filter() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    user_and_tool_betas(&fixture, &mut session);
-    mcp_beta_filtered(&fixture, &mut session);
-    user_beta_passes(&fixture, &mut session);
-    mid_conversation_beta(&fixture, &mut session);
-    thinking_display_beta(&fixture, &mut session);
+    beta_scenarios(&fixture, &mut session);
+    effort_beta(&fixture, &mut session);
 }
 
-fn user_and_tool_betas(fixture: &Fixture, session: &mut Session<'_>) {
-    let params = map_of(
-        r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}], "tools": [{"type": "computer_20250124", "name": "computer", "display_width_px": 1024, "display_height_px": 768}]}"#,
-    );
-    let body = beta_body(
-        fixture,
-        session,
-        prompt_message(),
-        params,
-        headers_of(&[("anthropic-beta", "context-1m-2025-08-07")]),
-    );
-    assert_eq!(
-        field(&body, "anthropic_beta"),
-        Some(&json(
-            r#"["computer-use-2025-01-24", "context-1m-2025-08-07"]"#,
-        ))
-    );
-}
-
-fn mcp_beta_filtered(fixture: &Fixture, session: &mut Session<'_>) {
-    let params = map_of(
-        r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}]}"#,
-    );
-    let body = beta_body(
+fn effort_beta(fixture: &Fixture, session: &mut Session<'_>) {
+    let params = map_of(r#"{"max_tokens": 64, "output_config": {"effort": "high"}}"#);
+    let beta = beta_of(
         fixture,
         session,
         prompt_message(),
         params,
         AnthropicHeaders::default(),
     );
-    assert!(field(&body, "anthropic_beta").is_none());
+    assert_eq!(beta, Some(json(r#"["effort-2025-11-24"]"#)));
 }
 
-fn user_beta_passes(fixture: &Fixture, session: &mut Session<'_>) {
-    let body = beta_body(
-        fixture,
-        session,
-        prompt_message(),
-        map_of(r#"{"max_tokens": 64}"#),
-        headers_of(&[("anthropic-beta", "mcp-client-2025-11-20")]),
-    );
-    assert_eq!(
-        field(&body, "anthropic_beta"),
-        Some(&json(r#"["mcp-client-2025-11-20"]"#))
-    );
+fn beta_scenarios(fixture: &Fixture, session: &mut Session<'_>) {
+    let scenarios = [
+        (
+            prompt_message(),
+            map_of(BETA_COMPUTER_PARAMS),
+            headers_of(&[("anthropic-beta", "context-1m-2025-08-07")]),
+            Some(json(BETA_COMPUTER_EXPECTED)),
+        ),
+        (
+            prompt_message(),
+            map_of(BETA_MCP_PARAMS),
+            AnthropicHeaders::default(),
+            None,
+        ),
+        (
+            prompt_message(),
+            map_of(r#"{"max_tokens": 64}"#),
+            headers_of(&[("anthropic-beta", "mcp-client-2025-11-20")]),
+            Some(json(BETA_USER_EXPECTED)),
+        ),
+        (
+            messages_of(BETA_MID_MESSAGES),
+            map_of(r#"{"max_tokens": 64}"#),
+            AnthropicHeaders::default(),
+            Some(json(BETA_MID_EXPECTED)),
+        ),
+        (
+            prompt_message(),
+            map_of(BETA_THINKING_PARAMS),
+            AnthropicHeaders::default(),
+            Some(json(BETA_THINKING_EXPECTED)),
+        ),
+    ];
+    for (messages, params, headers, expected) in scenarios {
+        assert_eq!(
+            beta_of(fixture, session, messages, params, headers),
+            expected
+        );
+    }
 }
 
-fn mid_conversation_beta(fixture: &Fixture, session: &mut Session<'_>) {
-    let messages = messages_of(
-        r#"[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi", "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}}]"#,
-    );
-    let body = beta_body(
-        fixture,
-        session,
-        messages,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-    );
-    assert_eq!(
-        field(&body, "anthropic_beta"),
-        Some(&json(r#"["mid-conversation-output-config-2026-07-01"]"#))
-    );
-}
-
-fn thinking_display_beta(fixture: &Fixture, session: &mut Session<'_>) {
-    let params =
-        map_of(r#"{"max_tokens": 64, "thinking": {"type": "adaptive", "display": "updates"}}"#);
-    let body = beta_body(
-        fixture,
-        session,
-        prompt_message(),
-        params,
-        AnthropicHeaders::default(),
-    );
-    assert_eq!(
-        field(&body, "anthropic_beta"),
-        Some(&json(r#"["thinking-display-updates-2026-08-18"]"#))
-    );
+fn beta_of(
+    fixture: &Fixture,
+    session: &mut Session<'_>,
+    messages: Vec<Json>,
+    params: IndexMap<String, Json>,
+    headers: AnthropicHeaders,
+) -> Option<Json> {
+    let request = fixture.request("claude-plain", messages, params, headers);
+    let fetcher = MapFetcher::default();
+    let body =
+        transformed(session, &request, &fetcher, Mode::Sync).expect("the beta request transforms");
+    field(&body, "anthropic_beta").cloned()
 }
 
 pub(super) fn tool_search_tool_name() {
     let fixture = Fixture::new(&model_cost_of(TOOL_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    named_tool_search_tools(&fixture, &mut session);
-    empty_tools(&fixture, &mut session);
-    malformed_tools(&fixture, &mut session);
+    tool_search_cases(&fixture, &mut session);
 }
 
-fn named_tool_search_tools(fixture: &Fixture, session: &mut Session<'_>) {
-    let params = map_of(
-        r#"{"max_tokens": 64, "tools": [
-            {"type": "tool_search_tool_regex_20251119"},
-            {"type": "tool_search_tool_regex_20251119", "name": "custom_search"},
-            {"type": "tool_search_tool_regex_20251119", "name": null, "input_schema": {"type": "object", "properties": {}}},
-            {"type": "tool_search_tool_bm25_20251119", "name": "search_bm25"},
-            {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "eager_input_streaming": true, "custom": {"defer_loading": true}}
-        ]}"#,
-    );
+fn tool_body(
+    fixture: &Fixture,
+    session: &mut Session<'_>,
+    tools: Json,
+) -> Result<Json, ClaudeInvokeError<Infallible>> {
+    let mut params = map_of(r#"{"max_tokens": 64}"#);
+    params.insert("tools".to_owned(), tools);
     let request = fixture.request(
         "claude-tools",
         prompt_message(),
@@ -303,49 +294,21 @@ fn named_tool_search_tools(fixture: &Fixture, session: &mut Session<'_>) {
         AnthropicHeaders::default(),
     );
     let fetcher = MapFetcher::default();
-    let body = transformed(session, &request, &fetcher, Mode::Sync)
+    transformed(session, &request, &fetcher, Mode::Sync)
+}
+
+fn tool_search_cases(fixture: &Fixture, session: &mut Session<'_>) {
+    let named = tool_body(fixture, session, json(TOOL_SEARCH_TOOLS))
         .expect("the tool search request transforms");
+    assert_eq!(field(&named, "tools"), Some(&json(TOOL_SEARCH_EXPECTED)));
     assert_eq!(
-        field(&body, "tools"),
-        Some(&json(
-            r#"[
-                {"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"},
-                {"name": "custom_search", "type": "tool_search_tool_regex"},
-                {"name": null, "type": "tool_search_tool_regex", "input_schema": {"type": "object", "properties": {}}},
-                {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true}
-            ]"#,
-        ))
+        field(&named, "anthropic_beta"),
+        Some(&json(TOOL_SEARCH_BETAS))
     );
-    assert_eq!(
-        field(&body, "anthropic_beta"),
-        Some(&json(
-            r#"["fine-grained-tool-streaming-2025-05-14", "tool-search-tool-2025-10-19"]"#,
-        ))
-    );
-}
-
-fn empty_tools(fixture: &Fixture, session: &mut Session<'_>) {
-    let request = fixture.request(
-        "claude-tools",
-        prompt_message(),
-        map_of(r#"{"max_tokens": 64, "tools": []}"#),
-        AnthropicHeaders::default(),
-    );
-    let fetcher = MapFetcher::default();
-    let body = transformed(session, &request, &fetcher, Mode::Sync)
-        .expect("the empty tools request transforms");
-    assert_eq!(field(&body, "tools"), Some(&json("[]")));
-}
-
-fn malformed_tools(fixture: &Fixture, session: &mut Session<'_>) {
-    let request = fixture.request(
-        "claude-tools",
-        prompt_message(),
-        map_of(r#"{"max_tokens": 64, "tools": [42]}"#),
-        AnthropicHeaders::default(),
-    );
-    let fetcher = MapFetcher::default();
-    match transformed(session, &request, &fetcher, Mode::Sync) {
+    let empty =
+        tool_body(fixture, session, json("[]")).expect("the empty tools request transforms");
+    assert_eq!(field(&empty, "tools"), Some(&json("[]")));
+    match tool_body(fixture, session, json("[42]")) {
         Ok(_body) => panic!("the malformed tools entry must fail the request"),
         Err(ClaudeInvokeError::Tools(ToolSearchToolsError::NotObject { index })) => {
             assert_eq!(index, 0);
@@ -533,63 +496,27 @@ fn supported_param_list(session: &mut Session<'_>) {
 pub(super) fn forced_tool_choice_removed() {
     let fixture = Fixture::new(&model_cost_of(FORCED_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    forced_choices(&mut session);
-    kept_choices(&mut session);
+    choice_scenarios(&mut session);
 }
 
-fn forced_choices(session: &mut Session<'_>) {
-    let json_tool =
-        choice_params(r#"{"type": "function", "function": {"name": "json_tool_call"}}"#);
-    assert_eq!(
-        map_params_of(
-            session,
-            "claude-test",
-            &structured_params(FORCED_FORMAT),
-            json_tool.clone(),
-        ),
-        json(
-            r#"{
-                "json_mode": true,
-                "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}]
-            }"#,
-        )
-    );
-    assert_eq!(
-        map_params_of(
-            session,
-            "claude-native",
-            &structured_params(FORCED_FORMAT),
-            json_tool,
-        ),
-        json(
-            r#"{
-                "json_mode": true,
-                "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}],
-                "tool_choice": {"type": "tool", "name": "json_tool_call"}
-            }"#,
-        )
-    );
-}
-
-fn kept_choices(session: &mut Session<'_>) {
-    let weather = choice_params(r#"{"type": "function", "function": {"name": "get_weather"}}"#);
-    let mapped = map_params_of(
-        session,
-        "claude-test",
-        &structured_params(FORCED_FORMAT),
-        weather,
-    );
-    assert_eq!(
-        at(&mapped, &["tool_choice"]),
-        &json(r#"{"type": "tool", "name": "get_weather"}"#)
-    );
-    let auto = map_params_of(
-        session,
-        "claude-test",
-        &structured_params(FORCED_FORMAT),
-        choice_params(r#""auto""#),
-    );
-    assert_eq!(at(&auto, &["tool_choice"]), &json(r#"{"type": "auto"}"#));
+fn choice_scenarios(session: &mut Session<'_>) {
+    let scenarios = [
+        ("claude-test", CHOICE_JSON_TOOL, CHOICE_STUB_BODY),
+        ("claude-native", CHOICE_JSON_TOOL, CHOICE_NATIVE_BODY),
+        ("claude-test", CHOICE_WEATHER, CHOICE_WEATHER_BODY),
+        ("claude-test", r#""auto""#, CHOICE_AUTO_BODY),
+    ];
+    for (model, choice, expected) in scenarios {
+        assert_eq!(
+            map_params_of(
+                session,
+                model,
+                &structured_params(FORCED_FORMAT),
+                choice_params(choice),
+            ),
+            json(expected)
+        );
+    }
 }
 
 pub(super) fn remote_url_inlined() {
@@ -673,8 +600,7 @@ fn mixed_media_fetcher() -> MapFetcher {
 pub(super) fn media_fetch() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    served_media(&fixture, &mut session);
-    refused_media(&fixture, &mut session);
+    media_scenarios(&fixture, &mut session);
 }
 
 const MEDIA_MESSAGES: &str = r#"[{"role": "user", "content": [
@@ -682,20 +608,27 @@ const MEDIA_MESSAGES: &str = r#"[{"role": "user", "content": [
     {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf"}}
 ]}]"#;
 
-fn served_media(fixture: &Fixture, session: &mut Session<'_>) {
-    let messages = messages_of(MEDIA_MESSAGES);
-    let fetcher = MapFetcher::new(&[
-        (
-            "https://example.test/pic.png",
-            "data:image/png;base64,iVBORw0KGgo=",
-        ),
-        (
-            "https://example.test/doc.pdf",
-            "data:application/octet-stream;base64,JVBERi0xLjQK",
-        ),
-    ]);
-    let body = plain_body(fixture, session, messages, &fetcher, Mode::Async)
-        .expect("the media request transforms");
+const SERVED_MEDIA: &[(&str, &str)] = &[
+    (
+        "https://example.test/pic.png",
+        "data:image/png;base64,iVBORw0KGgo=",
+    ),
+    (
+        "https://example.test/doc.pdf",
+        "data:application/octet-stream;base64,JVBERi0xLjQK",
+    ),
+];
+
+fn media_scenarios(fixture: &Fixture, session: &mut Session<'_>) {
+    let served = MapFetcher::new(SERVED_MEDIA);
+    let body = plain_body(
+        fixture,
+        session,
+        messages_of(MEDIA_MESSAGES),
+        &served,
+        Mode::Async,
+    )
+    .expect("the media request transforms");
     assert_eq!(
         at(&body, &["messages", "0", "content", "0", "source"]),
         &json(r#"{"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"}"#)
@@ -704,42 +637,37 @@ fn served_media(fixture: &Fixture, session: &mut Session<'_>) {
         at(&body, &["messages", "0", "content", "1", "source"]),
         &json(r#"{"data": "JVBERi0xLjQK", "media_type": "application/pdf", "type": "base64"}"#)
     );
-    assert_eq!(fetcher.transport_attempts(), 2);
-}
-
-fn refused_media(fixture: &Fixture, session: &mut Session<'_>) {
-    let messages = messages_of(MEDIA_MESSAGES);
-    let fetcher = RefusingFetcher::default();
-    match plain_body(fixture, session, messages, &fetcher, Mode::Async) {
+    assert_eq!(served.transport_attempts(), 2);
+    let refusing = RefusingFetcher::default();
+    match plain_body(
+        fixture,
+        session,
+        messages_of(MEDIA_MESSAGES),
+        &refusing,
+        Mode::Async,
+    ) {
         Ok(_body) => panic!("the refusing fetcher must fail the request"),
         Err(ClaudeInvokeError::Media(MediaError::Fetch(ImageFetchError::Rejected { url }))) => {
             assert_eq!(url, "https://example.test/pic.png");
         }
         Err(other) => panic!("unexpected error: {other}"),
     }
-    assert_eq!(fetcher.transport_attempts(), 0);
-    assert_eq!(fetcher.calls(), vec!["https://example.test/pic.png"]);
+    assert_eq!(refusing.transport_attempts(), 0);
+    assert_eq!(refusing.calls(), vec!["https://example.test/pic.png"]);
 }
 
 pub(super) fn structured_output_body() {
     let fixture = Fixture::new(&model_cost_of(OUTPUT_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    native_output_config(&fixture, &mut session);
-    unsupported_output_config(&fixture, &mut session);
-}
-
-fn native_output_config(fixture: &Fixture, session: &mut Session<'_>) {
     let mut params = map_of(r#"{"max_tokens": 64}"#);
     params.insert("output_format".to_owned(), json(OUTPUT_FORMAT));
-    let request = fixture.request(
+    let body = model_body(
+        &fixture,
+        &mut session,
         "claude-native",
         prompt_message(),
         params,
-        AnthropicHeaders::default(),
     );
-    let fetcher = MapFetcher::default();
-    let body = transformed(session, &request, &fetcher, Mode::Sync)
-        .expect("the native structured output transforms");
     assert_eq!(
         at(&body, &["output_config", "format"]),
         &json(OUTPUT_FORMAT)
@@ -749,6 +677,7 @@ fn native_output_config(fixture: &Fixture, session: &mut Session<'_>) {
         Some(&json(r#"["structured-outputs-2025-11-13"]"#))
     );
     assert!(field(&body, "output_format").is_none());
+    unsupported_output_config(&fixture, &mut session);
 }
 
 fn unsupported_output_config(fixture: &Fixture, session: &mut Session<'_>) {
@@ -771,9 +700,9 @@ fn unsupported_output_config(fixture: &Fixture, session: &mut Session<'_>) {
         at(&body, &["messages", "0", "content", "0"]),
         &json(r#"{"text": "hello", "type": "text"}"#)
     );
-    let inlined = at(&body, &["messages", "0", "content", "1", "text"])
-        .as_str()
-        .expect("the schema is inlined as text");
+    let Json::Text(inlined) = at(&body, &["messages", "0", "content", "1", "text"]) else {
+        panic!("the schema is inlined as text");
+    };
     assert_eq!(
         json(inlined),
         json(r#"{"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}"#)
@@ -816,7 +745,12 @@ pub(super) fn remote_url_limit() {
         &fetcher,
         Mode::Sync,
     );
-    assert_too_many(over);
+    assert!(matches!(
+        error_of(over),
+        ClaudeInvokeError::Documents(DocumentError::Media(MediaError::TooManyRemoteUrls {
+            limit: MAX_REMOTE_URLS,
+        }))
+    ));
     assert!(fetcher.calls().is_empty());
     let within = plain_body(
         &fixture,
@@ -827,29 +761,17 @@ pub(super) fn remote_url_limit() {
         &fetcher,
         Mode::Sync,
     );
-    expect_fetch_failure(within);
+    assert!(matches!(
+        error_of(within),
+        ClaudeInvokeError::Documents(DocumentError::Fetch(ImageFetchError::Attempts { .. }))
+    ));
     repeated_urls(&fixture, &mut session);
 }
 
-fn assert_too_many(result: Result<Json, ClaudeInvokeError<Infallible>>) {
+fn error_of(result: Result<Json, ClaudeInvokeError<Infallible>>) -> ClaudeInvokeError<Infallible> {
     match result {
-        Ok(_body) => panic!("more than {MAX_REMOTE_URLS} document URLs must fail the request"),
-        Err(ClaudeInvokeError::Documents(DocumentError::Media(
-            MediaError::TooManyRemoteUrls { limit },
-        ))) => {
-            assert_eq!(limit, MAX_REMOTE_URLS);
-        }
-        Err(other) => panic!("unexpected error: {other}"),
-    }
-}
-
-fn expect_fetch_failure(result: Result<Json, ClaudeInvokeError<Infallible>>) {
-    match result {
-        Ok(_body) => panic!("the empty fetcher cannot serve the document URLs"),
-        Err(ClaudeInvokeError::Documents(DocumentError::Fetch(ImageFetchError::Attempts {
-            ..
-        }))) => {}
-        Err(other) => panic!("unexpected error: {other}"),
+        Ok(_body) => panic!("the request must fail"),
+        Err(error) => error,
     }
 }
 
@@ -864,7 +786,12 @@ fn repeated_urls(fixture: &Fixture, session: &mut Session<'_>) {
         &quiet,
         Mode::Sync,
     );
-    assert_too_many(repeated_over);
+    assert!(matches!(
+        error_of(repeated_over),
+        ClaudeInvokeError::Documents(DocumentError::Media(MediaError::TooManyRemoteUrls {
+            limit: MAX_REMOTE_URLS,
+        }))
+    ));
     assert!(quiet.calls().is_empty());
     let served = MapFetcher::new(&[(
         "https://example.test/same.pdf",
