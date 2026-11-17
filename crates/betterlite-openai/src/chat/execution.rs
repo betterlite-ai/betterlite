@@ -2,10 +2,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_redact::secret::Redactor;
+use futures_util::StreamExt as _;
+use futures_util::stream::{self, BoxStream};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
@@ -22,6 +25,12 @@ use crate::chat::{
 };
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
+};
+use crate::output_limits::build::{RecoveredBody, Recovery, build_output_token_limit_response};
+use crate::output_limits::tokens::{PromptCountError, TokenizerPromptTokens};
+use crate::output_limits::{
+    ErrorBody, RejectedFieldsError, drop_params_from_unprocessable_entity_error,
+    is_output_token_limit_error,
 };
 use transport_failure::http_failure;
 
@@ -64,12 +73,28 @@ pub enum ChatError {
         #[source]
         source: TransportError,
     },
+    #[error("the prompt of an output-limit reply could not be counted: {source}")]
+    OutputLimit {
+        #[source]
+        source: PromptCountError,
+    },
+    #[error("the rejected fields of the provider's 422 could not be read: {source}")]
+    RejectedFields {
+        #[source]
+        source: RejectedFieldsError,
+    },
 }
 
 pub struct ChatOutcome {
     pub response: ChatResponse,
     pub upstream: UpstreamResponse,
     pub upstream_time: Duration,
+}
+
+// the chunks of a provider stream with the upstream response headers the client receives alongside them
+pub struct ChatStream {
+    pub headers: HeaderMap,
+    pub body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
 }
 
 pub struct ChatExecutor {
@@ -107,28 +132,94 @@ impl ChatExecutor {
         if let Some(plan) = resolved {
             return self.mocked_outcome(&plan, deployment, request);
         }
-        let outbound = self.outbound(deployment, request, "application/json")?;
-        let started = Instant::now();
+        let model = servable(deployment)?;
+        let mut body = self.body(request, model)?;
+        let mut dropped = false;
+        loop {
+            let upstream = self.buffered(deployment, request, &body).await?;
+            if let Some(retried) = rejected_retry(request, dropped, &upstream.response, &body)? {
+                body = retried;
+                dropped = true;
+                continue;
+            }
+            return self.buffered_outcome(request, &body, upstream).await;
+        }
+    }
+
+    async fn buffered(
+        &self,
+        deployment: &ChatDeployment,
+        request: &ChatRequest,
+        body: &Map<String, Value>,
+    ) -> Result<Upstream, ChatError> {
         let client = self.client_for(deployment);
-        let upstream = client
+        let outbound = self.outbound_with(deployment, request, "application/json", body)?;
+        let started = Instant::now();
+        let response = client
             .send_following(outbound)
             .await
-            .map_err(http_failure)?
+            .map_err(http_failure)?;
+        let response = response
             .buffered(client.limits.body_bytes)
             .await
             .map_err(http_failure)?;
-        let upstream_time = started.elapsed();
-        if upstream.status >= 400 {
+        Ok(Upstream {
+            response,
+            time: started.elapsed(),
+        })
+    }
+
+    // a 400 that matches the marker is repaired, and any other failing status travels on to the client
+    async fn buffered_outcome(
+        &self,
+        request: &ChatRequest,
+        body: &Map<String, Value>,
+        upstream: Upstream,
+    ) -> Result<ChatOutcome, ChatError> {
+        if upstream.response.status == 400 && output_limit_reached(&upstream.response.body) {
+            return self.recovered_outcome(request, body, upstream).await;
+        }
+        if upstream.response.status >= 400 {
             return Err(ChatError::Provider {
-                response: Box::new(upstream),
+                response: Box::new(upstream.response),
             });
         }
-        let decoded: ChatResponse = serde_json::from_slice(&upstream.body)
+        let decoded: ChatResponse = serde_json::from_slice(&upstream.response.body)
             .map_err(|source| ChatError::Decode { source })?;
         Ok(ChatOutcome {
             response: decoded.for_client(request.model.as_deref()),
-            upstream,
-            upstream_time,
+            upstream: upstream.response,
+            upstream_time: upstream.time,
+        })
+    }
+
+    // LiteLLM's output-limit branch: the 400 becomes the length-truncated 200 the provider returns for larger budgets
+    async fn recovered_outcome(
+        &self,
+        request: &ChatRequest,
+        body: &Map<String, Value>,
+        upstream: Upstream,
+    ) -> Result<ChatOutcome, ChatError> {
+        let recovery = Recovery {
+            clock: self.clock,
+            next_id: self.next_id,
+            tokens: &TokenizerPromptTokens,
+        };
+        let recovered =
+            build_output_token_limit_response(body, upstream.response.headers, &recovery)
+                .await
+                .map_err(|source| ChatError::OutputLimit { source })?;
+        let RecoveredBody::Completion(completion) = recovered.body else {
+            return Err(ChatError::Streaming);
+        };
+        Ok(ChatOutcome {
+            response: completion.for_client(request.model.as_deref()),
+            upstream: UpstreamResponse {
+                status: 200,
+                headers: recovered.headers,
+                body: Vec::new(),
+            },
+            upstream_time: upstream.time,
         })
     }
 
@@ -162,23 +253,73 @@ impl ChatExecutor {
         &self,
         deployment: &ChatDeployment,
         request: &ChatRequest,
-    ) -> Result<StreamResponse, ChatError> {
-        let outbound = self.outbound(deployment, request, "text/event-stream")?;
-        let client = self.client_for(deployment);
-        let response = client
-            .send_following(outbound)
-            .await
-            .map_err(http_failure)?;
-        if !response.response.status().is_success() {
+    ) -> Result<ChatStream, ChatError> {
+        let model = servable(deployment)?;
+        let mut body = self.body(request, model)?;
+        let mut dropped = false;
+        loop {
+            let client = self.client_for(deployment);
+            let outbound = self.outbound_with(deployment, request, "text/event-stream", &body)?;
+            let response = client
+                .send_following(outbound)
+                .await
+                .map_err(http_failure)?;
+            if response.response.status().is_success() {
+                let headers = response.response.headers().clone();
+                return Ok(ChatStream {
+                    headers,
+                    body: response.body_stream(),
+                });
+            }
             let upstream = response
                 .buffered(client.limits.body_bytes)
                 .await
                 .map_err(http_failure)?;
-            return Err(ChatError::Provider {
-                response: Box::new(upstream),
-            });
+            if let Some(retried) = rejected_retry(request, dropped, &upstream, &body)? {
+                body = retried;
+                dropped = true;
+                continue;
+            }
+            return self.stream_outcome(&body, upstream).await;
         }
-        Ok(response)
+    }
+
+    async fn stream_outcome(
+        &self,
+        body: &Map<String, Value>,
+        upstream: UpstreamResponse,
+    ) -> Result<ChatStream, ChatError> {
+        if upstream.status == 400 && output_limit_reached(&upstream.body) {
+            return self.recovered_chunk(body, upstream).await;
+        }
+        Err(ChatError::Provider {
+            response: Box::new(upstream),
+        })
+    }
+
+    // LiteLLM's streaming branch answers the one length-truncated chunk as a one-event SSE body
+    async fn recovered_chunk(
+        &self,
+        body: &Map<String, Value>,
+        upstream: UpstreamResponse,
+    ) -> Result<ChatStream, ChatError> {
+        let recovery = Recovery {
+            clock: self.clock,
+            next_id: self.next_id,
+            tokens: &TokenizerPromptTokens,
+        };
+        let recovered = build_output_token_limit_response(body, upstream.headers, &recovery)
+            .await
+            .map_err(|source| ChatError::OutputLimit { source })?;
+        let RecoveredBody::Chunk(chunk) = recovered.body else {
+            return Err(ChatError::Streaming);
+        };
+        let text = serde_json::to_string(&chunk).map_err(|source| ChatError::Encode { source })?;
+        let frame = format!("data: {text}\n\n").into_bytes();
+        Ok(ChatStream {
+            headers: recovered.headers,
+            body: stream::iter([Ok(frame)]).boxed(),
+        })
     }
 
     fn client_for(&self, deployment: &ChatDeployment) -> &ProxiedClient {
@@ -188,15 +329,14 @@ impl ChatExecutor {
             .unwrap_or(&self.client)
     }
 
-    fn outbound(
+    fn outbound_with(
         &self,
         deployment: &ChatDeployment,
         request: &ChatRequest,
         accept: &'static str,
+        body: &Map<String, Value>,
     ) -> Result<OutboundRequest, ChatError> {
-        let model = servable(deployment)?;
-        let body = serde_json::to_vec(&self.body(request, model)?)
-            .map_err(|source| ChatError::Encode { source })?;
+        let body = serde_json::to_vec(body).map_err(|source| ChatError::Encode { source })?;
         let mut headers = HeaderMap::new();
         let authorization = deployment.credential().ok_or(ChatError::MissingApiKey)?;
         headers.insert(
@@ -229,20 +369,30 @@ impl ChatExecutor {
         let messages = requested
             .remove("messages")
             .unwrap_or(Value::Array(Vec::new()));
-        requested.remove("model");
-        requested.remove("stream");
         // the mock control fields are read here and never reach the provider
-        requested.remove("mock_response");
-        requested.remove("mock_tool_calls");
-        let (known, forwarded): (Map<String, Value>, Map<String, Value>) = requested
-            .into_iter()
-            .partition(|(name, _)| KNOWN_PARAMS.split(' ').any(|known| known == name));
+        for name in ["model", "stream", "mock_response", "mock_tool_calls"] {
+            requested.remove(name);
+        }
         let policy = OpenAiConfig {
             family: ConfigFamily::OpenAi,
             api_key: None,
             headers: Headers::new(),
             settings: OpenAiSettings::default(),
         };
+        let optional = self.optional_params(request, model, requested, &policy);
+        Ok(policy.request_body(model, messages, &optional))
+    }
+
+    fn optional_params(
+        &self,
+        request: &ChatRequest,
+        model: &str,
+        requested: Map<String, Value>,
+        policy: &OpenAiConfig,
+    ) -> Map<String, Value> {
+        let (known, forwarded): (Map<String, Value>, Map<String, Value>) = requested
+            .into_iter()
+            .partition(|(name, _)| KNOWN_PARAMS.split(' ').any(|known| known == name));
         let mut optional = Map::new();
         policy.map_params(model, &known, &mut optional, &self.catalog);
         if request.stream {
@@ -257,8 +407,49 @@ impl ChatExecutor {
             );
         }
         optional.extend(forwarded);
-        Ok(policy.request_body(model, messages, &optional))
+        optional
     }
+}
+
+// the buffered provider answer with the time it took, which a recovered reply keeps
+struct Upstream {
+    response: UpstreamResponse,
+    time: Duration,
+}
+
+// LiteLLM re-sends a 422 once after dropping the fields the provider named, when drop_params allows it
+fn rejected_retry(
+    request: &ChatRequest,
+    dropped: bool,
+    response: &UpstreamResponse,
+    data: &Map<String, Value>,
+) -> Result<Option<Map<String, Value>>, ChatError> {
+    if response.status != 422 || dropped || !drop_params_enabled(request) {
+        return Ok(None);
+    }
+    let mut retried =
+        drop_params_from_unprocessable_entity_error(ErrorBody::Http(&response.body), data)
+            .map_err(|source| ChatError::RejectedFields { source })?;
+    // LiteLLM drops from the params before transform_request, which always restores these two
+    for name in ["messages", "model"] {
+        if let Some(value) = data.get(name) {
+            retried.insert(name.to_owned(), value.clone());
+        }
+    }
+    Ok(Some(retried))
+}
+
+// the per-call drop_params kwarg; the litellm_settings and deployment defaults are not wired into the executor yet
+fn drop_params_enabled(request: &ChatRequest) -> bool {
+    matches!(
+        request.passthrough.get("drop_params"),
+        Some(Value::Bool(true))
+    )
+}
+
+// LiteLLM matches the marker inside the whole exception text, which for the SDK is the raw response body
+fn output_limit_reached(body: &[u8]) -> bool {
+    is_output_token_limit_error(str::from_utf8(body).unwrap_or_default())
 }
 
 fn servable(deployment: &ChatDeployment) -> Result<&str, ChatError> {

@@ -32,7 +32,12 @@ impl ChatError {
             Self::Provider { response } => {
                 return provider_failure(response, redactor, ErrorBodyKind::Structured);
             }
-            Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => 500,
+            Self::Http { .. }
+            | Self::Encode { .. }
+            | Self::Decode { .. }
+            | Self::TooLarge
+            | Self::OutputLimit { .. }
+            | Self::RejectedFields { .. } => 500,
         };
         ProviderFailure {
             status,
