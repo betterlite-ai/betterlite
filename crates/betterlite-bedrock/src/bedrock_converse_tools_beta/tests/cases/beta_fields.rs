@@ -118,6 +118,10 @@ pub(super) fn effort_values(session: &mut Session<'_>) {
     assert!(adaptive.betas.is_empty());
     assert_eq!(adaptive.params, params(high));
 
+    let prefixed = prepare(session, "bedrock/anthropic.fixture-plain", "[]", None, high);
+    assert_eq!(prefixed.betas, plain.betas);
+    assert_eq!(prefixed.params, plain.params);
+
     let duplicate = prepare(
         session,
         PLAIN_MODEL,
@@ -135,21 +139,6 @@ pub(super) fn effort_values(session: &mut Session<'_>) {
         r#"{"output_config": {"effort": "banana"}}"#,
     );
     assert_eq!(unrecognized.betas, list(r#"["effort-2025-11-24"]"#));
-}
-
-pub(super) fn routing_prefixed_model(session: &mut Session<'_>) {
-    let prefixed = prepare(
-        session,
-        "bedrock/anthropic.fixture-plain",
-        "[]",
-        None,
-        r#"{"output_config": {"effort": "high"}}"#,
-    );
-    assert_eq!(prefixed.betas, list(r#"["effort-2025-11-24"]"#));
-    assert_eq!(
-        prefixed.params,
-        params(r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#)
-    );
 }
 
 pub(super) fn effort_without_effect(session: &mut Session<'_>) {

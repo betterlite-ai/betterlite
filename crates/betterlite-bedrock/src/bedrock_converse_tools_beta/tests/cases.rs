@@ -35,7 +35,6 @@ pub(super) fn anthropic_beta_fields() {
     beta_fields::eager_deduplicated(&mut session);
     beta_fields::eager_malformed(&mut session);
     beta_fields::effort_values(&mut session);
-    beta_fields::routing_prefixed_model(&mut session);
     beta_fields::effort_without_effect(&mut session);
     beta_fields::parameter_writing(&mut session);
 }

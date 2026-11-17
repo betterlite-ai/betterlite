@@ -54,7 +54,22 @@ pub async fn apply_anthropic_betas<Source, Transport>(
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    push_effort_beta(params, model, betas, environment, catalogs).await;
+    if let Some(Json::Object(output_config)) = params.get(OUTPUT_CONFIG)
+        && output_config
+            .get(EFFORT)
+            .is_some_and(|effort| !matches!(effort, Json::Null))
+        && !supports_model_capability(
+            model,
+            ADAPTIVE_THINKING,
+            BEDROCK_PROVIDER,
+            environment,
+            catalogs,
+        )
+        .await
+        && !has_beta(betas, EFFORT_BETA)
+    {
+        betas.push(Json::Text(EFFORT_BETA.to_owned()));
+    }
     filter_context_management(params, betas);
     if !betas.is_empty() {
         params.insert(ANTHROPIC_BETA.to_owned(), Json::List(betas.clone()));
@@ -66,41 +81,6 @@ pub fn has_beta(betas: &[Json], name: &str) -> bool {
     betas
         .iter()
         .any(|value| matches!(value, Json::Text(text) if text.as_str() == name))
-}
-
-pub async fn push_effort_beta<Source, Transport>(
-    params: &IndexMap<String, Json>,
-    model: &str,
-    betas: &mut Vec<Json>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-    catalogs: &CatalogSources<'_>,
-) where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    let Some(Json::Object(output_config)) = params.get(OUTPUT_CONFIG) else {
-        return;
-    };
-    if output_config
-        .get(EFFORT)
-        .is_none_or(|effort| matches!(effort, Json::Null))
-    {
-        return;
-    }
-    if supports_model_capability(
-        model,
-        ADAPTIVE_THINKING,
-        BEDROCK_PROVIDER,
-        environment,
-        catalogs,
-    )
-    .await
-    {
-        return;
-    }
-    if !has_beta(betas, EFFORT_BETA) {
-        betas.push(Json::Text(EFFORT_BETA.to_owned()));
-    }
 }
 
 fn beta_value(value: BetaValue) -> Json {
