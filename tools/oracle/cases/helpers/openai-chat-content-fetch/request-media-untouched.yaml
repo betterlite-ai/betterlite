@@ -1,0 +1,54 @@
+kind: helper
+name: openai-chat-content-fetch-request-media-untouched
+call:
+  b9960:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: sync
+          optional_params: {}
+          refuse: false
+          urls:
+            "https://example.com/system.pdf": "data:application/pdf;base64,JVBERi0="
+            "https://example.com/assistant.pdf": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: system
+              content:
+                - {type: text, text: be brief}
+                - type: file
+                  file:
+                    file_id: https://example.com/system.pdf
+            - role: assistant
+              content:
+                - {type: text, text: done}
+                - type: file
+                  file:
+                    file_id: https://example.com/assistant.pdf
+            - role: user
+              content:
+                - type: image_url
+                  image_url: https://example.com/cat.png
+                - type: image_url
+                  image_url:
+                    url: https://example.com/dog.png
+                    format: png
+                    detail: high
+                - type: file
+                  file:
+                    file_id: "data:application/pdf;base64,JVBERi0="
+                - type: file
+                  file:
+                    file_data: "data:text/plain;base64,aGk="
+                - type: file
+                  file: {}
+            - role: user
+              content: []
+            - role: user
+              content: plain words
+env: {}
+compare: {ignore: []}
