@@ -69,15 +69,25 @@ struct Named {
 }
 
 // The MCP SDK's SSE transport answers requests on the stream the client opened, so the server pushes frames through this
-#[derive(Default)]
 struct LegacyServer {
     outbox: Mutex<Option<Sender<String>>>,
     initialized: AtomicBool,
     // set by a case that needs the handshake refused with a JSON-RPC error
     reject_initialize: AtomicBool,
+    // the version the server answers the handshake with
+    protocol_version: String,
 }
 
 impl LegacyServer {
+    fn new(protocol_version: &str) -> Self {
+        Self {
+            outbox: Mutex::new(None),
+            initialized: AtomicBool::new(false),
+            reject_initialize: AtomicBool::new(false),
+            protocol_version: protocol_version.to_owned(),
+        }
+    }
+
     fn stream(&self) -> Body {
         let (sender, receiver) = channel::<String>(64);
         let mut outbox = self.outbox.lock().unwrap_or_else(PoisonError::into_inner);
@@ -124,7 +134,7 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
         "initialize" => Some(if server.reject_initialize.load(Ordering::SeqCst) {
             failure_reply(&id, "unsupported protocol")
         } else {
-            initialize_reply(&id)
+            initialize_reply(&server, &id)
         }),
         "tools/list" => Some(list_reply(&server, &id, request.params.as_deref())),
         "tools/call" => call_reply(&id, request.params.as_deref()).await,
@@ -138,9 +148,10 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
     StatusCode::ACCEPTED.into_response()
 }
 
-fn initialize_reply(id: &str) -> String {
+fn initialize_reply(server: &LegacyServer, id: &str) -> String {
+    let version = &server.protocol_version;
     format!(
-        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":"2025-06-18","capabilities":{{"tools":{{}},"prompts":{{}},"resources":{{}}}},"serverInfo":{{"name":"legacy-test","version":"1.0"}},"instructions":"{INSTRUCTIONS}"}}}}"#
+        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"protocolVersion":"{version}","capabilities":{{"tools":{{}},"prompts":{{}},"resources":{{}}}},"serverInfo":{{"name":"legacy-test","version":"1.0"}},"instructions":"{INSTRUCTIONS}"}}}}"#
     )
 }
 
@@ -219,7 +230,11 @@ struct LegacySseServer {
 }
 
 async fn serve_legacy() -> LegacySseServer {
-    let state = Arc::new(LegacyServer::default());
+    serve_legacy_with_version("2025-06-18").await
+}
+
+async fn serve_legacy_with_version(protocol_version: &str) -> LegacySseServer {
+    let state = Arc::new(LegacyServer::new(protocol_version));
     let router = Router::new()
         .route("/sse", get(open_events))
         .route("/messages", post(receive_message))
@@ -248,8 +263,8 @@ fn tool_names(tools: Vec<McpTool>) -> Vec<String> {
 #[tokio::test]
 async fn a_legacy_sse_session_lists_every_tool_page_and_calls_a_tool() {
     let server = serve_legacy().await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -304,18 +319,15 @@ async fn a_stream_failure_in_one_session_leaves_another_sessions_error_alone() {
         &plain.url,
         support::CALL_TIMEOUT,
     );
+    let stream_fail = call("stream-fail");
+    let rpc_error = call("rpc-error");
     let stream_call = call_tool(
         &mut broken_client,
-        &call("stream-fail"),
+        &stream_fail,
         None::<&RecordingHost>,
         RAISE,
     );
-    let error_call = call_tool(
-        &mut plain_client,
-        &call("rpc-error"),
-        None::<&RecordingHost>,
-        RAISE,
-    );
+    let error_call = call_tool(&mut plain_client, &rpc_error, None::<&RecordingHost>, RAISE);
     let (streamed, answered) = tokio::join!(stream_call, error_call);
     assert!(matches!(streamed.unwrap_err(), SessionError::Stream(_)));
     let failure = match answered.unwrap_err() {
@@ -329,8 +341,8 @@ async fn a_stream_failure_in_one_session_leaves_another_sessions_error_alone() {
 #[tokio::test]
 async fn a_broken_legacy_sse_stream_fails_the_pending_call() {
     let server = serve_legacy().await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -355,8 +367,8 @@ async fn a_broken_legacy_sse_stream_fails_the_pending_call() {
 async fn an_initialize_error_keeps_its_json_rpc_code() {
     let server = serve_legacy().await;
     server.state.reject_initialize.store(true, Ordering::SeqCst);
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -371,11 +383,28 @@ async fn an_initialize_error_keeps_its_json_rpc_code() {
     assert_eq!(failure.message, "unsupported protocol");
 }
 
+// The SDK's handshake accepts only the versions it knows, so a server on a later one is a runtime failure
+#[tokio::test]
+async fn a_protocol_version_outside_the_handshake_fails_before_initialized() {
+    let server = serve_legacy_with_version("2026-07-28").await;
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let error = list_tools(&mut client, support::CALL_TIMEOUT, true)
+        .await
+        .expect_err("the client refuses the version");
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+    assert!(!server.state.initialized.load(Ordering::SeqCst));
+}
+
 #[tokio::test]
 async fn a_session_sends_initialized_before_it_lists_tools() {
     let server = serve_legacy().await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -389,8 +418,8 @@ async fn a_session_sends_initialized_before_it_lists_tools() {
 #[tokio::test]
 async fn a_result_of_the_wrong_kind_fails_the_listing() {
     let server = serve_legacy().await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -408,8 +437,8 @@ async fn a_result_of_the_wrong_kind_fails_the_listing() {
 #[tokio::test]
 async fn an_input_required_result_is_an_error_unless_the_caller_allows_it() {
     let server = serve_legacy().await;
-    let mut refused = support::client_for(
-        support::runtime(),
+    let mut refused = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,
@@ -424,8 +453,8 @@ async fn an_input_required_result_is_an_error_unless_the_caller_allows_it() {
     .unwrap_err();
     assert!(matches!(error, SessionError::Runtime(_)), "{error}");
 
-    let mut allowed = support::client_for(
-        support::runtime(),
+    let mut allowed = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Sse),
         &server.url,
         support::CALL_TIMEOUT,

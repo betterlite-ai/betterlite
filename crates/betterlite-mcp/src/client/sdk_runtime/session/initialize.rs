@@ -1,3 +1,4 @@
+use rmcp::ServiceError;
 use rmcp::model::{
     ClientNotification, Implementation, InitializeRequest as SdkInitializeRequest,
     InitializeRequestParams, InitializedNotification, ProtocolVersion, ServerPeerInfo,
@@ -15,6 +16,14 @@ use super::super::convert::{
     protocol_failure as sdk_protocol_failure, protocol_version, unexpected_response,
 };
 use super::{SdkSession, Silent};
+
+// The SDK's handshake lists, from HANDSHAKE_PROTOCOL_VERSIONS in mcp_types.version
+const HANDSHAKE_VERSIONS: [ProtocolVersion; 4] = [
+    ProtocolVersion::V_2024_11_05,
+    ProtocolVersion::V_2025_03_26,
+    ProtocolVersion::V_2025_06_18,
+    ProtocolVersion::V_2025_11_25,
+];
 
 pub struct SdkInitializeResult {
     result: rmcp::model::InitializeResult,
@@ -61,6 +70,10 @@ impl ClientSession for SdkSession {
         )
         .with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE);
         let result = self.send_initialize_request(params).await?;
+        // The SDK rejects a version outside its handshake before it adopts the result or sends notifications/initialized
+        if !HANDSHAKE_VERSIONS.contains(&result.protocol_version) {
+            return Err(SdkError::Service(ServiceError::UnexpectedResponse));
+        }
         let outcome = SdkInitializeResult { result };
         self.adopt(&outcome);
         self.send_initialized().await?;
