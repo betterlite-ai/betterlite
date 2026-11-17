@@ -5,6 +5,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::answer::parse_answer;
@@ -22,7 +23,14 @@ use crate::report_check::mutants::mutant_problems;
 use crate::report_check::report_problems;
 use crate::spec::agents::Agents;
 use crate::spec::report::{Report, ReportStatus};
+use crate::spec::task::Task;
 use crate::yaml::read_yaml;
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum ReportIn {
+    LastMessage,
+    JsonSchema,
+}
 
 #[derive(Debug, Deserialize)]
 struct HookInput {
@@ -84,7 +92,7 @@ fn block_counted(
     block(&format!("{}\n{closing}", lines.join("\n")))
 }
 
-pub(crate) fn hook(input: &str) -> Result<Vec<String>, GateError> {
+pub(crate) fn hook(input: &str, report_in: ReportIn) -> Result<Vec<String>, GateError> {
     let payload: HookInput = serde_json::from_str(input).map_err(|source| GateError::Json {
         what: "the hook input".to_owned(),
         source,
@@ -97,17 +105,26 @@ pub(crate) fn hook(input: &str) -> Result<Vec<String>, GateError> {
             branch.trim()
         ));
     };
-    let message = payload.last_assistant_message.unwrap_or_default();
-    let report: Report = match parse_answer(&message, "the final answer") {
-        Ok(report) => report,
-        Err(error) => {
-            let line = format!(
-                "The final answer must be the report JSON from .development/schema/report.schema.json: {error}"
-            );
-            return block_counted(&development, task_id, &[line]);
+    match report_in {
+        // claude -p with --json-schema never puts the report in the last message, and the dispatcher checks it after the answer
+        ReportIn::JsonSchema => {
+            let task = development.task(task_id)?;
+            run_checks(&development, task_id, &task)
         }
-    };
-    check_report(&development, task_id, &report)
+        ReportIn::LastMessage => {
+            let message = payload.last_assistant_message.unwrap_or_default();
+            let report: Report = match parse_answer(&message, "the final answer") {
+                Ok(report) => report,
+                Err(error) => {
+                    let line = format!(
+                        "The final answer must be the report JSON from .development/schema/report.schema.json: {error}"
+                    );
+                    return block_counted(&development, task_id, &[line]);
+                }
+            };
+            check_report(&development, task_id, &report)
+        }
+    }
 }
 
 fn check_report(
@@ -131,6 +148,14 @@ fn check_report(
     if !problems.is_empty() {
         return block_counted(development, task_id, &problems);
     }
+    run_checks(development, task_id, &task)
+}
+
+fn run_checks(
+    development: &Development,
+    task_id: &str,
+    task: &Task,
+) -> Result<Vec<String>, GateError> {
     let selection = if env::var("GATE_DISPATCHED").as_deref() == Ok("1") {
         // they need no build and took 2 to 61 s on six task heads on 11-16, while a push that fails only them costs a CI round, 39 minutes median
         Selection {
@@ -145,10 +170,9 @@ fn check_report(
     } else {
         Selection::default()
     };
-    let verdict = checks::run(development, &task, &selection)?;
+    let verdict = checks::run(development, task, &selection)?;
     if verdict.passed {
         return Ok(Vec::new());
     }
-    let lines: Vec<String> = verdict.lines.into_iter().chain(problems).collect();
-    block_counted(development, task_id, &lines)
+    block_counted(development, task_id, &verdict.lines)
 }
