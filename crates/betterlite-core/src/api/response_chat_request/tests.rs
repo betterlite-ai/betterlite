@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fmt::Debug;
+use std::iter::repeat_n;
 use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -317,10 +318,20 @@ fn keeps_text_across_the_mapping(#[case] optional: &str, #[case] expected: Value
 #[rstest]
 #[case::exactly_64("u".repeat(64), "u".repeat(64))]
 #[case::one_character_longer("u".repeat(65), "u".repeat(64))]
-#[case::multibyte_characters("é".repeat(65), "é".repeat(64))]
 fn truncates_a_long_user_to_64_characters(#[case] user: String, #[case] expected: String) {
     let built = build(&format!(r#"{{"user": "{user}"}}"#));
     let projection = built.outcome.expect("the request builds");
+    assert_eq!(options(&projection.params)["user"], Value::String(expected));
+}
+
+#[test]
+fn truncates_on_character_boundaries() {
+    // U+00E9 needs two UTF-8 bytes, so taking 64 bytes would keep only 32 characters
+    let accented = char::from(233_u8);
+    let user: String = repeat_n(accented, 65).collect();
+    let built = build(&format!(r#"{{"user": "{user}"}}"#));
+    let projection = built.outcome.expect("the request builds");
+    let expected: String = repeat_n(accented, 64).collect();
     assert_eq!(options(&projection.params)["user"], Value::String(expected));
 }
 
@@ -546,7 +557,7 @@ fn sanitizes_the_sdk_params(#[case] litellm: &str, #[case] metadata: Value) {
         .litellm_params
         .get("litellm_metadata")
         .cloned()
-        .unwrap_or(Value::Null);
+        .unwrap_or_default();
     assert_eq!(merged, metadata);
     assert!(projection.litellm_params.get("temperature").is_none());
     assert!(projection.litellm_params.get("metadata").is_none());
@@ -770,6 +781,11 @@ fn keeps_the_extra_body_promotion_order(#[case] optional: &str, #[case] expected
 #[case::caller_headers(
     r#"{"X-Caller": "1"}"#,
     r#"{"extra_headers": {"X-Sdk": "2"}}"#,
+    json!({"X-Caller": "1"})
+)]
+#[case::caller_headers_skip_an_invalid_sdk_value(
+    r#"{"X-Caller": "1"}"#,
+    r#"{"extra_headers": "x"}"#,
     json!({"X-Caller": "1"})
 )]
 #[case::sdk_headers("{}", r#"{"extra_headers": {"X-Sdk": "2"}}"#, json!({"X-Sdk": "2"}))]
