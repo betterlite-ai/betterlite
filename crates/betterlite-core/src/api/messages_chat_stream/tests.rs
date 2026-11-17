@@ -397,11 +397,11 @@ async fn async_terminal_usage() {
         &[TEXT_START, DELTA_A, STOP_0, STOP_WITH_EDITS, MESSAGE_STOP],
     )
     .await;
+    assert_eq!(pulls(&stream), 5, "the trailing chunk was still read");
     assert!(
         stream.next_event().await.expect("no failure").is_none(),
         "the trailing content is dropped after the usage delta"
     );
-    assert_eq!(pulls(&stream), 5, "the trailing chunk was still read");
 }
 
 #[tokio::test]
