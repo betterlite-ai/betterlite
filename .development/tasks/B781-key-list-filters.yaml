@@ -142,7 +142,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-list-filters/alias-bind-offsets-and-false-scope.yaml
 deviations: []
 out_of_scope:
-  - B2314 owns _user_has_admin_view; B770 owns repository adapters, B723/B724 user/team repositories,
+  - B2314 owns _user_has_admin_view; B722 owns repository adapters, B723/B724 user/team repositories,
     B778 key-info access and B800 team role/permission checks. B897 owns query plans, not these helpers.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'

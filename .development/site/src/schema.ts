@@ -28,38 +28,11 @@ export const configSchema = z.object({
 });
 export type Config = z.infer<typeof configSchema>;
 
-const text = z.string().transform((cell) => (cell === "" ? null : cell));
 const count = z.string().min(1).pipe(z.coerce.number());
 const optionalCount = z
   .string()
   .transform((cell) => (cell === "" ? null : Number(cell)))
   .pipe(z.number().nullable());
-
-export const pullSchema = z.object({
-  number: count,
-  branch: z.string(),
-  first: count,
-  commits: count,
-  opened: count,
-  queued: optionalCount,
-  queues: count,
-  merged: count,
-  lines: count,
-  files: count,
-});
-export type Pull = z.infer<typeof pullSchema>;
-
-export const runSchema = z.object({
-  event: z.string(),
-  conclusion: text,
-  pr: optionalCount,
-  branch: text,
-  created: count,
-  started: count,
-  updated: count,
-  attempt: count,
-});
-export type Run = z.infer<typeof runSchema>;
 
 export const agentRunSchema = z.object({
   start: count,

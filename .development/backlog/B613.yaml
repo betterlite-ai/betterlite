@@ -2,7 +2,7 @@ id: B613
 milestone: M3 providers
 title: Bedrock classic model parameter maps
 status: todo
-depends_on: [B2205, B037, B2201, B2202, B682, B002, B171]
+depends_on: [B2205, B1415, B2201, B2202, B682, B002, B171]
 file: tasks/B613-bedrock-legacy-models.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py"
