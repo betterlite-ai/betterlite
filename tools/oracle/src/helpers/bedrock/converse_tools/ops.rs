@@ -141,14 +141,6 @@ fn tool_spec(input: &ToolSpecInput) -> HelperResult {
     Ok(json!({ "block": block }))
 }
 
-fn media_types() -> HelperResult {
-    Ok(json!({
-        "image": SUPPORTED_IMAGE_TYPES,
-        "document": SUPPORTED_DOCUMENT_TYPES,
-        "video": SUPPORTED_VIDEO_TYPES,
-    }))
-}
-
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::ToolChoice(call) => tool_choice(call),
@@ -161,6 +153,10 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::Additional(call) => additional(call),
         Input::OutputConfig(call) => output_config(call),
         Input::ToolSpec(call) => tool_spec(call),
-        Input::MediaTypes(_) => media_types(),
+        Input::MediaTypes(_) => Ok(json!({
+            "image": SUPPORTED_IMAGE_TYPES,
+            "document": SUPPORTED_DOCUMENT_TYPES,
+            "video": SUPPORTED_VIDEO_TYPES,
+        })),
     }
 }

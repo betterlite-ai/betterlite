@@ -22,6 +22,7 @@ enum Job {
 }
 
 // LiteLLM recurses here; a deep schema would overflow the stack, so the walk keeps its own frames.
+#[must_use]
 pub fn add_additional_properties(schema: &Json) -> Json {
     let mut work = vec![Job::Patch(schema.clone())];
     let mut finished: Vec<Json> = Vec::new();

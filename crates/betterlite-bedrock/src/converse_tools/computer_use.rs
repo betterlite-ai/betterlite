@@ -117,13 +117,15 @@ fn function_tool(tool_type: &str, function: &Json) -> Result<Json, ConverseTools
 fn direct_tool(fields: &IndexMap<String, Json>, tool_type: &str) -> Json {
     let mut transformed = fields.clone();
     if !transformed.contains_key("name") {
-        if tool_type.starts_with("bash_") {
-            transformed.insert("name".to_owned(), Json::Text("bash".to_owned()));
+        let name = if tool_type.starts_with("bash_") {
+            Some("bash")
         } else if tool_type.starts_with("text_editor_") {
-            transformed.insert(
-                "name".to_owned(),
-                Json::Text("str_replace_editor".to_owned()),
-            );
+            Some("str_replace_editor")
+        } else {
+            None
+        };
+        if let Some(name) = name {
+            transformed.insert("name".to_owned(), Json::Text(name.to_owned()));
         }
     }
     Json::Object(transformed)

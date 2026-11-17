@@ -30,7 +30,7 @@ pub fn map_tool_choice_values(
     }
 }
 
-fn none_choice(drop: DropParams) -> Result<(), ConverseToolsError> {
+const fn none_choice(drop: DropParams) -> Result<(), ConverseToolsError> {
     if drop.global || drop.call {
         return Ok(());
     }
