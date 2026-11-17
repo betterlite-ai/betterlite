@@ -1,0 +1,24 @@
+kind: helper
+name: deployment-bucket
+call:
+  vertex_file_read_settings:
+    params:
+      gcs_bucket_name: deployment-bucket
+      bucket_name: alias-bucket
+      vertex_credentials: /secrets/deployment-sa.json
+    argument: /secrets/argument-sa.json
+    environment:
+      GCS_BATCH_BUCKET_NAME: batch-env-bucket
+      GCS_BUCKET_NAME: env-bucket
+      GCS_PATH_SERVICE_ACCOUNT: /secrets/env-sa.json
+calls:
+  - vertex_file_read_settings:
+      params: {bucket_name: alias-bucket}
+      argument: null
+      environment: {}
+  - vertex_file_read_settings:
+      params: {gcs_bucket_name: deployment-bucket}
+      argument: null
+      environment: {}
+env: {}
+compare: {ignore: []}

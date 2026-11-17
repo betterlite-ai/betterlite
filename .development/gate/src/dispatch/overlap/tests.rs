@@ -61,3 +61,33 @@ fn a_path_two_running_tasks_share_stops_clashing_once_overlap_allowed_lists_it()
     development.catalog.settings.overlap_allowed = vec!["README.md".to_owned()];
     assert!(overlaps(&development, &task).unwrap().is_empty());
 }
+
+#[test]
+fn a_parked_journal_stops_counting_as_running() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let file = source.join("tasks/B000-workspace.yaml");
+    let folder = tempfile::tempdir().unwrap();
+    let root = folder.path();
+    git(root, &["init", "--quiet", "-b", "main"]).unwrap();
+    fs::create_dir_all(root.join(".development/tasks")).unwrap();
+    fs::copy(&file, root.join(".development/tasks/parked.yaml")).unwrap();
+    let mut parked: BacklogEntry = read_yaml(&source.join("backlog/B000.yaml")).unwrap();
+    parked.status = Status::Todo;
+    parked.file = Some("tasks/parked.yaml".to_owned());
+    let journal = root.join(".git/betterlite").join(&parked.id);
+    let mut development = Development {
+        root: root.to_owned(),
+        catalog: read_yaml(&source.join("checks.yaml")).unwrap(),
+        backlog: Backlog {
+            tasks: vec![parked],
+        },
+    };
+    let mut task: Task = read_yaml(&file).unwrap();
+    task.id = "B001".to_owned();
+    task.scope.paths = vec!["README.md".to_owned()];
+    development.catalog.settings.overlap_allowed.clear();
+    fs::create_dir_all(&journal).unwrap();
+    assert_eq!(overlaps(&development, &task).unwrap().len(), 1);
+    fs::write(journal.join("parked"), "").unwrap();
+    assert!(overlaps(&development, &task).unwrap().is_empty());
+}

@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use ::http::HeaderMap;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
@@ -64,6 +65,7 @@ impl CompletionAnswer {
 
 pub struct CompletionExecutor {
     pub client: ProxiedClient,
+    pub bundled_catalog: Arc<ModelCatalog>,
     pub catalog: OnceCell<CompletionCatalog>,
 }
 
@@ -78,7 +80,7 @@ impl CompletionExecutor {
     ) -> Result<CompletionAnswer, CompletionFailure> {
         let bundled = self
             .catalog
-            .get_or_init(async || CompletionCatalog::bundled())
+            .get_or_init(async || CompletionCatalog::new(&self.bundled_catalog))
             .await;
         let route = route_for(deployment, bundled);
         let CompletionRoute::Text { model } = &route else {

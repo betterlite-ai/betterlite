@@ -66,7 +66,7 @@ pub(super) fn fixture(directory: &Path) -> Result<Counter, Box<HelperError>> {
         Arc::clone(&service),
         false,
     ));
-    Ok(Counter::new(selector, fetcher, service, catalog, settings))
+    Ok(Counter::new(selector, service, catalog, settings))
 }
 
 fn client() -> Result<Arc<ProxiedClient>, Box<HelperError>> {

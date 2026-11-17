@@ -344,6 +344,7 @@ fn executor_over(
             mock_chat,
             mock_embedding,
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+            bundled_catalog: Arc::default(),
         },
         deployments,
         defaults,

@@ -135,6 +135,7 @@ pub mod providers;
 pub mod proxy;
 pub mod ragflow_vector_store;
 pub mod realtime;
+pub mod reasoning_effort_capability;
 pub mod reasoning_models;
 pub mod request;
 pub mod response_compatible;

@@ -410,6 +410,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "responses_sse_recovery"
+path = "fuzz_targets/responses_sse_recovery.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "responses_stream_value"
 path = "fuzz_targets/responses_stream_value.rs"
 test = false

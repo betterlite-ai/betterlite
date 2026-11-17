@@ -99,7 +99,7 @@ fn counter() -> Counter {
         Arc::clone(&service),
         false,
     ));
-    Counter::new(selector, fetcher, service, catalog, Settings::default())
+    Counter::new(selector, service, catalog, Settings::default())
 }
 
 #[tokio::test]
