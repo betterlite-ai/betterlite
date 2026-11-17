@@ -1,0 +1,62 @@
+kind: probe
+name: lar1-first-type-match
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: local-2
+            model: openai/local-2
+            kind: local
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+        metadata: '{"confidence": 0.5}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: local-2
+            model: openai/local-2
+            kind: local
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+        metadata: '{"confidence": 0.9}'
+  - clock: {unix_millis: 1700000000125, monotonic_millis: 42002}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: local-2
+            model: openai/local-2
+            kind: local
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+        metadata: '{"confidence": 0.4}'
+compare:
+  ignore: []
