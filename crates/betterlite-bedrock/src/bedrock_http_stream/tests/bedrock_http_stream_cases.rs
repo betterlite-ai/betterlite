@@ -10,7 +10,9 @@ use crate::bedrock_http_stream::error::HttpStreamError;
 use crate::bedrock_http_stream::stream::StreamFailure;
 use crate::bedrock_settings::ResponseBody;
 use crate::converse_events::ChunkProjection;
+use crate::event_frames::error::EventFrameError;
 use crate::invoke_events::InvokeChunk;
+use crate::invoke_events::error::InvokeStreamError;
 
 const START: &str = "0000008e0000002ab04f184c0b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7a644746796443493665794a796232786c496a6f6959584e7a61584e3059573530496e3073496d4e76626e526c626e52436247396a61306c755a475634496a6f7766513d3d227df9b9a0e5";
 const HELLO: &str = "000000860000002a803f538d0b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a6b5a5778305953493665794a305a586830496a6f69614756736247386966537769593239756447567564454a7362324e725357356b5a5867694f6a4239227d23df9631";
@@ -21,6 +23,17 @@ const USAGE: &str = "000000be0000002a116ea0ca0b3a6576656e742d7479706507000563687
 const MALFORMED: &str = "00000000000000000000000000000000";
 
 const TOOL_REPLY: &str = r#"{"output":{"message":{"role":"assistant","content":[{"toolUse":{"toolUseId":"tool-1","name":"top_song","input":{"sign":"WZPZ"}}}]}},"stopReason":"tool_use","usage":{"inputTokens":2,"outputTokens":3,"totalTokens":5}}"#;
+
+// A buffered reply whose only tool is the synthetic response-format call a json_mode client gets.
+const JSON_TOOL_REPLY: &str = r#"{"output":{"message":{"role":"assistant","content":[{"toolUse":{"toolUseId":"tool-1","name":"json_tool_call","input":{"sign":"WZPZ"}}}]}},"stopReason":"tool_use","usage":{"inputTokens":2,"outputTokens":3,"totalTokens":5}}"#;
+
+// One DeepSeek R1 chunk event: {"generation":"hello"}.
+const DEEPSEEK_CHUNK: &str = "000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a6e5a57356c636d463061573975496a6f69614756736247386966513d3d227da8f89c66";
+
+// A Converse content-block start, tool delta and stop, each carrying a json_tool_call block.
+const JSON_TOOL_START: &str = "000000d60000002ab82c9c460b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a6a623235305a573530516d787659327454644746796443493665794a7a644746796443493665794a306232397356584e6c496a7037496e5276623278566332564a5a434936496e517849697769626d46745a534936496d707a62323566644739766246396a59577873496e31394c434a6a623235305a573530516d78765932744a626d526c654349364d483139227d400de46f";
+const JSON_TOOL_DELTA: &str = "000000ca0000002a1d3ce6c50b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a6a623235305a573530516d7876593274455a5778305953493665794a6b5a5778305953493665794a306232397356584e6c496a7037496d6c7563485630496a6f696531776963326c6e626c77694f694263496c646155467063496e306966583073496d4e76626e526c626e52436247396a61306c755a475634496a6f776658303d227d56ee3eb6";
+const JSON_TOOL_STOP: &str = "000000820000002a75bff54d0b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a6a623235305a573530516d78765932745464473977496a7037496d4e76626e526c626e52436247396a61306c755a475634496a6f776658303d227d2340327a";
 
 fn tool_member<'value>(tool: &'value JsonValue, name: &str) -> &'value JsonValue {
     match tool {
@@ -46,6 +59,7 @@ fn generic(chunk: &InvokeChunk) -> &GenericChunk {
 }
 
 enum Field {
+    Model,
     Content,
     FinishReason,
 }
@@ -54,10 +68,12 @@ fn field(chunk: &InvokeChunk, field: Field) -> Option<&str> {
     match chunk {
         InvokeChunk::Base(projection) => match projection.as_ref() {
             ChunkProjection::Converse(converse) => match field {
+                Field::Model => Some(converse.model.as_str()),
                 Field::Content => converse.delta.content.as_deref(),
                 Field::FinishReason => converse.finish_reason.as_deref(),
             },
             ChunkProjection::Generic(generic) => match field {
+                Field::Model => None,
                 Field::Content => Some(generic.text.as_str()),
                 Field::FinishReason => Some(generic.finish_reason.as_str()),
             },
@@ -65,6 +81,16 @@ fn field(chunk: &InvokeChunk, field: Field) -> Option<&str> {
         InvokeChunk::Anthropic(_) | InvokeChunk::DeepSeek(_) | InvokeChunk::OpenAiCompatible(_) => {
             None
         }
+    }
+}
+
+// The message the tally built for a 502, which names the response headers the stream carried.
+fn failure_message(failure: &StreamFailure) -> Option<&str> {
+    match failure {
+        StreamFailure::Decode(InvokeStreamError::Frame(EventFrameError::Bedrock {
+            error, ..
+        })) => Some(error.error.message.as_str()),
+        StreamFailure::Read(_) | StreamFailure::Decode(_) => None,
     }
 }
 
@@ -144,6 +170,14 @@ fn case_1_invoke_stream_url() {
     let signed_outcome = run(Call::Invoke(signed_call), &signed_inputs, Consume::None);
     assert!(signed_outcome.error.is_none());
     assert_eq!(signed_inputs.posts()[0].body, "signed-json");
+    // The post-call log keeps the request data the caller passed, not the signed bytes on the wire.
+    assert_eq!(
+        member(
+            member(signed_outcome.logged(0), "additional_args"),
+            "complete_input_dict"
+        ),
+        &Json::Text(DATA.to_owned())
+    );
 
     let empty_signed_inputs = Inputs::new(Reply::frames(&[FIRST]));
     let mut empty_signed_call = invoke(api_base, DATA, &messages);
@@ -417,6 +451,18 @@ fn case_3_converse_stream_headers() {
         .filter_map(|chunk| field(chunk, Field::Content))
         .collect();
     assert_eq!(text, "hello world");
+    // Every event chunk carries the model the call passed, which the decoder stores at construction.
+    let models: Vec<&str> = outcome
+        .chunks
+        .iter()
+        .filter_map(|chunk| field(chunk, Field::Model))
+        .collect();
+    assert_eq!(models.len(), outcome.chunks.len());
+    assert!(
+        models
+            .iter()
+            .all(|model| *model == "bedrock/anthropic.claude-3")
+    );
     // Only the stop event names a reason; the usage event carries the totals instead.
     let reasons: Vec<&str> = outcome
         .chunks
@@ -456,13 +502,21 @@ fn case_3_converse_stream_headers() {
     assert_eq!(default_outcome.chunks.len(), 1);
 
     // An event stream that decodes to no events fails through the tally with the 502 LiteLLM raises.
-    let empty_inputs = Inputs::new(Reply::frames(&[]));
+    let mut empty_reply = Reply::frames(&[]);
+    empty_reply
+        .headers
+        .push(("x-amzn-requestid".to_owned(), "req-1".to_owned()));
+    let empty_inputs = Inputs::new(empty_reply);
     let empty_outcome = run(
         Call::Converse(converse(&messages)),
         &empty_inputs,
         Consume::All,
     );
     assert_eq!(empty_outcome.failure_statuses(), vec![Some(502)]);
+    // The 502 names the headers the response carried, which the tally was given when the stream was built.
+    let message = failure_message(&empty_outcome.failures[0]).expect("the tally names the headers");
+    assert!(message.contains("content-type='application/vnd.amazon.eventstream'"));
+    assert!(message.contains("x-amzn-requestid='req-1'"));
 
     // A body too short to hold a frame is still no events at EOF, so the tally again.
     let short_inputs = Inputs::new(Reply::frames(&["6e6f742061206672616d65"]));
@@ -481,6 +535,50 @@ fn case_3_converse_stream_headers() {
         Consume::All,
     );
     assert_eq!(malformed_outcome.failure_statuses(), vec![None]);
+
+    // json_mode makes the base decoder read the synthetic response-format tool as content.
+    let json_inputs = Inputs::new(Reply::frames(&[
+        JSON_TOOL_START,
+        JSON_TOOL_DELTA,
+        JSON_TOOL_STOP,
+    ]));
+    let mut json_call = converse(&messages);
+    json_call.json_mode = Some(true);
+    let json_outcome = run(Call::Converse(json_call), &json_inputs, Consume::All);
+    assert!(json_outcome.error.is_none());
+    assert!(json_outcome.failures.is_empty());
+    let contents: Vec<&str> = json_outcome
+        .chunks
+        .iter()
+        .filter_map(|chunk| field(chunk, Field::Content))
+        .collect();
+    assert!(
+        contents
+            .iter()
+            .any(|content| *content == r#"{"sign": "WZPZ"}"#)
+    );
+
+    // Without json_mode the same events keep the tool as a tool call and no content.
+    let plain_inputs = Inputs::new(Reply::frames(&[
+        JSON_TOOL_START,
+        JSON_TOOL_DELTA,
+        JSON_TOOL_STOP,
+    ]));
+    let plain_outcome = run(
+        Call::Converse(converse(&messages)),
+        &plain_inputs,
+        Consume::All,
+    );
+    let plain_contents: Vec<&str> = plain_outcome
+        .chunks
+        .iter()
+        .filter_map(|chunk| field(chunk, Field::Content))
+        .collect();
+    assert!(
+        !plain_contents
+            .iter()
+            .any(|content| *content == r#"{"sign": "WZPZ"}"#)
+    );
 }
 
 #[test]
@@ -553,6 +651,46 @@ fn case_4_fake_stream_projection() {
         Consume::All,
     );
     assert_eq!(generic(&converse_outcome.chunks[0]).text, "hello");
+
+    // A named provider selects its own decoder instead of the base projection.
+    let provider_inputs = Inputs::new(Reply::frames(&[DEEPSEEK_CHUNK]));
+    let mut provider_call = invoke(BASE, DATA, &messages);
+    provider_call.provider = Some("deepseek_r1");
+    let provider_outcome = run(Call::Invoke(provider_call), &provider_inputs, Consume::All);
+    assert!(provider_outcome.error.is_none());
+    assert!(provider_outcome.failures.is_empty());
+    assert!(matches!(
+        &provider_outcome.chunks[0],
+        InvokeChunk::DeepSeek(_)
+    ));
+
+    // json_mode is not the buffered converter's: there the synthetic tool stays a tool call.
+    let synthetic_inputs = Inputs::new(Reply::buffered(JSON_TOOL_REPLY));
+    let mut synthetic_call = invoke(BASE, DATA, &messages);
+    synthetic_call.fake_stream = true;
+    synthetic_call.json_mode = Some(true);
+    let synthetic_outcome = run(
+        Call::Invoke(synthetic_call),
+        &synthetic_inputs,
+        Consume::All,
+    );
+    let synthetic_chunk = generic(&synthetic_outcome.chunks[0]);
+    assert_eq!(synthetic_chunk.text, r#"{"sign": "WZPZ"}"#);
+    assert!(synthetic_chunk.tool_use.is_none());
+    assert_eq!(synthetic_chunk.finish_reason, "tool_calls");
+
+    let synthetic_converse_inputs = Inputs::new(Reply::buffered(JSON_TOOL_REPLY));
+    let mut synthetic_converse_call = converse(&messages);
+    synthetic_converse_call.fake_stream = true;
+    synthetic_converse_call.json_mode = Some(true);
+    let synthetic_converse_outcome = run(
+        Call::Converse(synthetic_converse_call),
+        &synthetic_converse_inputs,
+        Consume::All,
+    );
+    let synthetic_converse_chunk = generic(&synthetic_converse_outcome.chunks[0]);
+    assert_eq!(synthetic_converse_chunk.text, r#"{"sign": "WZPZ"}"#);
+    assert_eq!(synthetic_converse_chunk.finish_reason, "tool_calls");
 
     // A body the converter cannot read is the 422 it raises; a missing output member is the catch-all's 500.
     let bad_inputs = Inputs::new(Reply::buffered("[]"));
