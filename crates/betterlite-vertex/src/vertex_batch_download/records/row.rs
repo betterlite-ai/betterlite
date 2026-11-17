@@ -52,7 +52,7 @@ fn transform_row(
     };
     // a present modelVersion overrides this inside the shared conversion, and an "@" suffix is its to strip
     let model = match response.get("modelVersion") {
-        None | Some(Json::Null) => String::from(DEFAULT_MODEL),
+        None => String::from(DEFAULT_MODEL),
         Some(Json::Text(version)) => version.clone(),
         Some(_) => return Err(RecordsError::ModelVersion),
     };

@@ -245,6 +245,14 @@ fn a_present_model_version_wins_and_loses_its_suffix() {
 }
 
 #[test]
+fn a_null_model_version_returns_the_whole_payload() {
+    let row = ROW.replace(r#""candidates""#, r#""modelVersion":null,"candidates""#);
+    let response = convert(&row, URL);
+    assert_eq!(response.content, row.as_bytes());
+    assert_eq!(declared_length(&response), row.len());
+}
+
+#[test]
 fn a_provider_status_becomes_a_vertex_ai_error_row() {
     let response = convert(STATUS_ROW, URL);
     let body = json(&String::from_utf8(response.content).unwrap());

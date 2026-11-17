@@ -211,6 +211,12 @@ fn a_failing_row_keeps_its_bytes() {
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
     assert_eq!(decoder.mode(), DownloadMode::Lines);
     assert_eq!(lines(&output)[1], version);
+
+    let null_version = ROW.replace(r#""candidates""#, r#""modelVersion":null,"candidates""#);
+    let content = format!("{ROW}\n{null_version}\n");
+    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+    assert_eq!(decoder.mode(), DownloadMode::Lines);
+    assert_eq!(lines(&output)[1], null_version);
 }
 
 #[tokio::test]
@@ -232,6 +238,34 @@ async fn closes_upstream_on_drop() {
             .starts_with(r#"{"id":"batch_req_"#)
     );
     assert!(stream.next().await.is_none());
+    drop(stream);
+    assert!(dropped.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn cancelling_the_stream_closes_the_source() {
+    let content = format!("{ROW}\n{OTHER_ROW}\n");
+    let (head, tail) = content.split_once('\n').unwrap();
+    let tracked = Tracked::new(vec![
+        format!("{head}\n").into_bytes(),
+        tail.as_bytes().to_vec(),
+    ]);
+    let dropped = Arc::clone(&tracked.dropped);
+    let polls = Arc::clone(&tracked.polls);
+    let result =
+        transform_file_content_stream(tracked.boxed(), URL, HeaderMap::new(), false, context())
+            .await
+            .unwrap();
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
+    assert!(!dropped.load(Ordering::SeqCst));
+    let mut stream = result.stream;
+    let chunk = stream.next().await.unwrap().unwrap();
+    assert!(
+        from_utf8(&chunk)
+            .unwrap()
+            .starts_with(r#"{"id":"batch_req_"#)
+    );
+    assert_eq!(polls.load(Ordering::SeqCst), 1);
     drop(stream);
     assert!(dropped.load(Ordering::SeqCst));
 }
