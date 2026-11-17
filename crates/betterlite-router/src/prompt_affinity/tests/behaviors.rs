@@ -238,10 +238,31 @@ async fn default_breakpoints_are_injected_when_the_global_flag_is_on() {
 
 async fn request_kwargs_enable_prompt_caching_injects_without_the_flag() {
     let kwargs = request_kwargs(r#"{"enable_prompt_caching": true}"#);
-    let injected = injected_json(PLAIN_MESSAGES, &kwargs, Some(true), false);
+    narrows_with_request_kwargs(false, &kwargs, Some(true), &["dep-a"]).await;
+}
+
+async fn tools_marks_suppress_the_default_breakpoints() {
+    let kwargs = request_kwargs(
+        r#"{"tools":[{"type":"function","function":{"name":"lookup"},"cache_control":{"type":"ephemeral"}}]}"#,
+    );
+    narrows_with_request_kwargs(true, &kwargs, Some(false), &["dep-a", "dep-b"]).await;
+}
+
+async fn request_kwargs_without_the_flag_do_not_inject() {
+    narrows_with_request_kwargs(false, &Object::new(), Some(true), &["dep-a", "dep-b"]).await;
+}
+
+// the pin sits under the key the default breakpoints produce, so only an injected prompt reaches it
+async fn narrows_with_request_kwargs(
+    global_enabled: bool,
+    kwargs: &Object,
+    enable: Option<bool>,
+    expected: &[&str],
+) {
+    let injected = injected_json(PLAIN_MESSAGES, kwargs, enable, global_enabled);
     assert!(cache_key(&injected, None).is_some());
     let pins = Arc::new(FakePins::default());
-    let affinity = service(Arc::clone(&pins), 2000, false);
+    let affinity = service(Arc::clone(&pins), 2000, global_enabled);
     affinity
         .record_success(&success("completion", Some("dep-a"), Some(&injected)))
         .await
@@ -252,39 +273,9 @@ async fn request_kwargs_enable_prompt_caching_injects_without_the_flag() {
     ];
     let typed = messages(PLAIN_MESSAGES);
     let mut selection = request(&pool, Some(&typed));
-    selection.request_kwargs = Some(&kwargs);
-    let selected = affinity.filter_deployments(&selection).await.unwrap();
-    assert_eq!(ids(&selected), ["dep-a"]);
-}
-
-async fn tools_marks_suppress_the_default_breakpoints() {
-    let kwargs = request_kwargs(
-        r#"{"tools":[{"type":"function","function":{"name":"lookup"},"cache_control":{"type":"ephemeral"}}]}"#,
-    );
-    narrows_with_request_kwargs(true, &kwargs).await;
-}
-
-async fn request_kwargs_without_the_flag_do_not_inject() {
-    narrows_with_request_kwargs(false, &Object::new()).await;
-}
-
-async fn narrows_with_request_kwargs(global_enabled: bool, kwargs: &Object) {
-    let pins = Arc::new(FakePins::default());
-    let affinity = service(Arc::clone(&pins), 2000, global_enabled);
-    let raw = json_messages(PLAIN_MESSAGES);
-    pins.seed(
-        &cache_key(&raw, None).unwrap(),
-        super::support::pin("dep-a"),
-    );
-    let pool = [
-        deployment("dep-a", "claude-min"),
-        deployment("dep-b", "claude-min"),
-    ];
-    let typed = messages(PLAIN_MESSAGES);
-    let mut selection = request(&pool, Some(&typed));
     selection.request_kwargs = Some(kwargs);
     let selected = affinity.filter_deployments(&selection).await.unwrap();
-    assert_eq!(ids(&selected), ["dep-a"]);
+    assert_eq!(ids(&selected), expected);
 }
 
 fn a_message_level_mark_ignores_later_messages() {

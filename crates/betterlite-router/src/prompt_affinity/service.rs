@@ -208,7 +208,7 @@ impl PromptAffinity {
             messages,
             models,
             tools: tools_of(request.request_kwargs),
-            enable_prompt_caching: enable_flag(request.request_kwargs),
+            enable_prompt_caching: Some(enable_flag(request.request_kwargs)),
             request_kwargs,
             alias_map: &self.dependencies.defaults.alias_map,
             policy: CachePolicy {
@@ -248,8 +248,8 @@ fn tools_of(request_kwargs: Option<&Object>) -> Option<&[PromptJson]> {
     }
 }
 
-fn enable_flag(request_kwargs: Option<&Object>) -> Option<bool> {
-    request_kwargs.map(|kwargs| {
+fn enable_flag(request_kwargs: Option<&Object>) -> bool {
+    request_kwargs.is_some_and(|kwargs| {
         matches!(
             kwargs.get("enable_prompt_caching"),
             Some(PromptJson::Bool(true))
