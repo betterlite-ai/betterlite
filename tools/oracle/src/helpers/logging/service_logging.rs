@@ -22,7 +22,6 @@ const CONFIG_SOURCE: &str = "litellm_settings:\n  service_callback: []\n";
 pub(crate) enum Input {
     CorrelationSanitize {
         call_id: String,
-        redact: bool,
     },
     LogLevel {
         environment: BTreeMap<String, String>,
@@ -47,7 +46,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::CorrelationSanitize { call_id, redact } => correlation(call_id, *redact),
+            Input::CorrelationSanitize { call_id } => correlation(call_id),
             Input::LogLevel { environment } => level(environment),
             Input::ServiceSuccess { .. } | Input::ServiceFailure { .. } => payload(input),
         }
@@ -55,14 +54,10 @@ impl Helper for Op {
 }
 
 // LiteLLM's _sanitize_correlation_id: drop the control characters, redact credentials, cap the length
-fn correlation(call_id: &str, redact: bool) -> HelperResult {
-    let redactor = if redact {
-        Some(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?)
-    } else {
-        None
-    };
+fn correlation(call_id: &str) -> HelperResult {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     Ok(json!({
-        "sanitized": sanitize_correlation_id(call_id, redactor.as_ref()),
+        "sanitized": sanitize_correlation_id(call_id, Some(&redactor)),
     }))
 }
 
