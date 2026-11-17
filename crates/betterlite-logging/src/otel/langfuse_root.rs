@@ -11,7 +11,6 @@ use crate::langfuse_observations::attributes::keys::{
 };
 use crate::logging_pre_post::error::PrePostError;
 use crate::logging_pre_post::hooks::{ApiCallLogger, PostCallEvent, PreCallEvent};
-use crate::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
 use crate::otel::content_projections::{
     OutputResponse, RelayedChunk, StreamOutputAssembler, request_input, response_output,
     stream_output,
@@ -41,34 +40,11 @@ pub struct LangfuseOtel {
     pub roots: Arc<dyn RootSpanSource>,
 }
 
+// the wrapped logger keeps every other CallbackLogger method at its trait default, so only the overrides forward
 #[async_trait]
 impl CallbackLogger for LangfuseOtel {
     fn callback_name(&self) -> &str {
         self.inner.callback_name()
-    }
-
-    fn turn_off_message_logging(&self) -> bool {
-        self.inner.turn_off_message_logging()
-    }
-
-    fn redacts_messages_itself(&self) -> bool {
-        self.inner.redacts_messages_itself()
-    }
-
-    fn message_logging(&self) -> bool {
-        self.inner.message_logging()
-    }
-
-    fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_success_event(event)
-    }
-
-    fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_failure_event(event)
-    }
-
-    fn log_stream_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_stream_event(event)
     }
 
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
@@ -77,17 +53,6 @@ impl CallbackLogger for LangfuseOtel {
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.inner.async_log_failure_event(event).await
-    }
-
-    async fn async_log_stream_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        self.inner.async_log_stream_event(event).await
-    }
-
-    async fn async_post_mcp_tool_call_hook(
-        &self,
-        call: McpToolHookCall<'_>,
-    ) -> Result<Option<McpPostCallResponse>, LoggerError> {
-        self.inner.async_post_mcp_tool_call_hook(call).await
     }
 }
 
@@ -108,8 +73,9 @@ impl ApiCallLogger for LangfuseOtel {
         self.inner.log_pre_api_call(event)
     }
 
-    fn log_post_api_call(&self, event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
-        self.inner.log_post_api_call(event)
+    // the post-call has nothing to do here: the boundary span closes on the success or failure callback
+    fn log_post_api_call(&self, _event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
+        Ok(())
     }
 }
 
@@ -124,47 +90,12 @@ impl CallbackLogger for LangfuseContentOtel {
         self.inner.callback_name()
     }
 
-    fn turn_off_message_logging(&self) -> bool {
-        self.inner.turn_off_message_logging()
-    }
-
-    fn redacts_messages_itself(&self) -> bool {
-        self.inner.redacts_messages_itself()
-    }
-
-    fn message_logging(&self) -> bool {
-        self.inner.message_logging()
-    }
-
-    fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_success_event(event)
-    }
-
-    fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_failure_event(event)
-    }
-
-    fn log_stream_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
-        self.inner.log_stream_event(event)
-    }
-
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.inner.async_log_success_event(event).await
     }
 
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.inner.async_log_failure_event(event).await
-    }
-
-    async fn async_log_stream_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        self.inner.async_log_stream_event(event).await
-    }
-
-    async fn async_post_mcp_tool_call_hook(
-        &self,
-        call: McpToolHookCall<'_>,
-    ) -> Result<Option<McpPostCallResponse>, LoggerError> {
-        self.inner.async_post_mcp_tool_call_hook(call).await
     }
 }
 
@@ -173,8 +104,9 @@ impl ApiCallLogger for LangfuseContentOtel {
         self.inner.log_pre_api_call(event)
     }
 
-    fn log_post_api_call(&self, event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
-        self.inner.log_post_api_call(event)
+    // the post-call has nothing to do here: the boundary span closes on the success or failure callback
+    fn log_post_api_call(&self, _event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
+        Ok(())
     }
 }
 

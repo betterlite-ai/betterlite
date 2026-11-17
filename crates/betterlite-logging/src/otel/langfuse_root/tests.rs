@@ -9,11 +9,16 @@ use betterlite_config::sections::provider_url_destination::pattern::AllowedDesti
 use betterlite_models::decisions::Json;
 use futures_util::StreamExt as _;
 use futures_util::stream;
+use indexmap::IndexMap;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
-use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
 use super::{LangfuseContentOtel, LangfuseOtel, RootSpanSink, RootSpanSource};
+use crate::callback_logger::CallbackLogger as _;
+use crate::callback_logger::event::LoggerEvent;
+use crate::fields::payload::StandardLoggingPayload;
+use crate::fields::status::{GuardrailStatus, LoggingStatus, StatusFields};
 use crate::logging_pre_post::error::PrePostError;
 use crate::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
 use crate::otel::config::destination::SpanScope;
@@ -125,8 +130,15 @@ fn settings(exporters: Vec<ExporterSpec>) -> Settings {
 }
 
 fn inner_logger(log: &Log) -> OpenTelemetryV2 {
+    inner_logger_exporting(log, InMemorySpanExporter::default())
+}
+
+fn inner_logger_exporting(log: &Log, spans: InMemorySpanExporter) -> OpenTelemetryV2 {
     let config = settings(Vec::new());
-    let tracer = SdkTracerProvider::builder().build().tracer("litellm");
+    let tracer = SdkTracerProvider::builder()
+        .with_simple_exporter(spans)
+        .build()
+        .tracer("litellm");
     let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
         Arc::new(BTreeMap::<String, String>::new());
     let emitter = SpanEmitter {
@@ -234,6 +246,57 @@ const REPLY_OUTPUT: &str = r#"[{"content":"done","role":"assistant"}]"#;
 const INPUT: &str = r#"[{"content":"hello","role":"user"}]"#;
 const REQUEST: &str = r#"{"messages": [{"role": "user", "content": "hello"}]}"#;
 
+const PAYLOAD: &str = r#"{
+    "id": "chatcmpl-1",
+    "trace_id": "trace-1",
+    "session_id": "session-1",
+    "call_type": "completion",
+    "response_cost": 0.5,
+    "status": "success",
+    "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
+    "total_tokens": 5,
+    "prompt_tokens": 2,
+    "completion_tokens": 3,
+    "startTime": 1704067200.0,
+    "endTime": 1704067201.5,
+    "completionStartTime": 1704067200.5,
+    "response_time": 1.0,
+    "model_map_information": {"model_map_key": "", "model_map_value": null},
+    "model": "gpt-4o",
+    "api_base": "https://api.openai.com",
+    "metadata": {},
+    "saved_cache_cost": 0.0,
+    "request_tags": [],
+    "model_parameters": {},
+    "hidden_params": {}
+}"#;
+
+fn payload() -> StandardLoggingPayload {
+    serde_json::from_str(PAYLOAD).expect("payload")
+}
+
+// a failed call with its own id, so the second close is not deduped against the first
+fn failure_payload() -> StandardLoggingPayload {
+    let mut payload = payload();
+    payload.id = "chatcmpl-2".to_owned();
+    payload.status = LoggingStatus::Failure;
+    payload.status_fields = StatusFields {
+        llm_api_status: LoggingStatus::Failure,
+        guardrail_status: GuardrailStatus::NotRun,
+    };
+    payload
+}
+
+fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
+    Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(Json::Null),
+        litellm_metadata: Arc::new(IndexMap::new()),
+        stream: false,
+        guardrail_snapshot: None,
+    })
+}
+
 #[test]
 fn the_pre_call_stamps_the_trace_controls_before_the_wrapped_hook() {
     let log: Log = Arc::default();
@@ -296,6 +359,100 @@ fn the_pre_call_omits_the_controls_the_caller_did_not_send() {
         })
         .expect("pre call");
     assert_eq!(entries(&log), ["wrapped"]);
+}
+
+#[test]
+fn the_content_wrapper_forwards_the_pre_call_stamp() {
+    let log: Log = Arc::default();
+    let content = LangfuseContentOtel {
+        inner: LangfuseOtel {
+            inner: inner_logger(&log),
+            roots: Arc::new(FixedRoots {
+                sink: Some(root(&log, true)),
+            }),
+        },
+        stream_assembler: Arc::new(FakeAssembler { assembled: None }),
+    };
+    let details = details();
+    content
+        .log_pre_api_call(&PreCallEvent {
+            model: "gpt-4o",
+            messages: &Json::Null,
+            details: &details,
+        })
+        .expect("pre call");
+    assert_eq!(
+        entries(&log),
+        [
+            "langfuse.trace.name=checkout",
+            "user.id=user-1",
+            "session.id=session-1",
+            "langfuse.trace.tags=[\"env:test\",\"beta\"]",
+            "wrapped",
+        ]
+    );
+}
+
+#[test]
+fn both_wrappers_report_the_wrapped_callback_name() {
+    let log: Log = Arc::default();
+    let otel = LangfuseOtel {
+        inner: inner_logger(&log),
+        roots: Arc::new(FixedRoots {
+            sink: Some(root(&log, true)),
+        }),
+    };
+    assert_eq!(otel.callback_name(), "langfuse_otel");
+    let content = LangfuseContentOtel {
+        inner: otel,
+        stream_assembler: Arc::new(FakeAssembler { assembled: None }),
+    };
+    assert_eq!(content.callback_name(), "langfuse_otel");
+}
+
+#[tokio::test]
+async fn the_success_and_failure_events_reach_the_wrapped_logger() {
+    let log: Log = Arc::default();
+    let spans = InMemorySpanExporter::default();
+    let logger = LangfuseOtel {
+        inner: inner_logger_exporting(&log, spans.clone()),
+        roots: Arc::new(FixedRoots {
+            sink: Some(root(&log, true)),
+        }),
+    };
+    logger
+        .async_log_success_event(event(payload()))
+        .await
+        .expect("success event");
+    logger
+        .async_log_failure_event(event(failure_payload()))
+        .await
+        .expect("failure event");
+    assert_eq!(spans.get_finished_spans().expect("spans").len(), 2);
+}
+
+#[tokio::test]
+async fn the_content_wrapper_forwards_the_success_and_failure_events() {
+    let log: Log = Arc::default();
+    let spans = InMemorySpanExporter::default();
+    let content = LangfuseContentOtel {
+        inner: LangfuseOtel {
+            inner: inner_logger_exporting(&log, spans.clone()),
+            roots: Arc::new(FixedRoots {
+                sink: Some(root(&log, true)),
+            }),
+        },
+        stream_assembler: Arc::new(FakeAssembler { assembled: None }),
+    };
+    content
+        .async_log_success_event(event(payload()))
+        .await
+        .expect("success event");
+    content
+        .async_log_failure_event(event(failure_payload()))
+        .await
+        .expect("failure event");
+    assert_eq!(spans.get_finished_spans().expect("spans").len(), 2);
 }
 
 #[test]
