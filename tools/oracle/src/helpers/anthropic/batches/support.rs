@@ -110,7 +110,7 @@ pub(crate) fn logging_state(
         },
         redactor,
         || "batch-trace".to_owned(),
-        || Duration::default(),
+        Duration::default,
     )
     .or_config_error()
 }
