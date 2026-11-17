@@ -7,8 +7,10 @@ description: >-
 
 
   Use B844 get_model_list, B845 get_deployment_model_info, B367 pattern_router.route, B174 provider
-  resolution, B175 supported OpenAI parameters, local cost normalization, B323 deployment mapping and
-  reasoning-effort intersection, B2216 Anthropic fast-mode capability and B301 LiteLLM_Params. Own all
+  resolution, B175 supported OpenAI parameters, local cost normalization, the deployment mapping, resolver
+  and reasoning-effort intersection in betterlite_openai::reasoning_effort_capability (B323's build, moved
+  there by B9980, GroupReasoningEfforts included), B2216 Anthropic fast-mode capability and B301
+  LiteLLM_Params. Own all
   ModelGroupInfo fields L785-L817: model_group/providers required; token limits, costs (including
   input_cost_per_pixel), tpm/rpm/itpm/otpm and configurable_clientside_auth_params default None; mode
   defaults "chat"; seven supports_* booleans default false and explicit None becomes false;
@@ -52,7 +54,7 @@ description: >-
   supports_fast_mode starts true for aggregation and becomes the conjunction of B2216 capability for
   every matched deployment. Resolve reasoning efforts per deployment: one unknown result makes the
   final result None permanently; otherwise initialize from the first known tuple and intersect later
-  tuples through B323, retaining a known empty tuple. Apply totals at the end and assign clientside-auth
+  tuples through that module, retaining a known empty tuple. Apply totals at the end and assign clientside-auth
   params only if the final matched row's value is non-null. No settings, database writes or secret
   storage occur here. The helper oracle supplies catalog/provider metadata snapshots and compares
   every field, null/empty distinction and error-log event; it never calls a provider network endpoint.

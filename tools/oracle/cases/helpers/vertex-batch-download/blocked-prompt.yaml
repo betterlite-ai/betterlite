@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-batch-download-blocked-prompt
+call:
+  vertex_batch_download:
+    operation: buffer
+    content: 'eyJyZXF1ZXN0Ijp7fSwic3RhdHVzIjoiIiwicHJvY2Vzc2VkX3RpbWUiOiIiLCJyZXNwb25zZSI6eyJwcm9tcHRGZWVkYmFjayI6eyJibG9ja1JlYXNvbiI6IlNBRkVUWSJ9LCJ1c2FnZU1ldGFkYXRhIjp7InByb21wdFRva2VuQ291bnQiOjR9fX0='
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/content, why: LiteLLM writes json.dumps spacing and betterlite compact JSON}
+    - {pointer: /value/content_length, why: the length counts each side's own serialization}

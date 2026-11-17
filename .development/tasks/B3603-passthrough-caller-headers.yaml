@@ -242,7 +242,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2499-L2516
 out_of_scope:
 - >-
-  The UserAPIKeyAuth._safe_hash_litellm_api_key method is owned by B770; this task
+  The UserAPIKeyAuth._safe_hash_litellm_api_key method is owned by B2314; this task
   calls it for constant-time comparison of stored keys, relying on its implementation.
 - >-
   The JWTHandler.get_unverified_claims method and LITELLM_INTERNAL_CLAIMS constant

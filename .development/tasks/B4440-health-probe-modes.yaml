@@ -62,7 +62,7 @@ description: >-
   Tracking metadata. `add_tracking_information(params)` is
   _update_model_params_with_health_check_tracking_information. It replaces `litellm_metadata` with
   {"tags": ["litellm-internal-health-check"]}, discarding any earlier value, then applies B1106's
-  add_user_api_key_auth_to_request_metadata to it with the internal health principal. The principal is B770's
+  add_user_api_key_auth_to_request_metadata to it with the internal health principal. The principal is B2314's
   get_litellm_internal_health_check_user_api_key_auth: api_key, team_id, key_alias and team_alias all equal to
   "litellm-internal-health-check". The metadata variable name is "litellm_metadata". Return the updated params.
 
@@ -246,7 +246,7 @@ out_of_scope:
   - "The call operations the backend trait stands for (acompletion, atext_completion, aembedding, aspeech, atranscription, aimage_generation, aimage_edit, avideo_generation, arerank, aresponses, aocr, asystemone, alist_batches): their own tasks own them; B4449 implements the trait with them."
   - "_realtime_health_check in litellm/realtime_api/main.py L631: B1127 owns it; this module only passes the arguments."
   - "pick_cheapest_chat_models_from_llm_provider: llm_request_utils.py is in B176's covers; this module only defines the CheapestChatModels trait for it."
-  - "UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth: B770 owns the principal; add_user_api_key_auth_to_request_metadata: B1106 owns it."
+  - "UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth: B2314 owns the principal; add_user_api_key_auth_to_request_metadata: B1106 owns it."
   - "Logging.update_from_kwargs: B247 owns it; this module calls it through a narrow trait."
   - "Audio file access for audio_transcription: B1001 owns it. Decisions record types: B3510 owns them."
   - "_run_model_health_check in litellm/proxy/health_check.py L514-L536: not in this entry's covers. B4442 names B4440 as owner and B4443 builds it; see notes."

@@ -1,27 +1,10 @@
 import { csvParse } from "d3-dsv";
 import { load, loadAll } from "js-yaml";
 import { z } from "zod";
-import { analyzePath, coverage, mergeTimes, milestoneGroups, PATHS, porting, type Area, type Merge, type Milestone, type PathFacts } from "./backlog.ts";
+import { analyzePath, coverage, mergeTimes, milestoneGroups, PATHS, porting, pullMerges, type Area, type Merge, type Milestone, type PathFacts } from "./backlog.ts";
 import { DAY, REPO } from "./format.ts";
 import { historyFacts, type History } from "./history/facts.ts";
-import {
-  agentRunSchema,
-  bootSchema,
-  configSchema,
-  deviationLogSchema,
-  entrySchema,
-  exceptionSchema,
-  hourSchema,
-  openPullSchema,
-  pullSchema,
-  runSchema,
-  targetSchema,
-  type Config,
-  type DeviationLog,
-  type Entry,
-  type Exception,
-  type OpenPull,
-} from "./schema.ts";
+import { agentRunSchema, bootSchema, configSchema, deviationLogSchema, entrySchema, exceptionSchema, hourSchema, openPullSchema, targetSchema, type Config, type DeviationLog, type Entry, type Exception, type OpenPull } from "./schema.ts";
 
 export interface Site {
   config: Config;
@@ -78,8 +61,8 @@ function documents(text: string): unknown[] {
 }
 
 export async function loadSite(): Promise<Site> {
-  const files = ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt", "prs.csv", "runs.csv", "agent-runs.csv", "targets.csv", "machine-boot.csv", "machine-hours.csv", "exceptions.csv"];
-  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText, prsText, runsText, agentText, targetsText, bootText, hoursText, exceptionsText] = await Promise.all(files.map(fetchText));
+  const files = ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt", "agent-runs.csv", "targets.csv", "machine-boot.csv", "machine-hours.csv", "exceptions.csv"];
+  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText, agentText, targetsText, bootText, hoursText, exceptionsText] = await Promise.all(files.map(fetchText));
   const entries = checked("backlog.yaml", z.array(entrySchema), documents(backlogText));
   const config = checked("litellm.yaml", configSchema, load(configText));
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
@@ -90,7 +73,8 @@ export async function loadSite(): Promise<Site> {
     }
   }
   const milestones = milestoneGroups(entries);
-  const merges = mergeTimes(byPull, mergesText);
+  const merged = pullMerges(mergesText);
+  const merges = mergeTimes(byPull, merged);
   const counted = entries.filter(porting);
   const depths = new Map<string, number>();
   const next = new Map<string, string>();
@@ -115,15 +99,13 @@ export async function loadSite(): Promise<Site> {
     committed: Number(committed) * 1000,
     history: historyFacts(
       {
-        pulls: checked("prs.csv", z.array(pullSchema), csvParse(prsText)),
-        runs: checked("runs.csv", z.array(runSchema), csvParse(runsText)),
         agentRuns: checked("agent-runs.csv", z.array(agentRunSchema), csvParse(agentText)),
         targets: checked("targets.csv", z.array(targetSchema), csvParse(targetsText)),
         boot: checked("machine-boot.csv", z.array(bootSchema), csvParse(bootText)).at(0) ?? null,
         hours: checked("machine-hours.csv", z.array(hourSchema), csvParse(hoursText)),
+        merged,
         merges,
         milestones,
-        byPull,
         entries,
       },
       now,
