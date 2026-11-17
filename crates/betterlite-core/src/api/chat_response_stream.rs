@@ -3,7 +3,7 @@ pub mod driver;
 pub mod error;
 mod finalize;
 mod prime;
-mod source;
+pub mod source;
 mod translate;
 
 mod tests;
