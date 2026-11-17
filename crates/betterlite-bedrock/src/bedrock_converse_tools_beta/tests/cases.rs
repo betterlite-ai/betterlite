@@ -63,6 +63,7 @@ pub(super) fn computer_use_beta_versions() {
     computer_versions::version_markers();
     computer_versions::older_versions();
     computer_versions::request(&mut session);
+    computer_versions::foreign_base(&mut session);
 }
 
 pub(super) fn context_management_filter() {

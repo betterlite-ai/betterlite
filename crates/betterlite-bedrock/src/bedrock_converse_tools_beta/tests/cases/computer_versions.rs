@@ -1,5 +1,5 @@
 use super::super::support::{Session, list, params};
-use super::prepare;
+use super::{FOREIGN_MODEL, prepare};
 use crate::bedrock_converse_tools_beta::convert::computer_use_beta;
 
 const LATEST: &str = "computer-use-2025-11-24";
@@ -105,6 +105,23 @@ pub(super) fn request(session: &mut Session<'_>) {
         latest.params,
         params(
             r#"{"tools": [{"type": "computer_20241022", "name": "computer", "display_width_px": 1024}], "anthropic_beta": ["computer-use-2025-11-24"]}"#
+        )
+    );
+}
+
+pub(super) fn foreign_base(session: &mut Session<'_>) {
+    let foreign = prepare(
+        session,
+        FOREIGN_MODEL,
+        r#"[{"type": "computer_20241022", "name": "computer", "display_width_px": 1024}]"#,
+        None,
+        "{}",
+    );
+    assert_eq!(foreign.betas, list(r#"["computer-use-2024-10-22"]"#));
+    assert_eq!(
+        foreign.params,
+        params(
+            r#"{"tools": [{"type": "computer_20241022", "name": "computer", "display_width_px": 1024}]}"#
         )
     );
 }

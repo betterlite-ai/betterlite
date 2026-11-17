@@ -9,6 +9,9 @@ pub(super) fn client_headers(session: &mut Session<'_>) {
     assert!(absent.betas.is_empty());
     assert_eq!(absent.params, params("{}"));
 
+    let empty = prepare(session, ADAPTIVE_MODEL, "[]", Some("{}"), "{}");
+    assert!(empty.betas.is_empty());
+
     let listed = prepare(
         session,
         ADAPTIVE_MODEL,
