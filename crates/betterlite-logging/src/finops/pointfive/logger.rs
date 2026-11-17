@@ -19,7 +19,6 @@ use tokio_util::task::TaskTracker;
 use self::client::UploadClientSource;
 use self::core::PointFiveCore;
 use self::error::PointFiveError;
-use self::{flush, record};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
