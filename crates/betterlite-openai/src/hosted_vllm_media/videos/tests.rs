@@ -287,6 +287,8 @@ fn an_ipv6_loopback_reference_is_refused() {
 #[case("http://localhost:8000/x.png", &["localhost"])]
 #[case("http://[::1]:8000/x.png", &["[::1]:8000"])]
 #[case("http://[::ffff:127.0.0.1]:8000/x.png", &["[::FFFF:127.0.0.1]:8000"])]
+#[case("http://127.0.0.1/x.png", &["127.0.0.1."])]
+#[case("http://[::1]:8000/x.png", &["[::1]"])]
 fn a_media_reference_to_an_allowlisted_host_is_kept(#[case] url: &str, #[case] entries: &[&str]) {
     let params = value(&format!(
         r#"{{"image_reference": {{"image_url": "{url}"}}}}"#
