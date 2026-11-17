@@ -37,5 +37,6 @@ call:
     - {api_base: "https://"}
     - {api_base: "/it's"}
     - {api_base: "/both'\"kinds"}
+    - {api_base: "https://res.services.ai.azure.com/\t"}
 env: {}
 compare: {ignore: []}

@@ -51,6 +51,9 @@ pub(super) fn rerank_url_api_version() {
     assert_relative("/it's", "\"/it's\"");
     assert_relative("/both'\"kinds", "'/both\\'\"kinds'");
     assert_relative("/a\\b", "'/a\\\\b'");
+    let rejected = complete_url(Some("https://res.services.ai.azure.com/\t")).unwrap_err();
+    assert_eq!(rejected.to_string(), "api_base is not a valid URL");
+    assert!(std::error::Error::source(&rejected).is_some());
     for (path, expected) in PATHS {
         let base = format!("{BASE}{path}");
         assert_eq!(
