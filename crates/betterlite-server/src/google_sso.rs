@@ -36,9 +36,9 @@ impl GoogleSsoConfig {
     }
 }
 
-pub struct GoogleCallback<'a> {
-    pub url: &'a str,
-    pub sso_state_cookie: Option<&'a str>,
+pub struct GoogleCallback<'callback> {
+    pub url: &'callback str,
+    pub sso_state_cookie: Option<&'callback str>,
 }
 
 #[derive(Debug)]

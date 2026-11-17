@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use betterlite_models::controls::json_value::JsonValue;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::oauth_client::document::{
     MAX_OAUTH_DOCUMENT_BYTES, OAuthDiscoveryDocument, OAuthDocumentError, OAuthDocumentKind,
@@ -49,11 +49,11 @@ fn a_token_response_keeps_access_refresh_and_id_tokens_apart() {
         tokens
             .refresh_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("rt")
     );
     assert_eq!(
-        tokens.id_token.as_ref().map(|token| token.expose_secret()),
+        tokens.id_token.as_ref().map(ExposeSecret::expose_secret),
         Some("it")
     );
 }

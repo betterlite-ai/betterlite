@@ -18,14 +18,14 @@ use crate::oauth_client::error::{
 
 const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
 
-pub struct CallbackRequest<'a> {
-    pub url: &'a str,
-    pub sso_state_cookie: Option<&'a str>,
+pub struct CallbackRequest<'callback> {
+    pub url: &'callback str,
+    pub sso_state_cookie: Option<&'callback str>,
 }
 
-pub struct ExchangeRequest<'a> {
-    pub callback: CallbackRequest<'a>,
-    pub redirect_uri: Option<&'a str>,
+pub struct ExchangeRequest<'request> {
+    pub callback: CallbackRequest<'request>,
+    pub redirect_uri: Option<&'request str>,
     pub include_client_id: bool,
 }
 
@@ -34,9 +34,9 @@ pub struct OAuthExchange {
     pub userinfo: OAuthUserInfo,
 }
 
-struct TokenParameters<'a> {
-    code: &'a str,
-    redirect_uri: &'a str,
+struct TokenParameters<'parameters> {
+    code: &'parameters str,
+    redirect_uri: &'parameters str,
     include_client_id: bool,
 }
 
@@ -92,10 +92,10 @@ fn check_state(pairs: &[(String, String)], cookie: Option<&str>) -> Result<(), O
     let Some(state) = last_query_value(pairs, "state") else {
         return Ok(());
     };
-    let Some(cookie) = cookie else {
+    let Some(supplied) = cookie else {
         return Ok(());
     };
-    if cookie == state {
+    if supplied == state {
         return Ok(());
     }
     Err(OAuthClientError::InvalidState)
@@ -109,10 +109,12 @@ fn resolved_redirect_uri(
     let configured = request
         .redirect_uri
         .filter(|value| !value.is_empty())
-        .or(client
-            .redirect_uri
-            .as_deref()
-            .filter(|value| !value.is_empty()));
+        .or_else(|| {
+            client
+                .redirect_uri
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        });
     if let Some(value) = configured {
         return value.to_owned();
     }
@@ -227,7 +229,7 @@ fn token_body(client: &OAuthClient, parameters: &TokenParameters<'_>) -> String 
     body.finish()
 }
 
-fn last_query_value<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
+fn last_query_value<'pairs>(pairs: &'pairs [(String, String)], name: &str) -> Option<&'pairs str> {
     pairs
         .iter()
         .rev()
@@ -235,7 +237,10 @@ fn last_query_value<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a
         .map(|(_, value)| value.as_str())
 }
 
-fn last_non_blank_query_value<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
+fn last_non_blank_query_value<'pairs>(
+    pairs: &'pairs [(String, String)],
+    name: &str,
+) -> Option<&'pairs str> {
     pairs
         .iter()
         .rev()

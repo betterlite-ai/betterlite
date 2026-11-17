@@ -6,7 +6,8 @@ use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::controls::json_value::JsonValue;
 use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
+use url::form_urlencoded;
 
 use crate::oauth_client::OAuthClient;
 use crate::oauth_client::discovery::{DiscoverySource, fetch_discovery};
@@ -39,7 +40,7 @@ fn callback(url: &str) -> CallbackRequest<'_> {
     }
 }
 
-fn exchange_request<'a>(url: &'a str, include_client_id: bool) -> ExchangeRequest<'a> {
+fn exchange_request(url: &str, include_client_id: bool) -> ExchangeRequest<'_> {
     ExchangeRequest {
         callback: callback(url),
         redirect_uri: None,
@@ -52,7 +53,7 @@ fn discovery_source(provider: &Provider) -> DiscoverySource {
 }
 
 fn form_value(body: &str, name: &str) -> String {
-    url::form_urlencoded::parse(body.as_bytes())
+    form_urlencoded::parse(body.as_bytes())
         .find(|(key, _)| key == name)
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default()
@@ -128,7 +129,7 @@ async fn exchanges_a_callback_for_tokens_and_userinfo() {
             .tokens
             .refresh_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("refresh-abc")
     );
     assert_eq!(
@@ -136,13 +137,31 @@ async fn exchanges_a_callback_for_tokens_and_userinfo() {
             .tokens
             .id_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("id-abc")
     );
     assert_eq!(
         exchanged.userinfo.fields.get("email"),
         Some(&JsonValue::Text("access-abc@example.test".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn sends_the_discovery_token_and_userinfo_requests() {
+    let provider = provider().await;
+    let client = client();
+    let discovery = discovery(&client, &provider).await;
+    exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request(
+            "https://proxy.test/sso/callback?code=abc&state=state-1",
+            true,
+        ),
+    )
+    .await
+    .unwrap();
     let seen = provider.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 3);
     assert_eq!(seen[0].method, "GET");
@@ -461,34 +480,41 @@ async fn overlapping_logins_keep_their_own_tokens() {
     let discovery = discovery(&client, &provider).await;
     let alpha_request = exchange_request("https://proxy.test/sso/callback?code=alpha", true);
     let beta_request = exchange_request("https://proxy.test/sso/callback?code=beta", true);
-    let alpha = exchange(&client, &transport, &discovery, &alpha_request);
-    let beta = exchange(&client, &transport, &discovery, &beta_request);
-    let (alpha, beta) = tokio::join!(alpha, beta);
-    let alpha = alpha.unwrap();
-    let beta = beta.unwrap();
-    assert_eq!(alpha.tokens.access_token.expose_secret(), "access-alpha");
-    assert_eq!(beta.tokens.access_token.expose_secret(), "access-beta");
+    let alpha_future = exchange(&client, &transport, &discovery, &alpha_request);
+    let beta_future = exchange(&client, &transport, &discovery, &beta_request);
+    let (alpha, beta) = tokio::join!(alpha_future, beta_future);
+    let alpha_exchanged = alpha.unwrap();
+    let beta_exchanged = beta.unwrap();
     assert_eq!(
-        alpha
+        alpha_exchanged.tokens.access_token.expose_secret(),
+        "access-alpha"
+    );
+    assert_eq!(
+        beta_exchanged.tokens.access_token.expose_secret(),
+        "access-beta"
+    );
+    assert_eq!(
+        alpha_exchanged
             .tokens
             .refresh_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("refresh-alpha")
     );
     assert_eq!(
-        beta.tokens
+        beta_exchanged
+            .tokens
             .id_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("id-beta")
     );
     assert_eq!(
-        alpha.userinfo.fields.get("email"),
+        alpha_exchanged.userinfo.fields.get("email"),
         Some(&JsonValue::Text("access-alpha@example.test".to_owned()))
     );
     assert_eq!(
-        beta.userinfo.fields.get("email"),
+        beta_exchanged.userinfo.fields.get("email"),
         Some(&JsonValue::Text("access-beta@example.test".to_owned()))
     );
 }

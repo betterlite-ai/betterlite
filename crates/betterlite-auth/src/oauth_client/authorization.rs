@@ -21,17 +21,19 @@ pub fn authorization_url(
         .redirect_uri
         .as_deref()
         .filter(|value| !value.is_empty())
-        .or(client
-            .redirect_uri
-            .as_deref()
-            .filter(|value| !value.is_empty()));
-    let Some(redirect_uri) = redirect_uri else {
+        .or_else(|| {
+            client
+                .redirect_uri
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        });
+    let Some(configured) = redirect_uri else {
         return Err(OAuthClientError::MissingRedirectUri);
     };
     let mut params: Vec<(String, String)> = url.query_pairs().into_owned().collect();
     params.push(("response_type".to_owned(), "code".to_owned()));
     params.push(("client_id".to_owned(), client.client_id.clone()));
-    params.push(("redirect_uri".to_owned(), redirect_uri.to_owned()));
+    params.push(("redirect_uri".to_owned(), configured.to_owned()));
     if !client.scopes.is_empty() {
         params.push(("scope".to_owned(), client.scopes.join(" ")));
     }

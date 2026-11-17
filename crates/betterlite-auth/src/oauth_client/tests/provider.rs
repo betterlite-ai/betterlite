@@ -12,26 +12,26 @@ use tokio::task::JoinSet;
 
 const MAX_REQUEST_BYTES: usize = 0x0010_0000;
 
-pub type Reply = Arc<dyn Fn(&SeenRequest) -> (u16, String) + Send + Sync>;
+pub(super) type Reply = Arc<dyn Fn(&SeenRequest) -> (u16, String) + Send + Sync>;
 
 #[derive(Debug, Clone)]
-pub struct SeenRequest {
-    pub method: String,
-    pub target: String,
-    pub headers: BTreeMap<String, String>,
-    pub body: String,
+pub(super) struct SeenRequest {
+    pub(super) method: String,
+    pub(super) target: String,
+    pub(super) headers: BTreeMap<String, String>,
+    pub(super) body: String,
 }
 
 impl SeenRequest {
     #[must_use]
-    pub fn header(&self, name: &str) -> Option<&str> {
+    pub(super) fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name).map(String::as_str)
     }
 }
 
-pub struct Provider {
-    pub base: String,
-    pub seen: Arc<Mutex<Vec<SeenRequest>>>,
+pub(super) struct Provider {
+    pub(super) base: String,
+    pub(super) seen: Arc<Mutex<Vec<SeenRequest>>>,
     tasks: JoinSet<()>,
 }
 
@@ -41,12 +41,12 @@ impl Drop for Provider {
     }
 }
 
-pub fn transport() -> ProxiedClient {
+pub(super) fn transport() -> ProxiedClient {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
-pub async fn serve_sequence(responses: Vec<(u16, String)>) -> Provider {
+pub(super) async fn serve_sequence(responses: Vec<(u16, String)>) -> Provider {
     let replies: Arc<Mutex<VecDeque<(u16, String)>>> =
         Arc::new(Mutex::new(VecDeque::from(responses)));
     let reply: Reply = Arc::new(move |_request: &SeenRequest| {
@@ -54,12 +54,12 @@ pub async fn serve_sequence(responses: Vec<(u16, String)>) -> Provider {
             .lock()
             .unwrap()
             .pop_front()
-            .unwrap_or((500, "no reply left".to_owned()))
+            .unwrap_or_else(|| (500, "no reply left".to_owned()))
     });
     serve(reply).await
 }
 
-pub async fn serve(reply: Reply) -> Provider {
+pub(super) async fn serve(reply: Reply) -> Provider {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -87,8 +87,11 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<SeenRequest> {
     let mut buffer = Vec::new();
     let head_end = read_until_head_end(stream, &mut buffer).await?;
     let length = content_length(&buffer[..head_end]);
-    read_body(stream, &mut buffer, head_end + length).await?;
-    Ok(parse_request(&buffer, head_end, length))
+    let end = head_end
+        .checked_add(length)
+        .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+    read_body(stream, &mut buffer, end).await?;
+    Ok(parse_request(&buffer, head_end, end))
 }
 
 async fn read_chunk(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<()> {
@@ -104,7 +107,9 @@ async fn read_chunk(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<
 async fn read_until_head_end(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
     loop {
         if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-            return Ok(position + 4);
+            return position
+                .checked_add(4)
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData));
         }
         read_chunk(stream, buffer).await?;
         if buffer.len() > MAX_REQUEST_BYTES {
@@ -130,7 +135,7 @@ fn content_length(head: &[u8]) -> usize {
         .unwrap_or(0)
 }
 
-fn parse_request(buffer: &[u8], head_end: usize, length: usize) -> SeenRequest {
+fn parse_request(buffer: &[u8], head_end: usize, end: usize) -> SeenRequest {
     let head = from_utf8(&buffer[..head_end]).unwrap();
     let mut lines = head.split("\r\n");
     let mut request_line = lines.next().unwrap().split(' ');
@@ -140,9 +145,7 @@ fn parse_request(buffer: &[u8], head_end: usize, length: usize) -> SeenRequest {
         .filter_map(|line| line.split_once(':'))
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
-    let body = from_utf8(&buffer[head_end..head_end + length])
-        .unwrap()
-        .to_owned();
+    let body = from_utf8(&buffer[head_end..end]).unwrap().to_owned();
     SeenRequest {
         method,
         target,

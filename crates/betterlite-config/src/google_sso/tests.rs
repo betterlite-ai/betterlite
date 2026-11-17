@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::{GOOGLE_CLIENT_SECRET_ENV, load_google_sso_settings};
 
@@ -24,6 +24,6 @@ fn loads_google_client_secret(#[case] pairs: &[(&str, &str)], #[case] expected: 
     let loaded = settings
         .client_secret
         .as_ref()
-        .map(|secret| secret.expose_secret());
+        .map(ExposeSecret::expose_secret);
     assert_eq!(loaded, expected);
 }

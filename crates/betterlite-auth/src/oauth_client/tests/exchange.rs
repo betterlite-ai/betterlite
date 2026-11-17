@@ -28,7 +28,10 @@ fn discovery(token_endpoint: &str) -> OAuthDiscoveryDocument {
     }
 }
 
-fn request<'a>(url: &'a str, sso_state_cookie: Option<&'a str>) -> ExchangeRequest<'a> {
+fn request<'callback>(
+    url: &'callback str,
+    sso_state_cookie: Option<&'callback str>,
+) -> ExchangeRequest<'callback> {
     ExchangeRequest {
         callback: CallbackRequest {
             url,
@@ -37,6 +40,19 @@ fn request<'a>(url: &'a str, sso_state_cookie: Option<&'a str>) -> ExchangeReque
         redirect_uri: None,
         include_client_id: true,
     }
+}
+
+async fn exchanged(
+    url: &str,
+    sso_state_cookie: Option<&str>,
+) -> Result<OAuthExchange, OAuthClientError> {
+    exchange(
+        &client(true),
+        &transport(),
+        &discovery(""),
+        &request(url, sso_state_cookie),
+    )
+    .await
 }
 
 fn status(result: Result<OAuthExchange, OAuthClientError>) -> Option<u16> {
@@ -84,29 +100,15 @@ async fn a_callback_url_that_is_not_a_url_is_a_server_error() {
 
 #[tokio::test]
 async fn a_state_cookie_must_match_a_supplied_state() {
-    let client = client(true);
-    let transport = transport();
-    let discovery = discovery("");
-    let mismatched = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &request("https://proxy.test/cb?code=abc&state=one", Some("two")),
-    )
-    .await;
+    let mismatched = exchanged("https://proxy.test/cb?code=abc&state=one", Some("two")).await;
     assert!(matches!(&mismatched, Err(OAuthClientError::InvalidState)));
-    let response = mismatched.err().map(|error| error.response());
-    assert_eq!(
-        response.map(|response| (response.status, response.param)),
-        Some((401, Some("state")))
-    );
-    let matched = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &request("https://proxy.test/cb?code=abc&state=one", Some("one")),
-    )
-    .await;
+    let response = mismatched.err().map(|error| error.response()).unwrap();
+    assert_eq!((response.status, response.param), (401, Some("state")));
+}
+
+#[tokio::test]
+async fn a_matching_state_a_missing_cookie_or_a_missing_state_is_accepted() {
+    let matched = exchanged("https://proxy.test/cb?code=abc&state=one", Some("one")).await;
     assert!(matches!(
         &matched,
         Err(OAuthClientError::Endpoint {
@@ -114,13 +116,7 @@ async fn a_state_cookie_must_match_a_supplied_state() {
             ..
         })
     ));
-    let no_cookie = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &request("https://proxy.test/cb?code=abc&state=one", None),
-    )
-    .await;
+    let no_cookie = exchanged("https://proxy.test/cb?code=abc&state=one", None).await;
     assert!(matches!(
         &no_cookie,
         Err(OAuthClientError::Endpoint {
@@ -128,13 +124,7 @@ async fn a_state_cookie_must_match_a_supplied_state() {
             ..
         })
     ));
-    let no_state = exchange(
-        &client,
-        &transport,
-        &discovery,
-        &request("https://proxy.test/cb?code=abc", Some("two")),
-    )
-    .await;
+    let no_state = exchanged("https://proxy.test/cb?code=abc", Some("two")).await;
     assert!(matches!(
         &no_state,
         Err(OAuthClientError::Endpoint {
@@ -170,13 +160,15 @@ async fn a_provider_error_needs_a_code_and_maps_to_an_auth_failure() {
     .err()
     .unwrap();
     assert_eq!(error.response().status, 401);
-    match error {
-        OAuthClientError::Provider { error, description } => {
-            assert_eq!(error, "access_denied");
-            assert_eq!(description.as_deref(), Some("Denied"));
-        }
-        other => panic!("{other:?}"),
-    }
+    let OAuthClientError::Provider {
+        error: provider_error,
+        description,
+    } = error
+    else {
+        panic!("the callback error is a provider error");
+    };
+    assert_eq!(provider_error, "access_denied");
+    assert_eq!(description.as_deref(), Some("Denied"));
 }
 
 #[tokio::test]

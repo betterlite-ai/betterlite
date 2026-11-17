@@ -36,12 +36,12 @@ pub async fn fetch_discovery(
             deadline: OAUTH_REQUEST_TIMEOUT,
         })
         .await
-        .map_err(|source| OAuthClientError::Discovery(OAuthProviderFailure::Transport(source)))?;
+        .map_err(|failure| OAuthClientError::Discovery(OAuthProviderFailure::Transport(failure)))?;
     if !(200..=299).contains(&response.status) {
         return Err(OAuthClientError::Discovery(OAuthProviderFailure::Status {
             status: response.status,
         }));
     }
     decode_oauth_provider_document(&response.body)
-        .map_err(|source| OAuthClientError::Discovery(OAuthProviderFailure::Document(source)))
+        .map_err(|failure| OAuthClientError::Discovery(OAuthProviderFailure::Document(failure)))
 }

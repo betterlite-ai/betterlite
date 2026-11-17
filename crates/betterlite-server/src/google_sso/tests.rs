@@ -7,9 +7,11 @@ use axum::Json;
 use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_auth::oauth_client::document::OAuthUserInfo;
 use betterlite_auth::oauth_client::error::OAuthClientError;
 use betterlite_auth::oauth_client::google::GOOGLE_DISCOVERY_URL;
 use betterlite_config::google_sso::GOOGLE_CLIENT_SECRET_ENV;
@@ -19,9 +21,10 @@ use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::controls::json_value::JsonValue;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use url::form_urlencoded;
 
 use super::{
     GoogleCallback, GoogleSsoConfig, GoogleSsoError, GoogleSsoResponse,
@@ -40,6 +43,13 @@ struct Seen {
     path: String,
     authorization: Option<String>,
     body: String,
+}
+
+#[derive(Serialize)]
+struct DiscoveryAnswer {
+    authorization_endpoint: String,
+    token_endpoint: String,
+    userinfo_endpoint: String,
 }
 
 #[derive(Clone)]
@@ -62,6 +72,40 @@ impl Provider {
             body: body.to_owned(),
         });
     }
+
+    fn document(&self) -> DiscoveryAnswer {
+        DiscoveryAnswer {
+            authorization_endpoint: format!("{}/authorize", self.base),
+            token_endpoint: format!("{}/token", self.base),
+            userinfo_endpoint: format!("{}/userinfo", self.base),
+        }
+    }
+
+    fn userinfo(&self, token: &str) -> OAuthUserInfo {
+        OAuthUserInfo {
+            fields: BTreeMap::from([
+                (
+                    "sub".to_owned(),
+                    JsonValue::Text(format!("subject-{token}")),
+                ),
+                (
+                    "email".to_owned(),
+                    JsonValue::Text(format!("{token}@example.test")),
+                ),
+                (
+                    "email_verified".to_owned(),
+                    JsonValue::Bool(self.email_verified),
+                ),
+                ("given_name".to_owned(), JsonValue::Text("Ann".to_owned())),
+                ("family_name".to_owned(), JsonValue::Text("Lee".to_owned())),
+                ("name".to_owned(), JsonValue::Text("Ann Lee".to_owned())),
+                (
+                    "picture".to_owned(),
+                    JsonValue::Text("https://img.example.test/ann.png".to_owned()),
+                ),
+            ]),
+        }
+    }
 }
 
 struct Running {
@@ -75,63 +119,60 @@ impl Drop for Running {
     }
 }
 
-async fn read_answer(
+async fn discovery_answer(
     State(provider): State<Provider>,
     uri: Uri,
     headers: HeaderMap,
-) -> (StatusCode, Json<Value>) {
+) -> Response {
     provider.record("GET", uri.path(), &headers, "");
-    if uri.path() == "/discovery" {
-        return match provider.discovery {
-            DiscoveryReply::Document => (
-                StatusCode::OK,
-                Json(json!({
-                    "authorization_endpoint": format!("{}/authorize", provider.base),
-                    "token_endpoint": format!("{}/token", provider.base),
-                    "userinfo_endpoint": format!("{}/userinfo", provider.base),
-                })),
-            ),
-            DiscoveryReply::NotFound => {
-                (StatusCode::NOT_FOUND, Json(json!({"error": "not found"})))
-            }
-        };
+    match provider.discovery {
+        DiscoveryReply::Document => Json(provider.document()).into_response(),
+        DiscoveryReply::NotFound => StatusCode::NOT_FOUND.into_response(),
     }
-    let token = headers
+}
+
+async fn userinfo_answer(
+    State(provider): State<Provider>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    provider.record("GET", uri.path(), &headers, "");
+    Json(provider.userinfo(bearer(&headers))).into_response()
+}
+
+fn bearer(headers: &HeaderMap) -> &str {
+    headers
         .get("authorization")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .unwrap_or("unknown");
-    (
-        StatusCode::OK,
-        Json(json!({
-            "sub": format!("subject-{token}"),
-            "email": format!("{token}@example.test"),
-            "email_verified": provider.email_verified,
-            "given_name": "Ann",
-            "family_name": "Lee",
-            "name": "Ann Lee",
-            "picture": "https://img.example.test/ann.png",
-        })),
-    )
+        .unwrap_or("unknown")
+}
+
+#[derive(Serialize)]
+struct TokenAnswer {
+    access_token: String,
+    refresh_token: String,
+    id_token: String,
+    token_type: &'static str,
 }
 
 async fn token_answer(
     State(provider): State<Provider>,
     headers: HeaderMap,
     body: String,
-) -> Json<Value> {
+) -> Json<TokenAnswer> {
     provider.record("POST", "/token", &headers, &body);
     let code = form_value(&body, "code");
-    Json(json!({
-        "access_token": format!("access-{code}"),
-        "refresh_token": format!("refresh-{code}"),
-        "id_token": format!("id-{code}"),
-        "token_type": "Bearer",
-    }))
+    Json(TokenAnswer {
+        access_token: format!("access-{code}"),
+        refresh_token: format!("refresh-{code}"),
+        id_token: format!("id-{code}"),
+        token_type: "Bearer",
+    })
 }
 
 fn form_value(body: &str, name: &str) -> String {
-    url::form_urlencoded::parse(body.as_bytes())
+    form_urlencoded::parse(body.as_bytes())
         .find(|(key, _)| key == name)
         .map(|(_, value)| value.into_owned())
         .unwrap_or_default()
@@ -147,9 +188,9 @@ async fn serve(email_verified: bool, reply: DiscoveryReply) -> Running {
         seen: Arc::new(Mutex::new(Vec::new())),
     };
     let router = Router::new()
-        .route("/discovery", get(read_answer))
+        .route("/discovery", get(discovery_answer))
         .route("/token", post(token_answer))
-        .route("/userinfo", get(read_answer))
+        .route("/userinfo", get(userinfo_answer))
         .with_state(provider.clone());
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { axum::serve(listener, router).await.unwrap() });
@@ -171,7 +212,10 @@ fn config(provider: &Provider) -> GoogleSsoConfig {
     }
 }
 
-fn callback<'a>(url: &'a str, sso_state_cookie: Option<&'a str>) -> GoogleCallback<'a> {
+fn callback<'callback>(
+    url: &'callback str,
+    sso_state_cookie: Option<&'callback str>,
+) -> GoogleCallback<'callback> {
     GoogleCallback {
         url,
         sso_state_cookie,
@@ -237,28 +281,41 @@ async fn a_callback_exchanges_the_code_and_converts_the_identity() {
     let GoogleSsoResponse::Converted(identity) = response else {
         panic!("the callback converts the identity");
     };
+    assert_eq!(identity.id.as_deref(), Some("subject-access-abc"));
+    assert_eq!(identity.email.as_deref(), Some("access-abc@example.test"));
+    assert_eq!(identity.first_name.as_deref(), Some("Ann"));
+    assert_eq!(identity.last_name.as_deref(), Some("Lee"));
+    assert_eq!(identity.display_name.as_deref(), Some("Ann Lee"));
     assert_eq!(
-        serde_json::to_value(identity).unwrap(),
-        json!({
-            "id": "subject-access-abc",
-            "email": "access-abc@example.test",
-            "first_name": "Ann",
-            "last_name": "Lee",
-            "display_name": "Ann Lee",
-            "picture": "https://img.example.test/ann.png",
-            "provider": "google",
-            "team_ids": [],
-            "user_role": null,
-            "extra_fields": null,
-        })
+        identity.picture.as_deref(),
+        Some("https://img.example.test/ann.png")
     );
+    assert_eq!(identity.provider.as_deref(), Some("google"));
+    assert!(identity.team_ids.is_empty());
+    assert!(identity.user_role.is_none());
+    assert!(identity.extra_fields.is_none());
+}
+
+#[tokio::test]
+async fn a_google_callback_sends_the_discovery_token_and_userinfo_requests() {
+    let running = serve(true, DiscoveryReply::Document).await;
+    get_google_callback_response(
+        &transport(),
+        &config(&running.provider),
+        &callback(
+            "https://proxy.test/sso/callback?code=abc&state=state-1",
+            Some("state-1"),
+        ),
+        false,
+    )
+    .await
+    .unwrap();
     let seen = running.provider.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 3);
-    assert_eq!(
-        (seen[0].method, seen[0].path.as_str()),
-        ("GET", "/discovery")
-    );
-    assert_eq!((seen[1].method, seen[1].path.as_str()), ("POST", "/token"));
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(seen[0].path, "/discovery");
+    assert_eq!(seen[1].method, "POST");
+    assert_eq!(seen[1].path, "/token");
     let basic = format!("Basic {}", STANDARD.encode("client-id:client-secret"));
     assert_eq!(seen[1].authorization.as_deref(), Some(basic.as_str()));
     assert_eq!(form_value(&seen[1].body, "client_id"), "client-id");
@@ -267,10 +324,8 @@ async fn a_callback_exchanges_the_code_and_converts_the_identity() {
         form_value(&seen[1].body, "redirect_uri"),
         "https://proxy.test/sso/callback"
     );
-    assert_eq!(
-        (seen[2].method, seen[2].path.as_str()),
-        ("GET", "/userinfo")
-    );
+    assert_eq!(seen[2].method, "GET");
+    assert_eq!(seen[2].path, "/userinfo");
     assert_eq!(seen[2].authorization.as_deref(), Some("Bearer access-abc"));
 }
 
