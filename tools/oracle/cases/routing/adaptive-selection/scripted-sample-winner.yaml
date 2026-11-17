@@ -1,0 +1,67 @@
+kind: probe
+name: adaptive-selection-scripted-sample-winner
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick
+        cells:
+          - {"model": "a", "alpha": "5", "beta": "5"}
+          - {"model": "b", "alpha": "5", "beta": "5"}
+          - {"model": "c", "alpha": "5", "beta": "5"}
+        costs:
+          - {"model": "a", "amount": "0"}
+          - {"model": "b", "amount": "0.5"}
+          - {"model": "c", "amount": "1"}
+        weights: {"quality": "0.7", "cost": "0.3"}
+        samples: ["0.2", "0.9", "0.1"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick
+        cells:
+          - {"model": "a", "alpha": "5", "beta": "5"}
+          - {"model": "b", "alpha": "5", "beta": "5"}
+          - {"model": "c", "alpha": "5", "beta": "5"}
+        costs:
+          - {"model": "a", "amount": "0"}
+          - {"model": "b", "amount": "0.5"}
+          - {"model": "c", "amount": "1"}
+        weights: {"quality": "0.7", "cost": "0.3"}
+        samples: ["0.9", "0.1", "0.5"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick
+        cells:
+          - {"model": "a", "alpha": "5", "beta": "5"}
+          - {"model": "b", "alpha": "5", "beta": "5"}
+          - {"model": "c", "alpha": "5", "beta": "5"}
+        costs:
+          - {"model": "a", "amount": "0.5"}
+          - {"model": "b", "amount": "0.5"}
+          - {"model": "c", "amount": "0.5"}
+        weights: {"quality": "0.7", "cost": "0.3"}
+        samples: ["0.5", "0.5", "0.5"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick
+        cells:
+          - {"model": "a", "alpha": "5", "beta": "5"}
+          - {"model": "b", "alpha": "5", "beta": "5"}
+        costs:
+          - {"model": "a", "amount": "1"}
+          - {"model": "b", "amount": "0"}
+        weights: {"quality": "0", "cost": "1"}
+        samples: ["0.5", "0.5"]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: pick
+compare: {ignore: []}

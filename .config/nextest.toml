@@ -1,21 +1,19 @@
+experimental = ["setup-scripts"]
+
+# one PostgreSQL server per run; each test then copies a template database on it instead of starting a server of its own
+[scripts.setup.postgres]
+command = "tools/postgres-fixture/nextest-postgres.sh"
+slow-timeout = { period = "60s", terminate-after = 3 }
+
 [profile.default]
 # the dashboard browser test needs Node, Chromium and a built bundle, so only tools/dashboard/browser-check.sh runs it
 default-filter = "not package(betterlite-dashboard-browser)"
 # a hung test fails after 10 minutes instead of holding a CI job until its 120-minute limit
 slow-timeout = { period = "60s", terminate-after = 10 }
 
-# these modules take Prisma's and betterlite's migration advisory locks, which Postgres holds per database, not per test schema
-[[profile.default.overrides]]
-filter = "package(betterlite-db) & test(/^(migration_(deploy|drift|ledger|recovery)|request_log_indexes)::/)"
-test-group = "db-migration-locks"
-
-# the packaged catalog's constraint guards scan every schema, so these fixtures run one at a time
-[[profile.default.overrides]]
-filter = "((package(betterlite-server) | package(betterlite-db-admin)) & test(/^database_startup::tests::/)) | (package(betterlite-config) & test(/^sections::database_startup::tests::migrations::/))"
-test-group = "db-migration-locks"
-
-[test-groups]
-db-migration-locks = { max-threads = 1 }
+[[profile.default.scripts]]
+filter = "rdeps(betterlite-postgres-fixture)"
+setup = "postgres"
 
 # CI's task part reports up to 20 failing tests in one fix round instead of stopping at the first
 [profile.task]
