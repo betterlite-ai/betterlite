@@ -1,0 +1,18 @@
+kind: helper
+name: missing-name
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data: null
+        body: {done: false}
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data: null
+        body: {name: ''}
+env: {}
+compare: {ignore: []}

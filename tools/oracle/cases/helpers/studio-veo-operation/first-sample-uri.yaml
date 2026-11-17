@@ -1,0 +1,27 @@
+kind: helper
+name: first-sample-uri
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: content_target
+        body:
+          name: operations/generate_1234567890
+          done: true
+          response:
+            generateVideoResponse:
+              generatedSamples:
+                - video: {uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media'}
+                - video: {uri: 'files/second:download'}
+      - function: content_target
+        body:
+          name: operations/generate_1234567890
+          done: false
+          response:
+            generateVideoResponse:
+              generatedSamples:
+                - video: {uri: 'files/abc:download'}
+      - function: content_target
+        body: {name: operations/generate_1234567890, done: true}
+env: {}
+compare: {ignore: []}
