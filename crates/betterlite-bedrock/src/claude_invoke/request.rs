@@ -38,6 +38,7 @@ const MODELS: &str = "model";
 const STREAM: &str = "stream";
 const TOOLS: &str = "tools";
 
+#[derive(Clone)]
 pub struct ClaudeInvokeRequest<'request> {
     pub model: &'request str,
     pub messages: Vec<Json>,
@@ -82,7 +83,9 @@ where
     Lookup: ModelInfoLookup,
 {
     let mut optional_params = authentication_filtered(&request.optional_params);
-    normalize_output_config_effort(request.model, &mut optional_params, sources).await?;
+    sources
+        .normalize_output_config_effort(request.model, &mut optional_params)
+        .await?;
     normalize_tool_search_tools(&mut optional_params)?;
     let anthropic_request = AnthropicRequest {
         model: request.model,
@@ -104,7 +107,8 @@ where
     let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
     body.shift_remove(MODELS);
     body.shift_remove(STREAM);
-    finalize(request, &request.messages, &mut body, sources).await?;
+    sources.rewrite_body(request, &mut body).await?;
+    sources.apply_beta_headers(request, &mut body).await?;
     Ok(ClaudeInvokePrepared {
         body,
         tool_name_reverse: prepared.tool_name_reverse,
@@ -124,32 +128,28 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    let typed: Vec<Message> = serde_json::from_value(serde_json::to_value(&request.messages)?)?;
-    let inlined =
-        async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, sources.prompts.fetcher)
-            .await?;
-    let messages: Vec<Json> = serde_json::from_value(serde_json::to_value(&inlined)?)?;
-    let inlined_request = ClaudeInvokeRequest {
-        model: request.model,
-        messages,
-        optional_params: request.optional_params.clone(),
-        litellm_params: request.litellm_params.clone(),
-        headers: request.headers.clone(),
-        defaults: request.defaults,
-        catalog: request.catalog,
-        default_chat_max_tokens: request.default_chat_max_tokens,
-        modify_params: request.modify_params,
-        global_drop_params: request.global_drop_params,
-    };
+    let mut inlined_request = ClaudeInvokeRequest::clone(request);
+    inlined_request.messages =
+        inlined_messages::<Fetcher, Blocks>(&request.messages, sources.prompts.fetcher).await?;
     transform_request(&inlined_request, sources).await
 }
 
-async fn finalize<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    request: &ClaudeInvokeRequest<'_>,
+async fn inlined_messages<Fetcher, Blocks>(
     messages: &[Json],
-    body: &mut Object,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<(), ClaudeInvokeError<Blocks::Failure>>
+    fetcher: &Fetcher,
+) -> Result<Vec<Json>, ClaudeInvokeError<Blocks::Failure>>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+    Blocks: FileBlocks + Sync,
+{
+    let typed: Vec<Message> = serde_json::from_value(serde_json::to_value(messages)?)?;
+    let inlined = async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, fetcher).await?;
+    let converted: Vec<Json> = serde_json::from_value(serde_json::to_value(&inlined)?)?;
+    Ok(converted)
+}
+
+impl<'context, 'environment, Source, Transport, Fetcher, Blocks, Ids, Lookup>
+    TransformSources<'context, 'environment, Source, Transport, Fetcher, Blocks, Ids, Lookup>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
@@ -158,86 +158,75 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    {
-        let mut capabilities = InvokeCapabilities {
-            environment: &mut *sources.environment,
-            catalogs: sources.catalogs,
+    async fn rewrite_body(
+        &mut self,
+        request: &ClaudeInvokeRequest<'_>,
+        body: &mut Object,
+    ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
+        {
+            let mut capabilities = InvokeCapabilities {
+                environment: &mut *self.environment,
+                catalogs: self.catalogs,
+            };
+            apply_structured_output(request.model, body, &mut capabilities).await;
+            strip_unsupported_config_keys(request.model, body, &mut capabilities).await;
+        }
+        if !body.contains_key("anthropic_version") {
+            body.insert(
+                "anthropic_version".to_owned(),
+                BodyJson::Text(ANTHROPIC_VERSION.to_owned()),
+            );
+        }
+        normalize_tool_custom_field(body);
+        normalize_tool_schema_types(body);
+        strip_eager_streaming_tools(body);
+        convert_document_url_sources(body, self.prompts.fetcher).await?;
+        Ok(())
+    }
+
+    async fn apply_beta_headers(
+        &mut self,
+        request: &ClaudeInvokeRequest<'_>,
+        body: &mut Object,
+    ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
+        let betas = compute_beta_headers(
+            &InvokeBetaRequest {
+                model: request.model,
+                messages: &request.messages,
+                optional_params: &request.optional_params,
+                headers: &request.headers,
+                thinking: body.get("thinking"),
+            },
+            &mut *self.environment,
+            self.catalogs,
+            self.matrix,
+        )
+        .await?;
+        if betas.is_empty() {
+            return Ok(());
+        }
+        let list = BodyJson::List(betas.into_iter().map(BodyJson::Text).collect());
+        body.insert(BETA_HEADER_FIELD.to_owned(), list);
+        Ok(())
+    }
+
+    async fn normalize_output_config_effort(
+        &mut self,
+        model: &str,
+        optional_params: &mut IndexMap<String, Json>,
+    ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
+        let Some(value) = optional_params
+            .get("output_config")
+            .filter(|value| matches!(value, Json::Object(_)))
+        else {
+            return Ok(());
         };
-        apply_structured_output(request.model, body, &mut capabilities).await;
-        strip_unsupported_config_keys(request.model, body, &mut capabilities).await;
+        let mut output_config: ParamValue = serde_json::from_value(serde_json::to_value(value)?)?;
+        normalize_opus_effort(model, &mut output_config, self.lookup, self.packaged).await?;
+        let normalized: Json = serde_json::from_value(serde_json::to_value(&output_config)?)?;
+        optional_params.insert("output_config".to_owned(), normalized);
+        Ok(())
     }
-    if !body.contains_key("anthropic_version") {
-        body.insert(
-            "anthropic_version".to_owned(),
-            BodyJson::Text(ANTHROPIC_VERSION.to_owned()),
-        );
-    }
-    normalize_tool_custom_field(body);
-    normalize_tool_schema_types(body);
-    strip_eager_streaming_tools(body);
-    convert_document_url_sources(body, sources.prompts.fetcher).await?;
-    apply_beta_headers(request, messages, body, sources).await
-}
-
-async fn apply_beta_headers<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    request: &ClaudeInvokeRequest<'_>,
-    messages: &[Json],
-    body: &mut Object,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<(), ClaudeInvokeError<Blocks::Failure>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
-{
-    let betas = compute_beta_headers(
-        &InvokeBetaRequest {
-            model: request.model,
-            messages,
-            optional_params: &request.optional_params,
-            headers: &request.headers,
-            thinking: body.get("thinking"),
-        },
-        &mut *sources.environment,
-        sources.catalogs,
-        sources.matrix,
-    )
-    .await?;
-    if betas.is_empty() {
-        return Ok(());
-    }
-    let list = BodyJson::List(betas.into_iter().map(BodyJson::Text).collect());
-    body.insert(BETA_HEADER_FIELD.to_owned(), list);
-    Ok(())
-}
-
-async fn normalize_output_config_effort<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    model: &str,
-    optional_params: &mut IndexMap<String, Json>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<(), ClaudeInvokeError<Blocks::Failure>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
-{
-    let Some(value) = optional_params
-        .get("output_config")
-        .filter(|value| matches!(value, Json::Object(_)))
-    else {
-        return Ok(());
-    };
-    let mut output_config: ParamValue = serde_json::from_value(serde_json::to_value(value)?)?;
-    normalize_opus_effort(model, &mut output_config, sources.lookup, sources.packaged).await?;
-    let normalized: Json = serde_json::from_value(serde_json::to_value(&output_config)?)?;
-    optional_params.insert("output_config".to_owned(), normalized);
-    Ok(())
 }
 
 fn strip_eager_streaming_tools(body: &mut Object) {

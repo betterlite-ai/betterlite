@@ -154,6 +154,21 @@ impl ReasoningTokenCounter for NoReasoning {
     }
 }
 
+fn record_call(fetcher_calls: &Mutex<Vec<String>>, url: &str) {
+    fetcher_calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(url.to_owned());
+}
+
+fn text_pairs(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+    let mut pairs = Vec::with_capacity(entries.len());
+    for (name, value) in entries {
+        pairs.push(((*name).to_owned(), (*value).to_owned()));
+    }
+    pairs
+}
+
 #[derive(Default)]
 pub(super) struct MapFetcher {
     urls: BTreeMap<String, String>,
@@ -163,12 +178,8 @@ pub(super) struct MapFetcher {
 
 impl MapFetcher {
     pub(super) fn new(entries: &[(&str, &str)]) -> Self {
-        let mut urls = BTreeMap::new();
-        for (url, data_url) in entries {
-            urls.insert((*url).to_owned(), (*data_url).to_owned());
-        }
         Self {
-            urls,
+            urls: text_pairs(entries).into_iter().collect(),
             calls: Mutex::new(Vec::new()),
             transports: AtomicUsize::new(0),
         }
@@ -188,10 +199,7 @@ impl MapFetcher {
 
 impl RemoteMediaFetcher for MapFetcher {
     async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(url.to_owned());
+        record_call(&self.calls, url);
         let Some(data_url) = self.urls.get(url) else {
             return Err(ImageFetchError::Attempts {
                 url: url.to_owned(),
@@ -231,10 +239,7 @@ impl RefusingFetcher {
 
 impl RemoteMediaFetcher for RefusingFetcher {
     async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(url.to_owned());
+        record_call(&self.calls, url);
         Err(ImageFetchError::Rejected {
             url: url.to_owned(),
         })
@@ -339,6 +344,12 @@ impl Fixture {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Mode {
+    Sync,
+    Async,
+}
+
 pub(super) struct Session<'fixture> {
     fixture: &'fixture Fixture,
     resolution: ResolutionContext<'fixture>,
@@ -364,6 +375,7 @@ impl<'fixture> Session<'fixture> {
         &mut self,
         request: &ClaudeInvokeRequest<'_>,
         fetcher: &MapFetcher,
+        mode: Mode,
     ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Infallible>> {
         let catalogs = self.fixture.catalogs();
         let blocks = NoFileBlocks;
@@ -384,36 +396,14 @@ impl<'fixture> Session<'fixture> {
             lookup: &self.fixture.lookup,
             packaged: self.fixture.packaged.as_ref(),
         };
-        self.runtime
-            .block_on(transform_request(request, &mut sources))
-    }
-
-    pub(super) fn async_transform(
-        &mut self,
-        request: &ClaudeInvokeRequest<'_>,
-        fetcher: &MapFetcher,
-    ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Infallible>> {
-        let catalogs = self.fixture.catalogs();
-        let blocks = NoFileBlocks;
-        let new_id: fn() -> String = || "generated".to_owned();
-        let deps = PromptDeps {
-            fetcher,
-            blocks: &blocks,
-            new_id: &new_id,
-        };
-        let mut environment =
-            self.fixture
-                .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
-        let mut sources = TransformSources {
-            environment: &mut environment,
-            catalogs: &catalogs,
-            prompts: &deps,
-            matrix: &self.fixture.matrix,
-            lookup: &self.fixture.lookup,
-            packaged: self.fixture.packaged.as_ref(),
-        };
-        self.runtime
-            .block_on(async_transform_request(request, &mut sources))
+        match mode {
+            Mode::Sync => self
+                .runtime
+                .block_on(transform_request(request, &mut sources)),
+            Mode::Async => self
+                .runtime
+                .block_on(async_transform_request(request, &mut sources)),
+        }
     }
 
     pub(super) fn map_params(
@@ -539,11 +529,7 @@ pub(super) fn body_json(prepared: &ClaudeInvokePrepared) -> serde_json::Value {
 
 pub(super) fn headers_of(entries: &[(&str, &str)]) -> AnthropicHeaders {
     let mut headers = AnthropicHeaders::default();
-    for (name, value) in entries {
-        headers
-            .values
-            .insert((*name).to_owned(), (*value).to_owned());
-    }
+    headers.values.extend(text_pairs(entries));
     headers
 }
 

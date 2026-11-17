@@ -6,8 +6,8 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use super::support::{
-    Fixture, MapFetcher, RefusingFetcher, Session, body_json, catalog, chat_request, headers_of,
-    map_of, messages_of, model_cost_of,
+    Fixture, MapFetcher, Mode, RefusingFetcher, Session, body_json, catalog, chat_request,
+    headers_of, map_of, messages_of, model_cost_of,
 };
 use crate::claude_invoke::request::ClaudeInvokeRequest;
 use crate::claude_invoke::tools::ToolSearchToolsError;
@@ -59,7 +59,7 @@ pub(super) fn bedrock_anthropic_version() {
     let catalog = catalog();
     let request = plain_request(&defaults, &catalog, map_of(r#"{"max_tokens": 64}"#));
     let prepared = session
-        .transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Sync)
         .expect("the request transforms");
     assert_eq!(
         body_json(&prepared),
@@ -77,7 +77,7 @@ pub(super) fn bedrock_anthropic_version() {
         ),
     );
     let prepared = session
-        .transform(&explicit, &fetcher)
+        .transform(&explicit, &fetcher, Mode::Sync)
         .expect("the explicit version transforms");
     assert_eq!(
         body_json(&prepared)["anthropic_version"],
@@ -91,7 +91,7 @@ pub(super) fn bedrock_anthropic_version() {
         map_of(r#"{"max_tokens": 64, "anthropic_version": null}"#),
     );
     let prepared = session
-        .transform(&null_version, &fetcher)
+        .transform(&null_version, &fetcher, Mode::Sync)
         .expect("the null version transforms");
     assert_eq!(body_json(&prepared)["anthropic_version"], Value::Null);
     assert!(fetcher.calls().is_empty());
@@ -142,7 +142,7 @@ pub(super) fn adaptive_effort_ceiling() {
     );
     let fetcher = MapFetcher::default();
     let prepared = session
-        .transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Sync)
         .expect("the output config request transforms");
     assert_eq!(
         body_json(&prepared)["output_config"],
@@ -172,7 +172,7 @@ pub(super) fn bedrock_beta_filter() {
         &catalog,
     );
     let prepared = session
-        .transform(&with_user_beta, &fetcher)
+        .transform(&with_user_beta, &fetcher, Mode::Sync)
         .expect("the beta request transforms");
     assert_eq!(
         body_json(&prepared)["anthropic_beta"],
@@ -187,7 +187,7 @@ pub(super) fn bedrock_beta_filter() {
         &catalog,
     );
     let prepared = session
-        .transform(&filtered, &fetcher)
+        .transform(&filtered, &fetcher, Mode::Sync)
         .expect("the filtered request transforms");
     assert!(body_json(&prepared).get("anthropic_beta").is_none());
     let explicit_user = chat_request(
@@ -199,7 +199,7 @@ pub(super) fn bedrock_beta_filter() {
         &catalog,
     );
     let prepared = session
-        .transform(&explicit_user, &fetcher)
+        .transform(&explicit_user, &fetcher, Mode::Sync)
         .expect("the user beta request transforms");
     assert_eq!(
         body_json(&prepared)["anthropic_beta"],
@@ -230,7 +230,7 @@ pub(super) fn tool_search_tool_name() {
         &catalog,
     );
     let prepared = session
-        .transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Sync)
         .expect("the tool search request transforms");
     let body = body_json(&prepared);
     assert_eq!(
@@ -253,7 +253,7 @@ pub(super) fn tool_search_tool_name() {
         &catalog,
     );
     let prepared = session
-        .transform(&empty, &fetcher)
+        .transform(&empty, &fetcher, Mode::Sync)
         .expect("the empty tools request transforms");
     assert_eq!(body_json(&prepared)["tools"], json!([]));
     let malformed = chat_request(
@@ -264,7 +264,7 @@ pub(super) fn tool_search_tool_name() {
         &defaults,
         &catalog,
     );
-    match session.transform(&malformed, &fetcher) {
+    match session.transform(&malformed, &fetcher, Mode::Sync) {
         Ok(_prepared) => panic!("the malformed tools entry must fail the request"),
         Err(ClaudeInvokeError::Tools(ToolSearchToolsError::NotObject { index })) => {
             assert_eq!(index, 0);
@@ -297,7 +297,7 @@ pub(super) fn inline_document() {
         "data:application/octet-stream;base64,JVBERi0xLjQK",
     )]);
     let prepared = session
-        .transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Sync)
         .expect("the document request transforms");
     assert_eq!(
         body_json(&prepared)["messages"],
@@ -325,7 +325,7 @@ pub(super) fn inline_document() {
     );
     let quiet = MapFetcher::default();
     let prepared = session
-        .transform(&request, &quiet)
+        .transform(&request, &quiet, Mode::Sync)
         .expect("the inline document transforms");
     assert_eq!(
         body_json(&prepared)["messages"][0]["content"][0]["source"]["data"],
@@ -527,7 +527,7 @@ pub(super) fn remote_url_inlined() {
         "data:image/png;base64,iVBORw0KGgo=",
     )]);
     let prepared = session
-        .async_transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Async)
         .expect("the image request transforms");
     assert_eq!(
         body_json(&prepared)["messages"],
@@ -574,7 +574,7 @@ pub(super) fn async_media_order() {
         ),
     ]);
     let prepared = session
-        .async_transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Async)
         .expect("the mixed request transforms");
     assert_eq!(
         body_json(&prepared)["messages"],
@@ -626,7 +626,7 @@ pub(super) fn media_fetch() {
         &catalog,
     );
     let prepared = session
-        .async_transform(&request, &fetching)
+        .transform(&request, &fetching, Mode::Async)
         .expect("the media request transforms");
     let body = body_json(&prepared);
     assert_eq!(
@@ -647,7 +647,7 @@ pub(super) fn media_fetch() {
         &defaults,
         &catalog,
     );
-    match session.async_transform(&request, &refusing) {
+    match session.transform(&request, &refusing, Mode::Async) {
         Ok(_prepared) => panic!("the refusing fetcher must fail the request"),
         Err(ClaudeInvokeError::Media(MediaError::Fetch(ImageFetchError::Rejected { url }))) => {
             assert_eq!(url, "https://example.test/pic.png");
@@ -676,7 +676,7 @@ pub(super) fn billing_header() {
     );
     let fetcher = MapFetcher::default();
     let prepared = session
-        .transform(&request, &fetcher)
+        .transform(&request, &fetcher, Mode::Sync)
         .expect("the billing request transforms");
     assert!(body_json(&prepared).get("system").is_none());
     assert_eq!([STRIPS_BILLING_METADATA], [true]);
