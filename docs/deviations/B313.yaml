@@ -18,8 +18,10 @@ deviations:
       The proxy config accepts a top-level fallback_generalizations block with a rules list and reads it as the
       rule document, where LiteLLM reads that block only from the model cost map.
     why: >-
-      betterlite's router loads its catalog rules from config.yaml rather than a remote cost map, so the same
-      rule document needs a configured home; a config without the block keeps the cost map's own rules.
+      betterlite's router reads its catalog rules from config.yaml rather than a remote cost map, so the same
+      rule document needs a configured home; a config that names no rules installs the shipped cost map's
+      fallback_generalizations rules instead, as LiteLLM installs the loaded map's rules at startup, and a
+      reload to such a config reinstalls them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L537-L544
   - what: >-
       At route selection the router fills each candidate deployment's model_info from the capability rules
@@ -27,7 +29,8 @@ deviations:
       deployment's own keys and explicit nulls winning, and writes a missing litellm_provider from the first
       matching routing rule, where LiteLLM instead resolves a request's model through get_llm_provider and
       get_model_info before a call. The stage runs whenever the router's RouteServices carries installed
-      rules: the server builds that state from its loaded config at startup (RoutingState in
+      rules: the server builds that state from its loaded config at startup, or from the shipped cost map's
+      rules when the config names none (RoutingState in
       crates/betterlite-server/src/routing/routing_state.rs, constructed by ServerState::new), exposes
       RoutingState::reload for a config change, and its route entry
       (crates/betterlite-server/src/routing/router_core.rs) passes it as the RouteServices of pipeline::route.
