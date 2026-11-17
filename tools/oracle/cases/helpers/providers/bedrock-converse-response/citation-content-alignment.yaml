@@ -58,5 +58,38 @@ call:
         supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
         ids: []
         now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "\u001c"}, {"citationsContent": {"content": [{"text": "Cited"}], "citations": []}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "é"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/accent", "title": "Accent"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "٣"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/digit", "title": "Digit"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
 env: {}
 compare: {ignore: []}

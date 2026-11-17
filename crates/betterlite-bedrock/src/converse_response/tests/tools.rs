@@ -195,6 +195,11 @@ fn whitespace_content_is_replaced_by_the_cited_text() {
             r#"[{"content": [{"text": "Paris is the capital."}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 5}}, "source": "https://example.test/paris", "title": "Paris"}]}]"#
         ))
     );
+
+    let separator = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "\u001c"}, {"citationsContent": {"content": [{"text": "Cited"}], "citations": []}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&Fixture::default(), separator);
+    assert_eq!(run.message().content.as_deref(), Some("Cited"));
+    assert!(run.message().annotations.is_none());
 }
 
 fn punctuation_content_gets_the_cited_text_prepended() {
@@ -223,5 +228,15 @@ fn alphanumeric_content_keeps_its_own_text() {
     let uncited = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "  "}, {"citationsContent": {"content": [{"text": "Cited"}], "citations": []}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
     let run = run(&Fixture::default(), uncited);
     assert_eq!(run.message().content.as_deref(), Some("Cited"));
+    assert!(run.message().annotations.is_none());
+
+    let accented = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "é"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/accent", "title": "Accent"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&Fixture::default(), accented);
+    assert_eq!(run.message().content.as_deref(), Some("é"));
+    assert!(run.message().annotations.is_none());
+
+    let digit = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "٣"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/digit", "title": "Digit"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&Fixture::default(), digit);
+    assert_eq!(run.message().content.as_deref(), Some("٣"));
     assert!(run.message().annotations.is_none());
 }
