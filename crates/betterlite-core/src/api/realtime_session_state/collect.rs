@@ -33,10 +33,7 @@ pub(crate) fn collect_client_input(state: &mut RealtimeStreaming, message: Sessi
 }
 
 pub(crate) fn collect_backend_input(state: &mut RealtimeStreaming, event: &IndexMap<String, Json>) {
-    let Some(Json::Text(kind)) = event.get("type") else {
-        return;
-    };
-    if kind != TRANSCRIPTION_COMPLETED {
+    if event_type(event) != Some(TRANSCRIPTION_COMPLETED) {
         return;
     }
     let Some(Json::Text(transcript)) = event.get("transcript") else {
