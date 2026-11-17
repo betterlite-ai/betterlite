@@ -29,7 +29,10 @@ pub const NO_DEFAULT: Json = Json::Null;
 // _get_field: a dict key that is present but null reads as null, and only a missing key or attribute takes the default
 #[must_use]
 pub fn field(fields: &Fields, key: &str, default: &Json) -> Json {
-    fields.get(key).cloned().unwrap_or_else(|| default.clone())
+    let Some(value) = fields.get(key) else {
+        return default.clone();
+    };
+    value.clone()
 }
 
 #[must_use]
