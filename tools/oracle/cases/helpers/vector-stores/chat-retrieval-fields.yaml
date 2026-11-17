@@ -1,0 +1,21 @@
+kind: helper
+name: chat-retrieval-fields
+call:
+  vector_stores:
+    operation: success
+    request_data:
+      litellm_logging_obj:
+        model_call_details:
+          search_results: [{object: vector_store.search_results.page, search_query: q, data: []}]
+          vector_store_search_failures: [{vector_store_id: vs_a, custom_llm_provider: openai, error: failed}]
+    response:
+      id: chat1
+      created: 7
+      object: chat.completion
+      choices:
+        - index: 0
+          message: {role: assistant, content: a, provider_specific_fields: {keep: x, search_results: old}}
+        - index: 1
+          message: {role: assistant, content: b, provider_specific_fields: {keep: x, search_results: old}}
+env: {}
+compare: {ignore: []}

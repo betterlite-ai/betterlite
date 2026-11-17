@@ -1,14 +1,14 @@
 id: B3649
 milestone: M5 api families
 title: TinyFish terminal run polling and billing
-status: todo
+status: done
 depends_on: [B3648, B173]
 file: tasks/B3649-tinyfish-relay-billing.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py"
 parent: B103
 split_from: B103
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2280
