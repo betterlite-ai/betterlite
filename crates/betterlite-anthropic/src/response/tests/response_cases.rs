@@ -88,6 +88,26 @@ fn case_1_message_envelope() {
         &Json::Text(source.clone()),
         "the raw reply is logged"
     );
+    speed_reaches_usage();
+}
+
+fn speed_reaches_usage() {
+    let envelope = Scenario::new(&body(TEXT, "end_turn"))
+        .optional_params(r#"{"speed":"fast"}"#)
+        .run()
+        .envelope();
+    assert_eq!(
+        envelope.usage.as_ref().expect("usage").speed.as_deref(),
+        Some("fast")
+    );
+    let error = Scenario::new(&body(TEXT, "end_turn"))
+        .optional_params(r#"{"speed":5}"#)
+        .run()
+        .error();
+    assert!(
+        matches!(error, ResponseError::Parameter { field } if field == "speed"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -116,12 +136,17 @@ fn assert_finish(stop_reason: &str, expected: &str) {
     );
 }
 
-fn unknown_reason_warns() {
+fn finished_with(source: &str) -> (Option<String>, Vec<String>) {
     let Outcome {
         result, warnings, ..
-    } = Scenario::new(&body(TEXT, "surprise")).run();
-    let envelope = result.expect("an unknown reason still finishes");
-    assert_eq!(envelope.choices[0].finish_reason.as_deref(), Some("stop"));
+    } = Scenario::new(source).run();
+    let envelope = result.expect("the response still finishes");
+    (envelope.choices[0].finish_reason.clone(), warnings)
+}
+
+fn unknown_reason_warns() {
+    let (reason, warnings) = finished_with(&body(TEXT, "surprise"));
+    assert_eq!(reason.as_deref(), Some("stop"));
     assert!(
         warnings
             .iter()
@@ -134,11 +159,8 @@ fn null_reason_warns() {
     let source = format!(
         r#"{{"model":"{MODEL}","content":{TEXT},"stop_reason":null,"usage":{{"input_tokens":1,"output_tokens":1}}}}"#
     );
-    let Outcome {
-        result, warnings, ..
-    } = Scenario::new(&source).run();
-    let envelope = result.expect("a null reason still finishes");
-    assert_eq!(envelope.choices[0].finish_reason.as_deref(), Some("stop"));
+    let (reason, warnings) = finished_with(&source);
+    assert_eq!(reason.as_deref(), Some("stop"));
     assert!(!warnings.is_empty(), "the fallback warns");
 }
 

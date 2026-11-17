@@ -4,8 +4,7 @@ use thiserror::Error;
 
 use crate::response_content::ResponseContentError;
 
-// LiteLLM hands a raw_response.json() failure and the upstream error branch the same AnthropicError, so those
-// become ResponseError::Anthropic; a body of valid JSON with the wrong shape keeps a structural failure instead
+// A json() failure and the upstream error branch both raise AnthropicError; a wrong-shaped body stays structural
 #[derive(Debug, Error)]
 pub enum DecodeError {
     #[error("the response body is not JSON: {message}")]

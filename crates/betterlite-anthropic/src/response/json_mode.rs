@@ -1,10 +1,10 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::response_content::ResponseContentError;
 use crate::response_content::wire::{
-    AnthropicCompletionResponse, AnthropicToolCall, get, json_text, project_response,
+    AnthropicCompletionResponse, AnthropicToolCall, get, json_text,
 };
+use crate::response_content::{ResponseContentError, project_response};
 
 const RESPONSE_FORMAT_TOOL_NAME: &str = "json_tool_call";
 
@@ -14,8 +14,7 @@ pub(super) struct Selection {
     pub(super) extra: Option<String>,
 }
 
-// LiteLLM resolves the internal response_format tool after the reverse map ran, so a name the caller wrote
-// differently is no longer internal; a second projection on the reversed blocks gives that exact selection
+// LiteLLM resolves the internal tool after the reverse map, so the second projection reads the renamed blocks
 pub(super) fn select(
     body: &mut AnthropicCompletionResponse,
     json_mode: Option<bool>,

@@ -120,7 +120,15 @@ fn build_message(
                 &tool_calls,
             )
         },
-        ChatMessage::json_mode,
+        // the JSON-mode message LiteLLM builds from the tool arguments carries no provider fields or thinking
+        |content| ChatMessage {
+            role: "assistant".to_owned(),
+            content: Some(content),
+            tool_calls: None,
+            thinking_blocks: None,
+            reasoning_content: None,
+            provider_specific_fields: None,
+        },
     ))
 }
 
@@ -142,19 +150,25 @@ fn composed_message(
         text.push_str(extra);
     }
     ChatMessage {
+        role: "assistant".to_owned(),
         content: (!text.is_empty()).then_some(text),
         tool_calls: (!tool_calls.is_empty()).then(|| tool_calls.to_vec()),
         thinking_blocks: parsed.thinking_blocks.clone(),
         reasoning_content: parsed.reasoning_content.clone(),
         provider_specific_fields: Some(parsed.provider_specific_fields.clone()),
-        ..ChatMessage::default()
     }
 }
 
 fn finish_reason(fields: &JsonFields) -> Result<String, ResponseError> {
-    match fields.get("stop_reason") {
-        Some(Json::Text(raw)) => Ok(mapped_finish_reason(raw)),
-        Some(value @ (Json::Null | Json::Bool(_) | Json::Number(_))) => {
+    let Some(value) = fields.get("stop_reason") else {
+        return Err(ResponseError::MissingField("stop_reason"));
+    };
+    match value {
+        Json::Text(raw) => Ok(mapped_finish_reason(raw)),
+        Json::List(_) | Json::Object(_) => Err(ResponseError::FieldType {
+            field: "stop_reason",
+        }),
+        Json::Null | Json::Bool(_) | Json::Number(_) => {
             // LiteLLM looks the value up, misses, warns with it and falls back to stop
             tracing::warn!(
                 "Unmapped finish_reason '{}', defaulting to 'stop'",
@@ -162,10 +176,6 @@ fn finish_reason(fields: &JsonFields) -> Result<String, ResponseError> {
             );
             Ok("stop".to_owned())
         }
-        Some(Json::List(_) | Json::Object(_)) => Err(ResponseError::FieldType {
-            field: "stop_reason",
-        }),
-        None => Err(ResponseError::MissingField("stop_reason")),
     }
 }
 
@@ -181,9 +191,7 @@ fn model_of(fields: &JsonFields) -> Result<Option<String>, ResponseError> {
     match fields.get("model") {
         Some(Json::Text(model)) => Ok(Some(model.clone())),
         Some(Json::Null) => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ResponseError::FieldType { field: "model" })
-        }
+        Some(_) => Err(ResponseError::FieldType { field: "model" }),
         None => Err(ResponseError::MissingField("model")),
     }
 }

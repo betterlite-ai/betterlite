@@ -59,8 +59,12 @@ fn post_request(request: &ResponseRequest<'_>, text: String) -> PostCall {
         original_response: Json::Text(text),
         input: Json::List(request.messages.to_vec()),
         additional_args: AdditionalArgs {
+            api_base: None,
+            headers: None,
             complete_input_dict: Some(RawBody::Object(request.request_data.clone())),
-            ..AdditionalArgs::default()
+            request_str: None,
+            openai_sdk: None,
+            passthrough: IndexMap::new(),
         },
     }
 }

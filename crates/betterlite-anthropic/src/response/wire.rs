@@ -5,8 +5,7 @@ use serde::Serialize;
 use crate::response_content::wire::{AnthropicCompletionResponse, AnthropicToolCall, JsonFields};
 use crate::usage::AnthropicUsage;
 
-// LiteLLM's ModelResponse: the provider never copies the upstream id, object is fixed, and the transform fills
-// choices, usage, created, model and the hidden params it replaces wholesale
+// LiteLLM's ModelResponse: no upstream id, a fixed object, and hidden params the transform replaces wholesale
 #[derive(Debug, Clone, Serialize)]
 pub struct ResponseEnvelope {
     pub id: String,
@@ -78,17 +77,6 @@ impl Default for ChatMessage {
             thinking_blocks: None,
             reasoning_content: None,
             provider_specific_fields: None,
-        }
-    }
-}
-
-impl ChatMessage {
-    // the JSON-mode message LiteLLM builds from the tool arguments carries no provider fields or thinking
-    #[must_use]
-    pub fn json_mode(content: String) -> Self {
-        Self {
-            content: Some(content),
-            ..Self::default()
         }
     }
 }

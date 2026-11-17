@@ -11,7 +11,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
-use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
@@ -200,13 +199,6 @@ impl Outcome {
 
     pub(crate) fn error(self) -> ResponseError {
         self.result.expect_err("the transform should fail")
-    }
-
-    pub(crate) fn failed(self) -> (ResponseError, IndexMap<String, Json>) {
-        (
-            self.result.expect_err("the transform should fail"),
-            self.details,
-        )
     }
 }
 
