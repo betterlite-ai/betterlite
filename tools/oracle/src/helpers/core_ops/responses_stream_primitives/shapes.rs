@@ -1,6 +1,6 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_stream_primitives::decode::{
-    JsonShape, decode_responses_stream_value,
+    JsonShape as _, decode_responses_stream_value,
 };
 use serde_json::{Value, json};
 
