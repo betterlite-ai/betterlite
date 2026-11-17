@@ -266,6 +266,7 @@ fn environment_aliases_fall_back_in_source_order() {
         location: Some("vertex-ai-location".to_owned()),
         credentials: Some(credentials("vertex-ai-key")),
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
     assert_eq!(resolved.project.as_deref(), Some("vertex-ai-project"));
@@ -349,12 +350,12 @@ fn the_section_input_is_the_last_fallback() {
 
 #[test]
 fn an_explicit_api_base_and_option_credentials_win() {
-    let catalog = ModelCatalog::default();
     let vertex = VertexSettings {
         project: None,
         location: Some("settings-location".to_owned()),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let embedding = EmbeddingSettings {
         project: None,
@@ -376,7 +377,7 @@ fn an_explicit_api_base_and_option_credentials_win() {
             vertex: &vertex,
             embedding: &embedding,
         },
-        &catalog,
+        &ModelCatalog::default(),
     )
     .expect("a resolved request");
     assert_eq!(
@@ -506,6 +507,7 @@ fn pinned_options_sit_between_the_request_and_the_settings() {
         location: Some("settings-location".to_owned()),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let pins = format!(
         r#"{{"vertex_ai_project": "pinned-project", "vertex_location": "pinned-location", "vertex_credentials": {ACCOUNT}, "api_base": "https://pinned.example"}}"#
@@ -585,6 +587,7 @@ fn null_pins_fall_through_like_absent_ones() {
         location: None,
         credentials: Some(credentials("settings-creds")),
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let resolved = pinned_resolution(
         r#"{"vertex_project": null, "vertex_ai_location": null, "vertex_credentials": null, "api_base": null}"#,

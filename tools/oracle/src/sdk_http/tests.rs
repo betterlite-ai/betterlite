@@ -334,6 +334,7 @@ fn decoded_kind(text: &str) -> Nullable {
         | SdkResult::MessagesStreamLogging { .. }
         | SdkResult::MessagesNativeStream { .. }
         | SdkResult::MessagesSyncStream { .. }
+        | SdkResult::MessagesChatStream { .. }
         | SdkResult::ResponsesAgenticContinuation { .. }
         | SdkResult::FileAzureStorage { .. } => None,
     }

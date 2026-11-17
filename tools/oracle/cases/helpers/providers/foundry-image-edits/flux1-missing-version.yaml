@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-image-edits-flux1-missing-version
+call:
+  foundry_image_edits:
+    urls:
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com}
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com, environment: {}}
+      - {model: FLUX-1-kontext-pro, api_version: v1}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-image-edits-flux-inline-base64
+call:
+  foundry_image_edits:
+    transforms:
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: bytes, text: "plain bytes"}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: buffered, text: "buffered text", position: 2}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: buffered, text: "buffered text", position: 2}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: reader, text: "reader text", position: 2}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: reader, text: "reader text", position: 99}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: unsupported, text: str}, options: {}}
+      - {model: FLUX.2-pro, prompt: draw, image: {kind: unsupported, text: tuple}, options: {}}
+env: {}
+compare: {ignore: []}

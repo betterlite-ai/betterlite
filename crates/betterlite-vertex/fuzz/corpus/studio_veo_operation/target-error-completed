@@ -1,0 +1,1 @@
+{"name":"operations/generate_1234567890","done":true,"error":{"code":13,"message":"boom"},"response":{"generateVideoResponse":{"generatedSamples":[{"video":{"uri":"files/abc"}}]}}}

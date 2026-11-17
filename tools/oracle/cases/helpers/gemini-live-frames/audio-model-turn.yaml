@@ -1,0 +1,9 @@
+kind: helper
+name: audio-model-turn
+call:
+  gemini_live_frames:
+    frames:
+      - '{"serverContent": {"modelTurn": {"parts": [{"inlineData": {"mimeType": "audio/pcm", "data": "AAA"}}]}}}'
+      - '{"serverContent": {"generationComplete": true}}'
+env: {}
+compare: {ignore: []}

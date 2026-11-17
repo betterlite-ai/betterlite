@@ -1,0 +1,16 @@
+kind: helper
+name: foundry-image-edits-foundry-edit-auth
+call:
+  foundry_image_edits:
+    auths:
+      - {model: FLUX-1-kontext-pro, api_key: flux-key, headers: {Content-Type: multipart/form-data, X-Trace: '1'}}
+      - {model: FLUX.2-pro, api_key: flux-key, headers: {Content-Type: multipart/form-data, X-Trace: '1'}}
+      - {model: MAI-Image-2.5, api_key: mai-key, headers: {Content-Type: multipart/form-data, X-Trace: '1'}}
+      - {model: FLUX-1-kontext-pro, params: {azure_ad_token: entra-token}}
+      - {model: FLUX.2-pro, params: {azure_ad_token: entra-token}}
+      - {model: MAI-Image-2.5, params: {azure_ad_token: entra-token}}
+      - {model: FLUX-1-kontext-pro, environment: {AZURE_AI_API_KEY: env-key}}
+      - {model: FLUX-1-kontext-pro, global_api_key: global-key, api_base: https://explicit.test}
+      - {model: FLUX-1-kontext-pro, environment: {AZURE_AI_API_BASE: https://env.test}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-image-edits-image-edit-api-version
+call:
+  foundry_image_edits:
+    urls:
+      - {model: FLUX-1-kontext-pro, api_base: https://res.openai.azure.com/openai/deployments/, api_version: 2025-04-01-preview}
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com, api_version: v1}
+      - {model: FLUX-1-kontext-pro, api_base: 'https://res.services.ai.azure.com/api?x=1', api_version: v1}
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com, global_api_version: from-global}
+      - {model: FLUX-1-kontext-pro, api_base: https://res.services.ai.azure.com, environment: {AZURE_AI_API_VERSION: from-env}}
+      - {model: FLUX-1-kontext-pro, api_version: v1, environment: {AZURE_AI_API_BASE: https://res.services.ai.azure.com}}
+      - {model: FLUX-1-kontext-pro, environment: {AZURE_AI_API_BASE: https://res.services.ai.azure.com}}
+env: {}
+compare: {ignore: []}

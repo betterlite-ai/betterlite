@@ -1,0 +1,23 @@
+kind: helper
+name: b9965-vertex-download
+call:
+  b9965:
+    model: gemini-2.5-flash
+    provider: vertex_ai
+    mode: concurrent
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - type: image_url
+            image_url: {url: "https://example.com/cat", format: image/png}
+          - type: image_url
+            image_url: {url: "http://example.com/dog"}
+    data_urls:
+      "https://example.com/cat": "data:image/png;base64,YWJj"
+      "http://example.com/dog": "data:image/webp;base64,ZGVm"
+    optional_params: {}
+    litellm_params: {}
+    supports: {system_message: true, response_schema: true}
+env: {}
+compare: {ignore: []}
