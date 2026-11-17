@@ -561,29 +561,31 @@ async fn a_buffered_completion_keeps_the_provider_headers() {
 }
 
 #[tokio::test]
-async fn a_streamed_send_never_takes_a_buffered_provider_answer() {
-    let Err(failure) = crossed_send(false, true).await else {
+async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
+    let Err(stream_sent) = crossed_send(false, true).await else {
         panic!("a buffered answer cannot fill a stream");
     };
-    assert_eq!(failure.status, 500);
-    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
-    assert!(
-        failure.message.contains("without a body"),
-        "{}",
-        failure.message
+    assert_eq!(stream_sent.status, 500);
+    assert_eq!(
+        stream_sent.error_type.as_deref(),
+        Some("internal_server_error")
     );
-}
-
-#[tokio::test]
-async fn a_buffered_send_never_takes_a_streamed_provider_answer() {
-    let Err(failure) = crossed_send(true, false).await else {
+    assert!(
+        stream_sent.message.contains("without a body"),
+        "{}",
+        stream_sent.message
+    );
+    let Err(buffer_sent) = crossed_send(true, false).await else {
         panic!("a stream cannot fill a buffered answer");
     };
-    assert_eq!(failure.status, 500);
-    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
+    assert_eq!(buffer_sent.status, 500);
+    assert_eq!(
+        buffer_sent.error_type.as_deref(),
+        Some("internal_server_error")
+    );
     assert!(
-        failure.message.contains("byte stream"),
+        buffer_sent.message.contains("byte stream"),
         "{}",
-        failure.message
+        buffer_sent.message
     );
 }
