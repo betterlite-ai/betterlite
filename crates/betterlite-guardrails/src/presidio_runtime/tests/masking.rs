@@ -7,9 +7,9 @@ use tempfile::NamedTempFile;
 
 use super::support::{
     GUARDRAIL_NAME, MASKED, Mock, Replies, SOCIAL_SECURITY_FOUND, analyzer_requests, block,
-    checked_data, content_of, content_parts, example_recognizers_path, field, guard, guard_args,
-    guard_at, logging_only_guard, masking, messages_of, mock, pii_tokens_of, quiet, request, seen,
-    text, tokens,
+    content_of, content_parts, example_recognizers_path, field, guard, guard_args, guard_at,
+    logging_only_guard, masking, messages_of, mock, pii_tokens_of, quiet, request, seen, text,
+    tokens,
 };
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::presidio_runtime::PresidioGuard;
@@ -56,7 +56,8 @@ pub(super) async fn masks_string_content() {
         content_of(&messages[0]),
         GuardrailValue::Text("<PHONE_NUMBER>".to_owned())
     );
-    let analyze = &analyzer_requests(&server)[0];
+    let requests = analyzer_requests(&server);
+    let analyze = &requests[0];
     assert_eq!(text(field(analyze, "text")), "call me at 555-0100");
     assert_eq!(text(field(analyze, "language")), "en");
     assert!(matches!(field(analyze, "entities"), GuardrailValue::Null));
@@ -79,7 +80,8 @@ pub(super) async fn masks_list_content() {
         content_of(&messages[1]),
         GuardrailValue::Text("<PHONE_NUMBER>".to_owned())
     );
-    let texts: Vec<&str> = analyzer_requests(&server)
+    let requests = analyzer_requests(&server);
+    let texts: Vec<&str> = requests
         .iter()
         .map(|request| text(field(request, "text")))
         .collect();
@@ -220,7 +222,8 @@ pub(super) async fn per_request_language_reaches_the_analyzer() {
         r#"{"metadata":{"guardrail_config":{"language":"pt"}},"messages":[{"role":"user","content":"call me at 555-0100"}]}"#,
     )
     .await;
-    let analyze = &analyzer_requests(&server)[0];
+    let requests = analyzer_requests(&server);
+    let analyze = &requests[0];
     assert_eq!(text(field(analyze, "language")), "pt");
     assert_eq!(
         content_of(&messages_of(&data)[0]),
@@ -251,7 +254,8 @@ pub(super) async fn example_recognizers_reach_the_analyze_request() {
         .pre_call(&mut data, "completion")
         .await
         .expect("the request is checked");
-    let analyze = &analyzer_requests(&server)[0];
+    let requests = analyzer_requests(&server);
+    let analyze = &requests[0];
     let GuardrailValue::Array(items) = field(analyze, "ad_hoc_recognizers") else {
         panic!("expected the recognizers");
     };
@@ -272,7 +276,8 @@ pub(super) async fn a_null_recognizer_file_adds_no_recognizers() {
         .pre_call(&mut data, "completion")
         .await
         .expect("the request is checked");
-    let analyze = &analyzer_requests(&server)[0];
+    let requests = analyzer_requests(&server);
+    let analyze = &requests[0];
     assert!(matches!(
         field(analyze, "ad_hoc_recognizers"),
         GuardrailValue::Null
@@ -319,5 +324,5 @@ pub(super) async fn a_guardrail_error_status_is_reported() {
     };
     assert_eq!(guardrail_name.as_deref(), Some(GUARDRAIL_NAME));
     assert_eq!(*status_code, 400);
-    assert!(!blocked_content);
+    assert!(!*blocked_content);
 }
