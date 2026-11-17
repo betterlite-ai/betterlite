@@ -27,15 +27,19 @@ deviations:
       deployment's own keys and explicit nulls winning, and writes a missing litellm_provider from the first
       matching routing rule, where LiteLLM instead resolves a request's model through get_llm_provider and
       get_model_info before a call. The stage runs whenever the router's RouteServices carries installed
-      rules; the server startup that builds that service from the loaded config, and its reload on a config
-      change, belong to B304's routing_state.rs and B016's router_core.rs, the route entry that calls
-      pipeline::route.
+      rules: the server builds that state from its loaded config at startup (RoutingState in
+      crates/betterlite-server/src/routing/routing_state.rs, constructed by ServerState::new), exposes
+      RoutingState::reload for a config change, and its route entry
+      (crates/betterlite-server/src/routing/router_core.rs) passes it as the RouteServices of pipeline::route.
     why: >-
       betterlite selects among configured deployments, so the rule document reaches a deployment's entry at
       selection: a deployment without a provider or capability metadata gets it there, and both the filters and
       the chosen deployment see what a LiteLLM call would have resolved. A router without rules leaves every
       deployment unchanged; a deployment whose model prefix names its provider is not re-inferred at selection,
-      so a routing rule may supply a provider its records leave out. Until B304 and B016 install and call this
-      service from the server, no proxy process runs the stage.
+      so a routing rule may supply a provider its records leave out. The chat handler still picks its
+      deployment with simple shuffle directly and the server has no config reload path yet, so no request
+      reaches the route entry and nothing calls the reload: B016's request path is what calls the route entry,
+      and the reload path that lands is what calls RoutingState::reload. Until then the stage runs only where
+      pipeline::route is called.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
 kept_bugs: []
