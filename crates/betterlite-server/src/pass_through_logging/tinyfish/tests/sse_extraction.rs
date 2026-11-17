@@ -40,9 +40,9 @@ const VALID_RUN_ID: &[u8] =
 #[case::a_number_run_id_is_skipped(b"data: {\"run_id\": 5}\n", None)]
 #[case::a_run_without_a_run_id(b"data: {\"status\": \"PENDING\"}\n", None)]
 #[case::a_json_list_frame(b"data: [1, 2]\ndata: {\"run_id\": \"after\"}\n", Some("after"))]
-#[case::a_form_feed_splits_frames(
+#[case::a_form_feed_is_not_a_line_end(
     b"data: {\"run_id\": \"a\"}\x0cdata: {\"run_id\": \"b\"}",
-    Some("a")
+    None
 )]
 #[case::crlf_frames(b"data: {\"run_id\": \"crlf\"}\r\n", Some("crlf"))]
 #[case::a_carriage_return_splits_frames(
@@ -80,11 +80,21 @@ fn reads_a_collected_stream_as_lines() {
 #[case::two_carriage_returns_in_a_row("a\r\rb", &["a", "", "b"])]
 #[case::crlf_pairs_back_to_back("a\r\n\r\nb", &["a", "", "b"])]
 #[case::a_blank_line_between("a\n\nb", &["a", "", "b"])]
-#[case::a_line_separator("a\u{2028}b", &["a", "b"])]
+#[case::a_line_separator("a\u{2028}b", &["a\u{2028}b"])]
 #[case::no_trailing_empty_line("a\n", &["a"])]
 #[case::no_text("", &[])]
-fn splits_lines_like_python(#[case] text: &str, #[case] expected: &[&str]) {
+fn splits_sse_lines(#[case] text: &str, #[case] expected: &[&str]) {
     assert_eq!(split_lines(text), expected);
+}
+
+#[test]
+fn a_run_id_holding_unicode_separators_is_read() {
+    let run_id = "run_a\u{85}b\u{2028}c\u{2029}d";
+    let frames = format!("data: {{\"run_id\": \"{run_id}\"}}\n");
+    assert_eq!(
+        run_id_from_sse_frames(frames.as_bytes()),
+        Some(run_id.to_owned())
+    );
 }
 
 #[test]
