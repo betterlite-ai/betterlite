@@ -140,6 +140,22 @@ async fn body_reports_invalid_json_with_fastapis_shape() {
     assert!(model.calls().is_empty());
 }
 
+#[rstest]
+#[case::infinity(r#"{"messages": [], "model": Infinity}"#)]
+#[case::nan(r#"{"messages": [], "model": NaN}"#)]
+#[tokio::test]
+async fn body_rejects_non_finite_numbers_as_invalid_json(#[case] raw: &str) {
+    let model = FakeModel::new().replying(answer_reply("Hi"));
+    let factory = FakeFactory::new(model.clone(), FakeSource::new());
+    let request = with_principal(post(raw), master_principal());
+    let response = send(state(factory, None, FakeCallerId::from_subject()), request).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = parsed(&body_text(response).await);
+    assert_eq!(body["detail"][0]["type"], "json_invalid");
+    assert_eq!(body["detail"][0]["loc"], json!(["body"]));
+    assert!(model.calls().is_empty());
+}
+
 #[tokio::test]
 async fn body_reads_json_whatever_the_content_type() {
     let model = FakeModel::new().replying(answer_reply("Hi"));
