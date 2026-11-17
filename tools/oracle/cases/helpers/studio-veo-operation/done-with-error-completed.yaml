@@ -1,0 +1,23 @@
+kind: helper
+name: done-with-error-completed
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: status_response
+        provider: gemini
+        body:
+          name: operations/generate_1234567890
+          done: true
+          error: {code: 13, message: boom}
+      - function: content_target
+        body:
+          name: operations/generate_1234567890
+          done: true
+          error: {code: 13, message: boom}
+          response:
+            generateVideoResponse:
+              generatedSamples:
+                - video: {uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media'}
+env: {}
+compare: {ignore: []}

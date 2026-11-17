@@ -1,0 +1,70 @@
+kind: helper
+name: hosted-vllm-media-video-unsafe-urls
+call:
+  b8151:
+    function: "video_form"
+    calls:
+      - api_base: "http://host"
+        env: {}
+        headers: {}
+        api_key: "secret"
+        params_api_key: null
+        model: "my-model"
+        prompt: "a cat"
+        allowed_hosts: []
+        params: {image_reference: {image_url: "http://169.254.169.254/latest/meta-data"}}
+calls:
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {video_reference: {video_url: "http://10.0.0.1/clip.mp4"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {audio_reference: {audio_url: "http://127.0.0.1/clip.wav"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: [{image_url: "http://192.168.0.1/x.png"}]}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "http://[::1]/x.png"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "http://localhost:8000/x.png"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "ftp://files/x.png"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "file:///etc/passwd"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "http://"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: "{\"image_url\": \"http://10.0.0.1/x\"}"}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "http://8.8.8.8:bad/x.png"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: {image_url: "http://[::1/x"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: [], params: {image_reference: "{\"image_url\": "}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", allowed_hosts: ["127.0.0.1:8001"], params: {image_reference: "{\"image_url\": \"http://127.0.0.1:8000/x.png\"}"}}
+env: {}
+compare: {ignore: []}
