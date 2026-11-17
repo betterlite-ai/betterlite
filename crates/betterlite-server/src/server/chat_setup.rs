@@ -266,3 +266,4 @@ fn outbound_client(
 mod mock;
 pub(crate) mod provider_call;
 mod tests;
+pub mod vertex_embedding;

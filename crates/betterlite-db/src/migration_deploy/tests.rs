@@ -391,6 +391,42 @@ async fn deadline_releases_session() {
 }
 
 #[tokio::test]
+async fn deploy_reports_lock_wait() {
+    database(async |db| {
+        let holder = db.pool.get().await.unwrap();
+        holder
+            .batch_execute("SELECT pg_advisory_lock(72707369::bigint)")
+            .await
+            .unwrap();
+        let service = db.service(&[("locked", "SELECT 1")]);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(300))
+            .unwrap();
+        let error = service
+            .run(db.pool.get().await.unwrap(), deadline)
+            .await
+            .unwrap_err();
+        holder
+            .batch_execute("SELECT pg_advisory_unlock_all()")
+            .await
+            .unwrap();
+        assert!(matches!(error, DeployError::LockWait(_)), "{error:?}");
+        assert_eq!(
+            db.pool
+                .get()
+                .await
+                .unwrap()
+                .query_one("SELECT count(*) FROM _prisma_migrations", &[])
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn catalog_types_are_native() {
     let root = CatalogDirectory::create().await;
     root.write("migrations/one/migration.sql", b"SELECT 1;\r\n")

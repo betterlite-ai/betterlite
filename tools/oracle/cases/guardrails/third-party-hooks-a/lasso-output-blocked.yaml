@@ -1,0 +1,27 @@
+kind: helper
+name: lasso-output-blocked
+call:
+  b9451:
+    vendor: lasso
+    hook: post_call
+    gate: true
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: false
+    timeout: 5.0
+    data:
+      litellm_call_id: call-1
+      messages:
+        - {role: user, content: hello}
+    outputs: [the leaked secret]
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          violations_detected: true
+          deputies: {toxicity: true}
+          findings:
+            toxicity:
+              - {action: BLOCK}
+env: {}
+compare: {ignore: []}

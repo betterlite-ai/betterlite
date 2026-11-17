@@ -1,0 +1,38 @@
+kind: helper
+name: list-replaces-deltas
+call:
+  gemini_live_content:
+    calls:
+      - op: update
+        chunks: delta
+        steps:
+          - kind: single
+            event:
+              type: response.output_text.delta
+              delta: one
+          - kind: single
+            event:
+              type: response.output_text.delta
+              delta: two
+          - kind: list
+            events:
+              - type: response.output_audio.delta
+                delta: AAA=
+              - type: response.output_text.delta
+                delta: three
+              - type: response.output_text.delta
+                delta: four
+          - kind: single
+            event:
+              type: response.output_audio.delta
+              delta: BBB=
+          - kind: list
+            events:
+              - type: response.output_audio.delta
+                delta: CCC=
+          - kind: single
+            event:
+              type: response.output_text.delta
+              delta: five
+env: {}
+compare: {ignore: []}

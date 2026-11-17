@@ -1,0 +1,8 @@
+kind: helper
+name: azure_completion-config-seed
+call:
+  azure_completion:
+    function: config
+    constructor: {frequency_penalty: 0, stop: ["x"], top_p: 1}
+env: {}
+compare: {ignore: []}

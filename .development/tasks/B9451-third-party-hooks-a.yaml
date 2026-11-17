@@ -120,6 +120,11 @@ description: >-
   the vendor got with its path, headers and body (the adapter waits for Akto's background sends).
 scope:
   paths:
+    - "tools/oracle/cases"
+    - "tools/oracle/**"
+    - "tools/oracle"
+    - "crates/betterlite-guardrails/src/lasso/wire.rs"
+    - "crates/betterlite-guardrails/src/lasso.rs"
     - crates/betterlite-guardrails/src/third_party_hooks_a.rs
     - crates/betterlite-guardrails/src/third_party_hooks_a/**
     - tools/oracle/cases/guardrails/third-party-hooks-a/**
@@ -228,5 +233,5 @@ pitfalls:
   - "Lasso's post-call masking always calls /classifix, while the pre-call path falls back to /classify for non-string content."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2300
   max_new_expects: 0

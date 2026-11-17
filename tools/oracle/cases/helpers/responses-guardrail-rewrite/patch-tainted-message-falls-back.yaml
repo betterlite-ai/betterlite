@@ -1,0 +1,6 @@
+kind: helper
+name: responses-patch-tainted-message-falls-back
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"input": [{"role": "assistant", "content": "hello"}, {"type": "function_call", "call_id": "c1", "name": "f", "arguments": "{}"}]}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "assistant", "content": "HELLO", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}, "index": 0}]}]}}]}
+env: {}
+compare: {ignore: []}

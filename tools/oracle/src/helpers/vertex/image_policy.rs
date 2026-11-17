@@ -1,11 +1,15 @@
+mod ops;
+mod pricing;
+mod tests;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = ops::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("vertex_image_policy")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run_cases(input)
     }
 }

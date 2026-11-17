@@ -1,0 +1,25 @@
+kind: helper
+name: token-prompt
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {temperature: 0.5, max_tokens: 16}
+      - model: gpt-35-turbo-instruct
+        messages:
+          - role: system
+            content:
+              - {type: text, text: "Sys "}
+          - {role: user, content: Hi}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+env: {}
+compare: {ignore: []}

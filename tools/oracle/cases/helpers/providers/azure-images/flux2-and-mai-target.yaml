@@ -1,0 +1,36 @@
+kind: helper
+name: flux2-and-mai-target
+call:
+  azure_images:
+    targets:
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        model: FLUX.2-pro
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        model: FLUX.2-flex
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        model: azure_ai/flux_2_pro
+      - azure_endpoint: https://example.openai.azure.com
+        model: FLUX.2-pro
+      - azure_endpoint: https://example.openai.azure.com/providers/blackforestlabs/v1/flux-2-pro
+        model: FLUX.2-pro
+      - azure_endpoint: https://example.openai.azure.com/providers/blackforestlabs/v1/flux-2-pro?
+        api_version: "2025-02-01-preview"
+        model: FLUX.2-pro
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        model: MAI-Image-1
+      - azure_endpoint: https://example.openai.azure.com/mai/v1/images/generations
+        api_version: "2025-02-01-preview"
+        model: MAI-Image-1
+      - azure_endpoint: https://example.openai.azure.com?foo=1
+        api_version: "2025-02-01-preview"
+        model: MAI-Image-1
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        model: FLUX.2-pro
+        base_model: MAI-Image-1
+env: {}
+compare: {ignore: []}
