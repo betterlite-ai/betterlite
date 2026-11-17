@@ -1,5 +1,28 @@
 #![cfg(test)]
 
+mod call_context {
+    use betterlite_logging::otel::logger::call_context::CallContext;
+    use rust_decimal::Decimal;
+
+    use crate::otel::support::{inference, stream_event, zero_completion_start};
+
+    #[test]
+    fn call_context_measures_the_first_chunk_of_a_streaming_call() {
+        let call = CallContext::from_event(&stream_event(inference()), None).expect("call context");
+        assert_eq!(
+            call.event.time_to_first_chunk_seconds,
+            Some(Decimal::new(5, 1))
+        );
+    }
+
+    #[test]
+    fn call_context_ignores_a_zero_first_chunk_stamp() {
+        let call = CallContext::from_event(&stream_event(zero_completion_start(inference())), None)
+            .expect("call context");
+        assert_eq!(call.event.time_to_first_chunk_seconds, None);
+    }
+}
+
 mod baggage {
     use betterlite_logging::otel::logger::call_context::seed_identity_baggage;
     use opentelemetry::Context;
@@ -136,12 +159,15 @@ mod finish {
 }
 
 mod llm_close {
+    use betterlite_logging::otel::logger::call_context::SpanTimes;
+    use betterlite_logging::otel::logger::finish::close_llm_call;
     use betterlite_models::decisions::Json;
+    use indexmap::IndexMap;
 
     use crate::otel::support::{
-        PreCall, anchored, event, event_with, failure, finished, harness, inference,
-        inference_failure, no_upstream, owned_http, payload_start, pre_call, success, with_id,
-        zero_start,
+        PreCall, anchored, attribute, creds, event, event_with, failure, finished, harness,
+        inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
+        payloadless_call, pre_call, success, team_payload, with_id, zero_start,
     };
 
     #[tokio::test]
@@ -199,6 +225,54 @@ mod llm_close {
         )
         .await;
         assert!(finished(&harness.spans).is_empty());
+    }
+
+    #[test]
+    fn llm_close_ends_the_boundary_span_when_no_payload_arrived() {
+        let harness = harness(owned_http(), anchored());
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: None,
+                auth: None,
+            },
+        );
+        let times = SpanTimes {
+            start: Some(payload_start()),
+            end: Some(payload_end()),
+        };
+        let closed =
+            close_llm_call(&harness.logger, &payloadless_call("call-a"), times).expect("close");
+        assert!(closed.is_some());
+        let spans = finished(&harness.spans);
+        assert_eq!(spans.len(), 1);
+        // nothing but the callback closes this span, so it ends at the callback's time, not at drop
+        assert_eq!(spans.first().expect("span").end_time, payload_end());
+    }
+
+    #[tokio::test]
+    async fn llm_close_keeps_identity_baggage_on_a_detached_route() {
+        let mut settings = owned_http();
+        settings.baggage_promoted_keys = vec!["litellm.team.id".to_owned()];
+        let harness = harness(settings, anchored());
+        success(
+            &harness.logger,
+            event_with(
+                with_id(team_payload(), "call-team"),
+                creds("S"),
+                IndexMap::new(),
+            ),
+        )
+        .await;
+        let spans = finished(&harness.built.sink(0));
+        assert_eq!(spans.len(), 1);
+        assert_eq!(
+            attribute(spans.first().expect("span"), "litellm.team.id").as_deref(),
+            Some("team-a")
+        );
     }
 }
 
@@ -344,8 +418,9 @@ mod metrics {
     use tracing_subscriber::layer::SubscriberExt as _;
 
     use crate::otel::support::{
-        Captured, anchored, event, event_with, failure, harness_with, inference, inference_failure,
-        metric_points, no_upstream, owned_http, recorder, success, with_id,
+        Captured, PreCall, anchored, event, event_with, failure, harness_with, inference,
+        inference_failure, metric_points, no_upstream, number, owned_http, pre_call, recorder,
+        stream_event, success, token_usage, with_id, with_response, zero_start,
     };
 
     #[tokio::test]
@@ -353,7 +428,67 @@ mod metrics {
         let (recorder, provider, exporter) = recorder(None);
         let harness = harness_with(owned_http(), anchored(), Some(recorder));
         success(&harness.logger, event(with_id(inference(), "call-a"))).await;
-        assert_ne!(metric_points(&provider, &exporter), 0);
+        // the duration, the cost and the api latency, which runs from the payload's start to its end
+        assert_eq!(metric_points(&provider, &exporter), 3);
+    }
+
+    #[tokio::test]
+    async fn metrics_measure_the_first_chunk_from_the_carrier_start() {
+        let (recorder, provider, exporter) = recorder(None);
+        let harness = harness_with(owned_http(), anchored(), Some(recorder));
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: None,
+                auth: None,
+            },
+        );
+        success(
+            &harness.logger,
+            stream_event(with_id(inference(), "call-a")),
+        )
+        .await;
+        // the first chunk is measured from the boundary, which postdates the payload's own end, so
+        // the api latency is negative and skipped: the duration, the cost and the first chunk
+        assert_eq!(metric_points(&provider, &exporter), 3);
+    }
+
+    #[tokio::test]
+    async fn metrics_skip_the_first_chunk_without_a_start_stamp() {
+        let (recorder, provider, exporter) = recorder(None);
+        let harness = harness_with(owned_http(), anchored(), Some(recorder));
+        success(
+            &harness.logger,
+            stream_event(with_id(zero_start(inference()), "call-a")),
+        )
+        .await;
+        // a zero start stamp leaves only the duration and the cost, even for a stream
+        assert_eq!(metric_points(&provider, &exporter), 2);
+    }
+
+    #[tokio::test]
+    async fn metrics_stay_silent_about_a_non_filter_error() {
+        let (recorder, _, _) = recorder(None);
+        let harness = harness_with(owned_http(), anchored(), Some(recorder));
+        let captured = Captured::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+        success(
+            &harness.logger,
+            event(with_id(
+                with_response(
+                    inference(),
+                    token_usage(Json::Text("many".to_owned()), number(3)),
+                ),
+                "call-a",
+            )),
+        )
+        .await;
+        // only an otel.attributes filter error is an operator fix worth an ERROR record
+        assert!(captured.messages().is_empty());
     }
 
     #[tokio::test]
@@ -392,6 +527,8 @@ mod metrics {
         let subscriber = tracing_subscriber::registry().with(captured.clone());
         let _guard = tracing::subscriber::set_default(subscriber);
         success(&harness.logger, event(with_id(inference(), "call-a"))).await;
+        // the first record surfaces the filter error
+        assert_eq!(captured.messages().len(), 1);
         success(&harness.logger, event(with_id(inference(), "call-b"))).await;
         let messages = captured.messages();
         assert_eq!(messages.len(), 1);
@@ -408,6 +545,7 @@ mod open_calls {
     use std::time::{Duration, SystemTime};
 
     use betterlite_logging::otel::logger::v2::{OPEN_CALLS_MAX, OpenCall, OpenCalls};
+    use betterlite_logging::otel::plumbing::routing::cache::MAX_CACHED_PROVIDERS;
     use indexmap::IndexMap;
 
     use crate::otel::support::{
@@ -425,7 +563,7 @@ mod open_calls {
                     .store(
                         format!("call-{index}"),
                         OpenCall {
-                            span: None,
+                            boundary: None,
                             start_time: at,
                             provider: None,
                         },
@@ -459,7 +597,7 @@ mod open_calls {
             .store(
                 "overflow".to_owned(),
                 OpenCall {
-                    span: None,
+                    boundary: None,
                     start_time: start,
                     provider: None,
                 },
@@ -471,6 +609,51 @@ mod open_calls {
         // pop is the dedup between the success and failure paths
         assert!(calls.pop(Some("call-1")).is_some());
         assert!(calls.pop(Some("call-1")).is_none());
+    }
+
+    #[test]
+    fn eviction_releases_the_evicted_call_carriers_route() {
+        let harness = harness(owned_http(), anchored());
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-oldest",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S0")),
+                auth: None,
+            },
+        );
+        for index in 1..=MAX_CACHED_PROVIDERS {
+            pre_call(
+                &harness.logger,
+                PreCall {
+                    call_id: &format!("call-{index}"),
+                    model: "gpt-4o",
+                    no_upstream: false,
+                    dynamic: Some(creds(&format!("S{index}"))),
+                    auth: None,
+                },
+            );
+        }
+        let drained = harness.built.sink(0);
+        // S0's provider left the cache, but the oldest carrier still holds the route's lease
+        assert!(!drained.is_shutdown_called());
+        let stored = MAX_CACHED_PROVIDERS.saturating_add(1);
+        for index in 0..OPEN_CALLS_MAX.saturating_sub(stored).saturating_add(1) {
+            pre_call(
+                &harness.logger,
+                PreCall {
+                    call_id: &format!("later-{index}"),
+                    model: "gpt-4o",
+                    no_upstream: false,
+                    dynamic: Some(creds("S0")),
+                    auth: None,
+                },
+            );
+        }
+        // evicting that carrier released its lease, and the drained provider shut down
+        assert!(drained.is_shutdown_called());
     }
 
     #[tokio::test]

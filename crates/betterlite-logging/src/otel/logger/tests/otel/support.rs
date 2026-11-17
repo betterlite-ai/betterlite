@@ -20,10 +20,16 @@ use betterlite_logging::otel::config::{
 use betterlite_logging::otel::emitter::span_emission::{DedupCache, SpanEmitter};
 use betterlite_logging::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
 use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
+use betterlite_logging::otel::logger::call_context::CallContext;
 use betterlite_logging::otel::logger::pre_call::log_pre_api_call;
 use betterlite_logging::otel::logger::v2::{
     OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource,
 };
+use betterlite_logging::otel::model::metadata::llm_call_event::LLMCallEvent;
+use betterlite_logging::otel::model::metadata::wire::callback::{
+    Callback, OptionalParams, Params, ProxyRequest,
+};
+use betterlite_logging::otel::model::metadata::wire::payload::Metadata;
 use betterlite_logging::otel::model::payloads::RequestIdentity;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::context_slots::{
@@ -54,7 +60,7 @@ use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMete
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvider, SpanData};
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::json;
+use serde_json::{Number, json};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer};
@@ -138,6 +144,7 @@ pub(crate) fn mcp_tool_failure() -> StandardLoggingPayload {
 // the call id the OTel lifecycle keys its carrier and dedup markers on
 pub(crate) fn with_id(mut payload: StandardLoggingPayload, id: &str) -> StandardLoggingPayload {
     id.clone_into(&mut payload.id);
+    payload.litellm_call_id = Some(id.to_owned());
     payload
 }
 
@@ -145,6 +152,46 @@ pub(crate) fn with_id(mut payload: StandardLoggingPayload, id: &str) -> Standard
 pub(crate) fn zero_start(mut payload: StandardLoggingPayload) -> StandardLoggingPayload {
     payload.start_time = Decimal::ZERO;
     payload
+}
+
+// a payload whose provider never stamped the first chunk
+pub(crate) fn zero_completion_start(mut payload: StandardLoggingPayload) -> StandardLoggingPayload {
+    payload.completion_start_time = Decimal::ZERO;
+    payload
+}
+
+// a close callback whose payload carries a provider response
+pub(crate) fn with_response(
+    mut payload: StandardLoggingPayload,
+    response: Json,
+) -> StandardLoggingPayload {
+    payload.response = Some(response);
+    payload
+}
+
+pub(crate) fn number(value: u64) -> Json {
+    Json::Number(Number::from(value))
+}
+
+// the token usage a provider's response reports
+pub(crate) fn token_usage(prompt_tokens: Json, completion_tokens: Json) -> Json {
+    Json::Object(IndexMap::from([(
+        "usage".to_owned(),
+        Json::Object(IndexMap::from([
+            ("prompt_tokens".to_owned(), prompt_tokens),
+            ("completion_tokens".to_owned(), completion_tokens),
+        ])),
+    )]))
+}
+
+// the string dynamic parameters a preset reads, such as a New Relic key
+pub(crate) fn text_params(pairs: &[(&str, &str)]) -> Json {
+    Json::Object(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), Json::Text((*value).to_owned())))
+            .collect(),
+    )
 }
 
 pub(crate) fn mcp_list() -> StandardLoggingPayload {
@@ -199,6 +246,47 @@ pub(crate) fn event_with(
         stream: false,
         guardrail_snapshot: None,
     })
+}
+
+// a streaming close: the wire callback carries stream true, so the first-chunk time is measured
+pub(crate) fn stream_event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
+    Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(Json::Null),
+        litellm_metadata: Arc::new(IndexMap::new()),
+        stream: true,
+        guardrail_snapshot: None,
+    })
+}
+
+// a close callback whose wire dict carried no standard logging object: only the boundary span exists
+pub(crate) fn payloadless_call(call_id: &str) -> CallContext {
+    let callback = Callback {
+        litellm_call_id: Some(call_id.to_owned()),
+        model: Some("gpt-4o".to_owned()),
+        call_type: Some("completion".to_owned()),
+        standard_logging_object: None,
+        dynamic_params: None,
+        litellm_no_upstream_llm_call: false,
+        api_call_start_time: None,
+        completion_start_time: None,
+        optional_params: OptionalParams { stream: false },
+        litellm_params: Params {
+            metadata: Metadata::default(),
+            litellm_metadata: Metadata::default(),
+            litellm_session_id: None,
+            proxy_server_request: ProxyRequest { headers: None },
+        },
+    };
+    CallContext {
+        event: LLMCallEvent::from_dict(&callback).expect("call event"),
+        dynamic_params: Arc::new(Json::Null),
+        stream: false,
+        api_call_start_time: Decimal::ZERO,
+        start_time: Decimal::ZERO,
+        end_time: Decimal::ZERO,
+        completion_start_time: Decimal::ZERO,
+    }
 }
 
 pub(crate) fn no_upstream() -> IndexMap<String, Json> {
@@ -586,6 +674,12 @@ pub(crate) fn payload_start() -> SystemTime {
         .expect("payload start")
 }
 
+pub(crate) fn payload_end() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_millis(1_704_067_201_500))
+        .expect("payload end")
+}
+
 pub(crate) fn finished(spans: &InMemorySpanExporter) -> Vec<SpanData> {
     spans.get_finished_spans().expect("finished spans")
 }
@@ -690,13 +784,38 @@ impl Visit for Message {
     }
 }
 
+fn message_of(event: &Event<'_>) -> String {
+    let mut message = Message(String::new());
+    event.record(&mut message);
+    message.0
+}
+
 impl<Inner: Subscriber> Layer<Inner> for Captured {
     fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
         if *event.metadata().level() != Level::ERROR {
             return;
         }
-        let mut message = Message(String::new());
-        event.record(&mut message);
-        self.0.lock().expect("captured messages").push(message.0);
+        let message = message_of(event);
+        self.0.lock().expect("captured messages").push(message);
+    }
+}
+
+// the once-only routing warnings: one message per emitted WARN record
+#[derive(Clone, Default)]
+pub(crate) struct Warnings(Arc<Mutex<Vec<String>>>);
+
+impl Warnings {
+    pub(crate) fn messages(&self) -> Vec<String> {
+        self.0.lock().expect("captured warnings").clone()
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Warnings {
+    fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
+        if *event.metadata().level() != Level::WARN {
+            return;
+        }
+        let message = message_of(event);
+        self.0.lock().expect("captured warnings").push(message);
     }
 }
