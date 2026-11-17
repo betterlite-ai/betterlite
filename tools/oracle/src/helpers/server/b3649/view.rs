@@ -31,9 +31,9 @@ pub(super) fn billing_view(
         return Err(super::failure("the logging object holds no state"));
     };
     Ok(json!({
-        "model": entry_text(&details, "model"),
-        "custom_llm_provider": entry_text(&details, "custom_llm_provider"),
-        "response_cost": entry_text(&details, "response_cost"),
+        "model": text_entry(&details, "model").map(Value::String),
+        "custom_llm_provider": text_entry(&details, "custom_llm_provider").map(Value::String),
+        "response_cost": text_entry(&details, "response_cost").map(Value::String),
         "litellm_call_id": call_id,
         "cache_hit": logged.cache_hit,
         "response": parsed_response(logged.response.as_deref())?,
@@ -75,23 +75,14 @@ fn outcome_text(outcome: &HandlerOutcome) -> Option<String> {
     }
 }
 
+// LiteLLM writes the model and provider as text and the cost as a number, and the view compares all three as text.
 pub(super) fn text_entry(fields: &IndexMap<String, Json>, name: &str) -> Option<String> {
     let Some(value) = fields.get(name) else {
         return None;
     };
     match value {
         Json::Text(text) => Some(text.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
-}
-
-fn entry_text(fields: &IndexMap<String, Json>, name: &str) -> Value {
-    let Some(value) = fields.get(name) else {
-        return Value::Null;
-    };
-    match value {
-        Json::Text(text) => Value::String(text.clone()),
-        Json::Number(number) => Value::String(number.to_string()),
-        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => Value::Null,
+        Json::Number(number) => Some(number.to_string()),
+        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
     }
 }

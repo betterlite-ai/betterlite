@@ -155,7 +155,7 @@ pub(super) struct ScriptedTransport {
 impl ScriptedTransport {
     pub(super) fn new(replies: Vec<ScriptedReply>) -> Self {
         Self {
-            replies: Mutex::new(replies.into()),
+            replies: Mutex::new(VecDeque::from(replies)),
             requests: Mutex::new(Vec::new()),
         }
     }
@@ -235,13 +235,6 @@ pub(super) struct TestClock {
     elapsed: Mutex<Duration>,
 }
 
-impl TestClock {
-    fn advance(&self, duration: Duration) {
-        let mut elapsed = self.elapsed.lock().unwrap_or_else(PoisonError::into_inner);
-        *elapsed = elapsed.saturating_add(duration);
-    }
-}
-
 impl PollClock for TestClock {
     fn now(&self) -> Duration {
         *self.elapsed.lock().unwrap_or_else(PoisonError::into_inner)
@@ -254,7 +247,12 @@ pub(super) struct AdvancingSleeper {
 
 impl PollSleeper for AdvancingSleeper {
     fn sleep(&self, duration: Duration) -> PollSleepFuture<'_> {
-        self.clock.advance(duration);
+        let mut elapsed = self
+            .clock
+            .elapsed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *elapsed = elapsed.saturating_add(duration);
         Box::pin(ready(()))
     }
 }
@@ -269,19 +267,12 @@ impl SuccessClock for FixedSuccessClock {
     }
 }
 
-pub(super) fn start_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339(START_TIME).or_value_error()
-}
-
-pub(super) fn end_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339(END_TIME).or_value_error()
-}
-
 pub(super) struct Fixture {
     pub billing: TinyfishRunBilling,
     pub logging_obj: Arc<StreamLoggingObject>,
     pub recorder: Arc<Recorder>,
     pub transport: Arc<ScriptedTransport>,
+    pub start_time: DateTime<FixedOffset>,
 }
 
 pub(super) fn fixture(
@@ -292,6 +283,8 @@ pub(super) fn fixture(
     let recorder = Arc::new(Recorder::default());
     let transport = Arc::new(ScriptedTransport::new(replies));
     let clock = Arc::new(TestClock::default());
+    let start_time = DateTime::parse_from_rfc3339(START_TIME).or_value_error()?;
+    let end_time = DateTime::parse_from_rfc3339(END_TIME).or_value_error()?;
     let billing = TinyfishRunBilling::new(
         RunSettings {
             api_base: API_BASE.to_owned(),
@@ -304,9 +297,11 @@ pub(super) fn fixture(
             transport: Arc::clone(&transport),
             monotonic: Arc::clone(&clock),
             sleeper: Arc::new(AdvancingSleeper { clock }),
-            clock: Arc::new(FixedSuccessClock { now: end_time()? }),
+            clock: Arc::new(FixedSuccessClock { now: end_time }),
             payload: Arc::new(ProductionPayload),
-            tasks: BillingTasks::new(TaskTracker::new()),
+            tasks: BillingTasks {
+                tasks: TaskTracker::new(),
+            },
         },
     );
     Ok(Fixture {
@@ -314,5 +309,6 @@ pub(super) fn fixture(
         logging_obj,
         recorder,
         transport,
+        start_time,
     })
 }

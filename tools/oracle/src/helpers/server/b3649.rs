@@ -7,15 +7,17 @@ use std::sync::Arc;
 
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_stream_logging::object::StreamSuccessDispatch;
+use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::pass_through_logging::tinyfish::billing::{
     AsyncRun, BlockingRun, CollectedChunks, SseRun,
 };
+use fixture::Fixture;
 use serde::Deserialize;
-use serde_json::json;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
+use tokio::task::JoinHandle;
 
 pub(crate) struct Op;
 
@@ -56,102 +58,87 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input.function {
-            Function::Blocking => blocking(input),
-            Function::AsyncRun => async_run(input),
-            Function::SseRun => sse_run(input),
-            Function::CollectedChunks => collected_chunks(input),
+        let replies = match input.function {
+            Function::Blocking => Vec::new(),
+            Function::AsyncRun | Function::SseRun | Function::CollectedChunks => {
+                fixture::replies(&input.replies)?
+            }
+        };
+        let fixture = fixture::fixture(Some(input.api_key.as_str()), replies)?;
+        dispatch(input, &fixture)
+    }
+}
+
+// Each route bills from its own point: run-async and run-sse spawn a poller, while the other two return their payload.
+fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
+    match input.function {
+        Function::AsyncRun => {
+            let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
+            let poll = AsyncRun {
+                logging_obj: Arc::clone(&fixture.logging_obj),
+                response_body: input.run.as_ref(),
+                result: result_text(input)?,
+                kwargs: PassThroughLoggingKwargs::default(),
+                log,
+                start_time: fixture.start_time,
+            };
+            finish(fixture, fixture.billing.start_async_run_billing(poll))
+        }
+        Function::SseRun => {
+            let run_id = input
+                .run_id
+                .clone()
+                .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
+            let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
+            let poll = SseRun {
+                run_id,
+                logging_obj: Arc::clone(&fixture.logging_obj),
+                log,
+                start_time: fixture.start_time,
+            };
+            finish(fixture, fixture.billing.start_sse_run_billing(poll))
+        }
+        Function::Blocking => {
+            let result = result_text(input)?;
+            let kwargs = PassThroughLoggingKwargs::default();
+            let outcome = fixture.billing.tinyfish_passthrough_handler(BlockingRun {
+                logging_obj: fixture.logging_obj.as_ref(),
+                response_body: input.run.as_ref(),
+                result: &result,
+                kwargs: &kwargs,
+            });
+            payload_view(fixture, &outcome)
+        }
+        Function::CollectedChunks => {
+            let runtime = Builder::new_current_thread().build().or_value_error()?;
+            let outcome =
+                runtime.block_on(fixture.billing.handle_logging_tinyfish_collected_chunks(
+                    CollectedChunks {
+                        logging_obj: fixture.logging_obj.as_ref(),
+                        lines: &input.lines,
+                    },
+                ));
+            payload_view(fixture, &outcome)
         }
     }
 }
 
-// LiteLLM's blocking route bills from the response body before it answers, so one call is the whole path.
-fn blocking(input: &Input) -> HelperResult {
-    let fixture = fixture::fixture(Some(input.api_key.as_str()), Vec::new())?;
-    let result = result_text(input)?;
-    let kwargs = PassThroughLoggingKwargs::default();
-    let outcome = fixture.billing.tinyfish_passthrough_handler(BlockingRun {
-        logging_obj: fixture.logging_obj.as_ref(),
-        response_body: input.run.as_ref(),
-        result: &result,
-        kwargs: &kwargs,
-    });
+fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
     view::billing_view(
         fixture.logging_obj.as_ref(),
-        view::outcome_logged(&outcome),
+        view::outcome_logged(outcome),
         fixture.transport.request_log(),
     )
 }
 
-fn async_run(input: &Input) -> HelperResult {
-    let fixture = fixture::fixture(
-        Some(input.api_key.as_str()),
-        fixture::replies(&input.replies)?,
-    )?;
-    let runtime = runtime()?;
-    let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
-    let handle = fixture.billing.start_async_run_billing(AsyncRun {
-        logging_obj: Arc::clone(&fixture.logging_obj),
-        response_body: input.run.as_ref(),
-        result: result_text(input)?,
-        kwargs: PassThroughLoggingKwargs::default(),
-        log,
-        start_time: fixture::start_time()?,
-    });
+fn finish(fixture: &Fixture, handle: JoinHandle<()>) -> HelperResult {
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
     runtime.block_on(handle).or_value_error()?;
-    polled_view(&fixture)
-}
-
-fn sse_run(input: &Input) -> HelperResult {
-    let fixture = fixture::fixture(
-        Some(input.api_key.as_str()),
-        fixture::replies(&input.replies)?,
-    )?;
-    let runtime = runtime()?;
-    let run_id = input
-        .run_id
-        .clone()
-        .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
-    let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
-    let handle = fixture.billing.start_sse_run_billing(SseRun {
-        run_id,
-        logging_obj: Arc::clone(&fixture.logging_obj),
-        log,
-        start_time: fixture::start_time()?,
-    });
-    runtime.block_on(handle).or_value_error()?;
-    polled_view(&fixture)
-}
-
-fn collected_chunks(input: &Input) -> HelperResult {
-    let fixture = fixture::fixture(
-        Some(input.api_key.as_str()),
-        fixture::replies(&input.replies)?,
-    )?;
-    let runtime = runtime()?;
-    let outcome = runtime.block_on(fixture.billing.handle_logging_tinyfish_collected_chunks(
-        CollectedChunks {
-            logging_obj: fixture.logging_obj.as_ref(),
-            lines: &input.lines,
-        },
-    ));
-    view::billing_view(
-        fixture.logging_obj.as_ref(),
-        view::outcome_logged(&outcome),
-        fixture.transport.request_log(),
-    )
-}
-
-fn polled_view(fixture: &fixture::Fixture) -> HelperResult {
     view::billing_view(
         fixture.logging_obj.as_ref(),
         fixture.recorder.only_call()?,
         fixture.transport.request_log(),
     )
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread().build().or_value_error()
 }
 
 // The route hands LiteLLM the raw submit body, which is what a run that never turns terminal is logged with.
