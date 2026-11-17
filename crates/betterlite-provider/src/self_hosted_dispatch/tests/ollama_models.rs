@@ -1,3 +1,4 @@
+use std::fs;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -5,7 +6,7 @@ use betterlite_models::ollama_model_metadata::{LiteLlmGlobals, OllamaSettings};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::self_hosted_dispatch::ollama_models::{
-    OllamaModels, TAGS_TIMEOUT, TagsRequest, TagsResponse, TagsTransport, base_model,
+    OllamaModels, TAGS_TIMEOUT, TagsRequest, TagsResponse, TagsTransport, base_model, decode_tags,
     validate_environment,
 };
 
@@ -402,4 +403,19 @@ fn validate_environment_adds_nothing() {
 #[test]
 fn base_model_returns_the_model() {
     assert_eq!(base_model("ollama/llama3"), "ollama/llama3");
+}
+
+// every corpus file goes through the tags decoder the fuzzer feeds
+#[test]
+fn replays_the_ollama_tags_reply_corpus() {
+    let seen = fs::read_dir("fuzz/corpus/ollama_tags_reply")
+        .expect("the tags corpus exists")
+        .map(|entry| entry.expect("the corpus entry reads").path())
+        .filter(|path| path.is_file())
+        .inspect(|path| {
+            let bytes = fs::read(path).expect("the corpus file reads");
+            let _tags = decode_tags(&bytes);
+        })
+        .count();
+    assert!(seen > 0_usize);
 }

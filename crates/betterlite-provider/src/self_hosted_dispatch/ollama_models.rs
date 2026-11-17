@@ -148,7 +148,8 @@ pub fn base_model<'model>(model: &'model str) -> &'model str {
 }
 
 // a dict with a models list or a bare list gives the entries; a body that is not JSON falls back
-fn decode_tags(body: &[u8]) -> Option<Vec<String>> {
+#[must_use]
+pub fn decode_tags(body: &[u8]) -> Option<Vec<String>> {
     let data: Json = serde_json::from_slice(body).ok()?;
     let entries: Vec<&Json> = match &data {
         Json::Object(fields) => match fields.get(MODELS_KEY) {

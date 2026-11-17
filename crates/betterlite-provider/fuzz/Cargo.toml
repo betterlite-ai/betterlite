@@ -171,3 +171,17 @@ path = "fuzz_targets/watsonx_embed_rerank_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "ollama_tags_reply"
+path = "fuzz_targets/ollama_tags_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lemonade_models_reply"
+path = "fuzz_targets/lemonade_models_reply.rs"
+test = false
+doc = false
+bench = false

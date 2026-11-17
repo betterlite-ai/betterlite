@@ -1,3 +1,4 @@
+use std::fs;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -14,7 +15,9 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use crate::self_hosted_dispatch::error::LemonadeError;
-use crate::self_hosted_dispatch::lemonade::{PROVIDER, get_config, get_models, transform_response};
+use crate::self_hosted_dispatch::lemonade::{
+    PROVIDER, decode_model_names, get_config, get_models, transform_response,
+};
 
 use super::support::secret;
 
@@ -342,6 +345,21 @@ async fn get_models_reports_replies_it_cannot_read() {
     .await
     .expect("a reply without data lists nothing");
     assert!(names.is_empty());
+}
+
+// every corpus file goes through the models decoder the fuzzer feeds
+#[test]
+fn replays_the_lemonade_models_reply_corpus() {
+    let seen = fs::read_dir("fuzz/corpus/lemonade_models_reply")
+        .expect("the models corpus exists")
+        .map(|entry| entry.expect("the corpus entry reads").path())
+        .filter(|path| path.is_file())
+        .inspect(|path| {
+            let bytes = fs::read(path).expect("the corpus file reads");
+            let _names = decode_model_names(&bytes);
+        })
+        .count();
+    assert!(seen > 0_usize);
 }
 
 fn options() -> ReplyOptions<'static> {
