@@ -31,10 +31,10 @@ pub(super) async fn process<S>(
     stream: &mut ChatStream<'_, S>,
     raw: ProviderChunk,
 ) -> Result<Step, ChatStreamCause> {
-    let created = chunk_creator(&mut stream.shaper, &mut stream.decode, &raw);
+    let outcome = chunk_creator(&mut stream.shaper, &mut stream.decode, &raw);
     // chunk_creator names the shaped chunk after the call's model; every later creator call uses the logged one.
     stream.shaper.model.clone_from(&stream.logged_model);
-    let created = match created {
+    let created = match outcome {
         Ok(Some(chunk)) => chunk,
         Ok(None) => return Ok(Step::Skip),
         Err(ProviderChunkError::StopIteration) => return Ok(Step::End),
@@ -67,7 +67,7 @@ fn blocking<S>(
     stream.shaper.chunks.push(chunk.clone());
     first_chunk_mcp(stream, &mut chunk);
     if chunk.usage.is_some() {
-        let Some(rebuilt) = usage_rebuilt(stream, chunk)? else {
+        let Some(rebuilt) = usage_rebuilt(stream, &chunk)? else {
             return Ok(Step::Skip);
         };
         chunk = rebuilt;
@@ -86,7 +86,7 @@ async fn asynchronous<S>(
     let has_usage = chunk.usage.is_some();
     stream.shaper.chunks.push(chunk.clone());
     if has_usage {
-        let Some(rebuilt) = usage_rebuilt(stream, chunk)? else {
+        let Some(rebuilt) = usage_rebuilt(stream, &chunk)? else {
             return Ok(Step::Skip);
         };
         chunk = rebuilt;
@@ -104,7 +104,7 @@ fn accumulate_content<S>(stream: &mut ChatStream<'_, S>, chunk: &StreamChunk) {
     stream.shaper.response_uptil_now.push_str(content);
 }
 
-fn evaluate_post_call<S>(stream: &mut ChatStream<'_, S>) -> Result<(), ChatStreamCause> {
+fn evaluate_post_call<S>(stream: &ChatStream<'_, S>) -> Result<(), ChatStreamCause> {
     let rules = SharedRules(stream.ports.rules);
     evaluate(
         RulePhase::PostCall,
@@ -127,18 +127,15 @@ fn first_chunk_mcp<S>(stream: &mut ChatStream<'_, S>, chunk: &mut StreamChunk) {
 // The usage branch: move usage to hidden params, strip it, and drop the chunk when nothing is left.
 fn usage_rebuilt<S>(
     stream: &mut ChatStream<'_, S>,
-    mut chunk: StreamChunk,
+    chunk: &StreamChunk,
 ) -> Result<Option<StreamChunk>, ChatStreamCause> {
+    let mut hidden = chunk.hidden_params.clone();
     if let Some(usage) = &chunk.usage {
         let encoded: JsonValue = json::bridge(usage)?;
-        chunk.hidden_params.insert("usage".to_owned(), encoded);
+        hidden.insert("usage".to_owned(), encoded);
     }
-    let object = json::chunk_object(&chunk)?;
-    let rebuilt = model_response_creator(
-        &mut stream.shaper,
-        Some(&object),
-        Some(&chunk.hidden_params),
-    )?;
+    let object = json::chunk_object(chunk)?;
+    let rebuilt = model_response_creator(&mut stream.shaper, Some(&object), Some(&hidden))?;
     if empty::is_empty(&rebuilt) {
         return Ok(None);
     }
@@ -147,7 +144,7 @@ fn usage_rebuilt<S>(
 
 // __next__'s final chunk gets the running usage and the MCP metadata when stream_options is unset.
 fn blocking_final<S>(
-    stream: &mut ChatStream<'_, S>,
+    stream: &ChatStream<'_, S>,
     chunk: &mut StreamChunk,
 ) -> Result<(), ChatStreamCause> {
     if !stream.shaper.progress.sent_last_chunk || stream.config.stream_options.is_some() {
@@ -160,7 +157,7 @@ fn blocking_final<S>(
 
 // __anext__'s final chunk: hidden usage, then the deployment hook, then the MCP metadata.
 async fn async_final<S>(
-    stream: &mut ChatStream<'_, S>,
+    stream: &ChatStream<'_, S>,
     mut chunk: StreamChunk,
 ) -> Result<StreamChunk, ChatStreamCause> {
     if !stream.shaper.progress.sent_last_chunk {

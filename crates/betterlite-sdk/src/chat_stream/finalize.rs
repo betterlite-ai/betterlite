@@ -79,7 +79,7 @@ fn assembled_payload<S>(
 
 // The assembled response read through the chunk shape: usage, service tier and hidden params live there.
 fn complete_payload<S>(
-    stream: &mut ChatStream<'_, S>,
+    stream: &ChatStream<'_, S>,
     complete: Json,
     response: &mut StreamChunk,
 ) -> Result<Json, ChatStreamCause> {
@@ -120,7 +120,7 @@ fn with_hidden_params(mut complete: Json, hidden: Json) -> Json {
     complete
 }
 
-async fn store_and_log<S>(stream: &mut ChatStream<'_, S>, complete: &Json) {
+async fn store_and_log<S>(stream: &ChatStream<'_, S>, complete: &Json) {
     if !stream.cache_hit
         && let Some(cache) = stream.ports.cache
     {
@@ -136,7 +136,7 @@ async fn store_and_log<S>(stream: &mut ChatStream<'_, S>, complete: &Json) {
 
 // Complete logging in __next__ keeps the empty creator chunk; __anext__ dispatches None instead.
 fn log_without_assembly<S>(
-    stream: &mut ChatStream<'_, S>,
+    stream: &ChatStream<'_, S>,
     response: &StreamChunk,
 ) -> Result<(), ChatStreamCause> {
     if stream.config.logging.disable {
