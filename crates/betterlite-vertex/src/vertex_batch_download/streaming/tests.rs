@@ -148,6 +148,24 @@ fn case_insensitive_length_removal() {
     assert!(!output.is_empty());
 }
 
+#[tokio::test]
+async fn a_blank_download_passes_through() {
+    let content: &[u8] = b"\n\n";
+    let result = transform_file_content_stream(
+        source(&[content]),
+        URL,
+        headers(&[(CONTENT_LENGTH.as_str(), "2")]),
+        false,
+        context(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "2");
+    let mut stream = result.stream;
+    assert_eq!(stream.next().await.unwrap().unwrap().as_slice(), content);
+    assert!(stream.next().await.is_none());
+}
+
 #[test]
 fn an_unknown_first_row_replays_the_prefix() {
     let content = format!("{{\"custom_id\":\"x\"}}\n{ROW}\n");
