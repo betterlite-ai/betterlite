@@ -1,0 +1,16 @@
+kind: helper
+name: agent-resolution-success-time
+call:
+  b3007:
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_budget_per_session: 1.0}
+    charges:
+      - litellm_params: {metadata: {session_id: s1, agent_id: agent-1}}
+        response_cost: 0.25
+      - litellm_params: {metadata: {session_id: s2, agent_id: agent-9}}
+        response_cost: 0.25
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,57 @@
+kind: helper
+name: image-generation
+call:
+  openai_media_dispatch:
+    case: image_generation
+    api_base: https://mock.example/v1
+    model: dall-e-3
+    prompt: a cat on a roof
+    options:
+      n: 1
+      size: 1024x1024
+      response_format: b64_json
+    status: 200
+    reply:
+      created: 1700000000
+      background: null
+      quality: null
+      output_format: null
+      size: 1024x1024
+      data:
+        - b64_json: aGVsbG8=
+          url: null
+calls:
+  - openai_media_dispatch:
+      case: image_generation
+      api_base: https://mock.example/v1
+      model: gpt-image-1
+      prompt: a dog in a boat
+      options:
+        n: 2
+        size: 1024x1024
+        quality: high
+      status: 200
+      reply:
+        created: 1700000000
+        background: opaque
+        quality: high
+        output_format: png
+        size: 1024x1024
+        data:
+          - b64_json: ZG9n
+            url: https://images.example/dog.png
+  - openai_media_dispatch:
+      case: image_generation
+      api_base: https://mock.example/v1
+      model: gpt-image-1
+      prompt: a dog in a boat
+      options: {}
+      status: 500
+      reply:
+        error:
+          message: the upstream failed
+          type: server_error
+          param: null
+          code: null
+env: {}
+compare: {ignore: []}

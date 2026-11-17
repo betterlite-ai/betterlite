@@ -1,0 +1,59 @@
+kind: helper
+name: openai-chat-content-fetch-request-media-failure
+call:
+  b9960:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: sync
+          optional_params: {}
+          refuse: true
+          urls:
+            "https://example.com/report.pdf": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_id: https://example.com/report.pdf
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: sync
+          optional_params: {}
+          refuse: false
+          urls: {}
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_id: https://example.com/missing.pdf
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: sync
+          optional_params: {}
+          refuse: false
+          urls:
+            "https://example.com/report.pdf": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_id: https://example.com/report.pdf
+                - type: file
+env: {}
+compare: {ignore: []}

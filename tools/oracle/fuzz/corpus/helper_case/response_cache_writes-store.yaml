@@ -1,0 +1,32 @@
+kind: helper
+name: response-cache-writes-store-seed
+call:
+  b4304:
+    function: store
+    scenarios:
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: [gpt-4o]
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: aembedding
+        supported_call_types: [aembedding]
+        cache_configured: true
+        cache_type: s3
+        dual: true
+        kwargs: {model: text-embedding-3-small, input: [first, second]}
+        args: []
+        result: {kind: embedding, body: {model: text-embedding-3-small, object: list, data: [{embedding: [0.5], index: 0, object: embedding}, {embedding: [0.25], index: 1, object: embedding}]}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4, cache: {no-store: true}}
+        args: []
+        result: {kind: raw, body: {custom: value}}
+env: {}
+compare: {ignore: []}

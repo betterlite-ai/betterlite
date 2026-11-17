@@ -1,0 +1,9 @@
+kind: helper
+name: usage-ai-chat-csv-ids-only-commas
+call:
+  b3103:
+    function: csv_ids
+    raw: " , "
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-api-error-fail-open
+call:
+  b9450:
+    operation: mcp
+    settings: {api_key: oracle-key, inspection_type: mcp, fallback_on_error: allow}
+    kwargs:
+      mcp_tool_name: get_weather
+      original_response: {}
+      metadata: {}
+    tool_response:
+      - {type: text, text: "secret"}
+    answer: {status: 500, headers: {}, body: {error: unavailable}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+kind: helper
+name: foundry-agent-results-message-delta-stream
+call:
+  foundry_agent_results:
+    streams:
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          event: thread.message.delta
+
+          data: {"delta":{"content":[{"type":"text","text":{"value":"a"}}]}}
+          data: {"delta":{"content":[{"type":"text","text":{"value":"b"}}]}}
+
+          data: not-json
+          data: {"delta":{"content":[{"type":"image_url"},{"type":"text","text":{"value":""}},{"type":"text"}]}}
+      - model: azure_ai/agents/a
+        id: chatcmpl-1a2b3c4d
+        created: 1700000001
+        split: null
+        body: |
+          event: thread.message.delta
+          data: {"delta":{"content":[{"type":"text","text":{"value":"x"}},{"type":"text","text":{"value":"y"}}]}}
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          data: {"delta":{"content":[{"type":"text","text":{"value":"orphan"}}]}}
+
+          event: thread.message.delta
+
+          data: {"delta":{"content":[{"type":"text","text":{"value":"persisted"}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: responses-stream-spread-reasoning-delta-undeliverable
+call:
+  b3672: {"function": "spread", "scenarios": [{"events": [{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "a"}, {"type": "response.reasoning_summary_text.delta", "item_id": "rs_1", "output_index": 1, "content_index": 0, "delta": "think"}], "rewritten_text": "R", "guardrail_name": "guard"}, {"events": [{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": null, "content_index": 0, "delta": "a"}], "rewritten_text": "R", "guardrail_name": "guard"}, {"events": [{"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 0, "delta": "{"}], "rewritten_text": "R", "guardrail_name": "guard"}, {"events": [{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "a"}, {"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 1, "content_index": 0, "delta": "b"}], "rewritten_text": "R", "guardrail_name": "guard"}]}
+env: {}
+compare: {ignore: []}

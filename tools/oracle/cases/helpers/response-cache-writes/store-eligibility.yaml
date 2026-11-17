@@ -1,0 +1,64 @@
+kind: helper
+name: response-cache-writes-store-eligibility
+call:
+  b4304:
+    function: store
+    scenarios:
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: aembedding
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: acompletion
+        supported_call_types: null
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: false
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4, cache: {no-store: true}}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: [gpt-4o]
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4o, choices: []}}
+      - function_name: acompletion
+        supported_call_types: [acompletion]
+        cache_configured: true
+        cache_type: local
+        dual: true
+        kwargs: {model: gpt-4}
+        args: []
+        result: {kind: chat, body: {id: chatcmpl-1, created: 0, object: chat.completion, model: gpt-4, choices: []}}
+env: {}
+compare: {ignore: []}

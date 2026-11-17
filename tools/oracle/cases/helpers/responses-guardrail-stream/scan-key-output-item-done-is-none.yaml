@@ -1,0 +1,6 @@
+kind: helper
+name: responses-stream-scan-key-output-item-done-is-none
+call:
+  b3672: {"function": "scan_key", "scenarios": [{"events": [{"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "content": [{"type": "output_text", "text": "hi"}]}}]}, {"events": []}, {"events": [5]}, {"events": [["not", "an", "object"]]}, {"events": [{"type": "response.output_item.added", "output_index": 0, "item": {"type": "message"}}, {"type": "response.output_item.done", "output_index": 0, "item": {"type": "message"}}]}, {"events": ["text"]}]}
+env: {}
+compare: {ignore: []}

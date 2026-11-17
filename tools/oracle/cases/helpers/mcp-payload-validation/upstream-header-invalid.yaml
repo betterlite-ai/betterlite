@@ -1,0 +1,34 @@
+kind: helper
+name: mcp-payload-validation-upstream-header-invalid
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test_srv
+      credentials:
+        upstream_token_header: bad header
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        credentials:
+          upstream_token_header: ""
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        credentials:
+          upstream_token_header: "  "
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test_srv
+        credentials:
+          upstream_token_header: esb-oauth
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}
