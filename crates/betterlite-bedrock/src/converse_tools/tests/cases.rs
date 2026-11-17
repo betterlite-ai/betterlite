@@ -452,8 +452,7 @@ fn definitions_and_unions() {
     );
 }
 
-// Each iteration nests the schema two containers deeper, the node and its properties map, so 63 iterations
-// reach 127 containers, the edge of the 128-level parse bound serde_json puts on a request.
+// Each iteration adds the node and its properties map, so 63 reaches serde_json's 127-container parse limit.
 const DEEP_LEVELS: usize = 63;
 
 fn deep_schema() {
