@@ -1,0 +1,21 @@
+task: B5842
+deviations:
+  - what: An embedding value that is a nested list, a list of strings or null is refused with a typed decode error instead of copied into the response.
+    why: Betterlite's EmbeddingVector holds base64 text or a list of numbers, and docs/compatibility.md makes a value of the wrong type an error that names the field rather than free-form JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/embed/transformation.py#L99-L107
+  - what: The embedding response names the request model, where LiteLLM's embedding call site passes an empty EmbeddingResponse and only the unreachable model_response-is-None branch reads model_id.
+    why: Betterlite's EmbeddingResponse.model is a required string, so the request model is the only honest value; a null model would leak Python's optional field into every response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7068-L7097
+  - what: A rerank body that is not JSON fails with the response status but without the response headers.
+    why: Betterlite's WatsonxError carries status and message only here; the rerank records keep no header map, and no working setup branches on error headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/rerank/transformation.py#L168-L172
+  - what: A transcription reply with a non-null usage field keeps that field beside text instead of raising.
+    why: LiteLLM passes usage as a keyword to TranscriptionResponse, whose constructor accepts text only, so the response fails with TypeError; betterlite keeps both fields as the task requires, and no working setup can depend on the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/audio_transcription/transformation.py#L181-L193
+  - what: The passthrough get_base_model helper is not ported.
+    why: LiteLLM defines it but no caller reads it and B3570's BasePassthroughConfig has no such hook, so porting it would add dead code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/passthrough/transformation.py#L63-L64
+kept_bugs:
+  - what: The passthrough key lookup refuses a configured API key when no API base is set, because it resolves credentials through get_watsonx_credentials.
+    why: LiteLLM users who set WATSONX_API_KEY without WATSONX_API_BASE get a 401 from the key helper, and a working proxy setup cannot tell whether the base came from the deployment or the environment, so the refusal is kept and pinned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/passthrough/transformation.py#L52-L59
