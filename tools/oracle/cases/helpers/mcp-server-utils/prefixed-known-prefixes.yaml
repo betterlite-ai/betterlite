@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-server-utils-prefixed-known-prefixes
+call:
+  b6594:
+    function: is_tool_name_prefixed
+    tool_name: srv-1-get_pets
+    known_prefixes: [srv-1]
+calls:
+  - b6594:
+      function: is_tool_name_prefixed
+      tool_name: text-to-speech
+      known_prefixes: [srv-1]
+env: {}
+compare: {ignore: []}

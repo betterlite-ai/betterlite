@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-server-utils-allowlist-switch
+call:
+  b6594:
+    function: allowlist
+    mcp_info: {tool_allowlist_enforced: true}
+    allowed_tools: [get_pets]
+calls:
+  - b6594:
+      function: allowlist
+      mcp_info: {tool_allowlist_enforced: false}
+  - b6594:
+      function: allowlist
+      allowed_tools: [get_pets]
+  - b6594:
+      function: allowlist
+env: {}
+compare: {ignore: []}

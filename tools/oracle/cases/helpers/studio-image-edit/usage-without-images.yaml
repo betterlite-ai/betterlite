@@ -1,0 +1,25 @@
+kind: helper
+name: studio-image-edit-usage-without-images
+call:
+  studio_image_edit:
+    factories: []
+    requests: []
+    responses:
+      - body:
+          candidates: []
+          usageMetadata:
+            promptTokenCount: 4
+            candidatesTokenCount: 6
+            totalTokenCount: 10
+            promptTokensDetails: [{modality: TEXT, tokenCount: 4}]
+            candidatesTokensDetails: [{modality: IMAGE, tokenCount: 6}]
+    costs: []
+calls:
+  - studio_image_edit:
+      factories: []
+      requests: []
+      responses:
+        - body: {candidates: [], usageMetadata: {}}
+      costs: []
+env: {}
+compare: {ignore: []}

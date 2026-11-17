@@ -1,0 +1,22 @@
+kind: helper
+name: gemini-media-prepare-studio-assistant-image
+call:
+  b9965:
+    model: gemini-2.5-flash
+    provider: gemini
+    mode: sequential
+    messages:
+      - {role: user, content: q}
+      - role: assistant
+        content: a
+        images:
+          - type: image_url
+            image_url: {url: "https://example.com/cat.png"}
+            index: 0
+      - {role: user, content: next}
+    data_urls: {}
+    optional_params: {}
+    litellm_params: {}
+    supports: {system_message: true, response_schema: true}
+env: {}
+compare: {ignore: []}

@@ -1876,6 +1876,7 @@ name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-azure",
  "betterlite-config",
@@ -2303,6 +2304,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
@@ -2315,6 +2317,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "pem",
+ "percent-encoding",
  "regex",
  "rmcp",
  "rstest",
@@ -4279,6 +4282,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "chrono",
  "hex",
  "http 1.5.0",
@@ -4291,6 +4295,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 

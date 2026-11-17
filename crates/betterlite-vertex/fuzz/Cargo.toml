@@ -75,6 +75,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemini_live_frames"
+path = "fuzz_targets/gemini_live_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemini_live_setup"
 path = "fuzz_targets/gemini_live_setup.rs"
 test = false
@@ -210,6 +217,13 @@ bench = false
 [[bin]]
 name = "studio_transcription"
 path = "fuzz_targets/studio_transcription.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "studio_veo_operation"
+path = "fuzz_targets/studio_veo_operation.rs"
 test = false
 doc = false
 bench = false

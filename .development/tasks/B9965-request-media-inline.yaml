@@ -66,6 +66,7 @@ description: >-
   diff is about 300 lines, the adapters about 220 and the cases and seeds about 130.
 scope:
   paths:
+    - "crates/betterlite-vertex/src/gemini_history/media_source.rs"
     - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs
     - crates/betterlite-vertex/src/gemini_request/media_prepare.rs
     - crates/betterlite-vertex/src/gemini_request/orchestration.rs

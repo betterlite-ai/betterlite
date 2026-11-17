@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-image-edits-mai-preview-ignores-global
+call:
+  foundry_image_edits:
+    urls:
+      - {model: MAI-Image-2.5, api_base: https://res.services.ai.azure.com, global_api_version: '2024-02-01'}
+      - {model: MAI-Image-2.5, api_base: https://res.services.ai.azure.com, api_version: '2025-11-15', global_api_version: '2024-02-01'}
+      - {model: MAI-Image-2.5, api_base: https://res.services.ai.azure.com, environment: {AZURE_AI_API_VERSION: '2025-11-15'}, global_api_version: '2024-02-01'}
+      - {model: MAI-Image-2.5, global_api_version: '2024-02-01'}
+env: {}
+compare: {ignore: []}

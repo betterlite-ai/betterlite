@@ -1,0 +1,106 @@
+kind: helper
+name: logging-payload-standard-payload-redaction
+call:
+  logging_payload:
+    init:
+      model: gpt-4o
+      call_type: completion
+      start_time: "2024-01-01T00:00:00+00:00"
+      litellm_call_id: call-4
+      function_id: fn-4
+      messages:
+        - role: user
+          content: "secret prompt"
+      stream: false
+      litellm_trace_id: trace-4
+      litellm_params:
+        api_base: https://api.openai.com/
+    model_call_details:
+      custom_llm_provider: openai
+      optional_params: {}
+      response_cost: 0.5
+      system: "secret system prompt"
+    response:
+      id: chatcmpl-4
+      object: chat.completion
+      created: 1704067200
+      model: gpt-4o
+      vertex_ai_safety_ratings:
+        - category: HARM
+          blocked: false
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: "secret answer"
+            tool_calls:
+              - id: call_a
+                type: function
+                function:
+                  name: lookup
+                  arguments: '{"city":"Paris"}'
+          finish_reason: tool_calls
+      usage:
+        prompt_tokens: 2
+        completion_tokens: 3
+        total_tokens: 5
+    start_time: "2024-01-01T00:00:00+00:00"
+    end_time: "2024-01-01T00:00:01+00:00"
+    status: success
+    settings:
+      turn_off_message_logging: true
+      request_correlation_in_logs: false
+      log_client_error_tracebacks: false
+calls:
+  - logging_payload:
+      init:
+        model: gpt-4o
+        call_type: completion
+        start_time: "2024-01-01T00:00:00+00:00"
+        litellm_call_id: call-5
+        function_id: fn-5
+        messages:
+          - role: user
+            content: "secret prompt"
+        stream: false
+        litellm_trace_id: trace-5
+        litellm_params:
+          api_base: https://api.openai.com/
+      model_call_details:
+        custom_llm_provider: openai
+        optional_params: {}
+        response_cost: 0.5
+        system: "secret system prompt"
+      response:
+        id: chatcmpl-5
+        object: chat.completion
+        created: 1704067200
+        model: gpt-4o
+        vertex_ai_safety_ratings:
+          - category: HARM
+            blocked: false
+        choices:
+          - index: 0
+            message:
+              role: assistant
+              content: "secret answer"
+              tool_calls:
+                - id: call_a
+                  type: function
+                  function:
+                    name: lookup
+                    arguments: '{"city":"Paris"}'
+            finish_reason: tool_calls
+        usage:
+          prompt_tokens: 2
+          completion_tokens: 3
+          total_tokens: 5
+      start_time: "2024-01-01T00:00:00+00:00"
+      end_time: "2024-01-01T00:00:01+00:00"
+      status: success
+      redact_standard_payload: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/model_map_information
+      why: B068's model cost source fills this map, and this task only passes that source through

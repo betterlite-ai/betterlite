@@ -1,0 +1,51 @@
+task: B9463
+deviations:
+  - what: >-
+      pre_call checks the request texts one after another, not with asyncio.gather.
+    why: >-
+      B3805's check_pii takes &mut RequestData because it appends the guardrail information and the PII tokens to the
+      request metadata, so the checks share one request map through a loop. The masked texts, their order and the first
+      error are the same as LiteLLM's, and the gather races on that shared dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1080
+  - what: >-
+      A content part that is not a JSON object is skipped and the other parts are still checked.
+    why: >-
+      LiteLLM calls .get("text") on every item of a list content, so a non-object item raises AttributeError and
+      turns a malformed message into a 500. B3806 models such a part as an opaque Other, so betterlite leaves it
+      in place and masks the parts whose text it can read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1066-L1069
+  - what: >-
+      A presidio_ad_hoc_recognizers file whose JSON is not a list is refused at construction with the decode error.
+    why: >-
+      B3804's analyze payload carries ad_hoc_recognizers as a typed list, so a JSON object or scalar has no place in
+      it. LiteLLM stores whatever json.load returns and sends it along, which only a Presidio deployment that ignores
+      the field would tolerate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L254-L258
+  - what: >-
+      mock_redacted_text must hold a Presidio anonymize response, so a malformed value fails at construction.
+    why: >-
+      B3804 stores it as a typed MockRedactedText with a text string and items. LiteLLM keeps the raw dict and returns
+      it from check_pii, where a missing key only fails the request that reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L215
+  - what: >-
+      A timeout that is not a finite, non-negative number fails at construction.
+    why: >-
+      betterlite holds the timeout as a Duration, so it converts once. LiteLLM hands the raw number to
+      aiohttp.ClientTimeout on every request, where a negative or NaN value raises then.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L463-L465
+  - what: >-
+      A timeout of zero falls back to the default 300 second limit instead of switching the timeout off.
+    why: >-
+      LiteLLM hands the raw number to aiohttp.ClientTimeout, where total=0 means no timeout, so a Presidio
+      deployment that stops answering can hold the request open forever. betterlite keeps every Presidio call
+      bounded: reqwest reads a zero total timeout as already elapsed, so copying the number would fail each call
+      before it was sent. The fallback equals aiohttp's own DEFAULT_TIMEOUT, which LiteLLM uses when the timeout
+      is not a number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L463-L465
+  - what: >-
+      The constructor has no mock_testing path: it always reads the recognizer file and validates the environment.
+    why: >-
+      B3681's PresidioArgs carries no mock_testing field, and nothing at the pin passes it, so only a literal test could
+      ask for the early return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L251-L252
+kept_bugs: []

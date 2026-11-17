@@ -1,7 +1,7 @@
 id: B8271
 milestone: M4 keys, spend and management
 title: Serve the usage AI chat route
-status: todo
+status: done
 depends_on: [B003, B005, B732, B861, B3103]
 file: tasks/B8271-usage-ai-chat-route.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_endpoints/usage_endpoints/endpoints.py"
 parent: B074
 split_from: B074
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2238
