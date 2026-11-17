@@ -1,0 +1,50 @@
+kind: helper
+name: gpt-oss-and-deepseek-effort
+call:
+  bedrock_converse_options:
+    function: params
+    model_cost:
+      deepseek.v3-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
+      deepseek.r1-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
+      openai.gpt-oss-120b-1:0: {litellm_provider: bedrock}
+      fixture-reasoning: {litellm_provider: bedrock, supports_reasoning: true}
+      fixture-plain: {litellm_provider: bedrock, supports_reasoning: false}
+    models:
+      - deepseek.v3-v1:0
+      - us.deepseek.v3-v1:0
+      - deepseek.r1-v1:0
+      - us.deepseek.r1-v1:0
+      - DeepSeek.V3
+      - deepseek.r1
+      - openai.gpt-oss-120b-1:0
+      - anthropic.claude-3-7-sonnet-20250219-v1:0
+      - us.anthropic.claude-sonnet-4-5-v1:0
+      - anthropic.claude-opus-4-1-v1:0
+      - fixture-reasoning
+      - us.fixture-reasoning
+      - fixture-plain
+      - fixture-unknown
+calls:
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: openai.gpt-oss-120b-1:0
+      effort: minimal
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: deepseek.v3-v1:0
+      effort: high
+      optional_params: {thinking: {type: enabled, budget_tokens: 2048}}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: deepseek.r1-v1:0
+      effort: high
+      optional_params: {}
+env: {}
+compare: {ignore: []}
