@@ -50,17 +50,16 @@ impl NoDeployment {
             NoDeploymentType::RateLimit
         };
         // LiteLLM interpolates the float with str(): the shortest text that reads back as the same number
-        let mut message = format!(
-            "No deployments available for selected model, Try again in {} seconds.",
-            Number::from_f64(cooldown_time)
-                .map_or_else(|| cooldown_time.to_string(), |number| number.to_string())
+        let cooldown = Number::from_f64(cooldown_time)
+            .map_or_else(|| cooldown_time.to_string(), |number| number.to_string());
+        let suffix = if all_in_cooldown {
+            " All deployments for selected model are in cooldown."
+        } else {
+            ""
+        };
+        let message = format!(
+            "No deployments available for selected model, Try again in {cooldown} seconds.{suffix} Passed model={model}. pre-call-checks={enable_pre_call_checks}, cooldown_list={cooldown_list:?}"
         );
-        if all_in_cooldown {
-            message.push_str(" All deployments for selected model are in cooldown.");
-        }
-        message.push_str(&format!(
-            " Passed model={model}. pre-call-checks={enable_pre_call_checks}, cooldown_list={cooldown_list:?}"
-        ));
         Self {
             message,
             error_type,
