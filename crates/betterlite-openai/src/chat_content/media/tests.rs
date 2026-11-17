@@ -313,6 +313,16 @@ fn refusing_fetcher_returns_the_disabled_error() {
             .to_string()
             .contains("MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0")
     );
+    let refused = runtime()
+        .block_on(RefuseDownloads.convert_urls(&[REPORT.to_owned()]))
+        .unwrap_err();
+    assert!(matches!(refused, ImageFetchError::Disabled { .. }));
+    assert!(
+        runtime()
+            .block_on(RefuseDownloads.convert_urls(&[]))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
