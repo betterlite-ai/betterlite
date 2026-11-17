@@ -1,8 +1,8 @@
 use rmcp::ServiceError;
 use rmcp::model::{
-    ClientNotification, Implementation, InitializeRequest as SdkInitializeRequest,
-    InitializeRequestParams, InitializedNotification, ProtocolVersion, ServerPeerInfo,
-    ServerResult,
+    ClientNotification, ClientRequest, Implementation, InitializeRequest as SdkInitializeRequest,
+    InitializeRequestParams, InitializeResult, InitializedNotification, ProtocolVersion,
+    ServerPeerInfo, ServerResult,
 };
 
 use crate::client::sdk_transport::error::SdkError;
@@ -15,7 +15,7 @@ use super::super::convert::{
     DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION, capabilities_wire, client_capabilities,
     protocol_failure as sdk_protocol_failure, protocol_version, unexpected_response,
 };
-use super::{SdkSession, Silent};
+use super::{SdkSession, Silent, exchange_with_progress, request_failure};
 
 // The SDK's handshake lists, from HANDSHAKE_PROTOCOL_VERSIONS in mcp_types.version
 const HANDSHAKE_VERSIONS: [ProtocolVersion; 4] = [
@@ -26,7 +26,7 @@ const HANDSHAKE_VERSIONS: [ProtocolVersion; 4] = [
 ];
 
 pub struct SdkInitializeResult {
-    result: rmcp::model::InitializeResult,
+    result: InitializeResult,
 }
 
 impl InitializeOutcome for SdkInitializeResult {
@@ -39,23 +39,17 @@ impl InitializeOutcome for SdkInitializeResult {
     }
 }
 
-impl SdkSession {
-    async fn send_initialize_request(
-        &self,
-        params: InitializeRequestParams,
-    ) -> Result<rmcp::model::InitializeResult, SdkError> {
-        let request = SdkInitializeRequest::new(params);
-        match self
-            .exchange_with_progress(
-                rmcp::model::ClientRequest::InitializeRequest(request),
-                &Silent,
-            )
-            .await?
-        {
-            ServerResult::InitializeResult(result) => Ok(result),
-            other => Err(unexpected_response(&other)),
-        }
-    }
+async fn send_initialize_request(
+    session: &SdkSession,
+    params: InitializeRequestParams,
+) -> Result<InitializeResult, SdkError> {
+    let request = SdkInitializeRequest::new(params);
+    let response =
+        exchange_with_progress(session, ClientRequest::InitializeRequest(request), &Silent).await?;
+    let ServerResult::InitializeResult(result) = response else {
+        return Err(unexpected_response(&response));
+    };
+    Ok(result)
 }
 
 impl ClientSession for SdkSession {
@@ -69,7 +63,7 @@ impl ClientSession for SdkSession {
             Implementation::new(DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION),
         )
         .with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE);
-        let result = self.send_initialize_request(params).await?;
+        let result = send_initialize_request(self, params).await?;
         // The SDK rejects a version outside its handshake before it adopts the result or sends notifications/initialized
         if !HANDSHAKE_VERSIONS.contains(&result.protocol_version) {
             return Err(SdkError::Service(ServiceError::UnexpectedResponse));
@@ -85,16 +79,13 @@ impl ClientSession for SdkSession {
         request: SessionInitializeRequest,
     ) -> Result<SdkInitializeResult, SdkError> {
         let version = protocol_version(&request.protocol_version)?;
-        let capabilities = client_capabilities(
-            request.capabilities.sampling,
-            request.capabilities.elicitation,
-        );
+        let capabilities = client_capabilities(&request.capabilities);
         let params = InitializeRequestParams::new(
             capabilities,
             Implementation::new(request.client_info.name, request.client_info.version),
         )
         .with_protocol_version(version);
-        let result = self.send_initialize_request(params).await?;
+        let result = send_initialize_request(self, params).await?;
         Ok(SdkInitializeResult { result })
     }
 
@@ -114,7 +105,7 @@ impl ClientSession for SdkSession {
                 InitializedNotification::default(),
             ))
             .await
-            .map_err(|error| self.request_failure("notifications/initialized", error))
+            .map_err(|error| request_failure(self, "notifications/initialized", error))
     }
 
     fn protocol_failure(error: &SdkError) -> Option<McpFailure> {

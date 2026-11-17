@@ -3,7 +3,8 @@ use std::sync::Arc;
 use betterlite_prompts::arguments::json::Object;
 use rmcp::ServiceError;
 use rmcp::model::{
-    ClientCapabilities, ElicitationCapability, ErrorCode, ErrorData, FormElicitationCapability,
+    CallToolResult as SdkCallToolResult, ClientCapabilities, ElicitationCapability, ErrorCode,
+    ErrorData, FormElicitationCapability, InputRequiredResult as SdkInputRequiredResult,
     JsonObject, ListToolsResult, ProtocolVersion, SamplingCapability, ServerCapabilities,
     ServerResult, UrlElicitationCapability,
 };
@@ -11,6 +12,7 @@ use rmcp::model::{
 use crate::client::cleanup::failure::{ErrorContext, SDK_READ_TIMEOUT_CODE};
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::{McpFailure, SessionError};
+use crate::client::sessions::negotiate::ClientCapabilities as CallbackCapabilities;
 use crate::client::tools::result::{CallToolResult, InputRequiredResult, ToolCallResult};
 use crate::tools::pagination::Page;
 
@@ -53,19 +55,22 @@ pub fn protocol_version(value: &str) -> Result<ProtocolVersion, SdkError> {
     let known = ProtocolVersion::KNOWN_VERSIONS
         .iter()
         .find(|version| version.as_str() == value);
-    match known {
-        Some(version) => Ok(version.clone()),
-        None => serde_json::from_value(serde_json::json!(value)).map_err(SdkError::Json),
-    }
+    known.map_or_else(
+        || {
+            let encoded = serde_json::to_value(value).map_err(SdkError::Json)?;
+            serde_json::from_value(encoded).map_err(SdkError::Json)
+        },
+        |version| Ok(version.clone()),
+    )
 }
 
 #[must_use]
-pub fn client_capabilities(sampling: bool, elicitation: bool) -> ClientCapabilities {
+pub fn client_capabilities(callbacks: &CallbackCapabilities) -> ClientCapabilities {
     let mut capabilities = ClientCapabilities::default();
-    if sampling {
+    if callbacks.sampling {
         capabilities.sampling = Some(SamplingCapability::default());
     }
-    if elicitation {
+    if callbacks.elicitation {
         capabilities.elicitation = Some(
             ElicitationCapability::new()
                 .with_form(FormElicitationCapability::new())
@@ -87,15 +92,13 @@ pub fn tool_page(result: &ListToolsResult) -> Result<Page, SdkError> {
     Ok(page)
 }
 
-pub fn tool_call_result(result: &rmcp::model::CallToolResult) -> Result<ToolCallResult, SdkError> {
+pub fn tool_call_result(result: &SdkCallToolResult) -> Result<ToolCallResult, SdkError> {
     let encoded = serde_json::to_value(result).map_err(SdkError::Json)?;
     let complete: CallToolResult = serde_json::from_value(encoded).map_err(SdkError::Json)?;
     Ok(ToolCallResult::Complete(complete))
 }
 
-pub fn input_required_result(
-    result: &rmcp::model::InputRequiredResult,
-) -> Result<ToolCallResult, SdkError> {
+pub fn input_required_result(result: &SdkInputRequiredResult) -> Result<ToolCallResult, SdkError> {
     let encoded = serde_json::to_value(result).map_err(SdkError::Json)?;
     let required: InputRequiredResult = serde_json::from_value(encoded).map_err(SdkError::Json)?;
     Ok(ToolCallResult::InputRequired(required))
@@ -110,20 +113,24 @@ pub fn unexpected_response(result: &ServerResult) -> SdkError {
 // LiteLLM's SDK turns a timeout and a closed connection into its own JSON-RPC errors, and keeps every other failure a runtime one
 #[must_use]
 pub fn request_error(method: &str, error: ServiceError) -> SdkError {
-    match error {
-        ServiceError::McpError(data) => SdkError::JsonRpc(data),
-        ServiceError::Timeout { .. } => SdkError::JsonRpc(ErrorData::new(
+    if let ServiceError::McpError(data) = error {
+        return SdkError::JsonRpc(data);
+    }
+    if let ServiceError::Timeout { .. } = error {
+        return SdkError::JsonRpc(ErrorData::new(
             ErrorCode(SDK_READ_TIMEOUT_CODE),
             format!("Request '{method}' timed out"),
-            Some(serde_json::json!(TIMEOUT_MARKER)),
-        )),
-        ServiceError::TransportClosed => SdkError::JsonRpc(ErrorData::new(
+            serde_json::to_value(TIMEOUT_MARKER).ok(),
+        ));
+    }
+    if let ServiceError::TransportClosed = error {
+        return SdkError::JsonRpc(ErrorData::new(
             ErrorCode(CONNECTION_CLOSED_CODE),
             CONNECTION_CLOSED_MESSAGE,
             None,
-        )),
-        error => SdkError::Service(error),
+        ));
     }
+    SdkError::Service(error)
 }
 
 #[must_use]

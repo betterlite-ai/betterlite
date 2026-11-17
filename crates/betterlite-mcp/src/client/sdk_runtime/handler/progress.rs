@@ -69,8 +69,10 @@ impl ProgressRegistry {
                 state.early.pop_front();
             }
             state.early.push_back((param.progress_token.clone(), param));
+            drop(state);
             return;
         };
         drop(sender.try_send(param));
+        drop(state);
     }
 }

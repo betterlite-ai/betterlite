@@ -25,6 +25,7 @@ where
     pub message_handler: MessageHandler<Source>,
 }
 
+#[must_use]
 pub fn stdio_transport(parameters: StdioServerParameters) -> StdioTransport {
     StdioTransport::Server(Box::new(StdioServer {
         parameters,

@@ -1,6 +1,6 @@
 pub mod progress;
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -11,8 +11,10 @@ use rmcp::model::{
 };
 use rmcp::service::{NotificationContext, RequestContext};
 use rmcp::{RoleClient, Service};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::client::sessions::negotiate::ClientCapabilities as CallbackCapabilities;
 use crate::sampling_convert::messages::SamplingMessage;
 use crate::sampling_convert::model_preferences::ModelPreferences;
 use crate::sampling_convert::response::SamplingResponse;
@@ -77,7 +79,7 @@ pub enum IncludeContext {
     AllServers,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "mode", rename_all = "camelCase")]
 pub enum ElicitationRequest {
     #[serde(rename = "form", rename_all = "camelCase")]
@@ -94,7 +96,7 @@ pub enum ElicitationRequest {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ElicitationResult {
     pub action: ElicitationAction,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,58 +114,56 @@ impl SdkClientHandler {
         request: ServerRequest,
     ) -> Result<ClientResult, ErrorData> {
         // The request arrives as rmcp's own params, which serialize to the wire shape the responders decode
-        match request {
-            ServerRequest::PingRequest(_) => Ok(ClientResult::empty(())),
-            ServerRequest::CreateMessageRequest(request) => {
-                let responder = self
-                    .handlers
-                    .sampling
-                    .as_deref()
-                    .ok_or_else(|| ErrorData::invalid_request(SAMPLING_UNSUPPORTED, None))?;
-                sampling_result(
-                    responder
-                        .respond(decode(&request.params, "sampling")?)
-                        .await?,
-                )
-            }
-            ServerRequest::ElicitRequest(request) => {
-                let responder = self
-                    .handlers
-                    .elicitation
-                    .as_deref()
-                    .ok_or_else(|| ErrorData::invalid_request(ELICITATION_UNSUPPORTED, None))?;
-                custom(
-                    &responder
-                        .respond(decode(&request.params, "elicitation")?)
-                        .await?,
-                )
-            }
-            ServerRequest::ListRootsRequest(_) => {
-                Err(ErrorData::invalid_request(ROOTS_UNSUPPORTED, None))
-            }
-            unknown => Err(method_not_found(&unknown)),
+        if let ServerRequest::PingRequest(_) = &request {
+            return Ok(ClientResult::empty(()));
         }
+        if let ServerRequest::CreateMessageRequest(message) = &request {
+            let responder = self
+                .handlers
+                .sampling
+                .as_deref()
+                .ok_or_else(|| ErrorData::invalid_request(SAMPLING_UNSUPPORTED, None))?;
+            return sampling_result(
+                responder
+                    .respond(decode(&message.params, "sampling")?)
+                    .await?,
+            );
+        }
+        if let ServerRequest::ElicitRequest(elicitation) = &request {
+            let responder = self
+                .handlers
+                .elicitation
+                .as_deref()
+                .ok_or_else(|| ErrorData::invalid_request(ELICITATION_UNSUPPORTED, None))?;
+            return custom(
+                &responder
+                    .respond(decode(&elicitation.params, "elicitation")?)
+                    .await?,
+            );
+        }
+        if let ServerRequest::ListRootsRequest(_) = &request {
+            return Err(ErrorData::invalid_request(ROOTS_UNSUPPORTED, None));
+        }
+        Err(method_not_found(&request))
     }
 }
 
 fn decode<T, P>(params: &P, operation: &str) -> Result<T, ErrorData>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
     P: Serialize + ?Sized,
 {
-    serde_json::to_value(params)
-        .map_err(|error| internal(operation, &error))
-        .and_then(|encoded| {
-            serde_json::from_value(encoded).map_err(|error| invalid(operation, &error))
-        })
+    let encoded = serde_json::to_value(params).map_err(|error| internal(operation, &error))?;
+    serde_json::from_value(encoded).map_err(|error| invalid(operation, &error))
 }
 
 fn sampling_result(response: SamplingResponse) -> Result<ClientResult, ErrorData> {
     match response {
+        SamplingResponse::Message(result) => custom(&result),
+        SamplingResponse::WithTools(result) => custom(&result),
         SamplingResponse::Error(error) => {
             Err(ErrorData::new(ErrorCode(error.code), error.message, None))
         }
-        response => custom(&response),
     }
 }
 
@@ -180,14 +180,14 @@ where
 fn method_not_found(request: &ServerRequest) -> ErrorData {
     let method = serde_json::to_value(request)
         .ok()
-        .and_then(|request| request.get("method").cloned());
+        .and_then(|encoded| encoded.get("method").cloned());
     ErrorData::new(ErrorCode::METHOD_NOT_FOUND, "Method not found", method)
 }
 
 fn invalid(operation: &str, error: &serde_json::Error) -> ErrorData {
     ErrorData::invalid_params(
         format!("invalid {operation} request"),
-        Some(serde_json::json!(error.to_string())),
+        serde_json::to_value(error.to_string()).ok(),
     )
 }
 
@@ -196,7 +196,7 @@ fn invalid(operation: &str, error: &serde_json::Error) -> ErrorData {
 fn internal(operation: &str, error: &serde_json::Error) -> ErrorData {
     ErrorData::internal_error(
         format!("invalid {operation}"),
-        Some(serde_json::json!(error.to_string())),
+        serde_json::to_value(error.to_string()).ok(),
     )
 }
 
@@ -209,22 +209,24 @@ impl Service<RoleClient> for SdkClientHandler {
         self.handle_server_request(request).await
     }
 
-    async fn handle_notification(
+    fn handle_notification(
         &self,
         notification: ServerNotification,
         _context: NotificationContext<RoleClient>,
-    ) -> Result<(), ErrorData> {
-        if let ServerNotification::ProgressNotification(notification) = notification {
-            self.progress.deliver(notification.params);
+    ) -> impl Future<Output = Result<(), ErrorData>> {
+        if let ServerNotification::ProgressNotification(progress) = notification {
+            self.progress.deliver(progress.params);
         }
-        Ok(())
+        ready(Ok(()))
     }
 
     fn get_info(&self) -> ClientConfig {
-        let sampling = self.handlers.sampling.is_some();
-        let elicitation = self.handlers.elicitation.is_some();
+        let callbacks = CallbackCapabilities {
+            sampling: self.handlers.sampling.is_some(),
+            elicitation: self.handlers.elicitation.is_some(),
+        };
         InitializeRequestParams::new(
-            client_capabilities(sampling, elicitation),
+            client_capabilities(&callbacks),
             Implementation::new(DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION),
         )
         .with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE)

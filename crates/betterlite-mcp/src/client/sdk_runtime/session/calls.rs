@@ -3,10 +3,10 @@ use std::sync::PoisonError;
 
 use rmcp::ServiceError;
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientRequest, GetPromptRequest,
+    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, GetPromptRequest,
     GetPromptRequestParams, JsonObject, ListPromptsRequest, ListResourceTemplatesRequest,
-    ListResourcesRequest, ListToolsRequest, PaginatedRequestParams, ProgressNotificationParam,
-    ReadResourceRequest, ReadResourceRequestParams, ServerResult,
+    ListResourcesRequest, ListToolsRequest, ListToolsResult, PaginatedRequestParams,
+    ProgressNotificationParam, ReadResourceRequest, ReadResourceRequestParams, ServerResult,
 };
 
 use crate::client::sdk_transport::error::SdkError;
@@ -21,7 +21,7 @@ use super::super::convert::{
     input_required_result, json_object, session_failure, tool_call_result, tool_page,
     unexpected_response,
 };
-use super::{ProgressSink, SdkSession, Silent};
+use super::{ProgressSink, SdkSession, Silent, exchange_with_progress};
 
 struct Forward<'forward, 'host, Host>
 where
@@ -54,25 +54,25 @@ where
         params = params.with_arguments(json_object(arguments)?);
     }
     let sdk_request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
-    match session.exchange_with_progress(sdk_request, sink).await? {
-        ServerResult::CallToolResult(result) => {
-            // The SDK validates every non-error tool result against the tool's declared output schema
-            if result.is_error != Some(true) {
-                validate_tool_result(session, &request.name, &result).await?;
-            }
-            tool_call_result(&result)
-        }
-        ServerResult::InputRequiredResult(result) => input_required_result(&result),
-        other => Err(unexpected_response(&other)),
+    let response = exchange_with_progress(session, sdk_request, sink).await?;
+    if let ServerResult::InputRequiredResult(result) = &response {
+        return input_required_result(result);
     }
+    let ServerResult::CallToolResult(result) = &response else {
+        return Err(unexpected_response(&response));
+    };
+    // The SDK validates every non-error tool result against the tool's declared output schema
+    if result.is_error != Some(true) {
+        validate_tool_result(session, &request.name, result).await?;
+    }
+    tool_call_result(result)
 }
 
-// The SDK lists the tools when it has not seen the tool's schema, then insists on structured content that matches it
-async fn validate_tool_result(
+// The schema the SDK validates a tool result against; it lists the tools when it has not seen the tool's schema
+async fn cached_output_schema(
     session: &SdkSession,
     name: &str,
-    result: &rmcp::model::CallToolResult,
-) -> Result<(), SdkError> {
+) -> Result<Option<JsonObject>, SdkError> {
     let known = session
         .tool_output_schemas
         .lock()
@@ -81,30 +81,39 @@ async fn validate_tool_result(
     if !known {
         let params = PaginatedRequestParams::default();
         let request = ClientRequest::ListToolsRequest(ListToolsRequest::with_param(params));
-        let response = session.exchange_with_progress(request, &Silent).await?;
-        let ServerResult::ListToolsResult(listing) = response else {
+        let response = exchange_with_progress(session, request, &Silent).await?;
+        let ServerResult::ListToolsResult(listing) = &response else {
             return Err(unexpected_response(&response));
         };
-        session.absorb_tool_listing(None, &listing);
+        session.absorb_tool_listing(None, listing);
     }
-    let schema = session
+    let cached = session
         .tool_output_schemas
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .get(name)
         .cloned()
         .flatten();
-    let Some(schema) = schema else {
+    Ok(cached)
+}
+
+// The SDK insists on structured content that matches the tool's declared output schema
+async fn validate_tool_result(
+    session: &SdkSession,
+    name: &str,
+    result: &CallToolResult,
+) -> Result<(), SdkError> {
+    let Some(output_schema) = cached_output_schema(session, name).await? else {
         return Ok(());
     };
     let Some(content) = result.structured_content.as_ref() else {
         return Err(SdkError::Service(ServiceError::UnexpectedResponse));
     };
-    let schema = serde_json::Value::Object(schema);
+    let encoded = serde_json::to_value(&output_schema).map_err(SdkError::Json)?;
     let validator = jsonschema::options()
         .should_validate_formats(false)
         .offline()
-        .build(&schema)
+        .build(&encoded)
         .map_err(|_error| SdkError::Service(ServiceError::UnexpectedResponse))?;
     validator
         .validate(content)
@@ -118,17 +127,14 @@ impl McpSession for SdkSession {
     async fn list_tools(&mut self, cursor: Option<&str>) -> Result<Page, SessionError<SdkError>> {
         let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
         let request = ClientRequest::ListToolsRequest(ListToolsRequest::with_param(params));
-        let response = self
-            .exchange_with_progress(request, &Silent)
+        let response = exchange_with_progress(self, request, &Silent)
             .await
             .map_err(session_failure)?;
-        match response {
-            ServerResult::ListToolsResult(result) => {
-                self.absorb_tool_listing(cursor, &result);
-                tool_page(&result).map_err(session_failure)
-            }
-            other => Err(session_failure(unexpected_response(&other))),
-        }
+        let ServerResult::ListToolsResult(result) = &response else {
+            return Err(session_failure(unexpected_response(&response)));
+        };
+        self.absorb_tool_listing(cursor, result);
+        tool_page(result).map_err(session_failure)
     }
 
     async fn call_tool(
@@ -138,12 +144,12 @@ impl McpSession for SdkSession {
         let result = call_tool_request(self, &request, &Silent)
             .await
             .map_err(session_failure)?;
-        match result {
-            ToolCallResult::InputRequired(_) => Err(session_failure(SdkError::Service(
+        if let ToolCallResult::InputRequired(_) = result {
+            return Err(session_failure(SdkError::Service(
                 ServiceError::UnexpectedResponse,
-            ))),
-            result => Ok(result),
+            )));
         }
+        Ok(result)
     }
 }
 
@@ -165,19 +171,22 @@ impl ToolCallSession for SdkSession {
         let result = call_tool_request(self, request, &sink)
             .await
             .map_err(session_failure)?;
-        match (result, allow_input_required) {
-            (ToolCallResult::InputRequired(_), false) => Err(session_failure(SdkError::Service(
-                ServiceError::UnexpectedResponse,
-            ))),
-            (result, _) => Ok(result),
+        if allow_input_required {
+            return Ok(result);
         }
+        if let ToolCallResult::InputRequired(_) = result {
+            return Err(session_failure(SdkError::Service(
+                ServiceError::UnexpectedResponse,
+            )));
+        }
+        Ok(result)
     }
 }
 
 fn prompt_arguments(arguments: &BTreeMap<String, String>) -> JsonObject {
     arguments
         .iter()
-        .map(|(key, value)| (key.clone(), serde_json::json!(value)))
+        .map(|(key, value)| (key.clone(), serde_json::to_value(value).unwrap_or_default()))
         .collect()
 }
 
@@ -213,21 +222,20 @@ impl SdkSession {
                 ReadResourceRequest::new(ReadResourceRequestParams::new(uri.to_owned())),
             ),
         };
-        match self.exchange_with_progress(request, &Silent).await? {
-            ServerResult::ListPromptsResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            ServerResult::ListResourcesResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            ServerResult::ListResourceTemplatesResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            ServerResult::ReadResourceResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            other => Err(unexpected_response(&other)),
+        let response = exchange_with_progress(self, request, &Silent).await?;
+        if let ServerResult::ListPromptsResult(result) = &response {
+            return serde_json::to_string(result).map_err(SdkError::Json);
         }
+        if let ServerResult::ListResourcesResult(result) = &response {
+            return serde_json::to_string(result).map_err(SdkError::Json);
+        }
+        if let ServerResult::ListResourceTemplatesResult(result) = &response {
+            return serde_json::to_string(result).map_err(SdkError::Json);
+        }
+        if let ServerResult::ReadResourceResult(result) = &response {
+            return serde_json::to_string(result).map_err(SdkError::Json);
+        }
+        Err(unexpected_response(&response))
     }
 
     pub async fn get_prompt_wire(
@@ -236,20 +244,19 @@ impl SdkSession {
         arguments: Option<&BTreeMap<String, String>>,
     ) -> Result<String, SdkError> {
         let mut params = GetPromptRequestParams::new(name.to_owned());
-        if let Some(arguments) = arguments {
-            params = params.with_arguments(prompt_arguments(arguments));
+        if let Some(values) = arguments {
+            params = params.with_arguments(prompt_arguments(values));
         }
         let request = ClientRequest::GetPromptRequest(GetPromptRequest::new(params));
-        match self.exchange_with_progress(request, &Silent).await? {
-            ServerResult::GetPromptResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            other => Err(unexpected_response(&other)),
-        }
+        let response = exchange_with_progress(self, request, &Silent).await?;
+        let ServerResult::GetPromptResult(result) = &response else {
+            return Err(unexpected_response(&response));
+        };
+        serde_json::to_string(result).map_err(SdkError::Json)
     }
 
     // The SDK caches each listing's output schemas and drops the rest only when the request carried no cursor and no page follows
-    fn absorb_tool_listing(&self, cursor: Option<&str>, listing: &rmcp::model::ListToolsResult) {
+    fn absorb_tool_listing(&self, cursor: Option<&str>, listing: &ListToolsResult) {
         let mut schemas = self
             .tool_output_schemas
             .lock()

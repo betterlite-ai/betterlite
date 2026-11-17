@@ -131,7 +131,7 @@ impl TransportContext for SdkTransportContext {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         match transport {
-            Some(transport) => transport.exit().await,
+            Some(opened) => opened.exit().await,
             None => Ok(()),
         }
     }
@@ -154,7 +154,7 @@ impl SdkRuntime {
         }
     }
 
-    fn legacy_sse(&self, request: SseRequest) -> Result<SdkTransportContext, SdkError> {
+    fn legacy_sse(&self, request: &SseRequest) -> Result<SdkTransportContext, SdkError> {
         let url = Url::parse(&request.url).map_err(SdkError::EndpointUrl)?;
         let http = McpHttpTransport::new(&request.client, &self.base, Arc::clone(&self.capture))?;
         let handler = MessageHandler::default();
@@ -166,23 +166,19 @@ impl SdkRuntime {
         let transport = Arc::new(Mutex::new(Some(sdk_transport)));
         Ok(SdkTransportContext { transport, handler })
     }
+}
 
-    fn streamable(
-        &self,
-        url: &str,
-        client: &SdkHttpClient,
-    ) -> Result<SdkTransportContext, SdkError> {
-        let endpoint = Url::parse(url).map_err(SdkError::EndpointUrl)?;
-        let handler = MessageHandler::default();
-        let sdk_transport = SdkTransport::Streamable(StreamableHttp::new(
-            endpoint,
-            Arc::clone(&client.transport),
-            Arc::clone(&client.client),
-            handler.clone(),
-        ));
-        let transport = Arc::new(Mutex::new(Some(sdk_transport)));
-        Ok(SdkTransportContext { transport, handler })
-    }
+fn streamable(url: &str, client: &SdkHttpClient) -> Result<SdkTransportContext, SdkError> {
+    let endpoint = Url::parse(url).map_err(SdkError::EndpointUrl)?;
+    let handler = MessageHandler::default();
+    let sdk_transport = SdkTransport::Streamable(StreamableHttp::new(
+        endpoint,
+        Arc::clone(&client.transport),
+        Arc::clone(&client.client),
+        handler.clone(),
+    ));
+    let transport = Arc::new(Mutex::new(Some(sdk_transport)));
+    Ok(SdkTransportContext { transport, handler })
 }
 
 // McpRuntime::sse_client has no Result, so a transport that can't be built stands in as an unavailable one
@@ -213,7 +209,7 @@ impl McpRuntime for SdkRuntime {
     }
 
     fn sse_client(&self, request: SseRequest) -> SdkTransportContext {
-        match self.legacy_sse(request) {
+        match self.legacy_sse(&request) {
             Ok(context) => context,
             Err(error) => unsupported("legacy SSE", &error),
         }
@@ -224,7 +220,7 @@ impl McpRuntime for SdkRuntime {
         url: String,
         client: Arc<SdkHttpClient>,
     ) -> SdkTransportContext {
-        match self.streamable(&url, &client) {
+        match streamable(&url, &client) {
             Ok(context) => context,
             Err(error) => unsupported("streamable HTTP", &error),
         }

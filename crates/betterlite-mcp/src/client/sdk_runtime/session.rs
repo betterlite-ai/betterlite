@@ -2,9 +2,11 @@ pub mod calls;
 pub mod initialize;
 
 use std::collections::BTreeMap;
-use std::future::Future;
-use std::pin::pin;
+use std::future::{Future, poll_fn, ready};
+use std::io;
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::task::Poll;
 use std::time::Duration;
 
 use rmcp::RoleClient;
@@ -13,9 +15,11 @@ use rmcp::model::{
 };
 use rmcp::service::{Peer, PeerRequestOptions, RunningService, ServiceError, serve_directly};
 use rmcp::transport::{Transport, TransportAdapterIdentity};
+use tokio::sync::mpsc;
 
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::ExitFailure;
+use crate::client::sessions::negotiate::ClientCapabilities as CallbackCapabilities;
 use crate::client::sessions::runtime::{SessionContext, SessionOptions};
 use crate::client::sessions::stream::{MessageHandler, StreamMessage};
 
@@ -64,9 +68,9 @@ where
     type Session = SdkSession;
     type Error = SdkError;
 
-    async fn enter(&mut self) -> Result<SdkSession, SdkError> {
+    fn enter(&mut self) -> impl Future<Output = Result<SdkSession, SdkError>> + Send {
         let Some(streams) = self.streams.take() else {
-            return Err(SdkError::AlreadyOpen);
+            return ready(Err(SdkError::AlreadyOpen));
         };
         let handler = SdkClientHandler {
             handlers: self.options.handlers.clone(),
@@ -80,13 +84,14 @@ where
             SdkError,
             TransportAdapterIdentity,
         >(handler, streams, None);
+        let callbacks = CallbackCapabilities {
+            sampling: self.options.handlers.sampling.is_some(),
+            elicitation: self.options.handlers.elicitation.is_some(),
+        };
         let session = SdkSession {
             peer: running.peer().clone(),
             read_timeout: self.options.read_timeout,
-            capabilities: client_capabilities(
-                self.options.handlers.sampling.is_some(),
-                self.options.handlers.elicitation.is_some(),
-            ),
+            capabilities: client_capabilities(&callbacks),
             message_handler: self.options.message_handler.clone(),
             session_handler: self.session_handler.clone(),
             protocol_version: self.protocol_version.clone(),
@@ -95,7 +100,7 @@ where
             tool_output_schemas: Mutex::new(BTreeMap::new()),
         };
         self.running = Some(running);
-        Ok(session)
+        ready(Ok(session))
     }
 
     async fn exit(mut self) -> Result<(), ExitFailure<SdkError>> {
@@ -105,7 +110,7 @@ where
         match running.cancel().await {
             Ok(_reason) => Ok(()),
             Err(cause) => Err(ExitFailure::Failure(Arc::new(SdkError::Io(Arc::new(
-                std::io::Error::other(cause),
+                io::Error::other(cause),
             ))))),
         }
     }
@@ -123,67 +128,91 @@ pub struct SdkSession {
     // the initialize result's capabilities on the wire, for betterlite-core's typed decode
     pub server_capabilities: Option<ServerCapabilitiesWire>,
     // every output schema the session has seen, keyed by tool name, as the SDK caches them
-    tool_output_schemas: Mutex<BTreeMap<String, Option<JsonObject>>>,
+    pub tool_output_schemas: Mutex<BTreeMap<String, Option<JsonObject>>>,
 }
 
 // A progress sink the callers that take none use, so one exchange path serves every request
 struct Silent;
 
-trait ProgressSink {
+trait ProgressSink: Sync {
     fn send(&self, param: ProgressNotificationParam) -> impl Future<Output = ()> + Send;
 }
 
 impl ProgressSink for Silent {
-    async fn send(&self, _param: ProgressNotificationParam) {}
+    fn send(&self, _param: ProgressNotificationParam) -> impl Future<Output = ()> + Send {
+        ready(())
+    }
 }
 
-impl SdkSession {
-    async fn exchange_with_progress<Sink>(
-        &self,
-        request: ClientRequest,
-        sink: &Sink,
-    ) -> Result<ServerResult, SdkError>
-    where
-        Sink: ProgressSink,
-    {
-        let method = request.method().to_owned();
-        let options = PeerRequestOptions::with_timeout(self.read_timeout);
-        let handle = self
-            .peer
-            .send_request_with_option(request, options)
-            .await
-            .map_err(|error| self.request_failure(&method, error))?;
-        let token = handle.progress_token.clone();
-        let (mut progress, _subscription) = self.progress.subscribe(&token);
-        let response = {
-            let mut pending = pin!(handle.await_response());
-            let mut closed = false;
-            loop {
-                tokio::select! {
-                    result = &mut pending => break result,
-                    update = progress.recv(), if !closed => match update {
-                        Some(param) => sink.send(param).await,
-                        None => closed = true,
-                    },
-                }
-            }
-        };
-        response.map_err(|error| self.request_failure(&method, error))
-    }
+// One request's exchange, with the progress notifications a call forwards while it waits for the answer
+async fn exchange_with_progress<Sink>(
+    session: &SdkSession,
+    request: ClientRequest,
+    sink: &Sink,
+) -> Result<ServerResult, SdkError>
+where
+    Sink: ProgressSink,
+{
+    let method = request.method().to_owned();
+    let options = PeerRequestOptions::with_timeout(session.read_timeout);
+    let handle = session
+        .peer
+        .send_request_with_option(request, options)
+        .await
+        .map_err(|error| request_failure(session, &method, error))?;
+    let token = handle.progress_token.clone();
+    let (mut progress, _subscription) = session.progress.subscribe(&token);
+    let response = forward_progress(&mut progress, pin!(handle.await_response()), sink).await;
+    response.map_err(|error| request_failure(session, &method, error))
+}
 
-    fn request_failure(&self, method: &str, error: ServiceError) -> SdkError {
-        let recorded = self
-            .session_handler
-            .recorded
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        if let Some(failure) = recorded {
-            // B4744 watches its own handler, so a stream failure the transport saw is replayed there before the call fails
-            let _closed = self
-                .message_handler
-                .handle(StreamMessage::Failure((*failure).clone()));
-        }
-        request_error(method, error)
+// The answer is awaited while the call's progress updates go to the sink, one per poll
+async fn forward_progress<Sink, Response>(
+    progress: &mut mpsc::Receiver<ProgressNotificationParam>,
+    mut pending: Pin<&mut Response>,
+    sink: &Sink,
+) -> Result<ServerResult, ServiceError>
+where
+    Sink: ProgressSink,
+    Response: Future<Output = Result<ServerResult, ServiceError>>,
+{
+    loop {
+        let mut delivered = None;
+        let finished = poll_fn(|context| {
+            if let Poll::Ready(result) = pending.as_mut().poll(context) {
+                return Poll::Ready(Some(result));
+            }
+            match progress.poll_recv(context) {
+                Poll::Ready(Some(param)) => {
+                    delivered = Some(param);
+                    Poll::Ready(None)
+                }
+                Poll::Ready(None) | Poll::Pending => Poll::Pending,
+            }
+        })
+        .await;
+        let Some(result) = finished else {
+            if let Some(param) = delivered {
+                sink.send(param).await;
+            }
+            continue;
+        };
+        return result;
     }
+}
+
+fn request_failure(session: &SdkSession, method: &str, error: ServiceError) -> SdkError {
+    let recorded = session
+        .session_handler
+        .recorded
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    if let Some(failure) = recorded {
+        // B4744 watches its own handler, so a stream failure the transport saw is replayed there before the call fails
+        let _closed = session
+            .message_handler
+            .handle(StreamMessage::Failure((*failure).clone()));
+    }
+    request_error(method, error)
 }
