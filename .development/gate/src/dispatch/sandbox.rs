@@ -14,6 +14,44 @@ struct Settings<'dirs> {
     permissions: Permissions,
     // a config folder without the user's settings would add Claude Code's Co-Authored-By line to commits
     attribution: Attribution,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hooks: Option<Hooks>,
+}
+
+#[derive(Serialize)]
+struct Hooks {
+    #[serde(rename = "Stop")]
+    stop: [HookGroup; 1],
+}
+
+impl Hooks {
+    fn stop(gate: &str) -> Self {
+        Self {
+            stop: [HookGroup {
+                hooks: [HookCommand {
+                    kind: "command",
+                    command: format!(
+                        "cd \"$CLAUDE_PROJECT_DIR\" && '{gate}' hook --report json-schema"
+                    ),
+                    // the checks took up to 61 s on 11-16, past Claude Code's 60 s default
+                    timeout: 300,
+                }],
+            }],
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct HookGroup {
+    hooks: [HookCommand; 1],
+}
+
+#[derive(Serialize)]
+struct HookCommand {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    command: String,
+    timeout: u32,
 }
 
 #[derive(Serialize)]
@@ -55,6 +93,7 @@ pub(crate) fn write_settings(
     worktree: &str,
     home: &str,
     writable: &[String],
+    stop_gate: Option<&str>,
 ) -> Result<(), GateError> {
     let mut allow_write = vec![worktree];
     allow_write.extend(writable.iter().map(String::as_str));
@@ -84,6 +123,7 @@ pub(crate) fn write_settings(
             ],
         },
         attribution: Attribution { commit: "", pr: "" },
+        hooks: stop_gate.map(Hooks::stop),
     };
     let text = serde_json::to_string_pretty(&settings).map_err(|source| GateError::Json {
         what: "the Claude sandbox settings".to_owned(),
