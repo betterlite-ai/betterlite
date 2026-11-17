@@ -1,0 +1,62 @@
+kind: helper
+name: titan-v2-dimensions-normalize
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_v2_dimensions_normalize
+    settings:
+      - normalize: true
+        dimensions: 256
+      - normalize: null
+        dimensions: 512
+      - dimensions: null
+    non_default:
+      dimensions: 256
+      encoding_format: base64
+    optional_params:
+      dimensions: 512
+      custom: kept
+    input: hello v2
+    inference_params:
+      normalize: true
+      dimensions: 512
+calls:
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_dimensions_normalize
+      settings: []
+      non_default:
+        encoding_format: float
+      optional_params: {}
+      input: text
+      inference_params: {}
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_dimensions_normalize
+      settings:
+        - normalize: false
+      non_default:
+        encoding_format: null
+        dimensions: null
+      optional_params:
+        dimensions: 256
+      input: text
+      inference_params:
+        custom: 1
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_dimensions_normalize
+      settings:
+        - normalize: null
+      non_default:
+        encoding_format: ["binary", "float"]
+      optional_params: {}
+      input: text
+      inference_params: {}
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_dimensions_normalize
+      settings: []
+      non_default: {}
+      optional_params: {}
+      input: text
+      inference_params:
+        inputText: duplicate
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,18 @@
+kind: helper
+name: titan-v2-dimensions-normalize
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_v2_dimensions_normalize
+    settings:
+      - normalize: true
+        dimensions: 256
+      - dimensions: 512
+    non_default:
+      encoding_format: base64
+    optional_params: {}
+    input: hello v2
+    inference_params:
+      normalize: true
+env: {}
+compare:
+  ignore: []
