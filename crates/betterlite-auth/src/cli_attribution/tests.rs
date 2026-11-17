@@ -211,6 +211,15 @@ fn build_prefers_extra_fields_before_the_identity_document() {
 }
 
 #[test]
+fn build_falls_through_a_null_nested_extra_field_to_the_identity() {
+    let metadata = builds(
+        r#"{"extra_fields": {"region": null}, "region": "eu"}"#,
+        "extra_fields.region->region",
+    );
+    assert_eq!(metadata, document(r#"{"region": "eu"}"#));
+}
+
+#[test]
 fn build_skips_unsafe_destinations_and_values() {
     let events = CapturedEvents::capture();
     let metadata = builds(
