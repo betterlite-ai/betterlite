@@ -1,0 +1,14 @@
+kind: helper
+name: output-transcript-start
+call:
+  gemini_live_frames:
+    frames:
+      - '{"serverContent": {"outputTranscription": {"text": "hi"}}}'
+      - '{"serverContent": {"outputTranscription": {"text": " there"}, "turnComplete": true}}'
+calls:
+  - gemini_live_frames:
+      state: {response_id: resp_given, conversation_id: conv_given}
+      frames:
+        - '{"serverContent": {"outputTranscription": {"text": "again"}}}'
+env: {}
+compare: {ignore: []}

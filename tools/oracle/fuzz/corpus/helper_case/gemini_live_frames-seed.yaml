@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-live-frames-seed
+call:
+  gemini_live_frames:
+    frames:
+      - '{"setupComplete": {}}'
+      - '{}'
+      - '{"serverContent": {}}'
+      - '{"toolCall": {}}'
+      - '{"goAway": {"timeLeft": "1s"}}'
+      - '{"usageMetadata": {"promptTokenCount": 4}, "sessionResumptionUpdate": {}}'
+      - '{"serverContent": {"turnComplete": true}}'
+calls:
+  - gemini_live_frames:
+      state:
+        response_id: resp_given
+        conversation_id: conv_given
+        delta_type: audio
+        item_chunks:
+          - {type: response.output_item.done, item: {type: function_call}}
+      frames:
+        - '{"serverContent": {"outputTranscription": {"text": "hello"}}, "usageMetadata": {"promptTokenCount": 2}}'
+env: {}
+compare: {ignore: []}
