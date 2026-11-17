@@ -109,10 +109,12 @@ fn groups_that_are_not_a_list_of_names_are_an_error(#[case] literal: &[u8]) {
     );
 }
 
-#[test]
-fn a_tuple_of_groups_is_refused_where_pydantic_coerces_it() {
-    let decoded =
-        decode_role_mapping_literal(b"{'proxy_admin': ('admins',)}", Some("groups"), None);
+#[rstest]
+#[case::tuple(b"{'proxy_admin': ('admins',)}".as_slice())]
+#[case::set(b"{'proxy_admin': {'admins'}}".as_slice())]
+#[case::bytes(b"{'proxy_admin': [b'admins']}".as_slice())]
+fn groups_pydantic_would_coerce_are_refused(#[case] literal: &[u8]) {
+    let decoded = decode_role_mapping_literal(literal, Some("groups"), None);
     assert_eq!(
         decoded,
         Err(RoleMappingError::GroupsNotText {
