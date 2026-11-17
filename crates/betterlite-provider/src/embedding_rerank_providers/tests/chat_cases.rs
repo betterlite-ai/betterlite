@@ -179,6 +179,12 @@ fn null_passthrough_fields_never_reach_the_body() {
         ChatRequest::parse(br#"{"messages":[{"role":"user","content":"hi"}],"custom":null}"#)
             .unwrap();
     assert!(body_of(&fixture.prepared()).get("custom").is_none());
+    // an unset typed field serializes as null, so the mapping must drop it before the family sees it
+    assert!(
+        body_of(&ChatFixture::new("command-r").prepared())
+            .get("temperature")
+            .is_none()
+    );
 }
 
 #[test]

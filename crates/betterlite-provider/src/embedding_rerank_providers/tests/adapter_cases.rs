@@ -49,6 +49,24 @@ fn the_adapter_refuses_its_own_unit_request() {
 }
 
 #[test]
+fn a_family_preparation_failure_reaches_the_caller_as_an_unsupported_operation() {
+    let embedding = OperationRequest::Embedding(Box::new(EmbeddingOperation {
+        model: String::from("cohere/embed-v4.0"),
+        request: serde_json::from_str(r#"{"input":"hi"}"#).unwrap(),
+    }));
+    let refused = EmbeddingRerank.prepare(
+        &embedding,
+        &deployment("cohere/embed-v4.0", "not a url", Some("key")),
+        &catalog(),
+    );
+    assert!(matches!(
+        refused,
+        Err(OperationError::UnsupportedOperation { provider, operation })
+            if provider == "embedding_rerank" && operation == "prepare"
+    ));
+}
+
+#[test]
 fn the_adapter_prepares_embeddings_from_the_deployment() {
     let embedding = OperationRequest::Embedding(Box::new(EmbeddingOperation {
         model: String::from("cohere/embed-v4.0"),

@@ -246,6 +246,15 @@ fn infinity_embedding_sends_bearer_none_without_a_key() {
     );
 }
 
+// a null passthrough option is dropped before a family's mapper can copy it into the body
+#[test]
+fn a_null_passthrough_option_never_reaches_an_embedding_body() {
+    let mut fixture = EmbeddingFixture::new(ProviderId::Infinity, "infinity-model");
+    fixture.api_base = Some(String::from("https://infinity.test"));
+    fixture.request = serde_json::from_str(r#"{"input":"hi","modality":null}"#).unwrap();
+    assert!(body_of(&fixture.prepared()).get("modality").is_none());
+}
+
 #[test]
 fn an_unsupported_provider_prepares_no_embedding() {
     let fixture = EmbeddingFixture::new(ProviderId::Openai, "text-embedding-3-small");
