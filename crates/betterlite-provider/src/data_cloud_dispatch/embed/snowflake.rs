@@ -1,8 +1,8 @@
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_openai::containers::container_file_http::proxied::reply_headers;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::gitlab_client::payload::decode_text;
-use http::HeaderMap;
 use secrecy::ExposeSecret as _;
 
 use crate::data_cloud_dispatch::call::{EmbeddingCall, EmbeddingReply};
@@ -42,20 +42,11 @@ fn reply(model: &str, response: &UpstreamResponse) -> Result<EmbeddingReply, Dis
         return Err(DispatchError::SnowflakeException(get_error_class(
             &decode_text(&response.body),
             response.status,
-            response_headers(&response.headers),
+            reply_headers(&response.headers),
         )));
     }
     let reply = transform_embedding_response(model, &decode_text(&response.body))?;
     Ok(EmbeddingReply::Snowflake(Box::new(reply)))
-}
-
-// the provider headers LiteLLM's base handler hands to the exception, such as retry-after on a 429
-fn response_headers(headers: &HeaderMap) -> Headers {
-    let mut converted = Headers::new();
-    for (name, value) in headers {
-        converted.insert(name.as_str().to_owned(), decode_text(value.as_bytes()));
-    }
-    converted
 }
 
 // The snowflake arm takes the key, the url and the body, sends them and maps the answer
@@ -76,7 +67,7 @@ pub(super) async fn complete(
     validate_environment(
         &mut headers,
         &call.model,
-        api_key.as_ref().map(|value| value.expose_secret()),
+        api_key.as_ref().map(|value| value.expose_secret().as_str()),
     )?;
     let (url, body) = request(call, context)?;
     let response = send_json(context, &url, &headers, &body, call.timeout).await?;

@@ -12,7 +12,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
 
-use crate::data_cloud_dispatch::transport::{Pooled, PostTransport, WireRequest};
+use crate::data_cloud_dispatch::transport::{Pooled, PostTransport as _, WireRequest};
 
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
 

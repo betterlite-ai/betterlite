@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
-
 use betterlite_provider::data_cloud_dispatch::error::DispatchError;
-use http::{HeaderMap, HeaderName, HeaderValue};
+use http::HeaderMap;
 use serde_json::{Map, Value, json};
 
 pub(super) fn kept_headers(headers: &HeaderMap, names: &[&str]) -> Value {
@@ -14,19 +12,6 @@ pub(super) fn kept_headers(headers: &HeaderMap, names: &[&str]) -> Value {
         }
     }
     Value::Object(kept)
-}
-
-pub(super) fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        if let (Ok(name), Ok(value)) = (
-            HeaderName::try_from(name.as_str()),
-            HeaderValue::from_str(value),
-        ) {
-            map.insert(name, value);
-        }
-    }
-    map
 }
 
 pub(super) fn request_view(

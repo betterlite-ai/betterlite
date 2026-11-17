@@ -24,4 +24,7 @@ deviations:
   - what: The embedding arms do not run the pre_call and post_call logging themselves.
     why: The generic embedding handler owns the pre_call record for every provider, and the arm returns the reply to it. Running the hooks here would log each embedding twice.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py
+  - what: The snowflake embedding exception converts its reply headers with betterlite-openai's reply_headers, the function its container client already uses for the same httpx.Headers to mapping conversion.
+    why: LiteLLM hands get_error_class a dict built from httpx.Headers, and that object lower-cases names, comma-joins repeats and decodes each value as UTF-8 with a Latin-1 fallback. reply_headers does all three. Both alternatives in this crate fall short, since model_hub_dispatch::hub::headers_from drops a value that is not UTF-8 and lets its collect overwrite a repeated name, and a loop written in the arm had the same two faults. A 429 whose retry-after repeats or carries Latin-1 bytes keeps it only through reply_headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6090-L6109
 kept_bugs: []

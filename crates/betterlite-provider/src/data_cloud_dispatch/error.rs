@@ -1,3 +1,4 @@
+use betterlite_http::error::HttpError;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
 
@@ -56,7 +57,7 @@ pub enum DispatchError {
     #[error("the OCI stream failed: {source}")]
     Stream {
         #[source]
-        source: betterlite_http::error::HttpError,
+        source: HttpError,
     },
     #[error(transparent)]
     Transport(#[from] OperationError),

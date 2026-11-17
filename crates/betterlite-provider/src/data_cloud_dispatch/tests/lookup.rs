@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
@@ -26,8 +27,8 @@ impl AzureOidcTokens for Offline {
 }
 
 impl OidcClock for Offline {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 
     fn unix_seconds(&self) -> i64 {

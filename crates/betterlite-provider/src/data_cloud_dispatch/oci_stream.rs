@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
+use std::str::from_utf8;
 
 use betterlite_http::error::HttpError;
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::gitlab_client::payload::decode_text;
-use futures_util::stream::{BoxStream, StreamExt as _};
+use futures_util::stream::{BoxStream, StreamExt as _, empty};
 use http::{HeaderMap, Method};
 
 use crate::oci_chat::stream::{STREAMING_TIMEOUT, SseDecoder, StreamItem, check_stream_status};
@@ -42,7 +43,7 @@ pub async fn open_stream(
         .await?;
     check_stream_status(head.status, &decode_text(&head.body))?;
     Ok(OciStream::new(head.chunks.unwrap_or_else(|| {
-        futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed()
+        empty::<Result<Vec<u8>, HttpError>>().boxed()
     })))
 }
 
@@ -112,8 +113,8 @@ impl OciStream {
         self.carry.clear();
         let items = self.decoder.push(&tail)?;
         self.pending.extend(items);
-        let items = self.decoder.finish()?;
-        self.pending.extend(items);
+        let finished = self.decoder.finish()?;
+        self.pending.extend(finished);
         self.done = true;
         Ok(())
     }
@@ -121,7 +122,7 @@ impl OciStream {
 
 // httpx's iter_text decodes lossily and carries an incomplete UTF-8 sequence over to the next read
 fn split_text(bytes: &[u8]) -> (String, usize) {
-    let error = match std::str::from_utf8(bytes) {
+    let error = match from_utf8(bytes) {
         Ok(text) => return (text.to_owned(), bytes.len()),
         Err(error) => error,
     };

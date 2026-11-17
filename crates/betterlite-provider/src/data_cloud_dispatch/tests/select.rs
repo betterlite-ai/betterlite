@@ -1,5 +1,6 @@
 use betterlite_context::resource_config_selection::responses::{
-    AzureResponsesFacts, MantleResponses, ResponsesModelFacts, select_responses_config,
+    AzureResponsesFacts, MantleResponses, ResponsesConfigTag, ResponsesModelFacts,
+    select_responses_config,
 };
 use betterlite_models::identity::provider_id::ProviderId;
 
@@ -30,8 +31,12 @@ fn responses_selection_keeps_the_databricks_gpt_branch() {
         mantle: MantleResponses::default(),
     };
     assert_eq!(
-        select_responses_config(Some(ProviderId::Databricks), Some("databricks-gpt-5"), &facts),
-        Some(betterlite_context::resource_config_selection::responses::ResponsesConfigTag::Databricks)
+        select_responses_config(
+            Some(ProviderId::Databricks),
+            Some("databricks-gpt-5"),
+            &facts
+        ),
+        Some(ResponsesConfigTag::Databricks)
     );
     assert_eq!(
         select_responses_config(

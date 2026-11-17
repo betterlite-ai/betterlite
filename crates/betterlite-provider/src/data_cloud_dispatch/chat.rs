@@ -24,7 +24,7 @@ pub fn dispatch<R>(
     match tag {
         ChatConfigTag::Databricks => Some(complete_databricks(context, handler, log)),
         ChatConfigTag::OciChat => Some(handler.complete(&passthrough(context)).map_err(DispatchError::Handler)),
-        ChatConfigTag::Snowflake => Some(complete_snowflake(context, handler, log)),
+        ChatConfigTag::Snowflake => Some(complete_cloud(context, &passthrough(context), false, handler, log)),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
         | ChatConfigTag::AzureOpenAiO1 | ChatConfigTag::AzureOpenAiText | ChatConfigTag::Baseten | ChatConfigTag::Bedrock(_) | ChatConfigTag::BedrockMantleChat
@@ -54,12 +54,12 @@ pub fn dispatch<R>(
 // the handler call both completion arms share, then the failure record and the optional stream record
 fn complete_cloud<R>(
     context: &DispatchContext<'_>,
-    call: CompletionCall,
+    call: &CompletionCall,
     stream_record: bool,
     handler: &dyn ChatCompletionHandler<Reply = R>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError> {
-    match handler.complete(&call) {
+    match handler.complete(call) {
         Ok(reply) => {
             // LiteLLM logs the opened stream object itself; a Rust stream has no JSON form, so the record carries null
             if stream_record && context.stream == Some(true) {
@@ -68,7 +68,7 @@ fn complete_cloud<R>(
             Ok(reply)
         }
         Err(error) => {
-            log_failure(log, context, &call, &error)?;
+            log_failure(log, context, call, &error)?;
             Err(DispatchError::Handler(error))
         }
     }
@@ -80,7 +80,10 @@ pub fn complete_databricks<R>(
     handler: &dyn ChatCompletionHandler<Reply = R>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError> {
-    complete_cloud(context, databricks_call(context)?, true, handler, log)
+    match databricks_call(context) {
+        Ok(call) => complete_cloud(context, &call, true, handler, log),
+        Err(error) => Err(error),
+    }
 }
 
 // the post_call record LiteLLM writes before the handler error goes back unchanged
@@ -123,7 +126,7 @@ fn databricks_call(context: &DispatchContext<'_>) -> Result<CompletionCall, Disp
         .filter(|value| !value.is_empty())
         .or(context.globals.api_base);
     let api_base = match base {
-        Some(base) => Some(base.to_owned()),
+        Some(found) => Some(found.to_owned()),
         None => context.env.text("DATABRICKS_API_BASE")?,
     };
     let candidates = [
@@ -147,13 +150,4 @@ fn databricks_call(context: &DispatchContext<'_>) -> Result<CompletionCall, Disp
         provider_config: None,
         ..passthrough(context)
     })
-}
-
-// _complete_snowflake resolves nothing itself: the key and base come from get_llm_provider in B211
-pub fn complete_snowflake<R>(
-    context: &DispatchContext<'_>,
-    handler: &dyn ChatCompletionHandler<Reply = R>,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<R, DispatchError> {
-    complete_cloud(context, passthrough(context), false, handler, log)
 }

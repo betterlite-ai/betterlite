@@ -16,6 +16,7 @@ use crate::oci_common::Clock;
 use crate::oci_common::credentials::resolve_oci_credentials;
 use crate::oci_common::environment::{DEFAULT_LITELLM_VERSION, OciEnvironment};
 use crate::oci_common::signing::sign_oci_request;
+use crate::oci_embed;
 
 use super::call::{EmbeddingCall, EmbeddingReply};
 use super::context::{DispatchGlobals, EnvironmentSource, oci_explicit_params};
@@ -64,20 +65,23 @@ pub fn databricks_environment(
 }
 
 // the databricks and snowflake arms encode a JSON body next to their provider headers
-pub(super) async fn send_json<T: serde::Serialize>(
+pub(super) async fn send_json<T>(
     context: &EmbeddingContext<'_>,
     url: &str,
     headers: &Headers,
     body: &T,
     deadline: Duration,
-) -> Result<UpstreamResponse, DispatchError> {
-    let body = serde_json::to_vec(body).map_err(|source| DispatchError::Encode { source })?;
-    let headers = header_map(headers).map_err(|source| DispatchError::Headers { source })?;
+) -> Result<UpstreamResponse, DispatchError>
+where
+    T: serde::Serialize + Sync,
+{
+    let bytes = serde_json::to_vec(body).map_err(|source| DispatchError::Encode { source })?;
+    let wire_headers = header_map(headers).map_err(|source| DispatchError::Headers { source })?;
     let request = WireRequest {
         method: Method::POST,
         url,
-        headers: &headers,
-        body: &body,
+        headers: &wire_headers,
+        body: &bytes,
         deadline,
     };
     context.transport.post(&request).await
@@ -166,16 +170,16 @@ async fn oci(
     );
     let given = call.headers.clone().unwrap_or_default();
     let mut headers = header_map(&given).map_err(|source| DispatchError::Headers { source })?;
-    crate::oci_embed::validate_environment(&mut headers, &credentials, &OciEnvironment::default())?;
+    oci_embed::validate_environment(&mut headers, &credentials, &OciEnvironment::default())?;
     // LiteLLM's OCIEmbedConfig.get_complete_url reads api_base or litellm.api_base
-    let url = crate::oci_embed::get_complete_url(
+    let url = oci_embed::get_complete_url(
         &credentials,
         call.api_base.as_deref().or(context.globals.api_base),
     )?;
-    let params: crate::oci_embed::OciEmbedParams = convert(&call.optional_params)?;
+    let params: oci_embed::OciEmbedParams = convert(&call.optional_params)?;
     let input: EmbeddingInput = convert(&call.input)?;
     let request =
-        crate::oci_embed::transform_embedding_request(&call.model, &input, &params, &credentials)?;
+        oci_embed::transform_embedding_request(&call.model, &input, &params, &credentials)?;
     let signed = sign_oci_request(&mut headers, &credentials, &request, &url, context.clock)?;
     let wire = WireRequest {
         method: Method::POST,
@@ -185,6 +189,6 @@ async fn oci(
         deadline: call.timeout,
     };
     let response = context.transport.post(&wire).await?;
-    let reply = crate::oci_embed::response::decode_embed_response(response.status, &response.body)?;
+    let reply = oci_embed::response::decode_embed_response(response.status, &response.body)?;
     Ok(EmbeddingReply::Oci(Box::new(reply)))
 }

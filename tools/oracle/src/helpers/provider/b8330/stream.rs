@@ -40,10 +40,9 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
         },
         &transport,
     ));
-    let request = match transport.first() {
-        Some(sent) => request_view(&sent.url, &sent.headers, case.provider.kept_headers(), None),
-        None => Value::Null,
-    };
+    let request = transport.first().map_or(Value::Null, |sent| {
+        request_view(&sent.url, &sent.headers, case.provider.kept_headers(), None)
+    });
     Ok(json!({"request": request, "error": error_or_null(&outcome)}))
 }
 
@@ -89,8 +88,11 @@ async fn drain(
 }
 
 fn stream_head(case: &Case) -> StreamHead {
-    let body = case.answer_body();
-    let status = case.answer_status();
+    let body = case
+        .answer
+        .as_ref()
+        .map_or_else(String::new, |answer| answer.body.clone());
+    let status = case.answer.as_ref().map_or(200, |answer| answer.status);
     // a checked division keeps the arithmetic lint quiet; the middle index never exceeds the body length
     let middle = body.len().checked_div(2).unwrap_or_default();
     let (first, second) = body.as_bytes().split_at(middle);

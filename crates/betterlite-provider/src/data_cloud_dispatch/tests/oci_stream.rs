@@ -100,7 +100,7 @@ async fn oci_stream_sends_the_json_body_without_a_signature() {
         String::from("model"),
         PromptJson::Text(String::from("cohere.command-r-plus")),
     )]));
-    let stream = open_stream(
+    let _stream = open_stream(
         OciStreamRequest {
             api_base: "https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat",
             headers,
@@ -109,8 +109,8 @@ async fn oci_stream_sends_the_json_body_without_a_signature() {
         },
         &transport,
     )
-    .await;
-    assert!(stream.is_ok());
+    .await
+    .expect("the stream opens");
     let sent = transport.sent();
     let body: PromptJson = serde_json::from_slice(&sent[0].body).expect("the body is JSON");
     assert_eq!(
@@ -150,10 +150,11 @@ async fn oci_stream_maps_a_status_failure_to_the_oci_error() {
 
 #[tokio::test]
 async fn oci_stream_carries_a_utf8_sequence_split_across_reads() {
-    let line = "data: {\"message\":{\"content\":[{\"type\":\"TEXT\",\"text\":\"héllo\"}]}}\n\n";
+    let line =
+        "data: {\"message\":{\"content\":[{\"type\":\"TEXT\",\"text\":\"h\u{e9}llo\"}]}}\n\n";
     let bytes = line.as_bytes();
     let split = line
-        .find('é')
+        .find('\u{e9}')
         .expect("the fixture holds a two-byte sequence")
         + 1;
     let first = Ok(bytes[..split].to_vec());
@@ -184,7 +185,7 @@ async fn oci_stream_carries_a_utf8_sequence_split_across_reads() {
             contents.push(content);
         }
     }
-    assert_eq!(contents, vec![String::from("héllo")]);
+    assert_eq!(contents, vec![String::from("h\u{e9}llo")]);
 }
 
 #[tokio::test]

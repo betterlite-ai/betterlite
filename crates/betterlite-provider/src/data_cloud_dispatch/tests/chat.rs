@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret, SecretString};
 
+use crate::data_cloud_dispatch::call::CompletionCall;
 use crate::data_cloud_dispatch::chat::{complete_databricks, dispatch};
 use crate::data_cloud_dispatch::context::{CallLogging, DispatchGlobals};
 use crate::data_cloud_dispatch::error::DispatchError;
@@ -30,21 +32,13 @@ fn databricks_completion_prefers_the_context_then_the_globals() {
     globals.api_key = Some(SecretString::from("global-key"));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = dispatch(
+    let (outcome, calls, _state) = run_arm(
         ChatConfigTag::Databricks,
-        &fixture.context(globals.borrowed()),
+        &fixture,
+        globals.borrowed(),
         &handler,
-        &mut log,
-    )
-    .expect("the databricks arm answers");
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
-    let calls = handler.calls();
     assert_eq!(calls.len(), 1);
     let call = &calls[0];
     assert_eq!(
@@ -72,19 +66,8 @@ fn databricks_completion_reads_the_environment_when_no_setting_is_given() {
         ("DATABRICKS_API_KEY", "env-key"),
     ]);
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
-    assert!(outcome.is_ok());
-    let calls = handler.calls();
+    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0].api_base.as_deref(),
         Some("https://env.example.com")
@@ -103,19 +86,10 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
     globals.api_key = Some(SecretString::from("global-key"));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
-    assert!(outcome.is_ok());
+    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
-        handler.calls()[0]
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
+        calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("global-key")
     );
 }
@@ -128,17 +102,7 @@ fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
         String::from("one"),
     )]));
     let handler = Recorder::failing(500);
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
+    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
     match outcome {
         Err(DispatchError::Handler(HandlerError::Upstream { status_code })) => {
             assert_eq!(status_code, 500);
@@ -185,18 +149,8 @@ fn handler_errors_report_their_status() {
 fn databricks_completion_without_a_stream_logs_nothing_on_success() {
     let fixture = Fixture::new();
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
-    assert!(outcome.is_ok());
+    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert!(state.model_call_details.get("original_response").is_none());
 }
 
@@ -205,18 +159,8 @@ fn databricks_completion_logs_the_opened_stream_once() {
     let mut fixture = Fixture::new();
     fixture.stream = Some(true);
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
-    assert!(outcome.is_ok());
+    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         state.model_call_details.get("original_response"),
         Some(&Json::Null)
@@ -235,48 +179,34 @@ fn snowflake_completion_passes_the_context_values_and_logs_only_a_failure() {
     fixture.api_base = Some(String::from("https://acct.snowflakecomputing.com/api/v2"));
     fixture.api_key = Some(SecretString::from("pat/abc"));
     fixture.stream = Some(true);
-    let redactor = redactor();
     let handler = Recorder::failing(400);
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = dispatch(
+    let (outcome, calls, state) = run_arm(
         ChatConfigTag::Snowflake,
-        &fixture.context(DispatchGlobals::default()),
+        &fixture,
+        DispatchGlobals::default(),
         &handler,
-        &mut log,
-    )
-    .expect("the snowflake arm answers");
+    );
     assert!(matches!(
         outcome,
         Err(DispatchError::Handler(HandlerError::Upstream {
             status_code: 400
         }))
     ));
-    let call = &handler.calls()[0];
-    assert_eq!(call.custom_llm_provider, "snowflake");
+    assert_eq!(calls[0].custom_llm_provider, "snowflake");
     assert_eq!(
-        call.api_key.as_ref().map(ExposeSecret::expose_secret),
+        calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("pat/abc")
     );
     assert!(state.model_call_details.get("original_response").is_some());
 
     let succeeding = Recorder::succeeding();
-    let (mut second_state, second_env) = logging(&redactor);
-    let mut second_log = CallLogging {
-        state: &mut second_state,
-        env: &second_env,
-    };
-    let outcome = dispatch(
+    let (answered, _calls, second_state) = run_arm(
         ChatConfigTag::Snowflake,
-        &fixture.context(DispatchGlobals::default()),
+        &fixture,
+        DispatchGlobals::default(),
         &succeeding,
-        &mut second_log,
-    )
-    .expect("the snowflake arm answers");
-    assert!(outcome.is_ok());
+    );
+    assert_eq!(answered.ok(), Some(String::from("reply")));
     assert!(
         second_state
             .model_call_details
@@ -318,21 +248,14 @@ fn oci_completion_passes_the_context_values_without_a_fallback() {
         String::from("1"),
     )]));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = dispatch(
+    let (outcome, calls, state) = run_arm(
         ChatConfigTag::OciChat,
-        &fixture.context(globals.borrowed()),
+        &fixture,
+        globals.borrowed(),
         &handler,
-        &mut log,
-    )
-    .expect("the oci arm answers");
-    assert!(outcome.is_ok());
-    let call = &handler.calls()[0];
+    );
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
+    let call = &calls[0];
     assert_eq!(call.api_base, None);
     assert!(call.api_key.is_none());
     assert!(call.headers.is_none());
@@ -350,16 +273,10 @@ fn databricks_completion_falls_back_to_the_global_headers() {
         String::from("one"),
     )]));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
-    assert!(outcome.is_ok());
+    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
-        handler.calls()[0]
+        calls[0]
             .headers
             .as_ref()
             .and_then(|headers| headers.get("X-Global")),
@@ -372,19 +289,9 @@ fn databricks_completion_names_the_literal_provider() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from("azure");
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
-    assert!(outcome.is_ok());
-    assert_eq!(handler.calls()[0].custom_llm_provider, "databricks");
+    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
+    assert_eq!(calls[0].custom_llm_provider, "databricks");
 }
 
 #[test]
@@ -392,19 +299,9 @@ fn databricks_completion_clears_the_provider_config() {
     let mut fixture = Fixture::new();
     fixture.provider_config = Some(ChatConfigTag::A2a);
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(
-        &fixture.context(DispatchGlobals::default()),
-        &handler,
-        &mut log,
-    );
-    assert!(outcome.is_ok());
-    assert_eq!(handler.calls()[0].provider_config, None);
+    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
+    assert_eq!(calls[0].provider_config, None);
 }
 
 #[test]
@@ -417,15 +314,8 @@ fn databricks_completion_treats_an_empty_context_setting_as_unset() {
     globals.api_base = Some(String::from("https://global.example.com"));
     globals.api_key = Some(SecretString::from("global-key"));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
-    assert!(outcome.is_ok());
-    let calls = handler.calls();
+    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     let call = &calls[0];
     assert_eq!(call.api_base.as_deref(), Some("https://global.example.com"));
     assert_eq!(
@@ -442,19 +332,10 @@ fn databricks_completion_skips_an_empty_global_key() {
     globals.api_key = Some(SecretString::from(String::new()));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
     let handler = Recorder::succeeding();
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
-    assert!(outcome.is_ok());
+    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
-        handler.calls()[0]
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
+        calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("databricks-key")
     );
 }
@@ -466,19 +347,51 @@ fn databricks_completion_skips_an_empty_databricks_key() {
     let mut globals = OwnedGlobals::empty();
     globals.databricks_key = Some(SecretString::from(String::new()));
     let handler = Recorder::succeeding();
+    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    assert_eq!(outcome.ok(), Some(String::from("reply")));
+    assert_eq!(
+        calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("env-key")
+    );
+}
+
+fn run_databricks(
+    fixture: &Fixture,
+    globals: DispatchGlobals<'_>,
+    handler: &Recorder,
+) -> (
+    Result<String, DispatchError>,
+    Vec<CompletionCall>,
+    LoggingState,
+) {
     let redactor = redactor();
     let (mut state, env) = logging(&redactor);
     let mut log = CallLogging {
         state: &mut state,
         env: &env,
     };
-    let outcome = complete_databricks(&fixture.context(globals.borrowed()), &handler, &mut log);
-    assert!(outcome.is_ok());
-    assert_eq!(
-        handler.calls()[0]
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("env-key")
-    );
+    let outcome = complete_databricks(&fixture.context(globals), handler, &mut log)
+        .expect("the databricks arm answers");
+    (outcome, handler.calls(), state)
+}
+
+fn run_arm(
+    tag: ChatConfigTag,
+    fixture: &Fixture,
+    globals: DispatchGlobals<'_>,
+    handler: &Recorder,
+) -> (
+    Result<String, DispatchError>,
+    Vec<CompletionCall>,
+    LoggingState,
+) {
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = dispatch(tag, &fixture.context(globals), handler, &mut log)
+        .expect("the dispatch table answers");
+    (outcome, handler.calls(), state)
 }

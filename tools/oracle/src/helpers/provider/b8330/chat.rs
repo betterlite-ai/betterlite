@@ -3,6 +3,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::compatible_wire::header_map;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
@@ -38,7 +39,7 @@ use tokio::runtime::Runtime;
 
 use super::fixtures::{ORACLE_UPSTREAM, Scripted, environment, logging, secrets};
 use super::input::{Case, Provider};
-use super::wire::{error_or_null, header_map, request_view};
+use super::wire::{error_or_null, request_view};
 
 const ORACLE_TOKEN: &str = "oracle-token";
 
@@ -98,12 +99,14 @@ struct Recorder {
 impl Recorder {
     fn first(&self) -> Result<CompletionCall, Box<HelperError>> {
         let recorded = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        match recorded.first() {
-            Some(call) => Ok(call.clone()),
-            None => Err(super::input_failure(String::from(
-                "the chat arm called no handler",
-            ))),
-        }
+        recorded.first().map_or_else(
+            || {
+                Err(super::input_failure(String::from(
+                    "the chat arm called no handler",
+                )))
+            },
+            |call| Ok(call.clone()),
+        )
     }
 }
 
@@ -115,10 +118,10 @@ impl ChatCompletionHandler for Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.clone());
-        match self.failure {
-            None => Ok(String::from("reply")),
-            Some(status_code) => Err(HandlerError::Upstream { status_code }),
-        }
+        self.failure.map_or_else(
+            || Ok(String::from("reply")),
+            |status_code| Err(HandlerError::Upstream { status_code }),
+        )
     }
 }
 
@@ -233,7 +236,7 @@ async fn databricks_request(
     .await
     .or_value_error()?;
     let url = databricks_url(call.api_base.as_deref(), &call.model).or_value_error()?;
-    Ok((url, header_map(&resolved)))
+    Ok((url, header_map(&resolved).or_value_error()?))
 }
 
 fn snowflake_request(
@@ -252,7 +255,7 @@ fn snowflake_request(
     let key = call.api_key.as_ref().map(|value| value.expose_secret());
     let mut headers = call.headers.clone().unwrap_or_default();
     snowflake_headers(&mut headers, &call.model, key).or_value_error()?;
-    Ok((url, header_map(&headers)))
+    Ok((url, header_map(&headers).or_value_error()?))
 }
 
 fn oci_request(
@@ -274,7 +277,10 @@ fn oci_prepared(
     source: EnvironmentSource<'_>,
     optional_params: &Object,
 ) -> Result<(OciCredentials, HeaderMap), Box<HelperError>> {
-    let mut headers = call.headers.as_ref().map(header_map).unwrap_or_default();
+    let mut headers = call.headers.as_ref().map_or_else(
+        || Ok(HeaderMap::new()),
+        |given| header_map(given).or_value_error(),
+    )?;
     let explicit = oci_explicit_params(optional_params).or_value_error()?;
     let oci_environment = source.oci().or_value_error()?;
     let credentials = resolve_oci_credentials(&explicit, &oci_environment);

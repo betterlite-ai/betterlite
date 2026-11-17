@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use betterlite_http::proxy::UpstreamResponse;
@@ -55,8 +55,8 @@ impl AzureOidcTokens for Offline {
 }
 
 impl OidcClock for Offline {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> Instant {
+        Instant::now()
     }
 
     fn unix_seconds(&self) -> i64 {

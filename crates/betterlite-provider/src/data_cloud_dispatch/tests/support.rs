@@ -26,9 +26,9 @@ use crate::data_cloud_dispatch::context::{DispatchContext, DispatchGlobals, Envi
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::handler::{ChatCompletionHandler, HandlerError};
 use crate::data_cloud_dispatch::transport::{PostTransport, StreamHead, WireRequest};
+use crate::databricks_auth::oauth::{OauthReply, OauthTokenRequest, OauthTokenSource};
 use crate::oci_common::Clock;
 
-use super::globals::OwnedGlobals;
 use super::lookup::secrets;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -91,7 +91,6 @@ fn user_message() -> Message {
 pub(super) struct Fixture {
     pub(super) secrets: SecretLookup,
     pub(super) environment: BTreeMap<String, String>,
-    pub(super) globals: OwnedGlobals,
     pub(super) model: String,
     pub(super) messages: Vec<Message>,
     pub(super) optional_params: Object,
@@ -109,7 +108,6 @@ impl Fixture {
         Self {
             secrets: secrets(),
             environment: BTreeMap::new(),
-            globals: OwnedGlobals::empty(),
             model: String::from("databricks-meta-llama-3-3-70b-instruct"),
             messages: vec![user_message()],
             optional_params: Object::new(),
@@ -185,10 +183,10 @@ impl ChatCompletionHandler for Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.clone());
-        match self.failure {
-            None => Ok(String::from("reply")),
-            Some(status_code) => Err(HandlerError::Upstream { status_code }),
-        }
+        self.failure.map_or_else(
+            || Ok(String::from("reply")),
+            |status_code| Err(HandlerError::Upstream { status_code }),
+        )
     }
 }
 
@@ -277,14 +275,9 @@ impl PostTransport for Scripted {
 pub(super) struct NoTokens;
 
 #[async_trait]
-impl crate::databricks_auth::oauth::OauthTokenSource for NoTokens {
-    async fn send(
-        &self,
-        _request: &crate::databricks_auth::oauth::OauthTokenRequest,
-    ) -> crate::databricks_auth::oauth::OauthReply {
-        crate::databricks_auth::oauth::OauthReply::Transport(String::from(
-            "the fixture holds no token source",
-        ))
+impl OauthTokenSource for NoTokens {
+    async fn send(&self, _request: &OauthTokenRequest) -> OauthReply {
+        OauthReply::Transport(String::from("the fixture holds no token source"))
     }
 }
 

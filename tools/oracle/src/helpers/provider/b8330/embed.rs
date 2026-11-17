@@ -40,19 +40,20 @@ pub(super) fn run(runtime: &Runtime, case: &Case) -> HelperResult {
 
 fn answer(case: &Case) -> UpstreamResponse {
     UpstreamResponse {
-        status: case.answer_status(),
+        status: case.answer.as_ref().map_or(200, |answer| answer.status),
         headers: HeaderMap::new(),
-        body: case.answer_body().into_bytes(),
+        body: case
+            .answer
+            .as_ref()
+            .map_or_else(String::new, |answer| answer.body.clone())
+            .into_bytes(),
     }
 }
 
 fn embedding_call(case: &Case) -> Result<EmbeddingCall, Box<HelperError>> {
     Ok(EmbeddingCall {
         model: case.model.clone(),
-        input: match &case.input {
-            Some(input) => input.clone(),
-            None => Json::Null,
-        },
+        input: case.input.clone().unwrap_or(Json::Null),
         optional_params: case.optional_params()?,
         litellm_params: Object::new(),
         api_key: case

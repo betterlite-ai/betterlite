@@ -15,33 +15,15 @@ use crate::snowflake::embedding::transform_embedding_response;
 
 use super::globals::OwnedGlobals;
 use super::support::{
-    FixedClock, Fixture, NoTokens, Scripted, TEST_KEY, databricks_embedding_reply, environment, ok,
-    status,
+    FixedClock, Fixture, NoTokens, Scripted, Sent, TEST_KEY, databricks_embedding_reply,
+    environment, ok, status,
 };
 
 #[tokio::test]
 async fn databricks_embedding_sends_the_prepared_request() {
-    let mut fixture = Fixture::new();
-    fixture.model = String::from("databricks-bge-large-en");
-    fixture.environment = environment(&[
-        (
-            "DATABRICKS_API_BASE",
-            "https://dbc.example.com/serving-endpoints",
-        ),
-        ("DATABRICKS_API_KEY", "db-key"),
-    ]);
+    let fixture = databricks_fixture();
     let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
-    let tokens = NoTokens;
-    let clock = FixedClock;
-    let call = embedding_call(&fixture);
-    let context = embedding_context(
-        &fixture,
-        DispatchGlobals::default(),
-        &transport,
-        &tokens,
-        &clock,
-    );
-    let reply = embedding_dispatch(&call, EmbeddingConfig::Databricks, &context)
+    let reply = send(&fixture, EmbeddingConfig::Databricks, &transport)
         .await
         .expect("the databricks embedding answers");
     let EmbeddingReply::Databricks(embedding) = reply else {
@@ -53,17 +35,8 @@ async fn databricks_embedding_sends_the_prepared_request() {
         sent[0].url,
         "https://dbc.example.com/serving-endpoints/embeddings"
     );
-    assert_eq!(
-        sent[0]
-            .headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer db-key")
-    );
-    let body: PromptJson = serde_json::from_slice(&sent[0].body).expect("the body is JSON");
-    let PromptJson::Object(fields) = body else {
-        panic!("expected a JSON object body");
-    };
+    assert_eq!(header(&sent[0], "authorization"), Some("Bearer db-key"));
+    let fields = body_fields(&sent[0]);
     assert_eq!(
         fields.get("model"),
         Some(&PromptJson::Text(String::from("databricks-bge-large-en")))
@@ -103,26 +76,11 @@ async fn databricks_embedding_reports_a_status_failure() {
 
 #[tokio::test]
 async fn snowflake_embedding_uses_the_cortex_url_and_snowflake_jwt() {
-    let mut fixture = Fixture::new();
-    fixture.model = String::from("openai-gpt-4.1");
-    fixture.environment = environment(&[
-        ("SNOWFLAKE_JWT", "pat/abc"),
-        ("SNOWFLAKE_ACCOUNT_ID", "acct1"),
-    ]);
+    let fixture = snowflake_fixture();
     let transport = Scripted::with_replies(vec![ok(
         r#"{"object":"list","data":[{"object":"embedding","embedding":[[0.1,0.2]],"index":0}],"model":"openai-gpt-4.1","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
     )]);
-    let tokens = NoTokens;
-    let clock = FixedClock;
-    let call = embedding_call(&fixture);
-    let context = embedding_context(
-        &fixture,
-        DispatchGlobals::default(),
-        &transport,
-        &tokens,
-        &clock,
-    );
-    let reply = embedding_dispatch(&call, EmbeddingConfig::Snowflake, &context)
+    let reply = send(&fixture, EmbeddingConfig::Snowflake, &transport)
         .await
         .expect("the snowflake embedding answers");
     let EmbeddingReply::Snowflake(embedding) = reply else {
@@ -135,24 +93,12 @@ async fn snowflake_embedding_uses_the_cortex_url_and_snowflake_jwt() {
         sent[0].url,
         "https://acct1.snowflakecomputing.com/api/v2/cortex/inference:embed"
     );
+    assert_eq!(header(&sent[0], "authorization"), Some("Bearer abc"));
     assert_eq!(
-        sent[0]
-            .headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer abc")
-    );
-    assert_eq!(
-        sent[0]
-            .headers
-            .get("x-snowflake-authorization-token-type")
-            .and_then(|value| value.to_str().ok()),
+        header(&sent[0], "x-snowflake-authorization-token-type"),
         Some("PROGRAMMATIC_ACCESS_TOKEN")
     );
-    let body: PromptJson = serde_json::from_slice(&sent[0].body).expect("the body is JSON");
-    let PromptJson::Object(fields) = body else {
-        panic!("expected a JSON object body");
-    };
+    let fields = body_fields(&sent[0]);
     assert_eq!(
         fields.get("model"),
         Some(&PromptJson::Text(String::from("openai-gpt-4.1")))
@@ -192,29 +138,11 @@ async fn snowflake_embedding_reports_the_upstream_status() {
 
 #[tokio::test]
 async fn oci_embedding_signs_the_request_and_decodes_the_reply() {
-    let mut fixture = Fixture::new();
-    fixture.model = String::from("cohere.embed-english-v3.0");
-    fixture.environment = environment(&[
-        ("OCI_USER", "ocid1.user.oc1..bbbb"),
-        ("OCI_FINGERPRINT", "aa:bb:cc"),
-        ("OCI_TENANCY", "ocid1.tenancy.oc1..cccc"),
-        ("OCI_KEY", TEST_KEY),
-        ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
-    ]);
+    let fixture = oci_fixture();
     let transport = Scripted::with_replies(vec![ok(
         r#"{"embeddings":[[0.1,0.2]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0"}"#,
     )]);
-    let tokens = NoTokens;
-    let clock = FixedClock;
-    let call = embedding_call(&fixture);
-    let context = embedding_context(
-        &fixture,
-        DispatchGlobals::default(),
-        &transport,
-        &tokens,
-        &clock,
-    );
-    let reply = embedding_dispatch(&call, EmbeddingConfig::Oci, &context)
+    let reply = send(&fixture, EmbeddingConfig::Oci, &transport)
         .await
         .expect("the oci embedding answers");
     let EmbeddingReply::Oci(embedding) = reply else {
@@ -228,10 +156,7 @@ async fn oci_embedding_signs_the_request_and_decodes_the_reply() {
     );
     assert!(sent[0].headers.contains_key("authorization"));
     assert!(sent[0].headers.contains_key("x-content-sha256"));
-    let body: PromptJson = serde_json::from_slice(&sent[0].body).expect("the body is JSON");
-    let PromptJson::Object(fields) = body else {
-        panic!("expected a JSON object body");
-    };
+    let fields = body_fields(&sent[0]);
     assert_eq!(
         fields.get("compartmentId"),
         Some(&PromptJson::Text(String::from(
@@ -530,6 +455,72 @@ async fn snowflake_embedding_skips_an_empty_call_key() {
             .and_then(|value| value.to_str().ok()),
         Some("Bearer abc")
     );
+}
+
+async fn send(
+    fixture: &Fixture,
+    config: EmbeddingConfig,
+    transport: &Scripted,
+) -> Result<EmbeddingReply, DispatchError> {
+    let tokens = NoTokens;
+    let clock = FixedClock;
+    let call = embedding_call(fixture);
+    let context = embedding_context(
+        fixture,
+        DispatchGlobals::default(),
+        transport,
+        &tokens,
+        &clock,
+    );
+    embedding_dispatch(&call, config, &context).await
+}
+
+fn header<'sent>(sent: &'sent Sent, name: &str) -> Option<&'sent str> {
+    sent.headers.get(name).and_then(|value| value.to_str().ok())
+}
+
+fn body_fields(sent: &Sent) -> Object {
+    let body: PromptJson = serde_json::from_slice(&sent.body).expect("the body is JSON");
+    let PromptJson::Object(fields) = body else {
+        panic!("expected a JSON object body");
+    };
+    fields
+}
+
+fn databricks_fixture() -> Fixture {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("databricks-bge-large-en");
+    fixture.environment = environment(&[
+        (
+            "DATABRICKS_API_BASE",
+            "https://dbc.example.com/serving-endpoints",
+        ),
+        ("DATABRICKS_API_KEY", "db-key"),
+    ]);
+    fixture
+}
+
+fn snowflake_fixture() -> Fixture {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("openai-gpt-4.1");
+    fixture.environment = environment(&[
+        ("SNOWFLAKE_JWT", "pat/abc"),
+        ("SNOWFLAKE_ACCOUNT_ID", "acct1"),
+    ]);
+    fixture
+}
+
+fn oci_fixture() -> Fixture {
+    let mut fixture = Fixture::new();
+    fixture.model = String::from("cohere.embed-english-v3.0");
+    fixture.environment = environment(&[
+        ("OCI_USER", "ocid1.user.oc1..bbbb"),
+        ("OCI_FINGERPRINT", "aa:bb:cc"),
+        ("OCI_TENANCY", "ocid1.tenancy.oc1..cccc"),
+        ("OCI_KEY", TEST_KEY),
+        ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
+    ]);
+    fixture
 }
 
 fn status_with_headers(

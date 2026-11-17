@@ -98,20 +98,6 @@ pub(super) struct Case {
 }
 
 impl Case {
-    pub(super) fn answer_status(&self) -> u16 {
-        match &self.answer {
-            Some(answer) => answer.status,
-            None => 200,
-        }
-    }
-
-    pub(super) fn answer_body(&self) -> String {
-        match &self.answer {
-            Some(answer) => answer.body.clone(),
-            None => String::new(),
-        }
-    }
-
     pub(super) fn optional_params(&self) -> Result<Object, Box<HelperError>> {
         match &self.optional_params {
             None | Some(Json::Null) => Ok(Object::new()),

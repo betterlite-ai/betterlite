@@ -39,10 +39,9 @@ impl EnvironmentSource<'_> {
     }
 
     pub fn text(&self, name: &'static str) -> Result<Option<String>, DispatchError> {
-        match self.secret(name)? {
-            Some(secret) => Ok(Some(secret.expose_secret().to_owned())),
-            None => Ok(None),
-        }
+        Ok(self
+            .secret(name)?
+            .map(|secret| secret.expose_secret().to_owned()))
     }
 
     // LiteLLM's resolve_oci_credentials reads the OCI_* variables when the caller passes none
