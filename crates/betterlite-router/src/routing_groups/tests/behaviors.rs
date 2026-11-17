@@ -379,6 +379,8 @@ fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
         ("openai/e", "{}"),
         ("e", r#"{"reasoning_effort_levels": ["max"]}"#),
         ("openai/s", r#""nope""#),
+        ("openai/n", "null"),
+        ("n", r#"{"reasoning_effort_levels": ["minimal"]}"#),
     ]);
     assert_eq!(
         declared_efforts_for_model("m", "openai", &map),
@@ -387,6 +389,10 @@ fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
     assert_eq!(
         declared_efforts_for_model("e", "openai", &map),
         Some(vec![ReasoningEffort::Max])
+    );
+    assert_eq!(
+        declared_efforts_for_model("n", "openai", &map),
+        Some(vec![ReasoningEffort::Minimal])
     );
     assert_eq!(declared_efforts_for_model("s", "openai", &map), None);
     assert_eq!(declared_efforts_for_model("absent", "openai", &map), None);
@@ -418,19 +424,16 @@ fn the_group_aggregate_intersects_known_deployments() {
     let mut efforts = GroupReasoningEfforts::default();
     efforts.observe(Some(vec![ReasoningEffort::Low, ReasoningEffort::High]));
     efforts.observe(Some(vec![ReasoningEffort::High]));
-    assert_eq!(
-        efforts.supported(),
-        Some([ReasoningEffort::High].as_slice())
-    );
-    assert!(!efforts.is_unknown());
+    assert_eq!(efforts.supported, Some(vec![ReasoningEffort::High]));
+    assert!(!efforts.unknown);
 }
 
 fn the_group_aggregate_clears_on_an_unknown_deployment() {
     let mut efforts = GroupReasoningEfforts::default();
     efforts.observe(None);
     efforts.observe(Some(vec![ReasoningEffort::Low]));
-    assert_eq!(efforts.supported(), None);
-    assert!(efforts.is_unknown());
+    assert_eq!(efforts.supported, None);
+    assert!(efforts.unknown);
 }
 
 fn catalog_mapping_needs_both_modes() {

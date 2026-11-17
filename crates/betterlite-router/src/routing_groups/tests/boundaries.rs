@@ -390,8 +390,8 @@ fn a_late_unknown_deployment_clears_the_aggregate() {
     let mut efforts = GroupReasoningEfforts::default();
     efforts.observe(Some(vec![ReasoningEffort::Low]));
     efforts.observe(None);
-    assert_eq!(efforts.supported(), None);
-    assert!(efforts.is_unknown());
+    assert_eq!(efforts.supported, None);
+    assert!(efforts.unknown);
 }
 
 fn an_empty_declared_list_is_a_known_empty() {

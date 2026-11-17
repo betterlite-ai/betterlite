@@ -42,7 +42,10 @@ pub fn params_with_reasoning_override(
     request_kwargs: &JsonMap,
 ) -> JsonMap {
     let mut sanitized = deployment_params.clone();
-    if absent_or_null(request_kwargs, REASONING_EFFORT) {
+    if matches!(
+        request_kwargs.get(REASONING_EFFORT),
+        None | Some(Json::Null)
+    ) {
         return sanitized;
     }
     sanitized.pop("thinking");
@@ -110,7 +113,9 @@ pub fn drop_classifier_effort<S>(
 where
     S: ParamSupport,
 {
-    if absent_or_null(kwargs, REASONING_EFFORT) || !is_classifier_internal_call(kwargs) {
+    if matches!(kwargs.get(REASONING_EFFORT), None | Some(Json::Null))
+        || !is_classifier_internal_call(kwargs)
+    {
         return None;
     }
     if deployment_accepts_param(&deployment.to_json(), model, REASONING_EFFORT, support) {
@@ -201,10 +206,6 @@ where
                 .any(|deployment| deployment_accepts_param(deployment, model, param, support))
         })
         .collect()
-}
-
-fn absent_or_null(map: &JsonMap, key: &str) -> bool {
-    matches!(map.get(key), None | Some(Json::Null))
 }
 
 fn params_of(map: &JsonMap) -> Params {

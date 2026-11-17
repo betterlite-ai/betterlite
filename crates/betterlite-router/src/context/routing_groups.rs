@@ -7,22 +7,18 @@ use crate::routing_groups::priority::prioritized;
 
 pub(super) const CONFIGURED: bool = true;
 
+// Router._get_routing_group_deployments: a callable group serves only its members, in priority order.
 pub(super) fn apply(
     candidates: CandidateSet,
     route: &RouteContext<'_>,
 ) -> Ready<Result<CandidateSet, RoutingError>> {
-    ready(Ok(narrowed(candidates, route)))
-}
-
-// Router._get_routing_group_deployments: a callable group serves only its members, in priority order.
-fn narrowed(candidates: CandidateSet, route: &RouteContext<'_>) -> CandidateSet {
     if route.request.specific_deployment {
-        return candidates;
+        return ready(Ok(candidates));
     }
     let Some(group) = route.services.routing_group(route.request.model) else {
-        return candidates;
+        return ready(Ok(candidates));
     };
-    CandidateSet {
+    ready(Ok(CandidateSet {
         deployments: candidates
             .deployments
             .into_iter()
@@ -34,5 +30,5 @@ fn narrowed(candidates: CandidateSet, route: &RouteContext<'_>) -> CandidateSet 
             })
             .map(|deployment| prioritized(group, &deployment))
             .collect(),
-    }
+    }))
 }

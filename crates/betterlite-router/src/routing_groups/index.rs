@@ -65,11 +65,6 @@ impl RoutingGroupIndex {
         Ok(Built { index, warnings })
     }
 
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.groups.is_empty()
-    }
-
     // get_routing_group: a deployment name or alias added after init shadows a same-named group.
     #[must_use]
     pub fn callable_group(&self, name: &str) -> Option<&RoutingGroup> {
@@ -92,11 +87,6 @@ impl RoutingGroupIndex {
         self.model_to_group
             .get(model)
             .and_then(|group| self.groups.get(group))
-    }
-
-    #[must_use]
-    pub fn group_names(&self) -> impl Iterator<Item = &str> {
-        self.groups.keys().map(String::as_str)
     }
 
     // _replace_routing_groups: each group's own selector with the args its owner decoded, then B019's routes over the same names and members.
@@ -147,7 +137,8 @@ impl RoutingGroupIndex {
         let groups: Vec<&RoutingGroup> = match requested {
             Some(name) => self.callable_group(name).into_iter().collect(),
             None => self
-                .group_names()
+                .groups
+                .keys()
                 .filter_map(|name| self.callable_group(name))
                 .collect(),
         };

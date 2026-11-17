@@ -38,21 +38,6 @@ impl EffortFlag {
             ) => Self::Other,
         }
     }
-
-    #[must_use]
-    pub const fn is_present(self) -> bool {
-        !matches!(self, Self::Absent)
-    }
-
-    #[must_use]
-    pub const fn is_true(self) -> bool {
-        matches!(self, Self::True)
-    }
-
-    #[must_use]
-    pub const fn is_false(self) -> bool {
-        matches!(self, Self::False)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -68,13 +53,13 @@ impl EffortFlags {
     pub(super) fn any_present(&self) -> bool {
         [self.none, self.minimal, self.low, self.xhigh, self.max]
             .into_iter()
-            .any(EffortFlag::is_present)
+            .any(|flag| !matches!(flag, EffortFlag::Absent))
     }
 
     pub(super) fn all_absent(&self) -> bool {
         [self.none, self.minimal, self.low, self.xhigh, self.max]
             .into_iter()
-            .all(|flag| !flag.is_present())
+            .all(|flag| matches!(flag, EffortFlag::Absent))
     }
 
     pub(super) fn get(&self, effort: ReasoningEffort) -> EffortFlag {
@@ -109,11 +94,15 @@ pub fn bare_model_entry(model_info: &JsonMap, model_cost: &ModelCostMap) -> Json
 pub fn declared_effort_flags(model_info: &JsonMap, model_cost: &ModelCostMap) -> EffortFlags {
     let bare = bare_model_entry(model_info, model_cost);
     let read = |flag: &str| {
-        let own = EffortFlag::read(field(model_info, flag));
-        if own.is_present() {
+        let own = EffortFlag::read(
+            model_info
+                .get(flag)
+                .filter(|value| !matches!(value, Json::Null)),
+        );
+        if !matches!(own, EffortFlag::Absent) {
             own
         } else {
-            EffortFlag::read(field(&bare, flag))
+            EffortFlag::read(bare.get(flag).filter(|value| !matches!(value, Json::Null)))
         }
     };
     EffortFlags {
@@ -132,9 +121,14 @@ pub fn declared_reasoning_efforts(
     model_cost: &ModelCostMap,
 ) -> Option<Vec<ReasoningEffort>> {
     let bare = bare_model_entry(model_info, model_cost);
-    let raw = match field(model_info, DECLARED_EFFORTS_KEY) {
+    let raw = match model_info
+        .get(DECLARED_EFFORTS_KEY)
+        .filter(|value| !matches!(value, Json::Null))
+    {
         Some(value) => Some(value),
-        None => field(&bare, DECLARED_EFFORTS_KEY),
+        None => bare
+            .get(DECLARED_EFFORTS_KEY)
+            .filter(|value| !matches!(value, Json::Null)),
     };
     let Some(Json::List(entries)) = raw else {
         return None;
@@ -166,8 +160,10 @@ pub fn declared_efforts_for_model(
         let Ok(value) = serde_json::from_str::<Json>(raw.get()) else {
             return None;
         };
-        let Json::Object(prefixed) = value else {
-            return None;
+        let prefixed = match value {
+            Json::Object(prefixed) => prefixed,
+            Json::Null => JsonMap::new(),
+            Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => return None,
         };
         if !prefixed.is_empty() {
             return declared_reasoning_efforts(&prefixed, model_cost);
@@ -177,12 +173,8 @@ pub fn declared_efforts_for_model(
     declared_reasoning_efforts(&entry, model_cost)
 }
 
-pub(super) fn field<'map>(map: &'map JsonMap, key: &str) -> Option<&'map Json> {
-    map.get(key).filter(|value| !matches!(value, Json::Null))
-}
-
 pub(super) fn text<'map>(map: &'map JsonMap, key: &str) -> Option<&'map str> {
-    match field(map, key) {
+    match map.get(key).filter(|value| !matches!(value, Json::Null)) {
         Some(Json::Text(value)) => Some(value),
         None
         | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {

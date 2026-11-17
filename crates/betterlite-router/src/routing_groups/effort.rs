@@ -5,7 +5,7 @@ use betterlite_openai::openai_base_config::{ModelFamily, azure_model_family};
 
 use self::declared::{
     ADVERTISEMENT_ORDER, EffortFlag, EffortFlags, declared_effort_flags,
-    declared_reasoning_efforts, field, text,
+    declared_reasoning_efforts, text,
 };
 use crate::router_predicates::JsonMap;
 
@@ -29,22 +29,27 @@ pub fn nearest_declared_effort(
     requested: ReasoningEffort,
     declared: &[ReasoningEffort],
 ) -> ReasoningEffort {
-    let Some(requested_rank) = strength_rank(requested) else {
+    let Some(requested_rank) = STRENGTH_ORDER.iter().position(|level| *level == requested) else {
         return requested;
     };
     let mut ranked: Vec<ReasoningEffort> = declared
         .iter()
         .copied()
-        .filter(|effort| strength_rank(*effort).is_some())
+        .filter(|effort| STRENGTH_ORDER.contains(effort))
         .collect();
-    ranked.sort_by_key(|effort| strength_rank(*effort));
+    ranked.sort_by_key(|effort| STRENGTH_ORDER.iter().position(|level| level == effort));
     if ranked.contains(&requested) || ranked.is_empty() {
         return requested;
     }
     ranked
         .iter()
         .copied()
-        .find(|effort| strength_rank(*effort).is_some_and(|rank| rank >= requested_rank))
+        .find(|effort| {
+            STRENGTH_ORDER
+                .iter()
+                .position(|level| level == effort)
+                .is_some_and(|rank| rank >= requested_rank)
+        })
         .or_else(|| ranked.last().copied())
         .unwrap_or(requested)
 }
@@ -58,7 +63,12 @@ pub fn deployment_is_catalog_mapped(
     let Some(resolved) = resolved_model_info else {
         return false;
     };
-    field(resolved, "mode").is_some() && field(operator_model_info, "mode").is_none()
+    resolved
+        .get("mode")
+        .is_some_and(|value| !matches!(value, Json::Null))
+        && operator_model_info
+            .get("mode")
+            .is_none_or(|value| matches!(value, Json::Null))
 }
 
 // resolve_supported_reasoning_efforts: None is unknown, a Some of an empty list is a known model that accepts no level.
@@ -68,7 +78,9 @@ pub fn resolve_supported_efforts(
     deployment_is_mapped: bool,
     model_cost: &ModelCostMap,
 ) -> Option<Vec<ReasoningEffort>> {
-    let supports_reasoning = field(model_info, "supports_reasoning");
+    let supports_reasoning = model_info
+        .get("supports_reasoning")
+        .filter(|value| !matches!(value, Json::Null));
     if matches!(supports_reasoning, Some(Json::Bool(false))) {
         return Some(Vec::new());
     }
@@ -89,14 +101,14 @@ pub fn resolve_supported_efforts(
 fn advertised_levels(model_info: &JsonMap, flags: &EffortFlags) -> Vec<ReasoningEffort> {
     let mut allowed: Vec<ReasoningEffort> = Vec::new();
     for effort in [ReasoningEffort::Minimal, ReasoningEffort::Low] {
-        if !flags.get(effort).is_false() {
+        if !matches!(flags.get(effort), EffortFlag::False) {
             allowed.push(effort);
         }
     }
     allowed.push(ReasoningEffort::Medium);
     allowed.push(ReasoningEffort::High);
     for effort in [ReasoningEffort::Xhigh, ReasoningEffort::Max] {
-        if flags.get(effort).is_true() {
+        if matches!(flags.get(effort), EffortFlag::True) {
             allowed.push(effort);
         }
     }
@@ -113,15 +125,15 @@ fn advertised_levels(model_info: &JsonMap, flags: &EffortFlags) -> Vec<Reasoning
 #[must_use]
 pub fn supports_none_reasoning_effort(model_info: &JsonMap, flag: EffortFlag) -> bool {
     if text(model_info, "litellm_provider") != Some(AZURE) {
-        return !flag.is_false();
+        return !matches!(flag, EffortFlag::False);
     }
     let Some(key) = text(model_info, "key") else {
-        return !flag.is_false();
+        return !matches!(flag, EffortFlag::False);
     };
     if azure_model_family(key) != ModelFamily::GptReasoning {
-        return !flag.is_false();
+        return !matches!(flag, EffortFlag::False);
     }
-    flag.is_true()
+    matches!(flag, EffortFlag::True)
 }
 
 // intersect_supported_efforts: None never narrows, and an effort survives every deployment.
@@ -145,8 +157,8 @@ pub fn intersect_supported_efforts(
 // The model-group aggregate get_model_group_info builds out of each deployment's answer.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GroupReasoningEfforts {
-    supported: Option<Vec<ReasoningEffort>>,
-    unknown: bool,
+    pub(super) supported: Option<Vec<ReasoningEffort>>,
+    pub(super) unknown: bool,
     initialized: bool,
 }
 
@@ -170,18 +182,4 @@ impl GroupReasoningEfforts {
             Some(_) => {}
         }
     }
-
-    #[must_use]
-    pub fn supported(&self) -> Option<&[ReasoningEffort]> {
-        self.supported.as_deref()
-    }
-
-    #[must_use]
-    pub const fn is_unknown(&self) -> bool {
-        self.unknown
-    }
-}
-
-fn strength_rank(effort: ReasoningEffort) -> Option<usize> {
-    STRENGTH_ORDER.iter().position(|level| *level == effort)
 }

@@ -24,14 +24,15 @@ deviations:
       owner can pass per-group args without this module parsing JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1475-L1517
   - what: >-
-      declared_reasoning_efforts_for_model falls back from a non-object prefixed model_cost entry to the
-      bare entry only when the entry is an empty object; any other non-object entry yields None.
+      declared_efforts_for_model answers None for an empty list, empty string, zero or false prefixed
+      model_cost entry, where declared_reasoning_efforts_for_model's falsy `or` falls through to the bare
+      entry instead.
     why: >-
-      LiteLLM's `or` treats an empty list, empty string or zero as falsy too; the bundled map always holds
-      objects, so the difference needs a hand-edited map, and docs/compatibility.md keeps truthiness out.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L90-L103
+      LiteLLM's `or` treats those values as absent; the bundled map always holds objects, so the
+      difference needs a hand-edited map, and docs/compatibility.md keeps truthiness out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L100-L103
   - what: >-
-      _bare_model_entry treats a non-object cost-map twin as an empty entry, so the deployment advertises
+      bare_model_entry treats a non-object cost-map twin as an empty entry, so the deployment advertises
       the levels its own flags allow.
     why: >-
       LiteLLM returns the non-dict entry from model_cost.get and the next .get raises AttributeError, which
