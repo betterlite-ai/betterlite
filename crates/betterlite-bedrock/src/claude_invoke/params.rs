@@ -132,6 +132,7 @@ async fn translate_requested_thinking<'environment, Source, Transport, Lookup>(
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
 {
     thinking::translate_thinking(
         request.model,
