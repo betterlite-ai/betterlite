@@ -14,7 +14,7 @@ use crate::connection::{PostgresFixture, RandomDatabaseName};
 use crate::daily_usage::{self, DailyUsageError, DailyUsageRow, DailyUsageTable};
 use crate::error::FixtureError;
 use crate::seed::{FixtureSeed, KeyRow, TeamRow, UserRow};
-use crate::tests::postgres_server;
+use crate::tests::postgres_url;
 
 type ColumnExpectation = (&'static str, &'static str, bool, &'static str);
 type IndexExpectation = (&'static str, &'static [&'static str], bool);
@@ -494,7 +494,7 @@ async fn usage_schema_matches_pin() {
     if !postgres_available() {
         return;
     }
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let fixture = provision(&admin_url, &usage_seed_with(Vec::new())).await;
     let (client, driver) = connect(&fixture.options.url).await;
     assert_table_schema(&client, "LiteLLM_DailyUserSpend", USER_COLUMNS).await;
@@ -588,7 +588,7 @@ async fn usage_seeds_three_tables() {
     if !postgres_available() {
         return;
     }
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let fixture = provision(&admin_url, &usage_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
     let user = stored_row(&client, USER_ROW_SQL).await;
@@ -611,7 +611,7 @@ async fn usage_databases_are_independent() {
         return;
     }
     let seed = usage_seed();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let first = provision(&admin_url, &seed).await;
     let second = provision(&admin_url, &seed).await;
     let (writer, driver) = connect(&first.options.url).await;
@@ -822,7 +822,7 @@ async fn seed_revalidates_direct_callers() {
     if !postgres_available() {
         return;
     }
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let seed = usage_seed_with(Vec::new());
     let keys = seed.keys.clone();
     let fixture = provision(&admin_url, &seed).await;

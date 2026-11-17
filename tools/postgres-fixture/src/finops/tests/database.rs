@@ -13,7 +13,7 @@ use crate::connection::{PostgresFixture, RandomDatabaseName};
 use crate::error::FixtureError;
 use crate::finops::FinOpsFixtureError;
 use crate::seed::FixtureSeed;
-use crate::tests::{FixedName, postgres_server};
+use crate::tests::{FixedName, postgres_url};
 
 use super::support::{
     ORPHAN_HASH, VANTAGE_SETTINGS, deterministic_rows, expected_page, fixture_with, sample_finops,
@@ -392,7 +392,7 @@ async fn finops_seed_database_contract(#[case] case: DatabaseCase) {
     if !postgres_available() {
         return;
     }
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     match case {
         DatabaseCase::FiftyOneRows => check_sampling_boundary(&admin_url, 51, 50).await,
         DatabaseCase::FiveHundredOneRows => check_sampling_boundary(&admin_url, 501, 500).await,

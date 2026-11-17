@@ -13,7 +13,7 @@ pub(super) struct Server {
     fixture: PostgresFixture,
 }
 
-// B860's fixture chooses POSTGRES_TEST_URL or a testcontainers Postgres; parse_from keeps nextest's argv out of clap.
+// parse_from keeps nextest's argv out of clap
 pub(super) async fn start() -> Server {
     let configured = Environment::parse_from(["database-tls-tests"])
         .url

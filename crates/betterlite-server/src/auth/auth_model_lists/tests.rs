@@ -233,7 +233,12 @@ fn listing_provider_endpoint_check_lists_nothing() {
 #[test]
 fn listing_has_no_deployment_rows() {
     let config = loaded(REDIRECT_CONFIG);
-    let slot = Slot::new(&config, &Shared);
+    let slot = Slot::new(
+        &config,
+        &Shared {
+            bundled_catalog: BundledCatalog::default().get(),
+        },
+    );
     let groups = IndexMap::new();
     let granted_wildcard = strings(&["*"]);
     let expanded = slot

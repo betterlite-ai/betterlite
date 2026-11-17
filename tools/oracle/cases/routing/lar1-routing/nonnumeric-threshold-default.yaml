@@ -1,0 +1,39 @@
+kind: probe
+name: lar1-nonnumeric-threshold-default
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": "low", "confidence_threshold_medium": null, "confidence_threshold_high": [0.9]}'
+        metadata: '{"confidence": 0.5}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        routing_strategy_args: '{"confidence_threshold_low": "0.2"}'
+        metadata: '{"confidence": 0.25}'
+compare:
+  ignore: []

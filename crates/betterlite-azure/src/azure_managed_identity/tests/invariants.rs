@@ -1,7 +1,8 @@
+use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret as _;
 
 use super::super::selection::ManagedIdentityKind;
-use super::fixture::{APP_SERVICE, Fixture, RecordedHosted, Reply};
+use super::fixture::{APP_SERVICE, Fixture, RecordedHosted, Reply, redactor};
 
 const SCOPE: &str = "https://cognitiveservices.azure.com/.default";
 const SECRET: &str = "fixture-identity-header-secret";
@@ -17,19 +18,26 @@ fn header(request: &RecordedHosted, name: &str) -> Option<String> {
 
 #[test]
 fn azure_managed_identity_credential_identity_isolation() {
-    isolation_between_headers();
-    isolation_between_client_ids();
+    let redactor = &redactor();
+    isolation_between_headers(redactor);
+    isolation_between_client_ids(redactor);
 }
 
-fn isolation_between_headers() {
-    let first = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://app.test/first"),
-        ("IDENTITY_HEADER", "first-header-secret"),
-    ]);
-    let second = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://app.test/second"),
-        ("IDENTITY_HEADER", "second-header-secret"),
-    ]);
+fn isolation_between_headers(redactor: &Redactor) {
+    let first = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://app.test/first"),
+            ("IDENTITY_HEADER", "first-header-secret"),
+        ],
+        redactor,
+    );
+    let second = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://app.test/second"),
+            ("IDENTITY_HEADER", "second-header-secret"),
+        ],
+        redactor,
+    );
     first.hosted.push(Reply::ok(
         r#"{"access_token":"first-token","expires_on":1700003600}"#,
     ));
@@ -43,6 +51,10 @@ fn isolation_between_headers() {
         .unwrap();
     assert_eq!(first_token.token.expose_secret(), "first-token");
     assert_eq!(second_token.token.expose_secret(), "second-token");
+    assert_own_headers(&first, &second);
+}
+
+fn assert_own_headers(first: &Fixture<'_>, second: &Fixture<'_>) {
     let first_requests = first.hosted.recorded();
     let second_requests = second.hosted.recorded();
     assert_eq!(first_requests.len(), 1);
@@ -61,9 +73,15 @@ fn isolation_between_headers() {
     assert!(!format!("{:?}", second_requests[0]).contains("first-header-secret"));
 }
 
-fn isolation_between_client_ids() {
-    let first = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://first.test")]);
-    let second = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://second.test")]);
+fn isolation_between_client_ids(redactor: &Redactor) {
+    let first = Fixture::new(
+        &[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://first.test")],
+        redactor,
+    );
+    let second = Fixture::new(
+        &[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://second.test")],
+        redactor,
+    );
     first.imds.push(Reply::ok(
         r#"{"access_token":"first-token","expires_in":3600}"#,
     ));
@@ -94,11 +112,15 @@ fn isolation_between_client_ids() {
 
 #[test]
 fn azure_managed_identity_secret_safe_failure() {
-    let fixture = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", APP_SERVICE),
-        ("IDENTITY_HEADER", SECRET),
-        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
-    ]);
+    let redactor = &redactor();
+    let fixture = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", APP_SERVICE),
+            ("IDENTITY_HEADER", SECRET),
+            ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+        ],
+        redactor,
+    );
     fixture.hosted.push(Reply::ok(&format!(
         r#"{{"access_token":"fixture-access-token","error":{{"code":"SecretHeaderNotFound"}},"echo":"{SECRET}"}}"#
     )));

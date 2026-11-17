@@ -19,7 +19,7 @@ use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
@@ -119,7 +119,7 @@ fn hub_settings() -> HubSettings {
     }
 }
 
-pub(crate) fn counter() -> Counter {
+pub(crate) fn counter(catalog: &Arc<ModelCatalog>) -> Counter {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
@@ -135,8 +135,6 @@ pub(crate) fn counter() -> Counter {
         None,
         Arc::clone(&service),
     ));
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
     let hub = hub_settings();
     let clock = Arc::new(SystemHubClock::default());
     let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
@@ -153,13 +151,13 @@ pub(crate) fn counter() -> Counter {
         Arc::new(Instant::now),
     ));
     let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
+        fetcher,
         downloader,
-        Arc::clone(&catalog),
+        Arc::clone(catalog),
         Arc::clone(&service),
         true,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, Arc::clone(catalog), settings)
 }
 
 #[derive(Clone, Copy)]
