@@ -14,19 +14,17 @@ use betterlite_bedrock::converse_response::transform::{
 };
 use betterlite_bedrock::converse_response::wire::ModelResponse;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::request_policy::{BedrockRequestPolicy, Params};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use self::support::{
-    TokenizerCounter, entries, failure, fixture, instant, log_view, status_failure,
+    TokenizerCounter, environment_setup, failure, fixture, instant, log_view, status_failure,
 };
 
 mod support;
@@ -255,34 +253,20 @@ fn parse_ids(values: &[String]) -> Result<Vec<Uuid>, Box<HelperError>> {
         .collect()
 }
 
-struct Environment {
-    headers: IndexMap<String, String>,
-    key: Option<SecretString>,
-    policy: Option<BedrockRequestPolicy>,
-    params: Params,
-}
-
-fn environment_parts(case: &EnvironmentCase) -> Environment {
-    let policy = (!case.fields.is_empty()).then(|| BedrockRequestPolicy {
-        fields: case.fields.iter().cloned().collect(),
-    });
-    Environment {
-        headers: case.headers.iter().cloned().collect(),
-        key: case.api_key.as_deref().map(SecretString::from),
-        policy,
-        params: entries(&case.litellm_params),
-    }
-}
-
 fn environment_case(case: &EnvironmentCase) -> Result<Value, Box<HelperError>> {
-    let Environment {
-        headers,
-        key,
-        policy,
-        params,
-    } = environment_parts(case);
-    let merged = validate_environment(&headers, key.as_ref(), policy.as_ref(), &params)
-        .map_err(|error| status_failure(&error))?;
+    let setup = environment_setup(
+        &case.fields,
+        &case.headers,
+        &case.litellm_params,
+        case.api_key.as_deref(),
+    );
+    let merged = validate_environment(
+        &setup.headers,
+        setup.key.as_ref(),
+        setup.policy.as_ref(),
+        &setup.params,
+    )
+    .map_err(|error| status_failure(&error))?;
     Ok(json!({"headers": merged.into_iter().collect::<Vec<_>>()}))
 }
 

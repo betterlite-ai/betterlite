@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::converse_usage::transform::ReasoningTokenCounter;
 use betterlite_bedrock::error::BedrockError as MetadataError;
-use betterlite_bedrock::request_policy::{Params, RequestValue};
+use betterlite_bedrock::request_policy::{BedrockRequestPolicy, Params, RequestValue};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -15,6 +15,8 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
+use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -125,6 +127,31 @@ pub(crate) fn entries(value: &Value) -> Params {
     match request_value(value) {
         RequestValue::Mapping(pairs) => pairs,
         RequestValue::Text(_) | RequestValue::Secret(_) | RequestValue::Raw(_) => Params::new(),
+    }
+}
+
+pub(crate) struct EnvironmentSetup {
+    pub(crate) headers: IndexMap<String, String>,
+    pub(crate) key: Option<SecretString>,
+    pub(crate) policy: Option<BedrockRequestPolicy>,
+    pub(crate) params: Params,
+}
+
+// The metadata policy exists only when the case opts into fields, and the key stays secret until the merge formats it.
+pub(crate) fn environment_setup(
+    fields: &[String],
+    headers: &[(String, String)],
+    litellm_params: &Value,
+    api_key: Option<&str>,
+) -> EnvironmentSetup {
+    let policy = (!fields.is_empty()).then(|| BedrockRequestPolicy {
+        fields: fields.iter().cloned().collect(),
+    });
+    EnvironmentSetup {
+        headers: headers.iter().cloned().collect(),
+        key: api_key.map(SecretString::from),
+        policy,
+        params: entries(litellm_params),
     }
 }
 
