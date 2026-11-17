@@ -11,6 +11,8 @@ call:
           value: Im1vZGVsIjoidXBzdHJlYW0tbW9kZWwifX0KCg==
         - kind: text
           value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\nevent: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}\n\n"
     cache_stream: null
 env: {}
 compare: {ignore: []}
