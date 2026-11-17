@@ -112,7 +112,7 @@ impl Helper for Op {
                 }),
         };
         match outcome {
-            Ok(outcome) => view::outcome_view(&outcome, &logging_obj, &cost),
+            Ok(handled) => view::outcome_view(&handled, &logging_obj, &cost),
             Err(_) => Ok(json!({ "failed": true })),
         }
     }

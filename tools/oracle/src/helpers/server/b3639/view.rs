@@ -1,6 +1,5 @@
 use std::sync::PoisonError;
 
-use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::response::PassThroughResponse;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
@@ -10,6 +9,16 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 
 use super::RecordingCost;
+
+const DETAILS: &str = "details";
+const PROMPT_DETAILS: &str = "prompt_tokens_details";
+const USAGE_KEYS: [&str; 3] = ["prompt_tokens", "completion_tokens", "total_tokens"];
+const DETAIL_KEYS: [&str; 4] = [
+    "text_tokens",
+    "audio_tokens",
+    "image_tokens",
+    "video_tokens",
+];
 
 struct Logged {
     model: String,
@@ -29,7 +38,7 @@ pub(super) fn outcome_view(
     };
     Ok(json!({
         "result": result,
-        "kwargs": kwargs_view(&outcome.kwargs)?,
+        "kwargs": entry_view(&outcome.kwargs.entries)?,
         "logging": logging_view(logging_obj)?,
         "cost": cost_view(cost),
     }))
@@ -37,7 +46,20 @@ pub(super) fn outcome_view(
 
 fn result_view(response: &PassThroughResponse) -> Result<Value, Box<HelperError>> {
     match response {
-        PassThroughResponse::Embedding(value) => embedding_view(value),
+        PassThroughResponse::Embedding(value) => {
+            let Json::Object(fields) = value else {
+                return Err(helper_error(
+                    "UnexpectedResult",
+                    "the embedding reply is no object",
+                ));
+            };
+            Ok(json!({
+                "kind": "embedding",
+                "model": entry(fields, "model")?,
+                "data": count(fields.get("data")),
+                "usage": usage_view(&entry(fields, "usage")?),
+            }))
+        }
         PassThroughResponse::Image(value) => Ok(image_view(value)),
         PassThroughResponse::Standard(value) => {
             let body = serde_json::to_value(&value.response).or_value_error()?;
@@ -56,21 +78,6 @@ fn result_view(response: &PassThroughResponse) -> Result<Value, Box<HelperError>
     }
 }
 
-fn embedding_view(value: &Json) -> Result<Value, Box<HelperError>> {
-    let Json::Object(fields) = value else {
-        return Err(helper_error(
-            "UnexpectedResult",
-            "the embedding reply is no object",
-        ));
-    };
-    Ok(json!({
-        "kind": "embedding",
-        "model": entry(fields, "model")?,
-        "data": count(fields.get("data")),
-        "usage": usage_view(&entry(fields, "usage")?),
-    }))
-}
-
 fn image_view(value: &Json) -> Value {
     let data = match value {
         Json::Object(fields) => count(fields.get("data")),
@@ -83,34 +90,28 @@ fn usage_view(usage: &Value) -> Value {
     let Value::Object(fields) = usage else {
         return Value::Null;
     };
-    json!({
-        "prompt_tokens": field_or_null(fields, "prompt_tokens"),
-        "completion_tokens": field_or_null(fields, "completion_tokens"),
-        "total_tokens": field_or_null(fields, "total_tokens"),
-        "details": details_view(fields.get("prompt_tokens_details")),
-    })
+    let mut view = token_view(fields, &USAGE_KEYS);
+    view.insert(DETAILS.to_owned(), details_view(fields.get(PROMPT_DETAILS)));
+    Value::Object(view)
 }
 
 fn details_view(details: Option<&Value>) -> Value {
     let Some(Value::Object(fields)) = details else {
         return Value::Null;
     };
-    json!({
-        "text_tokens": field_or_null(fields, "text_tokens"),
-        "audio_tokens": field_or_null(fields, "audio_tokens"),
-        "image_tokens": field_or_null(fields, "image_tokens"),
-        "video_tokens": field_or_null(fields, "video_tokens"),
-    })
+    Value::Object(token_view(fields, &DETAIL_KEYS))
 }
 
-fn field_or_null(fields: &Map<String, Value>, name: &str) -> Value {
-    fields
-        .get(name)
-        .cloned()
-        .unwrap_or(Value::Null)
+fn token_view(fields: &Map<String, Value>, keys: &[&str]) -> Map<String, Value> {
+    let mut view = Map::new();
+    for key in keys {
+        let value = fields.get(*key).cloned().unwrap_or(Value::Null);
+        view.insert((*key).to_owned(), value);
+    }
+    view
 }
 
-fn count(value: Option<&Json>) -> usize {
+const fn count(value: Option<&Json>) -> usize {
     let Some(Json::List(items)) = value else {
         return 0;
     };
@@ -123,11 +124,12 @@ fn entry(fields: &Extra, name: &str) -> Result<Value, Box<HelperError>> {
     })
 }
 
-fn kwargs_view(kwargs: &PassThroughLoggingKwargs) -> Result<Value, Box<HelperError>> {
+// The kwargs and the logging details hold the same three keys, so both views share one builder.
+fn entry_view(fields: &Extra) -> Result<Value, Box<HelperError>> {
     Ok(json!({
-        "model": entry(&kwargs.entries, "model")?,
-        "custom_llm_provider": entry(&kwargs.entries, "custom_llm_provider")?,
-        "response_cost": entry(&kwargs.entries, "response_cost")?,
+        "model": entry(fields, "model")?,
+        "custom_llm_provider": entry(fields, "custom_llm_provider")?,
+        "response_cost": entry(fields, "response_cost")?,
     }))
 }
 
@@ -143,16 +145,15 @@ fn logging_view(logging_obj: &StreamLoggingObject) -> Result<Value, Box<HelperEr
             "the logging object holds no state",
         ));
     };
-    Ok(json!({
-        "model": logged.model,
-        "custom_llm_provider": logged.provider,
-        "call_type": logged.call_type,
-        "details": {
-            "model": entry(&logged.details, "model")?,
-            "custom_llm_provider": entry(&logged.details, "custom_llm_provider")?,
-            "response_cost": entry(&logged.details, "response_cost")?,
-        },
-    }))
+    let mut view = Map::new();
+    view.insert("model".to_owned(), Value::String(logged.model));
+    view.insert(
+        "custom_llm_provider".to_owned(),
+        logged.provider.map_or(Value::Null, Value::String),
+    );
+    view.insert("call_type".to_owned(), Value::String(logged.call_type));
+    view.insert("details".to_owned(), entry_view(&logged.details)?);
+    Ok(Value::Object(view))
 }
 
 fn cost_view(cost: &RecordingCost) -> Value {
