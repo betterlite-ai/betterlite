@@ -31,8 +31,8 @@ struct RawLiteLlm {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub global_disable_add_prefix_to_prompt: bool,
-    pub deployments: Vec<bool>,
+    pub global_disable_prefix: bool,
+    pub deployment_disable_prefix: Vec<bool>,
 }
 
 impl Section for Raw {
@@ -44,24 +44,24 @@ impl Section for Raw {
     {
         let name = "LITELLM_DISABLE_ADD_PREFIX_TO_PROMPT";
         let environment = betterlite_env::flag(name, &lookup.lookup(name).unwrap_or_default())?;
-        let global_disable_add_prefix_to_prompt = self
+        let global_disable_prefix = self
             .litellm_settings
             .disable_add_prefix_to_prompt
             .or(environment)
             .unwrap_or(false);
-        let deployments = self
+        let deployment_disable_prefix = self
             .model_list
             .into_iter()
             .map(|deployment| {
                 deployment
                     .litellm_params
                     .disable_add_prefix_to_prompt
-                    .unwrap_or(global_disable_add_prefix_to_prompt)
+                    .unwrap_or(global_disable_prefix)
             })
             .collect();
         Ok(Settings {
-            global_disable_add_prefix_to_prompt,
-            deployments,
+            global_disable_prefix,
+            deployment_disable_prefix,
         })
     }
 }
