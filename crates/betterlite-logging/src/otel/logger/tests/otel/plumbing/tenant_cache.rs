@@ -189,7 +189,7 @@ mod headers {
 
     use betterlite_logging::otel::config::ExporterOwner;
     use betterlite_logging::otel::config::destination::SpanScope;
-    use betterlite_logging::otel::plumbing::routing::routed::RouteKey;
+    use betterlite_logging::otel::plumbing::routing::routed::{RouteKey, TenantRouting as _};
 
     use crate::otel::support::{Built, cache, spec, with_exporters};
 

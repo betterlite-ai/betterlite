@@ -14,6 +14,7 @@ use crate::otel::vocabulary::registry::SpanRole;
 use super::FinishError;
 
 // one MCP span as LiteLLM's _emit_mcp_tool_call and _emit_mcp_list_tools build it: the role, the mapped data, the identity and the call
+#[derive(Clone, Copy)]
 pub(super) struct McpEmission<'emission, 'data> {
     pub(super) role: SpanRole,
     pub(super) data: &'emission SpanData<'data>,
@@ -67,8 +68,8 @@ fn drop_stray_carrier(logger: &OpenTelemetryV2, identity: &RequestIdentity) {
             .as_deref()
             .and_then(|id| calls.calls.shift_remove(id))
     };
-    if let Some(stray) = stray.as_ref() {
-        logger.tenants.release(stray.provider.as_ref());
+    if let Some(carrier) = stray.as_ref() {
+        logger.tenants.release(carrier.provider.as_ref());
     }
 }
 

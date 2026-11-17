@@ -71,14 +71,14 @@ fn open_at_boundary(
             &trace.destinations,
         )
         .map_err(callback_failed)?;
-    let (parent, links) = if route.detached {
+    let (parent_context, links) = if route.detached {
         (detached_context(&parent), request_trace_links(&parent))
     } else {
         (parent, Vec::new())
     };
     Ok(OpenCall {
         boundary: Some(BoundarySpan {
-            parent,
+            parent: parent_context,
             tracer: route.tracer,
             links,
         }),

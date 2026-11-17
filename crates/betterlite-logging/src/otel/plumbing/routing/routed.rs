@@ -70,9 +70,30 @@ impl fmt::Debug for RouteKey {
     }
 }
 
-impl TenantTracerCache {
+// the request fields a route is keyed by; a separate trait keeps the cache to one inherent impl
+pub(crate) trait TenantRouting {
+    fn credential_headers(
+        &self,
+        dynamic_params: Option<&StandardCallbackDynamicParams>,
+    ) -> BTreeMap<String, String>;
+    fn project_headers(
+        &self,
+        auth_metadata: Option<&BTreeMap<String, String>>,
+    ) -> BTreeMap<String, String>;
+    fn endpoint(&self, dynamic_params: Option<&StandardCallbackDynamicParams>) -> Option<String>;
+    #[must_use]
+    fn routed_config(
+        &self,
+        credential_headers: &BTreeMap<String, String>,
+        project_headers: &BTreeMap<String, String>,
+        endpoint: Option<&str>,
+        service_name: Option<&str>,
+    ) -> Settings;
+}
+
+impl TenantRouting for TenantTracerCache {
     // LiteLLM's _credential_headers: a callback owning only a header-ignoring exporter has nowhere to stamp credentials, so it warns once
-    pub(super) fn credential_headers(
+    fn credential_headers(
         &self,
         dynamic_params: Option<&StandardCallbackDynamicParams>,
     ) -> BTreeMap<String, String> {
@@ -86,14 +107,15 @@ impl TenantTracerCache {
         if self.credential_routable || requested.is_empty() {
             return requested;
         }
-        self.unroutable(
+        unroutable(
+            self,
             &self.warned_credential_unroutable,
             "OTel V2: request carries dynamic credentials, but the callback owns no OTLP exporter to stamp them onto; spans export to the default backend",
         )
     }
 
     // LiteLLM's _project_headers: the project header route is HTTP-only, so a gRPC-only exporter warns once and stays in the default project
-    pub(super) fn project_headers(
+    fn project_headers(
         &self,
         auth_metadata: Option<&BTreeMap<String, String>>,
     ) -> BTreeMap<String, String> {
@@ -101,27 +123,14 @@ impl TenantTracerCache {
         if self.project_routable || requested.is_empty() {
             return requested;
         }
-        self.unroutable(
+        unroutable(
+            self,
             &self.warned_project_unroutable,
             "OTel V2: key/team config names a per-request project, but its exporter is not OTLP/HTTP and the project header is HTTP-only; spans stay in the default project",
         )
     }
 
-    // LiteLLM warns once when a request's headers have nowhere to be stamped, then exports it unrouted
-    fn unroutable(&self, warned: &AtomicBool, message: &str) -> BTreeMap<String, String> {
-        if !warned.swap(true, Ordering::Relaxed) {
-            tracing::warn!(
-                callback = self.callback_name.as_deref().unwrap_or_default(),
-                "{message}"
-            );
-        }
-        BTreeMap::new()
-    }
-
-    pub(super) fn endpoint(
-        &self,
-        dynamic_params: Option<&StandardCallbackDynamicParams>,
-    ) -> Option<String> {
+    fn endpoint(&self, dynamic_params: Option<&StandardCallbackDynamicParams>) -> Option<String> {
         let empty = Json::Null;
         dynamic_otlp_endpoint(
             self.callback_name.as_deref(),
@@ -131,8 +140,7 @@ impl TenantTracerCache {
     }
 
     // LiteLLM's _routed_config: only the callback's own exporters are rewritten, and the tenant's service name wins
-    #[must_use]
-    pub fn routed_config(
+    fn routed_config(
         &self,
         credential_headers: &BTreeMap<String, String>,
         project_headers: &BTreeMap<String, String>,
@@ -145,53 +153,68 @@ impl TenantTracerCache {
                 .exporters
                 .iter()
                 .map(|spec| {
-                    self.routed_exporter(spec, credential_headers, project_headers, endpoint)
+                    routed_exporter(self, spec, credential_headers, project_headers, endpoint)
                 })
                 .collect(),
             ..self.config.clone()
         };
         routed.langfuse_span_scope = SpanScope::Full;
         if let Some(name) = service_name {
-            routed.service_name = name.to_owned();
+            name.clone_into(&mut routed.service_name);
         }
         routed
     }
+}
 
-    // LiteLLM's _routed_exporter: a request carrying one tenant's key must never rewrite a co-configured exporter's headers, which would leak that key
-    fn routed_exporter(
-        &self,
-        spec: &ExporterSpec,
-        credential_headers: &BTreeMap<String, String>,
-        project_headers: &BTreeMap<String, String>,
-        endpoint: Option<&str>,
-    ) -> ExporterSpec {
-        let kind = spec.kind.to_lowercase();
-        if !owns(spec, self.callback_name.as_deref()) || NON_OTLP_KINDS.contains(&kind.as_str()) {
-            return spec.clone();
-        }
-        let base = if credential_headers.is_empty() {
-            spec.headers.clone()
-        } else {
-            Some(join(&credential_headers, false))
-        };
-        let headers = if project_headers.is_empty() || GRPC_KINDS.contains(&kind.as_str()) {
-            base
-        } else {
-            let encoded = join(project_headers, true);
-            match base.as_deref().filter(|base| !base.is_empty()) {
-                Some(base) => Some(format!("{base},{encoded}")),
-                None => Some(encoded),
-            }
-        };
-        let mut routed = spec.clone();
-        if headers != spec.headers {
-            routed.headers = headers;
-        }
-        if let Some(endpoint) = endpoint.filter(|value| Some(*value) != spec.endpoint.as_deref()) {
-            routed.endpoint = Some(endpoint.to_owned());
-        }
-        routed
+// LiteLLM warns once when a request's headers have nowhere to be stamped, then exports it unrouted
+fn unroutable(
+    cache: &TenantTracerCache,
+    warned: &AtomicBool,
+    message: &str,
+) -> BTreeMap<String, String> {
+    if !warned.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            callback = cache.callback_name.as_deref().unwrap_or_default(),
+            "{message}"
+        );
     }
+    BTreeMap::new()
+}
+
+// LiteLLM's _routed_exporter: a request carrying one tenant's key must never rewrite a co-configured exporter's headers, which would leak that key
+fn routed_exporter(
+    cache: &TenantTracerCache,
+    spec: &ExporterSpec,
+    credential_headers: &BTreeMap<String, String>,
+    project_headers: &BTreeMap<String, String>,
+    endpoint: Option<&str>,
+) -> ExporterSpec {
+    let kind = spec.kind.to_lowercase();
+    if !owns(spec, cache.callback_name.as_deref()) || NON_OTLP_KINDS.contains(&kind.as_str()) {
+        return spec.clone();
+    }
+    let base = if credential_headers.is_empty() {
+        spec.headers.clone()
+    } else {
+        Some(join(credential_headers, false))
+    };
+    let headers = if project_headers.is_empty() || GRPC_KINDS.contains(&kind.as_str()) {
+        base
+    } else {
+        let encoded = join(project_headers, true);
+        match base.as_deref().filter(|current| !current.is_empty()) {
+            Some(existing) => Some(format!("{existing},{encoded}")),
+            None => Some(encoded),
+        }
+    };
+    let mut routed = spec.clone();
+    if headers != spec.headers {
+        routed.headers = headers;
+    }
+    if let Some(replacement) = endpoint.filter(|value| Some(*value) != spec.endpoint.as_deref()) {
+        routed.endpoint = Some(replacement.to_owned());
+    }
+    routed
 }
 
 // LiteLLM compares the callback's name with the exporter's owner, with no owner meaning the unnamed callback owns it

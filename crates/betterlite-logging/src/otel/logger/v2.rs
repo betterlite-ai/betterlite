@@ -130,8 +130,8 @@ impl OpenTelemetryV2 {
     // LiteLLM's _store_open_call: remember an in-flight call, releasing the provider of an evicted carrier
     pub(crate) fn store_open_call(&self, call_id: String, call: OpenCall) {
         let evicted = { self.open_calls().store(call_id, call) };
-        if let Some(evicted) = evicted.as_ref() {
-            self.tenants.release(evicted.provider.as_ref());
+        if let Some(carrier) = evicted.as_ref() {
+            self.tenants.release(carrier.provider.as_ref());
         }
     }
 }

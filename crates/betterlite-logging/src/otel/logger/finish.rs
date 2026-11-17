@@ -123,32 +123,27 @@ fn finish_carrier(
     logger: &OpenTelemetryV2,
     close: CarrierClose<'_>,
 ) -> Result<Option<SdkSpan>, FinishError> {
-    let CarrierClose {
-        boundary,
-        start_time,
-        call,
-        times,
-    } = close;
-    let Some(payload) = call.event.payload.as_ref() else {
+    let Some(payload) = close.call.event.payload.as_ref() else {
         return Ok(end_without_payload(
-            logger, boundary, start_time, call, times,
+            logger,
+            close.boundary,
+            close.start_time,
+            close.call,
+            close.times,
         ));
     };
     let trace = logger.trace.trace_context();
-    let data = llm_call_data(logger, call, payload, &trace)?;
-    match boundary {
-        Some(boundary) => Ok(finish_open_span(logger, boundary, start_time, &data, times)),
-        None => {
-            let deferred = DeferredClose {
-                data: &data,
-                call,
-                trace: &trace,
-                start_time,
-                times,
-            };
-            emit_deferred(logger, deferred)
-        }
-    }
+    let data = llm_call_data(logger, close.call, payload, &trace)?;
+    let Some(open) = close.boundary.as_ref() else {
+        return emit_deferred(logger, &close, &data, &trace);
+    };
+    Ok(finish_open_span(
+        logger,
+        open,
+        close.start_time,
+        &data,
+        close.times,
+    ))
 }
 
 // the payload never materialized: open the boundary span at its captured start and end it under its provisional name, then mark the call emitted so a later close cannot re-emit it deferred
@@ -159,25 +154,28 @@ fn end_without_payload(
     call: &CallContext,
     times: SpanTimes,
 ) -> Option<SdkSpan> {
-    let boundary = boundary?;
-    logger
+    let Some(open) = boundary else {
+        return None;
+    };
+    // the marker only has to exist before a later close looks; this path has nothing to do with its answer
+    let _marked = logger
         .emitter
         .mark_emitted(call.event.call_id.as_deref(), SpanRole::LlmCall);
-    let mut open = logger.emitter.start_span(
+    let mut span = logger.emitter.start_span(
         SpanRole::LlmCall,
         &call.event.provisional_span_name,
         &StartOptions {
-            parent: Some(&boundary.parent),
+            parent: Some(&open.parent),
             start_time,
-            tracer: Some(&boundary.tracer),
-            links: &boundary.links,
+            tracer: Some(&open.tracer),
+            links: &open.links,
         },
     );
     match times.end {
-        Some(end) => open.end_with_timestamp(end),
-        None => open.end(),
+        Some(end) => span.end_with_timestamp(end),
+        None => span.end(),
     }
-    Some(open)
+    Some(span)
 }
 
 fn llm_call_data(
@@ -201,7 +199,7 @@ fn llm_call_data(
 // born at the boundary: the payload proves the call ran, so open on the parent, tracer and links pre_call captured, then stamp and end it under the payload model
 fn finish_open_span(
     logger: &OpenTelemetryV2,
-    boundary: BoundarySpan,
+    boundary: &BoundarySpan,
     start_time: Option<SystemTime>,
     data: &LLMCallSpanData,
     times: SpanTimes,
@@ -219,27 +217,14 @@ fn finish_open_span(
     )
 }
 
-// what the deferred branch routes and emits with: the mapped data, its call, and the request trace
-struct DeferredClose<'call> {
-    data: &'call LLMCallSpanData,
-    call: &'call CallContext,
-    trace: &'call RequestTraceContext,
-    start_time: Option<SystemTime>,
-    times: SpanTimes,
-}
-
 // deferred: pre_call saw no recordable parent, so create the span now against the request's anchored root
 fn emit_deferred(
     logger: &OpenTelemetryV2,
-    close: DeferredClose<'_>,
+    close: &CarrierClose<'_>,
+    data: &LLMCallSpanData,
+    trace: &RequestTraceContext,
 ) -> Result<Option<SdkSpan>, FinishError> {
-    let DeferredClose {
-        data,
-        call,
-        trace,
-        start_time,
-        times,
-    } = close;
+    let call = close.call;
     let route = logger.tenants.route_for(
         &logger.tracer,
         Some(call.dynamic_params.as_ref()),
@@ -262,8 +247,8 @@ fn emit_deferred(
         &SpanData::LLMCall(data),
         &EmitOptions {
             parent: Some(&parent),
-            start_time: start_time.or(times.start),
-            end_time: times.end,
+            start_time: close.start_time.or(close.times.start),
+            end_time: close.times.end,
             tracer: Some(&route.tracer),
             links: &links,
         },

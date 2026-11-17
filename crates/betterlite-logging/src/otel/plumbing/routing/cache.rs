@@ -14,7 +14,9 @@ use crate::otel::config::destination::OtelDestination;
 use crate::otel::fan_out::scope::RequestScopeSource;
 use crate::otel::plumbing::context::destination_routing::destination_backends;
 use crate::otel::plumbing::exporters::{ExportResult, ExporterFactories, Transport};
-use crate::otel::plumbing::routing::routed::{RouteKey, owns, tenant_service_name};
+use crate::otel::plumbing::routing::routed::{
+    RouteKey, TenantRouting as _, owns, tenant_service_name,
+};
 use crate::otel_provider_assembly::tracer_provider_assembly::{
     AssemblyOptions, build_tracer_provider,
 };
@@ -154,8 +156,8 @@ impl TenantTracerCache {
         }
         let key = inputs.key();
         let (provider, evicted) = self.lease(&key, &inputs)?;
-        if let Some(evicted) = evicted {
-            shutdown_provider(&evicted);
+        if let Some(drained) = evicted {
+            shutdown_provider(&drained);
         }
         Ok(TenantRoute {
             tracer: provider.provider.tracer_with_scope(self.scope.clone()),
@@ -189,6 +191,7 @@ impl TenantTracerCache {
         let count = state.open_span_counts.entry(provider.id).or_insert(0);
         *count = count.saturating_add(1);
         let evicted = evict_overflow(&mut state);
+        drop(state);
         Ok((provider, evicted))
     }
 
