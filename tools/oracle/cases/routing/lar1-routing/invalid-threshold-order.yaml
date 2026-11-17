@@ -1,0 +1,35 @@
+kind: probe
+name: lar1-invalid-threshold-order
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: local-1
+            model: openai/local-1
+            kind: local
+        routing_strategy_args: '{"confidence_threshold_low": 0.7, "confidence_threshold_medium": 0.5, "confidence_threshold_high": 0.9}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: local-1
+            model: openai/local-1
+            kind: local
+        routing_strategy_args: '{"confidence_threshold_low": 0.999}'
+  - clock: {unix_millis: 1700000000125, monotonic_millis: 42002}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: local-1
+            model: openai/local-1
+            kind: local
+        routing_strategy_args: '{"confidence_threshold_medium": 0.7, "confidence_threshold_high": 0.7}'
+compare:
+  ignore: []

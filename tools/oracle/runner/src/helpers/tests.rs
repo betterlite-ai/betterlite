@@ -123,11 +123,16 @@ fn answer_cache_reads_the_shared_layer_first() {
     .unwrap();
     fs::write(answers.own.join(&name), r#"{"ok":true,"value":"own"}"#).unwrap();
     let shared = answers.answer(&root, &call, &case_env).unwrap();
+    let marked = answers.own.join("used").join(&name).is_file();
+    fs::remove_file(answers.own.join("used").join(&name)).unwrap();
     fs::remove_file(answers.shared.join(&name)).unwrap();
     let own = answers.answer(&root, &call, &case_env).unwrap();
+    let marked_from_own = answers.own.join("used").join(&name).exists();
     fs::remove_dir_all(&root).unwrap();
     assert_eq!(shared.value, Some(json!("shared")));
+    assert!(marked);
     assert_eq!(own.value, Some(json!("own")));
+    assert!(!marked_from_own);
 }
 
 #[test]
