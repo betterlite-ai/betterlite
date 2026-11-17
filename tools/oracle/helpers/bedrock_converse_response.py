@@ -1,7 +1,7 @@
-import datetime
+import datetime as dt
 import time
+from functools import partial
 from typing import TypedDict, cast
-from unittest.mock import patch
 
 import fastuuid
 import httpx
@@ -98,7 +98,7 @@ def _logging() -> Logging:
         messages=None,
         stream=False,
         call_type="completion",
-        start_time=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         litellm_call_id="call-1",
         function_id="fn-1",
         litellm_trace_id="trace-1",
@@ -150,34 +150,34 @@ def _transform(case: TransformCase) -> JsonValue:
     log = _logging()
     outcome: JsonValue = None
     fastuuid.uuid4 = FixedUuids(case["ids"])
-    with patch.object(time, "time", return_value=float(case["now"])):
-        try:
-            result = CONFIG.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2079-L2105
-                model=case["model"],
-                raw_response=response,
-                model_response=_supplied(case["supplied"]),
-                logging_obj=log,
-                request_data=case["data"],
-                messages=cast(list[AllMessageValues], case["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
-                optional_params=case["optional_params"],
-                litellm_params=EMPTY,
-                encoding=None,
-                api_key=case["api_key"],
-                json_mode=case["json_mode"],
-            )
-        except BedrockError as error:
-            headers = cast(httpx.Headers, error.headers)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
-            outcome = {
-                "failure": {"status": error.status_code, "headers": _pairs(headers)},
-                "log": _log_view(log),
-            }
-        except (AttributeError, KeyError, TypeError, ValueError):
-            outcome = {"failure": {"status": None, "headers": None}, "log": _log_view(log)}
-        else:
-            outcome = {
-                "response": JSON.validate_json(result.model_dump_json()),
-                "log": _log_view(log),
-            }
+    time.time = partial(float, case["now"])
+    try:
+        result = CONFIG.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2079-L2105
+            model=case["model"],
+            raw_response=response,
+            model_response=_supplied(case["supplied"]),
+            logging_obj=log,
+            request_data=case["data"],
+            messages=cast(list[AllMessageValues], case["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
+            optional_params=case["optional_params"],
+            litellm_params=EMPTY,
+            encoding=None,
+            api_key=case["api_key"],
+            json_mode=case["json_mode"],
+        )
+    except BedrockError as error:
+        headers = cast(httpx.Headers, error.headers)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
+        outcome = {
+            "failure": {"status": error.status_code, "headers": _pairs(headers)},
+            "log": _log_view(log),
+        }
+    except (AttributeError, KeyError, TypeError, ValueError):
+        outcome = {"failure": {"status": None, "headers": None}, "log": _log_view(log)}
+    else:
+        outcome = {
+            "response": JSON.validate_json(result.model_dump_json()),
+            "log": _log_view(log),
+        }
     return outcome
 
 
@@ -192,10 +192,11 @@ def _fake_stream(case: FakeStreamCase) -> JsonValue:
 
 def _environment(case: EnvironmentCase) -> JsonValue:
     litellm.bedrock_request_metadata_fields = case["fields"]
+    caller: dict[str, str] = {name: value for name, value in case["headers"]}
     headers = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
         "dict[str, str]",
-        CONFIG.validate_environment(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
-            headers=dict(case["headers"]),
+        CONFIG.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
+            headers=caller,
             model=MODEL,
             messages=[],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
             optional_params=EMPTY,
@@ -213,7 +214,11 @@ def _error_class(case: ErrorClassCase) -> JsonValue:
     error = CONFIG.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2704-L2709
         case["message"], case["status"], supplied
     )
-    headers = cast(httpx.Headers, error.headers)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
+    return _error_view(cast(BedrockError, error))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
+
+
+def _error_view(error: BedrockError) -> JsonValue:
+    headers = cast(httpx.Headers, error.headers)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
     response = error.response
     return {
         "status_code": error.status_code,
