@@ -5,7 +5,7 @@ use rand::rngs::StdRng;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::tests::support::{
-    NoLimits, NoParams, NoServices, route_context, route_request, strategy_context,
+    NoLimits, NoServices, Providers, route_context, route_request, strategy_context,
 };
 use crate::static_eligibility::request::RequestFacts;
 use crate::strategy_dispatch::service::StrategyDispatch;
@@ -18,7 +18,7 @@ use super::select;
 async fn router_core_boundaries() {
     let facts = RequestFacts::default();
     let request = route_request("gpt-4o", &facts);
-    let (services, limits, params) = (NoServices, NoLimits, NoParams);
+    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let route = route_context(&request, &services, &limits, &params);
     let mut dispatch = StrategyDispatch::new(RoutingStrategy::UsageBasedRouting, None).unwrap();
     let resolution = Resolution {
