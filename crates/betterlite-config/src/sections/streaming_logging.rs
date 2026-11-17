@@ -23,6 +23,9 @@ pub struct StreamingLogging {
     pub disable: bool,
 }
 
+// the sections! macro names every section's settings type Settings
+pub type Settings = StreamingLogging;
+
 impl Section for Raw {
     type Settings = StreamingLogging;
 
