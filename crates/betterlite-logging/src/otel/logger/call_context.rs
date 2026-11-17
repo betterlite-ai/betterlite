@@ -13,10 +13,10 @@ use crate::otel::config::Settings;
 use crate::otel::model::baggage::promoted_baggage;
 use crate::otel::model::metadata::llm_call_event::LLMCallEvent;
 use crate::otel::model::metadata::wire::MetadataError;
-use crate::otel::model::metadata::wire::Timestamp;
 use crate::otel::model::metadata::wire::callback::{
     Callback, OptionalParams, Params, ProxyRequest,
 };
+use crate::otel::model::metadata::wire::timestamp::Timestamp;
 use crate::otel::model::payloads::RequestIdentity;
 use crate::otel::model::utils::time::{FixedLocalTimeResolver, to_ns};
 use crate::otel::plumbing::context::baggage_context::set_request_baggage;

@@ -14,11 +14,11 @@ use crate::otel::vocabulary::registry::SpanRole;
 use super::FinishError;
 
 // one MCP span as LiteLLM's _emit_mcp_tool_call and _emit_mcp_list_tools build it: the role, the mapped data, the identity and the call
-pub(super) struct McpEmission<'a, 'data> {
+pub(super) struct McpEmission<'emission, 'data> {
     pub(super) role: SpanRole,
-    pub(super) data: &'a SpanData<'data>,
-    pub(super) identity: &'a RequestIdentity,
-    pub(super) call: &'a CallContext,
+    pub(super) data: &'emission SpanData<'data>,
+    pub(super) identity: &'emission RequestIdentity,
+    pub(super) call: &'emission CallContext,
     pub(super) times: SpanTimes,
 }
 
@@ -58,9 +58,15 @@ pub(super) fn emit_mcp_span(
     Ok(())
 }
 
-// a carrier a mis-fired pre_call left for this call id would otherwise linger until evicted; drop it so it is never a phantom LLM span
+// a carrier a misfired pre_call left for this call id would otherwise linger until evicted; drop it so it is never a phantom LLM span
 fn drop_stray_carrier(logger: &OpenTelemetryV2, identity: &RequestIdentity) {
-    let stray = { logger.open_calls().pop(identity.call_id.as_deref()) };
+    let stray = {
+        let mut calls = logger.open_calls();
+        identity
+            .call_id
+            .as_deref()
+            .and_then(|id| calls.calls.shift_remove(id))
+    };
     if let Some(stray) = stray.as_ref() {
         logger.tenants.release(stray.provider.as_ref());
     }

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::time::SystemTime;
 
 use betterlite_models::decisions::Json;
@@ -25,11 +26,11 @@ pub fn log_pre_api_call(
     if call.is_no_upstream_call {
         return Ok(());
     }
-    let Some(call_id) = call.call_id else {
+    let Some(call_id) = call.call_id.clone() else {
         return Ok(());
     };
     // idempotent: a retried call may re-enter pre_call with the same call id; keep the first span
-    if logger.open_calls().contains(&call_id) {
+    if logger.open_calls().calls.contains_key(&call_id) {
         return Ok(());
     }
     let start_time = SystemTime::now();
@@ -86,7 +87,10 @@ fn open_at_boundary(
     })
 }
 
-fn callback_failed<T: std::fmt::Display>(error: T) -> PrePostError {
+fn callback_failed<T>(error: T) -> PrePostError
+where
+    T: fmt::Display,
+{
     PrePostError::CallbackFailed {
         message: error.to_string(),
     }

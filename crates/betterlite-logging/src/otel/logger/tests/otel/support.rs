@@ -29,7 +29,6 @@ use betterlite_logging::otel::model::metadata::wire::callback::{
     Callback, OptionalParams, Params, ProxyRequest,
 };
 use betterlite_logging::otel::model::metadata::wire::payload::Metadata;
-use betterlite_logging::otel::model::payloads::RequestIdentity;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::context_slots::{
     AnchoredSpan, RequestTraceContext,
@@ -238,22 +237,25 @@ pub(crate) fn event_with(
     dynamic: Json,
     metadata: IndexMap<String, Json>,
 ) -> Arc<LoggerEvent> {
-    Arc::new(LoggerEvent {
-        payload: Arc::new(payload),
-        dynamic_params: Arc::new(dynamic),
-        litellm_metadata: Arc::new(metadata),
-        stream: false,
-        guardrail_snapshot: None,
-    })
+    log_event(payload, dynamic, metadata, false)
 }
 
 // a streaming close: the wire callback carries stream true, so the first-chunk time is measured
 pub(crate) fn stream_event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
+    log_event(payload, Json::Null, IndexMap::new(), true)
+}
+
+fn log_event(
+    payload: StandardLoggingPayload,
+    dynamic: Json,
+    metadata: IndexMap<String, Json>,
+    stream: bool,
+) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
-        dynamic_params: Arc::new(Json::Null),
-        litellm_metadata: Arc::new(IndexMap::new()),
-        stream: true,
+        dynamic_params: Arc::new(dynamic),
+        litellm_metadata: Arc::new(metadata),
+        stream,
         guardrail_snapshot: None,
     })
 }
@@ -372,13 +374,7 @@ pub(crate) async fn failure(logger: &OpenTelemetryV2, event: Arc<LoggerEvent>) {
 pub(crate) fn anchored() -> RequestTraceContext {
     RequestTraceContext {
         root: Some(AnchoredSpan {
-            context: SpanContext::new(
-                TraceId::from_hex(ROOT_TRACE).expect("trace id"),
-                SpanId::from_hex("b7ad6b7169203331").expect("span id"),
-                TraceFlags::SAMPLED,
-                true,
-                TraceState::default(),
-            ),
+            context: root_span_context(),
             http_route: Some("/v1/chat/completions".to_owned()),
         }),
         mcp_carrier: None,
@@ -393,6 +389,20 @@ pub(crate) fn empty_trace() -> RequestTraceContext {
 
 pub(crate) fn root_trace_id() -> TraceId {
     TraceId::from_hex(ROOT_TRACE).expect("trace id")
+}
+
+pub(crate) fn root_span_id() -> SpanId {
+    SpanId::from_hex("b7ad6b7169203331").expect("span id")
+}
+
+pub(crate) fn root_span_context() -> SpanContext {
+    SpanContext::new(
+        root_trace_id(),
+        root_span_id(),
+        TraceFlags::SAMPLED,
+        true,
+        TraceState::default(),
+    )
 }
 
 pub(crate) fn destination(callback: &str) -> OtelDestination {
@@ -606,15 +616,6 @@ fn main_emitter(tracer: &SdkTracer) -> SpanEmitter<SdkTracer> {
     }
 }
 
-pub(crate) fn settings(
-    kind: &str,
-    owner: Option<ExporterOwner>,
-    headers: Option<&str>,
-    endpoint: Option<&str>,
-) -> Settings {
-    with_exporters(vec![spec(kind, owner, headers, endpoint)])
-}
-
 pub(crate) fn with_exporters(exporters: Vec<ExporterSpec>) -> Settings {
     Settings {
         exporters,
@@ -653,16 +654,21 @@ pub(crate) fn spec(
 }
 
 pub(crate) fn owned_http() -> Settings {
-    settings("otlp_http", Some(ExporterOwner::ArizeAx), None, None)
+    with_exporters(vec![spec(
+        "otlp_http",
+        Some(ExporterOwner::ArizeAx),
+        None,
+        None,
+    )])
 }
 
 pub(crate) fn phoenix_http() -> Settings {
-    settings(
+    with_exporters(vec![spec(
         "otlp_http",
         Some(ExporterOwner::ArizePhoenix),
         None,
         Some("http://phoenix:6006"),
-    )
+    )])
 }
 
 pub(crate) fn payload_start() -> SystemTime {
@@ -690,20 +696,6 @@ pub(crate) fn attribute(span: &SpanData, key: &str) -> Option<String> {
         .iter()
         .find(|pair| pair.key.as_str() == key)
         .map(|pair| pair.value.as_str().into_owned())
-}
-
-pub(crate) fn identity() -> RequestIdentity {
-    RequestIdentity {
-        call_id: Some("call-1".to_owned()),
-        team_id: Some("team-a".to_owned()),
-        team_alias: None,
-        team_metadata: None,
-        key_hash: Some("hash".to_owned()),
-        end_user: None,
-        provider_model: None,
-        request_route: None,
-        metadata: BTreeMap::from([("route".to_owned(), "chat".to_owned())]),
-    }
 }
 
 pub(crate) struct FilterSettings(pub(crate) Option<OtelModelValue>);

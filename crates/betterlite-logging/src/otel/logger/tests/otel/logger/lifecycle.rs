@@ -24,18 +24,32 @@ mod call_context {
 }
 
 mod baggage {
+    use std::collections::BTreeMap;
+
     use betterlite_logging::otel::logger::call_context::seed_identity_baggage;
+    use betterlite_logging::otel::model::payloads::RequestIdentity;
     use opentelemetry::Context;
     use opentelemetry::baggage::BaggageExt as _;
 
-    use crate::otel::support::{identity, with_exporters};
+    use crate::otel::support::with_exporters;
 
     #[test]
     fn baggage_promotes_only_the_allowlisted_identity_keys() {
         let mut settings = with_exporters(Vec::new());
         settings.baggage_promoted_keys = vec!["litellm.team.id".to_owned()];
         settings.baggage_metadata_keys = vec!["route".to_owned()];
-        let context = seed_identity_baggage(&settings, &identity(), Some("gpt-4o"), Context::new());
+        let identity = RequestIdentity {
+            call_id: Some("call-1".to_owned()),
+            team_id: Some("team-a".to_owned()),
+            team_alias: None,
+            team_metadata: None,
+            key_hash: Some("hash".to_owned()),
+            end_user: None,
+            provider_model: None,
+            request_route: None,
+            metadata: BTreeMap::from([("route".to_owned(), "chat".to_owned())]),
+        };
+        let context = seed_identity_baggage(&settings, &identity, Some("gpt-4o"), Context::new());
         let bag = context.baggage();
         assert_eq!(
             bag.get("litellm.team.id").map(|(value, _)| value.as_str()),
@@ -115,7 +129,7 @@ mod dispatch {
 mod finish {
     use crate::otel::support::{
         PreCall, anchored, attribute, event, finished, harness, owned_http, payload_start,
-        pre_call, success, team_payload, with_id,
+        pre_call, root_span_id, success, team_payload, with_id,
     };
 
     #[tokio::test]
@@ -155,6 +169,8 @@ mod finish {
             Some("team-a")
         );
         assert_eq!(span.start_time, payload_start());
+        // seeded from the request's anchored root, not from a detached context
+        assert_eq!(span.parent_span_id, root_span_id());
     }
 }
 
@@ -163,11 +179,12 @@ mod llm_close {
     use betterlite_logging::otel::logger::finish::close_llm_call;
     use betterlite_models::decisions::Json;
     use indexmap::IndexMap;
+    use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
         PreCall, anchored, attribute, creds, event, event_with, failure, finished, harness,
         inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
-        payloadless_call, pre_call, success, team_payload, with_id, zero_start,
+        payloadless_call, pre_call, root_trace_id, success, team_payload, with_id, zero_start,
     };
 
     #[tokio::test]
@@ -269,9 +286,17 @@ mod llm_close {
         .await;
         let spans = finished(&harness.built.sink(0));
         assert_eq!(spans.len(), 1);
+        let span = spans.first().expect("span");
         assert_eq!(
-            attribute(spans.first().expect("span"), "litellm.team.id").as_deref(),
+            attribute(span, "litellm.team.id").as_deref(),
             Some("team-a")
+        );
+        // the routed span roots its own trace and links back to the request's root
+        assert_eq!(span.parent_span_id, SpanId::INVALID);
+        assert!(
+            span.links
+                .iter()
+                .any(|link| link.span_context.trace_id() == root_trace_id())
         );
     }
 }
@@ -451,8 +476,7 @@ mod metrics {
             stream_event(with_id(inference(), "call-a")),
         )
         .await;
-        // the first chunk is measured from the boundary, which postdates the payload's own end, so
-        // the api latency is negative and skipped: the duration, the cost and the first chunk
+        // the first chunk runs from the boundary, which postdates the payload end, so the negative api latency is skipped: the duration, the cost and the chunk
         assert_eq!(metric_points(&provider, &exporter), 3);
     }
 
@@ -573,15 +597,21 @@ mod open_calls {
         }
     }
 
-    fn build_boundaries(harness: &Harness, count: usize) {
-        for index in 0..count {
+    fn store_carriers(
+        harness: &Harness,
+        prefix: &str,
+        from: usize,
+        count: usize,
+        space: fn(usize) -> String,
+    ) {
+        for index in from..from.saturating_add(count) {
             pre_call(
                 &harness.logger,
                 PreCall {
-                    call_id: &format!("call-{index}"),
+                    call_id: &format!("{prefix}{index}"),
                     model: "gpt-4o",
                     no_upstream: false,
-                    dynamic: Some(creds("S")),
+                    dynamic: Some(creds(&space(index))),
                     auth: None,
                 },
             );
@@ -604,11 +634,11 @@ mod open_calls {
             )
             .expect("evicted carrier");
         assert_eq!(evicted.start_time, start);
-        assert!(!calls.contains("call-0"));
-        assert!(calls.contains("overflow"));
-        // pop is the dedup between the success and failure paths
-        assert!(calls.pop(Some("call-1")).is_some());
-        assert!(calls.pop(Some("call-1")).is_none());
+        assert!(!calls.calls.contains_key("call-0"));
+        assert!(calls.calls.contains_key("overflow"));
+        // removing is the dedup between the success and failure paths
+        assert!(calls.calls.shift_remove("call-1").is_some());
+        assert!(calls.calls.shift_remove("call-1").is_none());
     }
 
     #[test]
@@ -624,34 +654,20 @@ mod open_calls {
                 auth: None,
             },
         );
-        for index in 1..=MAX_CACHED_PROVIDERS {
-            pre_call(
-                &harness.logger,
-                PreCall {
-                    call_id: &format!("call-{index}"),
-                    model: "gpt-4o",
-                    no_upstream: false,
-                    dynamic: Some(creds(&format!("S{index}"))),
-                    auth: None,
-                },
-            );
-        }
+        store_carriers(&harness, "call-", 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("S{index}")
+        });
         let drained = harness.built.sink(0);
         // S0's provider left the cache, but the oldest carrier still holds the route's lease
         assert!(!drained.is_shutdown_called());
         let stored = MAX_CACHED_PROVIDERS.saturating_add(1);
-        for index in 0..OPEN_CALLS_MAX.saturating_sub(stored).saturating_add(1) {
-            pre_call(
-                &harness.logger,
-                PreCall {
-                    call_id: &format!("later-{index}"),
-                    model: "gpt-4o",
-                    no_upstream: false,
-                    dynamic: Some(creds("S0")),
-                    auth: None,
-                },
-            );
-        }
+        store_carriers(
+            &harness,
+            "later-",
+            0,
+            OPEN_CALLS_MAX.saturating_sub(stored).saturating_add(1),
+            |_| "S0".to_owned(),
+        );
         // evicting that carrier released its lease, and the drained provider shut down
         assert!(drained.is_shutdown_called());
     }
@@ -659,7 +675,13 @@ mod open_calls {
     #[tokio::test]
     async fn overflow_eviction_still_emits_the_evicted_call_deferred() {
         let harness = harness(owned_http(), anchored());
-        build_boundaries(&harness, OPEN_CALLS_MAX.saturating_add(1));
+        store_carriers(
+            &harness,
+            "call-",
+            0,
+            OPEN_CALLS_MAX.saturating_add(1),
+            |_| "S".to_owned(),
+        );
         assert_eq!(harness.built.builds(), 1);
         success(
             &harness.logger,

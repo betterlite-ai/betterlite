@@ -1,9 +1,10 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 use indexmap::IndexMap;
 use opentelemetry::Context;
-use opentelemetry::baggage::BaggageExt as _;
+use opentelemetry::baggage::{Baggage, BaggageExt as _};
 use opentelemetry::trace::{Link, TraceContextExt as _};
 use opentelemetry_sdk::trace::SdkTracer;
 
@@ -35,20 +36,10 @@ pub struct BoundarySpan {
 // litellm.integrations.otel.logger's _open_llm_calls ordered map
 #[derive(Default)]
 pub struct OpenCalls {
-    calls: IndexMap<String, OpenCall>,
+    pub calls: IndexMap<String, OpenCall>,
 }
 
 impl OpenCalls {
-    #[must_use]
-    pub fn contains(&self, call_id: &str) -> bool {
-        self.calls.contains_key(call_id)
-    }
-
-    #[must_use]
-    pub fn start_time(&self, call_id: Option<&str>) -> Option<SystemTime> {
-        self.calls.get(call_id?).map(|call| call.start_time)
-    }
-
     // idempotent storage keyed by call id; an evicted carrier comes back so its provider lease is released
     #[must_use]
     pub fn store(&mut self, call_id: String, call: OpenCall) -> Option<OpenCall> {
@@ -58,12 +49,6 @@ impl OpenCalls {
             return Some(evicted);
         }
         None
-    }
-
-    // pop is the dedup: whichever of the success and failure paths fires first closes the span
-    #[must_use]
-    pub fn pop(&mut self, call_id: Option<&str>) -> Option<OpenCall> {
-        self.calls.shift_remove(call_id?)
     }
 }
 
@@ -75,7 +60,8 @@ pub trait RequestTraceSource: Send + Sync {
 // a link back to the request trace, for a span detached into its own trace
 #[must_use]
 pub fn request_trace_links(context: &Context) -> Vec<Link> {
-    let anchor = context.span().span_context();
+    let span = context.span();
+    let anchor = span.span_context();
     if anchor.is_valid() {
         vec![Link::with_context(anchor.clone())]
     } else {
@@ -86,7 +72,12 @@ pub fn request_trace_links(context: &Context) -> Vec<Link> {
 // what a detached span starts from: the request's Baggage with no parent span, so the routed span roots its own trace
 #[must_use]
 pub fn detached_context(context: &Context) -> Context {
-    Context::new().with_baggage(context.baggage().clone())
+    let baggage: Baggage = context
+        .baggage()
+        .into_iter()
+        .map(|(key, entry)| (key.clone(), entry.clone()))
+        .collect();
+    Context::new().with_baggage(baggage)
 }
 
 // what building the logger takes: the assembled provider and emitter, the metric recorder, the tenant cache and the request scope
@@ -107,7 +98,7 @@ pub struct OpenTelemetryV2 {
     pub(crate) tracer: SdkTracer,
     pub(crate) emitter: SpanEmitter<SdkTracer>,
     pub(crate) metrics: Option<Arc<GenAiMetricRecorder>>,
-    pub(crate) metric_filter_error_logged: std::sync::atomic::AtomicBool,
+    pub(crate) metric_filter_error_logged: AtomicBool,
     pub(crate) tenants: TenantTracerCache,
     pub(crate) open_calls: Mutex<OpenCalls>,
     pub(crate) trace: Arc<dyn RequestTraceSource>,
@@ -122,7 +113,7 @@ impl OpenTelemetryV2 {
             tracer: parts.tracer,
             emitter: parts.emitter,
             metrics: parts.metrics,
-            metric_filter_error_logged: std::sync::atomic::AtomicBool::new(false),
+            metric_filter_error_logged: AtomicBool::new(false),
             tenants: parts.tenants,
             open_calls: Mutex::new(OpenCalls::default()),
             trace: parts.trace,

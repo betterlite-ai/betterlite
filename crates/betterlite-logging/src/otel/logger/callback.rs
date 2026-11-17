@@ -56,9 +56,13 @@ fn dispatch(
     failure: bool,
 ) -> Result<(), LoggerError> {
     let api_start = {
-        logger
-            .open_calls()
-            .start_time(event.payload.litellm_call_id.as_deref())
+        let calls = logger.open_calls();
+        event
+            .payload
+            .litellm_call_id
+            .as_deref()
+            .and_then(|id| calls.calls.get(id))
+            .map(|call| call.start_time)
     };
     let call =
         CallContext::from_event(event, api_start).map_err(|error| delivery(logger, &error))?;

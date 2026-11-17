@@ -76,7 +76,13 @@ pub fn close_llm_call(
     call: &CallContext,
     times: SpanTimes,
 ) -> Result<Option<SdkSpan>, FinishError> {
-    let stored = { logger.open_calls().pop(call.event.call_id.as_deref()) };
+    let stored = {
+        let mut calls = logger.open_calls();
+        call.event
+            .call_id
+            .as_deref()
+            .and_then(|id| calls.calls.shift_remove(id))
+    };
     let Some(carrier) = stored else {
         if call.event.is_no_upstream_call
             || !call.event.upstream_started
@@ -105,10 +111,10 @@ pub fn close_llm_call(
 }
 
 // the close state a carrier hands on: the boundary state, if pre_call saw a recordable parent, and the start time a deferred span uses
-struct CarrierClose<'a> {
+struct CarrierClose<'call> {
     boundary: Option<BoundarySpan>,
     start_time: Option<SystemTime>,
-    call: &'a CallContext,
+    call: &'call CallContext,
     times: SpanTimes,
 }
 
@@ -214,10 +220,10 @@ fn finish_open_span(
 }
 
 // what the deferred branch routes and emits with: the mapped data, its call, and the request trace
-struct DeferredClose<'a> {
-    data: &'a LLMCallSpanData,
-    call: &'a CallContext,
-    trace: &'a RequestTraceContext,
+struct DeferredClose<'call> {
+    data: &'call LLMCallSpanData,
+    call: &'call CallContext,
+    trace: &'call RequestTraceContext,
     start_time: Option<SystemTime>,
     times: SpanTimes,
 }
