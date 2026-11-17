@@ -3,7 +3,7 @@ mod tests;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use betterlite_config::sections::callback_settings::names::CallbackName;
+use betterlite_config::sections::callback_settings::{CallbackEntry, names::CallbackName};
 
 use super::{CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
@@ -17,10 +17,11 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
     let variables = inputs
         .callback_settings
         .get(name)
-        .map(|entry| entry.exposed_variables());
+        .map(CallbackEntry::exposed_variables);
     let params = configured_params(variables.as_ref()).map_err(|error| CatalogError::Init {
         message: error.to_string(),
     })?;
+    let settings = &inputs.config.sections;
     let deps = ZerobusDeps {
         params,
         client: None,
@@ -35,17 +36,8 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
                 .as_secs_f64()
         }),
         redaction: RedactionSettings {
-            turn_off_message_logging: inputs
-                .config
-                .sections
-                .logging_privacy
-                .turn_off_message_logging,
-            excluded_fields: inputs
-                .config
-                .sections
-                .payload_exclusions
-                .excluded_fields
-                .clone(),
+            turn_off_message_logging: settings.logging_privacy.turn_off_message_logging,
+            excluded_fields: settings.payload_exclusions.excluded_fields.clone(),
         },
         tasks: inputs.tracker.clone(),
         shutdown: inputs.shutdown.clone(),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 use url::Url;
 
@@ -62,7 +62,7 @@ pub fn connection_for(
         params
             .client_secret
             .as_ref()
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         CLIENT_SECRET,
         secrets,
     )?;

@@ -84,9 +84,9 @@ fn redact_details(
     match redact_standard_logging_payload(&details, &redaction, stamp) {
         Redaction::Unchanged => standard_logging_object.clone(),
         Redaction::Redacted {
-            standard_logging_object,
+            standard_logging_object: redacted,
             ..
-        } => standard_logging_object,
+        } => redacted,
     }
 }
 

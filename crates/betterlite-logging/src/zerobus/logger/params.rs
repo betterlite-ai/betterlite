@@ -29,10 +29,10 @@ pub fn configured_params(
     variables: Option<&IndexMap<String, String>>,
 ) -> Result<ZerobusInitParams, ParamsError> {
     let mut params = ZerobusInitParams::default();
-    let Some(variables) = variables else {
+    let Some(configured) = variables else {
         return Ok(params);
     };
-    for (key, value) in variables {
+    for (key, value) in configured {
         apply(&mut params, key, value)?;
     }
     Ok(params)

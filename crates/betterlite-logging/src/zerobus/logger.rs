@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use betterlite_http::proxy::ProxiedClient;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -26,9 +27,10 @@ use crate::zerobus::client::init_params::ZerobusInitParams;
 use crate::zerobus::row::{TraceRow, trace_row};
 
 use connection::{ConnectionError, SecretSource, connection_for};
-use delivery::{ClientFactory, RowIngest};
+use delivery::{ClientDelivery, ClientFactory, RowIngest, same_connection};
 use error::EnqueueError;
 use payload::{PayloadPolicy, RedactionSettings, event_details, payload_for};
+use queue::{FlushFlag, Inflight};
 
 pub const CALLBACK_NAME: &str = "zerobus";
 
@@ -186,6 +188,49 @@ impl Inner {
             .depth()
             .saturating_add(self.inflight.load(Ordering::SeqCst));
         held >= self.queue.settings.max_queue_size
+    }
+
+    pub(super) fn client(&self) -> Result<Arc<dyn RowIngest>, ConnectionError> {
+        if let Some(given) = &self.given_client {
+            return Ok(Arc::clone(given));
+        }
+        let connection = connection_for(&self.params, self.secrets.as_ref())?;
+        let mut cached = self
+            .cached_client
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(client) = cached.as_ref()
+            && same_connection(client.connection(), &connection)
+        {
+            return Ok(Arc::clone(client));
+        }
+        let fresh = self.factory.build(connection);
+        *cached = Some(Arc::clone(&fresh));
+        drop(cached);
+        Ok(fresh)
+    }
+
+    // a mid-flush arrival is counted against the rows the delivery holds, so the cap still holds
+    pub(super) async fn flush_queue(&self, skip_if_flushing: bool) {
+        if skip_if_flushing && self.flushing.load(Ordering::SeqCst) {
+            return;
+        }
+        let _flushing = FlushFlag::set(&self.flushing);
+        let pending = self.depth();
+        let _inflight = Inflight::set(&self.inflight, pending);
+        self.queue.flush(&ClientDelivery { inner: self }).await;
+    }
+
+    pub(super) async fn periodic_flush(&self, shutdown: &CancellationToken) {
+        loop {
+            if timeout(self.queue.settings.flush_interval, shutdown.cancelled())
+                .await
+                .is_ok()
+            {
+                return;
+            }
+            self.flush_queue(false).await;
+        }
     }
 }
 

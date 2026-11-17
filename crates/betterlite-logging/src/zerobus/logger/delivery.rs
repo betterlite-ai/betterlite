@@ -1,5 +1,5 @@
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -9,7 +9,6 @@ use subtle::ConstantTimeEq as _;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::Inner;
-use super::connection::{ConnectionError, connection_for};
 use crate::batch::delivery::{BatchCancelled, BatchDelivery};
 use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 use crate::zerobus::client::types::{ZerobusConnection, ZerobusIngestFailure};
@@ -21,7 +20,7 @@ use crate::zerobus::row::TraceRow;
 pub trait RowIngest: Send + Sync {
     fn connection(&self) -> &ZerobusConnection;
 
-    async fn insert(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure>;
+    async fn ingest(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure>;
 }
 
 #[async_trait]
@@ -30,8 +29,8 @@ impl RowIngest for ZerobusIngestClient {
         &self.connection
     }
 
-    async fn insert(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure> {
-        ZerobusIngestClient::insert(self, rows).await
+    async fn ingest(&self, rows: &[TraceRow]) -> Result<(), ZerobusIngestFailure> {
+        Self::insert(self, rows).await
     }
 }
 
@@ -76,27 +75,6 @@ pub(super) fn same_connection(left: &ZerobusConnection, right: &ZerobusConnectio
         )
 }
 
-impl Inner {
-    pub(super) fn client(&self) -> Result<Arc<dyn RowIngest>, ConnectionError> {
-        if let Some(given) = &self.given_client {
-            return Ok(Arc::clone(given));
-        }
-        let connection = connection_for(&self.params, self.secrets.as_ref())?;
-        let mut cached = self
-            .cached_client
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(client) = cached.as_ref()
-            && same_connection(client.connection(), &connection)
-        {
-            return Ok(Arc::clone(client));
-        }
-        let fresh = self.factory.build(connection);
-        *cached = Some(Arc::clone(&fresh));
-        Ok(fresh)
-    }
-}
-
 pub(super) struct ClientDelivery<'inner> {
     pub(super) inner: &'inner Inner,
 }
@@ -121,7 +99,7 @@ impl BatchDelivery<TraceRow> for ClientDelivery<'_> {
                 return Ok(batch.to_vec());
             }
         };
-        match client.insert(batch).await {
+        match client.ingest(batch).await {
             Ok(()) => {
                 settled.fetch_add(batch.len(), Ordering::SeqCst);
                 Ok(Vec::new())
