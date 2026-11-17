@@ -67,7 +67,9 @@ fn a_malformed_metadata_value_promotes_nothing() {
     let auth = Auth::default();
     let metadata = BTreeMap::from([(
         "user_api_key_user_id".to_owned(),
-        OtelModelValue::Array(vec![OtelModelValue::Number(serde_json::Number::from(7))]),
+        OtelModelValue::Array(vec![OtelModelValue::Number(serde_json::Number::from(
+            7_i32,
+        ))]),
     )]);
     let seed = IdentitySeed {
         auth: &auth,

@@ -96,11 +96,12 @@ pub(crate) fn construction_parts(
     spans: &InMemorySpanExporter,
     provider: Option<SdkTracerProvider>,
 ) -> CallbackParts {
+    let tenant_cache = tenants(&settings, spans);
     CallbackParts {
         callback_name: Some(CALLBACK.to_owned()),
-        config: settings.clone(),
+        config: settings,
         raw_config: otel_settings::Settings::default(),
-        tenants: tenants(&settings, spans),
+        tenants: tenant_cache,
         trace: Arc::new(FixedTrace::default()),
         providers: ProviderSources {
             tracer_provider: provider,

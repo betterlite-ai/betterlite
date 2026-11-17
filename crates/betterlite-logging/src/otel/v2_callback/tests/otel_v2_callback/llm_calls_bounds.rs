@@ -10,11 +10,14 @@ fn store_calls(harness: &Harness, count: usize) {
     let messages = Json::Null;
     let model = "gpt-4o";
     for index in 0..count {
-        let details: Json = serde_json::from_value(serde_json::json!({
-            "litellm_call_id": index.to_string(),
-            "model": model,
-        }))
-        .expect("details");
+        let details = Json::Object(
+            [
+                ("litellm_call_id".to_owned(), Json::Text(index.to_string())),
+                ("model".to_owned(), Json::Text(model.to_owned())),
+            ]
+            .into_iter()
+            .collect(),
+        );
         let event = PreCallEvent {
             model,
             messages: &messages,

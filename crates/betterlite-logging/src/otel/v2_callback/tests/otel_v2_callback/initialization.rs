@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::ptr;
 use std::sync::Arc;
 
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
@@ -106,10 +107,7 @@ fn an_injected_recorder_wins_and_an_opted_out_provider_stays_none() {
     let callback = V2Callback::new(parts, &registry).expect("callback");
     let (metrics, recorded) = callback.recorders();
     assert!(metrics.is_none());
-    assert!(std::ptr::eq(
-        recorded.expect("event recorder"),
-        events.as_ref()
-    ));
+    assert!(ptr::eq(recorded.expect("event recorder"), events.as_ref()));
 }
 
 #[test]
@@ -146,10 +144,9 @@ fn a_built_metric_provider_keeps_exporting() {
         .expect("held meter provider")
         .force_flush()
         .expect("flush");
+    let exported = exporter.get_finished_metrics().expect("finished metrics");
     assert!(
-        exporter
-            .get_finished_metrics()
-            .expect("finished metrics")
+        exported
             .iter()
             .flat_map(ResourceMetrics::scope_metrics)
             .flat_map(ScopeMetrics::metrics)
@@ -161,11 +158,17 @@ fn a_built_metric_provider_keeps_exporting() {
 fn pre_api_call_stores_the_open_call() {
     let harness = harness(settings());
     let messages = Json::Null;
-    let details: Json = serde_json::from_value(serde_json::json!({
-        "litellm_call_id": "call-1",
-        "model": "gpt-4o",
-    }))
-    .expect("details");
+    let details = Json::Object(
+        [
+            (
+                "litellm_call_id".to_owned(),
+                Json::Text("call-1".to_owned()),
+            ),
+            ("model".to_owned(), Json::Text("gpt-4o".to_owned())),
+        ]
+        .into_iter()
+        .collect(),
+    );
     let event = PreCallEvent {
         model: "gpt-4o",
         messages: &messages,
