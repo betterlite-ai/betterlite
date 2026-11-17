@@ -503,7 +503,7 @@ async fn web_search_filtered_pool() {
     let unsupported = with_info(
         "gpt-4o",
         "a",
-        &[],
+        &[("weight", number(5))],
         &[("supports_web_search", Json::Bool(false))],
     );
     let fixture = Fixture::plain(vec![unsupported, deployment("gpt-4o", "b", &[])]);
