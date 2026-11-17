@@ -1,0 +1,141 @@
+kind: helper
+name: auth-model-lists-wildcard-known-models
+call:
+  auth_model_lists:
+    function: complete_model_list
+    key_models: []
+    team_models: []
+    proxy_model_list: [openai/*]
+    user_model: null
+    infer_model_from_keys: false
+    return_wildcard_routes: true
+    model_access_groups: {}
+    include_model_access_groups: false
+    only_model_access_groups: false
+    team_id: null
+    deployments: []
+    catalog:
+      openai: [openai/gpt-4o, openai/meta-llama/Llama-3-8B, openai/gpt-4o-mini]
+    credentials: []
+calls:
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [gemini/gemini-1.5-*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments: []
+      catalog:
+        gemini: [gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash]
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: ["*"]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments:
+        - model_name: "*"
+          litellm_params:
+            model: openai/*
+          team_id: null
+          team_public_model_name: null
+      catalog:
+        "openai|None|None|None": [openai/gpt-4o-mini]
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: ["*"]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments:
+        - model_name: "*"
+          litellm_params:
+            model: gpt-4o
+          team_id: null
+          team_public_model_name: null
+      catalog: {}
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [ollama/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments: []
+      catalog: {}
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [openai/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments:
+        - model_name: openai/*
+          litellm_params:
+            model: ollama/llama3
+          team_id: null
+          team_public_model_name: null
+      catalog:
+        "ollama|None|None|None": [ollama/llama3, ollama/llama3:70b]
+      credentials: []
+  - auth_model_lists:
+      function: complete_model_list
+      key_models: []
+      team_models: []
+      proxy_model_list: [openai/*]
+      user_model: null
+      infer_model_from_keys: false
+      return_wildcard_routes: false
+      model_access_groups: {}
+      include_model_access_groups: false
+      only_model_access_groups: false
+      team_id: null
+      deployments:
+        - model_name: openai/*
+          litellm_params:
+            model: openai/*
+          team_id: null
+          team_public_model_name: null
+        - model_name: openai/*
+          litellm_params:
+            model: openai/*
+          team_id: null
+          team_public_model_name: null
+      catalog:
+        "openai|None|None|None": [openai/gpt-4o, openai/gpt-4o-mini]
+      credentials: []
+env: {}
+compare: {ignore: []}
