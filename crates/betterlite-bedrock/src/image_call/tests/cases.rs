@@ -201,8 +201,7 @@ fn image_call_cases(#[case] name: &str) {
     let redactor = &redactor();
     match name {
         "image_family_dispatch" => {
-            family_request_bodies(redactor);
-            family_reply_records(redactor);
+            family_bodies_and_records(redactor);
             family_precedence(redactor);
         }
         "image_runtime_url" => {
@@ -239,48 +238,46 @@ fn image_call_cases(#[case] name: &str) {
     }
 }
 
-fn family_request_bodies(redactor: &Redactor) {
-    let titan = run(
-        call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
-        Reply::ok(r#"{"images": ["dGl0YW4="]}"#),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(titan.response().data[0].b64_json, "dGl0YW4=");
-    assert!(titan.body().contains_key("textToImageParams"));
+const FAMILY_REPLIES: [(&str, &str, &str); 4] = [
+    (
+        "amazon.titan-image-generator-v2:0",
+        r#"{"images": ["dGl0YW4="]}"#,
+        "dGl0YW4=",
+    ),
+    (
+        "amazon.nova-canvas-v1:0",
+        r#"{"images": ["bm92YQ=="]}"#,
+        "bm92YQ==",
+    ),
+    (
+        "stability.sd3-large-v1:0",
+        r#"{"images": ["czM="]}"#,
+        "czM=",
+    ),
+    (
+        "stability.stable-diffusion-xl-v1",
+        r#"{"artifacts": [{"base64": "czE="}]}"#,
+        "czE=",
+    ),
+];
 
-    let nova = run(
-        call("amazon.nova-canvas-v1:0", "a cat", auth_params()),
-        Reply::ok(r#"{"images": ["bm92YQ=="]}"#),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(nova.response().data[0].b64_json, "bm92YQ==");
-    assert_eq!(field(&nova.body(), "taskType"), &Field::from("TEXT_IMAGE"));
-}
-
-fn family_reply_records(redactor: &Redactor) {
-    let stability3 = run(
-        call("stability.sd3-large-v1:0", "a cat", auth_params()),
-        Reply::ok(r#"{"images": ["czM="]}"#),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(stability3.response().data[0].b64_json, "czM=");
+fn family_bodies_and_records(redactor: &Redactor) {
+    let mut bodies = Vec::new();
+    for (model, reply, image) in FAMILY_REPLIES {
+        let family = run(
+            call(model, "a cat", auth_params()),
+            Reply::ok(reply),
+            Some(ClientKind::Sync),
+            redactor,
+        );
+        assert_eq!(family.response().data[0].b64_json, image, "{model}");
+        bodies.push(family.body());
+    }
+    assert!(bodies[0].contains_key("textToImageParams"));
+    assert_eq!(field(&bodies[1], "taskType"), &Field::from("TEXT_IMAGE"));
+    assert_eq!(bodies[2], params(vec![("prompt", Field::from("a cat"))]));
     assert_eq!(
-        stability3.body(),
-        params(vec![("prompt", Field::from("a cat"))])
-    );
-
-    let stability1 = run(
-        call("stability.stable-diffusion-xl-v1", "a cat", auth_params()),
-        Reply::ok(r#"{"artifacts": [{"base64": "czE="}]}"#),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(stability1.response().data[0].b64_json, "czE=");
-    assert_eq!(
-        field(&stability1.body(), "text_prompts"),
+        field(&bodies[3], "text_prompts"),
         &Field::List(vec![Field::from(params(vec![
             ("text", Field::from("a cat")),
             ("weight", Field::Int(1)),

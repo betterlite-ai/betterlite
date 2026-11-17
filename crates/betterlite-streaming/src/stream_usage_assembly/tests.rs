@@ -240,8 +240,7 @@ async fn cache_and_details(redactor: &Arc<Redactor>) {
     cache_counts_follow_prompt_side_reporting(redactor).await;
     cache_counts_retain_earlier_values(redactor).await;
     details_are_last_wins(redactor).await;
-    empty_details_never_clear_earlier_ones(redactor).await;
-    nested_details_survive_replacement(redactor).await;
+    prompt_details_across_records(redactor).await;
     server_tool_use_is_coerced(redactor).await;
 }
 
@@ -280,21 +279,38 @@ async fn cache_counts_retain_earlier_values(redactor: &Arc<Redactor>) {
     );
 }
 
-async fn empty_details_never_clear_earlier_ones(redactor: &Arc<Redactor>) {
+async fn prompt_details_across_records(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
-    let kept = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{}}}]"#, redactor)
-    .await;
-    assert_eq!(
-        kept.prompt_tokens_details,
-        Some(fixture_details(r#"{"cached_tokens":2}"#))
-    );
-
-    let cleared = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":null}}}]"#, redactor)
-    .await;
-    assert_eq!(
-        cleared.prompt_tokens_details,
-        Some(PromptTokensDetails::default())
-    );
+    let cases = [
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{}}}]"#,
+            fixture_details(r#"{"cached_tokens":2}"#),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":2}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":null}}}]"#,
+            PromptTokensDetails::default(),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":1,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2}}}]"#,
+            fixture_details(
+                r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}"#,
+            ),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cache_creation_token_details":{"ephemeral_5m_input_tokens":1}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}}}]"#,
+            fixture_details(
+                r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}"#,
+            ),
+        ),
+        (
+            r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"google_maps_grounding_requests":2}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}]"#,
+            fixture_details(r#"{"cached_tokens":3,"google_maps_grounding_requests":2}"#),
+        ),
+    ];
+    for (source, expected) in cases {
+        let usage = simple_usage(&counter, source, redactor).await;
+        assert_eq!(usage.prompt_tokens_details, Some(expected), "{source}");
+    }
 }
 
 async fn cache_counts_follow_prompt_side_reporting(redactor: &Arc<Redactor>) {
@@ -345,27 +361,6 @@ async fn details_are_last_wins(redactor: &Arc<Redactor>) {
     );
 }
 
-async fn nested_details_survive_replacement(redactor: &Arc<Redactor>) {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let preserved = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":1,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2}}}]"#, redactor)
-    .await;
-    assert_eq!(
-        preserved.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}}"#
-        ))
-    );
-
-    let own = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":3,"prompt_tokens_details":{"cache_creation_token_details":{"ephemeral_5m_input_tokens":1}}}},{"usage":{"prompt_tokens":4,"prompt_tokens_details":{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}}}]"#, redactor)
-    .await;
-    assert_eq!(
-        own.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":2,"cache_creation_token_details":{"ephemeral_1h_input_tokens":6}}"#
-        ))
-    );
-}
-
 async fn server_tool_use_is_coerced(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let usage = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"server_tool_use":{"web_search_requests":2}}},{"usage":{"prompt_tokens":2,"server_tool_use":null}},{"usage":{"prompt_tokens":3,"server_tool_use":{"web_search_requests":4,"browser_open_requests":1}}}]"#, redactor)
@@ -402,7 +397,6 @@ async fn server_tool_use_is_coerced(redactor: &Arc<Redactor>) {
 
 async fn grounding_and_pricing(redactor: &Arc<Redactor>) {
     grounding_counts_are_retained(redactor).await;
-    google_maps_counts_are_retained(redactor).await;
     cost_and_pricing_fields_are_last_wins(redactor).await;
 }
 
@@ -431,18 +425,6 @@ async fn grounding_counts_are_retained(redactor: &Arc<Redactor>) {
     assert_eq!(
         created.into_owned(),
         fixture_details(r#"{"web_search_requests":1,"google_maps_grounding_requests":2}"#)
-    );
-}
-
-async fn google_maps_counts_are_retained(redactor: &Arc<Redactor>) {
-    let counter = FixtureCounter::counting(7, 2, 4);
-    let maps_kept = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":1,"prompt_tokens_details":{"google_maps_grounding_requests":2}}},{"usage":{"prompt_tokens":2,"prompt_tokens_details":{"cached_tokens":3}}}]"#, redactor)
-    .await;
-    assert_eq!(
-        maps_kept.prompt_tokens_details,
-        Some(fixture_details(
-            r#"{"cached_tokens":3,"google_maps_grounding_requests":2}"#
-        ))
     );
 }
 

@@ -360,9 +360,8 @@ fn assert_source_shapes(body: &IndexMap<String, Json>) {
 
 fn model_arn(redactor: &Redactor) {
     model_arn_payload(redactor);
-    model_arn_endpoint_rewrites(redactor);
+    model_arn_endpoint_urls(redactor);
     model_arn_environment_region(redactor);
-    model_arn_session_region_and_endpoint(redactor);
     model_arn_bearer_api_key(redactor);
     model_arn_extra_headers(redactor);
 }
@@ -397,21 +396,11 @@ fn model_arn_payload(redactor: &Redactor) {
     assert!(headers.contains_key("X-Amz-Date"));
 }
 
-fn model_arn_endpoint_rewrites(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("doc")]);
-    let mut trailing = call(&documented, auth_params());
+fn model_arn_endpoint_urls(redactor: &Redactor) {
+    let arn = request(MODEL_ARN, "q", vec![text("doc")]);
+    let named = request("rerank-model", "q", vec![text("doc")]);
+    let mut trailing = call(&arn, auth_params());
     trailing.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com/");
-    let trailing_run = run_case(
-        trailing,
-        Reply::ok(VALID_REPLY),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(
-        trailing_run.posted().url,
-        "https://bedrock-agent-runtime.us-west-2.amazonaws.com//rerank"
-    );
-
     let configured = params(&[
         ("aws_access_key_id", Json::Text(FIRST_ACCESS.to_owned())),
         ("aws_secret_access_key", Json::Text(FIRST_SECRET.to_owned())),
@@ -421,16 +410,33 @@ fn model_arn_endpoint_rewrites(redactor: &Redactor) {
         ),
         ("aws_region_name", Json::Text("eu-west-1".to_owned())),
     ]);
-    let configured_run = run_case(
-        call(&documented, configured),
-        Reply::ok(VALID_REPLY),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(
-        configured_run.posted().url,
-        "https://bedrock-agent-runtime.eu-west-1.amazonaws.com/rerank"
-    );
+    let mut session = call(&named, ParamMap::new());
+    session.environment.session_region = Some("ap-south-1");
+    let mut endpoint = call(&named, ParamMap::new());
+    endpoint.environment.runtime_endpoint =
+        Some("https://bedrock-runtime.ca-central-1.amazonaws.com");
+    let sync = Some(ClientKind::Sync);
+    for (prepared, url) in [
+        (
+            trailing,
+            "https://bedrock-agent-runtime.us-west-2.amazonaws.com//rerank",
+        ),
+        (
+            call(&arn, configured),
+            "https://bedrock-agent-runtime.eu-west-1.amazonaws.com/rerank",
+        ),
+        (
+            session,
+            "https://bedrock-agent-runtime.ap-south-1.amazonaws.com/rerank",
+        ),
+        (
+            endpoint,
+            "https://bedrock-agent-runtime.ca-central-1.amazonaws.com/rerank",
+        ),
+    ] {
+        let run = run_case(prepared, Reply::ok(VALID_REPLY), sync, redactor);
+        assert_eq!(run.posted().url, url);
+    }
 }
 
 fn model_arn_environment_region(redactor: &Redactor) {
@@ -453,36 +459,6 @@ fn model_arn_environment_region(redactor: &Redactor) {
     let calls = source.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].1, "eu-central-1");
-}
-
-fn model_arn_session_region_and_endpoint(redactor: &Redactor) {
-    let documented = request("rerank-model", "q", vec![text("doc")]);
-    let mut environment = call(&documented, ParamMap::new());
-    environment.environment.session_region = Some("ap-south-1");
-    let session_run = run_case(
-        environment,
-        Reply::ok(VALID_REPLY),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(
-        session_run.posted().url,
-        "https://bedrock-agent-runtime.ap-south-1.amazonaws.com/rerank"
-    );
-
-    let mut endpoint = call(&documented, ParamMap::new());
-    endpoint.environment.runtime_endpoint =
-        Some("https://bedrock-runtime.ca-central-1.amazonaws.com");
-    let endpoint_run = run_case(
-        endpoint,
-        Reply::ok(VALID_REPLY),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    assert_eq!(
-        endpoint_run.posted().url,
-        "https://bedrock-agent-runtime.ca-central-1.amazonaws.com/rerank"
-    );
 }
 
 fn model_arn_bearer_api_key(redactor: &Redactor) {
@@ -579,22 +555,26 @@ fn tokens(response: &RerankResponse) -> &RerankTokens {
         .expect("tokens are not null")
 }
 
+fn run_reply(body: &str, redactor: &Redactor) -> Run {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    run_case(
+        call(&documented, auth_params()),
+        Reply::ok(body),
+        Some(ClientKind::Sync),
+        redactor,
+    )
+}
+
 fn results_index_score(redactor: &Redactor) {
     results_index_score_values(redactor);
-    results_index_score_ids(redactor);
     results_index_score_usage(redactor);
     results_index_score_usage_nulls(redactor);
-    results_index_score_failures(redactor);
+    results_index_score_ids_and_failures(redactor);
 }
 
 fn results_index_score_values(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
-        call(&documented, auth_params()),
-        Reply::ok(
-            r#"{"id":"resp-1","results":[{"index":2,"relevanceScore":0.125},{"index":0,"relevanceScore":-0.5}]}"#,
-        ),
-        Some(ClientKind::Sync),
+    let run = run_reply(
+        r#"{"id":"resp-1","results":[{"index":2,"relevanceScore":0.125},{"index":0,"relevanceScore":-0.5}]}"#,
         redactor,
     );
     let response = run.response();
@@ -607,44 +587,9 @@ fn results_index_score_values(redactor: &Redactor) {
     assert_eq!(tokens(response).input_tokens, None);
 }
 
-fn results_index_score_ids(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    for (body, expected) in [
-        (
-            r#"{"results":[{"index":0,"relevanceScore":0.5}]}"#,
-            GENERATED_ID,
-        ),
-        (
-            r#"{"id":"explicit","results":[{"index":0,"relevanceScore":0.5}]}"#,
-            "explicit",
-        ),
-        (
-            r#"{"id":"","results":[{"index":0,"relevanceScore":0.5}]}"#,
-            "",
-        ),
-        (
-            r#"{"id":null,"results":[{"index":0,"relevanceScore":0.5}]}"#,
-            GENERATED_ID,
-        ),
-    ] {
-        let run = run_case(
-            call(&documented, auth_params()),
-            Reply::ok(body),
-            Some(ClientKind::Sync),
-            redactor,
-        );
-        assert_eq!(run.response().id.as_deref(), Some(expected), "{body}");
-    }
-}
-
 fn results_index_score_usage(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let filled_run = run_case(
-        call(&documented, auth_params()),
-        Reply::ok(
-            r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":5,"total_tokens":9,"input_tokens":1,"output_tokens":2}}"#,
-        ),
-        Some(ClientKind::Sync),
+    let filled_run = run_reply(
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":5,"total_tokens":9,"input_tokens":1,"output_tokens":2}}"#,
         redactor,
     );
     let response = filled_run.response();
@@ -653,10 +598,8 @@ fn results_index_score_usage(redactor: &Redactor) {
     assert_eq!(tokens(response).input_tokens, Some(Some(1)));
     assert_eq!(tokens(response).output_tokens, Some(Some(2)));
 
-    let empty_run = run_case(
-        call(&documented, auth_params()),
-        Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{}}"#),
-        Some(ClientKind::Sync),
+    let empty_run = run_reply(
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{}}"#,
         redactor,
     );
     assert_eq!(
@@ -665,10 +608,8 @@ fn results_index_score_usage(redactor: &Redactor) {
         "an empty usage keeps no search unit"
     );
 
-    let null_run = run_case(
-        call(&documented, auth_params()),
-        Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":null}"#),
-        Some(ClientKind::Sync),
+    let null_run = run_reply(
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":null}"#,
         redactor,
     );
     assert_eq!(
@@ -679,13 +620,8 @@ fn results_index_score_usage(redactor: &Redactor) {
 }
 
 fn results_index_score_usage_nulls(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
-        call(&documented, auth_params()),
-        Reply::ok(
-            r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":null,"total_tokens":null,"input_tokens":null,"output_tokens":null}}"#,
-        ),
-        Some(ClientKind::Sync),
+    let run = run_reply(
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":null,"total_tokens":null,"input_tokens":null,"output_tokens":null}}"#,
         redactor,
     );
     let response = run.response();
@@ -695,36 +631,68 @@ fn results_index_score_usage_nulls(redactor: &Redactor) {
     assert_eq!(tokens(response).output_tokens, Some(None));
 }
 
-fn results_index_score_failures(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    for body in [
-        r#"{"usage":{}}"#,
-        "[]",
-        r#"{"results":[]}"#,
-        r#"{"results":null}"#,
-        r#"{"results":{"index":0}}"#,
-        r#"{"results":[5]}"#,
-        r#"{"results":[{"relevanceScore":0.5}]}"#,
-        r#"{"results":[{"index":null,"relevanceScore":0.5}]}"#,
-        r#"{"results":[{"index":1.5,"relevanceScore":0.5}]}"#,
-        r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#,
-        r#"{"results":[{"index":0,"relevanceScore":null}]}"#,
+const DECODE_OUTCOMES: [(&str, Option<&str>); 20] = [
+    (
+        r#"{"results":[{"index":0,"relevanceScore":0.5}]}"#,
+        Some(GENERATED_ID),
+    ),
+    (
+        r#"{"id":"explicit","results":[{"index":0,"relevanceScore":0.5}]}"#,
+        Some("explicit"),
+    ),
+    (
+        r#"{"id":"","results":[{"index":0,"relevanceScore":0.5}]}"#,
+        Some(""),
+    ),
+    (
+        r#"{"id":null,"results":[{"index":0,"relevanceScore":0.5}]}"#,
+        Some(GENERATED_ID),
+    ),
+    (r#"{"usage":{}}"#, None),
+    ("[]", None),
+    (r#"{"results":[]}"#, None),
+    (r#"{"results":null}"#, None),
+    (r#"{"results":{"index":0}}"#, None),
+    (r#"{"results":[5]}"#, None),
+    (r#"{"results":[{"relevanceScore":0.5}]}"#, None),
+    (r#"{"results":[{"index":null,"relevanceScore":0.5}]}"#, None),
+    (r#"{"results":[{"index":1.5,"relevanceScore":0.5}]}"#, None),
+    (r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#, None),
+    (r#"{"results":[{"index":0,"relevanceScore":null}]}"#, None),
+    (
         r#"{"results":[{"index":0,"relevanceScore":0.12345678901234567890123456789012}]}"#,
+        None,
+    ),
+    (
         r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":"none"}"#,
+        None,
+    ),
+    (
         r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":1.5}}"#,
+        None,
+    ),
+    (
         r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"total_tokens":"many"}}"#,
+        None,
+    ),
+    (
         r#"{"id":7,"results":[{"index":0,"relevanceScore":0.5}]}"#,
-    ] {
-        let run = run_case(
-            call(&documented, auth_params()),
-            Reply::ok(body),
-            Some(ClientKind::Sync),
-            redactor,
-        );
-        assert!(
-            matches!(run.result, Err(RerankCallError::Decode(_))),
-            "{body}"
-        );
+        None,
+    ),
+];
+
+fn results_index_score_ids_and_failures(redactor: &Redactor) {
+    for (body, id) in DECODE_OUTCOMES {
+        let run = run_reply(body, redactor);
+        match id {
+            Some(expected) => {
+                assert_eq!(run.response().id.as_deref(), Some(expected), "{body}");
+            }
+            None => assert!(
+                matches!(run.result, Err(RerankCallError::Decode(_))),
+                "{body}"
+            ),
+        }
     }
 }
 
@@ -762,59 +730,41 @@ fn return_document_content(redactor: &Redactor) {
 }
 
 fn rerank_error(redactor: &Redactor) {
-    rerank_error_status(redactor);
-    rerank_error_transport(redactor);
+    rerank_error_status_and_transport(redactor);
     rerank_error_redirect(redactor);
     rerank_error_decode(redactor);
 }
 
-fn rerank_error_status(redactor: &Redactor) {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
-        call(&documented, auth_params()),
-        Reply::status(
-            429,
-            &[("x-amzn-errortype", "ThrottlingException")],
-            "slow down",
-        ),
-        Some(ClientKind::Sync),
-        redactor,
-    );
-    let Err(RerankCallError::Provider { status, error }) = &run.result else {
-        panic!("a status error is a provider error");
-    };
-    assert_eq!(*status, 429);
-    assert_eq!(run.result.as_ref().unwrap_err().status(), Some(429));
-    assert_eq!(error.error.status_code, 429);
-    assert_eq!(error.error.message, "slow down");
-    assert_eq!(
-        error.response_headers,
-        vec![(
-            "x-amzn-errortype".to_owned(),
-            "ThrottlingException".to_owned()
-        )]
-    );
-    assert!(
-        run.post_call().is_none(),
-        "a failed status logs no post_call"
-    );
-}
-
-fn rerank_error_transport(redactor: &Redactor) {
+fn rerank_error_status_and_transport(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let sync = Some(ClientKind::Sync);
-    let timeout_run = run_case(
-        call(&documented, auth_params()),
-        Reply::Timeout,
-        sync,
-        redactor,
-    );
-    let Err(RerankCallError::Provider { status, error }) = &timeout_run.result else {
-        panic!("a timeout is a provider error");
-    };
-    assert_eq!(*status, 408);
-    assert_eq!(timeout_run.result.as_ref().unwrap_err().status(), Some(408));
-    assert_eq!(error.error.message, "Timeout error occurred.");
+    for (reply, code, message, headers) in [
+        (
+            Reply::status(
+                429,
+                &[("x-amzn-errortype", "ThrottlingException")],
+                "slow down",
+            ),
+            429,
+            "slow down",
+            vec![(
+                "x-amzn-errortype".to_owned(),
+                "ThrottlingException".to_owned(),
+            )],
+        ),
+        (Reply::Timeout, 408, "Timeout error occurred.", Vec::new()),
+    ] {
+        let run = run_case(call(&documented, auth_params()), reply, sync, redactor);
+        let Err(RerankCallError::Provider { status, error }) = &run.result else {
+            panic!("a status error or a timeout is a provider error");
+        };
+        assert_eq!(*status, code);
+        assert_eq!(run.result.as_ref().unwrap_err().status(), Some(code));
+        assert_eq!(error.error.status_code, code);
+        assert_eq!(error.error.message, message);
+        assert_eq!(error.response_headers, headers);
+        assert!(run.post_call().is_none(), "a failed call logs no post_call");
+    }
 
     let failed_run = run_case(
         call(&documented, auth_params()),

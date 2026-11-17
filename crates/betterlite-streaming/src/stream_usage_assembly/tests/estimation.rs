@@ -73,52 +73,42 @@ async fn prompt_callback_wins(redactor: &Arc<Redactor>) {
 }
 
 async fn prompt_failures_are_swallowed(redactor: &Arc<Redactor>) {
-    failed_message_count_is_swallowed(redactor).await;
-    failed_prompt_callback_is_swallowed(redactor).await;
+    failed_prompt_counts_are_swallowed(redactor).await;
     missing_messages_fail_the_prompt_count(redactor).await;
 }
 
-async fn failed_message_count_is_swallowed(redactor: &Arc<Redactor>) {
+async fn failed_prompt_counts_are_swallowed(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
-    let counter = FixtureCounter::failing_messages();
-    let case = UsageCase {
-        counter: &counter,
-        chunks: &parsed,
-        messages: Some(&messages),
-        reasoning_tokens: None,
-        count_prompt_tokens: None,
-    };
-    let (result, verbose) = case.run(redactor).await;
-    assert_eq!(
-        result
-            .expect("a failed prompt count is swallowed")
-            .prompt_tokens,
-        0
-    );
-    assert_eq!(verbose, vec![TOKEN_COUNTER_FAILED.to_owned()]);
-}
-
-async fn failed_prompt_callback_is_swallowed(redactor: &Arc<Redactor>) {
-    let parsed = chunks(r#"[{"choices":[]}]"#);
-    let messages = fixture_messages();
-    let counter = FixtureCounter::counting(7, 2, 4);
+    let failing_messages = FixtureCounter::failing_messages();
+    let counting = FixtureCounter::counting(7, 2, 4);
     let raising = || Err(CountError::MissingInput);
-    let case = UsageCase {
-        counter: &counter,
-        chunks: &parsed,
-        messages: Some(&messages),
-        reasoning_tokens: None,
-        count_prompt_tokens: Some(&raising),
-    };
-    let (result, verbose) = case.run(redactor).await;
-    assert_eq!(
-        result
-            .expect("a failed callback is swallowed")
-            .prompt_tokens,
-        0
-    );
-    assert_eq!(verbose, vec![TOKEN_COUNTER_FAILED.to_owned()]);
+    let cases = [
+        UsageCase {
+            counter: &failing_messages,
+            chunks: &parsed,
+            messages: Some(&messages),
+            reasoning_tokens: None,
+            count_prompt_tokens: None,
+        },
+        UsageCase {
+            counter: &counting,
+            chunks: &parsed,
+            messages: Some(&messages),
+            reasoning_tokens: None,
+            count_prompt_tokens: Some(&raising),
+        },
+    ];
+    for case in cases {
+        let (result, verbose) = case.run(redactor).await;
+        assert_eq!(
+            result
+                .expect("a failed prompt count is swallowed")
+                .prompt_tokens,
+            0
+        );
+        assert_eq!(verbose, vec![TOKEN_COUNTER_FAILED.to_owned()]);
+    }
 }
 
 async fn missing_messages_fail_the_prompt_count(redactor: &Arc<Redactor>) {

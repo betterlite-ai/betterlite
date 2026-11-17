@@ -12,8 +12,7 @@ pub(super) async fn text_completion_assembly(redactor: &Arc<Redactor>) {
     text_completion_join(redactor).await;
     text_completion_usage(redactor).await;
     text_defaults(redactor).await;
-    text_completion_failure(redactor).await;
-    text_total_overflow(redactor).await;
+    text_count_failures(redactor).await;
     text_branch_selection(redactor).await;
     text_branch_mixed(redactor).await;
 }
@@ -110,38 +109,36 @@ pub(super) async fn text_defaults(redactor: &Arc<Redactor>) {
     );
 }
 
-pub(super) async fn text_completion_failure(redactor: &Arc<Redactor>) {
+pub(super) async fn text_count_failures(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
          "choices": [{"index": 0, "text": "A"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream), redactor);
-    harness.counter.fail_response_text = true;
-    let (result, logs) = harness.run().await;
-    assert!(matches!(failed(result), AssemblyError::TokenCount { .. }));
-    assert_eq!(logs.len(), 2);
-    assert_eq!(logs[0], "token_counter failed, assuming prompt tokens is 0");
-    assert!(logs[1].ends_with(
+    let mut failing = Harness::new(Some(stream.clone()), redactor);
+    failing.counter.fail_response_text = true;
+    let (count_result, count_logs) = failing.run().await;
+    assert!(matches!(
+        failed(count_result),
+        AssemblyError::TokenCount { .. }
+    ));
+    assert_eq!(count_logs.len(), 2);
+    assert_eq!(
+        count_logs[0],
+        "token_counter failed, assuming prompt tokens is 0"
+    );
+    assert!(count_logs[1].ends_with(
         "Exception occurred - the token count failed: either text or messages must be provided"
     ));
-}
 
-pub(super) async fn text_total_overflow(redactor: &Arc<Redactor>) {
-    let stream = chunks(
-        r#"[
-        {"id": "chatcmpl-1", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
-         "choices": [{"index": 0, "text": "A"}]}
-    ]"#,
-    );
-    let mut harness = Harness::new(Some(stream), redactor);
-    harness.messages = true;
-    harness.counter.messages = i64::MAX;
-    harness.counter.response_text = 1;
-    let (result, logs) = harness.run().await;
-    assert!(matches!(failed(result), AssemblyError::Overflow));
-    assert!(logs[0].ends_with("Exception occurred - the token count overflowed"));
+    let mut overflowing = Harness::new(Some(stream), redactor);
+    overflowing.messages = true;
+    overflowing.counter.messages = i64::MAX;
+    overflowing.counter.response_text = 1;
+    let (overflow_result, overflow_logs) = overflowing.run().await;
+    assert!(matches!(failed(overflow_result), AssemblyError::Overflow));
+    assert!(overflow_logs[0].ends_with("Exception occurred - the token count overflowed"));
 }
 
 pub(super) async fn text_branch_selection(redactor: &Arc<Redactor>) {
