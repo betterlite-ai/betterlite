@@ -207,6 +207,13 @@ fn case_2_http_error_before_frame() {
         outcome.provider_body(),
         Some(ResponseBody::Unread { reason_phrase }) if reason_phrase == "Bad Request"
     ));
+    assert_eq!(
+        outcome.provider().unwrap().response_headers,
+        vec![(
+            "content-type".to_owned(),
+            "application/vnd.amazon.eventstream".to_owned()
+        )]
+    );
     assert_eq!(inputs.polls(), 0);
     assert!(outcome.logs.is_empty());
 

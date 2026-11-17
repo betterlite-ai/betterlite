@@ -24,6 +24,9 @@ deviations:
   - what: The post-call record carries no api_key, where LiteLLM passes api_key="" (and the buffered converter passes its own api_key argument) to logging_obj.post_call.
     why: B249's shared PostCall record has no api_key field, the same omission B607 records for the buffered converter, and nothing that reads the record consumes the key.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2541-L2548
+  - what: A supplied handler that fails a request surfaces as a transport failure, where LiteLLM's HTTPStatusError branch turns the response it carries into a BedrockError with that response's status, headers and error text.
+    why: The pooled transport and the oracle fixture deliver every status inside the response head instead of raising, so no native path produces an HTTP status error to map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L260-L267
   - what: A Converse transport failure surfaces as the native transport error type, where LiteLLM lets the raw httpx exception escape the handler.
     why: The sync Converse call has no catch, so the failure crosses the same boundary; betterlite names it with its own error type instead of an httpx exception class.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_handler.py#L26-L85
