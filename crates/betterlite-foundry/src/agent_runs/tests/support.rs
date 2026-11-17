@@ -71,7 +71,7 @@ pub(super) fn prepared(
     prepare(&request).expect("a prepared call")
 }
 
-pub(super) const NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
+pub(super) static NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
 
 pub(super) struct CallFixture {
     pub(super) api_base: &'static str,
