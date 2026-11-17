@@ -586,6 +586,19 @@ fn embed_batch_body_without_embeddings_is_an_error() {
 }
 
 #[test]
+fn embed_non_object_body_is_a_shape_error() {
+    let fixture = fixture(EMBED_ROUTE, "[]");
+    let logger = VertexPredictLogger::new(priced());
+    let Err(error) = logger.handle_embed_content_response(embed_input(&fixture, None)) else {
+        panic!("a non-object body is an error");
+    };
+    assert!(
+        matches!(&error, VertexPredictError::BodyShape { found } if *found == "a list"),
+        "{error}"
+    );
+}
+
+#[test]
 fn embed_invalid_json_body_is_a_decode_error() {
     let fixture = raw_fixture(EMBED_ROUTE, b"{oops");
     let logger = VertexPredictLogger::new(priced());
