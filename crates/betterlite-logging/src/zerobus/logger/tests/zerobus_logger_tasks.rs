@@ -6,7 +6,7 @@ use tokio::task::{Id, JoinHandle};
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 

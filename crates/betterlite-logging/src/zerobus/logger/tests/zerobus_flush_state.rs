@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::zerobus::client::types::ZerobusIngestFailure;
 use crate::zerobus::logger::delivery::RowIngest;
 

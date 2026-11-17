@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{FakeIngest, event, logger, params, queued_ids, queued_rows};

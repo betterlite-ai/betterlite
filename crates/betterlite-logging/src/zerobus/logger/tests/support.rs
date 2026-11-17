@@ -21,7 +21,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_failure::events::payload_to_map;
@@ -154,7 +154,7 @@ pub(super) fn deps(params: ZerobusInitParams, client: Option<Arc<dyn RowIngest>>
         client,
         secrets: Arc::new(MapSecrets::new(&[])),
         http: proxied_client(),
-        clock: Arc::new(|| 0.0),
+        clock: Arc::new(|| 0.0_f64),
         redaction: RedactionSettings {
             turn_off_message_logging: false,
             excluded_fields: Vec::new(),
@@ -351,12 +351,12 @@ impl RowIngest for FakeIngest {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(rows.to_vec());
-        let gate = self
+        let held = self
             .gate
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        if let Some(gate) = gate
+        if let Some(gate) = held
             && let Ok(permit) = gate.acquire().await
         {
             permit.forget();

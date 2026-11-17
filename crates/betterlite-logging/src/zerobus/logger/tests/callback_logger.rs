@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::zerobus::logger::CALLBACK_NAME;
 use crate::zerobus::logger::delivery::RowIngest;
 

@@ -32,7 +32,7 @@ async fn zerobus_batch_send_reports_the_client_failure() {
     let client = ZerobusIngestClient {
         connection: connection("main.traces"),
         http: proxied_client(),
-        clock: Arc::new(|| 0.0),
+        clock: Arc::new(|| 0.0_f64),
         timeout: Duration::from_secs(1),
         token: AsyncMutex::new(None),
     };

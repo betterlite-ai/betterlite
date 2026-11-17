@@ -217,31 +217,23 @@ fn zerobus_connection_uses_defaults_for_empty_settings() {
 #[test]
 fn zerobus_connection_refuses_a_non_numeric_batch_size() {
     let worded = entry(&[("batch_size", "zero")]);
-    let worded_error = configured_params(Some(&worded))
-        .err()
-        .expect("not a number");
+    let worded_error = configured_params(Some(&worded)).expect_err("not a number");
     assert!(matches!(worded_error, ParamsError::Number { field } if field == "batch_size"));
     let zeroed = entry(&[("batch_size", "0")]);
-    let zeroed_error = configured_params(Some(&zeroed))
-        .err()
-        .expect("zero is not a batch size");
+    let zeroed_error = configured_params(Some(&zeroed)).expect_err("zero is not a batch size");
     assert!(matches!(zeroed_error, ParamsError::Number { field } if field == "batch_size"));
 }
 
 #[test]
 fn zerobus_connection_refuses_a_non_bool_flag() {
     let variables = entry(&[("turn_off_message_logging", "maybe")]);
-    let error = configured_params(Some(&variables))
-        .err()
-        .expect("not a bool");
+    let error = configured_params(Some(&variables)).expect_err("not a bool");
     assert!(matches!(error, ParamsError::Bool { field } if field == "turn_off_message_logging"));
 }
 
 #[test]
 fn zerobus_connection_refuses_an_unknown_setting() {
     let variables = entry(&[("bogus_setting", "1")]);
-    let error = configured_params(Some(&variables))
-        .err()
-        .expect("unknown key");
+    let error = configured_params(Some(&variables)).expect_err("unknown key");
     assert!(matches!(error, ParamsError::Unknown { field } if field == "bogus_setting"));
 }

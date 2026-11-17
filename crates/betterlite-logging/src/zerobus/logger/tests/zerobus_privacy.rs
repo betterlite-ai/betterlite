@@ -3,7 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::exporter_options::redaction::ResponseStamp;
 use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;

@@ -4,7 +4,7 @@ use std::time::Duration;
 use indexmap::IndexMap;
 
 use crate::batch::logger::DEFAULT_MAX_QUEUE_SIZE;
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::zerobus::client::init_params::ZerobusInitParams;
 use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
