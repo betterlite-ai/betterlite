@@ -1,0 +1,140 @@
+kind: helper
+name: bedrock-converse-messages-orphan-text-projection
+call:
+  bedrock_converse_messages:
+    function: handle_orphaned
+    messages:
+      - role: assistant
+        content: Let me check.
+        tool_calls:
+          - {id: call_1, type: function, function: {name: lookup, arguments: '{"q":1}'}}
+    optional_params: {}
+    neutralize_orphaned_blocks: true
+    modify_params: false
+calls:
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: assistant
+          content:
+            - {type: text, text: a}
+            - {type: text, text: b}
+          tool_calls:
+            - {id: call_1, type: function, function: {name: lookup, arguments: '{}'}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: assistant
+          content: '  '
+          tool_calls:
+            - {id: call_1, type: function, function: {name: lookup, arguments: ''}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: assistant
+          tool_calls:
+            - {type: function, function: {name: lookup, arguments: '{}'}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: assistant, content: '', tool_calls: [{id: call_2}]}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: assistant
+          content: base
+          tool_calls:
+            - {id: a, type: function, function: {name: one, arguments: '1'}}
+            - {id: b, type: function, function: {name: two, arguments: '2'}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: tool, tool_call_id: call_9, content: sunny}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: tool, tool_call_id: '', name: weather, content: sunny}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: function, content: sunny}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: tool
+          tool_call_id: c
+          content:
+            - {type: image, source: {bytes: AA==}}
+            - {type: text, text: '  hi  '}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - role: tool
+          tool_call_id: c
+          content:
+            - {type: image, source: {bytes: AA==}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: tool, tool_call_id: c}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: tool, tool_call_id: call_1, content: result}
+        - {role: assistant, content: done, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+      optional_params: {guardrailConfig: null}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: user, name: alice, content: hello, extra: {keep: true}}
+        - {role: developer, content: policy}
+        - {role: tool, tool_call_id: c, content: r}
+        - {role: assistant, content: older, tool_calls: null}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+  - bedrock_converse_messages:
+      function: handle_orphaned
+      messages:
+        - {role: assistant, name: bot, content: x, tool_calls: [{id: c, type: function, function: {name: n, arguments: '{}'}}], extra: 1}
+        - {role: tool, name: weather, tool_call_id: c, content: r, extra: {dropped: true}}
+      optional_params: {}
+      neutralize_orphaned_blocks: true
+      modify_params: false
+env: {}
+compare: {ignore: []}
