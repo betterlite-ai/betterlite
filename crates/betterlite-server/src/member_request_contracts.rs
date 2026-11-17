@@ -37,43 +37,22 @@ impl From<serde_json::Error> for MemberContractError {
     }
 }
 
-pub(crate) fn required_field<T>(
-    object: &Map<String, Value>,
-    name: &str,
-) -> Result<T, MemberContractError>
-where
-    T: DeserializeOwned,
-{
-    match object.get(name) {
-        Some(raw) => Ok(serde_json::from_value(raw.clone())?),
-        None => Ok(serde_json::from_value(Value::Null)?),
+pub(crate) fn missing_field(name: &str) -> MemberContractError {
+    MemberContractError::Decode {
+        source: <serde_json::Error as serde::de::Error>::custom(format!("missing field `{name}`")),
     }
 }
 
-pub(crate) fn optional_field<T>(
+pub(crate) fn field<T>(
     object: &Map<String, Value>,
     name: &str,
-) -> Result<Option<T>, MemberContractError>
+    fallback: Value,
+) -> Result<T, MemberContractError>
 where
     T: DeserializeOwned,
 {
-    let Some(raw) = object.get(name) else {
-        return Ok(None);
-    };
-    Ok(serde_json::from_value(raw.clone())?)
-}
-
-pub(crate) fn defaulted_field<T>(
-    object: &Map<String, Value>,
-    name: &str,
-) -> Result<T, MemberContractError>
-where
-    T: DeserializeOwned + Default,
-{
-    let Some(raw) = object.get(name) else {
-        return Ok(T::default());
-    };
-    Ok(serde_json::from_value(raw.clone())?)
+    let raw = object.get(name).cloned().unwrap_or(fallback);
+    Ok(serde_json::from_value(raw)?)
 }
 
 #[must_use]

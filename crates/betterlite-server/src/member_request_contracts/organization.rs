@@ -6,12 +6,12 @@ use betterlite_db::budget_permission_rows::{
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::key_fields::values::LiteLLMObjectPermissionBase;
 
-use super::{MemberContractError, defaulted_field, json_object, optional_field, required_field};
+use super::{MemberContractError, field, json_object};
 
 pub const MANAGEMENT_METADATA_FIELDS: [&str; 19] = [
     "model_rpm_limit",
@@ -76,29 +76,29 @@ impl OrganizationTableUpdate {
         let budget: LiteLLMBudgetTable = serde_json::from_value(Value::Object(fields.clone()))?;
         Ok(Self {
             budget,
-            organization_id: optional_field(&fields, "organization_id")?,
-            organization_alias: optional_field(&fields, "organization_alias")?,
-            spend: optional_field(&fields, "spend")?,
-            metadata: optional_field(&fields, "metadata")?,
-            models: optional_field(&fields, "models")?,
-            updated_by: optional_field(&fields, "updated_by")?,
-            object_permission: optional_field(&fields, "object_permission")?,
-            model_tpm_limit: optional_field(&fields, "model_tpm_limit")?,
-            model_rpm_limit: optional_field(&fields, "model_rpm_limit")?,
+            organization_id: field(&fields, "organization_id", Value::Null)?,
+            organization_alias: field(&fields, "organization_alias", Value::Null)?,
+            spend: field(&fields, "spend", Value::Null)?,
+            metadata: field(&fields, "metadata", Value::Null)?,
+            models: field(&fields, "models", Value::Null)?,
+            updated_by: field(&fields, "updated_by", Value::Null)?,
+            object_permission: field(&fields, "object_permission", Value::Null)?,
+            model_tpm_limit: field(&fields, "model_tpm_limit", Value::Null)?,
+            model_rpm_limit: field(&fields, "model_rpm_limit", Value::Null)?,
         })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrganizationUpdateRequestV2 {
     pub organization_alias: Option<String>,
     pub models: Option<Vec<String>>,
     pub metadata: Option<BTreeMap<String, JsonData>>,
     pub tpm_limit: Option<i64>,
     pub rpm_limit: Option<i64>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub max_budget: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub soft_budget: Option<Decimal>,
     pub max_parallel_requests: Option<i64>,
     pub model_max_budget: Option<BTreeMap<String, JsonData>>,
@@ -111,27 +111,10 @@ pub struct OrganizationUpdateRequestV2 {
 impl OrganizationUpdateRequestV2 {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        for name in object.keys() {
-            if !V2_FIELDS.contains(&name.as_str()) {
-                return Err(MemberContractError::Validation {
-                    message: "Extra inputs are not permitted".to_owned(),
-                });
-            }
-        }
-        Ok(Self {
-            organization_alias: optional_field(object, "organization_alias")?,
-            models: optional_field(object, "models")?,
-            metadata: optional_field(object, "metadata")?,
-            tpm_limit: optional_field(object, "tpm_limit")?,
-            rpm_limit: optional_field(object, "rpm_limit")?,
-            max_budget: optional_field(object, "max_budget")?,
-            soft_budget: optional_field(object, "soft_budget")?,
-            max_parallel_requests: optional_field(object, "max_parallel_requests")?,
-            model_max_budget: optional_field(object, "model_max_budget")?,
-            budget_duration: optional_field(object, "budget_duration")?,
-            object_permission: optional_field(object, "object_permission")?,
-            fields_set: object.keys().cloned().collect(),
-        })
+        reject_unknown_v2_fields(object)?;
+        let mut request: Self = serde_json::from_value(value.clone())?;
+        request.fields_set = object.keys().cloned().collect();
+        Ok(request)
     }
 }
 
@@ -151,17 +134,45 @@ pub struct OrganizationTableWithMembers {
     pub updated_at: Timestamp,
 }
 
+#[derive(Deserialize)]
+struct OrganizationMemberLists {
+    #[serde(default)]
+    members: Vec<OrganizationMembership>,
+    #[serde(default)]
+    teams: Vec<LiteLLMTeamTable>,
+    created_at: Timestamp,
+    updated_at: Timestamp,
+}
+
 impl OrganizationTableWithMembers {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        Ok(Self {
-            table: serde_json::from_value(value.clone())?,
-            members: defaulted_field(object, "members")?,
-            teams: defaulted_field(object, "teams")?,
-            created_at: required_field(object, "created_at")?,
-            updated_at: required_field(object, "updated_at")?,
-        })
+        let table = serde_json::from_value(Value::Object(object.clone()))?;
+        let fields: OrganizationMemberLists =
+            serde_json::from_value(Value::Object(object.clone()))?;
+        Ok(Self::new(table, fields))
     }
+
+    const fn new(table: OrganizationTable, fields: OrganizationMemberLists) -> Self {
+        Self {
+            table,
+            members: fields.members,
+            teams: fields.teams,
+            created_at: fields.created_at,
+            updated_at: fields.updated_at,
+        }
+    }
+}
+
+fn reject_unknown_v2_fields(object: &Map<String, Value>) -> Result<(), MemberContractError> {
+    for name in object.keys() {
+        if !V2_FIELDS.contains(&name.as_str()) {
+            return Err(MemberContractError::Validation {
+                message: "Extra inputs are not permitted".to_owned(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn set_model_info(object: &Map<String, Value>) -> Result<Map<String, Value>, MemberContractError> {

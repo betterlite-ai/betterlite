@@ -5,10 +5,10 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::member_removal_identity::identity::MemberIdentity;
 use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
 use rust_decimal::Decimal;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{MemberContractError, json_object, optional_field, required_field};
+use super::{MemberContractError, field, json_object, missing_field};
 
 pub const ROLES_WITHIN_ORG: [UserRole; 3] = [
     UserRole::OrgAdmin,
@@ -34,13 +34,7 @@ impl OrgMember {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let base: MemberBase = record_from_json(value)?;
         let object = json_object(value)?;
-        let role: UserRole = required_field(object, "role")?;
-        if !ROLES_WITHIN_ORG.contains(&role) {
-            return Err(MemberContractError::Validation {
-                message: "Input should be 'org_admin', 'internal_user' or 'internal_user_viewer'"
-                    .to_owned(),
-            });
-        }
+        let role = org_role(object)?;
         Ok(Self { base, role })
     }
 }
@@ -53,10 +47,8 @@ pub struct MemberAddRequest {
 impl MemberAddRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let raw: Value = required_field(object, "member")?;
-        Ok(Self {
-            member: one_or_many(&raw, record_from_json::<Member>)?,
-        })
+        let member = member_list(object)?;
+        Ok(Self { member })
     }
 }
 
@@ -68,10 +60,8 @@ pub struct OrgMemberAddRequest {
 impl OrgMemberAddRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let raw: Value = required_field(object, "member")?;
-        Ok(Self {
-            member: one_or_many(&raw, OrgMember::from_value)?,
-        })
+        let member = org_member_list(object)?;
+        Ok(Self { member })
     }
 }
 
@@ -85,17 +75,31 @@ pub struct TeamMemberAddRequest {
     pub allowed_models: Option<Vec<String>>,
 }
 
+#[derive(Deserialize)]
+struct TeamMemberAddFields {
+    team_id: String,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    max_budget_in_team: Option<Decimal>,
+    budget_duration: Option<String>,
+    allowed_models: Option<Vec<String>>,
+}
+
 impl TeamMemberAddRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let raw: Value = required_field(object, "member")?;
-        Ok(Self {
-            member: one_or_many(&raw, record_from_json::<Member>)?,
-            team_id: required_field(object, "team_id")?,
-            max_budget_in_team: optional_field(object, "max_budget_in_team")?,
-            budget_duration: optional_field(object, "budget_duration")?,
-            allowed_models: optional_field(object, "allowed_models")?,
-        })
+        let member = member_list(object)?;
+        let fields: TeamMemberAddFields = serde_json::from_value(value.clone())?;
+        Ok(Self::new(member, fields))
+    }
+
+    const fn new(member: OneOrMany<Member>, fields: TeamMemberAddFields) -> Self {
+        Self {
+            member,
+            team_id: fields.team_id,
+            max_budget_in_team: fields.max_budget_in_team,
+            budget_duration: fields.budget_duration,
+            allowed_models: fields.allowed_models,
+        }
     }
 }
 
@@ -107,19 +111,31 @@ pub struct OrganizationMemberAddRequest {
     pub max_budget_in_organization: Option<Decimal>,
 }
 
+#[derive(Deserialize)]
+struct OrganizationMemberAddFields {
+    organization_id: String,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    max_budget_in_organization: Option<Decimal>,
+}
+
 impl OrganizationMemberAddRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let raw: Value = required_field(object, "member")?;
-        Ok(Self {
-            member: one_or_many(&raw, OrgMember::from_value)?,
-            organization_id: required_field(object, "organization_id")?,
-            max_budget_in_organization: optional_field(object, "max_budget_in_organization")?,
-        })
+        let member = org_member_list(object)?;
+        let fields: OrganizationMemberAddFields = serde_json::from_value(value.clone())?;
+        Ok(Self::new(member, fields))
+    }
+
+    const fn new(member: OneOrMany<OrgMember>, fields: OrganizationMemberAddFields) -> Self {
+        Self {
+            member,
+            organization_id: fields.organization_id,
+            max_budget_in_organization: fields.max_budget_in_organization,
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamMemberDeleteRequest {
     pub user_id: Option<String>,
     pub user_email: Option<String>,
@@ -129,16 +145,13 @@ pub struct TeamMemberDeleteRequest {
 impl TeamMemberDeleteRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let identity = member_identity(object)?;
-        Ok(Self {
-            user_id: identity.user_id,
-            user_email: identity.user_email,
-            team_id: required_field(object, "team_id")?,
-        })
+        member_identity(object)?;
+        let request: Self = serde_json::from_value(value.clone())?;
+        Ok(request)
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 // ast-grep-ignore: no-long-names
 pub struct OrganizationMemberDeleteRequest {
     pub user_id: Option<String>,
@@ -150,12 +163,9 @@ pub struct OrganizationMemberDeleteRequest {
 impl OrganizationMemberDeleteRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let identity = member_identity(object)?;
-        Ok(Self {
-            user_id: identity.user_id,
-            user_email: identity.user_email,
-            organization_id: required_field(object, "organization_id")?,
-        })
+        member_identity(object)?;
+        let request: Self = serde_json::from_value(value.clone())?;
+        Ok(request)
     }
 }
 
@@ -175,19 +185,42 @@ pub struct TeamMemberUpdateRequest {
     pub temp_budget_expiry: Option<Timestamp>,
 }
 
+#[derive(Deserialize)]
+struct TeamMemberUpdateFields {
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    max_budget_in_team: Option<Decimal>,
+    role: Option<MemberRole>,
+    tpm_limit: Option<i64>,
+    rpm_limit: Option<i64>,
+    budget_duration: Option<String>,
+    allowed_models: Option<Vec<String>>,
+    temp_budget_expiry: Option<Timestamp>,
+}
+
 impl TeamMemberUpdateRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
+        let base = TeamMemberDeleteRequest::from_value(value)?;
+        let fields: TeamMemberUpdateFields = serde_json::from_value(value.clone())?;
+        let increase = temp_budget_increase(object)?;
+        Self::from_fields(base, fields, increase)
+    }
+
+    fn from_fields(
+        base: TeamMemberDeleteRequest,
+        fields: TeamMemberUpdateFields,
+        increase: Option<Decimal>,
+    ) -> Result<Self, MemberContractError> {
         let request = Self {
-            base: TeamMemberDeleteRequest::from_value(value)?,
-            max_budget_in_team: optional_field(object, "max_budget_in_team")?,
-            role: optional_field(object, "role")?,
-            tpm_limit: optional_field(object, "tpm_limit")?,
-            rpm_limit: optional_field(object, "rpm_limit")?,
-            budget_duration: optional_field(object, "budget_duration")?,
-            allowed_models: optional_field(object, "allowed_models")?,
-            temp_budget_increase: temp_budget_increase(object)?,
-            temp_budget_expiry: optional_field(object, "temp_budget_expiry")?,
+            base,
+            max_budget_in_team: fields.max_budget_in_team,
+            role: fields.role,
+            tpm_limit: fields.tpm_limit,
+            rpm_limit: fields.rpm_limit,
+            budget_duration: fields.budget_duration,
+            allowed_models: fields.allowed_models,
+            temp_budget_increase: increase,
+            temp_budget_expiry: fields.temp_budget_expiry,
         };
         validate_temp_budget(&request)?;
         Ok(request)
@@ -205,23 +238,68 @@ pub struct OrganizationMemberUpdateRequest {
     pub role: Option<UserRole>,
 }
 
+#[derive(Deserialize)]
+struct OrganizationMemberUpdateFields {
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    max_budget_in_organization: Option<Decimal>,
+    role: Option<UserRole>,
+}
+
 // ast-grep-ignore: no-long-names
 impl OrganizationMemberUpdateRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
-        let object = json_object(value)?;
         // ast-grep-ignore: no-long-names
         let base = OrganizationMemberDeleteRequest::from_value(value)?;
-        let budget = optional_field(object, "max_budget_in_organization")?;
-        let role: Option<UserRole> = optional_field(object, "role")?;
-        if role.is_some_and(|role| !ROLES_WITHIN_ORG.contains(&role)) {
-            return Err(invalid_role());
-        }
+        let fields: OrganizationMemberUpdateFields = serde_json::from_value(value.clone())?;
+        Self::from_fields(base, fields)
+    }
+
+    fn from_fields(
+        // ast-grep-ignore: no-long-names
+        base: OrganizationMemberDeleteRequest,
+        fields: OrganizationMemberUpdateFields,
+    ) -> Result<Self, MemberContractError> {
+        let role = checked_role(fields.role)?;
         Ok(Self {
             base,
-            max_budget_in_organization: budget,
+            max_budget_in_organization: fields.max_budget_in_organization,
             role,
         })
     }
+}
+
+fn member_list(object: &Map<String, Value>) -> Result<OneOrMany<Member>, MemberContractError> {
+    let Some(raw) = object.get("member") else {
+        return Err(missing_field("member"));
+    };
+    one_or_many(raw, record_from_json::<Member>)
+}
+
+fn org_member_list(
+    object: &Map<String, Value>,
+) -> Result<OneOrMany<OrgMember>, MemberContractError> {
+    let Some(raw) = object.get("member") else {
+        return Err(missing_field("member"));
+    };
+    one_or_many(raw, OrgMember::from_value)
+}
+
+fn org_role(object: &Map<String, Value>) -> Result<UserRole, MemberContractError> {
+    let role: UserRole = field(object, "role", Value::Null)?;
+    if ROLES_WITHIN_ORG.contains(&role) {
+        return Ok(role);
+    }
+    Err(MemberContractError::Validation {
+        message: "Input should be 'org_admin', 'internal_user' or 'internal_user_viewer'"
+            .to_owned(),
+    })
+}
+
+fn checked_role(role: Option<UserRole>) -> Result<Option<UserRole>, MemberContractError> {
+    if role.is_some_and(|value| !ROLES_WITHIN_ORG.contains(&value)) {
+        return Err(invalid_role());
+    }
+    Ok(role)
 }
 
 fn one_or_many<T>(
@@ -250,8 +328,8 @@ where
 }
 
 fn member_identity(object: &Map<String, Value>) -> Result<MemberIdentity, MemberContractError> {
-    let user_id = optional_field(object, "user_id")?;
-    let user_email = optional_field(object, "user_email")?;
+    let user_id: Option<String> = field(object, "user_id", Value::Null)?;
+    let user_email: Option<String> = field(object, "user_email", Value::Null)?;
     MemberIdentity::new(user_id, user_email).map_err(|source| MemberContractError::Validation {
         message: source.to_string(),
     })
@@ -260,7 +338,7 @@ fn member_identity(object: &Map<String, Value>) -> Result<MemberIdentity, Member
 fn temp_budget_increase(
     object: &Map<String, Value>,
 ) -> Result<Option<Decimal>, MemberContractError> {
-    let increase: Option<Decimal> = optional_field(object, "temp_budget_increase")?;
+    let increase: Option<Decimal> = field(object, "temp_budget_increase", Value::Null)?;
     if increase.is_some_and(|amount| amount < Decimal::ZERO) {
         return Err(MemberContractError::Validation {
             message: "Input should be greater than or equal to 0".to_owned(),

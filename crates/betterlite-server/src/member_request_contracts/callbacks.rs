@@ -4,7 +4,7 @@ use betterlite_logging::logging_privacy::callbacks::{SpanScope, validate_environ
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::{MemberContractError, json_object, optional_field, required_field};
+use super::{MemberContractError, field, json_object, missing_field};
 
 pub const CALLBACK_VARIABLE_NAMES: [&str; 34] = [
     "arize_api_key",
@@ -69,19 +69,33 @@ impl AddTeamCallback {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         validate_callback_vars(object)?;
-        let callback_name = required_field(object, "callback_name")?;
-        let callback_type = match object.get("callback_type") {
-            None => Some(CallbackType::SuccessAndFailure),
-            Some(Value::Null) => None,
-            Some(raw) => Some(serde_json::from_value(raw.clone())?),
-        };
-        let raw_vars: Value = required_field(object, "callback_vars")?;
-        Ok(Self {
-            callback_name,
-            callback_type,
-            callback_vars: callback_vars(&raw_vars)?,
-        })
+        add_team_callback(object)
     }
+}
+
+fn add_team_callback(object: &Map<String, Value>) -> Result<AddTeamCallback, MemberContractError> {
+    Ok(AddTeamCallback {
+        callback_name: field(object, "callback_name", Value::Null)?,
+        callback_type: callback_type(object)?,
+        callback_vars: parsed_callback_vars(object)?,
+    })
+}
+
+fn callback_type(object: &Map<String, Value>) -> Result<Option<CallbackType>, MemberContractError> {
+    match object.get("callback_type") {
+        None => Ok(Some(CallbackType::SuccessAndFailure)),
+        Some(Value::Null) => Ok(None),
+        Some(raw) => Ok(Some(serde_json::from_value(raw.clone())?)),
+    }
+}
+
+fn parsed_callback_vars(
+    object: &Map<String, Value>,
+) -> Result<BTreeMap<String, String>, MemberContractError> {
+    let Some(raw) = object.get("callback_vars") else {
+        return Err(missing_field("callback_vars"));
+    };
+    callback_vars(raw)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -94,30 +108,43 @@ pub struct TeamCallbackMetadata {
 
 impl TeamCallbackMetadata {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
-        let object = json_object(value)?;
-        let mut fields = object.clone();
-        for name in NULLABLE_METADATA_KEYS {
-            if matches!(fields.get(name), Some(Value::Null)) {
-                fields.remove(name);
-            }
-        }
+        let fields = metadata_fields(value)?;
         if fields.values().all(Value::is_null) {
             return Ok(Self::default());
         }
-        if let Some(Value::Object(vars)) = fields.get("callback_vars") {
-            for name in vars.keys() {
-                if !CALLBACK_VARIABLE_NAMES.contains(&name.as_str()) {
-                    return Err(invalid_callback_variable(name));
-                }
+        metadata(&fields)
+    }
+}
+
+fn metadata_fields(value: &Value) -> Result<Map<String, Value>, MemberContractError> {
+    let mut fields = json_object(value)?.clone();
+    for name in NULLABLE_METADATA_KEYS {
+        if matches!(fields.get(name), Some(Value::Null)) {
+            fields.remove(name);
+        }
+    }
+    Ok(fields)
+}
+
+fn metadata(fields: &Map<String, Value>) -> Result<TeamCallbackMetadata, MemberContractError> {
+    if let Some(Value::Object(vars)) = fields.get("callback_vars") {
+        for name in vars.keys() {
+            if !CALLBACK_VARIABLE_NAMES.contains(&name.as_str()) {
+                return Err(invalid_callback_variable(name));
             }
         }
-        Ok(Self {
-            success_callback: optional_field(&fields, "success_callback")?.unwrap_or_default(),
-            failure_callback: optional_field(&fields, "failure_callback")?.unwrap_or_default(),
-            callbacks: optional_field(&fields, "callbacks")?.unwrap_or_default(),
-            callback_vars: optional_field(&fields, "callback_vars")?.unwrap_or_default(),
-        })
     }
+    let success_callback: Option<Vec<String>> = field(fields, "success_callback", Value::Null)?;
+    let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", Value::Null)?;
+    let callbacks: Option<Vec<String>> = field(fields, "callbacks", Value::Null)?;
+    let decoded_vars: Option<BTreeMap<String, String>> =
+        field(fields, "callback_vars", Value::Null)?;
+    Ok(TeamCallbackMetadata {
+        success_callback: success_callback.unwrap_or_default(),
+        failure_callback: failure_callback.unwrap_or_default(),
+        callbacks: callbacks.unwrap_or_default(),
+        callback_vars: decoded_vars.unwrap_or_default(),
+    })
 }
 
 fn validate_callback_vars(object: &Map<String, Value>) -> Result<(), MemberContractError> {

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{MemberContractError, json_object, required_field};
+use super::{MemberContractError, field, json_object};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DeleteTeamRequest {
@@ -13,7 +13,7 @@ pub struct DeleteTeamRequest {
 impl DeleteTeamRequest {
     pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let team_ids: Vec<String> = required_field(object, "team_ids")?;
+        let team_ids: Vec<String> = field(object, "team_ids", Value::Null)?;
         Ok(Self {
             team_ids: distinct_team_ids(team_ids),
         })
