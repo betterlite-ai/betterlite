@@ -101,7 +101,8 @@ pub(super) fn adaptive_effort_ceiling() {
         r#"{
             "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "max"},
             "bedrock/claude-low": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "high"},
-            "bedrock/claude-free": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true}
+            "bedrock/claude-free": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
+            "bedrock/claude-config": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "supports_output_config": true, "bedrock_output_config_effort_ceiling": "max"}
         }"#,
     ))
     .expect("the fixture builds");
@@ -127,6 +128,25 @@ pub(super) fn adaptive_effort_ceiling() {
             "model {model} with effort {requested}"
         );
     }
+    let defaults = OptionDefaults::default();
+    let catalog = catalog();
+    let requested = params(&json!({"max_tokens": 64, "output_config": {"effort": "xhigh"}}));
+    let request = chat_request(
+        "claude-config",
+        prompt_message(),
+        requested,
+        AnthropicHeaders::default(),
+        &defaults,
+        &catalog,
+    );
+    let fetcher = MapFetcher::default();
+    let prepared = session
+        .transform(&request, &fetcher)
+        .expect("the output config request transforms");
+    assert_eq!(
+        body_json(&prepared)["output_config"],
+        json!({"effort": "max"})
+    );
 }
 
 pub(super) fn bedrock_beta_filter() {
