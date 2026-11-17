@@ -1,4 +1,4 @@
-use std::io::{self, Write as _};
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
