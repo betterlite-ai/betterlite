@@ -10,6 +10,7 @@ from azure_file_storage import (
     run_file_azure_storage,
 )
 from beta_config_call import BetaConfigCall, run_beta_config
+from chat_response_stream import ChatResponseStreamCall, run_chat_response_stream
 from messages_chat_stream import (
     MessagesChatStreamCall,
     run_messages_chat_stream,
@@ -130,6 +131,15 @@ class MessagesChatStreamRequest(BaseModel):
         return run_messages_chat_stream(self.messages_chat_stream, api_base)
 
 
+class ChatResponseStreamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chat_response_stream: ChatResponseStreamCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_chat_response_stream(self.chat_response_stream, api_base)
+
+
 class ContinuationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -161,6 +171,7 @@ class Request(BaseModel):
         | MessagesNativeStreamRequest
         | MessagesSyncStreamRequest
         | MessagesChatStreamRequest
+        | ChatResponseStreamRequest
         | ContinuationRequest
         | FileAzureStorageRequest
     )
