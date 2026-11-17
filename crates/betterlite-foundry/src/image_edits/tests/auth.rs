@@ -150,12 +150,11 @@ fn key_precedence() {
 
 fn missing_key() {
     let error = validate(&Call::new(FLUX1), &NoSources).unwrap_err();
-    match &error {
-        ImageEditError::Credentials(CredentialsError::MissingCredentials { env_var }) => {
-            assert_eq!(env_var, "AZURE_AI_API_KEY");
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let ImageEditError::Credentials(CredentialsError::MissingCredentials { env_var }) = &error
+    else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(env_var, "AZURE_AI_API_KEY");
     assert_eq!(error.status_code(), None);
 }
 

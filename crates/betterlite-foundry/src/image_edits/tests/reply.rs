@@ -1,10 +1,12 @@
-use betterlite_openai::image_generation::reply::{ImageReplyError, ImageUsage};
+use betterlite_openai::image_generation::reply::{
+    ImageGenerationReply, ImageReplyError, ImageUsage,
+};
 
 use crate::image_edits::error::ImageEditError;
 use crate::image_edits::reply::{decode_mai_edit_reply, transform_mai_edit_response};
 use crate::mai_images::error::MaiImageError;
 
-use super::support::{self, Logger};
+use super::support::{self, Logger, PostCallRecord};
 
 const NOW: i64 = 1_700_000_000;
 
@@ -20,6 +22,12 @@ fn normalize_log_and_project() {
     let body = br#"{"created": 7, "data": [{"b64_json": "aGk="}], "usage": {"num_input_text_tokens": 3, "num_input_image_tokens": 4, "output_image_tokens": 5}}"#;
     let mut logger = Logger::default();
     let reply = transform_mai_edit_response(body, 200, NOW, &mut logger).unwrap();
+    normalized_reply(&reply);
+    let call = logger.recorded.expect("one logged call");
+    logged_call(&call);
+}
+
+fn normalized_reply(reply: &ImageGenerationReply) {
     assert_eq!(reply.created, 7);
     assert_eq!(reply.size, None);
     assert_eq!(reply.data.len(), 1);
@@ -31,8 +39,9 @@ fn normalize_log_and_project() {
     assert_eq!(reply.usage.total_tokens, 12);
     assert_eq!(reply.usage.prompt_tokens, Some(7));
     assert_eq!(reply.usage.completion_tokens, Some(5));
+}
 
-    let call = logger.recorded.expect("one logged call");
+fn logged_call(call: &PostCallRecord) {
     assert_eq!(call.input, "");
     assert_eq!(call.api_key.as_deref(), Some(""));
     assert!(call.complete_input_dict.is_empty());
@@ -94,13 +103,11 @@ fn size_is_not_synthesized() {
 
 fn failures_keep_the_provider_status() {
     let error = decode_mai_edit_reply(b"<html>bad gateway</html>", 502, NOW).unwrap_err();
-    match &error {
-        ImageEditError::Mai(MaiImageError::NotJson { record, .. }) => {
-            assert_eq!(record.status_code, 502);
-            assert_eq!(record.message, "<html>bad gateway</html>");
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let ImageEditError::Mai(MaiImageError::NotJson { record, .. }) = &error else {
+        panic!("unexpected error: {error:?}");
+    };
+    assert_eq!(record.status_code, 502);
+    assert_eq!(record.message, "<html>bad gateway</html>");
     assert_eq!(error.status_code(), Some(502));
 
     let not_object = decode_mai_edit_reply(b"[1]", 200, NOW).unwrap_err();

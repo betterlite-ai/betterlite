@@ -31,7 +31,9 @@ fn bytes_sources(count: usize) -> Vec<ImageSource> {
     (0..count)
         .map(|index| {
             let mut content = PNG.to_vec();
-            content.push(u8::try_from(index).expect("a small index"));
+            if index > 0 {
+                content.push(u8::try_from(index).expect("a small index"));
+            }
             ImageSource::Bytes(content)
         })
         .collect()
@@ -41,8 +43,7 @@ pub(super) fn flux_json_images() {
     assert_eq!(supported_params(FLUX2), FLUX2_OPENAI_PARAMS.as_slice());
     mapped_options();
     required_fields();
-    reference_limit();
-    flex_limit();
+    reference_limits();
     field_numbering_and_overlay();
     bytes_are_inline();
 }
@@ -60,8 +61,7 @@ fn mapped_options() {
     );
 
     let unsupported = map_edit_params(&support::params(r#"{"style": "vivid"}"#), FLUX2, false)
-        .err()
-        .expect("an unsupported parameter");
+        .expect_err("an unsupported parameter");
     assert!(matches!(
         unsupported,
         ImageEditError::Params(FoundryImageError::UnsupportedParams { .. })
@@ -73,17 +73,15 @@ fn mapped_options() {
     assert!(dropped.is_empty());
 
     let bad_size = map_edit_params(&support::params(r#"{"size": "bad"}"#), FLUX2, false)
-        .err()
-        .expect("an invalid size");
+        .expect_err("an invalid size");
     assert!(matches!(
         bad_size,
         ImageEditError::Params(FoundryImageError::InvalidSize { .. })
     ));
     assert_eq!(bad_size.status_code(), Some(400));
 
-    let bad_count = map_edit_params(&support::params(r#"{"n": "x"}"#), FLUX2, false)
-        .err()
-        .expect("a bad count");
+    let bad_count =
+        map_edit_params(&support::params(r#"{"n": "x"}"#), FLUX2, false).expect_err("a bad count");
     assert!(matches!(
         bad_count,
         ImageEditError::Params(FoundryImageError::WholeNumber { .. })
@@ -104,54 +102,35 @@ fn required_fields() {
     assert!(matches!(no_refs, ImageEditError::Flux2NoReferenceImages));
 }
 
-fn reference_limit() {
-    let mut at_limit = bytes_sources(DEFAULT_REFERENCE_LIMIT);
-    let built = form(
-        FLUX2,
-        Some("draw"),
-        Some(&mut at_limit),
-        &support::params(r#"{"num_images": 1}"#),
-    )
-    .unwrap();
-    assert_eq!(
-        built
-            .data
-            .keys()
-            .filter(|key| key.starts_with("input_image"))
-            .count(),
-        DEFAULT_REFERENCE_LIMIT
-    );
+fn reference_limits() {
+    for (model, limit) in [
+        (FLUX2, DEFAULT_REFERENCE_LIMIT),
+        (FLEX, FLEX_REFERENCE_LIMIT),
+    ] {
+        let mut at_limit = bytes_sources(limit);
+        let built = form(
+            model,
+            Some("draw"),
+            Some(&mut at_limit),
+            &ImageParams::new(),
+        )
+        .expect("the reference limit");
+        assert_eq!(built.data.len(), limit + 2, "{model}");
 
-    let mut over_limit = bytes_sources(DEFAULT_REFERENCE_LIMIT + 1);
-    let error = form(
-        FLUX2,
-        Some("draw"),
-        Some(&mut over_limit),
-        &ImageParams::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        ImageEditError::Flux2TooManyReferenceImages { limit: 8, .. }
-    ));
-    assert!(error.to_string().contains("at most 8"));
-}
-
-fn flex_limit() {
-    let mut at_limit = bytes_sources(FLEX_REFERENCE_LIMIT);
-    assert!(form(FLEX, Some("draw"), Some(&mut at_limit), &ImageParams::new()).is_ok());
-    let mut over_limit = bytes_sources(FLEX_REFERENCE_LIMIT + 1);
-    let error = form(
-        FLEX,
-        Some("draw"),
-        Some(&mut over_limit),
-        &ImageParams::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        ImageEditError::Flux2TooManyReferenceImages { limit: 10, .. }
-    ));
+        let mut over_limit = bytes_sources(limit + 1);
+        let error = form(
+            model,
+            Some("draw"),
+            Some(&mut over_limit),
+            &ImageParams::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            ImageEditError::Flux2TooManyReferenceImages { limit: matched, .. } if matched == limit
+        ));
+        assert!(error.to_string().contains(&format!("at most {limit}")));
+    }
 }
 
 fn field_numbering_and_overlay() {

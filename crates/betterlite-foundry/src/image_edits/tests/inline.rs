@@ -7,17 +7,18 @@ use crate::image_edits::image_source::{ImageSource, convert_image_to_base64};
 
 use super::support::{self, FLUX2, PNG};
 
-fn reference_field(sources: &mut [ImageSource]) -> Result<String, ImageEditError> {
+fn reference_field(sources: &mut [ImageSource]) -> String {
     let form = transform_request(Flux2EditRequest {
         model: FLUX2,
         prompt: Some("draw"),
         images: Some(sources),
         options: &ImageParams::new(),
-    })?;
-    match form.data.get("input_image") {
-        Some(Json::Text(encoded)) => Ok(encoded.clone()),
-        _ => panic!("the first reference is missing"),
-    }
+    })
+    .expect("a built edit form");
+    let Some(Json::Text(encoded)) = form.data.get("input_image") else {
+        panic!("the first reference is missing or not text");
+    };
+    encoded.clone()
 }
 
 pub(super) fn flux_inline_base64() {
@@ -62,14 +63,8 @@ pub(super) fn buffered_rewinds_between_requests() {
         content: PNG.to_vec(),
         position: 2,
     }];
-    assert_eq!(
-        reference_field(&mut sources).unwrap(),
-        support::encoded(&PNG[2..])
-    );
-    assert_eq!(
-        reference_field(&mut sources).unwrap(),
-        support::encoded(PNG)
-    );
+    assert_eq!(reference_field(&mut sources), support::encoded(&PNG[2..]));
+    assert_eq!(reference_field(&mut sources), support::encoded(PNG));
 }
 
 pub(super) fn reader_keeps_its_position() {
@@ -77,11 +72,8 @@ pub(super) fn reader_keeps_its_position() {
         content: PNG.to_vec(),
         position: 2,
     }];
-    assert_eq!(
-        reference_field(&mut sources).unwrap(),
-        support::encoded(&PNG[2..])
-    );
-    assert_eq!(reference_field(&mut sources).unwrap(), "");
+    assert_eq!(reference_field(&mut sources), support::encoded(&PNG[2..]));
+    assert_eq!(reference_field(&mut sources), "");
 }
 
 pub(super) fn unsupported_sources_are_refused() {

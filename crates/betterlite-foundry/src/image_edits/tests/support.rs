@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, ProviderFailure, SourceFailure, TokenReply,
@@ -43,15 +43,8 @@ pub(super) fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
 }
 
-pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs
-        .iter()
-        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
 pub(super) fn encoded(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+    STANDARD.encode(bytes)
 }
 
 pub(super) fn foundry_settings(base: Option<&str>, key: Option<&str>) -> FoundrySettings {

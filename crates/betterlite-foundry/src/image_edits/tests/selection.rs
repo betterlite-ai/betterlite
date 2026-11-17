@@ -48,8 +48,10 @@ fn other_models() {
     assert!(matches!(error, ImageEditError::UnsupportedModel { .. }));
     assert_eq!(error.status_code(), None);
 
-    assert!(ImageEditVariant::select("dall-e-3").is_err());
-    assert!(ImageEditVariant::select("stable-diffusion").is_err());
+    for unsupported in ["dall-e-3", "stable-diffusion"] {
+        let rejected = ImageEditVariant::select(unsupported).unwrap_err();
+        assert!(rejected.to_string().contains(unsupported));
+    }
 }
 
 pub(super) fn class_names_and_transports() {

@@ -6,11 +6,11 @@ use crate::image_edits::mai::{MAI_EDIT_OPENAI_PARAMS, MaiEditRequest, transform_
 
 use super::support::{self, JPEG, MAI, PNG};
 
-fn file(content: &[u8]) -> Option<ImageEditFile> {
-    Some(ImageEditFile {
+fn file(content: &[u8]) -> ImageEditFile {
+    ImageEditFile {
         content: content.to_vec(),
         name: None,
-    })
+    }
 }
 
 fn form(
@@ -34,7 +34,7 @@ pub(super) fn mai_edit_prompt_images() {
 }
 
 fn prompt_and_first_image() {
-    let images = [None, file(PNG), file(JPEG)];
+    let images = [None, Some(file(PNG)), Some(file(JPEG))];
     let built = form(
         Some("paint"),
         Some(&images),
@@ -51,7 +51,7 @@ fn prompt_and_first_image() {
     assert_eq!(uploaded.filename.as_deref(), Some("image.png"));
     assert_eq!(uploaded.content_type.as_deref(), Some("image/png"));
 
-    let only_jpeg = [file(JPEG)];
+    let only_jpeg = [Some(file(JPEG))];
     let jpeg_form = form(None, Some(&only_jpeg), &ImageParams::new());
     assert_eq!(
         jpeg_form.data,
