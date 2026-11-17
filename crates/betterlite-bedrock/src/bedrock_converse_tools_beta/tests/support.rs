@@ -82,17 +82,21 @@ impl Fixture {
     pub(super) fn session(&self) -> Session<'_> {
         Session {
             fixture: self,
-            resolution: ResolutionContext {
-                catalog: &self.typed,
-                known_model_names: &self.known_model_names,
-                custom_providers: &self.custom_providers,
-                environment: &self.variables,
-                registry: JSONProviderRegistry::load(),
-                policies: ProviderPolicies::default(),
-                globals: GlobalCredentials::default(),
-            },
+            resolution: self.resolution(),
             keys: ModelCostKeys::default(),
             dynamic: NoDynamicMetadata,
+        }
+    }
+
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.typed,
+            known_model_names: &self.known_model_names,
+            custom_providers: &self.custom_providers,
+            environment: &self.variables,
+            registry: JSONProviderRegistry::load(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
         }
     }
 

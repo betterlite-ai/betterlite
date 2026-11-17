@@ -30,20 +30,12 @@ pub(super) fn partitioning(session: &mut Session<'_>) {
     );
 }
 
+const TOOL_SEARCH_TOOLS: &str = r#"[{"type": "tool_search_tool_regex_20251119", "function": {"name": "regex_tool", "parameters": {"type": "object", "properties": {}}}}, {"type": "tool_search_tool_bm25_20251119", "function": {"name": "bm25_tool", "parameters": {"type": "object", "properties": {}}}}, {"type": "tool_search_tool_regex_20250101", "function": {"name": "search", "parameters": {"type": "object", "properties": {}}}}]"#;
+const SEARCH_CONVERTED: &str = r#"[{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "search", "description": "search"}}]"#;
+
 pub(super) fn tool_search_dropped(session: &mut Session<'_>) {
-    let searched = prepare(
-        session,
-        ADAPTIVE_MODEL,
-        r#"[{"type": "tool_search_tool_regex_20251119", "function": {"name": "regex_tool", "parameters": {"type": "object", "properties": {}}}}, {"type": "tool_search_tool_bm25_20251119", "function": {"name": "bm25_tool", "parameters": {"type": "object", "properties": {}}}}, {"type": "tool_search_tool_regex_20250101", "function": {"name": "search", "parameters": {"type": "object", "properties": {}}}}]"#,
-        None,
-        "{}",
-    );
-    assert_eq!(
-        searched.tools,
-        list(
-            r#"[{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "search", "description": "search"}}]"#
-        )
-    );
+    let searched = prepare(session, ADAPTIVE_MODEL, TOOL_SEARCH_TOOLS, None, "{}");
+    assert_eq!(searched.tools, list(SEARCH_CONVERTED));
 }
 
 pub(super) fn conversion(session: &mut Session<'_>) {
@@ -83,33 +75,20 @@ pub(super) fn conversion(session: &mut Session<'_>) {
 }
 
 pub(super) fn schemas(session: &mut Session<'_>) {
-    let schema = prepare(
-        session,
-        ADAPTIVE_MODEL,
-        r#"[{"name": "anthropic-tool", "input_schema": {"type": "object", "properties": {"x": {"type": "number"}}}}]"#,
-        None,
-        "{}",
-    );
-    assert_eq!(
-        schema.tools,
-        list(
-            r#"[{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {"x": {"type": "number"}}, "required": []}}, "name": "anthropic-tool", "description": "anthropic-tool"}}]"#
-        )
-    );
-
-    let native = prepare(
-        session,
-        ADAPTIVE_MODEL,
-        r#"[{"toolSpec": {"name": "ready", "description": "d", "inputSchema": {"json": {}}}}, {"type": "function", "function": {"name": "later"}}]"#,
-        None,
-        "{}",
-    );
-    assert_eq!(
-        native.tools,
-        list(
-            r#"[{"toolSpec": {"name": "ready", "description": "d", "inputSchema": {"json": {}}}}, {"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "later", "description": "later"}}]"#
-        )
-    );
+    let cases = [
+        (
+            r#"[{"name": "anthropic-tool", "input_schema": {"type": "object", "properties": {"x": {"type": "number"}}}}]"#,
+            r#"[{"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {"x": {"type": "number"}}, "required": []}}, "name": "anthropic-tool", "description": "anthropic-tool"}}]"#,
+        ),
+        (
+            r#"[{"toolSpec": {"name": "ready", "description": "d", "inputSchema": {"json": {}}}}, {"type": "function", "function": {"name": "later"}}]"#,
+            r#"[{"toolSpec": {"name": "ready", "description": "d", "inputSchema": {"json": {}}}}, {"toolSpec": {"inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}, "name": "later", "description": "later"}}]"#,
+        ),
+    ];
+    for (tools, blocks) in cases {
+        let converted = prepare(session, ADAPTIVE_MODEL, tools, None, "{}");
+        assert_eq!(converted.tools, list(blocks));
+    }
 }
 
 pub(super) fn failures(session: &mut Session<'_>) {

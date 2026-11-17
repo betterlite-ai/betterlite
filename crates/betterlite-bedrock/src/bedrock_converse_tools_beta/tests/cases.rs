@@ -59,8 +59,7 @@ pub(super) fn output_config_tools() {
 pub(super) fn computer_use_beta_versions() {
     let fixture = Fixture::new(MODEL_COST);
     let mut session = fixture.session();
-    computer_versions::latest_versions();
-    computer_versions::mid_versions();
+    computer_versions::version_markers();
     computer_versions::older_versions();
     computer_versions::request(&mut session);
 }
@@ -71,6 +70,6 @@ pub(super) fn context_management_filter() {
     context_filter::removed_foreign(&mut session);
     context_filter::removed_shapes(&mut session);
     context_filter::retained_edits(&mut session);
-    context_filter::retained_deduplicated(&mut session);
-    context_filter::retained_shapes(&mut session);
+    context_filter::retained_non_dict_edits(&mut session);
+    context_filter::retained_compact_fields(&mut session);
 }

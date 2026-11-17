@@ -6,52 +6,55 @@ const LATEST: &str = "computer-use-2025-11-24";
 const MID: &str = "computer-use-2025-01-24";
 const OLDER: &str = "computer-use-2024-10-22";
 
-pub(super) fn latest_versions() {
-    let latest = [
-        "opus-4.7",
-        "opus_4.7",
-        "opus-4-7",
-        "opus_4_7",
-        "opus-4.6",
-        "opus_4.6",
-        "opus-4-6",
-        "opus_4_6",
-        "sonnet-4.6",
-        "sonnet_4.6",
-        "sonnet-4-6",
-        "sonnet_4_6",
-        "opus-4.5",
-        "opus_4.5",
-        "opus-4-5",
-        "opus_4_5",
-    ];
-    assert_eq!(latest.map(computer_use_beta), [LATEST; 16]);
-}
+const LATEST_MARKERS: [&str; 16] = [
+    "opus-4.7",
+    "opus_4.7",
+    "opus-4-7",
+    "opus_4_7",
+    "opus-4.6",
+    "opus_4.6",
+    "opus-4-6",
+    "opus_4_6",
+    "sonnet-4.6",
+    "sonnet_4.6",
+    "sonnet-4-6",
+    "sonnet_4_6",
+    "opus-4.5",
+    "opus_4.5",
+    "opus-4-5",
+    "opus_4_5",
+];
 
-pub(super) fn mid_versions() {
-    let mid = [
-        "sonnet-4.5",
-        "sonnet_4.5",
-        "sonnet-4-5",
-        "sonnet_4_5",
-        "haiku-4.5",
-        "haiku_4.5",
-        "haiku-4-5",
-        "haiku_4_5",
-        "opus-4.1",
-        "opus_4.1",
-        "opus-4-1",
-        "opus_4_1",
-        "sonnet-4",
-        "sonnet_4",
-        "opus-4",
-        "opus_4",
-        "sonnet-3.7",
-        "sonnet_3.7",
-        "sonnet-3-7",
-        "sonnet_3_7",
-    ];
-    assert_eq!(mid.map(computer_use_beta), [MID; 20]);
+const MID_MARKERS: [&str; 20] = [
+    "sonnet-4.5",
+    "sonnet_4.5",
+    "sonnet-4-5",
+    "sonnet_4_5",
+    "haiku-4.5",
+    "haiku_4.5",
+    "haiku-4-5",
+    "haiku_4_5",
+    "opus-4.1",
+    "opus_4.1",
+    "opus-4-1",
+    "opus_4_1",
+    "sonnet-4",
+    "sonnet_4",
+    "opus-4",
+    "opus_4",
+    "sonnet-3.7",
+    "sonnet_3.7",
+    "sonnet-3-7",
+    "sonnet_3_7",
+];
+
+pub(super) fn version_markers() {
+    let families: [(&str, &[&str]); 2] = [(LATEST, &LATEST_MARKERS), (MID, &MID_MARKERS)];
+    for (expected, markers) in families {
+        for marker in markers {
+            assert_eq!(computer_use_beta(marker), expected, "marker {marker}");
+        }
+    }
 }
 
 pub(super) fn older_versions() {
