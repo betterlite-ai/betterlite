@@ -65,6 +65,7 @@ fn envelope_rebuilds_the_supplied_response() {
         &json(r#"{"complete_input_dict": {"model": "fixture-model"}}"#)
     );
     assert_eq!(run.detail("log_event_type"), &json(r#""post_api_call""#));
+    assert!(!run.details.contains_key("api_key"));
 }
 
 fn envelope_treats_a_null_message_as_empty() {
