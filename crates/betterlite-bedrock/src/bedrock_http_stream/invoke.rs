@@ -49,7 +49,8 @@ pub async fn make_call<'deps>(
         handler.as_ref(),
         Opening {
             api_base: call.api_base,
-            headers: call.headers,
+            // The call keeps its headers for the failure and fake paths below.
+            headers: call.headers.clone(),
             body: request_body(&call),
             stream: !call.fake_stream,
         },
