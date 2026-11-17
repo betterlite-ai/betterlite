@@ -30,7 +30,7 @@ enum Redaction {
 enum Step {
     ObserveChunk { chunk: Json },
     MarkEmitted { frame: String },
-    FormatFailure { failure: FailureCause },
+    FormatFailure { failure: Box<FailureCause> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +48,7 @@ enum StepResult {
     FormatFailure { text: Option<String> },
 }
 
+#[derive(Clone, Copy, Debug)]
 struct Committed {
     id: bool,
     time: bool,
