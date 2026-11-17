@@ -350,6 +350,37 @@ fn driver_queued_events_come_before_the_next_chunk() {
     );
 }
 
+#[tokio::test]
+async fn driver_async_queued_events_come_before_the_next_chunk() {
+    let (mut stream, _received) = driver(
+        vec![
+            Ok(json(CONTENT_HI)),
+            Ok(json(
+                r#"{"id":"chat_a","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"0123456789abcdef"}}]},"finish_reason":null}]}"#,
+            )),
+        ],
+        Reply::ToolCall,
+        "{}",
+        &["u1", "u2"],
+    );
+    let events = drain_async(&mut stream).await;
+    let arguments = events
+        .iter()
+        .filter(|event| {
+            event_type(event) == Json::Text(String::from("response.function_call_arguments.delta"))
+        })
+        .count();
+    assert_eq!(
+        arguments, 2,
+        "the argument delta splits into ten-character pieces"
+    );
+    assert_eq!(
+        stream.source.pulls.load(Ordering::SeqCst),
+        3,
+        "the asynchronous end of the stream is latched, so the terminal tool events stop pulling"
+    );
+}
+
 #[test]
 fn driver_iterates_through_the_iterator_impl() {
     let (mut stream, _received) = driver(
