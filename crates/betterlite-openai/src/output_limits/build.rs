@@ -78,11 +78,13 @@ fn completion(id: &str, created: u64, model: &str, prompt_tokens: usize) -> Chat
             logprobs: None,
             provider_specific_fields: BTreeMap::new(),
         }],
+        // the reply is truncated, so the completion count and the detail fields stay zero and absent
         usage: ChatUsage {
             prompt_tokens: counted,
             completion_tokens: 0,
             total_tokens: counted,
-            ..ChatUsage::default()
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
         },
         system_fingerprint: None,
         service_tier: None,
@@ -101,7 +103,9 @@ fn chunk(id: &str, created: u64, model: &str) -> Chunk {
             delta: Delta {
                 role: Some(String::from("assistant")),
                 content: Some(String::new()),
-                ..Delta::default()
+                refusal: None,
+                tool_calls: None,
+                function_call: None,
             },
             finish_reason: Some(String::from("length")),
             logprobs: None,

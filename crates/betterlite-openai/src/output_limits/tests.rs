@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::shadow_unrelated,
+        clippy::too_many_lines,
+        reason = "each case carries several provider replies in one function and rebinds the reply names as it goes"
+    )
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -266,6 +274,8 @@ fn malformed_detail_keeps_fields() {
         json!("a string body"),
         json!({"message": ""}),
         json!({"message": 0}),
+        json!({"message": []}),
+        json!({"message": {}}),
         json!({"message": "{}"}),
         json!({"message": "{\"detail\": []}"}),
         json!({"message": "{\"detail\": {\"loc\": [\"body\", \"temperature\"]}}"}),
@@ -591,6 +601,29 @@ async fn openai_output_limit_stream() {
         sent.first().and_then(|body| body.get("stream")),
         Some(&json!(true))
     );
+    let (listener, base) = listen().await;
+    let chat = executor(&base);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let request = ChatRequest::parse(
+        format!(r#"{{"model":"g","stream":true,"messages":{USER_TURN}}}"#).as_bytes(),
+    )
+    .expect("request");
+    let replies = vec![Reply {
+        status: 400,
+        body: String::from(
+            r#"{"error":{"message":"invalid max_tokens value","type":"invalid_request_error","param":"max_tokens"}}"#,
+        ),
+    }];
+    let ((), answered) = tokio::join!(
+        serve(listener, replies, Arc::clone(&seen)),
+        chat.stream(chat.deployments.first().expect("deployment"), &request)
+    );
+    let Err(error) = answered else {
+        panic!("an unrelated 400 is not repaired on the stream path");
+    };
+    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
+    assert_eq!(error.failure(&chat.redactor).status, 400);
+    assert_eq!(bodies(&seen).len(), 1);
 }
 
 async fn openai_422_drop_retry() {
@@ -638,6 +671,71 @@ async fn openai_422_drop_retry() {
         assert_eq!(body.get("model"), Some(&json!("gpt-3.5-turbo")));
         assert!(body.get("drop_params").is_none());
     }
+    let (listener, base) = listen().await;
+    let chat = executor(&base);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let request = ChatRequest::parse(
+        br#"{"model":"g","temperature":2,"messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .expect("request");
+    let rejected = String::from(
+        r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"unsupported value\"}]}","type":"invalid_request_error"}}"#,
+    );
+    let replies = vec![Reply {
+        status: 422,
+        body: rejected,
+    }];
+    let ((), answered) = tokio::join!(
+        serve(listener, replies, Arc::clone(&seen)),
+        chat.send(chat.deployments.first().expect("deployment"), &request)
+    );
+    let Err(error) = answered else {
+        panic!("a 422 without drop_params is not retried");
+    };
+    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
+    assert_eq!(error.failure(&chat.redactor).status, 422);
+    let sent = bodies(&seen);
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        sent.first().and_then(|body| body.get("temperature")),
+        Some(&json!(2))
+    );
+    let (listener, base) = listen().await;
+    let chat = executor(&base);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let request = ChatRequest::parse(
+        br#"{"model":"g","temperature":2,"drop_params":true,"messages":[{"role":"user","content":"hi"}]}"#,
+    )
+    .expect("request");
+    let rejected = String::from(
+        r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"unsupported value\"}]}","type":"invalid_request_error"}}"#,
+    );
+    let replies = vec![
+        Reply {
+            status: 422,
+            body: rejected.clone(),
+        },
+        Reply {
+            status: 422,
+            body: rejected,
+        },
+    ];
+    let ((), answered) = tokio::join!(
+        serve(listener, replies, Arc::clone(&seen)),
+        chat.send(chat.deployments.first().expect("deployment"), &request)
+    );
+    let Err(error) = answered else {
+        panic!("a second 422 becomes the provider's error");
+    };
+    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
+    assert_eq!(error.failure(&chat.redactor).status, 422);
+    let sent = bodies(&seen);
+    assert_eq!(sent.len(), 2);
+    assert!(
+        sent.get(1)
+            .and_then(|body| body.get("temperature"))
+            .is_none()
+    );
 }
 
 fn malformed_nested_error_failure() {

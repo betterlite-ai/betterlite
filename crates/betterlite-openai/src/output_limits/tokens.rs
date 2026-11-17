@@ -75,9 +75,9 @@ impl PromptTokens for TokenizerPromptTokens {
         };
         let params = message_params(model, &catalog);
         let mut total = count_messages(&texter, params, &parsed).await?;
-        let includes_system = parsed.iter().any(|message| message.role == "system");
+        // no tool definitions are counted here, so the system-message discount of count_extra never applies
         total = total
-            .checked_add(count_extra(&texter, None, None, includes_system).await?)
+            .checked_add(count_extra(&texter, None, None, false).await?)
             .ok_or(CountError::Overflow)?;
         Ok(total)
     }
@@ -91,10 +91,13 @@ impl BlockingCounter for InlineCounter {
         job()
     }
 
+    // the recovery path counts through CountingService::count only, so no test can reach a build or convert job
+    #[cfg_attr(test, mutants::skip)]
     async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
         job()
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
         job()
     }

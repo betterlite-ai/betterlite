@@ -149,7 +149,7 @@ pub(super) fn rejected_retry(
     let mut retried =
         drop_params_from_unprocessable_entity_error(ErrorBody::Http(&response.body), data)
             .map_err(|source| ChatError::RejectedFields { source })?;
-    // LiteLLM drops from the params before transform_request, which always restores these two
+    // LiteLLM drops the rejected fields from the transformed body, so a retry that named model or messages would go out without them; a retry that cannot succeed is a fix none relies on, so the two required fields stay
     for name in ["messages", "model"] {
         if let Some(value) = data.get(name) {
             retried.insert(name.to_owned(), value.clone());

@@ -124,10 +124,10 @@ pub(crate) async fn azure_case(case: &AzureCase) -> HelperResult {
         send_raw_chat_sync(&transport, &case.data, case.timeout, &recovery).await
     };
     let requests = recorded(&transport);
-    let response = response.map_err(raw_failure)?;
+    let answered = response.map_err(raw_failure)?;
     Ok(json!({
         "requests": requests,
-        "header": header_of(&response.headers, "x-ms-request-id"),
-        "body": body_of(&response.body, &case.data),
+        "header": header_of(&answered.headers, "x-ms-request-id"),
+        "body": body_of(&answered.body, &case.data),
     }))
 }
