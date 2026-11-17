@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::ExposeSecret as _;
 use tokio::time::sleep;
@@ -14,7 +15,6 @@ use crate::postgres_store::session::PostgresStore;
 
 use super::support::{DIGEST, OTHER_DIGEST, at, window};
 
-const BASELINE: &str = include_str!("../../../../migrations/20250326162113_baseline/migration.sql");
 const LOCK_SPEND_LOGS: &str = r#"BEGIN; LOCK TABLE "LiteLLM_SpendLogs" IN ACCESS EXCLUSIVE MODE"#;
 
 #[derive(clap::Parser)]
@@ -43,21 +43,18 @@ async fn database(application_name: &str) -> Database {
     let url = Environment::parse_from(["history-tests"])
         .url
         .map(secrecy::SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
     let store = PostgresStore {
         pool: Some(pool(&fixture, application_name)),
     };
     let holder = pool(&fixture, "history-holder");
-    store
-        .session()
-        .await
-        .unwrap()
-        .batch_execute(BASELINE)
-        .await
-        .unwrap();
     Database {
         fixture,
         store,

@@ -76,15 +76,12 @@ impl TestDatabase {
 pub(crate) async fn database() -> TestDatabase {
     let environment = Environment::parse_from(["lens-repository-tests"]);
     let url = environment.url.map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), vec![TABLES.to_owned()])
         .resolve()
         .await
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(4).build().unwrap();
-    let client = pool.get().await.unwrap();
-    client.batch_execute(TABLES).await.unwrap();
-    drop(client);
     TestDatabase { fixture, pool }
 }
 
