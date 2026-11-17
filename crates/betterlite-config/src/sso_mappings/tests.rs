@@ -22,49 +22,170 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 #[rstest]
-#[case::nothing_set(&[], SsoMappingSources::default())]
+#[case::nothing_set(
+    &[],
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
+)]
 #[case::client_secret(
     &[("GENERIC_CLIENT_SECRET", "secret")],
-    SsoMappingSources { client_secret: Some(SecretString::from("secret")), ..Default::default() }
+    SsoMappingSources {
+        client_secret: Some(SecretString::from("secret")),
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::scope(
     &[("GENERIC_SCOPE", "openid email")],
-    SsoMappingSources { scope: Some("openid email".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: Some("openid email".to_owned()),
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::authorization_endpoint(
     &[("GENERIC_AUTHORIZATION_ENDPOINT", "https://idp.example/authorize")],
     SsoMappingSources {
+        client_secret: None,
+        scope: None,
         authorization_endpoint: Some("https://idp.example/authorize".to_owned()),
-        ..Default::default()
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
     }
 )]
 #[case::token_endpoint(
     &[("GENERIC_TOKEN_ENDPOINT", "https://idp.example/token")],
-    SsoMappingSources { token_endpoint: Some("https://idp.example/token".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: Some("https://idp.example/token".to_owned()),
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::userinfo_endpoint(
     &[("GENERIC_USERINFO_ENDPOINT", "https://idp.example/userinfo")],
-    SsoMappingSources { userinfo_endpoint: Some("https://idp.example/userinfo".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: Some("https://idp.example/userinfo".to_owned()),
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::include_client_id(
     &[("GENERIC_INCLUDE_CLIENT_ID", "TRUE")],
-    SsoMappingSources { include_client_id: true, ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: true,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::role_mappings_roles(
     &[("GENERIC_ROLE_MAPPINGS_ROLES", "{'proxy_admin': ['admins']}")],
-    SsoMappingSources { role_mappings_roles: Some("{'proxy_admin': ['admins']}".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: Some("{'proxy_admin': ['admins']}".to_owned()),
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::role_mappings_group_claim(
     &[("GENERIC_ROLE_MAPPINGS_GROUP_CLAIM", "groups")],
-    SsoMappingSources { role_mappings_group_claim: Some("groups".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: Some("groups".to_owned()),
+        role_mappings_default_role: None,
+        sso_headers: None,
+    }
 )]
 #[case::role_mappings_default_role(
     &[("GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE", "internal_user")],
-    SsoMappingSources { role_mappings_default_role: Some("internal_user".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: Some("internal_user".to_owned()),
+        sso_headers: None,
+    }
 )]
 #[case::sso_headers(
     &[("GENERIC_SSO_HEADERS", "X-Team=eng")],
-    SsoMappingSources { sso_headers: Some("X-Team=eng".to_owned()), ..Default::default() }
+    SsoMappingSources {
+        client_secret: None,
+        scope: None,
+        authorization_endpoint: None,
+        token_endpoint: None,
+        userinfo_endpoint: None,
+        include_client_id: false,
+        role_mappings_roles: None,
+        role_mappings_group_claim: None,
+        role_mappings_default_role: None,
+        sso_headers: Some("X-Team=eng".to_owned()),
+    }
 )]
 fn loads_mapping_sources(#[case] pairs: &[(&str, &str)], #[case] expected: SsoMappingSources) {
     let actual = load_mapping_sources(&environment(pairs));
