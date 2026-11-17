@@ -85,7 +85,7 @@ pub(crate) fn classify(
         .expect("the test prompt scores")
 }
 
-// six decimals, the precision the routing decision records and the probe wire carry
+// six decimals, the precision the probe wire carries
 pub(crate) fn fixed(score: f64) -> String {
     format!("{score:.6}")
 }

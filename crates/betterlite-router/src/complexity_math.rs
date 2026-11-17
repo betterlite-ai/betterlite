@@ -75,7 +75,8 @@ pub fn within_boundary_margin(score: f64, boundaries: TierBoundaries, margin: f6
         .any(|boundary| (score - boundary).abs() <= margin)
 }
 
-// Python takes int(window * buffer), truncating toward zero; a window past u32::MAX holds any request here
+// Python takes int(window * buffer), truncating toward zero. A window past u32::MAX is clamped to
+// it, so a request above the clamped buffered capacity is refused
 #[must_use]
 pub fn window_holds(window: Option<u64>, needed: Option<u64>, buffer: f64) -> bool {
     let (Some(window), Some(needed)) = (window, needed) else {

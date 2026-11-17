@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::complexity_scoring as section;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -410,8 +411,16 @@ fn the_severity_order_lists_every_built_in_tier() {
             ComplexityTier::Reasoning
         ]
     );
-    assert_eq!(tier_severity_order(true).len(), 5);
-    assert_eq!(tier_severity_order(true)[0].name(), "NON_REASONING");
+    assert_eq!(
+        tier_severity_order(true),
+        [
+            ComplexityTier::NonReasoning,
+            ComplexityTier::Simple,
+            ComplexityTier::Medium,
+            ComplexityTier::Complex,
+            ComplexityTier::Reasoning
+        ]
+    );
 }
 
 #[rstest]
@@ -481,7 +490,10 @@ fn a_missing_tier_model_is_an_error() {
 #[test]
 fn a_pool_of_one_answers_like_a_bare_name() {
     let mut input = blank();
-    input.tier_models = Some(tiers(&[("SIMPLE", &["only-model"])]));
+    input.tier_models = Some(BTreeMap::from([(
+        "SIMPLE".to_owned(),
+        section::TierModelValue::Pool(strings(&["only-model"])),
+    )]));
     let config = resolved(&input);
     assert_eq!(
         config

@@ -195,6 +195,30 @@ fn a_tier_model_environment_reference_is_resolved() {
 }
 
 #[test]
+fn a_default_model_environment_reference_is_resolved() {
+    let keys = "        default_model: os.environ/FALLBACK_MODEL\n";
+    let configured = only(keys, &[("FALLBACK_MODEL", "fallback-model")]).unwrap();
+    assert_eq!(
+        configured.unwrap().default_model,
+        Some("fallback-model".to_owned())
+    );
+}
+
+#[test]
+fn a_pool_item_stays_literal() {
+    let keys = "        tier_models:\n          SIMPLE: [os.environ/POOL_MODEL, plain-model]\n";
+    let configured = only(keys, &[("POOL_MODEL", "resolved-model")]).unwrap();
+    let tier_models = configured.unwrap().tier_models.unwrap();
+    assert_eq!(
+        tier_models.get("SIMPLE"),
+        Some(&TierModelValue::Pool(strings(&[
+            "os.environ/POOL_MODEL",
+            "plain-model"
+        ])))
+    );
+}
+
+#[test]
 fn a_threshold_environment_reference_is_resolved() {
     let keys = "        complexity_thresholds:\n          simple: os.environ/SIMPLE_TOKENS\n";
     let configured = only(keys, &[("SIMPLE_TOKENS", "9")]).unwrap();
@@ -229,6 +253,7 @@ fn a_floor_environment_reference_is_resolved() {
 #[case::tier_model("tier_models:\n          SIMPLE: os.environ/UNSET_TIER")]
 #[case::weight("dimension_weights:\n          codePresence: os.environ/UNSET_WEIGHT")]
 #[case::floor("reasoning_override_min_score: os.environ/UNSET_FLOOR")]
+#[case::default_model("default_model: os.environ/UNSET_DEFAULT")]
 fn a_missing_environment_names_the_variable(#[case] body: &str) {
     let keys = format!("        {body}\n");
     let error = settings(&deployment(&keys), &[]).unwrap_err();
