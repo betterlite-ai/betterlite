@@ -1,0 +1,22 @@
+task: B090
+deviations:
+  - what: >-
+      A chat choice with no message, or with a null message, is returned exactly as it arrived.
+      LiteLLM validates the response before the hook sees it, so pydantic turns the missing or
+      null message into a Message with content null and role assistant, and the hook attaches
+      provider_specific_fields to that constructed message.
+    why: >-
+      betterlite decorates decoded records, which carry no model defaults, and the task asks for
+      such a choice to be returned unchanged. No response anyone sent gains a message it did not
+      have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L454-L462
+  - what: >-
+      The success hook picks the Responses shape by the record's object field, so a chat-shaped
+      record that reports object "response" receives only the top-level
+      vector_store_search_failures and no choice decorations.
+    why: >-
+      LiteLLM decides with isinstance(response, ResponsesAPIResponse), and a decoded record has no
+      class. betterlite's decoded responses use the object string as the only Responses marker,
+      the same rule responses_chat_output.rs follows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L448-L451
+kept_bugs: []
