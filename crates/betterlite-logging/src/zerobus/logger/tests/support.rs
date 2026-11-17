@@ -21,6 +21,7 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_failure::events::payload_to_map;

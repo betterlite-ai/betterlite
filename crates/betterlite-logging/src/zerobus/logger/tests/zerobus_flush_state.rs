@@ -129,7 +129,7 @@ async fn zerobus_flush_state_clears_the_in_flight_count() {
 #[tokio::test]
 async fn zerobus_flush_state_requeues_rows_after_an_aborted_flush() {
     let ingest = FakeIngest::table("main.litellm.traces");
-    let gate = ingest.block();
+    let _gate = ingest.block();
     let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);
     let logger = logger(params(1, 3600, false), client);
     assert_eq!(push(&logger, "a"), 1);
