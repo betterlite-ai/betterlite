@@ -11,7 +11,29 @@ fn caller_takes_an_admins_own_user_id_and_allows_null() {
         identity(&master_principal(), &caller).expect("the master key needs no caller guard");
     assert_eq!(without_user.user_id, None);
     assert!(without_user.is_admin);
+    let viewer = identity(
+        &principal("viewer", Some("viewer"), &[Role::PlatformViewer]),
+        &caller,
+    )
+    .expect("an admin viewer needs no caller guard");
+    assert_eq!(viewer.user_id.as_deref(), Some("viewer"));
+    assert!(viewer.is_admin);
     assert_eq!(caller.calls(), 0);
+}
+
+#[tokio::test]
+async fn caller_uses_the_real_guard_id_for_a_user_bound_non_admin() {
+    let model = FakeModel::new()
+        .replying(usage_tool_reply())
+        .replying(answer_reply("You spent nothing yet."));
+    let source = FakeSource::new();
+    let factory = FakeFactory::new(model.clone(), source.clone());
+    let request = with_principal(post(TOOL_BODY), principal("key-1", Some("owner-1"), &[]));
+    let response = send(state(factory, None, GuardCallerId), request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_text(response).await.contains("\"type\": \"done\""));
+    assert_eq!(source.user_ids(), vec![Some("owner-1".to_owned())]);
+    assert_eq!(model.calls()[0].tools, 1);
 }
 
 #[tokio::test]

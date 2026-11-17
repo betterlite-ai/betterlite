@@ -4,7 +4,7 @@ async fn route_streams_the_answer_for_an_admin_caller() {
     let factory = FakeFactory::new(model.clone(), FakeSource::new());
     let request = with_principal(
         post(
-            r#"{"messages": [{"role": "user", "content": "How much did we spend?"}], "model": "gpt-4o-mini"}"#,
+            r#"{"messages": [{"role": "user", "content": "How much did we spend?"}], "model": "gpt-4.1-mini"}"#,
         ),
         admin_principal("ana"),
     );
@@ -13,7 +13,7 @@ async fn route_streams_the_answer_for_an_admin_caller() {
     assert_eq!(body_text(response).await, answer_body());
     let calls = model.calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].model, "gpt-4o-mini");
+    assert_eq!(calls[0].model, "gpt-4.1-mini");
     assert_eq!(calls[0].tools, 3);
     assert_eq!(calls[0].messages.len(), 2);
     assert_eq!(
