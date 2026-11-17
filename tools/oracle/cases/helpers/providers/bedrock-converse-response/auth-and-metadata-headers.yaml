@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-converse-response-auth-and-metadata-headers
+call:
+  bedrock_converse_response:
+    environment:
+      - {fields: [], headers: [[X-Caller, kept]], litellm_params: {}, api_key: null}
+      - {fields: [], headers: [[X-Caller, kept]], litellm_params: {}, api_key: bedrock-key}
+      - {fields: [], headers: [[Authorization, caller-token]], litellm_params: {}, api_key: ""}
+      - {fields: [], headers: [[authorization, caller-token]], litellm_params: {}, api_key: bedrock-key}
+      - {fields: [user_api_key_team_id], headers: [[X-Caller, kept]], litellm_params: {metadata: {user_api_key_team_id: team-7}}, api_key: null}
+      - {fields: [spend_logs_metadata], headers: [], litellm_params: {metadata: {spend_logs_metadata: {team: a, user: b}}}, api_key: null}
+      - {fields: [user_api_key_team_id], headers: [[x-amzn-bedrock-request-metadata, caller], [X-Caller, kept]], litellm_params: {}, api_key: null}
+      - {fields: [], headers: [[x-amzn-bedrock-request-metadata, caller]], litellm_params: {}, api_key: null}
+      - {fields: [user_api_key_team_id], headers: [], litellm_params: {litellm_metadata: {user_api_key_team_id: team-9}}, api_key: bedrock-key}
+      - {fields: [user_api_key_team_id, spend_logs_metadata], headers: [], litellm_params: {metadata: {user_api_key_team_id: team-7, spend_logs_metadata: {tag: a b}}}, api_key: bedrock-key}
+      - {fields: [user_api_key_team_id], headers: [[X-Amzn-Bedrock-Request-Metadata, caller]], litellm_params: {metadata: {user_api_key_team_id: "bad key!"}}, api_key: null}
+env: {}
+compare: {ignore: []}
