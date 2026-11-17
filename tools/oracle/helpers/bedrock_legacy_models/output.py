@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 
 class MistralOutput(Protocol):
     @staticmethod
-    def get_outputText(
+    def get_outputText(  # noqa: N802  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py#L89-L90
         completion_response: dict[str, Json], model_response: ModelResponse
     ) -> str: ...
 

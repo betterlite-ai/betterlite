@@ -24,7 +24,7 @@ from pydantic import TypeAdapter
 
 FamilyName = Literal["ai21", "cohere", "llama", "mistral", "titan", "anthropic"]
 
-# The bare list and dict parameters make these class objects read as Any; the names below carry the class type.
+# The LiteLLM constructors are untyped, so these annotated names carry the class type.
 AI21: type[AmazonAI21Config] = AmazonAI21Config
 COHERE: type[AmazonCohereConfig] = AmazonCohereConfig
 LLAMA: type[AmazonLlamaConfig] = AmazonLlamaConfig
