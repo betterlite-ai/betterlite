@@ -31,10 +31,7 @@ use crate::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
 use crate::chat_call::error::ConfigError;
 use crate::chat_call::transport::{BufferedReply, ChatTransport};
 use crate::response::error::ResponseError;
-use crate::response::wire::ResponseEnvelope;
-use crate::response::{
-    Logging as ResponseLogging, RawResponse, ResponseRequest, transform_response,
-};
+use crate::response::{Logging as ResponseLogging, transform_response};
 use crate::stream_decode::TransportChunk;
 use crate::stream_state::state::IdSource;
 use crate::usage::ReasoningTokenCounter;

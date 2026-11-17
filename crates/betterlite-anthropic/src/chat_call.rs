@@ -16,7 +16,6 @@ use secrecy::SecretString;
 use crate::anthropic_http_stream::call::{StreamBuild, StreamLogger};
 use crate::anthropic_http_stream::completion::WrappedStream;
 use crate::credentials::AnthropicSettings;
-use crate::response::Logging;
 use crate::response::wire::ResponseEnvelope;
 use crate::stream_state::state::IdSource;
 use crate::usage::ReasoningTokenCounter;
@@ -24,9 +23,8 @@ use crate::usage::ReasoningTokenCounter;
 use config::ChatConfig;
 use error::ChatCallError;
 use prepare::Prepared;
-use send::BufferedCall;
 use send::streams::{StreamFacts, open_stream};
-use transport::{ChatTransport, ClientKind, SuppliedChatClient};
+use transport::{ChatTransport, SuppliedChatClient};
 
 // embedding() is an empty pass body: it builds no request, sends none and returns None
 pub const EMBEDDING_REPLY: Option<ResponseEnvelope> = None;
@@ -85,30 +83,7 @@ where
     if prepared.options.stream {
         return send_stream(call, prepared, deps).await;
     }
-    // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
-    let client = match deps.clients.supplied.as_ref() {
-        Some(supplied) if call.acompletion || supplied.kind == ClientKind::Sync => {
-            supplied.transport
-        }
-        _ => deps.clients.pooled,
-    };
-    send::buffered(
-        BufferedCall {
-            call,
-            body: prepared.body,
-            header_map: prepared.header_map,
-            optional_params: prepared.optional_params,
-            options: prepared.options,
-        },
-        client,
-        deps.config,
-        Logging {
-            state: &mut *deps.state,
-            env: deps.env,
-        },
-        &deps.counter,
-    )
-    .await
+    send::buffered(call, prepared, deps).await
 }
 
 // the stream branch: acompletion_stream_function takes only an AsyncHTTPHandler, make_sync_call any supplied client

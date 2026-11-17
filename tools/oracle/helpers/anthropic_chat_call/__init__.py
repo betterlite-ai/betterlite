@@ -59,7 +59,8 @@ def _chat_failure_projection(input_value: Input) -> JsonValue:
 
 
 def _unsupported_embedding(_input_value: Input) -> JsonValue:
-    answer: JsonObject = {"reply": EMBEDDING_HANDLER.embedding()}
+    EMBEDDING_HANDLER.embedding()
+    answer: JsonObject = {"reply": None}
     return answer
 
 

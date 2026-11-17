@@ -56,9 +56,18 @@ where
         logger,
     };
     if !acompletion {
-        return sync_stream(wrapping, facts, build).await;
+        let wrapped = send_sync(wrapping, facts, build).await?;
+        return Ok(ChatOutcome::Stream(Box::new(wrapped)));
     }
-    let stream = CompletionStream {
+    let wrapped = acompletion_stream_function(wrapping, async_request(facts), build)
+        .await
+        .map_err(completion_error)?;
+    Ok(ChatOutcome::Stream(Box::new(wrapped)))
+}
+
+// The async helper sends the request its own struct carries through the module-level async client
+const fn async_request(facts: StreamFacts<'_>) -> CompletionStream<'_> {
+    CompletionStream {
         model: facts.model,
         api_base: facts.api_base,
         headers: facts.headers,
@@ -68,23 +77,20 @@ where
         json_mode: facts.json_mode,
         optional_params: facts.optional_params,
         litellm_params: facts.litellm_params,
-    };
-    let wrapped = acompletion_stream_function(wrapping, stream, build)
-        .await
-        .map_err(completion_error)?;
-    Ok(ChatOutcome::Stream(Box::new(wrapped)))
+    }
 }
 
 // make_sync_call sends the encoded body and wraps the opened stream with the provider name and its headers
-async fn sync_stream<Client, Counter>(
+async fn send_sync<Client, Counter>(
     clients: StreamClients<'_, Client>,
     facts: StreamFacts<'_>,
     build: StreamBuild<'_, Counter>,
-) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
+) -> Result<WrappedStream<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
 where
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Unpin + Send,
 {
+    let model = facts.model.to_owned();
     let body = python_json::dumps_object(&facts.data);
     let (speed, reverse) = stream_names(facts.optional_params, facts.litellm_params)?;
     let request = StreamCall {
@@ -104,15 +110,15 @@ where
     }
     .make_sync_call()
     .await?;
-    Ok(ChatOutcome::Stream(Box::new(WrappedStream {
+    Ok(WrappedStream {
         completion_stream: opened.completion_stream,
-        model: facts.model.to_owned(),
+        model,
         custom_llm_provider: "anthropic",
         response_headers: process_anthropic_headers(&opened.headers),
-    })))
+    })
 }
 
-fn completion_error<ClientFailure, CounterFailure>(
+const fn completion_error<ClientFailure, CounterFailure>(
     source: CompletionError<ClientFailure>,
 ) -> ChatCallError<ClientFailure, CounterFailure>
 where
