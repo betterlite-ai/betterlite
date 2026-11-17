@@ -440,6 +440,21 @@ async fn sse_frame_encoding() {
         view.next_frame().await.expect("the null type"),
         b"event: None\ndata: {\"type\": null}\n\n".to_vec()
     );
+    let mut refused = byte_view(scripted(Vec::new()), setup());
+    refused
+        .stream
+        .state
+        .chunk_queue
+        .push_back(object(r#"{"type":5}"#));
+    assert_eq!(
+        refused.next_frame().await.expect("the refused type"),
+        b"event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"the event cannot name an SSE event: the chunk's type must be text or null\"}}\n\n"
+            .to_vec()
+    );
+    assert!(
+        refused.next_frame().await.is_none(),
+        "the refused frame ends the view"
+    );
     view.stream
         .state
         .chunk_queue
@@ -611,6 +626,41 @@ async fn async_error_event_ends_stream() {
     );
     assert_eq!(errors.0.load(Ordering::Relaxed), 2, "one line per boundary");
 
+    let malformed =
+        chunk(r#"{"choices":[{"index":0,"delta":{"thinking_blocks":[5]},"finish_reason":null}]}"#);
+    let mut stream = driver(scripted(vec![malformed.clone()]), setup());
+    assert_message(&mut stream).await;
+    let failure = stream
+        .next_event()
+        .await
+        .expect_err("the state error reaches the caller");
+    match failure {
+        ChatStreamError::State(error) => assert!(
+            error
+                .to_string()
+                .starts_with("the event is not valid JSON: "),
+            "the state error keeps its own text"
+        ),
+        other => panic!("expected the state error, got {other:?}"),
+    }
+    let mut view = byte_view(scripted(vec![malformed]), setup());
+    let start = String::from_utf8(view.next_frame().await.expect("the message_start frame"))
+        .expect("the frame is text");
+    assert!(start.starts_with("event: message_start\n"));
+    let state_frame = String::from_utf8(view.next_frame().await.expect("the state error event"))
+        .expect("the frame is text");
+    assert!(
+        state_frame.starts_with(
+            "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"the event is not valid JSON: "
+        ),
+        "the state error becomes the one error event"
+    );
+    assert!(
+        view.next_frame().await.is_none(),
+        "the state error ended the stream"
+    );
+    assert_eq!(errors.0.load(Ordering::Relaxed), 3, "one line per boundary");
+
     let oversized = StreamFailure::Reported {
         status_code: 500,
         message: "x".repeat(0x2000),
@@ -629,7 +679,7 @@ async fn async_error_event_ends_stream() {
     );
     assert_eq!(
         errors.0.load(Ordering::Relaxed),
-        4,
+        5,
         "the failure line and the oversized-frame line"
     );
 }

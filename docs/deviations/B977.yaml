@@ -3,7 +3,7 @@ deviations:
   - what: A failure at the async SSE boundary logs one error line under the "Anthropic Adapter - " prefix, carrying the tracing field kind=stream_failure and only the failure text, where LiteLLM's verbose_logger.exception appends the Python traceback after a newline.
     why: Rust has no Python traceback, and betterlite's logs carry structured fields; the error level and the message prefix stay the same, and the oracle compares exactly those two.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1043
-  - what: An event whose type is present but neither text nor null fails the frame with an error naming the type field, and the view writes the generic 500 error event, where LiteLLM writes str(chunk.get("type")) into the event line.
+  - what: An event whose type is present but neither text nor null fails the frame with an error naming the type field, and the view writes one 500 api_error event carrying that message, where LiteLLM writes str(chunk.get("type")) into the event line.
     why: docs/compatibility.md makes a value of the wrong type an error that names the field instead of copying Python's str() text; no working setup produces one, since every event the wrapper emits carries a text type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1037
   - what: An error event larger than the proxy's wire limits is not written, so the log line is the stream's last output, where LiteLLM yields whatever _mid_stream_error_sse_event builds.
