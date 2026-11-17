@@ -1,0 +1,1 @@
+ÿÿ{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}

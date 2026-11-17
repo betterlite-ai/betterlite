@@ -93,7 +93,7 @@ description: >-
 
 
   Implement decode_user_list_query with B001's maintained query extraction, typed defaults and
-  validation; no hand-written percent decoder. Add user_list_query to B770's existing server fuzz
+  validation; no hand-written percent decoder. Add user_list_query to B003's existing server fuzz
   workspace for duplicate fields, percent escapes, invalid integers, comma lists and bounds.
   Consume the existing gateway URI-size limit, with no new setting. B2334 owns the response envelope.
 

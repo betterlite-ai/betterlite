@@ -13,7 +13,7 @@ description: >-
   Bearer key and Content-Type application/json. extra_headers is applied last and may replace auth.
   Calls use the ephemeral key, multipart sdp/text/plain and session/application/json, with no filenames.
   Supply default session.type=realtime and model only when absent, preserving explicit null values.
-  Logging uses api_key="" and the complete request/session and URL with B012's header redaction.
+  Logging uses api_key="" and the complete request/session and URL with B249's header redaction.
 
   decode_realtime_sdp(bytes,limits) validates UTF-8 before send and is fuzzed/replayed in this crate;
   B1087 supplies the body cap. There is no SDP grammar parser. Add sdk_http.realtime_http_transport

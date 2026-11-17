@@ -6,7 +6,7 @@ description: >-
   and the complete shared _handle_error (6052-6111) in llm_http_handler.py. Implement their typed execution
   in betterlite-core::api::vector_store_http_write. B1066 calls this task, never the reverse. B173 supplies
   the pooled transport, B1058 the vector-store provider contract, B527 the OpenAI implementation, B668 the
-  metadata filter, B171 the existing path encoder, B012 logging and B011 provider error records.
+  metadata filter, B171 the existing path encoder, B249 logging and B011 provider error records.
 
   Choose the supplied client only if its execution mode matches the requested sync/async operation; otherwise
   use the configured pool, carrying ssl_verify with default null. Validate the environment with the supplied

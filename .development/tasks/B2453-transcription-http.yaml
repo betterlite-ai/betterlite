@@ -6,7 +6,7 @@ description: >-
   contract, B173 HTTP, B2402 send-error conversion, B206 hidden response headers and B1002 subtitle synthesis.
   Prepare validates headers, resolves URL, transforms the request and requires AudioTranscriptionRequestData.
   A non-None transformed content_type overrides Content-Type, including an empty string. Log query or "" as
-  input, the supplied key through redacting B012 logging and data or {} as complete_input_dict.
+  input, the supplied key through redacting B249 logging and data or {} as complete_input_dict.
 
   Dict data with files=None is JSON; files={} is distinct and selects data/files sending. Byte data goes as
   raw data. A matching-kind supplied client is reused. Sync fallback uses the default pooled client without
