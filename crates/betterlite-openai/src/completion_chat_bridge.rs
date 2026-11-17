@@ -146,7 +146,7 @@ pub fn text_request(
     }
     if request.stream {
         params.insert(String::from("stream"), Value::Bool(true));
-        // the proxy asks every streamed text provider for usage, whatever the client sent
+        // an absent include_usage asks for usage the way the proxy does; a caller's own choice is kept
         let include_usage = request
             .stream_options
             .as_ref()
