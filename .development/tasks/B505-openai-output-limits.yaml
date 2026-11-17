@@ -84,6 +84,9 @@ description: >-
   wiring lines; 645 planned, 650 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/src/case.rs"
+  - "tools/oracle"
+  - "crates/betterlite-openai"
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/output_limits.rs
   - crates/betterlite-openai/src/output_limits/**
