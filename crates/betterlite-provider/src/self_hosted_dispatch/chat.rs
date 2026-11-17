@@ -162,6 +162,8 @@ fn petals<R>(
     };
     let mut call = resolved(context, SelfHostedConfig::Petals);
     call.api_base = Some(api_base);
+    call.api_key = None;
+    call.headers = None;
     call.stream = stream;
     call.optional_params = optional_params;
     call.custom_llm_provider = PETALS_PROVIDER.to_owned();
