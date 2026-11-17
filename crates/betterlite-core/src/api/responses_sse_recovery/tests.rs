@@ -190,29 +190,46 @@ fn recovery_line_filter_does_not_join_data_lines() {
 }
 
 #[rstest]
-#[case::carriage_return_line_feed("\r\n")]
-#[case::carriage_return("\r")]
-#[case::vertical_tab("\u{b}")]
-#[case::form_feed("\u{c}")]
-#[case::file_separator("\u{1c}")]
-#[case::group_separator("\u{1d}")]
-#[case::record_separator("\u{1e}")]
-#[case::next_line("\u{85}")]
-#[case::line_separator("\u{2028}")]
-#[case::paragraph_separator("\u{2029}")]
-fn recovery_splits_python_line_boundaries(#[case] separator: &str) {
+#[case::line_feed("\n", r#"[{"id":"zero"},{"id":"one"}]"#)]
+#[case::carriage_return_line_feed("\r\n", r#"[{"id":"zero"},{"id":"one"}]"#)]
+#[case::carriage_return("\r", r#"[{"id":"zero"},{"id":"one"}]"#)]
+#[case::vertical_tab("\u{b}", "[]")]
+#[case::form_feed("\u{c}", "[]")]
+#[case::file_separator("\u{1c}", "[]")]
+#[case::group_separator("\u{1d}", "[]")]
+#[case::record_separator("\u{1e}", "[]")]
+#[case::unit_separator("\u{1f}", "[]")]
+#[case::next_line("\u{85}", "[]")]
+#[case::line_separator("\u{2028}", "[]")]
+#[case::paragraph_separator("\u{2029}", "[]")]
+fn recovery_splits_only_on_sse_line_ends(#[case] separator: &str, #[case] expected: &str) {
     let events = [item(0, "zero"), item(1, "one")].map(|event| format!("data: {event}"));
+    // any other separator leaves the two events on one line, which is no JSON object
+    assert_eq!(recover(&events.join(separator)), list(expected));
+}
+
+#[test]
+fn recovery_keeps_unicode_separators_in_an_item() {
+    let id = "a\u{85}b\u{2028}c\u{2029}d";
+    let recorded = format!(
+        r#"data: {{"type":"response.output_item.done","output_index":0,"item":{{"id":"{id}"}}}}"#
+    );
     assert_eq!(
-        recover(&events.join(separator)),
-        list(r#"[{"id":"zero"},{"id":"one"}]"#)
+        recover(&recorded),
+        vec![json(&format!(r#"{{"id":"{id}"}}"#))]
     );
 }
 
 #[test]
-fn recovery_does_not_split_on_the_unit_separator() {
-    // Python's splitlines leaves U+001F inside the line, so the joined payload is no JSON object
-    let events = [item(0, "zero"), item(1, "one")].join("\u{1f}");
-    assert!(recover(&events).is_empty());
+fn a_completed_event_with_unicode_separators_ends_recovery() {
+    let id = "a\u{85}b\u{2028}c\u{2029}d";
+    let completed =
+        format!(r#"{{"type":"response.completed","response":{{"output":[{{"id":"{id}"}}]}}}}"#);
+    let recorded = recording(&[completed, item(0, "later")]);
+    assert_eq!(
+        recover(&recorded),
+        vec![json(&format!(r#"{{"id":"{id}"}}"#))]
+    );
 }
 
 #[test]

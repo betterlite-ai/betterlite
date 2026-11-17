@@ -2,12 +2,6 @@ use betterlite_prompts::arguments::json::Json;
 
 use super::records::response_texts;
 
-// Python's str.splitlines() boundaries: SSE frames end at CR, LF or CRLF, and exotic separators keep the scan identical
-const LINE_BOUNDARIES: [char; 10] = [
-    '\n', '\r', '\u{000b}', '\u{000c}', '\u{001c}', '\u{001d}', '\u{001e}', '\u{0085}', '\u{2028}',
-    '\u{2029}',
-];
-
 // LiteLLM decodes each chunk with errors="replace", so a multibyte character split across chunks becomes replacement characters
 fn decode_lossy(bytes: &[u8]) -> String {
     let mut decoded = String::with_capacity(bytes.len());
@@ -24,13 +18,14 @@ fn decode_lossy(bytes: &[u8]) -> String {
 pub fn decode_google_guardrail_sse(chunks: &[&[u8]]) -> Vec<String> {
     let joined: String = chunks.iter().copied().map(decode_lossy).collect();
     let mut texts = Vec::new();
-    for line in joined.split(|character| LINE_BOUNDARIES.contains(&character)) {
+    for line in joined.split(['\r', '\n']) {
         let Some(payload) = line.strip_prefix("data:") else {
             continue;
         };
-        // an empty payload and [DONE] are not JSON objects, so the parse drops them; Python's strip also removes U+001F
-        let trimmed = payload
-            .trim_matches(|character: char| character.is_whitespace() || character == '\u{1f}');
+        // SSE lines end only at CR and LF, so U+001C to U+001F reach this trim and Python's strip removes them
+        let trimmed = payload.trim_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+        });
         if let Ok(Json::Object(object)) = serde_json::from_str::<Json>(trimmed) {
             texts.extend(response_texts(&object).1);
         }
