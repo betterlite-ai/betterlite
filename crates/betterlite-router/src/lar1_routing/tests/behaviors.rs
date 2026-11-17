@@ -9,10 +9,12 @@ use crate::lar1_routing::thresholds::Thresholds;
 enum Behavior {
     DeclaredDefaults,
     WireEnums,
-    ExactType,
-    Fallback,
+    Selection {
+        pool: &'static [(&'static str, &'static str)],
+        metadata: &'static [u8],
+        expected: &'static str,
+    },
     UnverifiedFirst,
-    MemorySecond,
     SingleDeployment,
     EmptyPool,
     NoRouter,
@@ -26,10 +28,35 @@ enum Behavior {
 #[rstest]
 #[case::declared_defaults(Behavior::DeclaredDefaults)]
 #[case::wire_enums(Behavior::WireEnums)]
-#[case::exact_type(Behavior::ExactType)]
-#[case::fallback(Behavior::Fallback)]
+// the declared type wins over deployment order, and the first deployment of that type wins
+#[case::exact_type(Behavior::Selection {
+    pool: &[
+        ("deep-1", "deep"),
+        ("cloud-fast-1", "cloud-fast"),
+        ("cloud-fast-2", "cloud-fast"),
+        ("local-1", "local"),
+    ],
+    metadata: br#"{"confidence":0.4}"#,
+    expected: "cloud-fast-1",
+})]
+// no deployment of the classified type falls back to the first healthy deployment
+#[case::fallback(Behavior::Selection {
+    pool: &[("cloud-smart-1", "cloud-smart"), ("deep-1", "deep")],
+    metadata: br#"{"confidence":0.55}"#,
+    expected: "cloud-smart-1",
+})]
 #[case::unverified_first(Behavior::UnverifiedFirst)]
-#[case::memory_second(Behavior::MemorySecond)]
+// a memory request is cloud-fast before any confidence threshold applies
+#[case::memory_second(Behavior::Selection {
+    pool: &[
+        ("cloud-smart-1", "cloud-smart"),
+        ("cloud-fast-1", "cloud-fast"),
+        ("local-1", "local"),
+        ("deep-1", "deep"),
+    ],
+    metadata: br#"{"confidence":0.99,"time":"MEM"}"#,
+    expected: "cloud-fast-1",
+})]
 #[case::single_deployment(Behavior::SingleDeployment)]
 #[case::empty_pool(Behavior::EmptyPool)]
 #[case::no_router(Behavior::NoRouter)]
@@ -43,10 +70,26 @@ async fn lar1_routing_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::DeclaredDefaults => declared_defaults().await,
         Behavior::WireEnums => wire_enums().await,
-        Behavior::ExactType => exact_type().await,
-        Behavior::Fallback => fallback().await,
+        Behavior::Selection {
+            pool,
+            metadata,
+            expected,
+        } => {
+            let deployments = pool
+                .iter()
+                .map(|&(id, kind)| spec(id, Some(kind)))
+                .collect();
+            let id = selected(
+                &Lar1Strategy::default(),
+                Some(&Group(deployments)),
+                Some(metadata),
+                false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(id.as_deref(), Some(expected));
+        }
         Behavior::UnverifiedFirst => unverified_first().await,
-        Behavior::MemorySecond => memory_second().await,
         Behavior::SingleDeployment => single_deployment().await,
         Behavior::EmptyPool => empty_pool().await,
         Behavior::NoRouter => no_router().await,
@@ -102,42 +145,6 @@ async fn wire_enums() {
     ));
 }
 
-async fn exact_type() {
-    // the declared type wins over deployment order, and the first deployment of that type wins
-    let pool = vec![
-        spec("deep-1", Some("deep")),
-        spec("cloud-fast-1", Some("cloud-fast")),
-        spec("cloud-fast-2", Some("cloud-fast")),
-        spec("local-1", Some("local")),
-    ];
-    let id = selected(
-        &Lar1Strategy::default(),
-        Some(&Group(pool)),
-        Some(br#"{"confidence":0.4}"#),
-        false,
-    )
-    .await
-    .unwrap();
-    assert_eq!(id.as_deref(), Some("cloud-fast-1"));
-}
-
-async fn fallback() {
-    // no deployment of the classified type falls back to the first healthy deployment
-    let pool = vec![
-        spec("cloud-smart-1", Some("cloud-smart")),
-        spec("deep-1", Some("deep")),
-    ];
-    let id = selected(
-        &Lar1Strategy::default(),
-        Some(&Group(pool)),
-        Some(br#"{"confidence":0.55}"#),
-        false,
-    )
-    .await
-    .unwrap();
-    assert_eq!(id.as_deref(), Some("cloud-smart-1"));
-}
-
 async fn unverified_first() {
     // unverified evidence outranks both the memory time and the confidence thresholds
     let id = selected(
@@ -149,8 +156,7 @@ async fn unverified_first() {
     .await
     .unwrap();
     assert_eq!(id.as_deref(), Some("cloud-smart-1"));
-    // the evidence list is searched, not only its first entry, and the type matches a deployment
-    // that is not the first healthy one
+    // the evidence list is searched, and the type matches a deployment that is not first
     let pool = vec![
         spec("local-1", Some("local")),
         spec("cloud-smart-1", Some("cloud-smart")),
@@ -164,19 +170,6 @@ async fn unverified_first() {
     .await
     .unwrap();
     assert_eq!(contained.as_deref(), Some("cloud-smart-1"));
-}
-
-async fn memory_second() {
-    // a memory request is cloud-fast before any confidence threshold applies
-    let id = selected(
-        &Lar1Strategy::default(),
-        Some(&Group(typed_pool())),
-        Some(br#"{"confidence":0.99,"time":"MEM"}"#),
-        false,
-    )
-    .await
-    .unwrap();
-    assert_eq!(id.as_deref(), Some("cloud-fast-1"));
 }
 
 async fn single_deployment() {

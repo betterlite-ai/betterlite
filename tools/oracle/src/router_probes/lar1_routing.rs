@@ -81,8 +81,7 @@ fn litellm_model(deployment: &DeploymentSpec) -> Option<&str> {
     }
 }
 
-// Router.async_get_healthy_deployments: a model id answers one deployment and every other request
-// answers the pool in model_list order, a named deployment included
+// Router.async_get_healthy_deployments: a model id answers one deployment, a group answers the pool in model_list order
 #[async_trait]
 impl HealthyDeployments for ProbeRouter {
     async fn healthy_deployments(

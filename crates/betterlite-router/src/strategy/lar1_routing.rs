@@ -9,8 +9,7 @@ use crate::strategy::StrategyContext;
 
 mod tests;
 
-// A route carries no request metadata and no configured thresholds, so this arm classifies with the
-// declared defaults; a host that has both calls Lar1Strategy::select_deployment, the native entry.
+// A route carries no metadata or thresholds, so this arm uses the declared defaults
 pub(super) fn select<R>(
     context: &StrategyContext<'_>,
     _random: &mut R,
