@@ -10,6 +10,12 @@ pub struct BillingTasks {
 }
 
 impl BillingTasks {
+    // The server owns one tracker for its lifetime, so a poller outlives the client that started it.
+    #[must_use]
+    pub fn new(tasks: TaskTracker) -> Self {
+        Self { tasks }
+    }
+
     pub fn spawn<Billing>(&self, billing: Billing) -> JoinHandle<()>
     where
         Billing: Future<Output = ()> + Send + 'static,
