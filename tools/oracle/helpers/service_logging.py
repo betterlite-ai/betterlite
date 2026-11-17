@@ -127,9 +127,11 @@ def level_value() -> JsonValue:
 
 
 # one body for both hooks, so the two payload shapes differ only in the call they make
-def payload_value(input_value: SuccessInput | FailureInput) -> JsonValue:
-    service_logger, payloads = recorder()
-    dispatch: ServiceDispatch = service_logger
+def payload_value(
+    input_value: SuccessInput | FailureInput,
+    dispatch: ServiceDispatch,
+    payloads: PayloadRecorder,
+) -> JsonValue:
     if input_value["op"] == "service_success":
         asyncio.run(
             dispatch.async_service_success_hook(
@@ -157,4 +159,5 @@ def run(input_value: Input) -> JsonValue:
         return correlation_value(input_value)
     if input_value["op"] == "log_level":
         return level_value()
-    return payload_value(input_value)
+    service_logger, payloads = recorder()
+    return payload_value(input_value, service_logger, payloads)
