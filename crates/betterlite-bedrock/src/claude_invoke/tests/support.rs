@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
+use std::fmt::Display;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -54,7 +55,7 @@ use tokio::runtime::{Builder, Runtime};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::claude_invoke::error::ClaudeInvokeError;
 use crate::claude_invoke::params::{
-    MapParamsRequest, get_supported_openai_params, map_openai_params,
+    MapParamsError, MapParamsRequest, get_supported_openai_params, map_openai_params,
 };
 use crate::claude_invoke::request::{
     ClaudeInvokePrepared, ClaudeInvokeRequest, TransformSources, async_transform_request,
@@ -84,7 +85,7 @@ pub(super) struct FixtureError {
 
 fn failed<E>(error: E) -> FixtureError
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     FixtureError {
         message: error.to_string(),
@@ -201,15 +202,19 @@ impl MapFetcher {
 }
 
 impl RemoteMediaFetcher for MapFetcher {
-    async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         record_call(&self.calls, url);
-        let Some(data_url) = self.urls.get(url) else {
-            return Err(ImageFetchError::Attempts {
+        let answer = self
+            .urls
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Attempts {
                 url: url.to_owned(),
             });
-        };
-        self.transports.fetch_add(1, Ordering::Relaxed);
-        Ok(data_url.clone())
+        if answer.is_ok() {
+            self.transports.fetch_add(1, Ordering::Relaxed);
+        }
+        ready(answer)
     }
 
     async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
@@ -241,11 +246,11 @@ impl RefusingFetcher {
 }
 
 impl RemoteMediaFetcher for RefusingFetcher {
-    async fn convert_url(&self, url: &str) -> Result<String, ImageFetchError> {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         record_call(&self.calls, url);
-        Err(ImageFetchError::Rejected {
+        ready(Err(ImageFetchError::Rejected {
             url: url.to_owned(),
-        })
+        }))
     }
 
     async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
@@ -276,6 +281,7 @@ pub(super) struct Fixture {
     unlisted: RawCatalog,
     lookup: MapLookup,
     matrix: BetaMatrix,
+    defaults: OptionDefaults,
 }
 
 impl Fixture {
@@ -301,7 +307,29 @@ impl Fixture {
             unlisted: RawCatalog::new(),
             lookup: MapLookup::from_entries(model_cost),
             matrix: serde_json::from_str(BUNDLED_BETA_CONFIG).map_err(failed)?,
+            defaults: OptionDefaults::default(),
         })
+    }
+
+    pub(super) fn request<'request>(
+        &'request self,
+        model: &'request str,
+        messages: Vec<Json>,
+        optional_params: IndexMap<String, Json>,
+        headers: AnthropicHeaders,
+    ) -> ClaudeInvokeRequest<'request> {
+        ClaudeInvokeRequest {
+            model,
+            messages,
+            optional_params,
+            litellm_params: IndexMap::new(),
+            headers,
+            defaults: &self.defaults,
+            catalog: &self.typed,
+            default_chat_max_tokens: 4096,
+            modify_params: false,
+            global_drop_params: false,
+        }
     }
 
     const fn catalogs(&self) -> CatalogSources<'_> {
@@ -418,7 +446,7 @@ impl<'fixture> Session<'fixture> {
         drop_params: bool,
         non_default_params: &IndexMap<String, Json>,
         optional_params: &mut IndexMap<String, Json>,
-    ) -> Result<(), crate::claude_invoke::params::MapParamsError> {
+    ) -> Result<(), MapParamsError> {
         let catalogs = self.fixture.catalogs();
         let request = MapParamsRequest {
             model,
@@ -454,67 +482,141 @@ impl<'fixture> Session<'fixture> {
             &catalogs,
         ))
     }
+}
 
-    pub(super) fn response(&mut self, raw: &str, messages: Vec<Json>) -> ResponseEnvelope {
-        let headers = HeaderMap::new();
-        let raw_response = RawResponse {
-            status: 200,
-            headers: &headers,
-            body: raw.as_bytes(),
-        };
-        let optional_params = IndexMap::new();
-        let litellm_params = IndexMap::new();
-        let request_data = IndexMap::new();
-        let request = ResponseRequest {
-            messages: &messages,
-            optional_params: &optional_params,
-            litellm_params: &litellm_params,
-            request_data: &request_data,
-            json_mode: None,
-            now: NOW_UNIX,
-            disable_add_prefix_to_prompt: false,
-        };
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-        let mut state = LoggingState::new(
-            serde_json::from_str::<LoggingInit>(INIT).expect("the logging init parses"),
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || "generated".to_owned(),
-            || Duration::default(),
-        )
-        .expect("the logging state builds");
-        let sink = Silent;
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &redactor,
-            log: &sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).expect("the clock parses"),
-        };
-        let mut envelope = ResponseEnvelope::new("generated".to_owned());
-        claude_transform_response(
-            &mut envelope,
-            &raw_response,
-            &request,
-            Logging {
-                state: &mut state,
-                env: &env,
-            },
-            &NoReasoning,
-        )
-        .expect("the response transforms");
-        envelope
+pub(super) fn response(raw: &str, messages: &[Json]) -> ResponseEnvelope {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let mut state = logging_state(&redactor);
+    let sink = Silent;
+    let env = pre_post_env(&redactor, &sink);
+    let mut envelope = ResponseEnvelope::new("generated".to_owned());
+    let headers = HeaderMap::new();
+    let raw_response = RawResponse {
+        status: 200,
+        headers: &headers,
+        body: raw.as_bytes(),
+    };
+    let optional_params = IndexMap::new();
+    let litellm_params = IndexMap::new();
+    let request_data = IndexMap::new();
+    let request = ResponseRequest {
+        messages,
+        optional_params: &optional_params,
+        litellm_params: &litellm_params,
+        request_data: &request_data,
+        json_mode: None,
+        now: NOW_UNIX,
+        disable_add_prefix_to_prompt: false,
+    };
+    claude_transform_response(
+        &mut envelope,
+        &raw_response,
+        &request,
+        Logging {
+            state: &mut state,
+            env: &env,
+        },
+        &NoReasoning,
+    )
+    .expect("the response transforms");
+    envelope
+}
+
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    let mut context = CorrelationContext::default();
+    LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).expect("the logging init parses"),
+        CorrelationSetup {
+            context: &mut context,
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || "generated".to_owned(),
+        Duration::default,
+    )
+    .expect("the logging state builds")
+}
+
+fn pre_post_env<'env>(redactor: &'env Redactor, sink: &'env Silent) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::<FixedOffset>::parse_from_rfc3339(NOW).expect("the clock parses"),
     }
+}
+
+pub(super) fn transformed<Fetcher>(
+    session: &mut Session<'_>,
+    request: &ClaudeInvokeRequest<'_>,
+    fetcher: &Fetcher,
+    mode: Mode,
+) -> Result<Json, ClaudeInvokeError<Infallible>>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
+    session
+        .transform(request, fetcher, mode)
+        .map(|prepared| body_json(&prepared))
+}
+
+pub(super) fn plain_body<Fetcher>(
+    fixture: &Fixture,
+    session: &mut Session<'_>,
+    messages: Vec<Json>,
+    fetcher: &Fetcher,
+    mode: Mode,
+) -> Result<Json, ClaudeInvokeError<Infallible>>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
+    let request = fixture.request(
+        "claude-plain",
+        messages,
+        map_of(r#"{"max_tokens": 64}"#),
+        AnthropicHeaders::default(),
+    );
+    transformed(session, &request, fetcher, mode)
+}
+
+pub(super) fn json(text: &str) -> Json {
+    serde_json::from_str(text).expect("the fixture JSON parses")
+}
+
+pub(super) fn field<'value>(value: &'value Json, name: &str) -> Option<&'value Json> {
+    match value {
+        Json::Object(fields) => fields.get(name),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    }
+}
+
+pub(super) fn at<'value>(value: &'value Json, path: &[&str]) -> &'value Json {
+    let mut current = value;
+    for step in path {
+        current = match current {
+            Json::Object(fields) => fields.get(*step).expect("the object field exists"),
+            Json::List(items) => {
+                let index: usize = step.parse().expect("a list step is an index");
+                items.get(index).expect("the list index exists")
+            }
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
+                panic!("the path meets a scalar")
+            }
+        };
+    }
+    current
+}
+
+pub(super) fn prompt_message() -> Vec<Json> {
+    messages_of(r#"[{"role": "user", "content": "hello"}]"#)
 }
 
 pub(super) fn map_of(text: &str) -> IndexMap<String, Json> {
@@ -529,38 +631,13 @@ pub(super) fn messages_of(text: &str) -> Vec<Json> {
     serde_json::from_str(text).expect("the fixture messages parse")
 }
 
-pub(super) fn body_json(prepared: &ClaudeInvokePrepared) -> serde_json::Value {
-    serde_json::to_value(&prepared.body).expect("the body serializes")
+pub(super) fn body_json(prepared: &ClaudeInvokePrepared) -> Json {
+    serde_json::from_value(serde_json::to_value(&prepared.body).expect("the body serializes"))
+        .expect("the body round-trips as JSON")
 }
 
 pub(super) fn headers_of(entries: &[(&str, &str)]) -> AnthropicHeaders {
     let mut headers = AnthropicHeaders::default();
     headers.values.extend(text_pairs(entries));
     headers
-}
-
-pub(super) fn catalog() -> ModelCatalog {
-    ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("the catalog parses")
-}
-
-pub(super) fn chat_request<'request>(
-    model: &'request str,
-    messages: Vec<Json>,
-    optional_params: IndexMap<String, Json>,
-    headers: AnthropicHeaders,
-    defaults: &'request OptionDefaults,
-    catalog: &'request ModelCatalog,
-) -> ClaudeInvokeRequest<'request> {
-    ClaudeInvokeRequest {
-        model,
-        messages,
-        optional_params,
-        litellm_params: IndexMap::new(),
-        headers,
-        defaults,
-        catalog,
-        default_chat_max_tokens: 4096,
-        modify_params: false,
-        global_drop_params: false,
-    }
 }

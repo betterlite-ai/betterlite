@@ -1,113 +1,145 @@
+use std::convert::Infallible;
+
 use betterlite_anthropic::headers::AnthropicHeaders;
-use betterlite_anthropic::option_primitives::OptionDefaults;
-use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::{Value, json};
 
 use super::support::{
-    Fixture, MapFetcher, Mode, RefusingFetcher, Session, body_json, catalog, chat_request,
-    headers_of, map_of, messages_of, model_cost_of,
+    Fixture, MapFetcher, Mode, RefusingFetcher, Session, at, field, headers_of, json, map_of,
+    messages_of, model_cost_of, plain_body, prompt_message, response, transformed,
 };
 use crate::claude_invoke::documents::DocumentError;
 use crate::claude_invoke::error::ClaudeInvokeError;
-use crate::claude_invoke::request::ClaudeInvokeRequest;
 use crate::claude_invoke::tools::ToolSearchToolsError;
 use crate::claude_invoke::{STRIPS_BILLING_METADATA, USES_ASYNC_TRANSFORM_REQUEST};
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 
-fn params(value: &Value) -> IndexMap<String, Json> {
-    serde_json::from_value(value.clone()).expect("the case params parse")
-}
+const PLAIN_COST: &str = r#"{"bedrock/claude-plain": {"litellm_provider": "bedrock"}}"#;
+const ADAPTIVE_COST: &str = r#"{
+    "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "max"},
+    "bedrock/claude-low": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "high"},
+    "bedrock/claude-free": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
+    "bedrock/claude-config": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "supports_output_config": true, "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "max"}
+}"#;
+const TOOL_COST: &str =
+    r#"{"bedrock/claude-tools": {"litellm_provider": "bedrock", "supports_tool_search": true}}"#;
+const TOOL_STUB_COST: &str = r#"{
+    "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_native_structured_output": false, "supports_adaptive_thinking": true},
+    "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true}
+}"#;
+const FORCED_COST: &str = r#"{
+    "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_forced_tool_use": false},
+    "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_forced_tool_use": true}
+}"#;
+const OUTPUT_COST: &str = r#"{
+    "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true},
+    "bedrock/claude-plain": {"litellm_provider": "bedrock"}
+}"#;
+const RESPONSE_FORMAT: &str = r#"{"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}}"#;
+const FORCED_FORMAT: &str = r#"{"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {}}}}"#;
+const OUTPUT_FORMAT: &str = r#"{"type": "json_schema", "schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}"#;
 
 fn plain_fixture() -> Fixture {
-    Fixture::new(&model_cost_of(
-        r#"{"bedrock/claude-plain": {"litellm_provider": "bedrock"}}"#,
-    ))
-    .expect("the fixture builds")
+    Fixture::new(&model_cost_of(PLAIN_COST)).expect("the fixture builds")
 }
 
-fn plain_request<'request>(
-    defaults: &'request OptionDefaults,
-    catalog: &'request ModelCatalog,
-    optional_params: IndexMap<String, Json>,
-) -> ClaudeInvokeRequest<'request> {
-    chat_request(
-        "claude-plain",
-        prompt_message(),
-        optional_params,
-        AnthropicHeaders::default(),
-        defaults,
-        catalog,
-    )
+fn map_params_of(
+    session: &mut Session<'_>,
+    model: &str,
+    non_default: &IndexMap<String, Json>,
+    mut optional_params: IndexMap<String, Json>,
+) -> Json {
+    session
+        .map_params(model, false, non_default, &mut optional_params)
+        .expect("the parameters map");
+    Json::Object(optional_params)
 }
 
-fn prompt_message() -> Vec<Json> {
-    messages_of(r#"[{"role": "user", "content": "hello"}]"#)
+fn reasoning_effort(value: &str) -> IndexMap<String, Json> {
+    let mut params = IndexMap::new();
+    params.insert("reasoning_effort".to_owned(), Json::Text(value.to_owned()));
+    params
 }
 
-fn prepared_message() -> Value {
-    json!([{"content": [{"text": "hello", "type": "text"}], "role": "user"}])
+fn choice_params(choice: &str) -> IndexMap<String, Json> {
+    let mut params = IndexMap::new();
+    params.insert("tool_choice".to_owned(), json(choice));
+    params
+}
+
+fn structured_params(format: &str) -> IndexMap<String, Json> {
+    let mut params = IndexMap::new();
+    params.insert("response_format".to_owned(), json(format));
+    params
+}
+
+fn beta_body(
+    fixture: &Fixture,
+    session: &mut Session<'_>,
+    messages: Vec<Json>,
+    params: IndexMap<String, Json>,
+    headers: AnthropicHeaders,
+) -> Json {
+    let request = fixture.request("claude-plain", messages, params, headers);
+    let fetcher = MapFetcher::default();
+    transformed(session, &request, &fetcher, Mode::Sync).expect("the beta request transforms")
 }
 
 pub(super) fn bedrock_anthropic_version() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
     let fetcher = MapFetcher::default();
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let request = plain_request(&defaults, &catalog, map_of(r#"{"max_tokens": 64}"#));
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Sync)
-        .expect("the request transforms");
+    let request = fixture.request(
+        "claude-plain",
+        prompt_message(),
+        map_of(r#"{"max_tokens": 64}"#),
+        AnthropicHeaders::default(),
+    );
+    let body =
+        transformed(&mut session, &request, &fetcher, Mode::Sync).expect("the request transforms");
     assert_eq!(
-        body_json(&prepared),
-        json!({
-            "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 64,
-            "messages": prepared_message(),
-        })
+        body,
+        json(
+            r#"{"anthropic_version": "bedrock-2023-05-31", "max_tokens": 64, "messages": [{"content": [{"text": "hello", "type": "text"}], "role": "user"}]}"#,
+        )
     );
-    let explicit = plain_request(
-        &defaults,
-        &catalog,
-        map_of(
-            r#"{"max_tokens": 64, "anthropic_version": "custom-2024-01-01", "aws_access_key_id": "AKIAEXAMPLE", "aws_secret_access_key": "secret"}"#,
-        ),
-    );
-    let prepared = session
-        .transform(&explicit, &fetcher, Mode::Sync)
-        .expect("the explicit version transforms");
-    assert_eq!(
-        body_json(&prepared)["anthropic_version"],
-        json!("custom-2024-01-01")
-    );
-    assert!(body_json(&prepared).get("aws_access_key_id").is_none());
-    assert!(body_json(&prepared).get("aws_secret_access_key").is_none());
-    let null_version = plain_request(
-        &defaults,
-        &catalog,
+    explicit_anthropic_version(&fixture, &mut session);
+    let null_version = fixture.request(
+        "claude-plain",
+        prompt_message(),
         map_of(r#"{"max_tokens": 64, "anthropic_version": null}"#),
+        AnthropicHeaders::default(),
     );
-    let prepared = session
-        .transform(&null_version, &fetcher, Mode::Sync)
+    let null_body = transformed(&mut session, &null_version, &fetcher, Mode::Sync)
         .expect("the null version transforms");
-    assert_eq!(body_json(&prepared)["anthropic_version"], Value::Null);
+    assert_eq!(field(&null_body, "anthropic_version"), Some(&Json::Null));
     assert!(fetcher.calls().is_empty());
 }
 
+fn explicit_anthropic_version(fixture: &Fixture, session: &mut Session<'_>) {
+    let fetcher = MapFetcher::default();
+    let request = fixture.request(
+        "claude-plain",
+        prompt_message(),
+        map_of(
+            r#"{"max_tokens": 64, "anthropic_version": "custom-2024-01-01", "aws_access_key_id": "AKIAEXAMPLE", "aws_secret_access_key": "secret"}"#,
+        ),
+        AnthropicHeaders::default(),
+    );
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
+        .expect("the explicit version transforms");
+    assert_eq!(
+        field(&body, "anthropic_version"),
+        Some(&json(r#""custom-2024-01-01""#))
+    );
+    assert!(field(&body, "aws_access_key_id").is_none());
+    assert!(field(&body, "aws_secret_access_key").is_none());
+}
+
 pub(super) fn adaptive_effort_ceiling() {
-    let fixture = Fixture::new(&model_cost_of(
-        r#"{
-            "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "max"},
-            "bedrock/claude-low": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "bedrock_output_config_effort_ceiling": "high"},
-            "bedrock/claude-free": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
-            "bedrock/claude-config": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true, "supports_output_config": true, "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "max"}
-        }"#,
-    ))
-    .expect("the fixture builds");
+    let fixture = Fixture::new(&model_cost_of(ADAPTIVE_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
     let cases = [
         ("claude-test", "xhigh", "max"),
@@ -115,202 +147,206 @@ pub(super) fn adaptive_effort_ceiling() {
         ("claude-test", "low", "low"),
         ("claude-free", "xhigh", "xhigh"),
     ];
-    for (model, requested, mapped) in cases {
-        let non_default = params(&json!({"reasoning_effort": requested}));
-        let mut optional_params = IndexMap::new();
-        session
-            .map_params(model, false, &non_default, &mut optional_params)
-            .expect("the parameters map");
+    for (model, requested, ceiling) in cases {
+        let mapped = map_params_of(
+            &mut session,
+            model,
+            &reasoning_effort(requested),
+            IndexMap::new(),
+        );
         assert_eq!(
-            serde_json::to_value(&optional_params).expect("the params serialize"),
-            json!({
-                "output_config": {"effort": mapped},
-                "thinking": {"type": "adaptive", "display": "summarized"},
-            }),
+            at(&mapped, &["output_config", "effort"]),
+            &Json::Text(ceiling.to_owned()),
             "model {model} with effort {requested}"
         );
+        assert_eq!(
+            field(&mapped, "thinking"),
+            Some(&json(r#"{"type": "adaptive", "display": "summarized"}"#))
+        );
     }
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let requested = params(&json!({"max_tokens": 64, "output_config": {"effort": "xhigh"}}));
-    let request = chat_request(
+    output_config_ceiling(&fixture, &mut session);
+}
+
+fn output_config_ceiling(fixture: &Fixture, session: &mut Session<'_>) {
+    let fetcher = MapFetcher::default();
+    let request = fixture.request(
         "claude-config",
         prompt_message(),
-        requested,
+        map_of(r#"{"max_tokens": 64, "output_config": {"effort": "xhigh"}}"#),
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let fetcher = MapFetcher::default();
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let caller_params = Json::Object(request.optional_params.clone());
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
         .expect("the output config request transforms");
     assert_eq!(
-        body_json(&prepared)["output_config"],
-        json!({"effort": "max"})
+        field(&body, "output_config"),
+        Some(&json(r#"{"effort": "max"}"#))
     );
     assert_eq!(
-        serde_json::to_value(&request.optional_params).expect("the request params serialize")["output_config"],
-        json!({"effort": "xhigh"})
+        at(&caller_params, &["output_config", "effort"]),
+        &Json::Text("xhigh".to_owned())
     );
 }
 
 pub(super) fn bedrock_beta_filter() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let fetcher = MapFetcher::default();
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let server = json!([{"type": "url", "url": "https://example.test/mcp", "name": "srv"}]);
-    let computer = json!([{
-        "type": "computer_20250124",
-        "name": "computer",
-        "display_width_px": 1024,
-        "display_height_px": 768,
-    }]);
-    let with_user_beta = chat_request(
-        "claude-plain",
+    user_and_tool_betas(&fixture, &mut session);
+    mcp_beta_filtered(&fixture, &mut session);
+    user_beta_passes(&fixture, &mut session);
+    mid_conversation_beta(&fixture, &mut session);
+    thinking_display_beta(&fixture, &mut session);
+}
+
+fn user_and_tool_betas(fixture: &Fixture, session: &mut Session<'_>) {
+    let params = map_of(
+        r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}], "tools": [{"type": "computer_20250124", "name": "computer", "display_width_px": 1024, "display_height_px": 768}]}"#,
+    );
+    let body = beta_body(
+        fixture,
+        session,
         prompt_message(),
-        params(&json!({"max_tokens": 64, "mcp_servers": server, "tools": computer})),
+        params,
         headers_of(&[("anthropic-beta", "context-1m-2025-08-07")]),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&with_user_beta, &fetcher, Mode::Sync)
-        .expect("the beta request transforms");
     assert_eq!(
-        body_json(&prepared)["anthropic_beta"],
-        json!(["computer-use-2025-01-24", "context-1m-2025-08-07"])
+        field(&body, "anthropic_beta"),
+        Some(&json(
+            r#"["computer-use-2025-01-24", "context-1m-2025-08-07"]"#,
+        ))
     );
-    let filtered = chat_request(
-        "claude-plain",
+}
+
+fn mcp_beta_filtered(fixture: &Fixture, session: &mut Session<'_>) {
+    let params = map_of(
+        r#"{"max_tokens": 64, "mcp_servers": [{"type": "url", "url": "https://example.test/mcp", "name": "srv"}]}"#,
+    );
+    let body = beta_body(
+        fixture,
+        session,
         prompt_message(),
-        params(&json!({"max_tokens": 64, "mcp_servers": server})),
+        params,
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&filtered, &fetcher, Mode::Sync)
-        .expect("the filtered request transforms");
-    assert!(body_json(&prepared).get("anthropic_beta").is_none());
-    let explicit_user = chat_request(
-        "claude-plain",
+    assert!(field(&body, "anthropic_beta").is_none());
+}
+
+fn user_beta_passes(fixture: &Fixture, session: &mut Session<'_>) {
+    let body = beta_body(
+        fixture,
+        session,
         prompt_message(),
         map_of(r#"{"max_tokens": 64}"#),
         headers_of(&[("anthropic-beta", "mcp-client-2025-11-20")]),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&explicit_user, &fetcher, Mode::Sync)
-        .expect("the user beta request transforms");
     assert_eq!(
-        body_json(&prepared)["anthropic_beta"],
-        json!(["mcp-client-2025-11-20"])
+        field(&body, "anthropic_beta"),
+        Some(&json(r#"["mcp-client-2025-11-20"]"#))
     );
-    let conversation = messages_of(
+}
+
+fn mid_conversation_beta(fixture: &Fixture, session: &mut Session<'_>) {
+    let messages = messages_of(
         r#"[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi", "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}}]"#,
     );
-    let mid_conversation = chat_request(
-        "claude-plain",
-        conversation,
+    let body = beta_body(
+        fixture,
+        session,
+        messages,
         map_of(r#"{"max_tokens": 64}"#),
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&mid_conversation, &fetcher, Mode::Sync)
-        .expect("the mid-conversation request transforms");
     assert_eq!(
-        body_json(&prepared)["anthropic_beta"],
-        json!(["mid-conversation-output-config-2026-07-01"])
+        field(&body, "anthropic_beta"),
+        Some(&json(r#"["mid-conversation-output-config-2026-07-01"]"#))
     );
-    let display_updates = chat_request(
-        "claude-plain",
+}
+
+fn thinking_display_beta(fixture: &Fixture, session: &mut Session<'_>) {
+    let params =
+        map_of(r#"{"max_tokens": 64, "thinking": {"type": "adaptive", "display": "updates"}}"#);
+    let body = beta_body(
+        fixture,
+        session,
         prompt_message(),
-        params(&json!({"max_tokens": 64, "thinking": {"type": "adaptive", "display": "updates"}})),
+        params,
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&display_updates, &fetcher, Mode::Sync)
-        .expect("the display updates request transforms");
     assert_eq!(
-        body_json(&prepared)["anthropic_beta"],
-        json!(["thinking-display-updates-2026-08-18"])
+        field(&body, "anthropic_beta"),
+        Some(&json(r#"["thinking-display-updates-2026-08-18"]"#))
     );
 }
 
 pub(super) fn tool_search_tool_name() {
-    let fixture = Fixture::new(&model_cost_of(
-        r#"{"bedrock/claude-tools": {"litellm_provider": "bedrock", "supports_tool_search": true}}"#,
-    ))
-    .expect("the fixture builds");
+    let fixture = Fixture::new(&model_cost_of(TOOL_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
+    named_tool_search_tools(&fixture, &mut session);
+    empty_tools(&fixture, &mut session);
+    malformed_tools(&fixture, &mut session);
+}
+
+fn named_tool_search_tools(fixture: &Fixture, session: &mut Session<'_>) {
+    let params = map_of(
+        r#"{"max_tokens": 64, "tools": [
+            {"type": "tool_search_tool_regex_20251119"},
+            {"type": "tool_search_tool_regex_20251119", "name": "custom_search"},
+            {"type": "tool_search_tool_regex_20251119", "name": null, "input_schema": {"type": "object", "properties": {}}},
+            {"type": "tool_search_tool_bm25_20251119", "name": "search_bm25"},
+            {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "eager_input_streaming": true, "custom": {"defer_loading": true}}
+        ]}"#,
+    );
+    let request = fixture.request(
+        "claude-tools",
+        prompt_message(),
+        params,
+        AnthropicHeaders::default(),
+    );
     let fetcher = MapFetcher::default();
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let tools = json!([
-        {"type": "tool_search_tool_regex_20251119"},
-        {"type": "tool_search_tool_regex_20251119", "name": "custom_search"},
-        {"type": "tool_search_tool_regex_20251119", "name": null, "input_schema": {"type": "object", "properties": {}}},
-        {"type": "tool_search_tool_bm25_20251119", "name": "search_bm25"},
-        {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "eager_input_streaming": true, "custom": {"defer_loading": true}},
-    ]);
-    let request = chat_request(
-        "claude-tools",
-        prompt_message(),
-        params(&json!({"max_tokens": 64, "tools": tools})),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
         .expect("the tool search request transforms");
-    let body = body_json(&prepared);
     assert_eq!(
-        body["tools"],
-        json!([
-            {"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"},
-            {"name": "custom_search", "type": "tool_search_tool_regex"},
-            {"name": null, "type": "tool_search_tool_regex", "input_schema": {"type": "object", "properties": {}}},
-            {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true},
-        ])
+        field(&body, "tools"),
+        Some(&json(
+            r#"[
+                {"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"},
+                {"name": "custom_search", "type": "tool_search_tool_regex"},
+                {"name": null, "type": "tool_search_tool_regex", "input_schema": {"type": "object", "properties": {}}},
+                {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true}
+            ]"#,
+        ))
     );
     assert_eq!(
-        body["anthropic_beta"],
-        json!([
-            "fine-grained-tool-streaming-2025-05-14",
-            "tool-search-tool-2025-10-19"
-        ])
+        field(&body, "anthropic_beta"),
+        Some(&json(
+            r#"["fine-grained-tool-streaming-2025-05-14", "tool-search-tool-2025-10-19"]"#,
+        ))
     );
-    let empty = chat_request(
+}
+
+fn empty_tools(fixture: &Fixture, session: &mut Session<'_>) {
+    let request = fixture.request(
         "claude-tools",
         prompt_message(),
-        params(&json!({"max_tokens": 64, "tools": []})),
+        map_of(r#"{"max_tokens": 64, "tools": []}"#),
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&empty, &fetcher, Mode::Sync)
+    let fetcher = MapFetcher::default();
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
         .expect("the empty tools request transforms");
-    assert_eq!(body_json(&prepared)["tools"], json!([]));
-    let malformed = chat_request(
+    assert_eq!(field(&body, "tools"), Some(&json("[]")));
+}
+
+fn malformed_tools(fixture: &Fixture, session: &mut Session<'_>) {
+    let request = fixture.request(
         "claude-tools",
         prompt_message(),
-        params(&json!({"max_tokens": 64, "tools": [42]})),
+        map_of(r#"{"max_tokens": 64, "tools": [42]}"#),
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    match session.transform(&malformed, &fetcher, Mode::Sync) {
-        Ok(_prepared) => panic!("the malformed tools entry must fail the request"),
+    let fetcher = MapFetcher::default();
+    match transformed(session, &request, &fetcher, Mode::Sync) {
+        Ok(_body) => panic!("the malformed tools entry must fail the request"),
         Err(ClaudeInvokeError::Tools(ToolSearchToolsError::NotObject { index })) => {
             assert_eq!(index, 0);
         }
@@ -321,70 +357,30 @@ pub(super) fn tool_search_tool_name() {
 pub(super) fn inline_document() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let document = messages_of(
-        r#"[{"role": "user", "content": [
-            {"type": "text", "text": "read this"},
-            {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf"}}
-        ]}]"#,
-    );
-    let request = chat_request(
-        "claude-plain",
-        document,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    let fetcher = MapFetcher::new(&[(
-        "https://example.test/doc.pdf",
-        "data:application/octet-stream;base64,JVBERi0xLjQK",
-    )]);
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Sync)
-        .expect("the document request transforms");
-    assert_eq!(
-        body_json(&prepared)["messages"],
-        json!([{
-            "content": [
-                {"text": "read this", "type": "text"},
-                {"source": {"data": "JVBERi0xLjQK", "media_type": "application/pdf", "type": "base64"}, "type": "document"},
-            ],
-            "role": "user",
-        }])
-    );
-    assert_eq!(fetcher.calls(), vec!["https://example.test/doc.pdf"]);
+    text_document_inlined(&fixture, &mut session);
+    document_sources(&fixture, &mut session);
+}
+
+fn document_sources(fixture: &Fixture, session: &mut Session<'_>) {
     let suffixed = messages_of(
         r#"[{"role": "user", "content": [
             {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf?token=1"}}
         ]}]"#,
     );
-    let request = chat_request(
-        "claude-plain",
-        suffixed,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    let streamed = MapFetcher::new(&[(
+    let fetcher = MapFetcher::new(&[(
         "https://example.test/doc.pdf?token=1",
         "data:application/octet-stream;base64,JVBERi0xLjQK",
     )]);
-    let prepared = session
-        .transform(&request, &streamed, Mode::Sync)
+    let body = plain_body(fixture, session, suffixed, &fetcher, Mode::Sync)
         .expect("the suffixed document transforms");
     assert_eq!(
-        body_json(&prepared)["messages"][0]["content"][0]["source"],
-        json!({
-            "data": "JVBERi0xLjQK",
-            "media_type": "application/octet-stream",
-            "type": "base64",
-        })
+        at(&body, &["messages", "0", "content", "0", "source"]),
+        &json(
+            r#"{"data": "JVBERi0xLjQK", "media_type": "application/octet-stream", "type": "base64"}"#,
+        )
     );
     assert_eq!(
-        streamed.calls(),
+        fetcher.calls(),
         vec!["https://example.test/doc.pdf?token=1"]
     );
     let inline = messages_of(
@@ -392,29 +388,49 @@ pub(super) fn inline_document() {
             {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "QUJD"}}
         ]}]"#,
     );
-    let request = chat_request(
-        "claude-plain",
-        inline,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
     let quiet = MapFetcher::default();
-    let prepared = session
-        .transform(&request, &quiet, Mode::Sync)
+    let inline_body = plain_body(fixture, session, inline, &quiet, Mode::Sync)
         .expect("the inline document transforms");
     assert_eq!(
-        body_json(&prepared)["messages"][0]["content"][0]["source"]["data"],
-        json!("QUJD")
+        at(
+            &inline_body,
+            &["messages", "0", "content", "0", "source", "data"]
+        ),
+        &json(r#""QUJD""#)
     );
     assert!(quiet.calls().is_empty());
 }
 
+fn text_document_inlined(fixture: &Fixture, session: &mut Session<'_>) {
+    let messages = messages_of(
+        r#"[{"role": "user", "content": [
+            {"type": "text", "text": "read this"},
+            {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf"}}
+        ]}]"#,
+    );
+    let fetcher = MapFetcher::new(&[(
+        "https://example.test/doc.pdf",
+        "data:application/octet-stream;base64,JVBERi0xLjQK",
+    )]);
+    let body = plain_body(fixture, session, messages, &fetcher, Mode::Sync)
+        .expect("the document request transforms");
+    assert_eq!(
+        field(&body, "messages"),
+        Some(&json(
+            r#"[{
+                "content": [
+                    {"text": "read this", "type": "text"},
+                    {"source": {"data": "JVBERi0xLjQK", "media_type": "application/pdf", "type": "base64"}, "type": "document"}
+                ],
+                "role": "user"
+            }]"#,
+        ))
+    );
+    assert_eq!(fetcher.calls(), vec!["https://example.test/doc.pdf"]);
+}
+
 pub(super) fn claude_response_usage() {
-    let fixture = plain_fixture();
-    let mut session = Session::new(&fixture).expect("the session builds");
-    let raw = json!({
+    let raw = r#"{
         "id": "msg_bdrk_01",
         "model": "claude-plain",
         "type": "message",
@@ -425,11 +441,10 @@ pub(super) fn claude_response_usage() {
             "input_tokens": 10,
             "output_tokens": 5,
             "cache_creation_input_tokens": 2,
-            "cache_read_input_tokens": 3,
-        },
-    })
-    .to_string();
-    let envelope = session.response(&raw, prompt_message());
+            "cache_read_input_tokens": 3
+        }
+    }"#;
+    let envelope = response(raw, &prompt_message());
     let usage = envelope.usage.expect("the response carries usage");
     assert_eq!(envelope.id, "generated");
     assert_eq!(envelope.model.as_deref(), Some("claude-plain"));
@@ -446,75 +461,50 @@ pub(super) fn claude_response_usage() {
 }
 
 pub(super) fn response_format_tool_stub() {
-    let fixture = Fixture::new(&model_cost_of(
-        r#"{
-            "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_native_structured_output": false, "supports_adaptive_thinking": true},
-            "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true}
-        }"#,
-    ))
-    .expect("the fixture builds");
+    let fixture = Fixture::new(&model_cost_of(TOOL_STUB_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    let schema = json!({
-        "type": "json_schema",
-        "json_schema": {
-            "name": "answer",
-            "schema": {
-                "type": "object",
-                "properties": {"a": {"type": "string"}},
-                "required": ["a"],
-            },
-        },
-    });
-    let structured = params(&json!({"response_format": schema}));
-    let mut optional_params = IndexMap::new();
-    session
-        .map_params("claude-test", false, &structured, &mut optional_params)
-        .expect("the response format maps");
+    structured_mapping(&mut session);
+    display_update_params(&mut session);
+    supported_param_list(&mut session);
+}
+
+fn structured_mapping(session: &mut Session<'_>) {
+    let format = structured_params(RESPONSE_FORMAT);
     assert_eq!(
-        serde_json::to_value(&optional_params).expect("the params serialize"),
-        json!({
-            "json_mode": true,
-            "tool_choice": {"type": "tool", "name": "json_tool_call"},
-            "tools": [{
-                "name": "json_tool_call",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"a": {"type": "string"}},
-                    "required": ["a"],
-                },
-            }],
-        })
+        map_params_of(session, "claude-test", &format, IndexMap::new()),
+        json(
+            r#"{
+                "json_mode": true,
+                "tool_choice": {"type": "tool", "name": "json_tool_call"},
+                "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}]
+            }"#,
+        )
     );
-    let mut native_params = IndexMap::new();
-    session
-        .map_params("claude-native", false, &structured, &mut native_params)
-        .expect("the native response format maps");
     assert_eq!(
-        serde_json::to_value(&native_params).expect("the params serialize"),
-        json!({
-            "json_mode": true,
-            "output_format": {
-                "type": "json_schema",
-                "schema": {
-                    "additionalProperties": false,
-                    "type": "object",
-                    "properties": {"a": {"type": "string"}},
-                    "required": ["a"],
-                },
-            },
-        })
+        map_params_of(session, "claude-native", &format, IndexMap::new()),
+        json(
+            r#"{
+                "json_mode": true,
+                "output_format": {"type": "json_schema", "schema": {"additionalProperties": false, "type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}
+            }"#,
+        )
     );
-    let requested = params(
-        &json!({"thinking": {"type": "enabled", "display": "updates", "budget_tokens": 1024}}),
-    );
+}
+
+fn display_update_params(session: &mut Session<'_>) {
+    let requested =
+        map_of(r#"{"thinking": {"type": "enabled", "display": "updates", "budget_tokens": 1024}}"#);
     let mut updates = requested.clone();
     session
         .map_params("claude-test", false, &requested, &mut updates)
         .expect("the display update maps");
     assert_eq!(
-        serde_json::to_value(&updates).expect("the params serialize")["thinking"],
-        json!({"type": "adaptive", "display": "updates"})
+        at(&Json::Object(updates), &["thinking"]),
+        &json(r#"{"type": "adaptive", "display": "updates"}"#)
     );
+}
+
+fn supported_param_list(session: &mut Session<'_>) {
     assert_eq!(
         session.supported("claude-test"),
         vec![
@@ -541,96 +531,92 @@ pub(super) fn response_format_tool_stub() {
 }
 
 pub(super) fn forced_tool_choice_removed() {
-    let fixture = Fixture::new(&model_cost_of(
-        r#"{
-            "bedrock/claude-test": {"litellm_provider": "bedrock", "supports_forced_tool_use": false},
-            "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_forced_tool_use": true}
-        }"#,
-    ))
-    .expect("the fixture builds");
+    let fixture = Fixture::new(&model_cost_of(FORCED_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    let schema = json!({
-        "type": "json_schema",
-        "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {}}},
-    });
-    let structured = params(&json!({"response_format": schema}));
-    let choice = json!({"type": "function", "function": {"name": "json_tool_call"}});
-    let mut removed = params(&json!({"tool_choice": choice}));
-    session
-        .map_params("claude-test", false, &structured, &mut removed)
-        .expect("the unsupported model maps");
+    forced_choices(&mut session);
+    kept_choices(&mut session);
+}
+
+fn forced_choices(session: &mut Session<'_>) {
+    let json_tool =
+        choice_params(r#"{"type": "function", "function": {"name": "json_tool_call"}}"#);
     assert_eq!(
-        serde_json::to_value(&removed).expect("the params serialize"),
-        json!({
-            "json_mode": true,
-            "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}],
-        })
+        map_params_of(
+            session,
+            "claude-test",
+            &structured_params(FORCED_FORMAT),
+            json_tool.clone(),
+        ),
+        json(
+            r#"{
+                "json_mode": true,
+                "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}]
+            }"#,
+        )
     );
-    let mut kept = params(&json!({"tool_choice": choice}));
-    session
-        .map_params("claude-native", false, &structured, &mut kept)
-        .expect("the supported model maps");
     assert_eq!(
-        serde_json::to_value(&kept).expect("the params serialize"),
-        json!({
-            "json_mode": true,
-            "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}],
-            "tool_choice": {"type": "tool", "name": "json_tool_call"},
-        })
+        map_params_of(
+            session,
+            "claude-native",
+            &structured_params(FORCED_FORMAT),
+            json_tool,
+        ),
+        json(
+            r#"{
+                "json_mode": true,
+                "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}],
+                "tool_choice": {"type": "tool", "name": "json_tool_call"}
+            }"#,
+        )
     );
-    let other_name = json!({"type": "function", "function": {"name": "get_weather"}});
-    let mut kept_other = params(&json!({"tool_choice": other_name}));
-    session
-        .map_params("claude-test", false, &structured, &mut kept_other)
-        .expect("the other tool name maps");
+}
+
+fn kept_choices(session: &mut Session<'_>) {
+    let weather = choice_params(r#"{"type": "function", "function": {"name": "get_weather"}}"#);
+    let mapped = map_params_of(
+        session,
+        "claude-test",
+        &structured_params(FORCED_FORMAT),
+        weather,
+    );
     assert_eq!(
-        serde_json::to_value(&kept_other).expect("the params serialize")["tool_choice"],
-        json!({"type": "tool", "name": "get_weather"})
+        at(&mapped, &["tool_choice"]),
+        &json(r#"{"type": "tool", "name": "get_weather"}"#)
     );
-    let mut kept_auto = params(&json!({"tool_choice": "auto"}));
-    session
-        .map_params("claude-test", false, &structured, &mut kept_auto)
-        .expect("the auto choice maps");
-    assert_eq!(
-        serde_json::to_value(&kept_auto).expect("the params serialize")["tool_choice"],
-        json!({"type": "auto"})
+    let auto = map_params_of(
+        session,
+        "claude-test",
+        &structured_params(FORCED_FORMAT),
+        choice_params(r#""auto""#),
     );
+    assert_eq!(at(&auto, &["tool_choice"]), &json(r#"{"type": "auto"}"#));
 }
 
 pub(super) fn remote_url_inlined() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let image = messages_of(
+    let messages = messages_of(
         r#"[{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": "https://example.test/pic.png"}}
         ]}]"#,
-    );
-    let request = chat_request(
-        "claude-plain",
-        image,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
     let fetcher = MapFetcher::new(&[(
         "https://example.test/pic.png",
         "data:image/png;base64,iVBORw0KGgo=",
     )]);
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Async)
+    let body = plain_body(&fixture, &mut session, messages, &fetcher, Mode::Async)
         .expect("the image request transforms");
     assert_eq!(
-        body_json(&prepared)["messages"],
-        json!([{
-            "content": [{
-                "source": {"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"},
-                "type": "image",
-            }],
-            "role": "user",
-        }])
+        field(&body, "messages"),
+        Some(&json(
+            r#"[{
+                "content": [{
+                    "source": {"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"},
+                    "type": "image"
+                }],
+                "role": "user"
+            }]"#,
+        ))
     );
     assert_eq!(fetcher.calls(), vec!["https://example.test/pic.png"]);
 }
@@ -639,46 +625,28 @@ pub(super) fn async_media_order() {
     assert_eq!([USES_ASYNC_TRANSFORM_REQUEST], [true]);
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let mixed = messages_of(
+    let messages = messages_of(
         r#"[{"role": "user", "content": [
             {"type": "document", "source": {"type": "url", "url": "https://example.test/second.pdf"}},
             {"type": "image_url", "image_url": "https://example.test/pic.png"},
             {"type": "text", "text": "and this"}
         ]}]"#,
     );
-    let request = chat_request(
-        "claude-plain",
-        mixed,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    let fetcher = MapFetcher::new(&[
-        (
-            "https://example.test/pic.png",
-            "data:image/png;base64,iVBORw0KGgo=",
-        ),
-        (
-            "https://example.test/second.pdf",
-            "data:application/pdf;base64,U0VDT05E",
-        ),
-    ]);
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Async)
+    let fetcher = mixed_media_fetcher();
+    let body = plain_body(&fixture, &mut session, messages, &fetcher, Mode::Async)
         .expect("the mixed request transforms");
     assert_eq!(
-        body_json(&prepared)["messages"],
-        json!([{
-            "content": [
-                {"source": {"data": "U0VDT05E", "media_type": "application/pdf", "type": "base64"}, "type": "document"},
-                {"source": {"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"}, "type": "image"},
-                {"text": "and this", "type": "text"},
-            ],
-            "role": "user",
-        }])
+        field(&body, "messages"),
+        Some(&json(
+            r#"[{
+                "content": [
+                    {"source": {"data": "U0VDT05E", "media_type": "application/pdf", "type": "base64"}, "type": "document"},
+                    {"source": {"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"}, "type": "image"},
+                    {"text": "and this", "type": "text"}
+                ],
+                "role": "user"
+            }]"#,
+        ))
     );
     assert_eq!(
         fetcher.calls(),
@@ -689,18 +657,34 @@ pub(super) fn async_media_order() {
     );
 }
 
+fn mixed_media_fetcher() -> MapFetcher {
+    MapFetcher::new(&[
+        (
+            "https://example.test/pic.png",
+            "data:image/png;base64,iVBORw0KGgo=",
+        ),
+        (
+            "https://example.test/second.pdf",
+            "data:application/pdf;base64,U0VDT05E",
+        ),
+    ])
+}
+
 pub(super) fn media_fetch() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let mixed = messages_of(
-        r#"[{"role": "user", "content": [
-            {"type": "image_url", "image_url": "https://example.test/pic.png"},
-            {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf"}}
-        ]}]"#,
-    );
-    let fetching = MapFetcher::new(&[
+    served_media(&fixture, &mut session);
+    refused_media(&fixture, &mut session);
+}
+
+const MEDIA_MESSAGES: &str = r#"[{"role": "user", "content": [
+    {"type": "image_url", "image_url": "https://example.test/pic.png"},
+    {"type": "document", "source": {"type": "url", "url": "https://example.test/doc.pdf"}}
+]}]"#;
+
+fn served_media(fixture: &Fixture, session: &mut Session<'_>) {
+    let messages = messages_of(MEDIA_MESSAGES);
+    let fetcher = MapFetcher::new(&[
         (
             "https://example.test/pic.png",
             "data:image/png;base64,iVBORw0KGgo=",
@@ -710,103 +694,89 @@ pub(super) fn media_fetch() {
             "data:application/octet-stream;base64,JVBERi0xLjQK",
         ),
     ]);
-    let request = chat_request(
-        "claude-plain",
-        mixed.clone(),
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    let prepared = session
-        .transform(&request, &fetching, Mode::Async)
+    let body = plain_body(fixture, session, messages, &fetcher, Mode::Async)
         .expect("the media request transforms");
-    let body = body_json(&prepared);
     assert_eq!(
-        body["messages"][0]["content"][0]["source"],
-        json!({"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"})
+        at(&body, &["messages", "0", "content", "0", "source"]),
+        &json(r#"{"data": "iVBORw0KGgo=", "media_type": "image/png", "type": "base64"}"#)
     );
     assert_eq!(
-        body["messages"][0]["content"][1]["source"],
-        json!({"data": "JVBERi0xLjQK", "media_type": "application/pdf", "type": "base64"})
+        at(&body, &["messages", "0", "content", "1", "source"]),
+        &json(r#"{"data": "JVBERi0xLjQK", "media_type": "application/pdf", "type": "base64"}"#)
     );
-    assert_eq!(fetching.transport_attempts(), 2);
-    let refusing = RefusingFetcher::default();
-    let request = chat_request(
-        "claude-plain",
-        mixed,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    match session.transform(&request, &refusing, Mode::Async) {
-        Ok(_prepared) => panic!("the refusing fetcher must fail the request"),
+    assert_eq!(fetcher.transport_attempts(), 2);
+}
+
+fn refused_media(fixture: &Fixture, session: &mut Session<'_>) {
+    let messages = messages_of(MEDIA_MESSAGES);
+    let fetcher = RefusingFetcher::default();
+    match plain_body(fixture, session, messages, &fetcher, Mode::Async) {
+        Ok(_body) => panic!("the refusing fetcher must fail the request"),
         Err(ClaudeInvokeError::Media(MediaError::Fetch(ImageFetchError::Rejected { url }))) => {
             assert_eq!(url, "https://example.test/pic.png");
         }
         Err(other) => panic!("unexpected error: {other}"),
     }
-    assert_eq!(refusing.transport_attempts(), 0);
-    assert_eq!(refusing.calls(), vec!["https://example.test/pic.png"]);
+    assert_eq!(fetcher.transport_attempts(), 0);
+    assert_eq!(fetcher.calls(), vec!["https://example.test/pic.png"]);
 }
 
 pub(super) fn structured_output_body() {
-    let fixture = Fixture::new(&model_cost_of(
-        r#"{
-            "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true},
-            "bedrock/claude-plain": {"litellm_provider": "bedrock"}
-        }"#,
-    ))
-    .expect("the fixture builds");
+    let fixture = Fixture::new(&model_cost_of(OUTPUT_COST)).expect("the fixture builds");
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let fetcher = MapFetcher::default();
-    let schema =
-        json!({"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]});
-    let format = json!({"type": "json_schema", "schema": schema});
-    let native = chat_request(
+    native_output_config(&fixture, &mut session);
+    unsupported_output_config(&fixture, &mut session);
+}
+
+fn native_output_config(fixture: &Fixture, session: &mut Session<'_>) {
+    let mut params = map_of(r#"{"max_tokens": 64}"#);
+    params.insert("output_format".to_owned(), json(OUTPUT_FORMAT));
+    let request = fixture.request(
         "claude-native",
         prompt_message(),
-        params(&json!({"max_tokens": 64, "output_format": format})),
+        params,
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&native, &fetcher, Mode::Sync)
+    let fetcher = MapFetcher::default();
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
         .expect("the native structured output transforms");
-    let body = body_json(&prepared);
-    assert_eq!(body["output_config"], json!({"format": format}));
     assert_eq!(
-        body["anthropic_beta"],
-        json!(["structured-outputs-2025-11-13"])
+        at(&body, &["output_config", "format"]),
+        &json(OUTPUT_FORMAT)
     );
-    assert!(body.get("output_format").is_none());
-    let unsupported = chat_request(
+    assert_eq!(
+        field(&body, "anthropic_beta"),
+        Some(&json(r#"["structured-outputs-2025-11-13"]"#))
+    );
+    assert!(field(&body, "output_format").is_none());
+}
+
+fn unsupported_output_config(fixture: &Fixture, session: &mut Session<'_>) {
+    let mut output_config = IndexMap::new();
+    output_config.insert("format".to_owned(), json(OUTPUT_FORMAT));
+    output_config.insert("stream".to_owned(), Json::Bool(true));
+    let mut params = map_of(r#"{"max_tokens": 64}"#);
+    params.insert("output_config".to_owned(), Json::Object(output_config));
+    let request = fixture.request(
         "claude-plain",
         prompt_message(),
-        params(&json!({"max_tokens": 64, "output_config": {"format": format, "stream": true}})),
+        params,
         AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
     );
-    let prepared = session
-        .transform(&unsupported, &fetcher, Mode::Sync)
+    let fetcher = MapFetcher::default();
+    let body = transformed(session, &request, &fetcher, Mode::Sync)
         .expect("the unsupported structured output transforms");
-    let body = body_json(&prepared);
-    assert!(body.get("output_config").is_none());
+    assert!(field(&body, "output_config").is_none());
     assert_eq!(
-        body["messages"][0]["content"][0],
-        json!({"text": "hello", "type": "text"})
+        at(&body, &["messages", "0", "content", "0"]),
+        &json(r#"{"text": "hello", "type": "text"}"#)
     );
-    let inlined = body["messages"][0]["content"][1]["text"]
+    let inlined = at(&body, &["messages", "0", "content", "1", "text"])
         .as_str()
         .expect("the schema is inlined as text");
     assert_eq!(
-        serde_json::from_str::<Value>(inlined).expect("the inlined schema parses"),
-        schema
+        json(inlined),
+        json(r#"{"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}"#)
     );
 }
 
@@ -816,14 +786,19 @@ where
 {
     let mut messages = Vec::with_capacity(count);
     for index in 0..count {
-        let message = json!({
-            "role": "user",
-            "content": [{
-                "type": "document",
-                "source": {"type": "url", "url": url(index)},
-            }],
-        });
-        messages.push(serde_json::from_value(message).expect("the generated message parses"));
+        let mut source = IndexMap::new();
+        source.insert("type".to_owned(), Json::Text("url".to_owned()));
+        source.insert("url".to_owned(), Json::Text(url(index)));
+        let mut document = IndexMap::new();
+        document.insert("type".to_owned(), Json::Text("document".to_owned()));
+        document.insert("source".to_owned(), Json::Object(source));
+        let mut user_message = IndexMap::new();
+        user_message.insert("role".to_owned(), Json::Text("user".to_owned()));
+        user_message.insert(
+            "content".to_owned(),
+            Json::List(vec![Json::Object(document)]),
+        );
+        messages.push(Json::Object(user_message));
     }
     messages
 }
@@ -831,21 +806,34 @@ where
 pub(super) fn remote_url_limit() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
     let fetcher = MapFetcher::default();
-    let over = chat_request(
-        "claude-plain",
+    let over = plain_body(
+        &fixture,
+        &mut session,
         document_bodies(MAX_REMOTE_URLS + 1, |index| {
             format!("https://example.test/{index}.pdf")
         }),
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
+        &fetcher,
+        Mode::Sync,
     );
-    match session.transform(&over, &fetcher, Mode::Sync) {
-        Ok(_prepared) => panic!("more than {MAX_REMOTE_URLS} document URLs must fail the request"),
+    assert_too_many(over);
+    assert!(fetcher.calls().is_empty());
+    let within = plain_body(
+        &fixture,
+        &mut session,
+        document_bodies(MAX_REMOTE_URLS, |index| {
+            format!("https://example.test/{index}.pdf")
+        }),
+        &fetcher,
+        Mode::Sync,
+    );
+    expect_fetch_failure(within);
+    repeated_urls(&fixture, &mut session);
+}
+
+fn assert_too_many(result: Result<Json, ClaudeInvokeError<Infallible>>) {
+    match result {
+        Ok(_body) => panic!("more than {MAX_REMOTE_URLS} document URLs must fail the request"),
         Err(ClaudeInvokeError::Documents(DocumentError::Media(
             MediaError::TooManyRemoteUrls { limit },
         ))) => {
@@ -853,87 +841,59 @@ pub(super) fn remote_url_limit() {
         }
         Err(other) => panic!("unexpected error: {other}"),
     }
-    assert!(fetcher.calls().is_empty());
-    let within = chat_request(
-        "claude-plain",
-        document_bodies(MAX_REMOTE_URLS, |index| {
-            format!("https://example.test/{index}.pdf")
-        }),
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
-    match session.transform(&within, &fetcher, Mode::Sync) {
-        Ok(_prepared) => panic!("the empty fetcher cannot serve the document URLs"),
+}
+
+fn expect_fetch_failure(result: Result<Json, ClaudeInvokeError<Infallible>>) {
+    match result {
+        Ok(_body) => panic!("the empty fetcher cannot serve the document URLs"),
         Err(ClaudeInvokeError::Documents(DocumentError::Fetch(ImageFetchError::Attempts {
             ..
         }))) => {}
         Err(other) => panic!("unexpected error: {other}"),
     }
+}
+
+fn repeated_urls(fixture: &Fixture, session: &mut Session<'_>) {
     let quiet = MapFetcher::default();
-    let repeated_over = chat_request(
-        "claude-plain",
+    let repeated_over = plain_body(
+        fixture,
+        session,
         document_bodies(MAX_REMOTE_URLS + 1, |_| {
             "https://example.test/same.pdf".to_owned()
         }),
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
+        &quiet,
+        Mode::Sync,
     );
-    match session.transform(&repeated_over, &quiet, Mode::Sync) {
-        Ok(_prepared) => {
-            panic!("one URL repeated more than {MAX_REMOTE_URLS} times must fail the request")
-        }
-        Err(ClaudeInvokeError::Documents(DocumentError::Media(
-            MediaError::TooManyRemoteUrls { limit },
-        ))) => {
-            assert_eq!(limit, MAX_REMOTE_URLS);
-        }
-        Err(other) => panic!("unexpected error: {other}"),
-    }
+    assert_too_many(repeated_over);
     assert!(quiet.calls().is_empty());
     let served = MapFetcher::new(&[(
         "https://example.test/same.pdf",
         "data:application/pdf;base64,U0VN",
     )]);
-    let repeated = chat_request(
-        "claude-plain",
+    let at_ceiling = plain_body(
+        fixture,
+        session,
         document_bodies(MAX_REMOTE_URLS, |_| {
             "https://example.test/same.pdf".to_owned()
         }),
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
+        &served,
+        Mode::Sync,
     );
-    session
-        .transform(&repeated, &served, Mode::Sync)
-        .expect("one URL repeated up to the ceiling transforms");
+    if let Err(error) = at_ceiling {
+        panic!("one URL repeated up to the ceiling must transform: {error}");
+    }
     assert_eq!(served.calls().len(), MAX_REMOTE_URLS);
 }
 
 pub(super) fn billing_header() {
+    assert_eq!([STRIPS_BILLING_METADATA], [true]);
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
-    let defaults = OptionDefaults::default();
-    let catalog = catalog();
-    let billing = messages_of(
+    let messages = messages_of(
         r#"[{"role": "system", "content": "x-anthropic-billing-header: abc"}, {"role": "user", "content": "hello"}]"#,
     );
-    let request = chat_request(
-        "claude-plain",
-        billing,
-        map_of(r#"{"max_tokens": 64}"#),
-        AnthropicHeaders::default(),
-        &defaults,
-        &catalog,
-    );
     let fetcher = MapFetcher::default();
-    let prepared = session
-        .transform(&request, &fetcher, Mode::Sync)
+    let body = plain_body(&fixture, &mut session, messages, &fetcher, Mode::Sync)
         .expect("the billing request transforms");
-    assert!(body_json(&prepared).get("system").is_none());
-    assert_eq!([STRIPS_BILLING_METADATA], [true]);
+    assert!(field(&body, "system").is_none());
 }
