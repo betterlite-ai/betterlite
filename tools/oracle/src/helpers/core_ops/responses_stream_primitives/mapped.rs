@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::support::{mapped_class_name, wire_text};
+use super::support::wire_text;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MappedRow {
@@ -38,7 +38,6 @@ fn row_answer(row: &MappedRow) -> Result<Value, Box<HelperError>> {
     let metadata = class.metadata();
     let eligible = mid_stream_fallback_eligible(&class, Some(metadata.status_code));
     Ok(json!({
-        "class": mapped_class_name(&class),
         "status": metadata.status_code,
         "type": wire_text(&metadata.error_type),
         "param": wire_text(&metadata.param),

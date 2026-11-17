@@ -48,10 +48,9 @@ fn row_answer(row: &DurationRow) -> Result<Value, Box<HelperError>> {
     };
     let state = build_state(&spec, limit)?;
     let checked = state.check_max_streaming_duration(row.now);
-    let (raised, status, message, model, provider) = match checked {
+    let (raised, status, model, provider) = match checked {
         Ok(()) => (
             false,
-            None,
             None,
             state.model,
             state.custom_llm_provider.unwrap_or_default(),
@@ -59,7 +58,6 @@ fn row_answer(row: &DurationRow) -> Result<Value, Box<HelperError>> {
         Err(timeout) => (
             true,
             Some(timeout.status_code),
-            Some(timeout.message),
             timeout.model,
             timeout.custom_llm_provider,
         ),
@@ -69,7 +67,6 @@ fn row_answer(row: &DurationRow) -> Result<Value, Box<HelperError>> {
         "limit": limit.map(float_text),
         "raised": raised,
         "status": status,
-        "message": message,
         "model": model,
         "llm_provider": provider,
     }))

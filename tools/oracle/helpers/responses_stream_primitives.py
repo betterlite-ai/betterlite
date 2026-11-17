@@ -111,7 +111,6 @@ class MappedRecord(BaseModel):
 
 class TimeoutRecord(BaseModel):
     status_code: int
-    message: str
     model: str
     llm_provider: str
 
@@ -230,7 +229,6 @@ def mapped_answer(row: MappedRow) -> JsonValue:
     mapped = MAP_ERROR(row["fields"], row["model"], row["provider"])
     record = MappedRecord.model_validate(mapped, from_attributes=True)
     answer: dict[str, JsonValue] = {
-        "class": type(mapped).__name__,
         "status": record.status_code,
         "type": record.error_type,
         "param": record.param,
@@ -267,7 +265,6 @@ def duration_answer(row: DurationRow) -> JsonValue:
             "limit": None if limit is None else repr(limit),
             "raised": True,
             "status": record.status_code,
-            "message": record.message,
             "model": record.model,
             "llm_provider": record.llm_provider,
         }
@@ -278,7 +275,6 @@ def duration_answer(row: DurationRow) -> JsonValue:
         "limit": None if limit is None else repr(limit),
         "raised": False,
         "status": None,
-        "message": None,
         "model": probe.model,
         "llm_provider": provider,
     }
