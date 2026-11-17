@@ -1,11 +1,7 @@
 use betterlite_anthropic::anthropic_capability_catalog::capability::supports_model_capability;
 use betterlite_anthropic::anthropic_capability_catalog::forced_tool::forced_tool_use_unsupported;
-use betterlite_anthropic::anthropic_capability_catalog::thinking::{
-    ThinkingError, ThinkingRequest, translate_legacy_thinking,
-};
-use betterlite_anthropic::anthropic_capability_catalog::{
-    CatalogSources, DropParams, EffortThresholds, OptionalParams,
-};
+use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
+use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
 use betterlite_anthropic::capabilities::supported_params::get_supported_openai_params as anthropic_supported_params;
 use betterlite_anthropic::feature_flags::messages::has_thinking_display_updates;
 use betterlite_anthropic::params::ParamsRequest;
@@ -18,19 +14,16 @@ use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
-use betterlite_prompts::arguments::json::Json as PromptJson;
 use indexmap::IndexMap;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::message_options::MessageOptionsError;
-use crate::message_options::OptionsSources;
-use crate::message_options::effort::clamp_adaptive_effort;
-use crate::model_routes::{ParamMap, ParamValue};
 
 use super::{CUSTOM_LLM_PROVIDER, RESPONSE_FORMAT_STUB_MODEL};
 
+mod thinking;
+
 const NATIVE_STRUCTURED_OUTPUT: &str = "supports_native_structured_output";
-const REASONING_EFFORT: &str = "reasoning_effort";
 const RESPONSE_FORMAT: &str = "response_format";
 const TOOL_CHOICE: &str = "tool_choice";
 
@@ -91,7 +84,7 @@ where
     Lookup: ModelInfoLookup,
 {
     let original_model = request.model;
-    let requested_thinking = thinking_param(non_default_params)?;
+    let requested_thinking = thinking::thinking_param(non_default_params)?;
     let display_updates = has_thinking_display_updates(requested_thinking.as_ref());
     let has_response_format = non_default_params.contains_key(RESPONSE_FORMAT);
     let mapped_model = stub_model(
@@ -102,7 +95,8 @@ where
     )
     .await;
     let mut clamped_params = non_default_params.clone();
-    clamp_reasoning_effort(original_model, &mut clamped_params, request, environment).await?;
+    thinking::clamp_reasoning_effort(original_model, &mut clamped_params, request, environment)
+        .await?;
     let params_request = ParamsRequest {
         model: mapped_model,
         provider: CUSTOM_LLM_PROVIDER,
@@ -118,8 +112,8 @@ where
         environment,
     )
     .await?;
-    translate_thinking(original_model, optional_params, request, environment).await?;
-    apply_display_updates(display_updates, optional_params);
+    thinking::translate_thinking(original_model, optional_params, request, environment).await?;
+    thinking::apply_display_updates(display_updates, optional_params);
     remove_forced_tool_choice(
         has_response_format,
         original_model,
@@ -155,140 +149,6 @@ where
         return model;
     }
     RESPONSE_FORMAT_STUB_MODEL
-}
-
-fn thinking_param(
-    non_default_params: &IndexMap<String, Json>,
-) -> Result<Option<PromptJson>, MapParamsError> {
-    let Some(value) = non_default_params.get("thinking") else {
-        return Ok(None);
-    };
-    let converted = serde_json::from_value(serde_json::to_value(value)?)?;
-    Ok(Some(converted))
-}
-
-// LiteLLM rewrites the caller's own map; the clamped copy is what the parent mapping reads here.
-async fn clamp_reasoning_effort<Source, Transport, Lookup>(
-    model: &str,
-    params: &mut IndexMap<String, Json>,
-    request: &MapParamsRequest<'_, Lookup>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), MapParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let Some(Json::Text(effort)) = params.get(REASONING_EFFORT) else {
-        return Ok(());
-    };
-    let mut clamped = ParamMap::new();
-    clamped.insert(
-        REASONING_EFFORT.to_owned(),
-        ParamValue::Text(effort.clone()),
-    );
-    let mut sources = OptionsSources {
-        environment: &mut *environment,
-        catalogs: request.catalogs,
-        budgets: request.budgets,
-    };
-    clamp_adaptive_effort(
-        model,
-        &mut clamped,
-        &mut sources,
-        request.lookup,
-        request.packaged,
-    )
-    .await?;
-    if let Some(ParamValue::Text(effort)) = clamped.get(REASONING_EFFORT) {
-        params.insert(REASONING_EFFORT.to_owned(), Json::Text(effort.clone()));
-    }
-    Ok(())
-}
-
-async fn translate_thinking<Source, Transport, Lookup>(
-    model: &str,
-    optional_params: &mut IndexMap<String, Json>,
-    request: &MapParamsRequest<'_, Lookup>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-) -> Result<(), MapParamsError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let thinking_request = ThinkingRequest {
-        model,
-        custom_llm_provider: CUSTOM_LLM_PROVIDER,
-        thresholds: EffortThresholds {
-            medium: request.budgets.medium,
-            high: request.budgets.high,
-            xhigh: request.budgets.xhigh,
-        },
-    };
-    let mut params = OptionalParams {
-        reasoning_effort: optional_params.get(REASONING_EFFORT).cloned(),
-        thinking: optional_params.get("thinking").cloned(),
-        output_config: optional_params.get("output_config").cloned(),
-    };
-    let before = params.clone();
-    translate_legacy_thinking(
-        &thinking_request,
-        &mut params,
-        environment,
-        request.catalogs,
-    )
-    .await?;
-    write_back(
-        optional_params,
-        "thinking",
-        &before.thinking,
-        params.thinking,
-    );
-    write_back(
-        optional_params,
-        "output_config",
-        &before.output_config,
-        params.output_config,
-    );
-    Ok(())
-}
-
-// B568 changes only the entries it rewrote, so an untouched map keeps the caller's order.
-fn write_back(
-    optional_params: &mut IndexMap<String, Json>,
-    key: &str,
-    before: &Option<Json>,
-    after: Option<Json>,
-) {
-    if before == &after {
-        return;
-    }
-    match after {
-        Some(value) => {
-            optional_params.insert(key.to_owned(), value);
-        }
-        None => {
-            optional_params.shift_remove(key);
-        }
-    }
-}
-
-fn apply_display_updates(requested: bool, optional_params: &mut IndexMap<String, Json>) {
-    if !requested {
-        return;
-    }
-    let Some(Json::Object(thinking)) = optional_params.get("thinking") else {
-        return;
-    };
-    let adaptive = matches!(thinking.get("type"), Some(Json::Text(kind)) if kind == "adaptive");
-    if !adaptive {
-        return;
-    }
-    let mut rewritten = IndexMap::new();
-    rewritten.insert("type".to_owned(), Json::Text("adaptive".to_owned()));
-    rewritten.insert("display".to_owned(), Json::Text("updates".to_owned()));
-    optional_params.insert("thinking".to_owned(), Json::Object(rewritten));
 }
 
 // The stub model hides the original model from the parent's forced-tool-use backstop.
