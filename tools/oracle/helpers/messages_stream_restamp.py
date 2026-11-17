@@ -9,6 +9,8 @@ import litellm
 from litellm.caching.base_cache import BaseCache
 from litellm.caching.caching import (
     DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALL_TYPES,
+)
+from litellm.caching.caching import (
     Cache,
 )
 from litellm.caching.caching_handler import LLMCachingHandler
@@ -16,8 +18,10 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages.response_cache import (
     AnthropicMessagesStreamCacheWriter,
-    CachedAnthropicMessagesStreamIterator as CachedStreamIterator,
     convert_cached_anthropic_messages_result,
+)
+from litellm.llms.anthropic.pass_through.messages.response_cache import (
+    CachedAnthropicMessagesStreamIterator as CachedStreamIterator,
 )
 from litellm.proxy.anthropic_endpoints.streaming_model_restamp import (
     AnthropicStreamModelRestamper,
