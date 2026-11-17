@@ -1,0 +1,6 @@
+task: B398
+deviations:
+  - what: A fallback error raised by an exception outside every family betterlite knows carries the type "Exception", where LiteLLM reports the raised Python class's name such as "ValueError" or "KeyError".
+    why: betterlite classifies every exception into a typed family, and one that no family classifies arrives as the unclassified family, which has no record of a Python class. The family keeps the plain Exception a working setup reaches for the families betterlite models, so the message, the null param and the null code of that error match; only the class name differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L230
+kept_bugs: []

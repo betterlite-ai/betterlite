@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_redact::secret::Redactor;
 use secrecy::ExposeSecret;
 
 use super::cases::{Run, auth_params, call, run_with_source};
@@ -29,7 +30,13 @@ fn secrets_in(text: &str, secrets: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn identity_run(access: &str, secret_key: &str, guardrail: &str, source: &Source) -> Run {
+fn identity_run(
+    access: &str,
+    secret_key: &str,
+    guardrail: &str,
+    source: &Source,
+    redactor: &Redactor,
+) -> Run {
     run_with_source(
         call(
             "amazon.titan-image-generator-v2:0",
@@ -39,19 +46,28 @@ fn identity_run(access: &str, secret_key: &str, guardrail: &str, source: &Source
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
         source,
+        redactor,
     )
 }
 
 #[test]
 fn image_call_credential_identity_isolation() {
+    let redactor = &super::fixture::redactor();
     let first_source = Source::with(FIRST_ACCESS, FIRST_SECRET);
     let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
-    let first = identity_run(FIRST_ACCESS, FIRST_SECRET, "first-guardrail", &first_source);
+    let first = identity_run(
+        FIRST_ACCESS,
+        FIRST_SECRET,
+        "first-guardrail",
+        &first_source,
+        redactor,
+    );
     let second = identity_run(
         SECOND_ACCESS,
         SECOND_SECRET,
         "second-guardrail",
         &second_source,
+        redactor,
     );
     let first_authorization = &first.headers()["Authorization"];
     let second_authorization = &second.headers()["Authorization"];
@@ -70,10 +86,11 @@ fn image_call_credential_identity_isolation() {
 
 #[test]
 fn image_call_resolver_identities_do_not_cross() {
+    let redactor = &super::fixture::redactor();
     let first_source = Source::with(FIRST_ACCESS, FIRST_SECRET);
     let second_source = Source::with(SECOND_ACCESS, SECOND_SECRET);
-    identity_run(FIRST_ACCESS, FIRST_SECRET, "gr", &first_source);
-    identity_run(SECOND_ACCESS, SECOND_SECRET, "gr", &second_source);
+    identity_run(FIRST_ACCESS, FIRST_SECRET, "gr", &first_source, redactor);
+    identity_run(SECOND_ACCESS, SECOND_SECRET, "gr", &second_source, redactor);
     let first_calls = first_source.calls.lock().unwrap();
     let second_calls = second_source.calls.lock().unwrap();
     assert_eq!(first_calls.len(), 1, "each call resolves its own identity");
@@ -100,9 +117,16 @@ fn image_call_resolver_identities_do_not_cross() {
 
 #[test]
 fn image_call_secret_safe_failure() {
+    let redactor = &super::fixture::redactor();
     let access = "AKIALEAKEXAMPLE00000";
     let secret_key = "leakSecretKey0000000000000000000000000000";
-    let run = identity_run(access, secret_key, "gr", &Source::with(access, secret_key));
+    let run = identity_run(
+        access,
+        secret_key,
+        "gr",
+        &Source::with(access, secret_key),
+        redactor,
+    );
     let request_debug = format!("{:?}", run.posted());
     assert!(request_debug.contains("header_names"));
     assert_eq!(
@@ -129,6 +153,7 @@ fn image_call_failure_paths_hide_credentials() {
         Reply::status(403, &[("x-amzn-errortype", "AccessDenied")], "denied"),
         Some(ClientKind::Sync),
         &Source::with(access, secret_key),
+        &super::fixture::redactor(),
     );
     let error = failing.result.as_ref().unwrap_err();
     assert!(matches!(
