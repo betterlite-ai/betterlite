@@ -67,9 +67,9 @@ RECORDS: dict[Record, type[BaseModel]] = {
     "AddTeamCallback": AddTeamCallback,
     "TeamCallbackMetadata": TeamCallbackMetadata,
     "OrgMember": OrgMember,
-    "MemberAddRequest": MemberAddRequest,
+    "MemberAddRequest": MemberAddRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4606
     "TeamMemberAddRequest": TeamMemberAddRequest,
-    "OrgMemberAddRequest": OrgMemberAddRequest,
+    "OrgMemberAddRequest": OrgMemberAddRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4627
     "OrganizationMemberAddRequest": OrganizationMemberAddRequest,
     "TeamMemberDeleteRequest": TeamMemberDeleteRequest,
     # ast-grep-ignore: no-long-names
@@ -78,9 +78,10 @@ RECORDS: dict[Record, type[BaseModel]] = {
     # ast-grep-ignore: no-long-names
     "OrganizationMemberUpdateRequest": OrganizationMemberUpdateRequest,
     # ast-grep-ignore: no-long-names
-    "OrganizationTableUpdate": LiteLLM_OrganizationTableUpdate,
+    "OrganizationTableUpdate": LiteLLM_OrganizationTableUpdate,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3607
+    "OrganizationUpdateRequestV2": OrganizationUpdateRequestV2,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3634
     # ast-grep-ignore: no-long-names
-    "OrganizationTableWithMembers": LiteLLM_OrganizationTableWithMembers,
+    "OrganizationTableWithMembers": LiteLLM_OrganizationTableWithMembers,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3664
 }
 
 DUMP: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
@@ -91,32 +92,16 @@ ENUM_MEMBER = re.compile(r"<LitellmUserRoles\.[A-Z_]+: '([^']+)'>")
 
 
 def run(input_value: Call) -> Outcome:
-    if input_value["record"] == "OrganizationUpdateRequestV2":
-        return patch_outcome(input_value["value"])
-    return record_outcome(input_value["record"], input_value["value"])
-
-
-def record_outcome(record: Record, value: dict[str, JsonValue]) -> Outcome:
+    record = input_value["record"]
     try:
-        model = RECORDS[record].model_validate(value)
+        model = RECORDS[record].model_validate(input_value["value"])
     except ValidationError as error:
         return rejected(error)
-    return {
-        "outcome": "record",
-        "dump": DUMP.validate_json(model.model_dump_json()),
-    }
-
-
-def patch_outcome(value: dict[str, JsonValue]) -> Outcome:
-    try:
-        request = OrganizationUpdateRequestV2.model_validate(value)
-    except ValidationError as error:
-        return rejected(error)
-    return {
-        "outcome": "record",
-        "dump": DUMP.validate_json(request.model_dump_json()),
-        "fields_set": sorted(request.model_fields_set),
-    }
+    dump = DUMP.validate_json(model.model_dump_json())
+    if record == "OrganizationUpdateRequestV2":
+        fields_set = sorted(model.model_fields_set)
+        return {"outcome": "record", "dump": dump, "fields_set": fields_set}
+    return {"outcome": "record", "dump": dump}
 
 
 def rejected(error: ValidationError) -> Rejected:
@@ -134,7 +119,7 @@ def set_names(set_repr: str) -> str:
 
 
 def stable(error: ValidationError) -> str:
-    text = error.errors()[0]["msg"].removeprefix(VALUE_ERROR_PREFIX)
+    text = error.errors()[0]["msg"].removeprefix(VALUE_ERROR_PREFIX)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_model_naming.py#L366
     if CALLBACK_NAMES_MARKER in text:
         head, _, tail = text.partition(CALLBACK_NAMES_MARKER)
         return f"{head}{CALLBACK_NAMES_MARKER}[{set_names(tail)}]"
