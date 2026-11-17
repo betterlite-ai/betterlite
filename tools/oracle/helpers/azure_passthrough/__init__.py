@@ -18,7 +18,7 @@ from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic import JsonValue as Json
 
-import azure_passthrough_steps as steps
+from . import steps
 
 RECORDED: list[Json] = []
 
