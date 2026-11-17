@@ -6,15 +6,65 @@ pub(crate) mod support;
 
 use std::future::{Future, Ready, ready};
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use self::support::{Fixture, RequestSetup, run_route, seeded, with_info};
 use crate::context::RouteStage;
+use crate::generalization_integration::model_generalizations::ModelGeneralizations;
+use crate::router_core::services::RouteServices;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
 // A synchronous case, as the completed future the case table awaits.
 fn settled(case: fn()) -> Ready<()> {
     case();
     ready(())
+}
+
+// a routing rule and a capability rule over the same backend model, as a cost map or a config names them
+const GENERALIZATION_RULES: &str = r#"[{"pattern":"^openai/","model_info":{"litellm_provider":"acme"}},{"pattern":"^openai/","model_info":{"supports_vision":true,"max_tokens":100}}]"#;
+
+// a router that carries installed rules
+struct Generalized(ModelGeneralizations);
+
+impl RouteServices for Generalized {
+    fn model_generalizations(&self) -> Option<&ModelGeneralizations> {
+        Some(&self.0)
+    }
+}
+
+// the rules fill a deployment named by its id too, as get_model_info fills every registered deployment
+async fn deployment_id_generalized() {
+    let named = with_info(
+        "gpt-4o",
+        "a",
+        &[],
+        &[("supports_vision", Json::Bool(false))],
+    );
+    let services =
+        Generalized(ModelGeneralizations::install(GENERALIZATION_RULES.as_bytes()).unwrap());
+    let mut random = seeded();
+    let result = run_route(
+        &Fixture::plain(vec![named]),
+        &RequestSetup::new("a"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.deployment.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("acme")))
+    );
+    assert_eq!(
+        result.deployment.model_info.get("supports_vision"),
+        Some(&Json::Bool(false))
+    );
+    assert!(matches!(
+        result.deployment.model_info.get("max_tokens"),
+        Some(Json::Number(number)) if number.as_u64() == Some(100)
+    ));
 }
 
 #[rstest]
@@ -24,7 +74,7 @@ fn settled(case: fn()) -> Ready<()> {
 #[case::specific_deployment_pool(behaviors::specific_deployment_pool())]
 #[case::pinned_short_circuit(behaviors::pinned_short_circuit())]
 #[case::deployment_id_single(behaviors::deployment_id_single())]
-#[case::deployment_id_generalized(behaviors::deployment_id_generalized())]
+#[case::deployment_id_generalized(deployment_id_generalized())]
 #[case::excluded_drop(behaviors::excluded_drop())]
 #[case::retry_skip_narrow(behaviors::retry_skip_narrow())]
 #[case::retry_skip_keeps_pool(behaviors::retry_skip_keeps_pool())]

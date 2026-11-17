@@ -127,21 +127,7 @@ where
 {
     let Resolved { route, candidates } = resolved;
     match candidates {
-        Candidates::Single(deployment) => {
-            // get_model_info fills every registered deployment from the rules, a named one included
-            let filled = context::run(
-                RouteStage::GeneralizationIntegration,
-                CandidateSet {
-                    deployments: vec![*deployment],
-                },
-                context,
-            )
-            .await?;
-            let Some(deployment) = filled.deployments.into_iter().next() else {
-                return Err(no_deployment_error(context, &route));
-            };
-            single_route(context, route, deployment)
-        }
+        Candidates::Single(deployment) => single_route(context, route, deployment).await,
         Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
@@ -159,16 +145,28 @@ pub fn resolve_catalog(
     Ok(resolver.resolve(&lookup)?)
 }
 
-// A named deployment comes back once the static gate accepted it, with no cooldown filter and no strategy.
-fn single_route(
+// A named deployment comes back once the generalization rules and the static gate accepted it, with no strategy.
+async fn single_route(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
-    deployment: DeploymentSpec,
+    deployment: Box<DeploymentSpec>,
 ) -> Result<AttemptResult, RoutingError> {
+    // get_model_info fills every registered deployment from the rules, a named one included
+    let candidates = context::run(
+        RouteStage::GeneralizationIntegration,
+        CandidateSet {
+            deployments: vec![*deployment],
+        },
+        context,
+    )
+    .await?;
+    let Some(filled) = candidates.deployments.into_iter().next() else {
+        return Err(no_deployment_error(context, &resolved));
+    };
     let filtered = eligible(
         EligibilityInput {
             model: &resolved.group,
-            candidates: Candidates::Single(Box::new(deployment)),
+            candidates: Candidates::Single(Box::new(filled)),
             facts: context.request.facts,
             environment: context.request.environment,
             enable_pre_call_checks: false,
@@ -223,9 +221,10 @@ async fn narrowed_pool(
     group: &str,
     pool: Vec<DeploymentSpec>,
 ) -> Result<CandidateSet, RoutingError> {
-    let pool = CandidateSet { deployments: pool };
-    let candidates = context::run(RouteStage::GeneralizationIntegration, pool, context).await?;
-    let windowed = context::run(RouteStage::AccessWindows, candidates, context).await?;
+    let candidates = CandidateSet { deployments: pool };
+    let generalized =
+        context::run(RouteStage::GeneralizationIntegration, candidates, context).await?;
+    let windowed = context::run(RouteStage::AccessWindows, generalized, context).await?;
     let mut set = CandidateSet {
         deployments: static_pool(context, windowed.deployments)?,
     };

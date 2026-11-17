@@ -11,28 +11,14 @@ use super::support::{
 use crate::deployment_catalog::types::{AliasSource, AliasStep, Candidates};
 use crate::deployment_clients::clients::{CachedClient, CachedClients, ClientCredential};
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::headers::{
     apply_response_model_id, ensure_additional_headers, prepare_response,
     response_has_hidden_params, response_total_token_count, write_hidden_params,
 };
 use crate::router_core::pipeline::HealthyDeployments;
-use crate::router_core::services::RouteServices;
 use crate::strategy::Strategy;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
-
-// a routing rule and a capability rule over the same backend model, as a cost map or a config names them
-const GENERALIZATION_RULES: &str = r#"[{"pattern":"^openai/","model_info":{"litellm_provider":"acme"}},{"pattern":"^openai/","model_info":{"supports_vision":true,"max_tokens":100}}]"#;
-
-// a router that carries installed rules
-struct Generalized(ModelGeneralizations);
-
-impl RouteServices for Generalized {
-    fn model_generalizations(&self) -> Option<&ModelGeneralizations> {
-        Some(&self.0)
-    }
-}
 
 pub(super) async fn weighted_pick() {
     let fixture = Fixture::plain(vec![weighted("gpt-4o", "a", 5), weighted("gpt-4o", "b", 0)]);
@@ -131,37 +117,6 @@ pub(super) async fn deployment_id_single() {
             to: String::from("openai/a"),
         }]
     );
-}
-
-// the rules fill a deployment named by its id too, as get_model_info fills every registered deployment
-pub(super) async fn deployment_id_generalized() {
-    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
-    let setup = RequestSetup::new("a");
-    let services =
-        Generalized(ModelGeneralizations::install(GENERALIZATION_RULES.as_bytes()).unwrap());
-    let mut random = seeded();
-    let result = run_route(
-        &fixture,
-        &setup,
-        &services,
-        RoutingStrategy::SimpleShuffle,
-        &mut random,
-    )
-    .await
-    .unwrap();
-    assert_eq!(picked(&result), "a");
-    assert_eq!(
-        result.deployment.model_info.get("litellm_provider"),
-        Some(&Json::Text(String::from("acme")))
-    );
-    assert_eq!(
-        result.deployment.model_info.get("supports_vision"),
-        Some(&Json::Bool(true))
-    );
-    assert!(matches!(
-        result.deployment.model_info.get("max_tokens"),
-        Some(Json::Number(number)) if number.as_u64() == Some(100)
-    ));
 }
 
 pub(super) async fn excluded_drop() {
