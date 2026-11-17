@@ -1,0 +1,40 @@
+kind: probe
+name: chat-and-embedding-shared-pool
+probes:
+  - clock: {unix_millis: 1700000000500, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 3}
+          - {model_name: gpt, model: "openai/text-embedding-3-small", id: embed, weight: 1}
+        routes:
+          - {model: gpt}
+  - clock: {unix_millis: 1700000000501, monotonic_millis: 0}
+    samples: [9007199254740991]
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 3}
+          - {model_name: gpt, model: "openai/text-embedding-3-small", id: embed, weight: 1}
+        routes:
+          - {model: gpt}
+  - clock: {unix_millis: 1700000000502, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 3}
+          - {model_name: gpt, model: "openai/text-embedding-3-small", id: embed, weight: 1}
+        routes:
+          - {model: gpt, excluded_deployment_ids: [chat]}
+  - clock: {unix_millis: 1700000000503, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 3}
+          - {model_name: gpt, model: "openai/text-embedding-3-small", id: embed, weight: 1}
+        routes:
+          - {model: embed}
+compare: {ignore: []}
