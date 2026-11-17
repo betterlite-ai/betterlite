@@ -122,8 +122,8 @@ fn harness_with(
     settings: WorkerSettings,
 ) -> Harness {
     let clock = SteppingClock::new();
-    let clock_source: Arc<dyn SuccessClock> = Arc::clone(&clock);
-    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
+    let clock_source: Arc<dyn SuccessClock> = Arc::<SteppingClock>::clone(&clock);
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let pipeline = Arc::new(
         ServicePipeline::start(PipelineConfig {
             settings,
@@ -204,7 +204,7 @@ async fn terminal_success_records_one_event() {
 #[tokio::test]
 async fn terminal_duration_comes_from_the_clock() {
     let sink = Arc::new(RecordingSink::default());
-    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let pipeline = Arc::new(
         ServicePipeline::start(PipelineConfig {
             settings: WorkerSettings::default(),
@@ -615,7 +615,7 @@ async fn wiring_applies_the_resolved_queue_limit() {
         event_timeout: SETTINGS_EVENT_TIMEOUT,
     };
     let sink = Arc::new(RecordingSink::default());
-    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let wiring = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
@@ -677,7 +677,7 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
         event_timeout: Duration::from_secs(5),
     };
     let sink = Arc::new(RecordingSink::default());
-    let sink_source: Arc<dyn ServiceEventSink> = Arc::clone(&sink);
+    let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let wiring = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
