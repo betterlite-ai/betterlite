@@ -34,4 +34,37 @@ deviations:
       mistyped threshold variable cannot quietly become the default. An empty variable still counts
       as unset and keeps the default, and a variable holding a non-numeric string fails the load.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+  - what: >-
+      A finite confidence threshold that Decimal's 28-digit scale cannot hold (1e-30) fails the load
+      with ConfigError::InvalidScalar naming router_settings.routing_strategy_args.confidence_threshold_low,
+      where LiteLLM's _coerce_threshold keeps the float, _normalize_thresholds accepts
+      0 < 1e-30 < 0.5 < 0.7 < 1, and the router starts and routes the default 0.5 confidence to the
+      local tier.
+    why: >-
+      Thresholds are Decimal, and docs/compatibility.md reports a value the declared type cannot hold as
+      a load error naming its field; LiteLLM's float keeps exponents Decimal's scale cannot. A threshold
+      of 1e30 differs on neither side, since LiteLLM's normalization refuses every value at or above 1
+      at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L27-L30
+  - what: >-
+      A request confidence that Decimal's 28-digit scale cannot hold ({"confidence": 1e-30}) warns as
+      invalid metadata and routes with the declared 0.5 default (local), where LiteLLM's pydantic float
+      keeps 1e-30 and _classify_request sends it to cloud-smart.
+    why: >-
+      Request confidence is Decimal too, and the metadata parser takes the same declared defaulting path
+      LiteLLM takes for metadata it cannot validate; the difference is only that LiteLLM's float holds
+      the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L68-L77
+  - what: >-
+      The confidence range check and the threshold comparisons read the exact JSON decimal, where
+      LiteLLM's pydantic float rounds the same JSON text to the nearest double:
+      {"confidence": 1.0000000000000001} is over 1 here, so the metadata warns into the 0.5 default
+      (local) while Python rounds it to 1.0 and routes deep, and {"confidence": 0.29999999999999999} is
+      below the 0.3 default low threshold here (cloud-smart) while Python rounds it to the 0.3 double
+      and routes cloud-fast.
+    why: >-
+      Decimal is the declared confidence type, and reading the exact text keeps a boundary value on the
+      side its text names. The declared thresholds and defaults themselves are the same values on both
+      sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L134-L153
 kept_bugs: []
