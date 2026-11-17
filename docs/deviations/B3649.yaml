@@ -13,6 +13,6 @@ kept_bugs:
   - what: A poll whose answer parses to a run record that rejects the payload counts as a failed poll and increments the consecutive-failure counter; the counter is not reset even though the HTTP request succeeded.
     why: LiteLLM's _fetch_run returns None when the run adapter rejects the body, and _poll_until_terminal resets the count only for a non-None run, so twelve unreadable answers end the poll. The task text says a successful fetch that parses to None resets the counter, which LiteLLM's code does not do; betterlite follows the code, since a setup pointing at a broken upstream relies on the give-up.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L271-L289
-  - what: An empty run_id is treated exactly like a missing one: the request is logged with no cost and nothing is polled.
+  - what: "An empty run_id is treated exactly like a missing one: the request is logged with no cost and nothing is polled."
     why: LiteLLM tests `if not run_id` before it polls and `if run_id` in the SSE fallback, so "" takes the same path as None. betterlite checks for a non-empty id in the same two places, so a submitted run carrying run_id "" bills nothing rather than fetching /v1/runs/.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L185-L200
