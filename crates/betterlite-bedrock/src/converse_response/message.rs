@@ -44,19 +44,10 @@ pub fn convert_message(
     let (content, annotations) = align_citations(&translation);
     let filtered = filter_json_mode_tools(json_mode, &translation.tools, Some(content.as_str()));
     let answer = filtered.content.unwrap_or(content);
-    let finish_reason = forced_finish_reason(
-        reply,
-        json_mode,
-        filtered.tools.as_deref(),
-        &translation.tools,
-    )?;
-    let (recovered, resolved_finish_reason) = with_recovery(
-        answer,
-        filtered.tools.as_deref(),
-        request,
-        finish_reason,
-        ids,
-    );
+    let content_tools = filtered.tools.as_deref();
+    let finish_reason = forced_finish_reason(reply, json_mode, content_tools, &translation.tools)?;
+    let (recovered, resolved_finish_reason) =
+        with_recovery(answer, content_tools, request, finish_reason, ids);
     let (reasoning_content, thinking_blocks) =
         reasoning_blocks(translation.reasoning_content_blocks.as_deref())?;
     Ok(ConvertedMessage {
