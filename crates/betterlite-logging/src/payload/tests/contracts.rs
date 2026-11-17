@@ -74,6 +74,7 @@ enum ContractBehavior {
     StdoutEmitterOutput,
     NonStreamTiming,
     NullRoutingDecision,
+    ResponseIdFallback,
 }
 
 #[rstest]
@@ -105,6 +106,7 @@ enum ContractBehavior {
 #[case::stdout_emitter_prints_one_json_line(ContractBehavior::StdoutEmitterOutput)]
 #[case::non_streamed_calls_end_at_the_end_time(ContractBehavior::NonStreamTiming)]
 #[case::null_routing_decision_has_no_estimate(ContractBehavior::NullRoutingDecision)]
+#[case::a_missing_response_id_falls_back_to_the_call_id(ContractBehavior::ResponseIdFallback)]
 #[tokio::test]
 async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: ContractBehavior) {
     match behavior {
@@ -325,16 +327,20 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             let mut configuration = init(None);
             configuration.litellm_params.insert(
                 "metadata".to_owned(),
-                Json::Object(IndexMap::from([(
-                    "model_info".to_owned(),
-                    Json::Object(IndexMap::from([(
-                        "id".to_owned(),
-                        Json::Text("model-id-1".to_owned()),
-                    )])),
-                )])),
+                Json::Object(IndexMap::from([
+                    (
+                        "model_info".to_owned(),
+                        Json::Object(IndexMap::from([(
+                            "id".to_owned(),
+                            Json::Text("model-id-1".to_owned()),
+                        )])),
+                    ),
+                    ("model_group".to_owned(), Json::Text("group-1".to_owned())),
+                ])),
             );
             let payload = built(configuration, chat_response());
             assert_eq!(payload.model_id.as_deref(), Some("model-id-1"));
+            assert_eq!(payload.model_group.as_deref(), Some("group-1"));
         }
         ContractBehavior::ResponseCostFields => {
             let cost: Json = serde_json::from_str("0.5").unwrap();
@@ -525,6 +531,14 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             );
             let payload = built(configuration, chat_response());
             assert!(payload.autorouter_savings_estimate.is_none());
+        }
+        ContractBehavior::ResponseIdFallback => {
+            let response: Json =
+                serde_json::from_str(r#"{"model": "gpt-4o", "choices": []}"#).unwrap();
+            let payload = built(init(None), response);
+            assert_eq!(payload.id, "call-1");
+            let logged = payload.response.expect("the response is logged");
+            assert!(object_field(&logged, "id").is_none());
         }
     }
 }
