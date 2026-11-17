@@ -58,10 +58,7 @@ impl TestServer {
         Self {
             protocol_version: ProtocolVersion::V_2025_06_18,
             supported: vec![ProtocolVersion::V_2025_06_18],
-            instructions: INSTRUCTIONS,
-            schemas: false,
-            one_page: false,
-            listings: Arc::new(AtomicUsize::new(0)),
+            ..Self::standard()
         }
     }
 
