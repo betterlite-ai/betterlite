@@ -190,7 +190,7 @@ fn mai_file(image: &ImageField) -> ImageEditFile {
 pub(super) fn transform_step(step: &TransformStep) -> Value {
     match ImageEditVariant::select(&step.model) {
         Ok(ImageEditVariant::Flux2) => flux2_step(step),
-        Ok(ImageEditVariant::Mai) => projected("mai", mai_form(step)),
+        Ok(ImageEditVariant::Mai) => project("mai", &mai_form(step)),
         Ok(ImageEditVariant::Flux1) => Value::Null,
         Err(_) => json!({"error": {"kind": "ValueError", "status": null, "provider": null}}),
     }
@@ -209,7 +209,7 @@ fn flux2_step(step: &TransformStep) -> Value {
         images: built.as_deref_mut(),
         options: &mapped,
     });
-    result.map_or_else(|error| error_value(&error), |form| projected("flux2", form))
+    result.map_or_else(|error| error_value(&error), |form| project("flux2", &form))
 }
 
 fn mai_form(step: &TransformStep) -> ImageEditForm {
@@ -231,7 +231,7 @@ fn mai_images(step: &TransformStep) -> Option<Vec<Option<ImageEditFile>>> {
     Some(files.collect())
 }
 
-fn projected(kind: &str, form: ImageEditForm) -> Value {
+fn project(kind: &str, form: &ImageEditForm) -> Value {
     let files: Vec<Value> = form
         .files
         .iter()
