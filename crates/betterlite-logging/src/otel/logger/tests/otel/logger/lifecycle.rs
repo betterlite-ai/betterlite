@@ -177,14 +177,16 @@ mod finish {
 mod llm_close {
     use betterlite_logging::otel::logger::call_context::SpanTimes;
     use betterlite_logging::otel::logger::finish::close_llm_call;
+    use betterlite_logging::otel::plumbing::routing::cache::MAX_CACHED_PROVIDERS;
     use betterlite_models::decisions::Json;
     use indexmap::IndexMap;
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        PreCall, anchored, attribute, creds, event, event_with, failure, finished, harness,
-        inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
-        payloadless_call, pre_call, root_trace_id, success, team_payload, with_id, zero_start,
+        PreCall, anchored, attribute, creds, empty_trace, event, event_with, failure, finished,
+        harness, inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
+        payloadless_call, pre_call, root_trace_id, store_carriers, success, team_payload, with_id,
+        zero_start,
     };
 
     #[tokio::test]
@@ -216,6 +218,33 @@ mod llm_close {
         let spans = finished(&harness.spans);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans.first().expect("span").start_time, payload_start());
+    }
+
+    #[tokio::test]
+    async fn deferred_close_releases_the_routed_providers_lease() {
+        let harness = harness(owned_http(), empty_trace());
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-a",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S0")),
+                auth: None,
+            },
+        );
+        assert_eq!(harness.built.builds(), 0);
+        success(
+            &harness.logger,
+            event_with(with_id(inference(), "call-a"), creds("S0"), IndexMap::new()),
+        )
+        .await;
+        assert_eq!(harness.built.builds(), 1);
+        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("S{index}")
+        });
+        // the deferred close released S0's lease, so the overflow eviction shuts its provider down at once
+        assert!(harness.built.sink(0).is_shutdown_called());
     }
 
     #[tokio::test]
@@ -302,11 +331,13 @@ mod llm_close {
 }
 
 mod mcp_list {
+    use betterlite_logging::otel::plumbing::routing::cache::MAX_CACHED_PROVIDERS;
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
         anchored, event, failure, finished, harness, harness_for, mcp_list, mcp_list_failure,
-        mcp_list_with_auth, names, owned_http, phoenix_http, root_trace_id, success, with_id,
+        mcp_list_with_auth, names, owned_http, phoenix_http, root_trace_id, route_projects,
+        success, with_id,
     };
 
     #[tokio::test]
@@ -357,15 +388,32 @@ mod mcp_list {
             .unwrap_or_default();
         assert!(headers.contains("x-project-name=proj"));
     }
+
+    #[tokio::test]
+    async fn mcp_list_emission_releases_the_project_routes_lease() {
+        let harness = harness_for(phoenix_http(), anchored(), "arize_phoenix", None);
+        success(
+            &harness.logger,
+            event(with_id(mcp_list_with_auth(), "call-list")),
+        )
+        .await;
+        assert_eq!(harness.built.builds(), 1);
+        route_projects(&harness, 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("proj{index}")
+        });
+        // the emission released the project route's lease, so the overflow eviction shuts it down at once
+        assert!(harness.built.sink(0).is_shutdown_called());
+    }
 }
 
 mod mcp_tool {
+    use betterlite_logging::otel::plumbing::routing::cache::MAX_CACHED_PROVIDERS;
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        PreCall, anchored, event, failure, finished, harness, harness_for, inference, mcp_tool,
-        mcp_tool_failure, mcp_tool_with_auth, names, owned_http, payload_start, phoenix_http,
-        pre_call, root_trace_id, success, with_id,
+        PreCall, anchored, creds, event, failure, finished, harness, harness_for, inference,
+        mcp_tool, mcp_tool_failure, mcp_tool_with_auth, names, owned_http, payload_start,
+        phoenix_http, pre_call, root_trace_id, route_projects, store_carriers, success, with_id,
     };
 
     #[tokio::test]
@@ -434,6 +482,44 @@ mod mcp_tool {
                 .iter()
                 .any(|link| link.span_context.trace_id() == root_trace_id())
         );
+    }
+
+    #[tokio::test]
+    async fn mcp_tool_emission_releases_the_project_routes_lease() {
+        let harness = harness_for(phoenix_http(), anchored(), "arize_phoenix", None);
+        success(
+            &harness.logger,
+            event(with_id(mcp_tool_with_auth(), "call-mcp")),
+        )
+        .await;
+        assert_eq!(harness.built.builds(), 1);
+        route_projects(&harness, 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("proj{index}")
+        });
+        // the emission released the project route's lease, so the overflow eviction shuts it down at once
+        assert!(harness.built.sink(0).is_shutdown_called());
+    }
+
+    #[tokio::test]
+    async fn mcp_tool_dropping_the_stray_carrier_releases_its_route_lease() {
+        let harness = harness(owned_http(), anchored());
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: "call-mcp",
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds("S0")),
+                auth: None,
+            },
+        );
+        assert_eq!(harness.built.builds(), 1);
+        success(&harness.logger, event(with_id(mcp_tool(), "call-mcp"))).await;
+        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
+            format!("S{index}")
+        });
+        // dropping the stray carrier released S0's lease, so the overflow eviction shuts its provider down
+        assert!(harness.built.sink(0).is_shutdown_called());
     }
 }
 
@@ -573,8 +659,8 @@ mod open_calls {
     use indexmap::IndexMap;
 
     use crate::otel::support::{
-        Harness, PreCall, anchored, creds, event_with, finished, harness, inference, owned_http,
-        payload_start, pre_call, success, with_id,
+        PreCall, anchored, creds, event_with, finished, harness, inference, owned_http,
+        payload_start, pre_call, store_carriers, success, with_id,
     };
 
     fn store_carriers(calls: &mut OpenCalls, start: SystemTime) {
@@ -593,27 +679,6 @@ mod open_calls {
                         },
                     )
                     .is_none()
-            );
-        }
-    }
-
-    fn store_carriers(
-        harness: &Harness,
-        prefix: &str,
-        from: usize,
-        count: usize,
-        space: fn(usize) -> String,
-    ) {
-        for index in from..from.saturating_add(count) {
-            pre_call(
-                &harness.logger,
-                PreCall {
-                    call_id: &format!("{prefix}{index}"),
-                    model: "gpt-4o",
-                    no_upstream: false,
-                    dynamic: Some(creds(&space(index))),
-                    auth: None,
-                },
             );
         }
     }
@@ -731,6 +796,8 @@ mod open_calls {
 }
 
 mod pre_call {
+    use std::time::SystemTime;
+
     use betterlite_logging::logging_pre_post::hooks::PreCallEvent;
     use betterlite_logging::otel::logger::pre_call::log_pre_api_call;
     use betterlite_models::decisions::Json;
@@ -767,6 +834,7 @@ mod pre_call {
     #[tokio::test]
     async fn pre_call_defers_the_span_and_routes_at_close_without_a_parent() {
         let harness = harness(owned_http(), empty_trace());
+        let before = SystemTime::now();
         pre_call(
             &harness.logger,
             PreCall {
@@ -784,7 +852,12 @@ mod pre_call {
         )
         .await;
         assert_eq!(harness.built.builds(), 1);
-        assert_eq!(finished(&harness.built.sink(0)).len(), 1);
+        let spans = finished(&harness.built.sink(0));
+        assert_eq!(spans.len(), 1);
+        let span = spans.first().expect("span");
+        // the close opens at the carrier's pre_call instant, not at the payload's 2024 start
+        assert!(span.start_time >= before);
+        assert_ne!(span.start_time, payload_start());
     }
 
     #[tokio::test]

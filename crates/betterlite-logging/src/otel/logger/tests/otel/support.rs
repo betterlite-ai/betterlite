@@ -581,6 +581,52 @@ pub(crate) fn harness_for(
     }
 }
 
+// route one tenant per credential set, so an earlier routed provider overflows the 256-entry cache
+pub(crate) fn store_carriers(
+    harness: &Harness,
+    prefix: &str,
+    from: usize,
+    count: usize,
+    space: fn(usize) -> String,
+) {
+    for index in from..from.saturating_add(count) {
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: &format!("{prefix}{index}"),
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: Some(creds(&space(index))),
+                auth: None,
+            },
+        );
+    }
+}
+
+// route one tenant per key/team project, so an earlier project-routed provider overflows the cache
+pub(crate) fn route_projects(
+    harness: &Harness,
+    from: usize,
+    count: usize,
+    project: fn(usize) -> String,
+) {
+    for index in from..from.saturating_add(count) {
+        pre_call(
+            &harness.logger,
+            PreCall {
+                call_id: &format!("project-{index}"),
+                model: "gpt-4o",
+                no_upstream: false,
+                dynamic: None,
+                auth: Some(Json::Object(IndexMap::from([(
+                    "phoenix_project_name".to_owned(),
+                    Json::Text(project(index)),
+                )]))),
+            },
+        );
+    }
+}
+
 // the logger's own provider: in memory, simple processor, so a test reads the span right after emit
 fn main_tracer(
     settings: &Settings,
