@@ -11,7 +11,7 @@ use crate::zerobus::logger::ZerobusLogger;
 use crate::zerobus::logger::delivery::RowIngest;
 
 use super::support::{
-    FakeIngest, deps, event, expected_ids, logger, params, queued_ids, settle, until,
+    FakeIngest, deps, event, expected_ids, logger, params, queued_ids, settle, task_alive, until,
 };
 
 fn periodic_id(logger: &ZerobusLogger) -> Option<Id> {
@@ -36,10 +36,10 @@ async fn zerobus_logger_tasks_starts_the_periodic_flush() {
     deps.start_periodic_flush = true;
     let logger = ZerobusLogger::new(deps).expect("the logger starts its periodic flush");
     assert_eq!(tracker.len(), 1);
-    assert!(logger.flush_task_is_alive());
+    assert!(task_alive(&logger.periodic));
     logger.shutdown.cancel();
     assert!(
-        until(|| !logger.flush_task_is_alive()).await,
+        until(|| !task_alive(&logger.periodic)).await,
         "the periodic task stops on shutdown"
     );
 }
@@ -69,7 +69,7 @@ fn zerobus_logger_tasks_skips_the_periodic_flush_without_a_runtime() {
     deps.start_periodic_flush = true;
     let logger = ZerobusLogger::new(deps).expect("the logger builds");
     assert!(tracker.is_empty());
-    assert!(!logger.flush_task_is_alive());
+    assert!(!task_alive(&logger.periodic));
 }
 
 #[tokio::test]
@@ -81,7 +81,7 @@ async fn zerobus_logger_tasks_recreates_a_finished_periodic_task() {
     let first = periodic_id(&logger).expect("the periodic task exists");
     logger.shutdown.cancel();
     assert!(
-        until(|| !logger.flush_task_is_alive()).await,
+        until(|| !task_alive(&logger.periodic)).await,
         "the periodic task stops"
     );
     logger
@@ -183,5 +183,5 @@ fn zerobus_logger_tasks_skips_the_batch_flush_without_a_runtime() {
     let logger = logger(params(1, 3600, false), client);
     logger.enqueue(&event("chatcmpl-n"));
     assert_eq!(queued_ids(&logger).len(), 1);
-    assert!(!logger.batch_flush_is_running());
+    assert!(!task_alive(&logger.batch));
 }

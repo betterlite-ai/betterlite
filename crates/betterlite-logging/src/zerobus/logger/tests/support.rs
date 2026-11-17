@@ -11,8 +11,9 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Semaphore;
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -106,13 +107,18 @@ pub(super) fn params(
 }
 
 pub(super) fn connection(table_name: &str) -> ZerobusConnection {
+    let secrets = connection_secrets();
+    let secret = |name: &str| {
+        secrets
+            .get_secret_str(name)
+            .expect("the fixture carries the connection settings")
+    };
     ZerobusConnection {
-        workspace_url: "https://dbc-1a2b3c4d.cloud.databricks.com".to_owned(),
+        workspace_url: secret("ZEROBUS_WORKSPACE_URL").expose_secret().to_owned(),
         workspace_id: "1234567890123456".to_owned(),
-        server_endpoint: "https://1234567890123456.zerobus.us-west-2.cloud.databricks.com"
-            .to_owned(),
-        client_id: "sp-client-id".to_owned(),
-        client_secret: SecretString::from("sp-client-secret"),
+        server_endpoint: secret("ZEROBUS_SERVER_ENDPOINT").expose_secret().to_owned(),
+        client_id: secret("ZEROBUS_CLIENT_ID").expose_secret().to_owned(),
+        client_secret: secret("ZEROBUS_CLIENT_SECRET"),
         table_name: table_name.to_owned(),
     }
 }
@@ -147,6 +153,7 @@ pub(super) fn deps(params: ZerobusInitParams, client: Option<Arc<dyn RowIngest>>
         client,
         secrets: Arc::new(MapSecrets::new(&[])),
         http: proxied_client(),
+        clock: Arc::new(|| 0.0),
         redaction: RedactionSettings {
             turn_off_message_logging: false,
             excluded_fields: Vec::new(),
@@ -171,11 +178,17 @@ pub(super) fn push(logger: &ZerobusLogger, request_id: &str) -> usize {
     logger.inner.queue.enqueue(row(request_id)).depth
 }
 
-pub(super) async fn until(check: impl FnMut() -> bool) -> bool {
+pub(super) async fn until<F>(check: F) -> bool
+where
+    F: FnMut() -> bool,
+{
     until_within(200, check).await
 }
 
-pub(super) async fn until_within(attempts: usize, mut check: impl FnMut() -> bool) -> bool {
+pub(super) async fn until_within<F>(attempts: usize, mut check: F) -> bool
+where
+    F: FnMut() -> bool,
+{
     for _ in 0..attempts {
         if check() {
             return true;
@@ -185,10 +198,14 @@ pub(super) async fn until_within(attempts: usize, mut check: impl FnMut() -> boo
     false
 }
 
+pub(super) fn task_alive(handle: &Mutex<Option<JoinHandle<()>>>) -> bool {
+    let stored = handle.lock().unwrap_or_else(PoisonError::into_inner);
+    stored.as_ref().is_some_and(|task| !task.is_finished())
+}
+
 pub(super) async fn settle(logger: &ZerobusLogger) {
     let idle =
-        until(|| !logger.batch_flush_is_running() && !logger.inner.flushing.load(Ordering::SeqCst))
-            .await;
+        until(|| !task_alive(&logger.batch) && !logger.inner.flushing.load(Ordering::SeqCst)).await;
     assert!(idle, "the flush did not settle");
 }
 

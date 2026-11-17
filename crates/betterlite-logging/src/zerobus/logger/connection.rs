@@ -62,7 +62,7 @@ pub fn connection_for(
         params
             .client_secret
             .as_ref()
-            .map(|value| value.expose_secret().as_str()),
+            .map(|value| value.expose_secret()),
         CLIENT_SECRET,
         secrets,
     )?;

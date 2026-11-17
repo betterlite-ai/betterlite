@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, PoisonError};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_http::proxy::ProxiedClient;
@@ -43,10 +43,10 @@ pub struct ClientFactory {
 
 impl ClientFactory {
     #[must_use]
-    pub fn new(http: ProxiedClient) -> Self {
+    pub fn new(http: ProxiedClient, clock: Clock) -> Self {
         Self {
             http,
-            clock: system_clock(),
+            clock,
             timeout: DELIVERY_DEADLINE,
         }
     }
@@ -60,14 +60,6 @@ impl ClientFactory {
             token: AsyncMutex::new(None),
         })
     }
-}
-
-fn system_clock() -> Clock {
-    Arc::new(|| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0.0, |elapsed| elapsed.as_secs_f64())
-    })
 }
 
 pub(super) fn same_connection(left: &ZerobusConnection, right: &ZerobusConnection) -> bool {

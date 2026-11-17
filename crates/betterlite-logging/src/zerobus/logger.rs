@@ -21,6 +21,7 @@ use crate::batch::logger::{BatchQueue, BatchSettings, DEFAULT_MAX_QUEUE_SIZE};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::zerobus::client::Clock;
 use crate::zerobus::client::init_params::ZerobusInitParams;
 use crate::zerobus::row::{TraceRow, trace_row};
 
@@ -36,6 +37,7 @@ pub struct ZerobusDeps {
     pub client: Option<Arc<dyn RowIngest>>,
     pub secrets: Arc<dyn SecretSource>,
     pub http: ProxiedClient,
+    pub clock: Clock,
     pub redaction: RedactionSettings,
     pub tasks: TaskTracker,
     pub shutdown: CancellationToken,
@@ -73,7 +75,7 @@ impl ZerobusLogger {
             params: deps.params,
             given_client: deps.client,
             cached_client: Mutex::new(None),
-            factory: ClientFactory::new(deps.http),
+            factory: ClientFactory::new(deps.http, deps.clock),
             secrets: deps.secrets,
             redaction: deps.redaction,
             queue: BatchQueue::new(settings),
@@ -108,32 +110,25 @@ impl ZerobusLogger {
         }))
     }
 
-    fn flush_task_is_alive(&self) -> bool {
-        let task = self.periodic.lock().unwrap_or_else(PoisonError::into_inner);
-        task.as_ref().is_some_and(|task| !task.is_finished())
-    }
-
-    fn batch_flush_is_running(&self) -> bool {
-        let task = self.batch.lock().unwrap_or_else(PoisonError::into_inner);
-        task.as_ref().is_some_and(|task| !task.is_finished())
-    }
-
     fn start_batch_flush_task(&self) {
-        if self.batch_flush_is_running() || Handle::try_current().is_err() {
+        let mut batch = self.batch.lock().unwrap_or_else(PoisonError::into_inner);
+        if batch.as_ref().is_some_and(|task| !task.is_finished()) || Handle::try_current().is_err()
+        {
             return;
         }
         let inner = Arc::clone(&self.inner);
         let spawned = self.tasks.spawn(async move {
             inner.flush_queue(true).await;
         });
-        *self.batch.lock().unwrap_or_else(PoisonError::into_inner) = Some(spawned);
+        *batch = Some(spawned);
     }
 
     fn enqueue(&self, event: &LoggerEvent) {
-        if !self.flush_task_is_alive() {
-            let started = self.spawn_periodic_flush();
-            *self.periodic.lock().unwrap_or_else(PoisonError::into_inner) = started;
+        let mut periodic = self.periodic.lock().unwrap_or_else(PoisonError::into_inner);
+        if periodic.as_ref().is_none_or(JoinHandle::is_finished) {
+            *periodic = self.spawn_periodic_flush();
         }
+        drop(periodic);
         if let Err(error) = self.try_enqueue(event) {
             tracing::error!(%error, "zerobus: failed to queue an event");
         }

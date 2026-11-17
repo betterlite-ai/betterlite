@@ -1,6 +1,7 @@
 mod tests;
 
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::callback_settings::names::CallbackName;
 
@@ -27,6 +28,12 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
             environment: Arc::clone(&inputs.env),
         }),
         http: inputs.http.clone(),
+        clock: Arc::new(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+        }),
         redaction: RedactionSettings {
             turn_off_message_logging: inputs
                 .config
