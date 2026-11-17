@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
+use std::io;
+use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_metadata_resolution::names::ModelCostMap;
 use betterlite_models::model_registration::JsonObject;
+
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::services::RouteServices;
@@ -163,4 +167,38 @@ impl RouteServices for GroupServices {
     fn routing_group(&self, model: &str) -> Option<&RoutingGroup> {
         (model == self.name).then_some(&self.group)
     }
+}
+
+// The log lines a call writes, through a subscriber only this thread sees.
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Captured {
+    pub(super) fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }

@@ -7,8 +7,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    GroupServices, Supports, Unresolved, cost_map, deployment, group, info, object, priority_group,
-    raw, raw_priority, text,
+    GroupServices, Supports, Unresolved, capture_logs, cost_map, deployment, group, info, object,
+    priority_group, raw, raw_priority, text,
 };
 use crate::context::{self, RouteStage};
 use crate::router_core::candidates::CandidateSet;
@@ -638,6 +638,26 @@ fn tier_params_drop_what_no_deployment_takes() {
     );
 }
 
+fn a_tier_drop_warns_with_the_sorted_names() {
+    let (logs, _guard) = capture_logs();
+    let tier = info(&[("temperature", number(1)), ("top_k", number(3))]);
+    let deployments = vec![deployment("m", "m1")];
+    let _accepted = tier_params_the_target_accepts(
+        "m",
+        &tier,
+        &JsonMap::new(),
+        &deployments,
+        &Supports(&["seed"]),
+    );
+    let logged = logs.text();
+    assert!(
+        logged.contains(
+            "litellm.router.py: dropping tier params temperature, top_k for model=m, no deployment behind it declares them"
+        ),
+        "{logged}"
+    );
+}
+
 fn a_param_one_deployment_takes_survives() {
     let tier = info(&[("temperature", number(1))]);
     let deployments = vec![deployment("m", "m1"), deployment("m", "m2")];
@@ -856,6 +876,7 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
 #[case::tier_params_drop_what_no_deployment_takes(settled(
     tier_params_drop_what_no_deployment_takes
 ))]
+#[case::a_tier_drop_warns_with_the_sorted_names(settled(a_tier_drop_warns_with_the_sorted_names))]
 #[case::a_param_one_deployment_takes_survives(settled(a_param_one_deployment_takes_survives))]
 #[case::an_allowlisted_tier_param_survives(settled(an_allowlisted_tier_param_survives))]
 #[case::a_request_allowlist_and_an_unresolvable_provider_keep_the_param(settled(
