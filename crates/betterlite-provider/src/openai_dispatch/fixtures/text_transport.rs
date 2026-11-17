@@ -7,6 +7,7 @@ use betterlite_openai::text_completion_transport::sdk::{
     TextCompletionSdk,
 };
 use futures_util::StreamExt as _;
+use futures_util::stream;
 use http::HeaderMap;
 use secrecy::SecretString;
 
@@ -160,12 +161,7 @@ impl TextCompletionSdk for FixtureTextSdk {
             .unwrap_or_else(PoisonError::into_inner)
             .push(data.clone());
         if let Some(chunks) = self.reply.chunks.clone() {
-            let bytes = futures_util::stream::iter(
-                chunks
-                    .into_iter()
-                    .map(|chunk| Ok::<Vec<u8>, SdkError>(chunk)),
-            )
-            .boxed();
+            let bytes = stream::iter(chunks.into_iter().map(Ok::<Vec<u8>, SdkError>)).boxed();
             return ready(Ok(RawCompletion::Stream {
                 status: self.reply.status,
                 headers: self.reply.headers.clone(),

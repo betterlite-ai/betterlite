@@ -1,3 +1,4 @@
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::text_completion_transport::logging::{
     CompletionLogger as _, PostCallRecord, ResponseKind, SecretHeaders,
 };
@@ -106,18 +107,10 @@ pub(super) fn check_plan_defaults() {
         support::credentials(None, None, None),
         r#"{"temperature":null,"max_tokens":0}"#,
     );
-    assert_eq!(
-        resolved.optional_params.get("temperature"),
-        Some(&serde_json::Value::Null)
-    );
-    assert_eq!(
-        resolved.optional_params.get("max_tokens"),
-        Some(&serde_json::Value::from(0))
-    );
-    assert_eq!(
-        resolved.optional_params.get("top_p"),
-        Some(&serde_json::Value::from(0.9))
-    );
+    let fields = support::fields_of(&resolved.optional_params);
+    assert_eq!(fields.get("temperature"), Some(&JsonValue::Null));
+    assert_eq!(fields.get("max_tokens"), Some(&support::number_value(0)));
+    assert_eq!(fields.get("top_p"), Some(&support::real_value(0.9)));
 }
 
 // With no explicit or global value the configured api_base stands, and the key is unset.
@@ -151,29 +144,22 @@ pub(super) async fn check_transport_attempt() {
     );
     // main.py assigns the SDK module global a truthy organization, and the handler's client never receives one
     assert_eq!(attempts[0].organization, None);
-    assert_eq!(attempts[0].timeout, 6000.0);
+    assert!(attempts[0].timeout.total_cmp(&6000.0_f64).is_eq());
 }
 
 // The body carries the model, the configured default and the caller's explicit zero; the reply projects and logs nothing.
 pub(super) async fn check_transport_body_and_reply() {
     let (text, logger, result) = dispatched(&transport_composition()).await;
     let bodies = text.bodies();
+    let body = support::fields_of(&bodies[0]);
     assert_eq!(
-        bodies[0].get("model"),
-        Some(&serde_json::Value::String(String::from(
-            "gpt-3.5-turbo-instruct"
-        )))
+        body.get("model"),
+        Some(&support::text_value("gpt-3.5-turbo-instruct"))
     );
     // the absent temperature took the configured default, and the explicit zero stayed as written
-    assert_eq!(
-        bodies[0].get("temperature"),
-        Some(&serde_json::Value::from(0.5))
-    );
-    assert_eq!(
-        bodies[0].get("max_tokens"),
-        Some(&serde_json::Value::from(0))
-    );
-    assert!(bodies[0].contains_key("prompt"));
+    assert_eq!(body.get("temperature"), Some(&support::real_value(0.5)));
+    assert_eq!(body.get("max_tokens"), Some(&support::number_value(0)));
+    assert!(body.contains_key("prompt"));
     let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = result else {
         panic!("a projected chat completion");
     };

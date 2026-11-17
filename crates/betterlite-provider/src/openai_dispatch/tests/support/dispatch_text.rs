@@ -7,7 +7,7 @@ use crate::operation::OperationResult;
 
 use super::run;
 
-pub async fn dispatch_text(
+pub(crate) async fn dispatch_text(
     composition: &Composition,
     call: TextCall,
     text: &FixtureTextSource,

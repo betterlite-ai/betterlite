@@ -1,11 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str;
 use std::sync::Arc;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -41,20 +44,20 @@ async fn serve_once(listener: TcpListener, body: &[u8], reply: &str) -> String {
     String::from_utf8(received).expect("the request text")
 }
 
-async fn client() -> ProxiedClient {
+fn client() -> ProxiedClient {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
     );
     ProxiedClient::outbound(&policy).expect("the client")
 }
 
-fn call(api_base: String) -> ChatCall {
+fn call(api_base: &str) -> ChatCall {
     ChatCall {
         model: String::from("gpt-http-upstream"),
         request: support::chat_request(
             r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}]}"#,
         ),
-        credentials: support::credentials(Some(&api_base), Some("oracle-key"), None),
+        credentials: support::credentials(Some(api_base), Some("oracle-key"), None),
         headers: None,
         extra_headers: None,
         timeout: Some(30.0),
@@ -86,14 +89,14 @@ async fn loopback() -> (TcpListener, String) {
 async fn round_trip(reply: &str) -> (String, Vec<u8>, Result<OperationResult, OperationError>) {
     let (listener, api_base) = loopback().await;
     let composition = support::composition();
-    let call = call(api_base.clone());
+    let call = call(&api_base);
     let plan = chat_plan(&composition, &call).expect("the chat plan");
     let expected = RecordedRequest::of(&plan.prepared)
         .expect("a prepared request")
         .body;
     let (result, request) = tokio::join!(
         async {
-            let client = client().await;
+            let client = client();
             let deployment = deployment(&api_base);
             let upstream = OpenAi
                 .execute(&client, &plan.prepared, &deployment)
@@ -109,8 +112,7 @@ async fn round_trip(reply: &str) -> (String, Vec<u8>, Result<OperationResult, Op
 // The composed plan names the endpoint with the resolved auth and content type, and a stream adds its body flag.
 pub(super) fn check_plans() {
     let composition = support::composition();
-    let plan = chat_plan(&composition, &call(String::from("http://127.0.0.1:9/v1")))
-        .expect("the chat plan");
+    let plan = chat_plan(&composition, &call("http://127.0.0.1:9/v1")).expect("the chat plan");
     let sent = RecordedRequest::of(&plan.prepared).expect("a prepared HTTP request");
     assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
     assert_eq!(sent.header("authorization"), Some("Bearer oracle-key"));
@@ -119,17 +121,14 @@ pub(super) fn check_plans() {
         request: support::chat_request(
             r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
         ),
-        ..call(String::from("http://127.0.0.1:9/v1"))
+        ..call("http://127.0.0.1:9/v1")
     };
     let stream_plan = chat_plan(&composition, &stream_call).expect("the chat plan");
     let stream_request = RecordedRequest::of(&stream_plan.prepared).expect("a prepared stream");
     assert_eq!(stream_request.url, "http://127.0.0.1:9/v1/chat/completions");
     assert_eq!(stream_request.header("accept"), Some("application/json"));
     let body = support::body_fields(&stream_request.body);
-    assert_eq!(
-        support::field(&body, "stream"),
-        &betterlite_models::controls::json_value::JsonValue::Bool(true)
-    );
+    assert_eq!(support::field(&body, "stream"), &JsonValue::Bool(true));
 }
 
 // The composed call reaches the upstream with its auth, headers and body, and the reply decodes.
@@ -143,18 +142,19 @@ pub(super) async fn check_round_trip() {
     let lowercase = request.to_ascii_lowercase();
     assert!(lowercase.contains("authorization: bearer oracle-key"));
     assert!(lowercase.contains("content-type: application/json"));
-    assert!(request.ends_with(String::from_utf8_lossy(&expected).as_ref()));
-    let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = result.expect("the chat completion")
+    assert!(request.ends_with(str::from_utf8(&expected).expect("the prepared body")));
+    let OperationResult::Chat(ChatCompletion::OpenAi(completion)) =
+        result.expect("the chat completion")
     else {
         panic!("a chat completion");
     };
-    assert_eq!(reply.id, "chatcmpl-http");
-    assert_eq!(reply.model, "gpt-http-upstream-2024");
+    assert_eq!(completion.id, "chatcmpl-http");
+    assert_eq!(completion.model, "gpt-http-upstream-2024");
     assert_eq!(
-        reply.choices[0].message.content.as_deref(),
+        completion.choices[0].message.content.as_deref(),
         Some("hello over http")
     );
-    assert_eq!(reply.usage.total_tokens, 5);
+    assert_eq!(completion.usage.total_tokens, 5);
 }
 
 // An upstream refusal keeps the provider's status and body, so the route renders its type, param and code.
@@ -181,10 +181,7 @@ pub(super) async fn check_stream_post_call() {
     assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
     assert!(matches!(result, Ok(OperationResult::Stream(_))));
     assert_eq!(logger.calls.len(), 1);
-    assert!(matches!(
-        &logger.calls[0].original_response,
-        betterlite_models::decisions::Json::Null
-    ));
+    assert!(matches!(&logger.calls[0].original_response, Json::Null));
 }
 
 async fn streamed_chat() -> (
@@ -198,15 +195,13 @@ async fn streamed_chat() -> (
         request: support::chat_request(
             r#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
         ),
-        ..call(api_base)
+        ..call(&api_base)
     };
     let plan = chat_plan(&composition, &call).expect("the chat plan");
     let expected = RecordedRequest::of(&plan.prepared)
         .expect("a prepared stream")
         .body;
-    let answer = ClientAnswer {
-        client: client().await,
-    };
+    let answer = ClientAnswer { client: client() };
     let text = FixtureTextSource::new(TextReply::new(200, Vec::new()));
     let mut logger = FixtureLogger::default();
     let reply = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\ndata: {\"id\":\"chatcmpl-http\"}\n\n";

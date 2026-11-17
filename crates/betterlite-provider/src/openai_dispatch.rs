@@ -2,6 +2,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use secrecy::ExposeSecret as _;
@@ -44,7 +45,7 @@ pub struct OpenAiRequest;
 // The text branch's results; a projected text reply is a chat completion and travels in that variant instead.
 pub enum OpenAiResult {
     Text(Box<JsonValue>),
-    TextStream(Box<betterlite_openai::text_completion_transport::stream::CompletionStream>),
+    TextStream(Box<CompletionStream>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

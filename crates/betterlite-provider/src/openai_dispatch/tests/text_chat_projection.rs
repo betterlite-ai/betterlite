@@ -1,4 +1,5 @@
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
@@ -178,10 +179,7 @@ pub(super) async fn check_text_stream_logging() {
         OperationResult::OpenAi(OpenAiResult::TextStream(_))
     ));
     assert_eq!(logger.calls.len(), 1);
-    assert!(matches!(
-        &logger.calls[0].original_response,
-        betterlite_models::decisions::Json::Null
-    ));
+    assert!(matches!(&logger.calls[0].original_response, Json::Null));
     assert!(logger.calls[0].headers.is_none());
 }
 

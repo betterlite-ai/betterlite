@@ -106,10 +106,10 @@ fn chat_deployment(
 fn chat_body(composition: &Composition, call: &ChatCall) -> Result<Vec<u8>, OpenAiProviderError> {
     let mut body = chat_fields(&call.request, &call.model, &composition.catalog)?;
     body.shift_remove("extra_headers");
-    if composition.provider.enable_preview_features {
-        if let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata) {
-            body.insert(String::from("metadata"), metadata);
-        }
+    if composition.provider.enable_preview_features
+        && let Some(metadata) = call.metadata.as_ref().and_then(requester_metadata)
+    {
+        body.insert(String::from("metadata"), metadata);
     }
     merge_defaults(&mut body, &composition.chat_defaults)?;
     Ok(encode(body)?)

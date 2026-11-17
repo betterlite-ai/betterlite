@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 
-use betterlite_config::sections::Section;
+use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::Raw as CredentialsRaw;
 use betterlite_config::sections::openai_provider::Raw as ProviderRaw;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::openai_dispatch::OpenAiRequest;
 use betterlite_provider::openai_dispatch::call::Composition;
@@ -20,7 +20,7 @@ use betterlite_provider::openai_dispatch::transport::Deps;
 use betterlite_provider::operation::OperationRequest;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use secrecy::SecretString;
-use serde::{Deserialize, DeserializeOwned};
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use uuid::Uuid;
 

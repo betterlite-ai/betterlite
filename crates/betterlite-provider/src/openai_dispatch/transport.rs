@@ -32,7 +32,8 @@ impl ProviderAnswer for ClientAnswer {
 
 // The text branch builds its SDK constructor from the key it resolved for this call, never from a module-level value.
 pub trait TextClientSource: Sync {
-    type Constructor: ClientConstructor;
+    // the constructor travels through the transport's send, so it must cross that await
+    type Constructor: ClientConstructor + Send;
 
     fn constructor(&self, api_key: Option<&SecretString>) -> Self::Constructor;
 }
@@ -56,7 +57,7 @@ impl TextClientSource for HttpTextClients {
 }
 
 // The injected ports and clocks one dispatch call reads; the clock keeps a projection's created stamp stable in tests.
-pub struct Deps<'source, Answer, Text> {
+pub struct Deps<'source, Answer: Sync, Text> {
     pub answer: &'source Answer,
     pub text: &'source Text,
     pub now: fn() -> StreamInstant,

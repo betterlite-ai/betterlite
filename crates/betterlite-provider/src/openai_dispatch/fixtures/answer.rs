@@ -22,9 +22,9 @@ impl RecordedRequest {
     #[must_use]
     pub fn of(prepared: &PreparedRequest) -> Option<Self> {
         let http = match prepared.kind() {
-            PreparedKind::Chat(prepared)
-            | PreparedKind::Stream(prepared)
-            | PreparedKind::Embedding(prepared) => &prepared.http,
+            PreparedKind::Chat(chat)
+            | PreparedKind::Stream(chat)
+            | PreparedKind::Embedding(chat) => &chat.http,
             PreparedKind::Other => return None,
         };
         Some(Self {

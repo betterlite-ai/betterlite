@@ -20,7 +20,7 @@ use crate::openai_dispatch::call::ChatCall;
 use crate::openai_dispatch::error::OpenAiProviderError;
 use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
 use crate::openai_dispatch::fixtures::logger::FixtureLogger;
-use crate::openai_dispatch::logging::{B249Logger, LoggedCall, OpenAiLogger};
+use crate::openai_dispatch::logging::{B249Logger, LoggedCall, OpenAiLogger as _};
 use crate::operation::OperationError;
 
 const ERROR_BODY: &str = r#"{"error":{"message":"the model is overloaded","type":"server_error","param":null,"code":"overloaded"}}"#;
@@ -239,8 +239,8 @@ pub(super) fn check_b249_logger() {
             input: Json::List(Vec::new()),
             original_response: Json::Text(String::from("the model is overloaded")),
             headers: Some(logged_caller_headers()),
-        });
-    }
+        })
+    };
     let details = &state.model_call_details;
     assert_eq!(
         details.get("original_response"),

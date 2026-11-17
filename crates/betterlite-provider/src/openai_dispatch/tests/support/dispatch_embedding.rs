@@ -7,7 +7,7 @@ use crate::operation::OperationResult;
 
 use super::run;
 
-pub async fn dispatch_embedding(
+pub(crate) async fn dispatch_embedding(
     composition: &Composition,
     call: EmbeddingCall,
     answer: &FixtureAnswer,

@@ -109,7 +109,7 @@ pub async fn execute<Source, Logger>(
 where
     Source: TextClientSource,
     <Source::Constructor as ClientConstructor>::Client: Clone,
-    Logger: OpenAiLogger,
+    Logger: OpenAiLogger + Send,
 {
     let transport = TextCompletionTransport {
         constructor: text.constructor(plan.api_key.as_ref()),
@@ -117,11 +117,14 @@ where
         now,
         next_id,
     };
-    let completion = logger.completion();
     let request = text_request(plan)?;
-    let begun = transport.begin(request, ProviderId::TextCompletionOpenai, completion)?;
+    let begun = transport.begin(
+        request,
+        ProviderId::TextCompletionOpenai,
+        logger.completion(),
+    )?;
     let sent = transport.send(&begun, None).await?;
-    match transport.finish(&begun, sent, completion)? {
+    match transport.finish(&begun, sent, logger.completion())? {
         TextCompletionOutcome::Buffered(reply) => {
             let response = serde_json::from_value(reply.response).map_err(|source| {
                 OpenAiProviderError::Operation(OperationError::Decode {
@@ -186,7 +189,7 @@ fn fresh_target(identifier: &dyn Fn() -> Uuid, clock: &dyn Fn() -> i64) -> Extra
 // B2237's convert_to_chat_model_response_object: every text choice becomes one assistant message, indexed by position.
 pub fn project(
     response: &JsonValue,
-    now: StreamInstant,
+    now: &StreamInstant,
     next_id: fn() -> Uuid,
 ) -> Result<ChatResponse, OpenAiProviderError> {
     let identifier = || next_id();

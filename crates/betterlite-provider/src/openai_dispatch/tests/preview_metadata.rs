@@ -106,7 +106,7 @@ pub(super) async fn check_nothing_survives() {
 // The cleaned map keeps the first sixteen string values and drops the rest.
 pub(super) async fn check_limits_to_sixteen() {
     let mut fields = IndexMap::new();
-    for index in 0..18 {
+    for index in 0_u8..18 {
         fields.insert(format!("key-{index}"), support::text_value("v"));
     }
     let call = call(

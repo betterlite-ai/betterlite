@@ -8,10 +8,10 @@ pub fn requester_metadata(metadata: &IndexMap<String, JsonValue>) -> Option<Json
     if metadata.is_empty() {
         return None;
     }
-    if let Some(JsonValue::Object(nested)) = metadata.get("requester_metadata") {
-        if let Some(cleaned) = clean_metadata(nested) {
-            return Some(cleaned);
-        }
+    if let Some(JsonValue::Object(nested)) = metadata.get("requester_metadata")
+        && let Some(cleaned) = clean_metadata(nested)
+    {
+        return Some(cleaned);
     }
     clean_metadata(metadata)
 }
@@ -31,7 +31,7 @@ fn clean_metadata(fields: &IndexMap<String, JsonValue>) -> Option<JsonValue> {
     Some(JsonValue::Object(
         cleaned
             .into_iter()
-            .map(|(name, value)| (name, JsonValue::Text(value)))
+            .map(|(name, text)| (name, JsonValue::Text(text)))
             .collect(),
     ))
 }

@@ -12,6 +12,7 @@ use betterlite_openai::text_completion_policy::TextCompletionSettings;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde_json::Number;
 use uuid::Uuid;
 
 use crate::openai_dispatch::OpenAiRequest;
@@ -26,11 +27,11 @@ use crate::openai_dispatch::logging::LoggedCall;
 use crate::openai_dispatch::transport::Deps;
 use crate::operation::{OperationRequest, OperationResult};
 
-pub const CHAT_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o-2024-08-06","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
-pub const EMBEDDING_REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.5]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":2,"total_tokens":2}}"#;
-pub const TEXT_REPLY: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"hello","finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+pub(crate) const CHAT_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o-2024-08-06","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+pub(crate) const EMBEDDING_REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.5]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":2,"total_tokens":2}}"#;
+pub(crate) const TEXT_REPLY: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"hello","finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 
-pub fn composition() -> Composition {
+pub(crate) fn composition() -> Composition {
     Composition {
         credentials: CredentialsSettings::default(),
         provider: ProviderSettings::default(),
@@ -46,7 +47,7 @@ pub fn composition() -> Composition {
     }
 }
 
-pub fn credentials(
+pub(crate) fn credentials(
     api_base: Option<&str>,
     api_key: Option<&str>,
     organization: Option<&str>,
@@ -59,7 +60,7 @@ pub fn credentials(
 }
 
 // litellm's globals carry the same identity as a call's explicit credentials, beside litellm.openai_key
-pub fn globals(identity: Credentials, openai_key: Option<&str>) -> LiteLlmGlobals {
+pub(crate) fn globals(identity: Credentials, openai_key: Option<&str>) -> LiteLlmGlobals {
     LiteLlmGlobals {
         api_base: identity.api_base,
         api_key: identity.api_key,
@@ -69,73 +70,90 @@ pub fn globals(identity: Credentials, openai_key: Option<&str>) -> LiteLlmGlobal
 }
 
 // What main.py logged under additional_args.headers, read back by name.
-pub fn logged_header<'call>(call: &'call LoggedCall, name: &str) -> Option<&'call str> {
+pub(crate) fn logged_header<'call>(call: &'call LoggedCall, name: &str) -> Option<&'call str> {
     let headers = call.headers.as_ref()?;
     match headers.get(name)? {
         Json::Text(value) => Some(value),
-        _other => None,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
-pub fn chat_request(body: &str) -> ChatRequest {
+pub(crate) fn chat_request(body: &str) -> ChatRequest {
     ChatRequest::parse(body.as_bytes()).expect("a chat request the route accepts")
 }
 
 // A request a route built before the parse step, so a test can reach the maps that parse would refuse.
-pub fn raw_chat_request(body: &str) -> ChatRequest {
+pub(crate) fn raw_chat_request(body: &str) -> ChatRequest {
     serde_json::from_str(body).expect("a chat request body")
 }
 
-pub fn embedding_request(body: &str) -> EmbeddingRequest {
+pub(crate) fn embedding_request(body: &str) -> EmbeddingRequest {
     EmbeddingRequest::parse(body.as_bytes()).expect("an embedding request the route accepts")
 }
 
-pub fn chat_defaults(body: &str) -> OpenAiSettings {
+pub(crate) fn chat_defaults(body: &str) -> OpenAiSettings {
     serde_json::from_str(body).expect("chat defaults")
 }
 
-pub fn text_defaults(body: &str) -> TextCompletionSettings {
+pub(crate) fn text_defaults(body: &str) -> TextCompletionSettings {
     serde_json::from_str(body).expect("text defaults")
 }
 
-pub fn optional_params(body: &str) -> Object {
+pub(crate) fn optional_params(body: &str) -> Object {
     serde_json::from_str(body).expect("text optional parameters")
 }
 
-pub fn messages(body: &str) -> Vec<JsonValue> {
+pub(crate) fn messages(body: &str) -> Vec<JsonValue> {
     serde_json::from_str(body).expect("messages")
 }
 
-pub fn body_fields(bytes: &[u8]) -> IndexMap<String, JsonValue> {
+pub(crate) fn body_fields(bytes: &[u8]) -> IndexMap<String, JsonValue> {
     serde_json::from_slice(bytes).expect("a JSON object body")
 }
 
-pub fn text_value(value: &str) -> JsonValue {
+pub(crate) fn text_value(value: &str) -> JsonValue {
     JsonValue::Text(value.to_owned())
 }
 
-pub fn number_value(value: i64) -> JsonValue {
-    JsonValue::Number(serde_json::Number::from(value))
+pub(crate) fn number_value(value: i64) -> JsonValue {
+    JsonValue::Number(Number::from(value))
 }
 
-pub fn field<'body>(fields: &'body IndexMap<String, JsonValue>, name: &str) -> &'body JsonValue {
+pub(crate) fn real_value(value: f64) -> JsonValue {
+    JsonValue::Number(Number::from_f64(value).expect("a finite number"))
+}
+
+// A body or a settings map an SDK received, read back as the route's own JSON value type.
+pub(crate) fn fields_of(object: &Object) -> IndexMap<String, JsonValue> {
+    let bytes = serde_json::to_vec(object).expect("a serializable object");
+    serde_json::from_slice(&bytes).expect("a JSON object")
+}
+
+pub(crate) fn field<'body>(
+    fields: &'body IndexMap<String, JsonValue>,
+    name: &str,
+) -> &'body JsonValue {
     fields
         .get(name)
         .unwrap_or_else(|| panic!("the body has {name}"))
 }
 
-pub fn object_field<'body>(
+pub(crate) fn object_field<'body>(
     fields: &'body IndexMap<String, JsonValue>,
     name: &str,
 ) -> &'body IndexMap<String, JsonValue> {
     match field(fields, name) {
         JsonValue::Object(nested) => nested,
-        _other => panic!("{name} is an object"),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Text(_)
+        | JsonValue::Array(_) => panic!("{name} is an object"),
     }
 }
 
 // The clock a projected text reply stamps its created field with, fixed so a test can compare it
-pub fn fixed_now() -> StreamInstant {
+pub(crate) fn fixed_now() -> StreamInstant {
     StreamInstant {
         seconds: 1_700_000_000,
         timestamp: 1_700_000_000.0,
@@ -143,7 +161,7 @@ pub fn fixed_now() -> StreamInstant {
 }
 
 // The identifier a projected text reply names itself with, fixed so a test can compare it
-pub fn fixed_id() -> Uuid {
+pub(crate) fn fixed_id() -> Uuid {
     Uuid::from_u128(1)
 }
 
