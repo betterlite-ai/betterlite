@@ -350,7 +350,6 @@ fn the_section_input_is_the_last_fallback() {
 
 #[test]
 fn an_explicit_api_base_and_option_credentials_win() {
-    let catalog = ModelCatalog::default();
     let vertex = VertexSettings {
         project: None,
         location: Some("settings-location".to_owned()),
@@ -378,7 +377,7 @@ fn an_explicit_api_base_and_option_credentials_win() {
             vertex: &vertex,
             embedding: &embedding,
         },
-        &catalog,
+        &ModelCatalog::default(),
     )
     .expect("a resolved request");
     assert_eq!(
