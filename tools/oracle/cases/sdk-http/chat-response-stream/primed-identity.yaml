@@ -16,10 +16,9 @@ upstream:
   - status: 200
     headers: {content-type: text/event-stream}
     events:
-      - '{"object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}'
-      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}'
       - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
-      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
       - '[DONE]'
   - status: 200
     headers: {content-type: text/event-stream}
