@@ -63,7 +63,8 @@ impl Poller<'_> {
             match poll_step(run_id, seen, &mut consecutive_failures) {
                 PollStep::Terminal(run) => return Some(run),
                 PollStep::GaveUp => return last_run,
-                PollStep::Continue(run) => last_run = run,
+                PollStep::Continue(Some(run)) => last_run = Some(run),
+                PollStep::Continue(None) => {}
             }
             self.sleeper.sleep(interval).await;
         }

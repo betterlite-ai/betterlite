@@ -135,3 +135,25 @@ async fn a_success_resets_the_failure_count() {
         r#"{"run_id":"run-1","status":"PENDING"}"#
     );
 }
+
+// A failed poll after a good one must not forget the run, so the give-up still bills the last run fetched.
+#[tokio::test]
+async fn keeps_the_last_run_across_failed_polls() {
+    let (logs, _guard) = capture_logs();
+    let mut replies = vec![ScriptedReply::Run(200, PENDING_BODY)];
+    replies.extend(unreachable(12));
+    let fixture = fixture(replies);
+    poll_to_completion(&fixture, shared_logging_object()).await;
+
+    assert_eq!(fixture.transport.requests().len(), 13);
+    assert!(
+        logs.contents()
+            .contains("giving up on run run-1 after 12 consecutive poll failures")
+    );
+    let calls = fixture.dispatch.calls();
+    let call = calls.first().expect("one dispatch");
+    assert_eq!(
+        standard_text(&call.result),
+        r#"{"run_id":"run-1","status":"PENDING"}"#
+    );
+}
