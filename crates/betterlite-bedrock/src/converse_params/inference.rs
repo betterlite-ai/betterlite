@@ -10,12 +10,12 @@ use crate::converse_options::family::requires_min_max_tokens;
 use crate::converse_options::supported::supports_sampling_params;
 use crate::converse_params::compose::ConverseParamsRequest;
 use crate::converse_params::error::ConverseParamsError;
-use crate::converse_params::wire::{self, transcode};
+use crate::converse_params::wire::transcode;
 use crate::model_routes::{ParamMap, ParamValue};
 
 const ANTHROPIC_PREFIX: &str = "anthropic";
-const BEDROCK_OPENAI_COMPAT_MIN_MAX_TOKENS: i64 = 16;
 const INFERENCE_CONFIG_FIELD: &str = "inferenceConfig";
+const MIN_MAX_TOKENS: i64 = 16;
 const NOVA_PREFIX: &str = "amazon.nova";
 const STOP_FIELD: &str = "stopSequences";
 const TOP_K_FIELD: &str = "top_k";
@@ -74,13 +74,22 @@ pub fn handle_top_k_value(
 // Bedrock's OpenAI-compatible families reject a completion cap under 16; other values ride unchanged.
 #[must_use]
 pub fn max_tokens_value(model: &str, value: &ParamValue) -> ParamValue {
-    let Some(tokens) = wire::python_int(value) else {
-        return value.clone();
-    };
-    if !requires_min_max_tokens(model) || tokens >= BEDROCK_OPENAI_COMPAT_MIN_MAX_TOKENS {
+    if !requires_min_max_tokens(model) {
         return value.clone();
     }
-    ParamValue::Number(Number::from(BEDROCK_OPENAI_COMPAT_MIN_MAX_TOKENS))
+    let below_minimum = match value {
+        ParamValue::Bool(_) => true,
+        ParamValue::Number(number) => number
+            .as_i64()
+            .is_some_and(|tokens| tokens < MIN_MAX_TOKENS),
+        ParamValue::Null | ParamValue::Text(_) | ParamValue::List(_) | ParamValue::Mapping(_) => {
+            false
+        }
+    };
+    if below_minimum {
+        return ParamValue::Number(Number::from(MIN_MAX_TOKENS));
+    }
+    value.clone()
 }
 
 // An empty string is the one stop value Converse rejects outright, so the field stays absent for it.
@@ -88,7 +97,11 @@ pub fn apply_stop(value: &ParamValue, optional_params: &mut ParamMap) {
     let sequences = match value {
         ParamValue::Text(text) if text.is_empty() => return,
         ParamValue::Text(text) => ParamValue::List(vec![ParamValue::Text(text.clone())]),
-        other => other.clone(),
+        ParamValue::Null
+        | ParamValue::Bool(_)
+        | ParamValue::Number(_)
+        | ParamValue::List(_)
+        | ParamValue::Mapping(_) => value.clone(),
     };
     optional_params.insert(STOP_FIELD.to_owned(), sequences);
 }
@@ -138,7 +151,7 @@ pub fn apply_sampling<Lookup>(
     }))
 }
 
-fn hint_for(param: SamplingParam) -> &'static str {
+const fn hint_for(param: SamplingParam) -> &'static str {
     match param {
         SamplingParam::Temperature => "Only temperature=1 is supported. ",
         SamplingParam::TopP | SamplingParam::TopK => "",

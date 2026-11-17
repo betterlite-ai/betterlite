@@ -1,4 +1,4 @@
-use crate::converse_params::wire::truthy;
+use crate::converse_params::wire::carries_value;
 use crate::model_routes::{ParamMap, ParamValue};
 
 const AUTO: &str = "auto";
@@ -13,7 +13,7 @@ pub fn parallel_tool_use_config(value: &ParamValue) -> ParamMap {
     tool_choice.insert(TYPE_FIELD.to_owned(), ParamValue::Text(AUTO.to_owned()));
     tool_choice.insert(
         DISABLE_PARALLEL_FIELD.to_owned(),
-        ParamValue::Bool(!truthy(value)),
+        ParamValue::Bool(!carries_value(value)),
     );
     ParamMap::from([(
         TOOL_CHOICE_FIELD.to_owned(),
@@ -52,9 +52,7 @@ fn merge_entry(generated: &ParamValue, existing: Option<&ParamValue>) -> ParamVa
 }
 
 // Converse rejects both toolConfig.toolChoice and additionalModelRequestFields.tool_choice.type.
-pub fn drop_tool_choice_type_conflicting_with_tool_config(
-    additional_request_params: &mut ParamMap,
-) {
+pub fn drop_tool_choice_type(additional_request_params: &mut ParamMap) {
     if let Some(ParamValue::Mapping(tool_choice)) =
         additional_request_params.get_mut(TOOL_CHOICE_FIELD)
     {

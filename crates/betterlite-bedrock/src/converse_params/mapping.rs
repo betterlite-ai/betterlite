@@ -8,7 +8,6 @@ use crate::request_policy::validation::validate_request_metadata;
 use crate::request_policy::{Params, RequestValue};
 
 const AUTO_TIER: &str = "auto";
-const CONTEXT_MANAGEMENT_FIELD: &str = "context_management";
 const DEFAULT_TIER: &str = "default";
 const REQUEST_METADATA_FIELD: &str = "requestMetadata";
 const SERVICE_TIER_FIELD: &str = "serviceTier";
@@ -42,7 +41,7 @@ pub fn map_request_metadata_param(
     };
     let pairs = fields
         .iter()
-        .map(|(key, value)| Ok((key.clone(), metadata_value(value)?)))
+        .map(|(key, entry)| Ok((key.clone(), metadata_value(entry)?)))
         .collect::<Result<Params, ConverseParamsError>>()?;
     validate_request_metadata(&RequestValue::Mapping(pairs))?;
     optional_params.insert(REQUEST_METADATA_FIELD.to_owned(), value.clone());
@@ -50,30 +49,28 @@ pub fn map_request_metadata_param(
 }
 
 fn metadata_value(value: &ParamValue) -> Result<RequestValue, ConverseParamsError> {
-    match value {
-        ParamValue::Text(text) => Ok(RequestValue::Text(text.clone())),
-        other => Ok(RequestValue::Raw(
-            serde_json::to_string(other).map_err(ConverseParamsError::Encode)?,
-        )),
+    if let ParamValue::Text(text) = value {
+        return Ok(RequestValue::Text(text.clone()));
     }
+    Ok(RequestValue::Raw(
+        serde_json::to_string(value).map_err(ConverseParamsError::Encode)?,
+    ))
 }
 
-// A list runs the B2201 mapper and assigns only a mapped result; a dict passes through unchanged.
-pub fn map_context_management_param(
+// A list runs the B2201 mapper and yields only a mapped result; a dict passes through unchanged.
+pub fn context_management_value(
     value: &ParamValue,
-    optional_params: &mut ParamMap,
-) -> Result<(), ConverseParamsError> {
+) -> Result<Option<ParamValue>, ConverseParamsError> {
     match value {
-        ParamValue::Mapping(_) => {
-            optional_params.insert(CONTEXT_MANAGEMENT_FIELD.to_owned(), value.clone());
-        }
+        ParamValue::Mapping(_) => Ok(Some(value.clone())),
         ParamValue::List(_) => {
             let encoded: Json = transcode(value)?;
-            if let Some(mapped) = map_context_management(&encoded)? {
-                optional_params.insert(CONTEXT_MANAGEMENT_FIELD.to_owned(), transcode(&mapped)?);
-            }
+            map_context_management(&encoded)?
+                .map(|mapped| transcode::<ParamValue, Json>(&mapped))
+                .transpose()
         }
-        ParamValue::Null | ParamValue::Bool(_) | ParamValue::Number(_) | ParamValue::Text(_) => {}
+        ParamValue::Null | ParamValue::Bool(_) | ParamValue::Number(_) | ParamValue::Text(_) => {
+            Ok(None)
+        }
     }
-    Ok(())
 }
