@@ -225,8 +225,8 @@ fn the_system_prompt_never_scores() {
 #[case::one_word("abcd", 1)]
 #[case::partial_word("abcdefg", 1)]
 #[case::three_words("abcdefghijkl", 3)]
-#[case::two_cjk("发票", 0)]
-#[case::six_cjk("发票发票发票", 1)]
+#[case::two_cjk("\u{53d1}\u{7968}", 0)]
+#[case::six_cjk("\u{53d1}\u{7968}\u{53d1}\u{7968}\u{53d1}\u{7968}", 1)]
 fn tokens_come_from_characters_divided_by_four(#[case] input: &str, #[case] expected: i64) {
     assert_eq!(estimated_tokens(input), expected);
 }
@@ -316,11 +316,18 @@ fn a_phrase_keyword_is_a_literal_substring() {
 #[test]
 fn a_cjk_keyword_matches_inside_running_text() {
     let mut input = blank();
-    input.custom_technical_keywords = Some(strings(&["发票", "报销"]));
-    let outcome = classify(&input, "我需要开发票和报销", None);
+    input.custom_technical_keywords = Some(strings(&["\u{53d1}\u{7968}", "\u{62a5}\u{9500}"]));
+    let outcome = classify(
+        &input,
+        "\u{6211}\u{9700}\u{8981}\u{5f00}\u{53d1}\u{7968}\u{548c}\u{62a5}\u{9500}",
+        None,
+    );
     assert_eq!(
         outcome.signals,
-        strings(&["short (2 tokens)", "technical (发票, 报销)"])
+        strings(&[
+            "short (2 tokens)",
+            "technical (\u{53d1}\u{7968}, \u{62a5}\u{9500})"
+        ])
     );
     assert_eq!(fixed(outcome.score), "0.025000");
 }
@@ -340,9 +347,8 @@ fn the_reasoning_override_needs_two_markers_and_the_floor() {
     let below_floor = classify(&weighted, "step by step think through", None);
     assert_eq!(below_floor.tier.name(), "SIMPLE");
     assert_eq!(below_floor.cause, RoutingDecisionCause::HeuristicScorer);
-    let mut explicit_zero = weighted.clone();
-    explicit_zero.reasoning_override_min_score = Some(0.0_f64);
-    let overridden = classify(&explicit_zero, "step by step think through", None);
+    weighted.reasoning_override_min_score = Some(0.0_f64);
+    let overridden = classify(&weighted, "step by step think through", None);
     assert_eq!(overridden.tier.name(), "REASONING");
     assert_eq!(overridden.cause, RoutingDecisionCause::ReasoningOverride);
     assert_eq!(fixed(overridden.score), "0.050000");
@@ -361,11 +367,21 @@ fn one_reasoning_marker_never_overrides() {
 #[test]
 fn the_resolved_config_carries_the_pinned_defaults() {
     let config = resolved(&blank());
-    assert_eq!(config.token_thresholds.simple, 15);
-    assert_eq!(config.token_thresholds.complex, 400);
-    assert_eq!(fixed(config.tier_boundaries.simple_medium), "0.150000");
-    assert_eq!(fixed(config.tier_boundaries.medium_complex), "0.350000");
-    assert_eq!(fixed(config.tier_boundaries.complex_reasoning), "0.600000");
+    assert_eq!(
+        (
+            config.token_thresholds.simple,
+            config.token_thresholds.complex
+        ),
+        (15, 400)
+    );
+    assert_eq!(
+        (
+            fixed(config.tier_boundaries.simple_medium),
+            fixed(config.tier_boundaries.medium_complex),
+            fixed(config.tier_boundaries.complex_reasoning),
+        ),
+        ("0.150000", "0.350000", "0.600000")
+    );
     assert_eq!(fixed(config.reasoning_override_min_score), "0.150000");
     assert_eq!(
         config.dimension_weights,
@@ -379,11 +395,16 @@ fn the_resolved_config_carries_the_pinned_defaults() {
             ("questionComplexity", 0.02_f64),
         ])
     );
-    assert_eq!(config.code_keywords.len(), 45);
-    assert_eq!(config.reasoning_keywords.len(), 19);
-    assert_eq!(config.technical_keywords.len(), 28);
-    assert_eq!(config.simple_keywords.len(), 26);
-    assert_eq!(config.multi_step_patterns.len(), 4);
+    assert_eq!(
+        (
+            config.code_keywords.len(),
+            config.reasoning_keywords.len(),
+            config.technical_keywords.len(),
+            config.simple_keywords.len(),
+            config.multi_step_patterns.len(),
+        ),
+        (45, 19, 28, 26, 4)
+    );
     assert_eq!(config.custom_technical_keywords, Vec::<String>::new());
     assert_eq!(config.custom_dimensions.len(), 0);
     assert_eq!(config.default_model, None);

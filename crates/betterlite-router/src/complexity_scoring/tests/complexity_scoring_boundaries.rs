@@ -350,8 +350,8 @@ fn a_non_finite_floor_is_rejected_by_name() {
 fn a_weighted_score_that_overflows_is_rejected() {
     let mut input = blank();
     input.dimension_weights = Some(weights(&[
-        ("codePresence", 1e308),
-        ("technicalTerms", 1e308),
+        ("codePresence", 1e308_f64),
+        ("technicalTerms", 1e308_f64),
     ]));
     let outcome = Scorer::new(resolved(&input))
         .unwrap()
@@ -381,10 +381,13 @@ fn an_invalid_pattern_is_rejected() {
         patterns: strings(&["("]),
         scoring_mode: ScoringMode::Binary,
     }];
-    let Err(error) = Scorer::new(custom) else {
+    let Err(custom_error) = Scorer::new(custom) else {
         panic!("the custom pattern should be refused");
     };
-    assert!(matches!(error, ScoringError::Pattern { .. }), "got {error}");
+    assert!(
+        matches!(custom_error, ScoringError::Pattern { .. }),
+        "got {custom_error}"
+    );
 }
 
 #[test]
@@ -399,10 +402,9 @@ fn the_floor_tracks_the_simple_medium_boundary_unless_configured() {
         fixed(resolved(&shifted).reasoning_override_min_score),
         "0.400000"
     );
-    let mut explicit = shifted.clone();
-    explicit.reasoning_override_min_score = Some(0.0_f64);
+    shifted.reasoning_override_min_score = Some(0.0_f64);
     assert_eq!(
-        fixed(resolved(&explicit).reasoning_override_min_score),
+        fixed(resolved(&shifted).reasoning_override_min_score),
         "0.000000"
     );
 }

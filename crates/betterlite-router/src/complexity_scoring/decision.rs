@@ -1,6 +1,7 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use betterlite_models::decisions::Json;
+use betterlite_redact::structured::mask_credentials_in_payload;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -263,7 +264,7 @@ fn masked_params(params: &IndexMap<String, Json>) -> Option<Json> {
         return None;
     }
     let value = serde_json::to_value(params).ok()?;
-    let masked = betterlite_redact::structured::mask_credentials_in_payload(&value);
+    let masked = mask_credentials_in_payload(&value);
     match serde_json::from_value(masked).ok()? {
         Json::Object(fields) => Some(Json::Object(fields)),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,

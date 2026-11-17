@@ -131,27 +131,28 @@ impl Config {
 
 // a keyword list the deployment sets replaces the default one, and an unset list keeps it
 fn keywords(configured: Option<&[String]>, default: &[String]) -> Vec<String> {
-    match configured {
-        Some(declared) => declared.to_vec(),
-        None => default.to_vec(),
-    }
+    configured.map_or_else(|| default.to_vec(), <[String]>::to_vec)
 }
 
 fn tier_models(
     configured: Option<&BTreeMap<String, section::TierModelValue>>,
     defaults: &Defaults,
 ) -> BTreeMap<String, TierModelValue> {
-    match configured {
-        None => defaults
-            .tier_models
-            .iter()
-            .map(|(tier, model)| (tier.clone(), TierModelValue::Single(model.clone())))
-            .collect(),
-        Some(values) => values
-            .iter()
-            .map(|(tier, value)| (tier.clone(), TierModelValue::from_section(value)))
-            .collect(),
-    }
+    configured.map_or_else(
+        || {
+            defaults
+                .tier_models
+                .iter()
+                .map(|(tier, model)| (tier.clone(), TierModelValue::Single(model.clone())))
+                .collect()
+        },
+        |values| {
+            values
+                .iter()
+                .map(|(tier, value)| (tier.clone(), TierModelValue::from_section(value)))
+                .collect()
+        },
+    )
 }
 
 fn thresholds(

@@ -42,10 +42,7 @@ pub enum Tier {
 impl Tier {
     #[must_use]
     pub fn from_name(name: &str) -> Self {
-        match ComplexityTier::built_in(name) {
-            Some(tier) => Self::BuiltIn(tier),
-            None => Self::Named(name.to_owned()),
-        }
+        ComplexityTier::built_in(name).map_or_else(|| Self::Named(name.to_owned()), Self::BuiltIn)
     }
 
     // _tier_name: the plain tier name, whether the pipeline carries a built-in tier or a defined name
