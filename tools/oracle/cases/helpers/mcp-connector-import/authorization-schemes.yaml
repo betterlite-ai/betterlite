@@ -1,0 +1,48 @@
+kind: helper
+name: mcp-connector-import-authorization-schemes
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        basic:
+          url: https://basic.example/mcp
+          headers:
+            Authorization: "Basic dXNlcjpwYXNz"
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          basic:
+            url: https://basic.example/mcp
+            headers:
+              Authorization: "Basic dXNlcjpwYXNz"
+          token:
+            url: https://token.example/mcp
+            headers:
+              Authorization: Token xyz
+          empty-bearer:
+            url: https://empty-bearer.example/mcp
+            headers:
+              Authorization: "Bearer "
+          bare-bearer:
+            url: https://bare-bearer.example/mcp
+            headers:
+              Authorization: Bearer
+          leading-space:
+            url: https://leading-space.example/mcp
+            headers:
+              Authorization: " Bearer x"
+          empty-value:
+            url: https://empty-value.example/mcp
+            headers:
+              Authorization: ""
+          uppercase:
+            url: https://uppercase.example/mcp
+            headers:
+              Authorization: BEARER xyz
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

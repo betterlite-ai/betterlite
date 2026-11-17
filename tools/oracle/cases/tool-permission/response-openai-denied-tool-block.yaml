@@ -1,0 +1,33 @@
+kind: helper
+name: response-openai-denied-tool-block
+call:
+  b3813:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+    default_action: deny
+    on_disallowed_action: block
+    event_hook: post_call
+    default_on: true
+    mode: success
+    format: openai
+    data: {}
+    chunks: []
+    raw_chunks: []
+    response:
+      id: chatcmpl-2
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+        - index: 0
+          finish_reason: tool_calls
+          message:
+            role: assistant
+            content: null
+            tool_calls:
+              - id: call_1
+                type: function
+                function: {name: Bash, arguments: '{"cmd": "ls"}'}
+env: {}
+compare: {ignore: []}

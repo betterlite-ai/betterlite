@@ -1,0 +1,6 @@
+task: B1394
+deviations:
+  - what: A stored setup that is not a JSON object, whose setup is null or not an object, or whose responseModalities, temperature or maxOutputTokens carry the wrong JSON type falls back to the empty setup and the default audio modality, where LiteLLM raises an uncaught TypeError or AttributeError as an HTTP 500, or iterates a responseModalities string into one modality per letter.
+    why: The stored request is decoded through B1378's typed model, so every decode failure takes the branch's own fallback, and docs/compatibility.md makes a wrong-typed value an error rather than a Python duck-typing accident; a setup that the session accepted decodes cleanly, so no working setup sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1374-L1387
+kept_bugs: []

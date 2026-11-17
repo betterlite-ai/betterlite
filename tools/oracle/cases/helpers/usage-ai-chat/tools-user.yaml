@@ -1,0 +1,9 @@
+kind: helper
+name: usage-ai-chat-tools-user
+call:
+  b3103:
+    function: tools
+    is_admin: false
+env: {}
+compare:
+  ignore: []

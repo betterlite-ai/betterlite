@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-payload-validation-conflict-message
+call:
+  b4716:
+    function: conflict_message
+    field: server_name
+    value: test-server
+    server_id: server-1
+calls:
+  - b4716:
+      function: conflict_message
+      field: alias
+      value: test-alias
+      server_id: server-2
+  - b4716:
+      function: conflict_message
+      field: server_name
+      value: ""
+      server_id: ""
+env: {}
+compare: {ignore: []}

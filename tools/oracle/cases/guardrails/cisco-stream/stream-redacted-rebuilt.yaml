@@ -1,0 +1,14 @@
+kind: helper
+name: stream-redacted-rebuilt
+call:
+  b9450:
+    operation: stream
+    settings: {api_key: oracle-key, inspection_type: chat}
+    request_data: {metadata: {}}
+    chunks:
+      - {id: chatcmpl-1, object: chat.completion.chunk, created: 1, model: gpt-4o, choices: [{index: 0, delta: {role: assistant, content: ""}, finish_reason: null}]}
+      - {id: chatcmpl-1, object: chat.completion.chunk, created: 1, model: gpt-4o, choices: [{index: 0, delta: {content: "hello"}, finish_reason: stop}]}
+    should_run: true
+    answer: {status: 200, headers: {}, body: {action: sanitize, sanitized_text: "[REDACTED]"}}
+env: {}
+compare: {ignore: []}
