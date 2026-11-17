@@ -14,6 +14,9 @@ pub mod routing_groups;
 pub mod routing_plugins;
 pub mod tag_routing;
 
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::router_core::candidates::CandidateSet;
 use crate::router_core::error::RoutingError;
 use crate::router_core::route::RouteContext;
@@ -38,33 +41,40 @@ pub enum RouteStage {
     ResponsesStreamFallback,
 }
 
+// the pool update a stage module returns, erased so the one match below stays one arm per stage
+type StageFuture<'route> =
+    Pin<Box<dyn Future<Output = Result<CandidateSet, RoutingError>> + Send + 'route>>;
+
 // apply: one stage narrows the pool; each arm calls only the module that owns that stage.
 pub async fn apply(
     stage: RouteStage,
     candidates: CandidateSet,
     route: &RouteContext<'_>,
 ) -> Result<CandidateSet, RoutingError> {
-    match stage {
-        RouteStage::CooldownState => cooldown_state::apply(candidates, route).await,
-        RouteStage::CooldownPolicy => cooldown_policy::apply(candidates, route).await,
-        RouteStage::FallbackAttempts => fallback_attempts::apply(candidates, route).await,
-        RouteStage::ChatStreamFallback => chat_stream_fallback::apply(candidates, route).await,
-        RouteStage::NativeStreamFallback => native_stream_fallback::apply(candidates, route).await,
+    let stage_future: StageFuture<'_> = match stage {
+        RouteStage::CooldownState => Box::pin(cooldown_state::apply(candidates, route)),
+        RouteStage::CooldownPolicy => Box::pin(cooldown_policy::apply(candidates, route)),
+        RouteStage::FallbackAttempts => Box::pin(fallback_attempts::apply(candidates, route)),
+        RouteStage::ChatStreamFallback => Box::pin(chat_stream_fallback::apply(candidates, route)),
+        RouteStage::NativeStreamFallback => {
+            Box::pin(native_stream_fallback::apply(candidates, route))
+        }
         RouteStage::GeneralizationIntegration => {
-            generalization_integration::apply(candidates, route).await
+            Box::pin(generalization_integration::apply(candidates, route))
         }
-        RouteStage::ModelRateLimits => model_rate_limits::apply(candidates, route).await,
-        RouteStage::TagRouting => tag_routing::apply(candidates, route).await,
-        RouteStage::AccessWindows => access_windows::apply(candidates, route).await,
-        RouteStage::RoutingGroups => routing_groups::apply(candidates, route).await,
-        RouteStage::DeploymentAffinity => deployment_affinity::apply(candidates, route).await,
-        RouteStage::PromptAffinity => prompt_affinity::apply(candidates, route).await,
-        RouteStage::RequestScheduler => request_scheduler::apply(candidates, route).await,
-        RouteStage::RoutingPlugins => routing_plugins::apply(candidates, route).await,
+        RouteStage::ModelRateLimits => Box::pin(model_rate_limits::apply(candidates, route)),
+        RouteStage::TagRouting => Box::pin(tag_routing::apply(candidates, route)),
+        RouteStage::AccessWindows => Box::pin(access_windows::apply(candidates, route)),
+        RouteStage::RoutingGroups => Box::pin(routing_groups::apply(candidates, route)),
+        RouteStage::DeploymentAffinity => Box::pin(deployment_affinity::apply(candidates, route)),
+        RouteStage::PromptAffinity => Box::pin(prompt_affinity::apply(candidates, route)),
+        RouteStage::RequestScheduler => Box::pin(request_scheduler::apply(candidates, route)),
+        RouteStage::RoutingPlugins => Box::pin(routing_plugins::apply(candidates, route)),
         RouteStage::ResponsesStreamFallback => {
-            responses_stream_fallback::apply(candidates, route).await
+            Box::pin(responses_stream_fallback::apply(candidates, route))
         }
-    }
+    };
+    stage_future.await
 }
 
 // Every stage's own CONFIGURED flag, keyed by the stage it belongs to.

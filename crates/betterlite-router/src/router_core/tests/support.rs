@@ -373,10 +373,10 @@ pub(super) fn clock() -> ClientClock {
 
 // The strategy the request names for itself, which _get_routing_context reads before the router's own.
 fn override_of(setup: &RequestSetup) -> StrategyOverride<'_> {
-    match &setup.routing_strategy {
-        Some(strategy) => StrategyOverride::Text(strategy),
-        None => StrategyOverride::Absent,
-    }
+    setup
+        .routing_strategy
+        .as_deref()
+        .map_or(StrategyOverride::Absent, StrategyOverride::Text)
 }
 
 // The route over a built context, with B395's dispatch resolved once for the request.

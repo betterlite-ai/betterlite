@@ -33,19 +33,25 @@ use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
 
 pub(super) async fn run(name: &str) {
-    if stage_cases(name).await {
+    if cooldown_stage_cases(name).await {
+        return;
+    }
+    if routing_stage_cases(name).await {
         return;
     }
     if strategy_cases(name).await {
         return;
     }
-    if selection_cases(name).await {
+    if no_deployment_cases(name).await {
+        return;
+    }
+    if filter_cases(name).await {
         return;
     }
     response_cases(name).await;
 }
 
-async fn stage_cases(name: &str) -> bool {
+async fn cooldown_stage_cases(name: &str) -> bool {
     match name {
         "stage_cooldown_state" => stage_skips(RouteStage::CooldownState).await,
         "stage_cooldown_policy" => stage_skips(RouteStage::CooldownPolicy).await,
@@ -53,8 +59,15 @@ async fn stage_cases(name: &str) -> bool {
         "stage_chat_stream_fallback" => stage_skips(RouteStage::ChatStreamFallback).await,
         "stage_native_stream_fallback" => stage_skips(RouteStage::NativeStreamFallback).await,
         "stage_generalization_integration" => {
-            stage_skips(RouteStage::GeneralizationIntegration).await
+            stage_skips(RouteStage::GeneralizationIntegration).await;
         }
+        _ => return false,
+    }
+    true
+}
+
+async fn routing_stage_cases(name: &str) -> bool {
+    match name {
         "stage_model_rate_limits" => stage_skips(RouteStage::ModelRateLimits).await,
         "stage_tag_routing" => stage_skips(RouteStage::TagRouting).await,
         "stage_access_windows" => stage_skips(RouteStage::AccessWindows).await,
@@ -73,14 +86,14 @@ async fn strategy_cases(name: &str) -> bool {
     match name {
         "least_busy" => strategy_unbuilt(RoutingStrategy::LeastBusy, "least_busy").await,
         "latency_routing" => {
-            strategy_unbuilt(RoutingStrategy::LatencyBasedRouting, "latency_routing").await
+            strategy_unbuilt(RoutingStrategy::LatencyBasedRouting, "latency_routing").await;
         }
         "cost_routing" => strategy_unbuilt(RoutingStrategy::CostBasedRouting, "cost_routing").await,
         "usage_routing" => {
-            strategy_unbuilt(RoutingStrategy::UsageBasedRouting, "usage_routing").await
+            strategy_unbuilt(RoutingStrategy::UsageBasedRouting, "usage_routing").await;
         }
         "usage_routing_v2" => {
-            strategy_unbuilt(RoutingStrategy::UsageBasedRoutingV2, "usage_routing_v2").await
+            strategy_unbuilt(RoutingStrategy::UsageBasedRoutingV2, "usage_routing_v2").await;
         }
         "lar1_routing" => strategy_unbuilt(RoutingStrategy::Lar1, "lar1_routing").await,
         _ => return false,
@@ -88,7 +101,7 @@ async fn strategy_cases(name: &str) -> bool {
     true
 }
 
-async fn selection_cases(name: &str) -> bool {
+async fn no_deployment_cases(name: &str) -> bool {
     match name {
         "no_deployment_rate_limit" => no_deployment_rate_limit().await,
         "no_deployment_all_in_cooldown" => no_deployment_all_in_cooldown().await,
@@ -98,6 +111,13 @@ async fn selection_cases(name: &str) -> bool {
         "blocked_deployment" => blocked_deployment().await,
         "blocked_pool" => blocked_pool().await,
         "blocked_pool_empty" => blocked_pool_empty().await,
+        _ => return false,
+    }
+    true
+}
+
+async fn filter_cases(name: &str) -> bool {
+    match name {
         "healthy_catalog_error" => healthy_catalog_error().await,
         "environment_filtered_single" => environment_filtered_single().await,
         "environment_filtered_pool" => environment_filtered_pool().await,

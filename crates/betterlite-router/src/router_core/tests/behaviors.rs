@@ -21,6 +21,19 @@ use crate::strategy::Strategy;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
 pub(super) async fn run(name: &str) {
+    if selection_cases(name).await {
+        return;
+    }
+    if catalog_cases(name).await {
+        return;
+    }
+    if health_cases(name).await {
+        return;
+    }
+    response_cases(name).await;
+}
+
+async fn selection_cases(name: &str) -> bool {
     match name {
         "weighted_pick" => weighted_pick().await,
         "shared_pool_chat_and_embedding" => shared_pool_chat_and_embedding().await,
@@ -31,14 +44,35 @@ pub(super) async fn run(name: &str) {
         "excluded_drop" => excluded_drop().await,
         "retry_skip_narrow" => retry_skip_narrow().await,
         "retry_skip_keeps_pool" => retry_skip_keeps_pool().await,
+        _ => return false,
+    }
+    true
+}
+
+async fn catalog_cases(name: &str) -> bool {
+    match name {
         "group_alias" => group_alias().await,
         "model_alias_map" => model_alias_map().await,
         "client_acquired" => client_acquired().await,
+        _ => return false,
+    }
+    true
+}
+
+async fn health_cases(name: &str) -> bool {
+    match name {
         "healthy_pool" => healthy_pool().await,
         "healthy_single" => healthy_single().await,
         "healthy_blocked_pool" => healthy_blocked_pool().await,
         "order_lowest_wins" => order_lowest_wins().await,
         "order_after_blocked" => order_after_blocked().await,
+        _ => return false,
+    }
+    true
+}
+
+async fn response_cases(name: &str) {
+    match name {
         "headers_attach_to_object" => headers_attach_to_object(),
         "header_model_id_kept" => header_model_id_kept(),
         "token_count_from_usage" => token_count_from_usage(),
