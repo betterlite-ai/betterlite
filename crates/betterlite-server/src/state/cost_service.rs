@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::cost_service::{CostService, CostServiceError, Policies, name_normalizers};
 use crate::state::shared::Shared;
 use betterlite_config::types::Config;
-use betterlite_core::cost::completion::lookup::LookupSettings;
-use betterlite_models::catalog::{BundledCatalog, CatalogError};
+use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
+use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -26,15 +27,20 @@ pub struct Slot {
 
 impl Slot {
     #[must_use]
-    pub fn new(config: &Config, _shared: &Shared) -> Self {
+    pub fn new(config: &Config, shared: &Shared) -> Self {
         Self {
-            service: build(config, TimeZoneDatabase::from_env()),
+            service: build(
+                config,
+                Arc::clone(&shared.bundled_catalog),
+                TimeZoneDatabase::from_env(),
+            ),
         }
     }
 }
 
 fn build(
     config: &Config,
+    catalog: Arc<ModelCatalog>,
     database: TimeZoneDatabase,
 ) -> Result<CostService<ProviderFormulas>, SlotError> {
     let bytes = (BundledCatalog::default().asset)()?;
@@ -52,9 +58,9 @@ fn build(
         globals: GlobalCredentials::default(),
         normalizers: name_normalizers(),
     };
+    let lookup = CatalogLookup::new(&bytes, catalog, settings).map_err(CostServiceError::Lookup)?;
     Ok(CostService::new(
-        &bytes,
-        settings,
+        lookup,
         &config.sections.cost_adjustments,
         Policies::native(),
         database,

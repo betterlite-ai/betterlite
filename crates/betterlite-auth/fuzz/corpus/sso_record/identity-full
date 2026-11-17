@@ -1,0 +1,1 @@
+{"id":"u1","email":"user@example.com","first_name":"Ada","last_name":"Lovelace","display_name":"Ada Lovelace","picture":"https://example.com/ada.png","provider":"generic","team_ids":["team-1","team-2"],"user_role":"proxy_admin_viewer","extra_fields":{"groups":["admins"],"count":3}}

@@ -1,7 +1,7 @@
 id: B339
 milestone: M2 routing
 title: Adaptive request classification and bandit selection
-status: todo
+status: done
 depends_on: [B388, B013, B016, B301, B361]
 file: tasks/B339-adaptive-selection.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/router_strategy/adaptive_router/README.md"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2294

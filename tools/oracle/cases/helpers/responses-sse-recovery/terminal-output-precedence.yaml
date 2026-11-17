@@ -1,0 +1,42 @@
+kind: helper
+name: responses-sse-recovery-terminal-output-precedence
+call:
+  responses_sse_recovery:
+    action: recover_recorded_output
+    recordings:
+      - |-
+        data: {"type":"response.completed","response":{"output":[{"id":"done"}]}}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"later"}}
+      - |-
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"early"}}
+        data: {"type":"response.completed","response":{"output":[{"id":"done"}]}}
+      - |-
+        data: {"type":"response.completed","response":{"output":[{"id":"first"}]}}
+        data: {"type":"response.completed","response":{"output":[{"id":"second"}]}}
+      - |-
+        data: {"type":"response.completed","response":{"output":[]}}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"recovered"}}
+      - |-
+        data: {"type":"response.completed"}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"recovered"}}
+      - |-
+        data: {"type":"response.completed","response":{"output":"x"}}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"recovered"}}
+      - |-
+        data: {"type":"response.incomplete","response":{"output":[{"id":"incomplete"}]}}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"recovered"}}
+      - |-
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"real"}}
+        data: {"type":"response.output_text.done","output_index":0,"text":"synthetic"}
+      - |-
+        data: {"type":"response.output_text.done","output_index":0,"text":"synthetic"}
+        data: {"type":"response.output_item.done","output_index":0,"item":{"id":"real"}}
+      - |-
+        data: {"type":"response.output_text.done","output_index":2,"text":"two"}
+        data: {"type":"response.output_item.done","output_index":1,"item":{"id":"one"}}
+        data: {"type":"response.output_text.done","output_index":0,"text":"zero"}
+      - 'data: {"type":"response.output_text.delta","output_index":0,"delta":"hello"}'
+      - 'data: {"type":"response.completed","response":{"output":[1,"two",null]}}'
+env: {}
+compare:
+  ignore: []

@@ -30,7 +30,9 @@ pub(crate) fn empty_config() -> Config {
 #[must_use]
 pub(crate) fn state_for(config: &Config) -> Arc<ServerState> {
     let executor = chat_executor(config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-    let shared = Arc::new(Shared);
+    let shared = Arc::new(Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+    });
     Arc::new(ServerState::new(config, Arc::new(executor), shared))
 }
 

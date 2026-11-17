@@ -1,0 +1,20 @@
+kind: helper
+name: sso-roles-unranked-roles-sort
+call:
+  sso_roles:
+    claims:
+      - [team, customer]
+      - [customer, team]
+      - [org_admin, team]
+      - [team, org_admin]
+      - [customer, org_admin]
+      - [org_admin, customer]
+      - [customer, internal_user]
+      - [team, internal_user_viewer]
+      - [proxy_admin, team, customer]
+      - team
+    role_names: [team, customer, org_admin]
+    ui_roles: [org_admin, team, customer]
+    access_modes: [restricted_sso_group]
+env: {}
+compare: {ignore: []}

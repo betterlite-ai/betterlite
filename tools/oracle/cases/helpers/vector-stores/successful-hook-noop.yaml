@@ -1,0 +1,41 @@
+kind: helper
+name: successful-hook-noop
+call:
+  vector_stores:
+    operation: success
+    request_data: {}
+    response:
+      id: chat1
+      created: 7
+      object: chat.completion
+      choices:
+        - index: 0
+          message: {role: assistant, content: a, provider_specific_fields: {keep: x}}
+calls:
+  - vector_stores:
+      operation: success
+      request_data:
+        litellm_logging_obj:
+          model_call_details: {}
+      response:
+        id: chat1
+        created: 7
+        object: chat.completion
+        choices:
+          - index: 0
+            message: {role: assistant, content: a, provider_specific_fields: {keep: x}}
+  - vector_stores:
+      operation: success
+      request_data:
+        litellm_logging_obj: {}
+        search_results: [{object: vector_store.search_results.page, search_query: q, data: []}]
+        vector_store_search_failures: []
+      response:
+        id: chat1
+        created: 7
+        object: chat.completion
+        choices:
+          - index: 0
+            message: {role: assistant, content: a, provider_specific_fields: {keep: x}}
+env: {}
+compare: {ignore: []}
