@@ -18,6 +18,10 @@ description: >-
   B016 registers RouteStage::GeneralizationIntegration as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/generalization_integration.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.
 scope:
   paths:
+  - crates/betterlite-router/src/router_core/services.rs
+  - crates/betterlite-router/src/router_core/pipeline.rs
+  - crates/betterlite-router/src/router_core/tests.rs
+  - crates/betterlite-router/src/router_core/tests/boundaries.rs
   - crates/betterlite-router/src/context/generalization_integration.rs
   - crates/betterlite-router/src/context/generalization_integration/**
   - crates/betterlite-server/src/routing/model_generalizations.rs
