@@ -6,6 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::Object;
+use crate::tool_permission::ToolPermissionGuardrail;
 use crate::tool_permission::types::{mapping_value, object_list};
 use crate::tool_permission_responses::tests::support::{
     GUARDRAIL_NAME, guardrail, object, rewrite_guardrail, rule, skipping_guardrail, text,
@@ -14,7 +15,7 @@ use crate::tool_permission_responses::tests::support::{
 use super::{ResponseFormat, post_call_success_hook};
 
 fn run(
-    guardrail: &crate::tool_permission::ToolPermissionGuardrail,
+    guardrail: &ToolPermissionGuardrail,
     data: &mut Object,
     format: ResponseFormat,
     response: &mut GuardrailValue,
@@ -31,9 +32,15 @@ fn applied(data: &Object) -> Vec<String> {
     };
     names
         .iter()
-        .filter_map(|name| match name {
+        .filter_map(|value| match value {
             GuardrailValue::Text(name) => Some(name.clone()),
-            _ => None,
+            GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_) => None,
         })
         .collect()
 }

@@ -12,7 +12,7 @@ use crate::tool_permission_requests::header_mutation::record_applied_guardrail;
 
 use super::anthropic_conversion::{anthropic_content_blocks, anthropic_to_tool_call};
 use super::anthropic_rewrite::rewrite_anthropic_responses;
-use super::evaluate::evaluate_tool_calls;
+use super::evaluate::{DeniedToolCall, evaluate_tool_calls};
 use super::extraction::{ToolCallInfo, extract_response_tools};
 use super::openai_rewrite::rewrite_openai_responses;
 
@@ -41,19 +41,7 @@ pub fn post_call_success_hook(
     if !should_run(guardrail, data, suppressed)? {
         return Ok(());
     }
-    let calls: Vec<ToolCallInfo> = match format {
-        ResponseFormat::OpenAi => {
-            let GuardrailValue::Object(fields) = response else {
-                return Ok(());
-            };
-            extract_response_tools(fields)
-        }
-        ResponseFormat::Anthropic => anthropic_content_blocks(response)
-            .unwrap_or_default()
-            .iter()
-            .filter_map(anthropic_to_tool_call)
-            .collect(),
-    };
+    let calls = response_tool_calls(response, format);
     if calls.is_empty() {
         tracing::debug!("Tool Permission Guardrail: No tool uses found");
         return Ok(());
@@ -63,19 +51,39 @@ pub fn post_call_success_hook(
         "Tool Permission Guardrail: Found tool calls"
     );
     let denied = evaluate_tool_calls(guardrail, &calls)?;
-    let GuardrailValue::Object(fields) = response else {
-        return Ok(());
-    };
     if denied.is_empty() {
         tracing::debug!("Tool Permission Guardrail Post-Call Hook: All tools allowed");
     } else {
-        match format {
-            ResponseFormat::OpenAi => rewrite_openai_responses(fields, &denied),
-            ResponseFormat::Anthropic => rewrite_anthropic_responses(fields, &denied),
-        }
+        let GuardrailValue::Object(fields) = response else {
+            return Ok(());
+        };
+        rewrite_denied_tools(fields, format, &denied);
     }
     record_applied_guardrail(data, &guardrail.args.name);
     Ok(())
+}
+
+// The tool calls of the body in the shape the caller sent, LiteLLM's two extraction branches
+fn response_tool_calls(response: &GuardrailValue, format: ResponseFormat) -> Vec<ToolCallInfo> {
+    if format == ResponseFormat::Anthropic {
+        return anthropic_content_blocks(response)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(anthropic_to_tool_call)
+            .collect();
+    }
+    let GuardrailValue::Object(fields) = response else {
+        return Vec::new();
+    };
+    extract_response_tools(fields)
+}
+
+// The rewrite in the shape the caller sent
+fn rewrite_denied_tools(fields: &mut Object, format: ResponseFormat, denied: &[DeniedToolCall]) {
+    match format {
+        ResponseFormat::OpenAi => rewrite_openai_responses(fields, denied),
+        ResponseFormat::Anthropic => rewrite_anthropic_responses(fields, denied),
+    }
 }
 
 // LiteLLM's should_run_guardrail check for post_call, logged the way its hook logs the skip
