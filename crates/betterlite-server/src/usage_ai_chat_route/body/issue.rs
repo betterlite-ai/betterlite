@@ -1,6 +1,8 @@
 use betterlite_config::sections::settings::JsonValue;
 use serde::Serialize;
 
+use super::{BODY, MESSAGES};
+
 const REQUIRED: &str = "Field required";
 const DICTIONARY: &str = "Input should be a valid dictionary or object to extract fields from";
 const LIST: &str = "Input should be a valid list";
@@ -49,6 +51,18 @@ impl ValidationIssue {
             input,
             ctx,
         }
+    }
+
+    // pydantic locates a field of a chat message under the body's messages list
+    #[must_use]
+    pub fn at_field(kind: IssueKind, index: usize, name: &'static str, input: JsonValue) -> Self {
+        let loc = vec![
+            LocPart::Field(BODY),
+            LocPart::Field(MESSAGES),
+            LocPart::Index(index),
+            LocPart::Field(name),
+        ];
+        Self::of(kind, loc, input)
     }
 }
 

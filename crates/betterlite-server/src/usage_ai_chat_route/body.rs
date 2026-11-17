@@ -18,6 +18,9 @@ const MODEL: &str = "model";
 const ROLE: &str = "role";
 const CONTENT: &str = "content";
 const ROLE_EXPECTED: &str = "'user' or 'assistant'";
+const ROLE_KIND: IssueKind = IssueKind::NotOneOf {
+    expected: ROLE_EXPECTED,
+};
 
 pub struct ChatBody {
     pub(super) messages: Vec<ChatMessage>,
@@ -135,78 +138,54 @@ fn decode_model(fields: &JsonMap, issues: &mut Vec<ValidationIssue>) -> Option<S
     }
 }
 
+fn field(
+    message: &JsonMap,
+    name: &'static str,
+    index: usize,
+    issues: &mut Vec<ValidationIssue>,
+) -> Option<JsonValue> {
+    let Some(value) = message.get(name) else {
+        issues.push(ValidationIssue::at_field(
+            IssueKind::Missing,
+            index,
+            name,
+            JsonValue::Object(message.clone()),
+        ));
+        return None;
+    };
+    Some(value.clone())
+}
+
 fn decode_message(
     message: &JsonMap,
     index: usize,
     issues: &mut Vec<ValidationIssue>,
 ) -> Option<ChatMessage> {
-    let role_loc = vec![
-        LocPart::Field(BODY),
-        LocPart::Field(MESSAGES),
-        LocPart::Index(index),
-        LocPart::Field(ROLE),
-    ];
-    let role = match message.get(ROLE) {
-        Some(JsonValue::String(name)) => match name.as_str() {
-            "user" => Some(ChatRole::User),
-            "assistant" => Some(ChatRole::Assistant),
-            _ => {
-                issues.push(ValidationIssue::of(
-                    IssueKind::NotOneOf {
-                        expected: ROLE_EXPECTED,
-                    },
-                    role_loc,
-                    JsonValue::String(name.clone()),
-                ));
-                None
-            }
-        },
+    let parsed_role = match field(message, ROLE, index, issues) {
+        Some(JsonValue::String(name)) if name == "user" => Some(ChatRole::User),
+        Some(JsonValue::String(name)) if name == "assistant" => Some(ChatRole::Assistant),
         Some(other) => {
-            issues.push(ValidationIssue::of(
-                IssueKind::NotOneOf {
-                    expected: ROLE_EXPECTED,
-                },
-                role_loc,
-                other.clone(),
-            ));
+            issues.push(ValidationIssue::at_field(ROLE_KIND, index, ROLE, other));
             None
         }
-        None => {
-            issues.push(ValidationIssue::of(
-                IssueKind::Missing,
-                role_loc,
-                JsonValue::Object(message.clone()),
-            ));
-            None
-        }
+        None => None,
     };
-    let content_loc = vec![
-        LocPart::Field(BODY),
-        LocPart::Field(MESSAGES),
-        LocPart::Index(index),
-        LocPart::Field(CONTENT),
-    ];
-    let content = match message.get(CONTENT) {
-        Some(JsonValue::String(text)) => Some(text.clone()),
+    let parsed_content = match field(message, CONTENT, index, issues) {
+        Some(JsonValue::String(text)) => Some(text),
         Some(other) => {
-            issues.push(ValidationIssue::of(
+            issues.push(ValidationIssue::at_field(
                 IssueKind::NotText,
-                content_loc,
-                other.clone(),
+                index,
+                CONTENT,
+                other,
             ));
             None
         }
-        None => {
-            issues.push(ValidationIssue::of(
-                IssueKind::Missing,
-                content_loc,
-                JsonValue::Object(message.clone()),
-            ));
-            None
-        }
+        None => None,
     };
-    let role = role?;
-    let content = content?;
+    let (Some(role), Some(content)) = (parsed_role, parsed_content) else {
+        return None;
+    };
     Some(match role {
         ChatRole::User => ChatMessage::User { content },
         ChatRole::Assistant => ChatMessage::Assistant { content },
