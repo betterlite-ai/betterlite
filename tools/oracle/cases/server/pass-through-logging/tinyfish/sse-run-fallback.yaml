@@ -1,0 +1,18 @@
+kind: helper
+name: tinyfish-sse-run-fallback
+call:
+  b3649:
+    function: collected_chunks
+    api_key: key-1
+    lines:
+      - 'data: {"run_id": "run_fallback", "status": "PENDING"}'
+      - ""
+    replies:
+      - status: 200
+        body:
+          run_id: run_fallback
+          status: COMPLETED
+          num_of_steps: 1
+          result: {answer: 7}
+env: {}
+compare: {ignore: []}

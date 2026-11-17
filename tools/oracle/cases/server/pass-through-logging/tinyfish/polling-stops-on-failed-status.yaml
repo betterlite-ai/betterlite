@@ -1,0 +1,21 @@
+kind: helper
+name: tinyfish-polling-stops-on-failed-status
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      run_id: run_failed
+      status: PENDING
+      num_of_steps: 0
+    replies:
+      - status: 200
+        body: {run_id: run_failed, status: PENDING, num_of_steps: 0}
+      - status: 200
+        body:
+          run_id: run_failed
+          status: FAILED
+          num_of_steps: 3
+          error: {message: boom}
+env: {}
+compare: {ignore: []}

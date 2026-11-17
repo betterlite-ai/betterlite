@@ -1,0 +1,15 @@
+kind: helper
+name: tinyfish-polling-stops-on-deadline
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      run_id: run_slow
+      status: PENDING
+      num_of_steps: 0
+    replies:
+      - status: 200
+        body: {run_id: run_slow, status: PENDING, num_of_steps: 0}
+env: {}
+compare: {ignore: []}
