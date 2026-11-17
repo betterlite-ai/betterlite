@@ -25,7 +25,8 @@ use super::super::replay::{
     CachedMessagesResult, CachedStreamEventsError, convert_cached_messages_result,
     get_cached_stream_events,
 };
-use super::super::restamp::{StreamModelRestamper, restamp_chunk, restamp_messages_stream};
+use super::super::restamp::{StreamModelRestamper, restamp_chunk};
+use super::super::restamp_messages_stream;
 use super::support::{
     REQUESTED_MODEL, Read, RecordingCache, RecordingLogging, ReplayHarness, ScriptedStream,
     cache_deps, cache_hit, cache_settings, cached_events_dict, limits, request_kwargs, tracker,
@@ -66,8 +67,8 @@ async fn written(
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;
-    let writes = cache.map_or(0, |cache| cache.writes().len());
-    (yielded, writes)
+    let write_count = cache.map_or(0, |cache| cache.writes().len());
+    (yielded, write_count)
 }
 
 fn every_frame_as_a_read() -> Vec<Read> {

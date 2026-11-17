@@ -10,13 +10,12 @@ use tracing::Level;
 
 use crate::api::messages_sse_events::stream::MessagesProviderStream;
 
-use super::MessagesStreamChunk;
-use super::MessagesStreamRestampInput;
 use super::cache_stream::MessagesStreamCacheWriter;
 use super::python_text::{decode_utf8_ignore, splitlines_keepends};
 use super::replay::{CachedMessagesResult, convert_cached_messages_result};
 use super::restamp::{MAX_HELD_BYTES, is_ping_frame};
 use super::restamp_messages_stream;
+use super::{CACHED_STREAM_EVENTS_KEY, MessagesStreamChunk, MessagesStreamRestampInput};
 
 mod branches;
 mod support;
@@ -67,7 +66,7 @@ fn ping_event() -> Json {
     json("{\"type\":\"ping\"}")
 }
 
-fn ping_frame() -> String {
+fn ping_sse_frame() -> String {
     "event: ping\ndata: {\"type\": \"ping\"}\n\n".to_owned()
 }
 
@@ -92,6 +91,16 @@ fn restamp_case(
         expected,
         flushed,
     }
+}
+
+fn assert_restamp_case(case: RestampCase) {
+    let input = MessagesStreamRestampInput {
+        requested_model: REQUESTED_MODEL.to_owned(),
+        chunks: case.chunks,
+    };
+    let result = restamp_messages_stream(&input);
+    assert_eq!(result.chunks, case.expected);
+    assert_eq!(result.flushed, case.flushed);
 }
 
 fn split_across_chunks() -> RestampCase {
@@ -126,15 +135,22 @@ fn message_is_not_an_object() -> RestampCase {
     )
 }
 
+fn data_line(padding: &str, terminator: &str, emitted: bool) -> RestampCase {
+    let upstream = format!(
+        "{padding}data: {}{terminator}",
+        start_event_text("upstream-model")
+    );
+    let restamped = format!("data: {}{terminator}", start_event_text(REQUESTED_MODEL));
+    let (chunks, flushed) = if emitted {
+        (vec![bytes(restamped.as_bytes())], bytes(b""))
+    } else {
+        (vec![bytes(b"")], bytes(restamped.as_bytes()))
+    };
+    restamp_case(vec![text(&upstream)], chunks, flushed)
+}
+
 fn indented_data_line() -> RestampCase {
-    let frame = format!("  data: {}\n\n", start_event_text("upstream-model"));
-    restamp_case(
-        vec![text(&frame)],
-        vec![bytes(
-            format!("data: {}\n\n", start_event_text(REQUESTED_MODEL)).as_bytes(),
-        )],
-        bytes(b""),
-    )
+    data_line("  ", "\n\n", true)
 }
 
 #[rstest]
@@ -158,9 +174,9 @@ fn indented_data_line() -> RestampCase {
 ))]
 #[case::data_line_with_leading_whitespace(indented_data_line())]
 #[case::two_frames_in_one_read(restamp_case(
-    vec![text(&format!("{}{}", ping_frame(), start_frame("upstream-model")))],
+    vec![text(&format!("{}{}", ping_sse_frame(), start_frame("upstream-model")))],
     vec![bytes(
-        format!("{}{}", ping_frame(), start_frame(REQUESTED_MODEL)).as_bytes()
+        format!("{}{}", ping_sse_frame(), start_frame(REQUESTED_MODEL)).as_bytes()
     )],
     bytes(b""),
 ))]
@@ -180,22 +196,16 @@ fn indented_data_line() -> RestampCase {
     bytes(b""),
 ))]
 fn split_message_start_model(#[case] case: RestampCase) {
-    let input = MessagesStreamRestampInput {
-        requested_model: REQUESTED_MODEL.to_owned(),
-        chunks: case.chunks,
-    };
-    let result = restamp_messages_stream(&input);
-    assert_eq!(result.chunks, case.expected);
-    assert_eq!(result.flushed, case.flushed);
+    assert_restamp_case(case);
 }
 
 fn torn_after_ping() -> RestampCase {
     let torn = "event: content_block_delta\ndata: {\"type\":\"content_bl";
     let second = format!("{}{torn}", start_frame("upstream-model"));
     restamp_case(
-        vec![text(&ping_frame()), bytes(second.as_bytes())],
+        vec![text(&ping_sse_frame()), bytes(second.as_bytes())],
         vec![
-            bytes(ping_frame().as_bytes()),
+            bytes(ping_sse_frame().as_bytes()),
             bytes(format!("{}{torn}", start_frame(REQUESTED_MODEL)).as_bytes()),
         ],
         bytes(b""),
@@ -204,9 +214,9 @@ fn torn_after_ping() -> RestampCase {
 
 #[rstest]
 #[case::ping_block_keeps_the_stream_armed(restamp_case(
-    vec![text(&ping_frame()), text(&start_frame("upstream-model"))],
+    vec![text(&ping_sse_frame()), text(&start_frame("upstream-model"))],
     vec![
-        bytes(ping_frame().as_bytes()),
+        bytes(ping_sse_frame().as_bytes()),
         bytes(start_frame(REQUESTED_MODEL).as_bytes()),
     ],
     bytes(b""),
@@ -278,13 +288,7 @@ fn torn_after_ping() -> RestampCase {
     bytes(b""),
 ))]
 fn ping_frame(#[case] case: RestampCase) {
-    let input = MessagesStreamRestampInput {
-        requested_model: REQUESTED_MODEL.to_owned(),
-        chunks: case.chunks,
-    };
-    let result = restamp_messages_stream(&input);
-    assert_eq!(result.chunks, case.expected);
-    assert_eq!(result.flushed, case.flushed);
+    assert_restamp_case(case);
 }
 
 #[rstest]
@@ -398,25 +402,11 @@ fn utf8_decoding_ignores_invalid_sequences() {
 }
 
 fn held_data_line() -> RestampCase {
-    restamp_case(
-        vec![text(&format!(
-            "data: {}\n",
-            start_event_text("upstream-model")
-        ))],
-        vec![bytes(b"")],
-        bytes(format!("data: {}\n", start_event_text(REQUESTED_MODEL)).as_bytes()),
-    )
+    data_line("", "\n", false)
 }
 
 fn unterminated_data_line() -> RestampCase {
-    restamp_case(
-        vec![text(&format!(
-            "data: {}",
-            start_event_text("upstream-model")
-        ))],
-        vec![bytes(b"")],
-        bytes(format!("data: {}", start_event_text(REQUESTED_MODEL)).as_bytes()),
-    )
+    data_line("", "", false)
 }
 
 fn filler(width: usize) -> RestampCase {
@@ -425,7 +415,7 @@ fn filler(width: usize) -> RestampCase {
 }
 
 fn oversized_filler() -> RestampCase {
-    let width = MAX_HELD_BYTES.saturating_add(1);
+    let width = 0x0001_0001_usize;
     let held = vec![b'x'; width];
     restamp_case(vec![bytes(&held)], vec![bytes(&held)], bytes(b""))
 }
@@ -438,7 +428,7 @@ fn oversized_filler() -> RestampCase {
     vec![bytes(b"")],
     bytes(b"event: ping\n"),
 ))]
-#[case::the_limit_is_held(filler(MAX_HELD_BYTES))]
+#[case::the_limit_is_held(filler(0x0001_0000))]
 #[case::past_the_limit_is_emitted(oversized_filler())]
 #[case::nothing_was_held(restamp_case(Vec::new(), Vec::new(), bytes(b"")))]
 #[case::held_tail_without_the_marker_is_unchanged(restamp_case(
@@ -451,13 +441,8 @@ fn oversized_filler() -> RestampCase {
     ),
 ))]
 fn partial_final_frame_flush(#[case] case: RestampCase) {
-    let input = MessagesStreamRestampInput {
-        requested_model: REQUESTED_MODEL.to_owned(),
-        chunks: case.chunks,
-    };
-    let result = restamp_messages_stream(&input);
-    assert_eq!(result.chunks, case.expected);
-    assert_eq!(result.flushed, case.flushed);
+    assert_eq!(MAX_HELD_BYTES, 0x0001_0000_usize);
+    assert_restamp_case(case);
 }
 
 pub(super) fn sse_event(event_type: &str, data: &str) -> String {
@@ -526,14 +511,18 @@ pub(super) async fn written_stream(
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;
-    let mut writes = cache.writes();
-    assert_eq!(writes.len(), 1, "{NOT_STORED}");
-    let (payload, kwargs) = writes.pop().expect("the write was recorded");
+    let mut recorded = cache.writes();
+    assert_eq!(recorded.len(), 1, "{NOT_STORED}");
+    let (payload, kwargs) = recorded.pop().expect("the write was recorded");
     (yielded, payload, kwargs)
 }
 
 #[tokio::test]
 async fn cache_stream_replay() {
+    assert_eq!(
+        CACHED_STREAM_EVENTS_KEY,
+        "litellm_cached_anthropic_sse_events"
+    );
     let frames = cache_stream_frames();
     let (head, tail) = split_halves(&frames);
     let (yielded, payload, kwargs) = written_stream(split_reads(&frames), Some("preset-key")).await;

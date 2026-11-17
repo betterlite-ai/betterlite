@@ -111,12 +111,11 @@ impl MessagesProviderStream for ScriptedStream {
     }
 
     async fn aclose(&mut self) -> Option<Result<(), StreamFailure>> {
-        Some(match self.close_failure {
-            Some(message) => Err(StreamFailure {
+        Some(self.close_failure.map_or(Ok(()), |message| {
+            Err(StreamFailure {
                 message: message.to_owned(),
-            }),
-            None => Ok(()),
-        })
+            })
+        }))
     }
 
     fn buffered_provider_output(&self) -> Option<Json> {
@@ -310,8 +309,12 @@ pub(super) fn cache_deps(
     tracker: &Arc<CacheWriteTracker>,
     api_limits: ApiLimits,
 ) -> MessagesStreamCacheDeps {
+    let mut target: Option<Arc<dyn MessagesStreamCacheTarget>> = None;
+    if let Some(recording) = cache {
+        target = Some(recording);
+    }
     MessagesStreamCacheDeps {
-        cache: cache.map(|cache| cache as Arc<dyn MessagesStreamCacheTarget>),
+        cache: target,
         tracker: Arc::clone(tracker),
         call: call_context(),
         limits: api_limits,
