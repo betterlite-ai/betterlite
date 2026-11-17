@@ -1,4 +1,6 @@
 use std::convert::Infallible;
+use std::future::pending;
+use std::pin::pin;
 use std::time::Duration;
 
 use axum::body::Body;
@@ -6,9 +8,10 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue};
 use axum::response::Response;
 use chrono::NaiveDate;
-use futures_util::future::BoxFuture;
+use futures_util::future::{BoxFuture, Either, select};
 use futures_util::stream::{Stream, unfold};
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::model::UsageChatModel;
@@ -24,7 +27,6 @@ struct FrameState {
     producer: BoxFuture<'static, ()>,
     frames: mpsc::Receiver<String>,
     interval: Option<Duration>,
-    producer_done: bool,
 }
 
 enum NextFrame {
@@ -59,7 +61,6 @@ where
         producer: Box::pin(producer),
         frames,
         interval,
-        producer_done: false,
     };
     unfold(state, next_frame)
 }
@@ -67,16 +68,21 @@ where
 async fn next_frame(mut state: FrameState) -> Option<(Result<String, Infallible>, FrameState)> {
     loop {
         // biased keeps LiteLLM's order: a frame that is ready wins over a ping
-        let next = tokio::select! {
-            biased;
-            frame = state.frames.recv() => NextFrame::Frame(frame),
-            () = &mut state.producer, if !state.producer_done => NextFrame::ProducerDone,
-            () = ping_due(state.interval) => NextFrame::Ping,
+        let next = {
+            let interval = state.interval;
+            let mut frame = pin!(state.frames.recv());
+            let event = select(frame.as_mut(), state.producer.as_mut());
+            let mut ping = pin!(ping_due(interval));
+            match select(event, ping.as_mut()).await {
+                Either::Left((Either::Left((frame, _)), _)) => NextFrame::Frame(frame),
+                Either::Left((Either::Right(((), _)), _)) => NextFrame::ProducerDone,
+                Either::Right(((), _)) => NextFrame::Ping,
+            }
         };
         match next {
             NextFrame::Frame(Some(frame)) => return Some((Ok(frame), state)),
             NextFrame::Frame(None) => return None,
-            NextFrame::ProducerDone => state.producer_done = true,
+            NextFrame::ProducerDone => state.producer = Box::pin(pending()),
             NextFrame::Ping => return Some((Ok(SSE_COMMENT_PING.to_owned()), state)),
         }
     }
@@ -84,8 +90,8 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<String, Infallible>
 
 async fn ping_due(interval: Option<Duration>) {
     match interval {
-        Some(wait) => tokio::time::sleep(wait).await,
-        None => std::future::pending::<()>().await,
+        Some(wait) => sleep(wait).await,
+        None => pending::<()>().await,
     }
 }
 

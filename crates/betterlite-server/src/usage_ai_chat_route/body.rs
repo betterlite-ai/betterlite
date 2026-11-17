@@ -2,7 +2,7 @@ pub mod issue;
 
 mod response;
 
-use std::str::Utf8Error;
+use std::str::{Utf8Error, from_utf8};
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
@@ -45,7 +45,7 @@ enum ChatRole {
 }
 
 pub fn decode_body(body: &[u8]) -> Result<ChatBody, BodyError> {
-    let text = std::str::from_utf8(body).map_err(|source| BodyError::NotUtf8 { source })?;
+    let text = from_utf8(body).map_err(|source| BodyError::NotUtf8 { source })?;
     if text.is_empty() {
         return Err(BodyError::Issues {
             issues: vec![ValidationIssue::of(
