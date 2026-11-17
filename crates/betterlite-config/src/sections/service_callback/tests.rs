@@ -23,8 +23,8 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     "litellm_settings: {service_callback: [datadog, otel]}",
     &["datadog", "otel"]
 )]
-#[case::single_string("litellm_settings: {service_callback: datadog}", &["datadog"])]
 #[case::empty_list("litellm_settings: {service_callback: []}", &[])]
+#[case::null("litellm_settings: {service_callback: null}", &[])]
 fn service_callback_names_tests_behavior(#[case] yaml: &str, #[case] names: &[&str]) {
     let settings = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -40,6 +40,17 @@ fn service_callback_names_tests_behavior(#[case] yaml: &str, #[case] names: &[&s
             .map(|name| (*name).to_owned())
             .collect::<Vec<_>>()
     );
+}
+
+// LiteLLM declares service_callback as a list; a bare string is a value outside that type
+#[test]
+fn service_callback_bare_string_tests_behavior() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings: {service_callback: datadog}")
+    .expect_err("a bare string is not the declared list");
+    assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
 #[test]

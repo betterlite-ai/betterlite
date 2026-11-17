@@ -30,29 +30,7 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawSettings {
     #[serde(default)]
-    service_callback: RawCallbackList,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawCallbackList {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Default for RawCallbackList {
-    fn default() -> Self {
-        Self::Many(Vec::new())
-    }
-}
-
-impl RawCallbackList {
-    fn into_names(self) -> Vec<String> {
-        match self {
-            Self::One(name) => vec![name],
-            Self::Many(names) => names,
-        }
-    }
+    service_callback: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,7 +77,10 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            service_callbacks: resolve_names(self.litellm_settings.service_callback, lookup)?,
+            service_callbacks: resolve_names(
+                self.litellm_settings.service_callback.unwrap_or_default(),
+                lookup,
+            )?,
             log_level: log_level(lookup)?,
             json_logs: json_logs(lookup),
             max_queue_size: variable(lookup, MAX_QUEUE_SIZE_VARIABLE)?
@@ -110,11 +91,11 @@ impl Section for Raw {
     }
 }
 
-fn resolve_names<L>(list: RawCallbackList, lookup: &L) -> Result<Vec<String>, ConfigError>
+fn resolve_names<L>(names: Vec<String>, lookup: &L) -> Result<Vec<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    list.into_names()
+    names
         .into_iter()
         .enumerate()
         .map(|(index, name)| {
