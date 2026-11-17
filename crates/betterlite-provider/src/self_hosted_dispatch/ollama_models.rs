@@ -3,7 +3,9 @@ use std::error::Error;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::ollama_model_metadata::{DEFAULT_API_BASE, LiteLlmGlobals, OllamaSettings};
+use betterlite_models::ollama_model_metadata::{
+    LiteLlmGlobals, OllamaSettings, selected_key, server_api_base,
+};
 use secrecy::{ExposeSecret as _, SecretString};
 
 const TAGS_PATH: &str = "/api/tags";
@@ -12,14 +14,6 @@ const NAME_KEY: &str = "name";
 const MODEL_KEY: &str = "model";
 const OLLAMA_PREFIX: &str = "ollama/";
 const AUTHORIZATION: &str = "Authorization";
-const SERVER_SUFFIXES: [&str; 6] = [
-    "/api/generate",
-    "/api/chat",
-    "/api/embed",
-    "/api/embeddings",
-    "/api/show",
-    "/api/tags",
-];
 
 // httpx.get's default timeout, which OllamaModelInfo.get_models relies on by passing none
 pub const TAGS_TIMEOUT: Duration = Duration::from_secs(5);
@@ -78,46 +72,11 @@ impl<Transport: TagsTransport> OllamaModels<'_, Transport> {
         }
     }
 
-    // get_server_api_base: the passed base, OLLAMA_API_BASE, the local server, without a known endpoint suffix
-    fn server_api_base(&self, api_base: Option<&str>) -> String {
-        let configured = [
-            api_base.unwrap_or_default(),
-            self.settings.api_base.as_deref().unwrap_or_default(),
-        ];
-        let base = configured
-            .into_iter()
-            .find(|base| !base.is_empty())
-            .unwrap_or(DEFAULT_API_BASE);
-        let trimmed = base.trim_end_matches('/');
-        for suffix in SERVER_SUFFIXES {
-            if let Some(stripped) = trimmed.strip_suffix(suffix) {
-                return stripped.to_owned();
-            }
-        }
-        trimmed.to_owned()
-    }
-
-    // get_api_key: the passed key, OLLAMA_API_KEY, litellm.api_key, litellm.openai_key, then the secret manager
-    fn selected_key(&self, explicit: Option<&SecretString>) -> Option<SecretString> {
-        let candidates = [
-            explicit,
-            self.settings.api_key.as_ref(),
-            self.globals.api_key.as_ref(),
-            self.globals.openai_key.as_ref(),
-            self.globals.secret_manager_api_key.as_ref(),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find(|key| !key.expose_secret().is_empty())
-            .cloned()
-    }
-
     // a base alone drops every key, so only a call without one or with its own key resolves credentials
     fn tags_request(&self, api_base: Option<&str>, api_key: Option<&SecretString>) -> TagsRequest {
         let resolved =
             if api_base.is_none() || api_key.is_some_and(|key| !key.expose_secret().is_empty()) {
-                self.selected_key(api_key)
+                selected_key(self.settings, self.globals, api_key)
             } else {
                 None
             };
@@ -128,7 +87,7 @@ impl<Transport: TagsTransport> OllamaModels<'_, Transport> {
             )]
         });
         TagsRequest {
-            url: format!("{}{TAGS_PATH}", self.server_api_base(api_base)),
+            url: format!("{}{TAGS_PATH}", server_api_base(self.settings, api_base)),
             headers,
             timeout: TAGS_TIMEOUT,
         }
