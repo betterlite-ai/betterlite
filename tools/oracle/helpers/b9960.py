@@ -180,7 +180,5 @@ def outcome(request: Request) -> dict[str, JsonValue]:
 def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     requests = parsed["transform_requests"]["requests"]
-    outcomes: list[JsonValue] = []
-    for request in requests:
-        outcomes.append(outcome(request))
+    outcomes: list[JsonValue] = [outcome(request) for request in requests]
     return JSON.validate_python(outcomes)
