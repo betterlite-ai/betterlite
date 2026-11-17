@@ -3,6 +3,9 @@ deviations:
   - what: A max_completion_tokens or max_tokens selected for the adaptive-thinking cap that is not an integer or a boolean returns 400 "max_tokens must be a number"; LiteLLM raises a TypeError that surfaces as a 500 for a string, list or dict, and compares a float as-is.
     why: A wrong-typed value is a client error, and the typed boundary names the integer field instead of crashing inside the comparison, as docs/compatibility.md asks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1322
+  - what: A thinking.budget_tokens that is a string, list or mapping returns 400 "thinking.budget_tokens must be a number"; LiteLLM's Bedrock override adds it to DEFAULT_MAX_TOKENS and the TypeError surfaces as a 500.
+    why: A wrong-typed value is a client error, and the typed boundary names the field instead of failing inside the addition, as docs/compatibility.md asks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1294
 kept_bugs:
   - what: Any present non-null cache_control, including false, an empty dict or a non-dict value, still produces a cachePoint block, and the control's type field is ignored.
     why: LiteLLM tests only for null and for model support, so a setup sending cache_control false or a bare object still gets caching; copying it keeps the wire block identical.
