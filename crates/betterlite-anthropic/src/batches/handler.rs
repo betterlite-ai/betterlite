@@ -22,7 +22,7 @@ use url::Url;
 use crate::response::Logging;
 
 use super::CUSTOM_LLM_PROVIDER;
-use super::config::{AnthropicBatchesConfig, BatchesConfig, Environment};
+use super::config::{AnthropicBatchesConfig, BatchesConfig as _, Environment};
 use super::decode::decoded_text;
 use super::error::BatchesError;
 use super::timestamps::Clock;
@@ -62,11 +62,25 @@ pub struct AnthropicBatchesHandler<T> {
 }
 
 impl<T: BatchTransport> AnthropicBatchesHandler<T> {
-    pub async fn retrieve_batch(
+    // LiteLLM resolves the base and key, runs pre_call and then makes its one GET, in that order
+    pub fn retrieve_batch<'call>(
+        &'call self,
+        request: &RetrieveRequest<'_>,
+        logging: Logging<'_>,
+    ) -> impl Future<Output = Result<BatchObject, BatchesError>> + Send + use<'call, T> {
+        let prepared = self.prepare_retrieve(request, logging);
+        async move {
+            let (url, headers) = prepared?;
+            self.fetch_batch(&url, headers).await
+        }
+    }
+
+    // the synchronous half of the call: base and key resolution, the URL, the validated headers and pre_call
+    fn prepare_retrieve(
         &self,
         request: &RetrieveRequest<'_>,
         logging: Logging<'_>,
-    ) -> Result<BatchObject, BatchesError> {
+    ) -> Result<(String, HeaderMap), BatchesError> {
         let api_base = request
             .api_base
             .filter(|value| !value.is_empty())
@@ -100,7 +114,7 @@ impl<T: BatchTransport> AnthropicBatchesHandler<T> {
             env,
         )
         .map_err(|source| BatchesError::Logging { source })?;
-        self.fetch_batch(&url, headers).await
+        Ok((url, headers))
     }
 
     // the one GET and the reply mapping every retrieval shares

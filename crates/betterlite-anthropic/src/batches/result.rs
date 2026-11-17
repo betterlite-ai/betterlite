@@ -20,6 +20,7 @@ use crate::usage::{
 
 use super::decode::{BatchBody, DecodeError, DecodedBody, decode_anthropic_batch_result};
 
+#[derive(Clone, Copy)]
 pub struct BatchResponse<'call> {
     pub status: u16,
     pub headers: &'call HeaderMap,
@@ -117,17 +118,14 @@ where
     let Logging { state, env } = logging;
     let mut usages = Vec::new();
     for message in messages {
-        let usage = projector.project(
+        usages.extend(projector.project(
             &message,
             envelope,
             Logging {
                 state: &mut *state,
                 env,
             },
-        )?;
-        if let Some(usage) = usage {
-            usages.push(usage);
-        }
+        )?);
     }
     envelope.usage = Some(combine(&usages)?);
     Ok(())
@@ -171,7 +169,7 @@ fn combine(usages: &[AnthropicUsage]) -> Result<AnthropicUsage, UsageSumError> {
     })
 }
 
-fn project_usage(usage: &AnthropicUsage) -> SummedUsage {
+const fn project_usage(usage: &AnthropicUsage) -> SummedUsage {
     SummedUsage {
         prompt_tokens: usage.prompt_tokens,
         completion_tokens: usage.completion_tokens,

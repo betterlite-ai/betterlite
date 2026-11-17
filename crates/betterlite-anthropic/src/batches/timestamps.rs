@@ -32,7 +32,7 @@ pub fn parse_timestamp(value: &Json, zone: FixedOffset) -> Option<i64> {
 }
 
 // int() truncates toward zero while chrono's timestamp() floors a negative instant
-fn truncate_toward_zero(instant: DateTime<Utc>) -> Option<i64> {
+const fn truncate_toward_zero(instant: DateTime<Utc>) -> Option<i64> {
     let seconds = instant.timestamp();
     if seconds < 0 && instant.timestamp_subsec_nanos() > 0 {
         return seconds.checked_add(1);

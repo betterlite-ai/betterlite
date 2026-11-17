@@ -45,7 +45,7 @@ pub enum BatchesError {
 impl BatchesError {
     #[must_use]
     pub fn provider(message: &str, status: u16, headers: Option<&HeaderMap>) -> Self {
-        let flattened = headers.map(|headers| flatten_headers(headers).into_iter().collect());
+        let flattened = headers.map(|values| flatten_headers(values).into_iter().collect());
         Self::Provider(Box::new(ProviderError::from(ProviderErrorParts {
             status_code: status,
             message: message.to_owned(),

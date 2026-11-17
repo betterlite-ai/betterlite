@@ -46,10 +46,9 @@ impl BatchCounts {
             .checked_add(self.succeeded)
             .and_then(|value| value.checked_add(self.errored))
             .and_then(|value| value.checked_add(self.canceled));
-        match first.and_then(|value| value.checked_add(self.expired)) {
-            Some(total) => Ok(total),
-            None => Err(DecodeError::CountOverflow),
-        }
+        first
+            .and_then(|value| value.checked_add(self.expired))
+            .map_or(Err(DecodeError::CountOverflow), Ok)
     }
 }
 
@@ -60,11 +59,10 @@ pub enum DecodeError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the Anthropic batch response {field} {expected}")]
-    Shape {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("the Anthropic batch response {detail}")]
+    Shape { detail: &'static str },
+    #[error("the Anthropic batch response {field} must be an integer")]
+    CountField { field: &'static str },
     #[error("the Anthropic batch response request_counts total overflows")]
     CountOverflow,
 }
@@ -86,8 +84,7 @@ fn decode_lifecycle(body: &[u8]) -> Result<LifecycleBatch, DecodeError> {
         serde_json::from_slice(body).map_err(|source| DecodeError::Parse { source })?;
     let Json::Object(mut fields) = value else {
         return Err(DecodeError::Shape {
-            field: "the body",
-            expected: "must be a JSON object",
+            detail: "the body must be a JSON object",
         });
     };
     let raw_status = status_field(fields.shift_remove("processing_status"))?;
@@ -112,11 +109,7 @@ fn status_field(value: Option<Json>) -> Result<Option<String>, DecodeError> {
     match value {
         None => Ok(Some("in_progress".to_owned())),
         Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(_other) => Err(DecodeError::Shape {
-            field: "processing_status",
-            expected: "must be a string or null",
-        }),
+        Some(raw) => text_field(raw, "processing_status must be a string or null").map(Some),
     }
 }
 
@@ -131,45 +124,41 @@ fn batch_status(raw_status: Option<&str>) -> BatchStatus {
 fn id_field(value: Option<Json>) -> Result<String, DecodeError> {
     match value {
         None => Ok(String::new()),
-        Some(Json::Text(text)) => Ok(text),
-        Some(_other) => Err(DecodeError::Shape {
-            field: "id",
-            expected: "must be a string",
-        }),
+        Some(raw) => text_field(raw, "id must be a string"),
+    }
+}
+
+fn text_field(value: Json, detail: &'static str) -> Result<String, DecodeError> {
+    match value {
+        Json::Text(text) => Ok(text),
+        _other => Err(DecodeError::Shape { detail }),
     }
 }
 
 fn counts_of(value: Option<Json>) -> Result<BatchCounts, DecodeError> {
-    let Some(value) = value else {
-        return Ok(BatchCounts::default());
-    };
-    let Json::Object(mut fields) = value else {
-        return Err(DecodeError::Shape {
-            field: "request_counts",
-            expected: "must be a JSON object",
-        });
-    };
-    Ok(BatchCounts {
-        processing: count_of(&mut fields, "processing")?,
-        succeeded: count_of(&mut fields, "succeeded")?,
-        errored: count_of(&mut fields, "errored")?,
-        canceled: count_of(&mut fields, "canceled")?,
-        expired: count_of(&mut fields, "expired")?,
-    })
+    match value {
+        None => Ok(BatchCounts::default()),
+        Some(Json::Object(mut fields)) => Ok(BatchCounts {
+            processing: count_of(&mut fields, "processing")?,
+            succeeded: count_of(&mut fields, "succeeded")?,
+            errored: count_of(&mut fields, "errored")?,
+            canceled: count_of(&mut fields, "canceled")?,
+            expired: count_of(&mut fields, "expired")?,
+        }),
+        Some(_other) => Err(DecodeError::Shape {
+            detail: "request_counts must be a JSON object",
+        }),
+    }
 }
 
 fn count_of(fields: &mut IndexMap<String, Json>, name: &'static str) -> Result<i64, DecodeError> {
     match fields.shift_remove(name) {
         None => Ok(0),
-        Some(Json::Number(number)) => number.as_i64().ok_or_else(|| DecodeError::Shape {
-            field: name,
-            expected: "must be an integer",
-        }),
+        Some(Json::Number(number)) => number
+            .as_i64()
+            .ok_or(DecodeError::CountField { field: name }),
         Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(DecodeError::Shape {
-                field: name,
-                expected: "must be an integer",
-            })
+            Err(DecodeError::CountField { field: name })
         }
     }
 }
@@ -189,8 +178,8 @@ pub(crate) fn decoded_text(body: &[u8]) -> String {
 fn decode_results(body: &[u8]) -> Result<Vec<Json>, DecodeError> {
     let text = decoded_text(body);
     let mut messages = Vec::new();
-    for line in text.trim().split('\n') {
-        let line = line.trim();
+    for row in text.lines() {
+        let line = row.trim();
         if line.is_empty() {
             continue;
         }
@@ -212,20 +201,15 @@ fn decode_results(body: &[u8]) -> Result<Vec<Json>, DecodeError> {
 fn message_of(value: Json) -> Result<Json, DecodeError> {
     let Json::Object(mut row) = value else {
         return Err(DecodeError::Shape {
-            field: "result row",
-            expected: "must be a JSON object",
+            detail: "result row must be a JSON object",
         });
     };
     let Some(Json::Object(mut result)) = row.shift_remove("result") else {
         return Err(DecodeError::Shape {
-            field: "result row",
-            expected: "must hold a result object",
+            detail: "result row must hold a result object",
         });
     };
-    result
-        .shift_remove("message")
-        .ok_or_else(|| DecodeError::Shape {
-            field: "result row",
-            expected: "must hold a result message",
-        })
+    result.shift_remove("message").ok_or(DecodeError::Shape {
+        detail: "result row must hold a result message",
+    })
 }
