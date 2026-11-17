@@ -4,7 +4,6 @@ from litellm.proxy.utils import PrismaClient, hash_token
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 MAPPING = TypeAdapter(dict[str, JsonValue])
-HASHES = TypeAdapter(list[str])
 VALUE = TypeAdapter(JsonValue)
 TEXT = TypeAdapter(str)
 
@@ -46,7 +45,5 @@ def run(input_value: Input) -> JsonValue:
                 reported[name] = {"kind": "encoded", "value": parsed}
         return {"fields": reported}
     if input_value["function"] == "class_hash":
-        hashes = HASHES.validate_python([client.hash_token(token) for token in input_value["tokens"]])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4617-L4621
-        return MAPPING.validate_python({"hashes": hashes})
-    hashes = HASHES.validate_python([hash_token(token) for token in input_value["tokens"]])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7119-L7125
-    return MAPPING.validate_python({"hashes": hashes})
+        return {"hashes": [client.hash_token(token) for token in input_value["tokens"]]}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4617-L4621
+    return {"hashes": [hash_token(token) for token in input_value["tokens"]]}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7119-L7125
