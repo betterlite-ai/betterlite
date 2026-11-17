@@ -8,30 +8,32 @@ use serde_json::json;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::Input;
-use super::harness;
+use super::exporters::Captured;
+use super::harness::HarnessError;
+use super::{fixtures, harness, spans};
 
 // the boundary and the close callback of one inference call: a recordable parent opens the routed
 // span at pre_call, while an unanchored request defers every build to the close
 pub(super) fn pre_call(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
-    let harness = harness::harness(
+    let harness = harness::make_harness(
         settings,
         input.callback_name.clone(),
         None,
         harness::trace(input.anchored),
     )?;
-    harness::boundary(
+    fixtures::boundary(
         &harness.logger,
         input.credentials.as_ref(),
         input.auth_metadata.as_ref(),
     )?;
     let builds_after_pre_call = harness.built.builds();
-    let metadata = harness::payload_metadata(input.auth_metadata.as_ref(), None);
-    let payload = harness::payload_document("completion", "success", metadata)?;
-    let dynamic = harness::dynamic_params(input.credentials.as_ref());
-    harness::deliver(&harness.logger, harness::event(payload, dynamic), false)?;
-    let routed = harness::span_records(&harness.built.sinks())?;
-    let default = harness::span_records(from_ref(&harness.default))?;
+    let metadata = fixtures::payload_metadata(input.auth_metadata.as_ref(), None);
+    let payload = fixtures::payload_document("completion", "success", metadata)?;
+    let dynamic = fixtures::dynamic_params(input.credentials.as_ref());
+    fixtures::deliver(&harness.logger, fixtures::event(payload, dynamic), false)?;
+    let routed = spans::span_records(&harness.built.sinks())?;
+    let default = spans::span_records(from_ref(&harness.default))?;
     Ok(json!({
         "builds_after_pre_call": builds_after_pre_call,
         "builds_after_close": harness.built.builds(),
@@ -44,20 +46,23 @@ pub(super) fn pre_call(input: &Input) -> HelperResult {
 // nothing routes to a tenant provider
 pub(super) fn mcp_tool_call(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
-    let harness = harness::harness(
+    let harness = harness::make_harness(
         settings,
         input.callback_name.clone(),
         None,
         harness::trace(false),
     )?;
-    let metadata = harness::payload_metadata(input.auth_metadata.as_ref(), Some("search"));
-    let payload = harness::payload_document("call_mcp_tool", "success", metadata)?;
-    harness::deliver(
+    let metadata = fixtures::payload_metadata(input.auth_metadata.as_ref(), Some("search"));
+    let payload = fixtures::payload_document("call_mcp_tool", "success", metadata)?;
+    fixtures::deliver(
         &harness.logger,
-        harness::event(payload, harness::dynamic_params(input.credentials.as_ref())),
+        fixtures::event(
+            payload,
+            fixtures::dynamic_params(input.credentials.as_ref()),
+        ),
         false,
     )?;
-    let names = harness::span_names(from_ref(&harness.default))?;
+    let names = spans::span_names(from_ref(&harness.default))?;
     let count = names.len();
     Ok(json!({
         "names": names,
@@ -71,21 +76,21 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
     let mut settings = harness::settings(&input.exporters)?;
     settings.enable_metrics = true;
     let (recorder, meter_provider) = harness::metric_recorder(input.filter.clone())?;
-    let harness = harness::harness(
+    let harness = harness::make_harness(
         settings,
         input.callback_name.clone(),
         Some(recorder),
         harness::trace(false),
     )?;
-    let metadata = harness::payload_metadata(None, None);
-    let payload = harness::payload_document("completion", "success", metadata)?;
-    let event = harness::event(payload, harness::dynamic_params(None));
-    let captured = harness::Captured::default();
+    let metadata = fixtures::payload_metadata(None, None);
+    let payload = fixtures::payload_document("completion", "success", metadata)?;
+    let event = fixtures::event(payload, fixtures::dynamic_params(None));
+    let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let outcome: Result<(), Box<HelperError>> =
         tracing::subscriber::with_default(subscriber, || {
-            harness::deliver(&harness.logger, Arc::clone(&event), false)?;
-            harness::deliver(&harness.logger, event, false)
+            fixtures::deliver(&harness.logger, Arc::clone(&event), false)?;
+            fixtures::deliver(&harness.logger, event, false)
         });
     outcome?;
     drop(meter_provider);
@@ -97,27 +102,27 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
 // is dropped by the emitter's (call id, role) marker
 pub(super) fn close_dedup(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
-    let harness = harness::harness(
+    let harness = harness::make_harness(
         settings,
         input.callback_name.clone(),
         None,
         harness::trace(true),
     )?;
-    harness::boundary(&harness.logger, None, None)?;
-    let metadata = harness::payload_metadata(None, None);
-    let success = harness::payload_document("completion", "success", metadata.clone())?;
-    harness::deliver(
+    fixtures::boundary(&harness.logger, None, None)?;
+    let metadata = fixtures::payload_metadata(None, None);
+    let success = fixtures::payload_document("completion", "success", metadata.clone())?;
+    fixtures::deliver(
         &harness.logger,
-        harness::event(success, harness::dynamic_params(None)),
+        fixtures::event(success, fixtures::dynamic_params(None)),
         false,
     )?;
-    let failure = harness::payload_document("completion", "failure", metadata)?;
-    harness::deliver(
+    let failure = fixtures::payload_document("completion", "failure", metadata)?;
+    fixtures::deliver(
         &harness.logger,
-        harness::event(failure, harness::dynamic_params(None)),
+        fixtures::event(failure, fixtures::dynamic_params(None)),
         true,
     )?;
-    let names = harness::span_names(from_ref(&harness.default))?;
+    let names = spans::span_names(from_ref(&harness.default))?;
     let count = names.len();
     Ok(json!({"names": names, "count": count}))
 }
@@ -126,10 +131,10 @@ pub(super) fn close_dedup(input: &Input) -> HelperResult {
 // lease is held, is shut down when the lease goes, and routing the last space again is a cache hit
 pub(super) fn cache_eviction(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
-    let cache = harness::cache(settings, input.callback_name.clone())?;
+    let cache = harness::make_cache(settings, input.callback_name.clone())?;
     let mut held = None;
     for (index, space) in input.spaces.iter().enumerate() {
-        let params = harness::space_params(space);
+        let params = fixtures::space_params(space);
         let route = cache
             .cache
             .route_for(&cache.default, Some(&params), None, &[])
@@ -142,13 +147,13 @@ pub(super) fn cache_eviction(input: &Input) -> HelperResult {
     }
     let builds = cache.built.builds();
     cache.cache.release(held.as_ref());
-    let shutdowns = harness::shutdowns(&cache.built.sinks());
+    let shutdowns = spans::shutdowns(&cache.built.sinks());
     let last = input
         .spaces
         .last()
-        .ok_or(harness::HarnessError::NoSpaces)
+        .ok_or(HarnessError::NoSpaces)
         .or_value_error()?;
-    let params = harness::space_params(last);
+    let params = fixtures::space_params(last);
     cache
         .cache
         .route_for(&cache.default, Some(&params), None, &[])
@@ -165,12 +170,12 @@ pub(super) fn cache_eviction(input: &Input) -> HelperResult {
 // project appends its own percent-encoded header, and both detach the span from the request trace
 pub(super) fn project_headers(input: &Input) -> HelperResult {
     let settings = harness::settings(&input.exporters)?;
-    let cache = harness::cache(settings, input.callback_name.clone())?;
+    let cache = harness::make_cache(settings, input.callback_name.clone())?;
     let auth_metadata: Option<BTreeMap<String, String>> = input
         .project_name
         .as_ref()
         .map(|name| BTreeMap::from([("phoenix_project_name".to_owned(), name.clone())]));
-    let params = input.credentials.as_ref().map(harness::text_object);
+    let params = input.credentials.as_ref().map(fixtures::text_object);
     let route = cache
         .cache
         .route_for(&cache.default, params.as_ref(), auth_metadata.as_ref(), &[])
@@ -180,7 +185,7 @@ pub(super) fn project_headers(input: &Input) -> HelperResult {
         .specs()
         .into_iter()
         .next()
-        .ok_or(harness::HarnessError::NoProvider)
+        .ok_or(HarnessError::NoProvider)
         .or_value_error()?;
     let mut header_pairs: Vec<String> = spec
         .headers

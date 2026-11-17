@@ -3,10 +3,13 @@ use std::collections::BTreeMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use self::harness::ExporterInput;
+use self::exporters::ExporterInput;
 
+mod exporters;
+mod fixtures;
 mod harness;
 mod scenarios;
+mod spans;
 mod tests;
 
 pub(crate) struct Op;
