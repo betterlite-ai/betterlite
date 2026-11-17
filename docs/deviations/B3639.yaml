@@ -1,0 +1,27 @@
+task: B3639
+deviations:
+  - what: Both handlers take the buffered response bytes, the status and the response headers, where LiteLLM takes one httpx response object.
+    why: Rust has no httpx response; the handlers decode the buffered body themselves, and the multimodal step reads the status and headers that LiteLLM reads off the same object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L333-L338
+  - what: A decode, cost or transform failure comes back as Err from the module's own error enum, where LiteLLM lets the Python exception rise.
+    why: Rust has no exceptions. The error climbs to the caller, which logs it and drops the dispatch, so nothing is written for a failed reply and a failure is never turned into a zero cost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L398-L403
+  - what: The embedContent request body arrives as an optional JSON value instead of an optional map of string to value.
+    why: The caller holds the parsed body in the shared JSON tree, and the extraction only reads the "requests", "content" and "parts" keys of it. The task text names serde_json::Map, but the request body is parsed as the JSON tree here and converting it back would add a shape check with no behavior behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L481-L494
+  - what: A request entry or a part that is not a JSON object contributes an empty string instead of failing the reply.
+    why: LiteLLM calls .get on every entry and raises AttributeError on a non-dict, which fails the whole dispatch. The declared request shape is a list of objects, so a malformed entry is already outside what a working setup sends, and the empty-string rule the task states keeps the rest of the text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L484-L494
+  - what: An embedding reply without usageMetadata falls back to a character count over the joined input text, where LiteLLM's token_counter tokenizes it.
+    why: betterlite has no tokenizer at this layer; the B1340 step takes an injected counter, and the character counter is what the server has. A reply that carries usageMetadata is counted from it, as LiteLLM does, and every oracle case that reads the counts carries that metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L356
+  - what: The Lyria audio price is read from the bundled model catalog only, with no runtime litellm.model_cost overlay.
+    why: betterlite has no runtime mutation of the model cost map, so the bundled catalog is what a working setup on the pinned map gets. A model that is not a Lyria model, or carries no price, takes no audio branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L79-L99
+  - what: An audio prediction count that does not fit an i64, or a price multiplication that overflows the decimal, comes back as a cost error.
+    why: Rust decimals and integers are fixed width where LiteLLM multiplies floats without a bound. A list length past i64 cannot come out of a decoded body in one process, so this is a guard, and its outcome is the same Err a failed price lookup gives rather than a silently wrong cost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L427-L428
+kept_bugs:
+  - what: A predict body that reads as a multimodal embedding always fails, because the handler hands the transform an empty request and the transform requires "instances".
+    why: LiteLLM calls transform_embedding_response with request_data={} and calculate_usage raises KeyError on request_data["instances"], so a multimodal predict reply can never be logged through the passthrough. betterlite hands the B1343 step the same empty request and returns its Err, so a setup sees the same failed dispatch it gets from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L239
