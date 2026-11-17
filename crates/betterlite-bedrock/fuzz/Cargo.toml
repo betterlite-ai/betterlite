@@ -97,6 +97,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "sagemaker_stream"
+path = "fuzz_targets/sagemaker_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_services_vector_stores"
 path = "fuzz_targets/bedrock_services_vector_stores.rs"
 test = false
