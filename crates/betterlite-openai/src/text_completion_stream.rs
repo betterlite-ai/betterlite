@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use thiserror::Error;
 
 use betterlite_streaming::stream_chunk_shaping::decision::is_delta_empty;
@@ -34,11 +34,19 @@ pub fn without_nulls(value: Value) -> Value {
                 .map(|(name, item)| (name, without_nulls(item)))
                 .collect(),
         ),
-        other => other,
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => other,
     }
 }
 
 pub const DONE_FRAME: &str = "data: [DONE]\n\n";
+
+// one entry of a JSON object; an absent option is the null without_nulls drops from the client's JSON
+pub(crate) fn field(name: &str, value: Option<Value>) -> (String, Value) {
+    let Some(item) = value else {
+        return (name.to_owned(), Value::Null);
+    };
+    (name.to_owned(), item)
+}
 
 // The chat chunk the text wrapper converts: usage gains the detail block litellm fills in, model restamped
 pub fn shaped_chunk(mut chunk: StreamChunk, model: &str) -> Result<Value, serde_json::Error> {
@@ -55,14 +63,11 @@ pub fn shaped_chunk(mut chunk: StreamChunk, model: &str) -> Result<Value, serde_
 fn with_details(mut usage: Usage) -> Usage {
     if usage.completion_tokens_details.is_none() {
         let mut details = TokenDetails::default();
-        details.extra.insert(
-            String::from("reasoning_tokens"),
-            JsonValue::Number(serde_json::Number::from(0_u8)),
-        );
-        details.extra.insert(
-            String::from("text_tokens"),
-            JsonValue::Number(serde_json::Number::from(usage.completion_tokens)),
-        );
+        let fields = &mut details.extra;
+        let reasoning = JsonValue::Number(serde_json::Number::from(0_u8));
+        let tokens = JsonValue::Number(serde_json::Number::from(usage.completion_tokens));
+        fields.insert(String::from("reasoning_tokens"), reasoning);
+        fields.insert(String::from("text_tokens"), tokens);
         usage.completion_tokens_details = Some(details);
     }
     usage
@@ -81,34 +86,33 @@ pub fn chat_chunk(
     if silent && (chunk.usage.is_none() || !include_usage) {
         return Ok(None);
     }
-    let model = if model.is_empty() {
-        chunk.model.as_str()
-    } else {
-        model
-    };
-    let usage = chunk.usage.clone().map(with_details);
-    let usage = serde_json::to_value(usage.filter(|_| include_usage))?;
-    let fields = serde_json::json!({
-        "id": chunk.id,
-        "object": chunk.object,
-        "created": chunk.created,
-        "model": model,
-        "choices": chunk.choices.iter().map(chat_choice).collect::<Vec<_>>(),
-        "usage": usage,
-    });
+    let given = Some(model).filter(|name| !name.is_empty());
+    let named = given.unwrap_or(chunk.model.as_str());
+    let asked = chunk.usage.clone().map(with_details);
+    let usage = serde_json::to_value(asked.filter(|_| include_usage))?;
+    let choices = chunk.choices.iter().map(chat_choice).collect();
+    let fields = Value::Object(Map::from_iter([
+        field("id", Some(Value::from(chunk.id.as_str()))),
+        field("object", Some(Value::from(chunk.object.as_str()))),
+        field("created", Some(Value::from(chunk.created))),
+        field("model", Some(Value::from(named))),
+        field("choices", Some(Value::Array(choices))),
+        field("usage", Some(usage)),
+    ]));
     Ok(Some(without_nulls(fields)))
 }
 
 fn chat_choice(choice: &StreamChoice) -> Value {
-    let delta = serde_json::json!({
-        "role": choice.delta.role.as_deref(),
-        "content": choice.delta.content.as_deref(),
-    });
-    serde_json::json!({
-        "index": choice.index,
-        "delta": delta,
-        "finish_reason": choice.finish_reason.as_deref(),
-    })
+    let delta = Value::Object(Map::from_iter([
+        field("role", choice.delta.role.as_deref().map(Value::from)),
+        field("content", choice.delta.content.as_deref().map(Value::from)),
+    ]));
+    let finish = choice.finish_reason.as_deref();
+    Value::Object(Map::from_iter([
+        field("index", Some(Value::from(choice.index))),
+        field("delta", Some(delta)),
+        field("finish_reason", finish.map(Value::from)),
+    ]))
 }
 
 // A chat endpoint's SSE events read as the text route's chunks: the chat route's chunk parse, DONE skipped

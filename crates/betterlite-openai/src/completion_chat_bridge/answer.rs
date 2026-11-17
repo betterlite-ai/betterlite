@@ -4,7 +4,7 @@ use super::failure;
 use crate::chat::response::ChatResponse;
 use crate::text_completion_execution::failure::CompletionFailure;
 use crate::text_completion_response::{CompletionChoice, CompletionResponse, CompletionUsage};
-use crate::text_completion_stream::without_nulls;
+use crate::text_completion_stream::{field, without_nulls};
 
 // The fine-tuned branch answers the text body itself, model renamed, nulls dropped as pydantic's exclude_none does
 pub fn text_completion_body(
@@ -12,10 +12,10 @@ pub fn text_completion_body(
     model: Option<&str>,
 ) -> Result<Vec<u8>, CompletionFailure> {
     let mut value = serde_json::to_value(response).map_err(|source| encode_failure(&source))?;
-    if let Some(model) = model
+    if let Some(asked) = model
         && let Value::Object(fields) = &mut value
     {
-        fields.insert(String::from("model"), Value::from(model));
+        fields.insert(String::from("model"), Value::from(asked));
     }
     let answer = without_nulls(value);
     serde_json::to_vec(&answer).map_err(|source| encode_failure(&source))
@@ -27,29 +27,31 @@ pub fn chat_completion_body(
     created: i64,
     model: Option<&str>,
 ) -> Result<Vec<u8>, CompletionFailure> {
-    let body = serde_json::json!({
-        "id": response.id,
-        "created": created,
-        "model": model,
-        "object": "chat.completion",
-        "choices": chat_choices(response),
-        "usage": response.usage.as_ref().map(usage_value),
-    });
+    let body = Value::Object(Map::from_iter([
+        field("id", Some(Value::from(response.id.as_str()))),
+        field("created", Some(Value::from(created))),
+        field("model", model.map(Value::from)),
+        field("object", Some(Value::from("chat.completion"))),
+        field("choices", Some(Value::Array(chat_choices(response)))),
+        field("usage", response.usage.as_ref().map(usage_value)),
+    ]));
     serde_json::to_vec(&without_nulls(body)).map_err(|source| encode_failure(&source))
 }
 
 fn chat_choices(response: &CompletionResponse) -> Vec<Value> {
     let mut choices = Vec::new();
     for (index, choice) in response.choices.iter().enumerate() {
-        choices.push(serde_json::json!({
-            "finish_reason": choice.finish_reason.as_deref(),
-            "index": index,
-            "message": {
-                "content": choice.text.as_deref(),
-                "role": "assistant",
-            },
-            "logprobs": choice.logprobs,
-        }));
+        let message = Value::Object(Map::from_iter([
+            field("content", choice.text.as_deref().map(Value::from)),
+            field("role", Some(Value::from("assistant"))),
+        ]));
+        let finish = choice.finish_reason.as_deref();
+        choices.push(Value::Object(Map::from_iter([
+            field("finish_reason", finish.map(Value::from)),
+            field("index", Some(Value::from(index))),
+            field("message", Some(message)),
+            field("logprobs", choice.logprobs.clone()),
+        ])));
     }
     choices
 }
@@ -111,13 +113,16 @@ pub fn text_completion_response(chat: ChatResponse) -> CompletionResponse {
 }
 
 fn usage_value(usage: &CompletionUsage) -> Value {
-    serde_json::json!({
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-        "completion_tokens_details": usage.completion_tokens_details,
-        "prompt_tokens_details": usage.prompt_tokens_details,
-    })
+    let completion = usage.completion_tokens_details.clone();
+    let prompt = usage.prompt_tokens_details.clone();
+    let counted = Some(Value::from(usage.completion_tokens));
+    Value::Object(Map::from_iter([
+        field("prompt_tokens", Some(Value::from(usage.prompt_tokens))),
+        field("completion_tokens", counted),
+        field("total_tokens", Some(Value::from(usage.total_tokens))),
+        field("completion_tokens_details", completion),
+        field("prompt_tokens_details", prompt),
+    ]))
 }
 
 fn encode_failure(source: &serde_json::Error) -> CompletionFailure {
