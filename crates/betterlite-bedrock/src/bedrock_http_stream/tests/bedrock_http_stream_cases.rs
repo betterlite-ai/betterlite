@@ -1,7 +1,6 @@
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::{GenericChunk, JsonValue};
-use rstest::rstest;
 
 use super::support::{
     BASE, Call, Consume, DATA, FIRST, Inputs, Outcome, REPLY, Refusal, Reply, converse, invoke,
@@ -59,6 +58,7 @@ fn generic(chunk: &InvokeChunk) -> &GenericChunk {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Field {
     Model,
     Content,
@@ -116,16 +116,7 @@ fn content_of(chunks: &[InvokeChunk]) -> Vec<&str> {
         .collect()
 }
 
-#[rstest]
-#[case::invoke_stream_url(case_1_invoke_stream_url)]
-#[case::http_error_before_frame(case_2_http_error_before_frame)]
-#[case::converse_stream_headers(case_3_converse_stream_headers)]
-#[case::fake_stream_projection(case_4_fake_stream_projection)]
-#[case::post_call_before_consumption(case_5_post_call_before_consumption)]
-fn bedrock_http_stream_cases(#[case] case: fn()) {
-    case();
-}
-
+#[test]
 fn case_1_invoke_stream_url() {
     let messages = messages();
     invoke_posts(&messages);
@@ -267,6 +258,7 @@ fn fake_streams_do_not_stream(messages: &Json) {
     assert!(!fake_converse_inputs.posts()[0].stream);
 }
 
+#[test]
 fn case_2_http_error_before_frame() {
     let messages = messages();
     invoke_status_failure(&messages);
@@ -478,6 +470,7 @@ fn converse_passthrough_failures(messages: &Json) {
     assert!(matches!(body_outcome.error, Some(HttpStreamError::Body(_))));
 }
 
+#[test]
 fn case_3_converse_stream_headers() {
     let messages = messages();
     converse_stream_headers(&messages);
@@ -616,11 +609,7 @@ fn converse_json_mode(messages: &Json) {
     assert!(json_outcome.error.is_none());
     assert!(json_outcome.failures.is_empty());
     let contents = content_of(&json_outcome.chunks);
-    assert!(
-        contents
-            .iter()
-            .any(|content| *content == r#"{"sign": "WZPZ"}"#)
-    );
+    assert!(contents.contains(&r#"{"sign": "WZPZ"}"#));
 
     // Without json_mode the same events keep the tool as a tool call and no content.
     let plain_inputs = Inputs::new(Reply::frames(&[
@@ -634,13 +623,10 @@ fn converse_json_mode(messages: &Json) {
         Consume::All,
     );
     let plain_contents = content_of(&plain_outcome.chunks);
-    assert!(
-        !plain_contents
-            .iter()
-            .any(|content| *content == r#"{"sign": "WZPZ"}"#)
-    );
+    assert!(!plain_contents.contains(&r#"{"sign": "WZPZ"}"#));
 }
 
+#[test]
 fn case_4_fake_stream_projection() {
     let messages = messages();
     fake_invoke_projection(&messages);
@@ -782,6 +768,7 @@ fn buffered_conversion_failures(messages: &Json) {
     assert_eq!(missing_outcome.provider_status(), Some(500));
 }
 
+#[test]
 fn case_5_post_call_before_consumption() {
     let messages = messages();
     invoke_logs_before_read(&messages);

@@ -26,7 +26,7 @@ fn echoed_headers() -> Vec<(String, String)> {
 #[test]
 fn bedrock_http_stream_secret_safe_failure() {
     let messages = messages();
-    let shown = vec![
+    let shown = [
         status_failure(&messages),
         transport_failure(&messages),
         empty_stream_failure(&messages),

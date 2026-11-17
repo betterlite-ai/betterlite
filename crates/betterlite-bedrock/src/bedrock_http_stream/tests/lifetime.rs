@@ -179,7 +179,7 @@ async fn serve(
     }
     let mut rest = Vec::new();
     socket.read_to_end(&mut rest).await.unwrap();
-    drop(closed.send(()));
+    let _sent = closed.send(());
 }
 
 fn proxied_client() -> ProxiedClient {

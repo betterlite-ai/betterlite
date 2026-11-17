@@ -73,8 +73,8 @@ pub fn make_sync_call<'deps>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
     let PendingOpen { head, body } = pending;
-    if let Some(body) = body {
-        let stream = fake_stream(call, deps, &head, &body, log)?;
+    if let Some(buffered) = body {
+        let stream = fake_stream(call, deps, &head, &buffered, log)?;
         log_open(log.state, log.env, call.messages, call.data);
         return Ok(OpenedStream {
             chunks: ChunkStream::Fake(stream),

@@ -72,7 +72,9 @@ fn fixed_seconds() -> i64 {
 }
 
 pub(super) fn now() -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(SECONDS)
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(SECONDS))
+        .unwrap()
 }
 
 pub(super) fn header_map(pairs: &[(&str, &str)]) -> HeaderMap {
@@ -435,7 +437,7 @@ pub(super) fn invoke<'call>(
 }
 
 // Every converse case posts the shared fixture body to BASE; the one that varies its URL overrides api_base.
-pub(super) fn converse<'call>(messages: &'call Json) -> ConverseCall<'call> {
+pub(super) fn converse(messages: &Json) -> ConverseCall<'_> {
     ConverseCall {
         model: "bedrock/anthropic.claude-3",
         api_base: BASE,
@@ -448,13 +450,18 @@ pub(super) fn converse<'call>(messages: &'call Json) -> ConverseCall<'call> {
 }
 
 pub(super) fn run(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = inputs.handler.clone();
-    block_on(open_with(call, Some(handler.clone()), handler, consume))
+    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
+    block_on(open_with(
+        call,
+        Some(Arc::clone(&handler)),
+        handler,
+        consume,
+    ))
 }
 
 // No supplied client: the helper must post through the default handler it was given.
 pub(super) fn run_default(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = inputs.handler.clone();
+    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
     block_on(open_with(call, None, handler, consume))
 }
 
@@ -465,8 +472,8 @@ pub(super) fn run_supplied(
     default: &Inputs,
     consume: Consume,
 ) -> Outcome {
-    let supplied_handler: Arc<dyn StreamHandler> = supplied.handler.clone();
-    let default_handler: Arc<dyn StreamHandler> = default.handler.clone();
+    let supplied_handler: Arc<dyn StreamHandler> = Arc::clone(&supplied.handler);
+    let default_handler: Arc<dyn StreamHandler> = Arc::clone(&default.handler);
     block_on(open_with(
         call,
         Some(supplied_handler),
@@ -512,8 +519,8 @@ async fn open_pending(
     deps: &StreamDeps<'_>,
 ) -> Result<PendingOpen, HttpStreamError<Infallible>> {
     match call {
-        Call::Invoke(call) => open_invoke(call, deps).await,
-        Call::Converse(call) => open_converse(call, deps).await,
+        Call::Invoke(invoke_call) => open_invoke(invoke_call, deps).await,
+        Call::Converse(converse_call) => open_converse(converse_call, deps).await,
     }
 }
 
@@ -534,14 +541,14 @@ fn open_logged<'deps>(
         Ok(())
     };
     let env = log_env(deps.redactor, &sink, &logger);
-    let pending = pending?;
+    let opened = pending?;
     let mut log = LogContext {
         state: &mut state,
         env: &env,
     };
     match call {
-        Call::Invoke(call) => make_call(call, deps, pending, &mut log),
-        Call::Converse(call) => make_sync_call(call, deps, pending, &mut log),
+        Call::Invoke(invoke_call) => make_call(invoke_call, deps, opened, &mut log),
+        Call::Converse(converse_call) => make_sync_call(converse_call, deps, opened, &mut log),
     }
 }
 
@@ -594,11 +601,11 @@ fn log_env<'env>(
     }
 }
 
-fn deps_for<'deps>(
+fn deps_for(
     supplied: Option<Arc<dyn StreamHandler>>,
     handler: Arc<dyn StreamHandler>,
-    redactor: &'deps Redactor,
-) -> StreamDeps<'deps> {
+    redactor: &Redactor,
+) -> StreamDeps<'_> {
     StreamDeps {
         supplied,
         default: handler,

@@ -9,7 +9,7 @@ use crate::bedrock_http_stream::invoke::InvokeCall;
 // One credential per identity, and a body that names it, so a shared response or log is visible.
 type Identity = (&'static str, &'static str, &'static str);
 
-fn identity_call<'call>(messages: &'call Json, identity: Identity) -> InvokeCall<'call> {
+fn identity_call(messages: &Json, identity: Identity) -> InvokeCall<'_> {
     let (name, authorization, data) = identity;
     let mut call = invoke(BASE, data, messages);
     call.headers = header_map(&[("authorization", authorization), ("x-identity", name)]);
@@ -62,6 +62,7 @@ fn distinct_identities(
 }
 
 fn assert_identity_headers(posts: &[Recorded], alpha: Identity, beta: Identity) {
+    assert!(posts.len() > 1);
     assert_eq!(
         posts[0].headers,
         vec![
@@ -83,6 +84,7 @@ fn assert_identity_headers(posts: &[Recorded], alpha: Identity, beta: Identity) 
 fn assert_requests_are_isolated(inputs: &Inputs, alpha: Identity, beta: Identity) {
     // Neither the other credential nor its body rides on this identity's request.
     let posts = inputs.posts();
+    assert!(posts.len() > 1);
     assert!(!posts[0].body.contains(beta.0));
     assert!(!posts[1].body.contains(alpha.0));
 }
