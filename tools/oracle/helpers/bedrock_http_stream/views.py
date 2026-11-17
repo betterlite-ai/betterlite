@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from .wire import JSON, Case, Chunk, FakeFailure
 
+
 class DeltaView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +46,16 @@ class ErrorView(BaseModel):
     status_code: int
     message: str
     response: ResponseView | None = None
+
+class StatusView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status_code: int
+
+def failure_status(error: BedrockError) -> JsonValue:
+    view = StatusView.model_validate(error)
+    payload: dict[str, JsonValue] = {"status": view.status_code}
+    return JSON.validate_python(payload)
 
 def chunk_payload(value: Chunk) -> JsonValue:
     view = ChunkView.model_validate(value)

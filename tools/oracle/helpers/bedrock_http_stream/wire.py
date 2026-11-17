@@ -84,9 +84,10 @@ class Fixture:
 
     def reply(self, url: str, options: PostOptions) -> httpx.Response:
         pairs = sorted([name, value] for name, value in options["headers"].items())
+        body: list[int] = list(options["data"].encode())
         self.posts.append({
             "url": url,
-            "body": JSON.validate_python(list(options["data"].encode())),
+            "body": JSON.validate_python(body),
             "headers": JSON.validate_python(pairs),
             "stream": options["stream"],
         })
@@ -129,6 +130,16 @@ class SyncClient(Fixture):
 class AsyncClient(Fixture):
     async def post(self, url: str, **options: Unpack[PostOptions]) -> httpx.Response:
         return self.reply(url, options)
+
+class OpenArguments(TypedDict):
+    api_base: str
+    headers: dict[str, str]
+    data: str
+    model: str
+    messages: list[dict[str, JsonValue]]
+    logging_obj: Recorder
+    json_mode: bool | None
+    fake_stream: bool
 
 class ConverseArguments(TypedDict):
     client: SyncClient
