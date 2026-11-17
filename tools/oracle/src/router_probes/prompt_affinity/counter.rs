@@ -46,13 +46,15 @@ impl BlockingCounter for InlineCounter {
 
 // litellm.token_counter over the bundled cl100k vocabulary with the network switched off, the count is_prompt_caching_valid_prompt reads
 pub(crate) fn counting_pieces() -> Result<(Counter, Arc<ModelCatalog>), OperationError> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(invalid)?;
-    let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).map_err(invalid)?);
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .map_err(|error| invalid(&error))?;
+    let client =
+        Arc::new(ProxiedClient::outbound(&Arc::new(policy)).map_err(|error| invalid(&error))?);
     let settings = Settings::default();
     let service = Arc::new(CountingService::new(
         1,
         Arc::new(InlineCounter),
-        settings.encode_limits().map_err(invalid)?,
+        settings.encode_limits().map_err(|error| invalid(&error))?,
     ));
     let fetcher = Arc::new(TiktokenFetcher::new(
         Arc::clone(&client),
@@ -100,7 +102,7 @@ fn downloader(client: Arc<ProxiedClient>) -> Arc<HubDownloader> {
     ))
 }
 
-fn invalid<E>(error: E) -> OperationError
+fn invalid<E>(error: &E) -> OperationError
 where
     E: ToString,
 {

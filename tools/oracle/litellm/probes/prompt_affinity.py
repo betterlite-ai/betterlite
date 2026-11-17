@@ -97,11 +97,8 @@ class PromptAffinity(Operation):
             request_kwargs["_target_order"] = self.target_order
         litellm.enable_anthropic_prompt_caching = self.global_enabled
         try:
-            chosen: Final[list[dict[str, JsonValue]]] = await check.async_filter_deployments(
-                model=self.model,
-                healthy_deployments=deployments,
-                messages=self.messages,
-                request_kwargs=request_kwargs,
+            chosen: Final[list[dict[str, JsonValue]]] = await self.filtered_pool(
+                check, deployments, request_kwargs
             )
         finally:
             litellm.enable_anthropic_prompt_caching = False
@@ -116,4 +113,18 @@ class PromptAffinity(Operation):
             ],
             cache_key=PromptCachingCache.get_prompt_caching_cache_key(self.messages, None),
             pin=None if pinned is None else pinned["model_id"],
+        )
+
+    # LiteLLM types the method as list[dict], so the call goes through the protocol parameter
+    async def filtered_pool(
+        self,
+        check: Check,
+        deployments: list[dict[str, JsonValue]],
+        request_kwargs: dict[str, JsonValue],
+    ) -> list[dict[str, JsonValue]]:
+        return await check.async_filter_deployments(
+            model=self.model,
+            healthy_deployments=deployments,
+            messages=self.messages,
+            request_kwargs=request_kwargs,
         )

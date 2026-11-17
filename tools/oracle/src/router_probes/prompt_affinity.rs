@@ -133,8 +133,10 @@ pub(crate) fn run(
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(invalid)?;
-    let output = runtime.block_on(simulate(input)).map_err(invalid)?;
+        .map_err(|error| invalid(&error))?;
+    let output = runtime
+        .block_on(simulate(input))
+        .map_err(|error| invalid(&error))?;
     Ok(ProbeOutput::PromptAffinity(output))
 }
 
@@ -238,11 +240,11 @@ fn deployment_spec(deployment: &Deployment) -> Result<DeploymentSpec, InvalidDep
         params,
         info,
         IndexMap::new(),
-        || String::new(),
+        String::new,
     )
 }
 
-fn invalid<E>(error: E) -> OperationError
+fn invalid<E>(error: &E) -> OperationError
 where
     E: ToString,
 {
