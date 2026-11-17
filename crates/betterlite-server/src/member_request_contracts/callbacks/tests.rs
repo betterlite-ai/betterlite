@@ -313,3 +313,17 @@ fn rejects_metadata_callback_vars_that_is_not_an_object() {
     .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
+
+#[test]
+fn rejects_a_callback_body_that_is_not_an_object() {
+    let callback_error = callback(parse("\"langfuse\"")).unwrap_err();
+    assert!(matches!(
+        callback_error,
+        MemberContractError::Validation { .. }
+    ));
+    let metadata_error = metadata(parse("[]")).unwrap_err();
+    assert!(matches!(
+        metadata_error,
+        MemberContractError::Validation { .. }
+    ));
+}

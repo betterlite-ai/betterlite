@@ -151,16 +151,24 @@ fn rejects_a_mixed_member_list() {
 }
 
 #[test]
-fn rejects_a_member_without_a_role() {
+fn reports_a_member_without_a_role_as_a_validation_error() {
     let error = member_add(json!({ "member": { "user_id": "user-1" } })).unwrap_err();
-    assert!(matches!(error, MemberContractError::Decode { .. }));
+    let text = message(error);
+    assert!(
+        text.starts_with("stored row is invalid JSON: missing field `role`"),
+        "{text}"
+    );
 }
 
 #[test]
-fn rejects_a_member_with_an_unknown_role() {
+fn reports_a_member_with_an_unknown_role_as_a_validation_error() {
     let error =
         member_add(json!({ "member": { "user_id": "user-1", "role": "owner" } })).unwrap_err();
-    assert!(matches!(error, MemberContractError::Decode { .. }));
+    let text = message(error);
+    assert!(
+        text.contains("stored row is invalid JSON: unknown variant `owner`"),
+        "{text}"
+    );
 }
 
 #[test]
@@ -344,6 +352,22 @@ fn rejects_an_organization_member_delete_without_an_organization() {
     let error =
         OrganizationMemberDeleteRequest::from_value(&json!({ "user_id": "user-1" })).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
+}
+
+#[rstest]
+#[case("null")]
+#[case("[]")]
+fn rejects_a_member_request_body_that_is_not_an_object(#[case] body: &str) {
+    let value = parse(body);
+    let errors = [
+        TeamMemberDeleteRequest::from_value(&value).unwrap_err(),
+        TeamMemberUpdateRequest::from_value(&value).unwrap_err(),
+        OrganizationMemberDeleteRequest::from_value(&value).unwrap_err(),
+        OrganizationMemberUpdateRequest::from_value(&value).unwrap_err(),
+    ];
+    for error in errors {
+        assert!(matches!(error, MemberContractError::Validation { .. }));
+    }
 }
 
 #[test]

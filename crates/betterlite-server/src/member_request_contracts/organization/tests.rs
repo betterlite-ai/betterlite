@@ -193,8 +193,6 @@ fn decodes_the_budget_fields() {
         "tpd_limit": 1000,
         "budget_duration": "1d",
         "allowed_models": ["gpt-4"],
-        "temp_budget_increase": 2.5,
-        "temp_budget_expiry": "2026-03-01T00:00:00",
     }))
     .unwrap();
     assert_eq!(request.budget.budget_id, Some("budget-1".to_owned()));
@@ -209,11 +207,24 @@ fn decodes_the_budget_fields() {
         request.budget.allowed_models,
         Some(vec!["gpt-4".to_owned()])
     );
+}
+
+#[test]
+fn moves_the_temp_budget_pair_into_metadata() {
+    let request = table_update(json!({
+        "temp_budget_increase": 2.5,
+        "temp_budget_expiry": "2026-03-01T00:00:00",
+    }))
+    .unwrap();
+    assert_eq!(request.budget.temp_budget_increase, None);
+    assert_eq!(request.budget.temp_budget_expiry, None);
+    let metadata = request.metadata.unwrap();
+    assert_eq!(metadata.len(), 2);
+    assert_eq!(metadata["temp_budget_increase"], data("2.5"));
     assert_eq!(
-        request.budget.temp_budget_increase,
-        Some(Decimal::new(25, 1))
+        metadata["temp_budget_expiry"],
+        data("\"2026-03-01T00:00:00\"")
     );
-    assert!(request.budget.temp_budget_expiry.is_some());
 }
 
 #[test]
@@ -224,8 +235,6 @@ fn decodes_the_organization_fields() {
         "spend": 3.5,
         "models": ["gpt-4"],
         "updated_by": "updater",
-        "model_tpm_limit": { "gpt-4": 100 },
-        "model_rpm_limit": { "gpt-4": 10 },
     }))
     .unwrap();
     assert_eq!(request.organization_id, Some("org-1".to_owned()));
@@ -233,8 +242,20 @@ fn decodes_the_organization_fields() {
     assert_eq!(request.spend, Some(Decimal::new(35, 1)));
     assert_eq!(request.models, Some(vec!["gpt-4".to_owned()]));
     assert_eq!(request.updated_by, Some("updater".to_owned()));
-    assert_eq!(request.model_tpm_limit.unwrap()["gpt-4"], 100);
-    assert_eq!(request.model_rpm_limit.unwrap()["gpt-4"], 10);
+}
+
+#[test]
+fn leaves_moved_management_fields_null() {
+    let request = table_update(json!({
+        "model_tpm_limit": { "gpt-4": 100 },
+        "model_rpm_limit": { "gpt-4": 10 },
+    }))
+    .unwrap();
+    assert_eq!(request.model_tpm_limit, None);
+    assert_eq!(request.model_rpm_limit, None);
+    let metadata = request.metadata.unwrap();
+    assert_eq!(metadata["model_tpm_limit"], data("{\"gpt-4\": 100}"));
+    assert_eq!(metadata["model_rpm_limit"], data("{\"gpt-4\": 10}"));
 }
 
 #[test]
