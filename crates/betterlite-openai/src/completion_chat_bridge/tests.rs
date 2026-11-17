@@ -4,7 +4,9 @@ use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use secrecy::SecretString;
 use serde_json::Value;
 
-use super::answer::{chat_completion_body, text_completion_body, text_completion_response};
+use super::answer::{
+    chat_completion_body, text_answer_body, text_completion_body, text_completion_response,
+};
 use super::{ChatEndpoint, chat_endpoint, chat_request, text_endpoint_model, text_request};
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::chat::response::ChatResponse;
@@ -347,6 +349,29 @@ fn the_fine_tuned_answer_keeps_its_text_shape_with_the_client_model() {
         value.pointer("/choices/0/text"),
         Some(&Value::from("Hello"))
     );
+}
+
+// The text route's chat-deployment answer keeps its null fields but writes no system fingerprint
+#[test]
+fn the_text_answer_keeps_its_nulls_but_never_a_null_system_fingerprint() {
+    let text = response(
+        r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5},"system_fingerprint":null}"#,
+    );
+    let body = text_answer_body(&text).expect("body");
+    let value: Value = serde_json::from_slice(&body).expect("json");
+    assert_eq!(value.get("object"), Some(&Value::from("text_completion")));
+    assert_eq!(value.get("model"), Some(&Value::from("upstream")));
+    assert_eq!(
+        value.pointer("/choices/0/text"),
+        Some(&Value::from("Hello"))
+    );
+    assert_eq!(
+        value.pointer("/usage/total_tokens"),
+        Some(&Value::from(5_i64))
+    );
+    // the route writes the response's own null logprobs and drops only the null fingerprint
+    assert_eq!(value.pointer("/choices/0/logprobs"), Some(&Value::Null));
+    assert_eq!(value.get("system_fingerprint"), None);
 }
 
 #[test]
