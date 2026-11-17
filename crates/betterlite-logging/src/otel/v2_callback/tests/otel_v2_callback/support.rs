@@ -21,9 +21,7 @@ use betterlite_logging::otel::mappers::utils::tool_attr_budget;
 use betterlite_logging::otel::model::payloads::error::SpanError;
 use betterlite_logging::otel::model::payloads::service::{ServiceLoggerPayload, ServiceType};
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
-use betterlite_logging::otel::plumbing::context::context_slots::{
-    AnchoredSpan, RequestTraceContext,
-};
+use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::plumbing::context::post_response::ServiceSpanTiming;
 use betterlite_logging::otel::plumbing::exporters::{
     ExportResult, ExporterFactories, ExporterFactory, HttpClients,
@@ -252,15 +250,6 @@ impl Harness {
     pub(crate) fn finished(&self) -> Vec<SpanData> {
         self.spans.get_finished_spans().expect("finished spans")
     }
-}
-
-pub(crate) fn anchored_trace(root: &LiveSpan) -> RequestTraceContext {
-    let mut trace = RequestTraceContext::default();
-    trace.anchor_request_root(AnchoredSpan {
-        context: root.context.clone(),
-        http_route: None,
-    });
-    trace
 }
 
 pub(crate) fn service_payload(service: ServiceType, call_type: &str) -> ServiceLoggerPayload {
