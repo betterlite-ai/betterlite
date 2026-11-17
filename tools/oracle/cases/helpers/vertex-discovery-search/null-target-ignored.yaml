@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-discovery-search-null-target-ignored
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: policy
+        api_base: https://host/v1
+        litellm_params:
+          vertex_engine_id: app-example
+        extra_body:
+          servingConfig: null
+          entity: null
+          filter: status = 1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-discovery-search-search-seed
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: projects/p/locations/l/collections/default_collection/dataStores/d
+        query:
+          - find
+          - policy
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params: {}
+        extra_body:
+          filter: active
+          contentSearchSpec:
+            searchResultMode: CHUNKS
+        response:
+          status: 200
+          body: '{"results":[{"chunk":{"name":"projects/p/locations/l/collections/c/dataStores/d/branches/0/documents/doc-1/chunks/1","content":"seed content","relevanceScore":0.5}}]}'
+env: {}
+compare: {ignore: []}

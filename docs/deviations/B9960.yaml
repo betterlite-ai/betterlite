@@ -1,0 +1,17 @@
+task: B9960
+deviations:
+  - what: >-
+      The media-aware entry point exists, but ChatContent::transform is still synchronous and the six
+      provider modules that build a ChatContent on main pass RefuseDownloads, while the OpenAI chat route
+      builds its body from chat_fields without ChatContent. A request that reaches one of those paths with a
+      user-message file_id starting http://, https:// or www. still ends with the ImageFetchError 400 that says
+      downloads are disabled, where LiteLLM downloads the URL and sends file_data. A caller that awaits
+      ChatContent::transform_with_media, or prefetches with ChatContent::fetch_media and passes the returned
+      FetchedMedia to a plain transform, sends the fetched file_data.
+    why: >-
+      B9960 adds the downloader to the seam without changing UrlDownloader, transform or any adapter
+      signature, so the adapter tasks keep compiling. The OpenAI umbrella B024 and the provider umbrellas that
+      own the routes pass a B5083 Fetcher through transform_with_media or fetch_media in their own tasks.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
+kept_bugs: []

@@ -1,0 +1,20 @@
+kind: helper
+name: soniox-pipeline-seed
+call:
+  soniox_pipeline:
+    pipeline:
+      model: soniox/stt-async-v4
+      timeout_millis: 2500
+      api_key: sk-local
+      api_base: https://api.soniox.test
+      optional_params: {}
+      audio: {filename: audio.mp3, content: RIFF-data}
+      answers:
+      - {status: 200, body: '{"id": "file-1"}'}
+      - {status: 200, body: '{"id": "job-1"}'}
+      - {status: 200, body: '{"status": "completed", "audio_duration_ms": 900}'}
+      - {status: 200, body: '{"text": "seed"}'}
+      - {status: 200, body: '{"id": "job-1"}'}
+      - {status: 200, body: '{"id": "file-1"}'}
+compare: {ignore: []}
+env: {}

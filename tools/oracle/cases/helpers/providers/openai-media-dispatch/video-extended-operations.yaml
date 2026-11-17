@@ -1,0 +1,83 @@
+kind: helper
+name: video-extended-operations
+call:
+  openai_media_dispatch:
+    case: video_extended_operations
+    api_base: https://mock.example/v1
+    provider: openai
+    model: sora-2
+    op: edit
+    prompt: add rain
+    video_id: vid-1
+    video_file: null
+    extra_body: null
+    seconds: null
+    name: null
+    video: null
+    character_id: null
+    reply: '{"id": "vid-7", "object": "video", "status": "completed", "seconds": "8"}'
+calls:
+  - openai_media_dispatch:
+      case: video_extended_operations
+      api_base: https://mock.example/v1
+      provider: null
+      model: sora-2
+      op: edit
+      prompt: add rain
+      video_id: vid-2
+      video_file: video-source-bytes
+      extra_body:
+        seed: '5'
+      seconds: null
+      name: null
+      video: null
+      character_id: null
+      reply: '{"id": "vid-8", "object": "video", "status": "completed"}'
+  - openai_media_dispatch:
+      case: video_extended_operations
+      api_base: https://mock.example/v1
+      provider: openai
+      model: sora-2
+      op: extension
+      prompt: extend it
+      video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTk=
+      video_file: null
+      extra_body:
+        seed: '7'
+      seconds: '8'
+      name: null
+      video: null
+      character_id: null
+      reply: '{"id": "vid-9", "object": "video", "status": "completed", "seconds": "12"}'
+  - openai_media_dispatch:
+      case: video_extended_operations
+      api_base: https://mock.example/v1
+      provider: null
+      model: sora-2
+      op: create_character
+      prompt: null
+      video_id: null
+      video_file: null
+      extra_body: null
+      seconds: null
+      name: hero
+      video: character-video-bytes
+      character_id: null
+      reply: '{"id": "char_1", "object": "character", "created_at": 1767225600, "name": "hero"}'
+  - openai_media_dispatch:
+      case: video_extended_operations
+      api_base: https://mock.example/v1
+      provider: null
+      model: sora-2
+      op: get_character
+      prompt: null
+      video_id: null
+      video_file: null
+      extra_body: null
+      seconds: null
+      name: null
+      video: null
+      character_id: char_1
+      reply: '{"id": "char_1", "object": "character", "created_at": 1767225600, "name": "hero"}'
+env: {}
+compare: {ignore: []}

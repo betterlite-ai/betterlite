@@ -1,0 +1,11 @@
+kind: helper
+name: usage-ai-chat-sse-non-ascii-chunk
+call:
+  b3103:
+    function: sse
+    event:
+      type: chunk
+      content: "é😀"
+env: {}
+compare:
+  ignore: []
