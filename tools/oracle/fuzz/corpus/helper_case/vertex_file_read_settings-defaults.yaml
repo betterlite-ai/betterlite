@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-file-read-settings-defaults
+call:
+  vertex_file_read_settings:
+    params: {}
+    argument: null
+    environment:
+      GCS_BATCH_BUCKET_NAME: seed-batch
+      GCS_BUCKET_NAME: seed-bucket
+      GCS_PATH_SERVICE_ACCOUNT: /secrets/seed-sa.json
+env: {}
+compare: {ignore: []}
