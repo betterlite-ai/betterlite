@@ -1,0 +1,23 @@
+kind: helper
+name: streaming-assembly-failed
+call:
+  b3740:
+    function: streaming
+    guardrail: {guardrail_name: purview, tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, purview_app_name: LiteLLM, user_id_field: user_id, timeout_seconds: 5}
+    replies: []
+    identity: {user_id: user-1, end_user_id: null}
+    call_type: completion
+    data:
+      model: gpt-4o
+      messages:
+      - {role: user, content: hi}
+    result: null
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1
+      model: gpt-4o
+      choices:
+      - {index: 0, delta: {content: 5, reasoning_content: thinking}, finish_reason: null}
+env: {}
+compare: {ignore: [{pointer: /value/status, why: LiteLLM raises an uncaught APIError with status 500 where betterlite fails closed with the documented 400.}]}

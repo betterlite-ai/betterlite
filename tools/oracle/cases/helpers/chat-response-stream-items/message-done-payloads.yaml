@@ -1,0 +1,33 @@
+kind: helper
+name: chat-response-stream-items-message-done-payloads
+call:
+  chat_response_stream_items:
+    model: m
+    request_value: hi
+    responses_api_request: {}
+    custom_llm_provider: null
+    litellm_metadata: null
+    now: 10
+    uuid_ids: [msg]
+    steps:
+      - kind: message_items
+      - kind: set
+        message_output_index: 2
+        litellm_model_response: {choices: [{message: {content: stored, annotations: []}}]}
+      - kind: done
+        completion:
+          choices:
+            - message:
+                content: passed
+                annotations:
+                  - type: url_citation
+                    url_citation: {url: "https://example.com", title: Example, start_index: 1, end_index: 4}
+      - kind: done
+        completion: {choices: [{message: {content: null}}]}
+      - kind: done
+        completion: {choices: [{message: {}}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/results/2/1/part/annotations
+      why: LiteLLM's ContentPartDonePartOutputText drops the annotation fields and dumps an empty object; betterlite keeps the citation fields the output_item.done payload carries

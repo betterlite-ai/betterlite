@@ -40,6 +40,7 @@ mime_guess = { version = "2.0.5", default-features = false }
 pem = "4.0.0"
 percent-encoding.workspace = true
 pkcs8 = { version = "0.11.0", default-features = false }
+rand = { version = "0.10.3", default-features = false, features = ["alloc", "std_rng"] }
 regex.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "form", "json", "multipart", "query"] }
 rust_decimal.workspace = true
@@ -87,6 +88,10 @@ path = "src/noma_v2/tests.rs"
 [[test]]
 name = "onyx"
 path = "src/onyx/tests.rs"
+
+[[test]]
+name = "repello_lifecycle"
+path = "src/repello_lifecycle/tests.rs"
 
 [[test]]
 name = "vigil_guard"

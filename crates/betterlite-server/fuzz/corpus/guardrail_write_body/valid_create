@@ -1,0 +1,1 @@
+{"guardrail":{"guardrail_name":"my-guard","litellm_params":{"guardrail":"bedrock","mode":"pre_call"}}}

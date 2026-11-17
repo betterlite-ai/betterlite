@@ -7,7 +7,7 @@ mod input;
 mod prepare;
 mod reasoning;
 pub mod schema;
-mod tools;
+pub mod tools;
 
 mod tests;
 
