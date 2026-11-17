@@ -89,8 +89,7 @@ impl ServiceType {
             | Self::RedisDailyEndUserSpendUpdateQueue
             | Self::RedisDailyAgentSpendUpdateQueue
             | Self::InMemorySpendUpdateQueue
-            | Self::RedisSpendUpdateQueue
-            | Self::RedisWindowSpendUpdateQueue => &[ServiceMetric::Gauge],
+            | Self::RedisSpendUpdateQueue => &[ServiceMetric::Gauge],
             Self::Redis
             | Self::Postgres
             | Self::BatchWriteToDb
@@ -101,7 +100,8 @@ impl ServiceType {
             | Self::ProxyPreCall
             | Self::RedisDailyOrgSpendUpdateQueue
             | Self::RedisDailyTeamSpendUpdateQueue
-            | Self::RedisDailyTagSpendUpdateQueue => {
+            | Self::RedisDailyTagSpendUpdateQueue
+            | Self::RedisWindowSpendUpdateQueue => {
                 &[ServiceMetric::Counter, ServiceMetric::Histogram]
             }
         }

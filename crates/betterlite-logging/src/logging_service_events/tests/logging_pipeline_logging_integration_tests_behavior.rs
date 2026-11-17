@@ -378,7 +378,6 @@ fn metric_sets_follow_the_service_config() {
         ServiceType::RedisDailyAgentSpendUpdateQueue,
         ServiceType::InMemorySpendUpdateQueue,
         ServiceType::RedisSpendUpdateQueue,
-        ServiceType::RedisWindowSpendUpdateQueue,
     ];
     for service in ServiceType::ALL {
         let expected = if gauges.contains(&service) {
