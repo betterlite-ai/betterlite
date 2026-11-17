@@ -4,7 +4,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 use secrecy::SecretString;
 
-use crate::finops::pointfive::logger::client::UploadClientSource;
+use crate::finops::pointfive::logger::client::UploadClientSource as _;
 use crate::finops::pointfive::types::DEFAULT_API_URL;
 
 use super::support::{FakeHttp, MutableEnvironment, default_params, service};

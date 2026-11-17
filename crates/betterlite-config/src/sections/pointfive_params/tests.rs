@@ -166,6 +166,6 @@ fn the_defaults_match_litellm() {
     let params = defaults();
     assert_eq!(params.batch_size, 1_000);
     assert_eq!(params.flush_interval, 300);
-    assert_eq!(params.max_batch_bytes, 8_388_608);
+    assert_eq!(params.max_batch_bytes, 8 * 1024 * 1024);
     assert_eq!(params.max_upload_retries, 3);
 }

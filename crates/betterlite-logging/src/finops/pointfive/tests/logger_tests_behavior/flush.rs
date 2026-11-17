@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 use betterlite_http::proxy::transport_error::TransportError;
 use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 
 use super::support::{
     FakeHttp, FakeUrlCheck, PRESIGNED, RecordingSleeper, Reply, Seen, client, client_over, core,
@@ -54,13 +54,12 @@ impl UploadHttp for GatedHttp {
                 url: request.url.to_string(),
                 body: request.body,
             });
-        let permit = self
-            .gate
+        // a returned permit would let every later request through without another open
+        self.gate
             .acquire()
             .await
-            .expect("the test keeps the gate open");
-        // a returned permit would let every later request through without another open
-        permit.forget();
+            .expect("the test keeps the gate open")
+            .forget();
         let reply = self
             .replies
             .lock()
@@ -168,7 +167,7 @@ async fn a_flush_waiting_on_the_lock_keeps_the_flag_set_while_it_sends() {
     let core = core(
         PointFiveInitParams::default(),
         client_over(
-            http.clone(),
+            Arc::clone(&http),
             Arc::new(FakeUrlCheck),
             Arc::new(RecordingSleeper::default()),
             1,
@@ -183,7 +182,7 @@ async fn a_flush_waiting_on_the_lock_keeps_the_flag_set_while_it_sends() {
     // the second flush queues up behind the lock the first one holds
     let second = Arc::clone(&core);
     tasks.spawn(async move { flush_queue(&second, false).await });
-    tokio::task::yield_now().await;
+    yield_now().await;
     http.open();
     wait_until(|| http.requests() == 2).await;
     core.queue.push(payload("evt-2"));

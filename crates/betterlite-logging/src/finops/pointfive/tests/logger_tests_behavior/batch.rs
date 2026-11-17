@@ -1,4 +1,7 @@
-use crate::callback_logger::CallbackLogger;
+use tokio::task::JoinHandle;
+
+use crate::callback_logger::CallbackLogger as _;
+use crate::finops::pointfive::logger::PointFiveLogger;
 
 use super::support::{
     FakeHttp, PRESIGNED, Reply, batching, client, event, logger_started, payload,
@@ -15,7 +18,7 @@ fn upload_pair(index: usize) -> [Reply; 2] {
     ]
 }
 
-async fn queued(logger: &crate::finops::pointfive::logger::PointFiveLogger, id: &str) {
+async fn queued(logger: &PointFiveLogger, id: &str) {
     logger
         .async_log_success_event(event(payload(id)))
         .await
@@ -98,7 +101,7 @@ async fn a_finished_batch_flush_is_replaced() {
             .lock()
             .expect("the lock is not poisoned")
             .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
+            .is_some_and(JoinHandle::is_finished)
     })
     .await;
     queued(&logger, "evt-3").await;

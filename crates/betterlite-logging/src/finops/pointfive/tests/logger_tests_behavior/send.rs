@@ -92,8 +92,7 @@ async fn a_retryable_failure_raises_and_keeps_the_failed_chunk() {
     core.queue.push(payload("evt-2"));
     let error = send_batch(&core)
         .await
-        .err()
-        .expect("the retryable failure is raised");
+        .expect_err("the retryable failure is raised");
     assert!(error.to_string().contains("pointfive api returned 500"));
     assert!(error.to_string().contains("gave up after 1 attempts"));
     let held: Vec<String> = core
@@ -140,10 +139,7 @@ async fn a_failure_past_the_retry_limit_raises() {
     let http = FakeHttp::scripted(vec![Reply::answer(500), Reply::answer(500)]);
     let core = core(PointFiveInitParams::default(), client(&http, 2));
     core.queue.push(payload("evt-1"));
-    let error = send_batch(&core)
-        .await
-        .err()
-        .expect("the failure is raised");
+    let error = send_batch(&core).await.expect_err("the failure is raised");
     assert!(error.to_string().contains("gave up after 2 attempts"));
     assert_eq!(core.queue.len(), 1);
 }
@@ -155,8 +151,7 @@ async fn a_transport_failure_is_retryable() {
     core.queue.push(payload("evt-1"));
     let error = send_batch(&core)
         .await
-        .err()
-        .expect("the transport failure is raised");
+        .expect_err("the transport failure is raised");
     assert!(error.to_string().contains("pointfive api unreachable"));
     assert_eq!(core.queue.len(), 1);
 }

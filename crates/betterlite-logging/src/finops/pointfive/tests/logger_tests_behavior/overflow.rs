@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::finops::pointfive::logger::core::PointFiveCore;
 
 use super::support::{
@@ -101,8 +101,8 @@ async fn enqueued_events_trim_the_queue() {
         let unshared = Arc::get_mut(&mut logger).expect("the logger is unshared");
         Arc::get_mut(&mut unshared.core)
             .expect("the core is unshared")
-            .max_queue_size = 2;
-    }
+            .max_queue_size = 2
+    };
     logger
         .async_log_success_event(event(payload("a")))
         .await

@@ -19,6 +19,8 @@ use http::Method;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::task::JoinHandle;
+use tokio::task::yield_now;
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
@@ -504,9 +506,9 @@ pub(super) async fn wait_until<Condition>(mut condition: Condition)
 where
     Condition: FnMut() -> bool,
 {
-    let waited = tokio::time::timeout(Duration::from_secs(5), async {
+    let waited = timeout(Duration::from_secs(5), async {
         while !condition() {
-            tokio::task::yield_now().await;
+            yield_now().await;
         }
     })
     .await;

@@ -7,7 +7,7 @@ use betterlite_secret_managers::oidc::http_timeouts::OidcHttpTimeouts;
 use betterlite_secret_managers::secret_lookup::ports::OidcRequest;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::finops::pointfive::logger::client::UploadClientSource;
+use crate::finops::pointfive::logger::client::UploadClientSource as _;
 use crate::finops::pointfive::logger::error::PointFiveError;
 
 use super::support::{FakeHttp, MutableEnvironment, default_params, service};
@@ -75,8 +75,7 @@ fn an_unresolved_environment_reference_is_a_missing_key() {
         &params_with_key("os.environ/POINTFIVE_CONFIGURED_KEY"),
         environment(&[]),
     )
-    .err()
-    .expect("the reference resolves to nothing");
+    .expect_err("the reference resolves to nothing");
     assert!(matches!(error, PointFiveError::MissingApiKey));
 }
 
@@ -96,16 +95,14 @@ fn an_empty_environment_key_counts_as_unset() {
         &PointFiveInitParams::default(),
         environment(&[("POINTFIVE_API_KEY", "")]),
     )
-    .err()
-    .expect("the key is missing");
+    .expect_err("the key is missing");
     assert!(matches!(error, PointFiveError::MissingApiKey));
 }
 
 #[test]
 fn a_missing_key_reports_the_value_error_message() {
     let error = resolved_key(&PointFiveInitParams::default(), environment(&[]))
-        .err()
-        .expect("the key is missing");
+        .expect_err("the key is missing");
     assert_eq!(
         error.to_string(),
         "pointfive logging requires an api key. Set POINTFIVE_API_KEY, or litellm_settings.pointfive_params.api_key in config.yaml"
@@ -117,11 +114,10 @@ fn an_environment_key_that_disappears_is_missing_again() {
     let environment = MutableEnvironment::with(&[("POINTFIVE_API_KEY", "environment-key")]);
     let http = FakeHttp::default();
     let service = service(&http, Arc::new(environment.clone()));
-    assert!(
-        service
-            .upload_client(&PointFiveInitParams::default())
-            .is_ok()
-    );
+    let client = service
+        .upload_client(&PointFiveInitParams::default())
+        .expect("the default params resolve to a client");
+    assert_eq!(client.api_key.expose_secret(), "environment-key");
     environment.unset("POINTFIVE_API_KEY");
     assert!(matches!(
         service.upload_client(&PointFiveInitParams::default()),

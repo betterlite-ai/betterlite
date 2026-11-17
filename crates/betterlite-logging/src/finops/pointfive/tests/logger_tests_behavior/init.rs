@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 use crate::finops::pointfive::logger::PointFiveLogger;
 use crate::finops::pointfive::logger::error::PointFiveError;
 use crate::finops::pointfive::upload::PointFiveUploadClient;

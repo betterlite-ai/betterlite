@@ -1,4 +1,4 @@
-use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::CallbackLogger as _;
 
 use super::support::{FakeHttp, batching, client, event, logger, payload, wait_until};
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{FakeHttp, PRESIGNED, Reply, client, core, payload, target_body, wait_until};
@@ -86,7 +86,7 @@ async fn a_failed_ping_leaves_the_loop_waiting() {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { periodic_flush(&core, HOUR, token).await });
     wait_until(|| !http.pings().is_empty()).await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert!(!tasks.is_empty());
     shutdown.cancel();
     tasks
