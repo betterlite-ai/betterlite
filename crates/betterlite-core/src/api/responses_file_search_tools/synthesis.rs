@@ -97,14 +97,14 @@ fn hidden_with_first_cost(
     original: Option<&HiddenParams>,
     first: Option<&HiddenParams>,
 ) -> Result<HiddenParams, FileSearchToolsError> {
-    let Some(original) = original else {
+    let Some(current_hidden) = original else {
         return Ok(HiddenParams::default());
     };
-    let mut hidden = (*original).clone();
-    let Some(first) = first else {
+    let mut hidden = (*current_hidden).clone();
+    let Some(first_hidden) = first else {
         return Ok(hidden);
     };
-    let Some(first_cost) = first.get("response_cost") else {
+    let Some(first_cost) = first_hidden.get("response_cost") else {
         return Ok(hidden);
     };
     if matches!(first_cost, Json::Null) {

@@ -52,7 +52,7 @@ pub fn extract_tool_call_fields(
         field(tool_call, "id", &NO_DEFAULT),
     ]
     .into_iter()
-    .find(|value| has_value(value));
+    .find(has_value);
     let call_id = match raw_id {
         Some(value) => value_text(&value, "call_id")?,
         None => fallback_call_id.to_owned(),

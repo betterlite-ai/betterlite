@@ -57,8 +57,8 @@ pub fn build_file_search_call_output(
     include_search_results: bool,
 ) -> Result<FileSearchCallOutput, FileSearchToolsError> {
     let search_results = match results {
-        Some(results) if include_search_results && !results.is_empty() => {
-            let records = results
+        Some(found) if include_search_results && !found.is_empty() => {
+            let records = found
                 .iter()
                 .map(include_record)
                 .collect::<Result<Vec<_>, _>>()?;
@@ -172,8 +172,8 @@ fn unknown_message_text(
             });
         }
     };
-    for block in content {
-        let Json::Object(block) = block else {
+    for part in content {
+        let Json::Object(block) = part else {
             continue;
         };
         if !matches!(block.get("type"), Some(Json::Text(kind)) if kind == OUTPUT_TEXT_TYPE) {
