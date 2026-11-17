@@ -18,18 +18,16 @@ pub fn requester_metadata(metadata: &IndexMap<String, JsonValue>) -> Option<Json
 
 // add_openai_metadata keeps string values that are not hidden_params and takes the first sixteen.
 fn clean_metadata(fields: &IndexMap<String, JsonValue>) -> Option<JsonValue> {
-    let mut raw = IndexMap::new();
-    for (name, value) in fields {
-        raw.insert(name.clone(), serde_json::to_value(value).ok()?);
-    }
+    let raw = fields
+        .iter()
+        .map(|(name, value)| Some((name.clone(), serde_json::to_value(value).ok()?)))
+        .collect::<Option<IndexMap<_, _>>>()?;
     let cleaned = metadata_filter_limit(Some(&raw))?;
     if cleaned.is_empty() {
         return None;
     }
-    Some(JsonValue::Object(
-        cleaned
-            .into_iter()
-            .map(|(name, text)| (name, JsonValue::Text(text)))
-            .collect(),
-    ))
+    let entries = cleaned
+        .into_iter()
+        .map(|(name, text)| (name, JsonValue::Text(text)));
+    Some(JsonValue::Object(entries.collect()))
 }

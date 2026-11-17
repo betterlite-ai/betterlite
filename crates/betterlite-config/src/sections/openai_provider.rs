@@ -23,13 +23,16 @@ struct Global {
     enable_preview_features: JsonValue,
 }
 
-// main.py's OpenAI dispatch reads these three flags; the two environment ones have no YAML owner
+// main.py's OpenAI dispatch reads these three settings; the two environment ones have no YAML owner
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Settings {
+pub struct ProviderValues {
     pub experimental_handler: bool,
     pub enable_preview_features: bool,
     pub embedding_format: Option<String>,
 }
+
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<ProviderValues>;
 
 impl Section for Raw {
     type Settings = Settings;
@@ -38,7 +41,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
+        Ok(Box::new(ProviderValues {
             // get_secret_bool defaults to unset, so any text but true or false leaves the handler off
             experimental_handler: lookup
                 .lookup(EXPERIMENTAL_HANDLER_ENV)
@@ -52,7 +55,7 @@ impl Section for Raw {
             embedding_format: lookup
                 .lookup(EMBEDDING_FORMAT_ENV)
                 .filter(|value| !value.is_empty()),
-        })
+        }))
     }
 }
 
