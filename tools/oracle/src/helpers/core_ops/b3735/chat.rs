@@ -25,7 +25,7 @@ struct State {
     seen: bool,
 }
 
-// LiteLLM's stream_chunk_builder reduced to what a scan and a replay read: the shared builder's sinks are private to another task's fixtures and it block_on's inside this helper's runtime.
+// LiteLLM's stream_chunk_builder reduced to what a scan and a replay read: betterlite's stream_chunk_builder needs sinks only another task's private fixtures build, and its adapter block_on's inside this helper's runtime.
 pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
     let mut state = State::default();
     for chunk in chunks {
