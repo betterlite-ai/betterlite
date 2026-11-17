@@ -125,7 +125,7 @@ async fn a_cohere_rerank_call_is_sent_and_projected() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v2/rerank", listener.local_addr().unwrap());
     let mut fixture = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    fixture.api_base = Some(base);
+    fixture.setup.api_base = Some(base);
     let prepared = PreparedRequest::EmbeddingRerank(fixture.prepared());
     let deployed = deployment("cohere/rerank-v3.5", "https://host", Some("key"));
     let (sent, answer) = timeout(EXCHANGE, async {
@@ -154,7 +154,7 @@ async fn a_jina_rerank_call_is_sent_and_projected() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let mut fixture = RerankFixture::new(ProviderId::JinaAi, "jina-reranker-v2");
-    fixture.api_base = Some(base);
+    fixture.setup.api_base = Some(base);
     let prepared = PreparedRequest::EmbeddingRerank(fixture.prepared());
     let deployed = deployment("jina_ai/jina-reranker-v2", "https://host", Some("key"));
     let reply = r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"doc"}}],"usage":{"total_tokens":2}}"#;
@@ -183,7 +183,7 @@ async fn an_infinity_rerank_call_is_sent_and_projected() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let mut fixture = RerankFixture::new(ProviderId::Infinity, "infinity-rerank");
-    fixture.api_base = Some(base);
+    fixture.setup.api_base = Some(base);
     let prepared = PreparedRequest::EmbeddingRerank(fixture.prepared());
     let deployed = deployment("infinity/infinity-rerank", "https://host", Some("key"));
     let reply = r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5}]}"#;
@@ -211,7 +211,7 @@ async fn a_voyage_rerank_call_is_sent_and_projected() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let mut fixture = RerankFixture::new(ProviderId::Voyage, "rerank-2");
-    fixture.api_base = Some(base);
+    fixture.setup.api_base = Some(base);
     let prepared = PreparedRequest::EmbeddingRerank(fixture.prepared());
     let deployed = deployment("voyage/rerank-2", "https://host", Some("key"));
     let (sent, answer) = timeout(EXCHANGE, async {
@@ -242,7 +242,7 @@ async fn a_cohere_embedding_call_is_sent_and_decoded() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v2/embed", listener.local_addr().unwrap());
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    fixture.api_base = Some(base);
+    fixture.setup.api_base = Some(base);
     let prepared = PreparedRequest::EmbeddingRerank(fixture.prepared());
     let deployed = deployment("cohere/embed-v4.0", "https://host", Some("key"));
     let (sent, answer) = timeout(EXCHANGE, async {

@@ -1,16 +1,17 @@
 use betterlite_openai::cohere_embedding::CohereEmbeddingError;
 use betterlite_openai::infinity_embedding::error::InfinityEmbeddingError;
+use rstest::rstest;
 
 use super::*;
 #[test]
 fn cohere_embedding_uses_the_key_chain_and_the_caller_headers() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    fixture.api_key = key("explicit");
-    fixture.headers = Some(headers(&[
+    fixture.setup.api_key = key("explicit");
+    fixture.setup.headers = Some(headers(&[
         ("authorization", "Bearer caller"),
         ("x-call", "1"),
     ]));
-    fixture.extra = headers(&[("x-extra", "2")]);
+    fixture.setup.extra = headers(&[("x-extra", "2")]);
     let prepared = fixture.prepared();
     assert_eq!(
         header_of(&prepared, "authorization").as_deref(),
@@ -27,26 +28,26 @@ fn cohere_embedding_uses_the_key_chain_and_the_caller_headers() {
     assert_eq!(items_field(&body, "texts")[0].as_str(), Some("hi"));
 
     let mut chained = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    chained.api_key = None;
-    chained.settings.cohere_key = key("first");
+    chained.setup.api_key = None;
+    chained.setup.settings.cohere_key = key("first");
     assert_eq!(
         header_of(&chained.prepared(), "authorization").as_deref(),
         Some("Bearer first")
     );
-    chained.settings.cohere_key = None;
-    chained.settings.cohere_api_key = key("second");
+    chained.setup.settings.cohere_key = None;
+    chained.setup.settings.cohere_api_key = key("second");
     assert_eq!(
         header_of(&chained.prepared(), "authorization").as_deref(),
         Some("Bearer second")
     );
-    chained.settings.cohere_api_key = None;
-    chained.settings.co_api_key = key("third");
+    chained.setup.settings.cohere_api_key = None;
+    chained.setup.settings.co_api_key = key("third");
     assert_eq!(
         header_of(&chained.prepared(), "authorization").as_deref(),
         Some("Bearer third")
     );
-    chained.settings.co_api_key = None;
-    chained.settings.api_key = key("last");
+    chained.setup.settings.co_api_key = None;
+    chained.setup.settings.api_key = key("last");
     assert_eq!(
         header_of(&chained.prepared(), "authorization").as_deref(),
         Some("Bearer last")
@@ -56,13 +57,13 @@ fn cohere_embedding_uses_the_key_chain_and_the_caller_headers() {
 #[test]
 fn cohere_embedding_ignores_the_chat_base_globals() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Cohere, "embed-v4.0");
-    fixture.settings.api_base = Some(String::from("https://litellm"));
-    fixture.settings.cohere_api_base = Some(String::from("https://cohere"));
+    fixture.setup.settings.api_base = Some(String::from("https://litellm"));
+    fixture.setup.settings.cohere_api_base = Some(String::from("https://cohere"));
     assert_eq!(
         url_of(&fixture.prepared()),
         "https://api.cohere.ai/v2/embed"
     );
-    fixture.api_base = Some(String::from("https://explicit/embed"));
+    fixture.setup.api_base = Some(String::from("https://explicit/embed"));
     assert_eq!(url_of(&fixture.prepared()), "https://explicit/embed");
 }
 
@@ -108,9 +109,9 @@ fn cohere_embedding_refuses_input_it_cannot_send_as_text() {
 #[test]
 fn voyage_embedding_sends_only_its_authorization() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Voyage, "voyage-3");
-    fixture.api_key = key("voyage-key");
-    fixture.headers = Some(headers(&[("x-call", "1")]));
-    fixture.extra = headers(&[("x-extra", "2")]);
+    fixture.setup.api_key = key("voyage-key");
+    fixture.setup.headers = Some(headers(&[("x-call", "1")]));
+    fixture.setup.extra = headers(&[("x-extra", "2")]);
     let prepared = fixture.prepared();
     assert_eq!(
         header_of(&prepared, "authorization").as_deref(),
@@ -129,15 +130,16 @@ fn voyage_embedding_sends_only_its_authorization() {
 #[test]
 fn voyage_embedding_reads_the_key_from_the_environment() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Voyage, "voyage-3");
-    fixture.api_key = None;
+    fixture.setup.api_key = None;
     fixture
+        .setup
         .environment
         .insert(String::from("VOYAGE_API_KEY"), String::from("env-key"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer env-key")
     );
-    fixture.environment.clear();
+    fixture.setup.environment.clear();
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer None")
@@ -191,7 +193,7 @@ fn voyage_embedding_keeps_only_the_supported_options() {
 #[test]
 fn jina_embedding_wraps_a_scalar_and_maps_dimensions() {
     let mut fixture = EmbeddingFixture::new(ProviderId::JinaAi, "jina-embeddings-v3");
-    fixture.api_base = Some(String::from("https://jina.test/v1"));
+    fixture.setup.api_base = Some(String::from("https://jina.test/v1"));
     fixture.request = serde_json::from_str(r#"{"input":"hi","dimensions":128}"#).unwrap();
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://jina.test/v1/embeddings");
@@ -207,9 +209,9 @@ fn jina_embedding_wraps_a_scalar_and_maps_dimensions() {
 #[test]
 fn jina_embedding_resolves_base_and_key_from_the_host_settings() {
     let mut fixture = EmbeddingFixture::new(ProviderId::JinaAi, "jina-embeddings-v3");
-    fixture.api_key = None;
-    fixture.host.jina_ai_api_base = Some(String::from("https://host.test"));
-    fixture.host.jina_ai_api_key = key("host-key");
+    fixture.setup.api_key = None;
+    fixture.setup.host.jina_ai_api_base = Some(String::from("https://host.test"));
+    fixture.setup.host.jina_ai_api_key = key("host-key");
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://host.test/embeddings");
     assert_eq!(
@@ -232,8 +234,8 @@ fn infinity_embedding_requires_a_base() {
 #[test]
 fn infinity_embedding_sends_bearer_none_without_a_key() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Infinity, "infinity-model");
-    fixture.api_key = None;
-    fixture.api_base = Some(String::from("https://infinity.test"));
+    fixture.setup.api_key = None;
+    fixture.setup.api_base = Some(String::from("https://infinity.test"));
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://infinity.test/embeddings");
     assert_eq!(
@@ -250,7 +252,7 @@ fn infinity_embedding_sends_bearer_none_without_a_key() {
 #[test]
 fn a_null_passthrough_option_never_reaches_an_embedding_body() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Infinity, "infinity-model");
-    fixture.api_base = Some(String::from("https://infinity.test"));
+    fixture.setup.api_base = Some(String::from("https://infinity.test"));
     fixture.request = serde_json::from_str(r#"{"input":"hi","modality":null}"#).unwrap();
     assert!(body_of(&fixture.prepared()).get("modality").is_none());
 }
@@ -303,7 +305,7 @@ fn a_jina_embedding_reply_is_decoded() {
 #[test]
 fn an_infinity_embedding_reply_is_decoded() {
     let mut fixture = EmbeddingFixture::new(ProviderId::Infinity, "infinity-model");
-    fixture.api_base = Some(String::from("https://infinity.test"));
+    fixture.setup.api_base = Some(String::from("https://infinity.test"));
     let prepared = fixture.prepared();
     let answer = embedding_result(decode(&prepared, 200, INFINITY_EMBEDDING_REPLY).unwrap());
     let EmbeddingRerankResult::InfinityEmbedding(reply) = answer else {
@@ -345,20 +347,20 @@ fn cohere_embedding_sends_a_batch_of_texts() {
     );
 }
 
-#[test]
-fn an_unparseable_embedding_base_names_each_family() {
-    let cases = [
-        (ProviderId::Cohere, "embed-v4.0", "cohere"),
-        (ProviderId::Voyage, "voyage-3", "voyage"),
-        (ProviderId::JinaAi, "jina-embeddings-v3", "jina"),
-        (ProviderId::Infinity, "infinity-model", "infinity"),
-    ];
-    for (provider, model, expected) in cases {
-        let mut fixture = EmbeddingFixture::new(provider, model);
-        fixture.api_base = Some(String::from("not a url"));
-        assert!(
-            matches!(fixture.prepare(), Err(FamilyError::Url { family, .. }) if family == expected),
-            "the {expected} URL failure"
-        );
-    }
+#[rstest]
+#[case(ProviderId::Cohere, "embed-v4.0", "cohere")]
+#[case(ProviderId::Voyage, "voyage-3", "voyage")]
+#[case(ProviderId::JinaAi, "jina-embeddings-v3", "jina")]
+#[case(ProviderId::Infinity, "infinity-model", "infinity")]
+fn an_unparsable_embedding_base_names_each_family(
+    #[case] provider: ProviderId,
+    #[case] model: &str,
+    #[case] expected: &str,
+) {
+    let mut fixture = EmbeddingFixture::new(provider, model);
+    fixture.setup.api_base = Some(String::from("not a url"));
+    assert!(
+        matches!(fixture.prepare(), Err(FamilyError::Url { family, .. }) if family == expected),
+        "the {expected} URL failure"
+    );
 }

@@ -4,6 +4,7 @@ use betterlite_config::sections::{cohere_rerank_settings, jina_infinity_rerank};
 use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use betterlite_openai::host_rerank::error::HostRerankError;
+use rstest::rstest;
 
 use super::*;
 use crate::api::rerank_contracts::{
@@ -14,9 +15,9 @@ use crate::operation::OperationError;
 #[test]
 fn cohere_rerank_uses_the_v1_client_for_a_v1_base() {
     let mut fixture = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    fixture.api_base = Some(String::from("https://co.test/v1/rerank"));
-    fixture.max_chunks_per_doc = Some(2);
-    fixture.top_n = Some(1);
+    fixture.setup.api_base = Some(String::from("https://co.test/v1/rerank"));
+    fixture.options.max_chunks_per_doc = Some(2);
+    fixture.options.top_n = Some(1);
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://co.test/v1/rerank");
     let body = body_of(&prepared);
@@ -36,7 +37,7 @@ fn cohere_rerank_uses_the_v1_client_for_a_v1_base() {
 #[test]
 fn cohere_rerank_v2_is_the_default() {
     let mut fixture = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    fixture.max_tokens_per_doc = Some(8);
+    fixture.options.max_tokens_per_doc = Some(8);
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://api.cohere.ai/v2/rerank");
     let body = body_of(&prepared);
@@ -47,25 +48,25 @@ fn cohere_rerank_v2_is_the_default() {
 #[test]
 fn a_legacy_limit_selects_the_v1_client_and_its_suffix_quirk() {
     let mut legacy = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    legacy.api_base = Some(String::from("https://co.test"));
-    legacy.max_chunks_per_doc = Some(1);
+    legacy.setup.api_base = Some(String::from("https://co.test"));
+    legacy.options.max_chunks_per_doc = Some(1);
     assert_eq!(url_of(&legacy.prepared()), "https://co.test/v1/rerank");
 
     let mut both = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    both.api_base = Some(String::from("https://co.test"));
-    both.max_chunks_per_doc = Some(1);
-    both.max_tokens_per_doc = Some(1);
+    both.setup.api_base = Some(String::from("https://co.test"));
+    both.options.max_chunks_per_doc = Some(1);
+    both.options.max_tokens_per_doc = Some(1);
     assert_eq!(url_of(&both.prepared()), "https://co.test/v2/rerank");
 
     let mut v2_base = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    v2_base.api_base = Some(String::from("https://co.test/v2/rerank"));
-    v2_base.max_chunks_per_doc = Some(1);
+    v2_base.setup.api_base = Some(String::from("https://co.test/v2/rerank"));
+    v2_base.options.max_chunks_per_doc = Some(1);
     assert_eq!(url_of(&v2_base.prepared()), "https://co.test/v2/rerank");
 
     // the trailing slash hides the suffix from the selector, so the legacy limit picks v1
     let mut trailing = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    trailing.api_base = Some(String::from("https://co.test/v2/rerank/"));
-    trailing.max_chunks_per_doc = Some(1);
+    trailing.setup.api_base = Some(String::from("https://co.test/v2/rerank/"));
+    trailing.options.max_chunks_per_doc = Some(1);
     assert_eq!(
         url_of(&trailing.prepared()),
         "https://co.test/v2/rerank/v1/rerank"
@@ -75,7 +76,7 @@ fn a_legacy_limit_selects_the_v1_client_and_its_suffix_quirk() {
 #[test]
 fn rank_fields_reach_the_cohere_body() {
     let mut fixture = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    fixture.rank_fields = Some(vec![String::from("title")]);
+    fixture.options.rank_fields = Some(vec![String::from("title")]);
     let body = body_of(&fixture.prepared());
     assert_eq!(items_field(&body, "rank_fields")[0].as_str(), Some("title"));
 }
@@ -83,9 +84,9 @@ fn rank_fields_reach_the_cohere_body() {
 #[test]
 fn jina_rerank_sends_its_own_headers_and_params() {
     let mut fixture = RerankFixture::new(ProviderId::JinaAi, "jina-reranker-v2");
-    fixture.api_base = Some(String::from("https://jina.test"));
-    fixture.headers = Some(headers(&[("x-call", "1")]));
-    fixture.top_n = Some(2);
+    fixture.setup.api_base = Some(String::from("https://jina.test"));
+    fixture.setup.headers = Some(headers(&[("x-call", "1")]));
+    fixture.options.top_n = Some(2);
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://jina.test/v1/rerank");
     assert_eq!(
@@ -115,8 +116,8 @@ fn infinity_rerank_requires_a_base() {
 #[test]
 fn voyage_rerank_sends_its_typed_body() {
     let mut fixture = RerankFixture::new(ProviderId::Voyage, "rerank-2");
-    fixture.top_n = Some(2);
-    fixture.return_documents = ReturnDocuments::Value(false);
+    fixture.options.top_n = Some(2);
+    fixture.options.return_documents = Some(ReturnDocuments::Value(false));
     let prepared = fixture.prepared();
     assert_eq!(url_of(&prepared), "https://api.voyageai.com/v1/rerank");
     assert_eq!(
@@ -138,15 +139,16 @@ fn voyage_rerank_sends_its_typed_body() {
 #[test]
 fn voyage_rerank_reads_the_key_from_the_environment() {
     let mut fixture = RerankFixture::new(ProviderId::Voyage, "rerank-2");
-    fixture.api_key = None;
+    fixture.setup.api_key = None;
     fixture
+        .setup
         .environment
         .insert(String::from("VOYAGE_API_KEY"), String::from("env-key"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer env-key")
     );
-    fixture.environment.clear();
+    fixture.setup.environment.clear();
     assert!(matches!(
         fixture.prepare(),
         Err(FamilyError::VoyageRerank(_))
@@ -189,7 +191,7 @@ fn a_jina_rerank_reply_is_decoded() {
 #[test]
 fn an_infinity_rerank_reply_is_decoded() {
     let mut fixture = RerankFixture::new(ProviderId::Infinity, "infinity-rerank");
-    fixture.api_base = Some(String::from("https://infinity.test"));
+    fixture.setup.api_base = Some(String::from("https://infinity.test"));
     let prepared = fixture.prepared();
     let reply = r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5}]}"#;
     let answer = embedding_result(decode(&prepared, 200, reply).unwrap());
@@ -271,62 +273,63 @@ const JINA_PARAMS: [&str; 4] = ["query", "top_n", "documents", "return_documents
 const VOYAGE_PARAMS: [&str; 4] = ["query", "documents", "top_n", "return_documents"];
 
 // the contract's own methods, which preparation reaches through the trait rather than by name
-#[test]
-fn the_rerank_config_names_its_params_and_url() {
+#[rstest]
+#[case(
+    RerankConfig::Cohere,
+    Some("https://co.test"),
+    "https://co.test/v1/rerank",
+    &COHERE_V1_PARAMS
+)]
+#[case(
+    RerankConfig::CohereV2,
+    Some("https://co.test"),
+    "https://co.test/v2/rerank",
+    &COHERE_V2_PARAMS
+)]
+#[case(
+    RerankConfig::Infinity,
+    Some("https://inf.test"),
+    "https://inf.test/rerank",
+    &COHERE_V1_PARAMS
+)]
+#[case(
+    RerankConfig::JinaAi,
+    Some("https://jina.test"),
+    "https://jina.test/v1/rerank",
+    &JINA_PARAMS
+)]
+#[case(
+    RerankConfig::Voyage,
+    Some("https://voyage.test"),
+    "https://voyage.test/v1/rerank",
+    &VOYAGE_PARAMS
+)]
+fn the_rerank_config_names_its_params_and_url(
+    #[case] config: RerankConfig,
+    #[case] base: Option<&str>,
+    #[case] expected_url: &str,
+    #[case] expected_params: &[&str],
+) {
     let cohere = cohere_rerank_settings::Settings::default();
     let host = jina_infinity_rerank::Settings::default();
     let environment = BTreeMap::new();
-    let cases: [(RerankConfig, Option<&str>, &str, &[&str]); 5] = [
-        (
-            RerankConfig::Cohere,
-            Some("https://co.test"),
-            "https://co.test/v1/rerank",
-            &COHERE_V1_PARAMS,
-        ),
-        (
-            RerankConfig::CohereV2,
-            Some("https://co.test"),
-            "https://co.test/v2/rerank",
-            &COHERE_V2_PARAMS,
-        ),
-        (
-            RerankConfig::Infinity,
-            Some("https://inf.test"),
-            "https://inf.test/rerank",
-            &COHERE_V1_PARAMS,
-        ),
-        (
-            RerankConfig::JinaAi,
-            Some("https://jina.test"),
-            "https://jina.test/v1/rerank",
-            &JINA_PARAMS,
-        ),
-        (
-            RerankConfig::Voyage,
-            Some("https://voyage.test"),
-            "https://voyage.test/v1/rerank",
-            &VOYAGE_PARAMS,
-        ),
-    ];
-    for (config, base, expected_url, expected_params) in cases {
-        let family = rerank::FamilyRerankConfig {
-            config,
-            cohere: &cohere,
-            host: &host,
-            environment: &environment,
-        };
-        assert_eq!(
-            family.get_complete_url(base, "rerank-v3.5", None),
-            expected_url
-        );
-        assert_eq!(
-            family.supported_rerank_params("rerank-v3.5"),
-            expected_params
-                .iter()
-                .map(|name| (*name).to_owned())
-                .collect::<Vec<String>>()
-        );
-    }
+    let family = rerank::FamilyRerankConfig {
+        config,
+        cohere: &cohere,
+        host: &host,
+        environment: &environment,
+    };
+    assert_eq!(
+        family.get_complete_url(base, "rerank-v3.5", None),
+        expected_url
+    );
+    assert_eq!(
+        family.supported_rerank_params("rerank-v3.5"),
+        expected_params
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<String>>()
+    );
 }
 
 #[test]
@@ -366,9 +369,9 @@ fn the_rerank_config_rewrites_the_raw_response() {
 }
 
 #[test]
-fn an_unparseable_rerank_base_names_its_family() {
+fn an_unparsable_rerank_base_names_its_family() {
     let mut v1 = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    v1.api_base = Some(String::from("not a url"));
+    v1.setup.api_base = Some(String::from("not a url"));
     assert!(matches!(
         v1.prepare(),
         Err(FamilyError::Url {
@@ -378,8 +381,8 @@ fn an_unparseable_rerank_base_names_its_family() {
     ));
 
     let mut v2 = RerankFixture::new(ProviderId::Cohere, "rerank-v3.5");
-    v2.api_base = Some(String::from("not a url"));
-    v2.max_tokens_per_doc = Some(1);
+    v2.setup.api_base = Some(String::from("not a url"));
+    v2.options.max_tokens_per_doc = Some(1);
     assert!(matches!(
         v2.prepare(),
         Err(FamilyError::Url {
@@ -389,7 +392,7 @@ fn an_unparseable_rerank_base_names_its_family() {
     ));
 
     let mut voyage = RerankFixture::new(ProviderId::Voyage, "rerank-2");
-    voyage.api_base = Some(String::from("not a url"));
+    voyage.setup.api_base = Some(String::from("not a url"));
     assert!(matches!(
         voyage.prepare(),
         Err(FamilyError::Url {

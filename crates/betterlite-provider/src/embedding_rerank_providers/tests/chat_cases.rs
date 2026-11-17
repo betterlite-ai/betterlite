@@ -41,55 +41,55 @@ fn cohere_v1_chat_keeps_its_model_and_sends_a_message() {
 #[test]
 fn the_chat_base_falls_through_the_globals_and_then_the_route_default() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.settings.api_base = Some(String::from("https://litellm/v1/chat"));
-    fixture.settings.cohere_api_base = Some(String::from("https://cohere/v1/chat"));
+    fixture.setup.settings.api_base = Some(String::from("https://litellm/v1/chat"));
+    fixture.setup.settings.cohere_api_base = Some(String::from("https://cohere/v1/chat"));
     assert_eq!(url_of(&fixture.prepared()), "https://litellm/v1/chat");
-    fixture.settings.api_base = None;
+    fixture.setup.settings.api_base = None;
     assert_eq!(url_of(&fixture.prepared()), "https://cohere/v1/chat");
-    fixture.settings.cohere_api_base = None;
+    fixture.setup.settings.cohere_api_base = None;
     assert_eq!(
         url_of(&fixture.prepared()),
         "https://api.cohere.com/v2/chat"
     );
-    fixture.api_base = Some(String::from("https://explicit/v1/chat"));
-    fixture.settings.api_base = Some(String::from("https://litellm/v1/chat"));
-    fixture.settings.cohere_api_base = Some(String::from("https://cohere/v1/chat"));
+    fixture.setup.api_base = Some(String::from("https://explicit/v1/chat"));
+    fixture.setup.settings.api_base = Some(String::from("https://litellm/v1/chat"));
+    fixture.setup.settings.cohere_api_base = Some(String::from("https://cohere/v1/chat"));
     assert_eq!(url_of(&fixture.prepared()), "https://explicit/v1/chat");
 }
 
 #[test]
 fn the_chat_key_falls_through_the_globals_in_order() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.api_key = key("");
-    fixture.settings.cohere_key = key("first");
+    fixture.setup.api_key = key("");
+    fixture.setup.settings.cohere_key = key("first");
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer first")
     );
-    fixture.settings.cohere_key = key("");
-    fixture.settings.cohere_api_key = key("second");
+    fixture.setup.settings.cohere_key = key("");
+    fixture.setup.settings.cohere_api_key = key("second");
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer second")
     );
-    fixture.settings.cohere_api_key = key("");
-    fixture.settings.co_api_key = key("third");
+    fixture.setup.settings.cohere_api_key = key("");
+    fixture.setup.settings.co_api_key = key("third");
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer third")
     );
-    fixture.settings.co_api_key = key("");
-    fixture.settings.api_key = key("last");
+    fixture.setup.settings.co_api_key = key("");
+    fixture.setup.settings.api_key = key("last");
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer last")
     );
-    fixture.settings.api_key = key("");
+    fixture.setup.settings.api_key = key("");
     assert!(header_of(&fixture.prepared(), "authorization").is_none());
-    fixture.api_key = None;
-    fixture.settings.api_key = None;
+    fixture.setup.api_key = None;
+    fixture.setup.settings.api_key = None;
     assert!(header_of(&fixture.prepared(), "authorization").is_none());
-    fixture.api_key = key("explicit");
+    fixture.setup.api_key = key("explicit");
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer explicit")
@@ -99,9 +99,9 @@ fn the_chat_key_falls_through_the_globals_in_order() {
 #[test]
 fn caller_headers_win_over_the_globals_and_extra_headers_overlay() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.settings.headers = headers(&[("x-global", "global"), ("x-shared", "global")]);
-    fixture.headers = Some(headers(&[("x-call", "call"), ("x-shared", "call")]));
-    fixture.extra = headers(&[("x-extra", "extra"), ("x-shared", "extra")]);
+    fixture.setup.settings.headers = headers(&[("x-global", "global"), ("x-shared", "global")]);
+    fixture.setup.headers = Some(headers(&[("x-call", "call"), ("x-shared", "call")]));
+    fixture.setup.extra = headers(&[("x-extra", "extra"), ("x-shared", "extra")]);
     let prepared = fixture.prepared();
     assert_eq!(header_of(&prepared, "x-call").as_deref(), Some("call"));
     assert_eq!(header_of(&prepared, "x-extra").as_deref(), Some("extra"));
@@ -112,9 +112,9 @@ fn caller_headers_win_over_the_globals_and_extra_headers_overlay() {
 #[test]
 fn an_empty_caller_headers_map_falls_back_to_the_globals_and_extra_headers() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.settings.headers = headers(&[("x-global", "global")]);
-    fixture.headers = Some(Headers::new());
-    fixture.extra = headers(&[("x-extra", "extra")]);
+    fixture.setup.settings.headers = headers(&[("x-global", "global")]);
+    fixture.setup.headers = Some(Headers::new());
+    fixture.setup.extra = headers(&[("x-extra", "extra")]);
     let prepared = fixture.prepared();
     assert_eq!(header_of(&prepared, "x-global").as_deref(), Some("global"));
     assert_eq!(header_of(&prepared, "x-extra").as_deref(), Some("extra"));
@@ -123,8 +123,8 @@ fn an_empty_caller_headers_map_falls_back_to_the_globals_and_extra_headers() {
 #[test]
 fn extra_headers_are_merged_over_the_globals_when_no_caller_headers_arrive() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.settings.headers = headers(&[("x-global", "global"), ("x-shared", "global")]);
-    fixture.extra = headers(&[("x-extra", "extra"), ("x-shared", "extra")]);
+    fixture.setup.settings.headers = headers(&[("x-global", "global"), ("x-shared", "global")]);
+    fixture.setup.extra = headers(&[("x-extra", "extra"), ("x-shared", "extra")]);
     let prepared = fixture.prepared();
     assert_eq!(header_of(&prepared, "x-extra").as_deref(), Some("extra"));
     assert_eq!(header_of(&prepared, "x-global").as_deref(), Some("global"));
@@ -134,7 +134,7 @@ fn extra_headers_are_merged_over_the_globals_when_no_caller_headers_arrive() {
 #[test]
 fn cohere_chat_overwrites_the_framing_headers() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.headers.replace(headers(&[
+    fixture.setup.headers.replace(headers(&[
         ("Request-Source", "caller"),
         ("accept", "text/plain"),
     ]));
@@ -190,7 +190,7 @@ fn null_passthrough_fields_never_reach_the_body() {
 #[test]
 fn a_non_cohere_provider_prepares_no_chat() {
     let mut fixture = ChatFixture::new("voyage-3");
-    fixture.provider = ProviderId::Voyage;
+    fixture.setup.provider = ProviderId::Voyage;
     assert!(matches!(
         fixture.prepare(),
         Err(FamilyError::Unsupported { .. })

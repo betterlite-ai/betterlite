@@ -55,6 +55,7 @@ const INFINITY_EMBEDDING_REPLY: &str = r#"{"object":"list","model":"infinity-mod
 const RERANK_REPLY: &str =
     r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"doc"}}]}"#;
 const VOYAGE_RERANK_REPLY: &str = r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":"doc"}],"usage":{"total_tokens":3}}"#;
+const CHAT_REQUEST: &[u8] = br#"{"messages":[{"role":"user","content":"hi"}]}"#;
 
 fn client() -> ProxiedClient {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
@@ -169,62 +170,10 @@ async fn serve(listener: &TcpListener, status: u16, reply: &[u8]) -> String {
     String::from_utf8(request).unwrap()
 }
 
-struct ChatFixture {
+// the deployment-wide inputs every fixture shares: who to call, with what credentials and settings
+struct Setup {
     provider: ProviderId,
     model: String,
-    request: ChatRequest,
-    stream: bool,
-    api_key: Option<SecretString>,
-    api_base: Option<String>,
-    headers: Option<Headers>,
-    extra: Headers,
-    settings: Settings,
-}
-
-impl ChatFixture {
-    fn new(model: &str) -> Self {
-        Self {
-            provider: ProviderId::Cohere,
-            model: model.to_owned(),
-            request: ChatRequest::parse(br#"{"messages":[{"role":"user","content":"hi"}]}"#)
-                .unwrap(),
-            stream: false,
-            api_key: key("key"),
-            api_base: None,
-            headers: None,
-            extra: Headers::new(),
-            settings: Settings::default(),
-        }
-    }
-
-    fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
-        chat::prepare(
-            &Common {
-                provider: self.provider,
-                model: &self.model,
-                api_key: self.api_key.as_ref(),
-                api_base: self.api_base.as_deref(),
-                headers: self.headers.as_ref(),
-                extra_headers: &self.extra,
-                settings: &self.settings,
-                host: &embedding_host_settings::Settings::default(),
-                environment: &BTreeMap::<String, String>::new(),
-                timeout: TIMEOUT,
-            },
-            &self.request,
-            self.stream,
-        )
-    }
-
-    fn prepared(&self) -> EmbeddingRerankPrepared {
-        self.prepare().unwrap()
-    }
-}
-
-struct EmbeddingFixture {
-    provider: ProviderId,
-    model: String,
-    request: EmbeddingRequest,
     api_key: Option<SecretString>,
     api_base: Option<String>,
     headers: Option<Headers>,
@@ -234,12 +183,11 @@ struct EmbeddingFixture {
     environment: BTreeMap<String, String>,
 }
 
-impl EmbeddingFixture {
+impl Setup {
     fn new(provider: ProviderId, model: &str) -> Self {
         Self {
             provider,
             model: model.to_owned(),
-            request: serde_json::from_str(r#"{"input":"hi"}"#).unwrap(),
             api_key: key("key"),
             api_base: None,
             headers: None,
@@ -250,22 +198,39 @@ impl EmbeddingFixture {
         }
     }
 
+    fn common(&self) -> Common<'_> {
+        Common {
+            provider: self.provider,
+            model: &self.model,
+            api_key: self.api_key.as_ref(),
+            api_base: self.api_base.as_deref(),
+            headers: self.headers.as_ref(),
+            extra_headers: &self.extra,
+            settings: &self.settings,
+            host: &self.host,
+            environment: &self.environment,
+            timeout: TIMEOUT,
+        }
+    }
+}
+
+struct ChatFixture {
+    setup: Setup,
+    request: ChatRequest,
+    stream: bool,
+}
+
+impl ChatFixture {
+    fn new(model: &str) -> Self {
+        Self {
+            setup: Setup::new(ProviderId::Cohere, model),
+            request: ChatRequest::parse(CHAT_REQUEST).unwrap(),
+            stream: false,
+        }
+    }
+
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
-        embedding::prepare(
-            &Common {
-                provider: self.provider,
-                model: &self.model,
-                api_key: self.api_key.as_ref(),
-                api_base: self.api_base.as_deref(),
-                headers: self.headers.as_ref(),
-                extra_headers: &self.extra,
-                settings: &self.settings,
-                host: &self.host,
-                environment: &self.environment,
-                timeout: TIMEOUT,
-            },
-            &self.request,
-        )
+        chat::prepare(&self.setup.common(), &self.request, self.stream)
     }
 
     fn prepared(&self) -> EmbeddingRerankPrepared {
@@ -273,73 +238,96 @@ impl EmbeddingFixture {
     }
 }
 
-struct RerankFixture {
-    provider: ProviderId,
-    model: String,
+struct EmbeddingFixture {
+    setup: Setup,
+    request: EmbeddingRequest,
+}
+
+impl EmbeddingFixture {
+    fn new(provider: ProviderId, model: &str) -> Self {
+        Self {
+            setup: Setup::new(provider, model),
+            request: serde_json::from_str(r#"{"input":"hi"}"#).unwrap(),
+        }
+    }
+
+    fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
+        embedding::prepare(&self.setup.common(), &self.request)
+    }
+
+    fn prepared(&self) -> EmbeddingRerankPrepared {
+        self.prepare().unwrap()
+    }
+}
+
+// the rerank-only inputs a case sets before it prepares, all at their LiteLLM defaults
+struct RerankOptions {
     query: String,
     documents: Vec<RerankDocument>,
     top_n: Option<i64>,
     rank_fields: Option<Vec<String>>,
-    return_documents: ReturnDocuments,
+    return_documents: Option<ReturnDocuments>,
     max_chunks_per_doc: Option<i64>,
     max_tokens_per_doc: Option<i64>,
     instruction: Option<String>,
-    api_key: Option<SecretString>,
-    api_base: Option<String>,
-    headers: Option<Headers>,
     cohere: cohere_rerank_settings::Settings,
     host: jina_infinity_rerank::Settings,
-    settings: Settings,
-    environment: BTreeMap<String, String>,
+}
+
+impl Default for RerankOptions {
+    fn default() -> Self {
+        Self {
+            query: String::from("what"),
+            documents: vec![RerankDocument::Text(String::from("doc"))],
+            top_n: None,
+            rank_fields: None,
+            return_documents: None,
+            max_chunks_per_doc: None,
+            max_tokens_per_doc: None,
+            instruction: None,
+            cohere: cohere_rerank_settings::Settings::default(),
+            host: jina_infinity_rerank::Settings::default(),
+        }
+    }
+}
+
+struct RerankFixture {
+    setup: Setup,
+    options: RerankOptions,
 }
 
 impl RerankFixture {
     fn new(provider: ProviderId, model: &str) -> Self {
         Self {
-            provider,
-            model: model.to_owned(),
-            query: String::from("what"),
-            documents: vec![RerankDocument::Text(String::from("doc"))],
-            top_n: None,
-            rank_fields: None,
-            return_documents: ReturnDocuments::Default,
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-            api_key: key("key"),
-            api_base: None,
-            headers: None,
-            cohere: cohere_rerank_settings::Settings::default(),
-            host: jina_infinity_rerank::Settings::default(),
-            settings: Settings::default(),
-            environment: BTreeMap::new(),
+            setup: Setup::new(provider, model),
+            options: RerankOptions::default(),
         }
     }
 
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
         let mut present = Vec::new();
-        if self.max_chunks_per_doc.is_some() {
+        if self.options.max_chunks_per_doc.is_some() {
             present.push(String::from("max_chunks_per_doc"));
         }
-        if self.max_tokens_per_doc.is_some() {
+        if self.options.max_tokens_per_doc.is_some() {
             present.push(String::from("max_tokens_per_doc"));
         }
         let config = betterlite_core::embedding_rerank_providers::rerank_config(
-            self.provider,
-            self.api_base.as_deref(),
+            self.setup.provider,
+            self.setup.api_base.as_deref(),
             &present,
         )
         .ok_or(FamilyError::Unsupported {
-            provider: self.provider.to_string(),
+            provider: self.setup.provider.to_string(),
         })?;
         let family = FamilyRerankConfig {
             config,
-            cohere: &self.cohere,
-            host: &self.host,
-            environment: &self.environment,
+            cohere: &self.options.cohere,
+            host: &self.options.host,
+            environment: &self.setup.environment,
         };
         let mut non_default = Params::new();
-        if let Some(rank_fields) = self.rank_fields.as_deref() {
+        if let Some(rank_fields) = self.options.rank_fields.as_deref() {
             non_default.insert(
                 String::from("rank_fields"),
                 betterlite_models::decisions::Json::List(
@@ -354,32 +342,36 @@ impl RerankFixture {
         let params = get_optional_rerank_params(
             &family,
             OptionalRerankParams {
-                model: &self.model,
+                model: &self.setup.model,
                 drop_params: false,
-                query: &self.query,
-                documents: &self.documents,
-                custom_llm_provider: Some(<&'static str>::from(self.provider)),
-                top_n: self.top_n,
-                rank_fields: self.rank_fields.as_deref(),
-                return_documents: self.return_documents,
-                max_chunks_per_doc: self.max_chunks_per_doc,
-                max_tokens_per_doc: self.max_tokens_per_doc,
-                instruction: self.instruction.as_deref(),
+                query: &self.options.query,
+                documents: &self.options.documents,
+                custom_llm_provider: Some(<&'static str>::from(self.setup.provider)),
+                top_n: self.options.top_n,
+                rank_fields: self.options.rank_fields.as_deref(),
+                return_documents: self
+                    .options
+                    .return_documents
+                    .unwrap_or(ReturnDocuments::Default),
+                max_chunks_per_doc: self.options.max_chunks_per_doc,
+                max_tokens_per_doc: self.options.max_tokens_per_doc,
+                instruction: self.options.instruction.as_deref(),
                 non_default_params: Some(&mut non_default),
             },
         )?;
         let supplied = self
+            .setup
             .settings
-            .resolve_headers(self.headers.as_ref(), &Headers::new());
+            .resolve_headers(self.setup.headers.as_ref(), &Headers::new());
         let headers = family.validate_environment(EnvironmentRequest {
             headers: &supplied,
-            model: &self.model,
-            api_key: self.api_key.as_ref(),
+            model: &self.setup.model,
+            api_key: self.setup.api_key.as_ref(),
             optional_params: Some(&params),
             litellm_params: None,
         })?;
-        let endpoint = family.url(self.api_base.as_deref())?;
-        let body = family.transform_rerank_request(&self.model, &params, &headers, None)?;
+        let endpoint = family.url(self.setup.api_base.as_deref())?;
+        let body = family.transform_rerank_request(&self.setup.model, &params, &headers, None)?;
         rerank::prepare(family.config, endpoint, headers, &body, TIMEOUT)
     }
 
