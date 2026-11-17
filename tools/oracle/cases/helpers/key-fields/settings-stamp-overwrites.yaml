@@ -1,0 +1,13 @@
+kind: helper
+name: settings_stamp_overwrites
+call:
+  key_fields:
+    calls:
+      - {function: settings, body: {a: 1, settings_updated_at: "old"}, now: "2030-01-01T00:00:00Z"}
+      - {function: settings, body: {}, now: "2030-01-01T00:00:00Z"}
+      - {function: settings, body: {b: [1, 2], c: {d: null}, e: "text"}, now: "2031-06-01T12:30:00Z"}
+      - {function: settings, body: {a: 1}, now: "2030-01-01T00:00:00+00:00"}
+      - {function: settings, body: {a: 1}, now: "not a time"}
+      - {function: settings, body: {settings_updated_at: null, other: false}, now: "2030-01-01T00:00:00Z"}
+env: {}
+compare: {ignore: []}

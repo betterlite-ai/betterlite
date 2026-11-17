@@ -1,0 +1,38 @@
+kind: helper
+name: foundry-rerank-query-documents-top-n
+call:
+  foundry_rerank:
+    requests:
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      - second document
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - {text: first document}
+      - second document
+      top_n: 1
+      rank_fields: [text]
+      return_documents: false
+      max_chunks_per_doc: 2
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      top_n: 1
+      return_documents: true
+    - model: cohere-rerank-v3-multilingual
+      query: which document answers the question
+      documents:
+      - first document
+      top_n: 0
+      max_chunks_per_doc: 0
+    - model: ""
+      query: ""
+      documents: []
+    - model: azure_ai/cohere-rerank-v3-english
+      query: which document answers the question
+env: {}
+compare: {ignore: []}

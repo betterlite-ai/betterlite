@@ -1,0 +1,33 @@
+kind: helper
+name: responses-sse-recovery-line-filter
+call:
+  responses_sse_recovery:
+    action: recovery_line_filter
+    lines:
+      - '{"a": 1}'
+      - '  {"a": 1}  '
+      - 'data: {"a": 1}'
+      - 'data:{"a": 1}'
+      - 'data: {"type":"response.output_text.done","text":"x"}'
+      - ''
+      - '   '
+      - 'data: [DONE]'
+      - '[DONE]'
+      - 'event: response.completed'
+      - 'data: event: response.completed'
+      - 'data: {"type":'
+      - 'data: [1, 2]'
+      - 'data: 5'
+      - 'data: "text"'
+      - 'data: null'
+      - 'data: true'
+      - 'text data: {"a": 1}'
+      - 'data:data:{"a": 1}'
+      - 'data: {"a": 1} trailing'
+      - 'data:'
+      - 'data: {"a": {"b": [1, null, "x"]}}'
+      - "\u001c{\"a\": 1}\u001f"
+      - "data: {\n\"a\": 1}"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,13 @@
+kind: helper
+name: sso-resolution-team-mappings-non-dict
+call:
+  b4141:
+    salt_key: salt-one
+    db:
+      team_mappings: teams
+      role_mappings:
+        provider: google
+        group_claim: groups
+    env: {}
+env: {}
+compare: {ignore: []}
