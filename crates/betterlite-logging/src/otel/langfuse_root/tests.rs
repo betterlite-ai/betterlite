@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_models::decisions::Json;
 use futures_util::StreamExt as _;
@@ -12,7 +11,7 @@ use futures_util::stream;
 use indexmap::IndexMap;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvider};
 
 use super::{LangfuseContentOtel, LangfuseOtel, RootSpanSink, RootSpanSource};
 use crate::callback_logger::CallbackLogger as _;
@@ -139,17 +138,34 @@ fn inner_logger_exporting(log: &Log, spans: InMemorySpanExporter) -> OpenTelemet
         .with_simple_exporter(spans)
         .build()
         .tracer("litellm");
-    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
-        Arc::new(BTreeMap::<String, String>::new());
-    let emitter = SpanEmitter {
+    let emitter = emitter_for(&tracer);
+    let tenants = tenants_for(&config);
+    OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
+        name: "langfuse_custom".to_owned(),
+        config,
+        tracer,
+        emitter,
+        metrics: None,
+        tenants,
+        trace: Arc::new(RecordingTrace {
+            log: Arc::clone(log),
+        }),
+    })
+}
+
+fn emitter_for(tracer: &SdkTracer) -> SpanEmitter<SdkTracer> {
+    SpanEmitter {
         tracer: tracer.clone(),
-        environment,
+        environment: Arc::new(BTreeMap::<String, String>::new()),
         mappers: Vec::new(),
         event_recorder: None,
         attribute_limit: None,
         emitted: DedupCache::default(),
-    };
-    let tenants = TenantTracerCache::new(
+    }
+}
+
+fn tenants_for(config: &Settings) -> TenantTracerCache {
+    TenantTracerCache::new(
         config.clone(),
         Some("langfuse_custom".to_owned()),
         "litellm",
@@ -165,18 +181,7 @@ fn inner_logger_exporting(log: &Log, spans: InMemorySpanExporter) -> OpenTelemet
             scope_source: Arc::new(NoScope),
             allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
         },
-    );
-    OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
-        name: "langfuse_custom".to_owned(),
-        config,
-        tracer,
-        emitter,
-        metrics: None,
-        tenants,
-        trace: Arc::new(RecordingTrace {
-            log: Arc::clone(log),
-        }),
-    })
+    )
 }
 
 fn root(log: &Log, recording: bool) -> Arc<dyn RootSpanSink> {
