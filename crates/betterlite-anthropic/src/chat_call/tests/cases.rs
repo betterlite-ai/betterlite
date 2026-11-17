@@ -1,0 +1,424 @@
+use betterlite_models::decisions::Json;
+use http::HeaderMap;
+use http::header::HeaderValue;
+use indexmap::IndexMap;
+use rstest::rstest;
+
+use crate::chat_call::EMBEDDING_REPLY;
+use crate::chat_call::error::ChatCallError;
+use crate::chat_call::transport::ClientKind;
+use crate::response::wire::ResponseEnvelope;
+
+use super::fixture::{API_BASE, CALLER_KEY, FixtureReply, MODEL, Trip, messages, text_body};
+use super::harness::{Run, Setup, execute};
+
+#[derive(Clone, Copy)]
+enum Scenario {
+    MessagesPostRequest,
+    BufferedSuccess,
+    StreamRequest,
+    PreStreamError,
+    NativeErrorBody,
+    UnsupportedEmbedding,
+    ChatFailureProjection,
+}
+
+#[rstest]
+#[case::case_1_messages_post_request(Scenario::MessagesPostRequest)]
+#[case::case_2_buffered_success(Scenario::BufferedSuccess)]
+#[case::case_3_stream_request(Scenario::StreamRequest)]
+#[case::case_4_pre_stream_error(Scenario::PreStreamError)]
+#[case::case_5_native_error_body(Scenario::NativeErrorBody)]
+#[case::case_6_unsupported_embedding(Scenario::UnsupportedEmbedding)]
+#[case::case_7_chat_failure_projection(Scenario::ChatFailureProjection)]
+fn chat_call_cases(#[case] scenario: Scenario) {
+    match scenario {
+        Scenario::MessagesPostRequest => messages_post_request(),
+        Scenario::BufferedSuccess => buffered_success(),
+        Scenario::StreamRequest => stream_request(),
+        Scenario::PreStreamError => pre_stream_error(),
+        Scenario::NativeErrorBody => native_error_body(),
+        Scenario::UnsupportedEmbedding => unsupported_embedding(),
+        Scenario::ChatFailureProjection => chat_failure_projection(),
+    }
+}
+
+fn popped_options() -> IndexMap<String, Json> {
+    IndexMap::from([
+        ("stream".to_owned(), Json::Bool(false)),
+        ("json_mode".to_owned(), Json::Bool(true)),
+        ("is_vertex_request".to_owned(), Json::Null),
+        (
+            "vertex_count_tokens_location".to_owned(),
+            Json::Text("body".to_owned()),
+        ),
+    ])
+}
+
+fn speed_options() -> IndexMap<String, Json> {
+    IndexMap::from([("speed".to_owned(), Json::Text("fast".to_owned()))])
+}
+
+fn kept() -> Json {
+    let betas = vec![Json::Text("kept".to_owned())];
+    Json::List(betas)
+}
+
+fn text(value: &str) -> Json {
+    let owned = value.to_owned();
+    Json::Text(owned)
+}
+
+fn object_of(value: &Json) -> &IndexMap<String, Json> {
+    let Json::Object(fields) = value else {
+        panic!("the value is not a JSON object");
+    };
+    fields
+}
+
+fn messages_post_request() {
+    let asynchronous = execute(Setup {
+        acompletion: true,
+        optional_params: popped_options(),
+        ..Setup::default()
+    });
+    assert_eq!(asynchronous.posts_supplied, 1);
+    assert_eq!(asynchronous.posts_pooled, 0);
+    assert_posted(&asynchronous);
+    assert_prepared(&asynchronous, "async");
+
+    // the sync branch keeps only an HTTPHandler client, so an async one falls back to the pooled client
+    let synchronous = execute(Setup {
+        optional_params: popped_options(),
+        ..Setup::default()
+    });
+    assert_eq!(synchronous.posts_supplied, 0);
+    assert_eq!(synchronous.posts_pooled, 1);
+    assert_posted(&synchronous);
+    assert_prepared(&synchronous, "sync");
+}
+
+fn assert_posted(run: &Run) {
+    assert_eq!(run.posted_bodies.len(), 1);
+    let body = &run.posted_bodies[0];
+    assert_eq!(body.get("model"), Some(&text(MODEL)));
+    assert_eq!(body.get("anthropic_beta"), Some(&kept()));
+    assert!(body.get("stream").is_none());
+    let key = run.posted_headers[0].get("x-api-key").unwrap();
+    assert_eq!(key.to_str().unwrap(), CALLER_KEY);
+}
+
+fn assert_prepared(run: &Run, mode: &str) {
+    assert_eq!(run.calls, [mode.to_owned(), "filter:anthropic".to_owned()]);
+    assert_eq!(run.transforms.len(), 1);
+    let recorded = &run.transforms[0];
+    assert_eq!(recorded.model, MODEL);
+    assert_eq!(recorded.messages, messages());
+    assert_eq!(
+        recorded.optional_params.get("is_vertex_request"),
+        Some(&Json::Bool(false))
+    );
+    // popped options never reach the config's transform_params
+    assert!(!recorded.optional_params.contains_key("stream"));
+    assert!(!recorded.optional_params.contains_key("json_mode"));
+    assert!(
+        !recorded
+            .optional_params
+            .contains_key("vertex_count_tokens_location")
+    );
+    assert_eq!(recorded.litellm_params, IndexMap::new());
+    let beta = recorded.headers.get("anthropic-beta").unwrap();
+    assert!(beta.contains("keep") && beta.contains("drop"));
+    assert_eq!(
+        recorded.headers.get("x-api-key").map(String::as_str),
+        Some(CALLER_KEY)
+    );
+    assert_eq!(
+        recorded
+            .headers
+            .get("anthropic-version")
+            .map(String::as_str),
+        Some("2023-06-01")
+    );
+}
+
+fn assert_buffered_logged(run: &Run) {
+    // pre_call stores the filtered body, not the transform's answer, and no stream key for a buffered call
+    assert_eq!(run.detail(&["log_event_type"]), Some(&text("pre_api_call")));
+    assert_eq!(run.detail(&["input"]), Some(&Json::List(messages())));
+    assert_eq!(
+        run.detail(&["additional_args", "api_base"]),
+        Some(&text(API_BASE))
+    );
+    let body = object_of(
+        run.detail(&["additional_args", "complete_input_dict"])
+            .unwrap(),
+    );
+    assert_eq!(body.get("anthropic_beta"), Some(&kept()));
+    assert!(body.get("stream").is_none());
+}
+
+fn buffered_success() {
+    let asynchronous = execute(Setup {
+        acompletion: true,
+        optional_params: speed_options(),
+        ..Setup::default()
+    });
+    assert_eq!(asynchronous.posts_supplied, 1);
+    assert_reply(&asynchronous);
+    assert_buffered_logged(&asynchronous);
+    assert_eq!(
+        asynchronous.detail(&["log_event_type"]),
+        Some(&text("post_api_call"))
+    );
+    assert_eq!(
+        asynchronous.detail(&["original_response"]),
+        Some(&text(&text_body("hello")))
+    );
+
+    let synchronous = execute(Setup {
+        optional_params: speed_options(),
+        ..Setup::default()
+    });
+    assert_eq!(synchronous.posts_pooled, 1);
+    assert_reply(&synchronous);
+}
+
+fn assert_reply(run: &Run) {
+    let reply = run.reply();
+    assert_eq!(
+        reply.choices.first().unwrap().message.content.as_deref(),
+        Some("hello")
+    );
+    assert_eq!(reply.model.as_deref(), Some(MODEL));
+    // the response mapper got the popped optional_params, so the speed reaches the usage
+    assert_eq!(reply.usage.as_ref().unwrap().speed.as_deref(), Some("fast"));
+}
+
+fn tool_name_map() -> IndexMap<String, Json> {
+    let reverse = IndexMap::from([("sanitized".to_owned(), Json::Text("original".to_owned()))]);
+    IndexMap::from([("_anthropic_tool_name_map".to_owned(), Json::Object(reverse))])
+}
+
+fn stream_setup() -> Setup {
+    let mut headers = HeaderMap::new();
+    headers.insert("request-id", HeaderValue::from_static("stream-1"));
+    Setup {
+        stream: true,
+        supplied_kind: ClientKind::Sync,
+        optional_params: speed_options(),
+        litellm_params: tool_name_map(),
+        reply: FixtureReply {
+            headers,
+            ..FixtureReply::text("hello")
+        },
+        ..Setup::default()
+    }
+}
+
+fn stream_request() {
+    let setup = stream_setup();
+    // the async stream accepts only an AsyncHTTPHandler, so this sync client is not used
+    let asynchronous = execute(Setup {
+        acompletion: true,
+        ..setup.clone()
+    });
+    assert_eq!(asynchronous.posts_supplied, 0);
+    assert_eq!(asynchronous.posts_pooled, 1);
+    assert_streamed(&asynchronous);
+    assert_eq!(asynchronous.logger_calls.len(), 1);
+    assert_eq!(asynchronous.logger_calls[0].original_response, "lines");
+
+    // make_sync_call takes any supplied client
+    let synchronous = execute(setup);
+    assert_eq!(synchronous.posts_supplied, 1);
+    assert_eq!(synchronous.posts_pooled, 0);
+    assert_streamed(&synchronous);
+    assert_eq!(synchronous.logger_calls.len(), 1);
+    assert_eq!(
+        synchronous.logger_calls[0].original_response,
+        "first stream response received"
+    );
+    let logged: IndexMap<String, Json> =
+        serde_json::from_str(&synchronous.logger_calls[0].complete_input_dict).unwrap();
+    assert_eq!(logged, synchronous.posted_bodies[0]);
+}
+
+fn assert_streamed(run: &Run) {
+    let (model, provider, headers, options) = run.stream();
+    assert_eq!(model, MODEL);
+    assert_eq!(provider, "anthropic");
+    assert_eq!(
+        headers.get("llm_provider-request-id").map(String::as_str),
+        Some("stream-1")
+    );
+    assert_eq!(options.json_mode, Some(false));
+    assert_eq!(options.speed.as_deref(), Some("fast"));
+    assert_eq!(
+        options
+            .tool_name_reverse_map
+            .get("sanitized")
+            .map(String::as_str),
+        Some("original")
+    );
+    // data.stream is set after beta filtering, before pre_call, and reaches the transport
+    assert_eq!(run.posted_bodies[0].get("stream"), Some(&Json::Bool(true)));
+    assert_eq!(
+        run.detail(&["additional_args", "complete_input_dict", "stream"]),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        run.detail(&["additional_args", "complete_input_dict", "anthropic_beta"]),
+        Some(&kept())
+    );
+}
+
+fn pre_stream_error() {
+    // validation runs before any config or transport work
+    let unauthenticated = execute(Setup {
+        caller_key: None,
+        ..Setup::default()
+    });
+    assert_eq!(unauthenticated.status(), Some(401));
+    assert_eq!(
+        unauthenticated.posts_supplied + unauthenticated.posts_pooled,
+        0
+    );
+    assert!(unauthenticated.transforms.is_empty());
+    assert!(unauthenticated.calls.is_empty());
+
+    let unprepared = execute(Setup {
+        transform_failure: Some("the case's transform refuses"),
+        ..Setup::default()
+    });
+    assert_eq!(unprepared.status(), None);
+    assert!(format!("{}", unprepared.error()).contains("the case's transform refuses"));
+    assert_eq!(unprepared.posts_supplied + unprepared.posts_pooled, 0);
+    assert_eq!(unprepared.calls, ["sync".to_owned()]);
+
+    let unfiltered = execute(Setup {
+        acompletion: true,
+        filter_failure: Some("the case's filter refuses"),
+        ..Setup::default()
+    });
+    assert_eq!(unfiltered.status(), None);
+    assert!(format!("{}", unfiltered.error()).contains("the case's filter refuses"));
+    assert_eq!(unfiltered.posts_supplied + unfiltered.posts_pooled, 0);
+    assert_eq!(
+        unfiltered.calls,
+        ["async".to_owned(), "filter:anthropic".to_owned()]
+    );
+}
+
+fn error_body() -> &'static str {
+    r#"{"error":{"type":"rate_limit_error","message":"slow down"}}"#
+}
+
+fn native_error_body() {
+    let body = error_body();
+    for acompletion in [true, false] {
+        let run = execute(Setup {
+            acompletion,
+            reply: FixtureReply::raw(200, HeaderMap::new(), body),
+            ..Setup::default()
+        });
+        // an error body at HTTP 200 is the upstream's own error, not a decode failure
+        assert_eq!(run.status(), Some(200));
+        assert!(format!("{}", run.error()).contains("slow down"));
+        assert_eq!(
+            run.detail(&["log_event_type"]),
+            Some(&text("post_api_call"))
+        );
+        assert_eq!(run.detail(&["original_response"]), Some(&text(body)));
+    }
+}
+
+fn unsupported_embedding() {
+    let reply: Option<ResponseEnvelope> = EMBEDDING_REPLY;
+    assert!(reply.is_none());
+}
+
+fn failed_call(acompletion: bool) -> Run {
+    execute(Setup {
+        acompletion,
+        trip: Trip::Unknown("boom"),
+        ..Setup::default()
+    })
+}
+
+fn status_call(status_code: u16, body: &[u8], exception_headers: bool) -> Run {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-request-id", HeaderValue::from_static("req-1"));
+    execute(Setup {
+        acompletion: true,
+        trip: Trip::Status {
+            status_code,
+            headers,
+            body: body.to_vec(),
+            exception_headers,
+        },
+        ..Setup::default()
+    })
+}
+
+fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
+    let ChatCallError::Anthropic {
+        status_code: actual,
+        message: text,
+        headers,
+    } = run.error()
+    else {
+        panic!("a status failure becomes AnthropicError");
+    };
+    assert_eq!(*actual, status_code);
+    assert_eq!(text, message);
+    assert_eq!(
+        headers.as_ref().unwrap().get("x-request-id").unwrap(),
+        "req-1"
+    );
+}
+
+fn chat_failure_projection() {
+    let asynchronous = failed_call(true);
+    assert_eq!(asynchronous.status(), Some(500));
+    assert!(format!("{}", asynchronous.error()).contains("boom"));
+    assert_eq!(
+        asynchronous.detail(&["log_event_type"]),
+        Some(&text("post_api_call"))
+    );
+    assert_eq!(
+        asynchronous.detail(&["original_response"]),
+        Some(&text("boom"))
+    );
+    assert_eq!(asynchronous.posts_supplied, 1);
+
+    // the sync path raises the same status but never logs the failure
+    let synchronous = failed_call(false);
+    assert_eq!(synchronous.status(), Some(500));
+    assert_eq!(
+        synchronous.detail(&["log_event_type"]),
+        Some(&text("pre_api_call"))
+    );
+    assert_eq!(synchronous.posts_pooled, 1);
+
+    // a deadline with no response is a bare transport error here, so it takes the 500 path;
+    // litellm.Timeout would carry a status of its own
+    let timed = execute(Setup {
+        acompletion: true,
+        trip: Trip::Timed,
+        ..Setup::default()
+    });
+    assert_eq!(timed.status(), Some(500));
+    assert!(format!("{}", timed.error()).contains("timed out after 1.5 seconds"));
+
+    // httpx drops exception.headers on a status error, so the response headers are the fallback
+    let rejected = status_call(429, b"rate limited", false);
+    assert_anthropic_error(&rejected, 429, "rate limited");
+    assert_eq!(
+        rejected.detail(&["log_event_type"]),
+        Some(&text("post_api_call"))
+    );
+
+    let guarded = status_call(529, b"overloaded", true);
+    assert_anthropic_error(&guarded, 529, "overloaded");
+}
