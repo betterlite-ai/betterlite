@@ -13,14 +13,16 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L504
   - what: >-
       An upstream error's AnthropicError message renders the error payload as
-      standard JSON, and a malformed body's message carries serde's parse error
-      text where LiteLLM interpolates Python's str(), so the wording of the
-      message text differs between the two.
+      standard JSON, a malformed body's message carries serde's parse error
+      text where LiteLLM interpolates Python's str(), and the unmapped
+      finish-reason warning renders a non-string stop_reason as JSON, so the
+      wording of that text differs between the two.
     why: >-
       docs/compatibility.md declares that Python's str() and repr() text is not
-      ported and that output is standard JSON. The status, headers, class and
-      the decision to raise AnthropicError are the same; only the rendered text
-      of an error value differs.
+      ported and that output is standard JSON. The status, headers, class, the
+      decision to raise AnthropicError and the decision to warn are the same;
+      only the rendered text of a non-string value differs, and a string
+      stop_reason warns with the same words.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2599
 kept_bugs:
   - what: >-
