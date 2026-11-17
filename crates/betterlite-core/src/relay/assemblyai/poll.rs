@@ -4,7 +4,6 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::Json;
-use betterlite_models::price_lookup::PriceLookup;
 use http::Method;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
@@ -13,8 +12,8 @@ use url::Url;
 
 use super::transcript::{encode_transcript_id, request_headers, text_field};
 use super::{
-    ASSEMBLY_AI_PROVIDER, AssemblyAiError, AssemblyAiLogging, AssemblyCredentialSource,
-    AssemblySleeper, AssemblyTranscriptLogSink, AssemblyTranscriptTransport,
+    ASSEMBLY_AI_PROVIDER, AssemblyAiError, AssemblyAiSettings, AssemblyCredentialSource,
+    AssemblySleeper, AssemblyTranscriptTransport,
 };
 
 // LiteLLM's poll passes no timeout, so the provider client's own read limit bounds each GET
@@ -51,27 +50,34 @@ pub fn decode_assembly_transcript(
     match answer {
         Json::Null => Ok(None),
         Json::Object(fields) => Ok(Some(fields)),
-        _ => Err(AssemblyAiError::TranscriptShape),
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(AssemblyAiError::TranscriptShape)
+        }
     }
 }
 
-impl<Credentials, Transport, Pricing, Sleeper, Sink>
-    AssemblyAiLogging<Credentials, Transport, Pricing, Sleeper, Sink>
+// What one transcript poll needs: the provider bases, the key, the client and the wait between asks
+pub(super) struct TranscriptPoller<'service, Credentials, Sleeper, Transport> {
+    pub(super) settings: &'service AssemblyAiSettings,
+    pub(super) credentials: &'service Credentials,
+    pub(super) sleeper: &'service Sleeper,
+    pub(super) transport: &'service Transport,
+}
+
+impl<Credentials, Sleeper, Transport> TranscriptPoller<'_, Credentials, Sleeper, Transport>
 where
-    Credentials: AssemblyCredentialSource + Send + Sync + 'static,
-    Transport: AssemblyTranscriptTransport + Send + Sync + 'static,
-    Pricing: PriceLookup + Send + Sync + 'static,
-    Sleeper: AssemblySleeper + Send + Sync + 'static,
-    Sink: AssemblyTranscriptLogSink + Send + Sync + 'static,
+    Credentials: AssemblyCredentialSource + Send + Sync,
+    Sleeper: AssemblySleeper + Send + Sync,
+    Transport: AssemblyTranscriptTransport + Send + Sync,
 {
     // _poll_assembly_for_transcript_response: an absent answer ends the poll, a non-terminal one waits
-    pub(super) async fn poll_transcript(
+    pub(super) async fn poll(
         &self,
         transcript_id: &str,
         region: Option<&str>,
     ) -> Result<Option<IndexMap<String, Json>>, AssemblyAiError> {
         for _attempt in 0..self.settings.max_polling_attempts {
-            let Some(transcript) = self.transcript_once(transcript_id, region).await? else {
+            let Some(transcript) = self.poll_once(transcript_id, region).await? else {
                 return Ok(None);
             };
             let finished = matches!(
@@ -81,23 +87,19 @@ where
             if finished {
                 return Ok(Some(transcript));
             }
-            self.ports
-                .sleeper
-                .sleep(self.settings.polling_interval)
-                .await;
+            self.sleeper.sleep(self.settings.polling_interval).await;
         }
         Ok(None)
     }
 
     // _get_assembly_transcript: every failure short of a missing key reads as an absent transcript
-    async fn transcript_once(
+    async fn poll_once(
         &self,
         transcript_id: &str,
         region: Option<&str>,
     ) -> Result<Option<IndexMap<String, Json>>, AssemblyAiError> {
         let base = self.settings.polling_base(region);
         let Some(api_key) = self
-            .ports
             .credentials
             .get_credentials(ASSEMBLY_AI_PROVIDER, region)
             .await
@@ -111,7 +113,7 @@ where
         let Some(headers) = request_headers(&api_key) else {
             return Ok(None);
         };
-        let Ok(response) = self.ports.transport.get(url, headers).await else {
+        let Ok(response) = self.transport.get(url, headers).await else {
             return Ok(None);
         };
         if response.status >= 400 {

@@ -3,7 +3,7 @@ use http::HeaderMap;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use indexmap::IndexMap;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::AssemblyAiError;
 

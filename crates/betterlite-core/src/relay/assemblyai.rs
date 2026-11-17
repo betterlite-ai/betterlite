@@ -176,7 +176,7 @@ pub struct AssemblyAiPorts<Credentials, Transport, Pricing, Sleeper, Sink> {
 pub struct AssemblyAiLogging<Credentials, Transport, Pricing, Sleeper, Sink> {
     ports: AssemblyAiPorts<Credentials, Transport, Pricing, Sleeper, Sink>,
     settings: AssemblyAiSettings,
-    pub tasks: TaskTracker,
+    tasks: TaskTracker,
 }
 
 impl<Credentials, Transport, Pricing, Sleeper, Sink>
@@ -257,14 +257,20 @@ where
         let empty = IndexMap::new();
         let body = match &call.response_body {
             Json::Object(fields) => fields,
-            _ => &empty,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &empty,
         };
         let Some(transcript_id) = transcript::text_field(body, "id")? else {
             return Err(AssemblyAiError::MissingTranscriptId);
         };
         let speech_model = transcript::text_field(body, "speech_model")?.unwrap_or_default();
         let region = assembly_region_from_url(call.url_route.as_deref());
-        let transcript = self.poll_transcript(transcript_id, region).await?;
+        let poller = poll::TranscriptPoller {
+            settings: &self.settings,
+            credentials: &self.ports.credentials,
+            sleeper: &self.ports.sleeper,
+            transport: &self.ports.transport,
+        };
+        let transcript = poller.poll(transcript_id, region).await?;
         let response_cost = match &transcript {
             Some(fields) => pricing::transcript_cost(fields, speech_model, &self.ports.pricing)?,
             None => None,

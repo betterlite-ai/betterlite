@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -21,6 +21,7 @@ use http::header::HeaderMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde_json::Number;
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
@@ -128,12 +129,6 @@ impl Transport {
         }
     }
 
-    fn set_script(&self, replies: Vec<Reply>) {
-        let mut script = lock(&self.script);
-        script.clear();
-        script.extend(replies);
-    }
-
     fn requests(&self) -> Vec<Recorded> {
         lock(&self.requests).clone()
     }
@@ -164,10 +159,12 @@ impl AssemblyTranscriptTransport for Transport {
     }
 }
 
+type CredentialCalls = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 #[derive(Clone)]
 struct Credentials {
     key: Option<SecretString>,
-    calls: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    calls: CredentialCalls,
 }
 
 impl Credentials {
@@ -301,6 +298,7 @@ struct Harness {
     pricing: Pricing,
     sleeper: Sleeper,
     sink: Sink,
+    tasks: TaskTracker,
 }
 
 impl Default for Harness {
@@ -314,6 +312,7 @@ impl Default for Harness {
             ]),
             sleeper: Sleeper::default(),
             sink: Sink::default(),
+            tasks: TaskTracker::new(),
         }
     }
 }
@@ -331,6 +330,7 @@ impl Harness {
             ]),
             sleeper: Sleeper::default(),
             sink: Sink::default(),
+            tasks: TaskTracker::new(),
         }
     }
 
@@ -341,6 +341,7 @@ impl Harness {
             pricing,
             sleeper: Sleeper::default(),
             sink: Sink::default(),
+            tasks: TaskTracker::new(),
         }
     }
 
@@ -362,7 +363,7 @@ impl Harness {
                 sink: self.sink.clone(),
             },
             settings,
-            TaskTracker::new(),
+            self.tasks.clone(),
         ))
     }
 
@@ -454,7 +455,10 @@ fn assembly_base_url_maps_only_eu_to_the_routing_eu_host() {
 async fn post_job_polls_to_completion() {
     let mut harness = Harness::default();
     harness.set_transport(vec![queued(), queued(), completed_transcript("12.5")]);
-    harness.run(body_with("t1", "best"), None).await.unwrap();
+    harness
+        .run_with(AssemblyAiSettings::new(), body_with("t1", "best"), None)
+        .await
+        .unwrap();
     let requests = harness.transport.requests();
     assert_eq!(requests.len(), 3);
     assert_eq!(
@@ -559,7 +563,10 @@ async fn absent_transcript_stops_at_once_and_logs_an_empty_response(
 ) {
     let mut harness = Harness::default();
     harness.set_transport(vec![match reply {
-        Some((status, body)) => answer(status, body),
+        Some((status, body)) => Reply::Answer {
+            status,
+            body: body.as_bytes().to_vec(),
+        },
         None => Reply::Failure,
     }]);
     harness.run(body_with("t1", "best"), None).await.unwrap();
@@ -629,7 +636,7 @@ async fn disallowed_transcript_ids_are_rejected_before_any_request(#[case] trans
 
 #[rstest::rstest]
 #[case::space("t 1", "/v2/transcript/t%201")]
-#[case::unicode("tést", "/v2/transcript/t%C3%A9st")]
+#[case::unicode("t\u{e9}st", "/v2/transcript/t%C3%A9st")]
 #[case::colon("a:b", "/v2/transcript/a%3Ab")]
 #[case::tilde("a~b", "/v2/transcript/a~b")]
 #[tokio::test]
@@ -870,8 +877,8 @@ async fn only_post_requests_are_logged(#[case] method: &str, #[case] expected: u
     let harness = Harness::default();
     let service = harness.service(settings(2));
     service.log(log_call(method, body_with("t1", "best"), None));
-    service.tasks.close();
-    service.tasks.wait().await;
+    harness.tasks.close();
+    harness.tasks.wait().await;
     assert_eq!(
         (harness.sink.count(), harness.transport.request_count()),
         (expected, expected)
@@ -880,7 +887,7 @@ async fn only_post_requests_are_logged(#[case] method: &str, #[case] expected: u
 
 #[tokio::test(start_paused = true)]
 async fn the_tokio_sleeper_waits_for_the_whole_interval() {
-    let waited = tokio::time::timeout(
+    let waited = timeout(
         Duration::from_millis(1),
         TokioSleeper.sleep(Duration::from_secs(60)),
     )
