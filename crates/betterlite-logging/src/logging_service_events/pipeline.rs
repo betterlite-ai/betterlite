@@ -122,9 +122,10 @@ pub struct ServiceCall {
 }
 
 impl ServiceCall {
-    pub(crate) fn finish(mut self, outcome: TerminalOutcome) {
+    // Settles the call once: a failure text records an error event, and none records success.
+    pub fn finish(mut self, failure: Option<String>) {
         self.settled = true;
-        self.record(outcome);
+        self.record(failure.map_or(TerminalOutcome::Succeeded, TerminalOutcome::Failed));
     }
 
     fn record(&self, outcome: TerminalOutcome) {

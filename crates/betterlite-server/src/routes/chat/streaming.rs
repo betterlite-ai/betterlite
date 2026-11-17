@@ -65,16 +65,20 @@ pub(crate) async fn service_events(
     let call = pipeline.begin(kind, &call_id);
     let response = next.run(request).await;
     let (mut parts, body) = response.into_parts();
-    let size = body.size_hint().exact();
-    if let Some(value) = size.and_then(|length| HeaderValue::from_str(&length.to_string()).ok()) {
+    let Some(length) = body.size_hint().exact() else {
+        let streamed = Body::from_stream(ServiceEventStream::new(
+            body.into_data_stream(),
+            call,
+            failure_for(parts.status),
+        ));
+        return Response::from_parts(parts, streamed);
+    };
+    // A sized body is complete here, and hyper may drop it without a final poll, so settle now.
+    call.finish(failure_for(parts.status));
+    if let Ok(value) = HeaderValue::from_str(&length.to_string()) {
         parts.headers.entry(CONTENT_LENGTH).or_insert(value);
     }
-    let streamed = Body::from_stream(ServiceEventStream::new(
-        body.into_data_stream(),
-        call,
-        failure_for(parts.status),
-    ));
-    Response::from_parts(parts, streamed)
+    Response::from_parts(parts, body)
 }
 
 // the existing chat implementation, reached through the dispatch pipeline's port

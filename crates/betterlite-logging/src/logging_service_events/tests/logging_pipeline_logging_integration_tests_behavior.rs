@@ -9,6 +9,7 @@ use http::StatusCode;
 use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TryRecvError;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -25,7 +26,7 @@ use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
 use crate::logging_service_events::stream::{STREAM_FAILED_ERROR, ServiceEventStream, failure_for};
 use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
-    ServiceMetric, ServiceType, TerminalOutcome, wire_names,
+    ServiceMetric, ServiceType, wire_names,
 };
 use crate::logging_service_events::wiring::LoggingWiring;
 use crate::logging_service_events::worker_link::Delivery;
@@ -152,7 +153,7 @@ fn harness() -> Harness {
 async fn begin_redacts_a_secret_call_id() {
     let harness = harness();
     let call = harness.pipeline.begin(ServiceKind::Chat, SECRET);
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
     assert_eq!(events[0].call_id, "REDACTED");
@@ -173,7 +174,7 @@ async fn pre_call_event_carries_the_call_identity() {
     assert_eq!(pre_call.payload.error, None);
     assert_eq!(pre_call.payload.caller, None);
     assert_eq!(pre_call.payload.event_metadata, None);
-    assert_eq!(pre_call.payload.duration, 0.0);
+    assert_eq!(pre_call.payload.duration.to_bits(), 0.0_f64.to_bits());
     assert_eq!(pre_call.start_time, harness.clock.base_time());
     assert_eq!(pre_call.end_time, harness.clock.base_time());
 }
@@ -182,7 +183,7 @@ async fn pre_call_event_carries_the_call_identity() {
 async fn terminal_success_records_one_event() {
     let harness = harness();
     let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
     assert_eq!(events.len(), 2);
@@ -192,7 +193,7 @@ async fn terminal_success_records_one_event() {
     assert_eq!(terminal.payload.call_type, "acompletion");
     assert!(!terminal.payload.is_error);
     assert_eq!(terminal.payload.error, None);
-    assert_eq!(terminal.payload.duration, 1.0);
+    assert_eq!(terminal.payload.duration.to_bits(), 1.0_f64.to_bits());
     assert_eq!(terminal.start_time, harness.clock.base_time());
     assert_eq!(
         terminal.end_time,
@@ -215,18 +216,19 @@ async fn terminal_duration_comes_from_the_clock() {
         .unwrap(),
     );
     let call = pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     pipeline.worker.flush().await;
-    assert_eq!(sink.recorded()[1].payload.duration, 3.0);
+    assert_eq!(
+        sink.recorded()[1].payload.duration.to_bits(),
+        3.0_f64.to_bits()
+    );
 }
 
 #[tokio::test]
 async fn terminal_failure_records_the_error_text() {
     let harness = harness();
     let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Failed(
-        "the upstream call failed with HTTP 500".to_owned(),
-    ));
+    call.finish(Some("the upstream call failed with HTTP 500".to_owned()));
     harness.pipeline.worker.flush().await;
     let terminal = &harness.sink.recorded()[1];
     assert!(terminal.payload.is_error);
@@ -234,7 +236,7 @@ async fn terminal_failure_records_the_error_text() {
         terminal.payload.error.as_deref(),
         Some("the upstream call failed with HTTP 500")
     );
-    assert_eq!(terminal.payload.duration, 1.0);
+    assert_eq!(terminal.payload.duration.to_bits(), 1.0_f64.to_bits());
 }
 
 #[tokio::test]
@@ -253,7 +255,7 @@ async fn dropping_a_call_records_one_cancellation() {
 async fn a_finished_call_records_no_second_event() {
     let harness = harness();
     let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     harness.pipeline.worker.flush().await;
     assert_eq!(harness.sink.recorded().len(), 2);
 }
@@ -431,14 +433,14 @@ fn metric_sets_follow_the_service_config(#[case] service: ServiceType, #[case] g
 fn service_event_metadata_carries_only_the_fields_it_sets() {
     let filled = ServiceEventMetadata {
         gauge_labels: Some("worker".to_owned()),
-        gauge_value: Some(2.5),
+        gauge_value: Some(2.5_f64),
     };
     assert_eq!(
-        serde_json::to_value(&filled).unwrap(),
-        serde_json::json!({"gauge_labels": "worker", "gauge_value": 2.5})
+        serde_json::to_string(&filled).unwrap(),
+        r#"{"gauge_labels":"worker","gauge_value":2.5}"#
     );
     let empty = ServiceEventMetadata::default();
-    assert_eq!(serde_json::to_value(&empty).unwrap(), serde_json::json!({}));
+    assert_eq!(serde_json::to_string(&empty).unwrap(), "{}");
 }
 
 #[test]
@@ -488,7 +490,7 @@ async fn a_failing_sink_records_no_second_event() {
         .unwrap(),
     );
     let call = pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     let report = pipeline.worker.flush().await;
     assert_eq!(report.accepted, 2);
     assert_eq!(report.failed, 2);
@@ -514,11 +516,11 @@ async fn registered_service_callbacks_hear_each_event() {
         WorkerSettings::default(),
     );
     let call = harness.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     harness.pipeline.worker.flush().await;
     assert_eq!(receiver.try_recv().unwrap().phase, CallbackPhase::Service);
     assert_eq!(receiver.try_recv().unwrap().phase, CallbackPhase::Service);
-    assert!(receiver.try_recv().is_err());
+    assert_eq!(receiver.try_recv().unwrap_err(), TryRecvError::Empty);
 }
 
 #[tokio::test]
@@ -625,7 +627,7 @@ async fn wiring_applies_the_resolved_queue_limit() {
     )
     .unwrap();
     let call = wiring.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     // the queue holds one event, so the two synchronous enqueues admit one and reject one
     let report = wiring.pipeline.stop().await;
     assert_eq!(report.accepted, 1);
@@ -699,7 +701,7 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
         }
     );
     let call = wiring.pipeline.begin(ServiceKind::Chat, "call-1");
-    call.finish(TerminalOutcome::Succeeded);
+    call.finish(None);
     let report = wiring.pipeline.stop().await;
     assert_eq!(report.accepted, 2);
     assert_eq!(report.completed, 2);
