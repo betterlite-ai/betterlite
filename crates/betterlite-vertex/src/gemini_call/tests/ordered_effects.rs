@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -18,7 +19,6 @@ use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
-use crate::gemini_media::error::MediaError;
 use crate::gemini_request::error::RequestError;
 use crate::gemini_stream::error::StreamError;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
@@ -543,12 +543,12 @@ fn ordered_effects_remote_tool_media_follows_the_branch_transform(
         stream: None,
         timeout: None,
     });
-    match reply {
-        Err(GeminiCallError::Request(RequestError::Inline(MediaError::Fetch(
-            ImageFetchError::Rejected { .. },
-        )))) => {}
-        other => panic!("a failed download stops the call, got {other:?}"),
-    }
+    let Err(GeminiCallError::Request(RequestError::Inline(MediaError::Fetch(
+        ImageFetchError::Rejected { .. },
+    )))) = reply
+    else {
+        panic!("a failed download stops the call");
+    };
     assert_eq!(fixture.fetches(), fetches);
     assert_eq!(fixture.recorder.posts().len(), posts);
     assert!(fixture.recorder.opens().is_empty());
