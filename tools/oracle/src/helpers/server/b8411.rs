@@ -64,16 +64,20 @@ fn run_call(call: &Call) -> Outcome {
 fn evaluate(call: &Call) -> Result<Value, Box<HelperError>> {
     let body = serde_json::to_value(&call.body).or_value_error()?;
     match call.function {
-        Function::Key => record(KeyRequest::from_value(&body).or_value_error()?),
-        Function::ResetSpend => record(ResetSpendRequest::from_value(&body).or_value_error()?),
-        Function::CostEstimate => record(CostEstimateRequest::from_value(&body).or_value_error()?),
+        Function::Key => {
+            serde_json::to_value(KeyRequest::from_value(&body).or_value_error()?).or_value_error()
+        }
+        Function::ResetSpend => {
+            serde_json::to_value(ResetSpendRequest::from_value(&body).or_value_error()?)
+                .or_value_error()
+        }
+        Function::CostEstimate => {
+            serde_json::to_value(CostEstimateRequest::from_value(&body).or_value_error()?)
+                .or_value_error()
+        }
         Function::NewUser => new_user::answer(&body),
         Function::UpdateUser => update_user::answer(&body),
         Function::Customer => customer::answer(&body),
         Function::RedisParams => redis_params::answer(&body),
     }
-}
-
-fn record<T: Serialize>(value: T) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(value).or_value_error()
 }
