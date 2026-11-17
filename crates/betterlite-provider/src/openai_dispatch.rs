@@ -19,6 +19,18 @@ use crate::provider::Adapter;
 use crate::transform_retry::{TransformOnUnprocessable, TransformRetry, send_with_retry};
 use betterlite_models::controls::json_value::JsonValue;
 
+pub mod call;
+pub mod compose;
+pub mod dispatch;
+pub mod error;
+pub mod headers;
+pub mod logging;
+pub mod metadata;
+#[cfg(any(test, feature = "testing"))]
+pub mod test_support;
+pub mod text;
+pub mod transport;
+
 // the executor's embedding path caps a provider answer at 32 MiB
 const EMBEDDING_BODY_LIMIT: usize = 0x0200_0000;
 
@@ -28,8 +40,11 @@ pub struct OpenAi;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenAiRequest;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct OpenAiResult;
+// The text branch's results; a projected text reply is a chat completion and travels in that variant instead.
+pub enum OpenAiResult {
+    Text(Box<JsonValue>),
+    TextStream(Box<betterlite_openai::text_completion_transport::stream::CompletionStream>),
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenAiPrepared;
