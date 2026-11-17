@@ -28,7 +28,7 @@ pub enum EffortFlag {
 }
 
 impl EffortFlag {
-    pub(super) fn read(value: Option<&Json>) -> Self {
+    pub(super) const fn read(value: Option<&Json>) -> Self {
         match value {
             None | Some(Json::Null) => Self::Absent,
             Some(Json::Bool(true)) => Self::True,
@@ -60,7 +60,7 @@ impl EffortFlags {
             .all(|flag| matches!(flag, EffortFlag::Absent))
     }
 
-    pub(super) fn get(&self, effort: ReasoningEffort) -> EffortFlag {
+    pub(super) const fn get(&self, effort: ReasoningEffort) -> EffortFlag {
         match effort {
             ReasoningEffort::None => self.none,
             ReasoningEffort::Minimal => self.minimal,

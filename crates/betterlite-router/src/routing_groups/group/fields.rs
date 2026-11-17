@@ -29,7 +29,7 @@ pub(super) fn text_field(map: &JsonMap, key: &'static str) -> Result<String, Rou
     }
 }
 
-fn models_shape() -> RoutingGroupError {
+const fn models_shape() -> RoutingGroupError {
     RoutingGroupError::Field {
         field: "models",
         expected: "a list of strings",

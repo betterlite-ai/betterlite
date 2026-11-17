@@ -38,12 +38,12 @@ pub(super) fn group(name: &str, models: &[&str], strategy: &str) -> RoutingGroup
     RoutingGroup::new(name.to_owned(), texts(models), strategy, None, None).unwrap()
 }
 
-pub(super) fn priority_group(name: &str, priorities: &[(&str, u64)]) -> RoutingGroup {
-    let models: Vec<String> = priorities
+pub(super) fn priority_group(name: &str, declared: &[(&str, u64)]) -> RoutingGroup {
+    let models: Vec<String> = declared
         .iter()
         .map(|(model, _)| (*model).to_owned())
         .collect();
-    let priorities: BTreeMap<String, u64> = priorities
+    let priorities: BTreeMap<String, u64> = declared
         .iter()
         .map(|(model, priority)| ((*model).to_owned(), *priority))
         .collect();

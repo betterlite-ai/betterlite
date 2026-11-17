@@ -44,17 +44,19 @@ fn number(value: u64) -> Json {
 }
 
 fn parsed(groups: &[JsonMap], known: &[&str]) -> Vec<RoutingGroup> {
-    let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    parse_routing_groups(Some(groups), &known).unwrap().groups
+    let model_names: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
+    parse_routing_groups(Some(groups), &model_names)
+        .unwrap()
+        .groups
 }
 
 fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> RoutingGroupIndex {
-    let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    let aliases: BTreeMap<String, String> = aliases
+    let model_names: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
+    let alias_map: BTreeMap<String, String> = aliases
         .iter()
         .map(|name| ((*name).to_owned(), (*name).to_owned()))
         .collect();
-    RoutingGroupIndex::build(groups, &known, &aliases)
+    RoutingGroupIndex::build(groups, &model_names, &alias_map)
         .unwrap()
         .index
 }
@@ -367,13 +369,13 @@ fn explicit_false_empties_even_with_levels() {
 
 fn the_own_flag_wins_over_the_bare_twin() {
     let bare_only = cost_map(&[("gpt-5-mini", r#"{"supports_low_reasoning_effort": false}"#)]);
-    let model_info = info(&[
+    let bare_info = info(&[
         ("key", text("azure/gpt-5-mini")),
         ("litellm_provider", text("azure")),
         ("supports_reasoning", Json::Bool(true)),
     ]);
     assert_eq!(
-        resolve_supported_efforts(&model_info, false, &bare_only),
+        resolve_supported_efforts(&bare_info, false, &bare_only),
         Some(vec![
             ReasoningEffort::Minimal,
             ReasoningEffort::Medium,
@@ -649,6 +651,9 @@ fn a_classifier_effort_follows_the_target() {
         kwargs.get("proxy_server_request"),
         Some(&object(&[("body", object(&[("model", text("m"))]))]))
     );
+}
+
+fn an_allowed_classifier_effort_stays() {
     let mut allowed = deployment("m", "m1");
     allowed.litellm_params.insert(
         "allowed_openai_params".to_owned(),

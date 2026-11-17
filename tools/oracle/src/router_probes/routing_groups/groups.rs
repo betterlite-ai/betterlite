@@ -9,6 +9,7 @@ use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::strategy_dispatch::groups::GroupStrategy;
 
 use crate::router_probes::error::OperationError;
+use crate::sdk_http::messages_stream_logging::outcome::Flag;
 
 use super::{DeploymentInput, GroupRow, Input, NameFacts, invalid};
 
@@ -88,9 +89,9 @@ pub(super) fn name_facts(
     };
     NameFacts {
         name: name.to_owned(),
-        is_callable: callable,
-        priority: index.is_priority_group(name),
-        alternatives: index.has_alternatives(name, &|member| deploys(specs, member).len()),
+        is_callable: Flag(callable),
+        priority: Flag(index.is_priority_group(name)),
+        alternatives: Flag(index.has_alternatives(name, &|member| deploys(specs, member).len())),
         ids,
     }
 }

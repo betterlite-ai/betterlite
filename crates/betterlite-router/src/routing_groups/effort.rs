@@ -144,11 +144,11 @@ pub fn intersect_supported_efforts(
 ) -> Option<Vec<ReasoningEffort>> {
     match (current, resolved) {
         (_, None) => current.map(<[ReasoningEffort]>::to_vec),
-        (None, Some(resolved)) => Some(resolved.to_vec()),
-        (Some(current), Some(resolved)) => Some(
+        (None, Some(found)) => Some(found.to_vec()),
+        (Some(held), Some(found)) => Some(
             ADVERTISEMENT_ORDER
                 .into_iter()
-                .filter(|effort| current.contains(effort) && resolved.contains(effort))
+                .filter(|effort| held.contains(effort) && found.contains(effort))
                 .collect(),
         ),
     }

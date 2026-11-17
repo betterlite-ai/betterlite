@@ -48,24 +48,24 @@ pub fn params_with_reasoning_override(
     ) {
         return sanitized;
     }
-    let _ = sanitized.shift_remove("thinking");
+    drop(sanitized.shift_remove("thinking"));
     for carrier in NESTED_EFFORT_CARRIERS {
         pop_effort_from_nested_carrier(&mut sanitized, carrier);
     }
-    let Some(extra_body) = sanitized.get("extra_body") else {
+    let Some(stored_extra) = sanitized.get("extra_body") else {
         return sanitized;
     };
-    let Json::Object(extra_body) = extra_body else {
+    let Json::Object(stored_map) = stored_extra else {
         return sanitized;
     };
-    let mut extra_body = extra_body.clone();
-    let _ = extra_body.shift_remove(REASONING_EFFORT);
-    let _ = extra_body.shift_remove("thinking");
+    let mut extra_body = stored_map.clone();
+    drop(extra_body.shift_remove(REASONING_EFFORT));
+    drop(extra_body.shift_remove("thinking"));
     for carrier in NESTED_EFFORT_CARRIERS {
         pop_effort_from_nested_carrier(&mut extra_body, carrier);
     }
     if extra_body.is_empty() {
-        let _ = sanitized.shift_remove("extra_body");
+        drop(sanitized.shift_remove("extra_body"));
     } else {
         sanitized.insert("extra_body".to_owned(), Json::Object(extra_body));
     }
@@ -78,9 +78,9 @@ fn pop_effort_from_nested_carrier(params: &mut JsonMap, carrier: &str) {
         return;
     };
     let mut sanitized = nested.clone();
-    let _ = sanitized.shift_remove("effort");
+    drop(sanitized.shift_remove("effort"));
     if sanitized.is_empty() {
-        let _ = params.shift_remove(carrier);
+        drop(params.shift_remove(carrier));
     } else {
         params.insert(carrier.to_owned(), Json::Object(sanitized));
     }
@@ -121,11 +121,11 @@ where
     if deployment_accepts_param(&deployment.to_json(), model, REASONING_EFFORT, support) {
         return None;
     }
-    let _ = kwargs.shift_remove(REASONING_EFFORT);
+    drop(kwargs.shift_remove(REASONING_EFFORT));
     if let Some(Json::Object(request)) = kwargs.get_mut("proxy_server_request")
         && let Some(Json::Object(body)) = request.get_mut("body")
     {
-        let _ = body.shift_remove(REASONING_EFFORT);
+        drop(body.shift_remove(REASONING_EFFORT));
     }
     Some(format!(
         "litellm.router.py: dropping classifier reasoning_effort for model={model} because the selected deployment does not support it"
@@ -224,7 +224,7 @@ fn json_value(value: &Json) -> JsonValue {
         Json::Object(fields) => JsonValue::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), json_value(value)))
+                .map(|(key, nested)| (key.clone(), json_value(nested)))
                 .collect(),
         ),
     }

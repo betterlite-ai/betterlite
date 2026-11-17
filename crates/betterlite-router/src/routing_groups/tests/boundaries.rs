@@ -36,19 +36,19 @@ fn number(value: u64) -> Json {
 }
 
 fn parse_error(groups: &[JsonMap], known: &[&str]) -> String {
-    let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    parse_routing_groups(Some(groups), &known)
+    let model_names: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
+    parse_routing_groups(Some(groups), &model_names)
         .unwrap_err()
         .to_string()
 }
 
 fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> RoutingGroupIndex {
-    let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    let aliases: BTreeMap<String, String> = aliases
+    let model_names: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
+    let alias_map: BTreeMap<String, String> = aliases
         .iter()
         .map(|name| ((*name).to_owned(), (*name).to_owned()))
         .collect();
-    RoutingGroupIndex::build(groups, &known, &aliases)
+    RoutingGroupIndex::build(groups, &model_names, &alias_map)
         .unwrap()
         .index
 }
@@ -286,7 +286,7 @@ fn a_priority_outside_the_bounds_is_rejected() {
 
 fn field_types_name_the_field_and_the_expected_shape() {
     let mut missing_name = raw("cheap", &["a"], "simple-shuffle");
-    let _ = missing_name.shift_remove("group_name");
+    drop(missing_name.shift_remove("group_name"));
     assert_eq!(
         parse_error(&[missing_name], &[]),
         "routing_groups.group_name must be a string"

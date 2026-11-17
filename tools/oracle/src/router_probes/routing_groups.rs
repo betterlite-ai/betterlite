@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
+use crate::sdk_http::messages_stream_logging::outcome::Flag;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -80,9 +81,9 @@ pub struct GroupRow {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NameFacts {
     pub name: String,
-    pub is_callable: bool,
-    pub priority: bool,
-    pub alternatives: bool,
+    pub is_callable: Flag,
+    pub priority: Flag,
+    pub alternatives: Flag,
     pub ids: Option<Vec<String>>,
 }
 
