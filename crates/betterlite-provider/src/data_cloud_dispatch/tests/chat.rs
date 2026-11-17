@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::data_cloud_dispatch::call::CompletionCall;
-use crate::data_cloud_dispatch::chat::{complete_databricks, dispatch};
+use crate::data_cloud_dispatch::chat::dispatch;
 use crate::data_cloud_dispatch::context::{CallLogging, DispatchGlobals};
 use crate::data_cloud_dispatch::error::DispatchError;
 use crate::data_cloud_dispatch::handler::HandlerError;
@@ -66,7 +66,12 @@ fn databricks_completion_reads_the_environment_when_no_setting_is_given() {
         ("DATABRICKS_API_KEY", "env-key"),
     ]);
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0].api_base.as_deref(),
@@ -86,7 +91,12 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
     globals.api_key = Some(SecretString::from("global-key"));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        globals.borrowed(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
@@ -97,12 +107,14 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
 #[test]
 fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
     let mut fixture = Fixture::new();
-    fixture.headers = Some(BTreeMap::from([(
-        String::from("X-Request-Tag"),
-        String::from("one"),
-    )]));
+    fixture.headers = Some([("X-Request-Tag".to_owned(), "one".to_owned())].into());
     let handler = Recorder::failing(500);
-    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, _calls, state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     match outcome {
         Err(DispatchError::Handler(HandlerError::Upstream { status_code })) => {
             assert_eq!(status_code, 500);
@@ -110,12 +122,8 @@ fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
         other => panic!("expected the handler failure, got {other:?}"),
     }
     let details = &state.model_call_details;
-    assert_eq!(
-        details.get("original_response"),
-        Some(&Json::Text(String::from(
-            "the provider answered with status 500"
-        )))
-    );
+    let error_text = Json::Text(String::from("the provider answered with status 500"));
+    assert_eq!(details.get("original_response"), Some(&error_text));
     assert_eq!(
         details.get("log_event_type"),
         Some(&Json::Text(String::from("post_api_call")))
@@ -149,7 +157,12 @@ fn handler_errors_report_their_status() {
 fn databricks_completion_without_a_stream_logs_nothing_on_success() {
     let fixture = Fixture::new();
     let handler = Recorder::succeeding();
-    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, _calls, state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert!(state.model_call_details.get("original_response").is_none());
 }
@@ -159,7 +172,12 @@ fn databricks_completion_logs_the_opened_stream_once() {
     let mut fixture = Fixture::new();
     fixture.stream = Some(true);
     let handler = Recorder::succeeding();
-    let (outcome, _calls, state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, _calls, state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         state.model_call_details.get("original_response"),
@@ -273,7 +291,12 @@ fn databricks_completion_falls_back_to_the_global_headers() {
         String::from("one"),
     )]));
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        globals.borrowed(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0]
@@ -289,7 +312,12 @@ fn databricks_completion_names_the_literal_provider() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from("azure");
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(calls[0].custom_llm_provider, "databricks");
 }
@@ -299,7 +327,12 @@ fn databricks_completion_clears_the_provider_config() {
     let mut fixture = Fixture::new();
     fixture.provider_config = Some(ChatConfigTag::A2a);
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, DispatchGlobals::default(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        DispatchGlobals::default(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(calls[0].provider_config, None);
 }
@@ -314,7 +347,12 @@ fn databricks_completion_treats_an_empty_context_setting_as_unset() {
     globals.api_base = Some(String::from("https://global.example.com"));
     globals.api_key = Some(SecretString::from("global-key"));
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        globals.borrowed(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     let call = &calls[0];
     assert_eq!(call.api_base.as_deref(), Some("https://global.example.com"));
@@ -332,7 +370,12 @@ fn databricks_completion_skips_an_empty_global_key() {
     globals.api_key = Some(SecretString::from(String::new()));
     globals.databricks_key = Some(SecretString::from("databricks-key"));
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        globals.borrowed(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
@@ -347,32 +390,17 @@ fn databricks_completion_skips_an_empty_databricks_key() {
     let mut globals = OwnedGlobals::empty();
     globals.databricks_key = Some(SecretString::from(String::new()));
     let handler = Recorder::succeeding();
-    let (outcome, calls, _state) = run_databricks(&fixture, globals.borrowed(), &handler);
+    let (outcome, calls, _state) = run_arm(
+        ChatConfigTag::Databricks,
+        &fixture,
+        globals.borrowed(),
+        &handler,
+    );
     assert_eq!(outcome.ok(), Some(String::from("reply")));
     assert_eq!(
         calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("env-key")
     );
-}
-
-fn run_databricks(
-    fixture: &Fixture,
-    globals: DispatchGlobals<'_>,
-    handler: &Recorder,
-) -> (
-    Result<String, DispatchError>,
-    Vec<CompletionCall>,
-    LoggingState,
-) {
-    let redactor = redactor();
-    let (mut state, env) = logging(&redactor);
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = complete_databricks(&fixture.context(globals), handler, &mut log)
-        .expect("the databricks arm answers");
-    (outcome, handler.calls(), state)
 }
 
 fn run_arm(

@@ -21,7 +21,16 @@ use super::support::{
 
 #[tokio::test]
 async fn databricks_embedding_sends_the_prepared_request() {
-    let fixture = databricks_fixture();
+    let fixture = fixture_for(
+        "databricks-bge-large-en",
+        &[
+            (
+                "DATABRICKS_API_BASE",
+                "https://dbc.example.com/serving-endpoints",
+            ),
+            ("DATABRICKS_API_KEY", "db-key"),
+        ],
+    );
     let transport = Scripted::with_replies(vec![ok(databricks_embedding_reply())]);
     let reply = send(&fixture, EmbeddingConfig::Databricks, &transport)
         .await
@@ -76,7 +85,13 @@ async fn databricks_embedding_reports_a_status_failure() {
 
 #[tokio::test]
 async fn snowflake_embedding_uses_the_cortex_url_and_snowflake_jwt() {
-    let fixture = snowflake_fixture();
+    let fixture = fixture_for(
+        "openai-gpt-4.1",
+        &[
+            ("SNOWFLAKE_JWT", "pat/abc"),
+            ("SNOWFLAKE_ACCOUNT_ID", "acct1"),
+        ],
+    );
     let transport = Scripted::with_replies(vec![ok(
         r#"{"object":"list","data":[{"object":"embedding","embedding":[[0.1,0.2]],"index":0}],"model":"openai-gpt-4.1","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
     )]);
@@ -138,7 +153,16 @@ async fn snowflake_embedding_reports_the_upstream_status() {
 
 #[tokio::test]
 async fn oci_embedding_signs_the_request_and_decodes_the_reply() {
-    let fixture = oci_fixture();
+    let fixture = fixture_for(
+        "cohere.embed-english-v3.0",
+        &[
+            ("OCI_USER", "ocid1.user.oc1..bbbb"),
+            ("OCI_FINGERPRINT", "aa:bb:cc"),
+            ("OCI_TENANCY", "ocid1.tenancy.oc1..cccc"),
+            ("OCI_KEY", TEST_KEY),
+            ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
+        ],
+    );
     let transport = Scripted::with_replies(vec![ok(
         r#"{"embeddings":[[0.1,0.2]],"modelId":"cohere.embed-english-v3.0","modelVersion":"1.0"}"#,
     )]);
@@ -487,39 +511,10 @@ fn body_fields(sent: &Sent) -> Object {
     fields
 }
 
-fn databricks_fixture() -> Fixture {
+fn fixture_for(model: &str, pairs: &[(&str, &str)]) -> Fixture {
     let mut fixture = Fixture::new();
-    fixture.model = String::from("databricks-bge-large-en");
-    fixture.environment = environment(&[
-        (
-            "DATABRICKS_API_BASE",
-            "https://dbc.example.com/serving-endpoints",
-        ),
-        ("DATABRICKS_API_KEY", "db-key"),
-    ]);
-    fixture
-}
-
-fn snowflake_fixture() -> Fixture {
-    let mut fixture = Fixture::new();
-    fixture.model = String::from("openai-gpt-4.1");
-    fixture.environment = environment(&[
-        ("SNOWFLAKE_JWT", "pat/abc"),
-        ("SNOWFLAKE_ACCOUNT_ID", "acct1"),
-    ]);
-    fixture
-}
-
-fn oci_fixture() -> Fixture {
-    let mut fixture = Fixture::new();
-    fixture.model = String::from("cohere.embed-english-v3.0");
-    fixture.environment = environment(&[
-        ("OCI_USER", "ocid1.user.oc1..bbbb"),
-        ("OCI_FINGERPRINT", "aa:bb:cc"),
-        ("OCI_TENANCY", "ocid1.tenancy.oc1..cccc"),
-        ("OCI_KEY", TEST_KEY),
-        ("OCI_COMPARTMENT_ID", "ocid1.compartment.oc1..aaaa"),
-    ]);
+    fixture.model = String::from(model);
+    fixture.environment = environment(pairs);
     fixture
 }
 

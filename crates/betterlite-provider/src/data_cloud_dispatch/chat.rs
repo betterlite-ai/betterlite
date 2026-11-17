@@ -59,19 +59,15 @@ fn complete_cloud<R>(
     handler: &dyn ChatCompletionHandler<Reply = R>,
     log: &mut CallLogging<'_, '_>,
 ) -> Result<R, DispatchError> {
-    match handler.complete(call) {
-        Ok(reply) => {
-            // LiteLLM logs the opened stream object itself; a Rust stream has no JSON form, so the record carries null
-            if stream_record && context.stream == Some(true) {
-                logging::post(log, context.messages, Json::Null, call.headers.as_ref())?;
-            }
-            Ok(reply)
-        }
-        Err(error) => {
-            log_failure(log, context, call, &error)?;
-            Err(DispatchError::Handler(error))
-        }
+    let reply = handler.complete(call);
+    if let Err(error) = &reply {
+        log_failure(log, context, call, error)?;
     }
+    // LiteLLM logs the opened stream object itself; a Rust stream has no JSON form, so the record carries null
+    if reply.is_ok() && stream_record && context.stream == Some(true) {
+        logging::post(log, context.messages, Json::Null, call.headers.as_ref())?;
+    }
+    reply.map_err(DispatchError::Handler)
 }
 
 // _complete_databricks: the resolved call and the stream post_call on success
