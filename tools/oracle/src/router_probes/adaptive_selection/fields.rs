@@ -11,9 +11,7 @@ use super::wire::{
     CellOutput, Check, CostCheckInput, CostScoreOutput, DeltaInput, Fields, Payload, RoutingOutput,
     SnapshotOutput,
 };
-use super::{
-    cost_map, decimal, number, operation_error, sample_values, selection_error, service, weights,
-};
+use super::{cost_map, decimal, number, sample_values, service, weights};
 use crate::router_probes::error::OperationError;
 
 pub(super) fn fields_for(payload: &Payload) -> Result<Fields, OperationError> {
@@ -40,14 +38,12 @@ pub(super) fn fields_for(payload: &Payload) -> Result<Fields, OperationError> {
 fn updated_cells(deltas: &[DeltaInput]) -> Result<Vec<CellOutput>, OperationError> {
     let mut cells = Vec::with_capacity(deltas.len());
     for input in deltas {
-        let cell = BanditCell::new(number(&input.alpha, "alpha")?, number(&input.beta, "beta")?)
-            .map_err(operation_error)?;
+        let cell = BanditCell::new(number(&input.alpha, "alpha")?, number(&input.beta, "beta")?)?;
         let updated = apply_delta(
             cell,
             number(&input.delta_alpha, "delta_alpha")?,
             number(&input.delta_beta, "delta_beta")?,
-        )
-        .map_err(operation_error)?;
+        )?;
         cells.push(CellOutput {
             request_type: input.request_type,
             model: input.model.clone(),
@@ -78,8 +74,7 @@ fn cost_scores(checks: &[CostCheckInput]) -> Result<Vec<CostScoreOutput>, Operat
                 model: check.model.clone(),
                 cost_score: format!(
                     "{:.6}",
-                    normalized_cost(decimal(&check.amount, "amount")?, amounts)
-                        .map_err(selection_error)?
+                    normalized_cost(decimal(&check.amount, "amount")?, amounts)?
                 ),
             })
         })
@@ -97,43 +92,36 @@ fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
     let mut candidates = Vec::with_capacity(payload.cells.len());
     for (cell, cost) in payload.cells.iter().zip(&all_costs) {
         let bandit_cell =
-            BanditCell::new(number(&cell.alpha, "alpha")?, number(&cell.beta, "beta")?)
-                .map_err(operation_error)?;
+            BanditCell::new(number(&cell.alpha, "alpha")?, number(&cell.beta, "beta")?)?;
         candidates.push(Candidate {
             model: &cell.model,
             cell: bandit_cell,
-            economy_score: normalized_cost(*cost, &all_costs).map_err(selection_error)?,
+            economy_score: normalized_cost(*cost, &all_costs)?,
         });
     }
     let mut sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
         samples: sample_values(payload)?,
         position: 0,
     }));
-    pick_best(&candidates, weights, &mut sampler).map_err(operation_error)
+    Ok(pick_best(&candidates, weights, &mut sampler)?)
 }
 
 fn selected_model(payload: &Payload) -> Result<String, OperationError> {
     let mut selection = service(payload)?;
     let request_type = payload.request_type.unwrap_or(RequestType::General);
-    selection
-        .pick_model(request_type, payload.min_quality_tier)
-        .map_err(selection_error)
+    Ok(selection.pick_model(request_type, payload.min_quality_tier)?)
 }
 
 fn planned_route(payload: &Payload) -> Result<RoutingOutput, OperationError> {
     let mut selection = service(payload)?;
-    let mut metadata = if payload.metadata_present {
-        Some(payload.metadata.clone().unwrap_or(Json::Null))
-    } else {
-        None
-    };
-    let response = selection
-        .pre_route(PreRoutingRequest {
-            messages: payload.messages.as_deref(),
-            headers: payload.headers.as_ref(),
-            metadata: &mut metadata,
-        })
-        .map_err(selection_error)?;
+    let mut metadata = payload
+        .metadata_present
+        .then(|| payload.metadata.clone().unwrap_or(Json::Null));
+    let response = selection.pre_route(PreRoutingRequest {
+        messages: payload.messages.as_deref(),
+        headers: payload.headers.as_ref(),
+        metadata: &mut metadata,
+    })?;
     let request_type = response.routing_decision.request_type;
     Ok(RoutingOutput {
         model: response.model,

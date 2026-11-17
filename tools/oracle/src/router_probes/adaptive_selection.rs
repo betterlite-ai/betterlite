@@ -51,31 +51,35 @@ fn decimal(text: &str, field: &str) -> Result<Decimal, OperationError> {
         })
 }
 
-fn operation_error(error: BanditMathError) -> OperationError {
-    let message = error.to_string();
-    match error {
-        BanditMathError::SamplesExhausted => OperationError::SamplesExhausted { message },
-        BanditMathError::NonFinite { .. }
-        | BanditMathError::UnsupportedTier { .. }
-        | BanditMathError::NoModels
-        | BanditMathError::Distribution { .. } => OperationError::InvalidRequest { message },
+impl From<BanditMathError> for OperationError {
+    fn from(error: BanditMathError) -> Self {
+        let message = error.to_string();
+        match error {
+            BanditMathError::SamplesExhausted => Self::SamplesExhausted { message },
+            BanditMathError::NonFinite { .. }
+            | BanditMathError::UnsupportedTier { .. }
+            | BanditMathError::NoModels
+            | BanditMathError::Distribution { .. } => Self::InvalidRequest { message },
+        }
     }
 }
 
-fn selection_error(error: AdaptiveSelectionError) -> OperationError {
-    let message = error.to_string();
-    match error {
-        AdaptiveSelectionError::Bandit(inner) => operation_error(inner),
-        AdaptiveSelectionError::Classification(_)
-        | AdaptiveSelectionError::CostNormalization
-        | AdaptiveSelectionError::NoEligibleModels { .. }
-        | AdaptiveSelectionError::MissingCell { .. } => OperationError::InvalidRequest { message },
+impl From<AdaptiveSelectionError> for OperationError {
+    fn from(error: AdaptiveSelectionError) -> Self {
+        let message = error.to_string();
+        match error {
+            AdaptiveSelectionError::Bandit(inner) => Self::from(inner),
+            AdaptiveSelectionError::Classification(_)
+            | AdaptiveSelectionError::CostNormalization
+            | AdaptiveSelectionError::NoEligibleModels { .. }
+            | AdaptiveSelectionError::MissingCell { .. } => Self::InvalidRequest { message },
+        }
     }
 }
 
 fn weights(payload: &Payload) -> Result<AdaptiveRouterWeights, OperationError> {
     let Some(raw) = payload.weights.as_ref() else {
-        return AdaptiveRouterWeights::resolve(None).map_err(classification_error);
+        return Ok(AdaptiveRouterWeights::resolve(None)?);
     };
     let input = section::Weights {
         quality: raw
@@ -89,12 +93,14 @@ fn weights(payload: &Payload) -> Result<AdaptiveRouterWeights, OperationError> {
             .map(|text| number(text, "weights.cost"))
             .transpose()?,
     };
-    AdaptiveRouterWeights::resolve(Some(&input)).map_err(classification_error)
+    Ok(AdaptiveRouterWeights::resolve(Some(&input))?)
 }
 
-fn classification_error(error: AdaptiveClassificationError) -> OperationError {
-    OperationError::InvalidRequest {
-        message: error.to_string(),
+impl From<AdaptiveClassificationError> for OperationError {
+    fn from(error: AdaptiveClassificationError) -> Self {
+        Self::InvalidRequest {
+            message: error.to_string(),
+        }
     }
 }
 
@@ -131,7 +137,7 @@ fn sample_values(payload: &Payload) -> Result<Vec<f64>, OperationError> {
 fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {
     let preferences = preference_map(payload);
     let costs = cost_map(payload)?;
-    AdaptiveSelection::new(
+    Ok(AdaptiveSelection::new(
         "probe".to_owned(),
         &AdaptiveRouterConfig {
             available_models: payload.available_models.clone(),
@@ -143,6 +149,5 @@ fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {
             samples: sample_values(payload)?,
             position: 0,
         })),
-    )
-    .map_err(selection_error)
+    )?)
 }
