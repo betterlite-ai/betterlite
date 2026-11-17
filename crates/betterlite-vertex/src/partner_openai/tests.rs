@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod partner_max_tokens_settings;
+
 use std::collections::BTreeSet;
 
 use betterlite_openai::base_helpers::provider_config;

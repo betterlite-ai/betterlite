@@ -1,8 +1,8 @@
+use crate::gemini_options::defaults::GenerationDefaults;
 use betterlite_models::decisions::Json;
-use betterlite_vertex::gemini_options::defaults::GenerationDefaults;
 use serde::Deserialize;
 
-use crate::loader::{ConfigError, parse_view};
+use betterlite_config::loader::{ConfigError, parse_view};
 
 const CONFIGURED: &str = "litellm_settings:\n  vertex_ai_safety_settings:\n    category: HARM_CATEGORY_HATE_SPEECH\n    threshold: BLOCK_LOW_AND_ABOVE\nmodel_list:\n  - litellm_params:\n      model: vertex_ai/gemini-2.5-pro\n      temperature: 0\n      max_output_tokens: 256\n      top_p: 0.95\n      top_k: 40\n      response_mime_type: application/json\n      candidate_count: 2\n      stop_sequences: [END]\n      frequency_penalty: 0.1\n      presence_penalty: 0.2\n      seed: 7\n  - litellm_params:\n      model: vertex_ai/gemini-3-pro-preview\n";
 

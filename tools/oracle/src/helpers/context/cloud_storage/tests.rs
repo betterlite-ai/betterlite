@@ -1,32 +1,25 @@
 #![cfg(test)]
 
-use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
-use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use std::fs;
-use std::path::Path;
-#[test]
-fn helper_seeds_select_cloud_storage() {
-    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
-    let seeds: Vec<_> = fs::read_dir(corpus)
-        .unwrap()
-        .map(Result::unwrap)
-        .filter(|entry| {
-            let name = entry.file_name();
-            name.as_encoded_bytes().starts_with(b"cloud_storage")
-        })
-        .collect();
-    assert!(!seeds.is_empty());
-    assert!(seeds.iter().all(|path| {
-        let source = fs::read_to_string(path.path()).unwrap();
-        serde_saphyr::from_str(&source)
-            .map_err(|error| error.to_string())
-            .and_then(|parsed| {
-                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
-            })
-            .unwrap();
-        let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-        assert_eq!(case.call.operation, "cloud_storage");
-        let run = run_case(&[crate::GROUP], &case, false).unwrap();
-        matches!(run, HelperRun::Match)
-    }));
+use std::path::PathBuf;
+
+use rstest::rstest;
+
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
+
+#[rstest]
+fn helper_seeds_select_cloud_storage(
+    #[base_dir = "../../.."]
+    #[files("fuzz/corpus/helper_case/cloud_storage*")]
+    path: PathBuf,
+) {
+    let source = fs::read_to_string(&path).unwrap();
+    let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
+    validate_helper(&path, &case).unwrap();
+    assert_eq!(case.call.operation, "cloud_storage");
+    assert!(matches!(
+        run_case(&[crate::GROUP], &case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

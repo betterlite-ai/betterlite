@@ -1,9 +1,7 @@
-#![cfg(test)]
-
 use std::collections::BTreeMap;
 
-use crate::loader::ConfigLoader;
-use betterlite_auth::auth_route_patterns::public_routes::is_public_route;
+use crate::auth_route_patterns::public_routes::is_public_route;
+use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
 
 #[test]

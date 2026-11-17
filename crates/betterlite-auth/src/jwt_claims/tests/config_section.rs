@@ -1,17 +1,15 @@
-#![cfg(test)]
-
 use std::collections::BTreeMap;
 
-use betterlite_auth::jwt_claims::TypedValue;
-use betterlite_auth::jwt_claims::claims::JwtClaims;
-use betterlite_auth::jwt_claims::identity::IdentityClaims as _;
-use betterlite_auth::jwt_claims::orgs::OrgClaims as _;
-use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
-use betterlite_auth::jwt_claims::teams::TeamClaims as _;
+use crate::jwt_claims::TypedValue;
+use crate::jwt_claims::claims::JwtClaims;
+use crate::jwt_claims::identity::IdentityClaims as _;
+use crate::jwt_claims::orgs::OrgClaims as _;
+use crate::jwt_claims::settings::JwtAuthSettings;
+use crate::jwt_claims::teams::TeamClaims as _;
 use rstest::rstest;
 
-use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::jwt_claims::Settings;
+use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::sections::jwt_claims::Settings;
 
 const ALL_SETTINGS: &str = r#"
 general_settings:

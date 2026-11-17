@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod config_section;
+
 use rstest::rstest;
 
 use super::canonical::{

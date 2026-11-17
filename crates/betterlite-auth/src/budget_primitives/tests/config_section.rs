@@ -1,14 +1,12 @@
-#![cfg(test)]
-
 use std::collections::BTreeMap;
 
-use betterlite_auth::budget_primitives::throttle::{percentage, should_throttle, throttled_limit};
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use crate::budget_primitives::throttle::{percentage, should_throttle, throttled_limit};
+use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
-use crate::sections::budget_primitives::Settings;
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::budget_primitives::Settings;
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     let lookup: BTreeMap<String, String> = variables
