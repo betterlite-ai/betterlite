@@ -140,7 +140,7 @@ def client_models_answer(input_value: Input) -> JsonValue:
 
 def int_like_answer(input_value: Input) -> JsonValue:
     answers: list[JsonValue] = [
-        _is_positive_int_like(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9359
+        _is_positive_int_like(value)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9359
         for value in input_value["values"]
     ]
     return answers
@@ -149,7 +149,7 @@ def int_like_answer(input_value: Input) -> JsonValue:
 def include_errors_answer(input_value: Input) -> JsonValue:
     proxy_server.general_settings = {"expose_fallback_errors_to_caller": input_value["expose"]}  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9367
     return [
-        _should_include_fallback_errors(request)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9366
+        _should_include_fallback_errors(request)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9366
         for request in input_value["requests"]
     ]
 
