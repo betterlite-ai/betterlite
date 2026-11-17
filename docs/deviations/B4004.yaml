@@ -1,7 +1,7 @@
 task: B4004
 deviations:
-  - what: The periodic and batch flush work runs as tokio tasks owned by a TaskTracker, and shutdown cancels the logger's token and joins them. LiteLLM creates asyncio tasks on the running loop and keeps only task references, leaving cleanup to the event loop.
-    why: Rust has no implicit event-loop cleanup, so the tasks are owned explicitly and joined on shutdown instead of leaking past the logger that started them.
+  - what: The periodic and batch flush work runs as tokio tasks owned by a TaskTracker, and shutdown cancels the logger's token and joins them. LiteLLM creates asyncio tasks on the running loop, keeps only task references, and counts a task alive only while its event loop is not closed. A tokio task handle has no event loop, so a handle that has not finished is the whole liveness test.
+    why: Rust has no implicit event-loop cleanup, so the tasks are owned explicitly and joined on shutdown instead of leaking past the logger that started them, and a tokio handle reports its own state, so there is no closed-loop case to guard.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L130-L148
   - what: The adapter reads its parameters from the callback_settings.zerobus block. LiteLLM reads the litellm.zerobus_params module global instead.
     why: betterlite's config enters through the typed callback_settings section, and its litellm_settings section declares no zerobus_params field, so the same names ride in the per-callback settings map.
@@ -21,6 +21,9 @@ deviations:
   - what: A configured secret resolves from the environment only, through the injected secret source. LiteLLM's get_secret_str also consults the configured secret manager.
     why: The general get_secret_str dispatcher belongs to B189; until it lands this adapter consumes the environment-backed secret source the catalog injects.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L25-L32
+  - what: The server endpoint is parsed as an absolute URL and its workspace label must be ASCII digits. LiteLLM reads the hostname with urlsplit, which accepts a bare authority such as //123.example.com, and Python's isdigit also accepts non-ASCII digits.
+    why: betterlite parses the endpoint with the url crate, and a Databricks workspace id is an ASCII number, so an endpoint that is not an https URL is a configuration error instead of a host that happens to parse in Python.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L55-L64
 kept_bugs:
   - what: An error while building or queueing a row is logged and swallowed, so the request path continues and that row is lost.
     why: LiteLLM catches every exception in _enqueue because logging must never fail the request, and a working setup relies on that protection.

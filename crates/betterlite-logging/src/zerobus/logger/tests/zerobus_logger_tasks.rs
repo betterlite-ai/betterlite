@@ -22,6 +22,11 @@ fn periodic_id(logger: &ZerobusLogger) -> Option<Id> {
     task.as_ref().map(JoinHandle::id)
 }
 
+fn batch_id(logger: &ZerobusLogger) -> Option<Id> {
+    let task = logger.batch.lock().unwrap_or_else(PoisonError::into_inner);
+    task.as_ref().map(JoinHandle::id)
+}
+
 #[tokio::test]
 async fn zerobus_logger_tasks_starts_the_periodic_flush() {
     let tracker = TaskTracker::new();
@@ -144,6 +149,32 @@ async fn zerobus_logger_tasks_keeps_one_batch_flush_running() {
     gate.add_permits(1);
     settle(&logger).await;
     assert_eq!(ingest.inserted(), 1);
+}
+
+#[tokio::test]
+async fn zerobus_logger_tasks_keeps_the_running_batch_task() {
+    let ingest = FakeIngest::table("main.litellm.traces");
+    let gate = ingest.block();
+    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let logger = logger(params(1, 3600, false), client);
+    logger
+        .async_log_success_event(event("chatcmpl-a"))
+        .await
+        .expect("the event is accepted");
+    assert!(
+        until(|| ingest.inserted() == 1).await,
+        "the batch flush starts"
+    );
+    let first = batch_id(&logger).expect("the batch task exists");
+    logger
+        .async_log_success_event(event("chatcmpl-b"))
+        .await
+        .expect("the event is accepted");
+    let second = batch_id(&logger).expect("the batch task stays");
+    assert_eq!(first, second);
+    ingest.unblock();
+    gate.add_permits(1);
+    settle(&logger).await;
 }
 
 #[test]

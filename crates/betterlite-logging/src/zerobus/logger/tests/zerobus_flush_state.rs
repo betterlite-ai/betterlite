@@ -76,6 +76,37 @@ async fn zerobus_flush_state_skips_a_second_flush_while_one_runs() {
 }
 
 #[tokio::test]
+async fn zerobus_flush_state_waits_for_a_running_flush() {
+    let ingest = FakeIngest::table("main.litellm.traces");
+    let gate = ingest.block();
+    let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
+    let logger = logger(params(1, 3600, false), client);
+    logger
+        .async_log_success_event(event("a"))
+        .await
+        .expect("the event is accepted");
+    assert!(
+        until(|| ingest.inserted() == 1).await,
+        "the delivery starts"
+    );
+    logger
+        .async_log_success_event(event("b"))
+        .await
+        .expect("the event is accepted");
+    let inner = Arc::clone(&logger.inner);
+    let second = tokio::spawn(async move { inner.flush_queue(false).await });
+    sleep(Duration::from_millis(10)).await;
+    ingest.unblock();
+    gate.add_permits(1);
+    second.await.expect("the second flush finishes");
+    assert!(
+        until(|| ingest.inserted() == 2).await,
+        "the second flush sends the row that arrived during the first"
+    );
+    assert!(queued_ids(&logger).is_empty());
+}
+
+#[tokio::test]
 async fn zerobus_flush_state_clears_the_in_flight_count() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let client: Arc<dyn RowIngest> = Arc::clone(&ingest);
