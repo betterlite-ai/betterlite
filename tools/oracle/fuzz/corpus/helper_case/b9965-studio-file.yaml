@@ -1,0 +1,20 @@
+kind: helper
+name: b9965-studio-file
+call:
+  b9965:
+    model: gemini-2.5-flash
+    provider: gemini
+    mode: sequential
+    messages:
+      - role: user
+        content:
+          - {type: text, text: read}
+          - type: file
+            file: {file_id: "https://example.com/doc.pdf"}
+    data_urls:
+      "https://example.com/doc.pdf": "data:application/pdf;base64,YWJj"
+    optional_params: {}
+    litellm_params: {}
+    supports: {system_message: true, response_schema: true}
+env: {}
+compare: {ignore: []}

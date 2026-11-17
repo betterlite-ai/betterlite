@@ -1,0 +1,106 @@
+kind: helper
+name: video-lifecycle
+call:
+  openai_media_dispatch:
+    case: video_lifecycle
+    api_base: https://mock.example/v1/videos/
+    provider: openai
+    op: list
+    video_id: null
+    after: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLWN1cnNvcg==
+    limit: 7
+    order: asc
+    variant: null
+    prompt: null
+    reply: '{"object": "list", "data": [{"id": "vid-1", "object": "video", "status": "completed",
+      "model": "sora-2"}, {"id": "vid-2", "object": "video", "status": "queued", "model": null}],
+      "first_id": "vid-1", "last_id": "vid-2", "has_more": false}'
+calls:
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: null
+      op: list
+      video_id: null
+      after: null
+      limit: 0
+      order: null
+      variant: null
+      prompt: null
+      reply: '{"object": "list", "data": [{"id": "vid-1", "object": "video", "status": "completed",
+        "model": "sora-2"}], "first_id": "vid-1", "last_id": "vid-1", "has_more": false}'
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: openai
+      op: status
+      video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTM=
+      after: null
+      limit: null
+      order: null
+      variant: null
+      prompt: null
+      reply: '{"id": "vid-3", "object": "video", "status": "completed", "seconds": "4",
+        "usage": {"duration_seconds": 99}}'
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: null
+      op: status
+      video_id: vid-2
+      after: null
+      limit: null
+      order: null
+      variant: null
+      prompt: null
+      reply: '{"id": "vid-2", "object": "video", "status": "queued"}'
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: null
+      op: delete
+      video_id: vid-1
+      after: null
+      limit: null
+      order: null
+      variant: null
+      prompt: null
+      reply: '{"id": "vid-1", "object": "video", "status": "deleted"}'
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: null
+      op: content
+      video_id: vid-1
+      after: null
+      limit: null
+      order: null
+      variant: thumbnail
+      prompt: null
+      reply: video-content-bytes
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: null
+      op: content
+      video_id: vid-1
+      after: null
+      limit: null
+      order: null
+      variant: null
+      prompt: null
+      reply: video-content-bytes
+  - openai_media_dispatch:
+      case: video_lifecycle
+      api_base: https://mock.example/v1
+      provider: openai
+      op: remix
+      video_id: vid-2
+      after: null
+      limit: null
+      order: null
+      variant: null
+      prompt: make it slow
+      reply: '{"id": "vid-2", "object": "video", "status": "queued", "seconds": "4"}'
+env: {}
+compare: {ignore: []}

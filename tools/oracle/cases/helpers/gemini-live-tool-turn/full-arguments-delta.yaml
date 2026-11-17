@@ -1,0 +1,16 @@
+kind: helper
+name: full-arguments-delta
+call:
+  gemini_live_tool_turn:
+    ids: {conversation_id: conv_given, response_id: resp_given, output_item_id: item_given}
+    tool_call:
+      functionCalls:
+        - name: render
+          args:
+            nested: {a: [true, false, null]}
+            empty: {}
+            text: "line\nquote\"end"
+            count: 1.5
+            path: "C:\\temp\\out.txt"
+env: {}
+compare: {ignore: []}

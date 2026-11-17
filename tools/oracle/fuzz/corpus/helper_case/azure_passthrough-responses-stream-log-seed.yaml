@@ -1,0 +1,28 @@
+kind: helper
+name: azure_passthrough-responses-stream-log-seed
+call:
+  azure_passthrough:
+    function: responses_stream_log
+    stream_steps:
+      - endpoint: /v1/responses
+        chunks:
+          - 'data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_1","created_at":7,"output":[],"status":"completed"}}'
+          - 'data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"i","output_index":0,"content_index":0,"delta":"hi"}'
+      - endpoint: openai/deployments/my-d/responses
+        chunks:
+          - 'data: {"type":"response.incomplete","sequence_number":1,"response":{"id":"resp_2","created_at":8,"output":[],"status":"incomplete"}}'
+      - endpoint: responses
+        chunks:
+          - 'data: {"type":"response.failed","sequence_number":1,"response":{"id":"resp_3","created_at":9,"output":[],"status":"failed"}}'
+      - endpoint: /v1/responses/
+        chunks:
+          - 'data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_4","created_at":10,"output":[]}}'
+      - endpoint: v1/responses
+        chunks:
+          - 'data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_5","created_at":11,"output":[],"status":"completed"}}'
+          - 'data: {"type":"response.completed","bad":'
+      - endpoint: openai/deployments/my-d/embeddings
+        chunks:
+          - 'data: {"type":"response.completed","response":{"id":"resp_6","created_at":12,"output":[]}}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,31 @@
+kind: helper
+name: foundry-agent-results-token-count-warning
+call:
+  foundry_agent_results:
+    replies:
+      - model: azure_ai/agents/a
+        content: hello
+        thread_id: thread-9
+        messages: []
+        annotations: null
+        existing_usage: {prompt_tokens: 4, completion_tokens: 6, total_tokens: 10}
+        hidden_params: null
+        fail: true
+      - model: azure_ai/agents/a
+        content: hello
+        thread_id: thread-9
+        messages: [{role: user, content: hi}]
+        annotations: null
+        existing_usage: null
+        hidden_params: null
+        fail: true
+      - model: azure_ai/agents/a
+        content: abcd
+        thread_id: thread-9
+        messages: [{role: user, content: hi}, {role: system, content: sys}]
+        annotations: null
+        existing_usage: null
+        hidden_params: null
+        fail: false
+env: {}
+compare: {ignore: []}

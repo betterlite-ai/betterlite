@@ -30,7 +30,7 @@ pub fn text_of(fields: &Object, name: &str) -> Option<String> {
     None
 }
 
-fn hints_of(fields: &Object) -> MimeHints {
+pub(crate) fn hints_of(fields: &Object) -> MimeHints {
     MimeHints {
         format: text_of(fields, FORMAT),
         mime_type: text_of(fields, MIME_TYPE),

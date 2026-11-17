@@ -779,6 +779,7 @@ async fn vertex_auth_takes_the_project_and_location_from_the_settings() {
         location: Some("europe-west4".to_owned()),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let catalog = catalog();
     let auth = auth(
