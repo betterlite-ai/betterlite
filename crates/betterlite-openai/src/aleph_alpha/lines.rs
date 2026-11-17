@@ -12,10 +12,8 @@ use crate::aleph_alpha::error::AlephAlphaError;
 
 pub type LineStream = BoxStream<'static, Result<String, AlephAlphaError>>;
 
-// the characters Python's str.splitlines breaks on, which httpx's LineDecoder follows
-const LINE_BREAKS: [char; 10] = [
-    '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
-];
+// SSE lines end only at CR, LF or CRLF, so no other character ends one
+const LINE_BREAKS: [char; 2] = ['\n', '\r'];
 
 // LiteLLM hands the raw response lines on with iter_lines, which splits the incrementally decoded text
 #[must_use]

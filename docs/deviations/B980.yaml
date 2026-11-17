@@ -13,6 +13,3 @@ kept_bugs:
   - what: The closed-block decider disarms the restamper on the first frame that merely contains message_start anywhere, so a content delta whose text mentions message_start ends restamping for the rest of the stream.
     why: copied on purpose; LiteLLM's decider is a substring scan and a working setup gets its events through it as LiteLLM does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L151-L174
-  - what: A restamped frame is split on Python's universal line breaks, so U+2028, U+001C and the other characters str.splitlines breaks on end a line inside a JSON string.
-    why: copied on purpose; the split decides which line gets re-encoded, and a working setup's frames are newline-delimited ASCII.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L54-L59
