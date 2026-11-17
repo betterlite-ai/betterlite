@@ -1,0 +1,13 @@
+kind: helper
+name: sso-resolution-user-email-db-only
+call:
+  b4141:
+    salt_key: salt-one
+    db:
+      user_email: "ZY64GPr5lLlsllQDpbzPDydcppLvFWVwLYWQ9ze90DIhje6cF3hiLTnEHSvG_7Y3PqtMsF6suIEN"
+      ui_access_mode: admin_only
+    env:
+      USER_EMAIL: env@example.com
+      UI_ACCESS_MODE: env-mode
+env: {}
+compare: {ignore: []}

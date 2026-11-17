@@ -1,0 +1,15 @@
+task: B770
+deviations:
+  - what: The outside-byte key request and response decoder rejects documents over 1048576 bytes or nested deeper than 64, where LiteLLM hands the bytes to Python's json parser with no such bound.
+    why: Bounds the one decoder this task owns, as the task asks; the inherited logging limit stays the same and typed helpers keep no artificial parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/key_settings_audit.py#L7-L14
+  - what: router_settings stays the caller's JSON object in key request and response records instead of being validated through UpdateRouterConfig and expanded to that model's defaults in the resolved dump.
+    why: UpdateRouterConfig belongs to B016, which has not landed; the field keeps the caller's values and type errors for it are not raised yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1361
+  - what: A budget_limits window the caller explicitly sent with reset_at null loses that key from the supplied projection, while a full resolved dump keeps reset_at null in both.
+    why: betterlite stores windows as the typed BudgetLimitEntry, whose serialization always carries reset_at, so the supplied dump drops a null reset time to match pydantic's exclude_unset for every caller that omitted it; the explicit-null spelling cannot be told apart after typing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L45-L50
+  - what: Datetime fields render whole microseconds as three or six fractional digits when the value is an exact millisecond count, where pydantic's JSON dump always writes six digits for a nonzero microsecond.
+    why: The shared database Timestamp type serializes through chrono's AutoSi format, which trims exact milliseconds to three digits; whole-second and microsecond-precision values render the same as pydantic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1403
+kept_bugs: []
