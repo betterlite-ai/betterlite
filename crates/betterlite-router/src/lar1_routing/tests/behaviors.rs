@@ -57,6 +57,14 @@ enum Behavior {
     metadata: br#"{"confidence":0.99,"time":"MEM"}"#,
     expected: "cloud-fast-1",
 })]
+#[case::single_deployment(Behavior::SingleDeployment)]
+#[case::empty_pool(Behavior::EmptyPool)]
+#[case::no_router(Behavior::NoRouter)]
+#[case::invalid_metadata(Behavior::InvalidMetadata)]
+#[case::exact_match_log(Behavior::ExactMatchLog)]
+#[case::fallback_log(Behavior::FallbackLog)]
+#[case::async_only(Behavior::AsyncOnly)]
+#[case::default_args(Behavior::DefaultArgs)]
 // the metadata reader keeps the exact decimal text, where LiteLLM's float keeps 1e-30 and rounds
 // 1.0000000000000001 to 1.0; the first two values fall back to the declared 0.5 default
 #[case::decimal_scale_confidence(Behavior::Selection {
@@ -75,14 +83,6 @@ enum Behavior {
     metadata: br#"{"confidence":0.29999999999999999}"#,
     expected: "cloud-smart-1",
 })]
-#[case::single_deployment(Behavior::SingleDeployment)]
-#[case::empty_pool(Behavior::EmptyPool)]
-#[case::no_router(Behavior::NoRouter)]
-#[case::invalid_metadata(Behavior::InvalidMetadata)]
-#[case::exact_match_log(Behavior::ExactMatchLog)]
-#[case::fallback_log(Behavior::FallbackLog)]
-#[case::async_only(Behavior::AsyncOnly)]
-#[case::default_args(Behavior::DefaultArgs)]
 #[tokio::test]
 async fn lar1_routing_behaviors(#[case] behavior: Behavior) {
     match behavior {
