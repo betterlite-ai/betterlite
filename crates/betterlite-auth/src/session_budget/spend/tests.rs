@@ -160,8 +160,14 @@ async fn lua_script_increment_writes_through_to_redis() {
 async fn lua_script_increment_carries_the_key_amount_and_ttl() {
     let handler = handler_at(FakeCache::with_redis(), Duration::from_secs(120));
     add_spend(&handler, KEY, amount("0.25")).await;
-    let runs = handler.cache.script_runs.lock().unwrap();
-    let run = runs.first().expect("the script ran");
+    let run = handler
+        .cache
+        .script_runs
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .expect("the script ran");
     assert_eq!(run.key, KEY);
     assert_eq!(run.amount, amount("0.25"));
     assert_eq!(run.ttl, Duration::from_secs(120));

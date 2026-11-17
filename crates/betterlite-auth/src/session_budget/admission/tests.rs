@@ -81,22 +81,18 @@ async fn admission_allows_spend_below_the_budget() {
     cache.preload_memory(SPEND_KEY, amount("0.999"));
     let handler = handler(cache);
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn admission_allows_a_session_with_no_recorded_spend() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -116,33 +112,27 @@ async fn admission_rejects_at_an_explicit_zero_budget() {
 async fn admission_allows_an_agent_without_the_budget_key() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[NO_BUDGET]);
-    assert!(
-        check(&handler, &registry, Some("agent-2"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-2"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn admission_allows_an_unregistered_agent() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    assert!(
-        check(&handler, &registry, Some("agent-9"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-9"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn admission_allows_a_request_without_an_agent_id() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    assert!(
-        check(&handler, &registry, None, &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, None, &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -179,11 +169,9 @@ async fn admission_treats_a_true_budget_as_one_dollar() {
 async fn admission_allows_a_null_budget() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_NULL]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -243,11 +231,9 @@ async fn agent_registry_lookup_is_live_at_pre_call() {
     let handler = handler(FakeCache::new());
     let registry = AgentRegistry::default();
     let data = json(REQUEST);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &data)
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &data)
+        .await
+        .unwrap();
     registry.register_agent(agent(BUDGET_ZERO));
     assert!(
         check(&handler, &registry, Some("agent-1"), &data)
@@ -287,11 +273,9 @@ async fn metadata_metadata_bucket_wins_over_litellm_metadata() {
     let data = json(
         r#"{"model":"gpt-4o","metadata":{"session_id":"fresh"},"litellm_metadata":{"session_id":"s1"}}"#,
     );
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &data)
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &data)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -354,11 +338,9 @@ async fn metadata_non_text_session_id_is_a_no_op() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_ONE]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":5}}"#);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &data)
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &data)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -367,11 +349,9 @@ async fn admission_allows_a_session_whose_local_spend_is_unreadable() {
     cache.preload_memory_unreadable(SPEND_KEY);
     let handler = handler(cache);
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &json(REQUEST))
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -379,11 +359,9 @@ async fn metadata_absent_session_id_is_a_no_op() {
     let handler = handler(over_budget_cache());
     let registry = agent_registry_with(&[BUDGET_ONE]);
     let data = json(r#"{"model":"gpt-4o"}"#);
-    assert!(
-        check(&handler, &registry, Some("agent-1"), &data)
-            .await
-            .is_ok()
-    );
+    check(&handler, &registry, Some("agent-1"), &data)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

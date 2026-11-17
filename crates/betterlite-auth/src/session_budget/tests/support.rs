@@ -16,9 +16,7 @@ use crate::agent_policy::AgentResponse;
 use crate::agent_registry::AgentRegistry;
 use crate::agent_registry::AgentRegistryApi as _;
 use crate::model_budget_values::spend_reads::CachedSpend;
-use crate::rejection_provider::DeploymentSnapshot;
 use crate::rejection_provider::ProviderResolution;
-use crate::rejection_provider::SnapshotError;
 use crate::session_budget::SessionBudgetHandler;
 use crate::session_budget::SuccessEvent;
 use crate::session_budget::cache::SessionBudgetCache;
@@ -42,6 +40,7 @@ pub(crate) struct FakeFailure;
 
 pub(crate) struct FakeScript;
 
+#[derive(Clone)]
 pub(crate) struct ScriptRun {
     pub(crate) key: String,
     pub(crate) amount: Decimal,
@@ -57,7 +56,6 @@ pub(crate) struct FakeCache {
     pub(crate) memory: Mutex<BTreeMap<String, CachedSpend>>,
     pub(crate) redis_values: Mutex<BTreeMap<String, CachedSpend>>,
     pub(crate) memory_ttls: Mutex<BTreeMap<String, Duration>>,
-    pub(crate) redis_ttls: Mutex<BTreeMap<String, Duration>>,
     pub(crate) script_runs: Mutex<Vec<ScriptRun>>,
 }
 
@@ -72,7 +70,6 @@ impl FakeCache {
             memory: Mutex::new(BTreeMap::new()),
             redis_values: Mutex::new(BTreeMap::new()),
             memory_ttls: Mutex::new(BTreeMap::new()),
-            redis_ttls: Mutex::new(BTreeMap::new()),
             script_runs: Mutex::new(Vec::new()),
         }
     }
@@ -136,10 +133,6 @@ impl FakeCache {
     pub(crate) fn memory_ttl(&self, key: &str) -> Option<Duration> {
         self.memory_ttls.lock().unwrap().get(key).copied()
     }
-
-    pub(crate) fn redis_ttl(&self, key: &str) -> Option<Duration> {
-        self.redis_ttls.lock().unwrap().get(key).copied()
-    }
 }
 
 fn spend_of(value: &CachedSpend) -> Option<Decimal> {
@@ -181,7 +174,7 @@ impl SessionBudgetCache for FakeCache {
         _script: &FakeScript,
         key: &str,
         amount: Decimal,
-        ttl: Duration,
+        _ttl: Duration,
     ) -> impl Future<Output = Result<Decimal, FakeFailure>> + Send {
         if self.fails_script.load(Ordering::SeqCst) {
             return ready(Err(FakeFailure));
@@ -192,14 +185,10 @@ impl SessionBudgetCache for FakeCache {
             ttl,
         });
         let mut values = self.redis_values.lock().unwrap();
-        let existed = values.contains_key(key);
         let current = values.get(key).and_then(spend_of).unwrap_or(Decimal::ZERO);
         let next = current.checked_add(amount).unwrap_or(Decimal::MAX);
         values.insert(key.to_owned(), CachedSpend::Number(next));
         drop(values);
-        if !existed {
-            self.redis_ttls.lock().unwrap().insert(key.to_owned(), ttl);
-        }
         ready(Ok(next))
     }
 
@@ -237,14 +226,6 @@ impl ProviderResolution for FakeResolver {
     }
 }
 
-pub(crate) struct NoRouter;
-
-impl DeploymentSnapshot for NoRouter {
-    fn model_list(&self) -> Result<Option<&[Json]>, SnapshotError> {
-        Ok(None)
-    }
-}
-
 pub(crate) fn handler(cache: FakeCache) -> SessionBudgetHandler<FakeCache> {
     handler_at(cache, Duration::from_secs(3600))
 }
@@ -273,10 +254,10 @@ pub(crate) fn amount(text: &str) -> Decimal {
     text.parse().expect("the fixture is a decimal")
 }
 
-pub(crate) fn success<'input>(
-    litellm_params: Option<&'input Json>,
+pub(crate) fn success(
+    litellm_params: Option<&Json>,
     response_cost: Option<Decimal>,
-) -> SuccessEvent<'input> {
+) -> SuccessEvent<'_> {
     SuccessEvent {
         litellm_params,
         response_cost,
@@ -284,8 +265,8 @@ pub(crate) fn success<'input>(
 }
 
 pub(crate) fn rejection(error: SessionBudgetError) -> Box<ProxyRateLimitError> {
-    let SessionBudgetError::Exceeded(error) = error else {
+    let SessionBudgetError::Exceeded(limit) = error else {
         panic!("expected a session budget rejection");
     };
-    error
+    limit
 }

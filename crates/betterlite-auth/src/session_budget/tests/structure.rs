@@ -37,12 +37,10 @@ async fn structure_handler_serves_the_pre_call_and_success_callbacks() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_ONE]);
     let data = json(r#"{"model":"gpt-4o","metadata":{"session_id":"s1"}}"#);
-    assert!(
-        handler
-            .async_pre_call_hook(&registry, None, Some("agent-1"), &data)
-            .await
-            .is_ok()
-    );
+    handler
+        .async_pre_call_hook(&registry, None, Some("agent-1"), &data)
+        .await
+        .unwrap();
     let params = json(r#"{"metadata":{"session_id":"s1","agent_id":"agent-1"}}"#);
     handler
         .async_log_success_event(&registry, &success(Some(&params), Some(amount("0.25"))))
