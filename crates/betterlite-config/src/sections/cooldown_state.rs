@@ -40,15 +40,18 @@ enum RawFlag {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Settings {
+pub struct CooldownStateSettings {
     pub enable_health_check_routing: bool,
     pub staleness_threshold: f64,
     pub ignore_transient_errors: bool,
     pub read_interval_seconds: f64,
 }
 
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<CooldownStateSettings>;
+
 // the staleness default is LiteLLM's DEFAULT_HEALTH_CHECK_INTERVAL at import time, times its staleness multiplier
-impl Default for Settings {
+impl Default for CooldownStateSettings {
     fn default() -> Self {
         Self {
             enable_health_check_routing: false,
@@ -86,13 +89,13 @@ impl Section for Raw {
             &lookup.lookup(READ_INTERVAL_VARIABLE).unwrap_or_default(),
         )?
         .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
-        Ok(Settings {
+        Ok(Box::new(CooldownStateSettings {
             enable_health_check_routing: enable,
             staleness_threshold: configured
                 .unwrap_or_else(|| interval.mul_add(STALENESS_MULTIPLIER, 0.0)),
             ignore_transient_errors: ignore,
             read_interval_seconds: read_interval,
-        })
+        }))
     }
 }
 

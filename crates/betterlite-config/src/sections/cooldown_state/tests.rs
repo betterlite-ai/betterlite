@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::cooldown_state::Settings;
+use crate::sections::cooldown_state::{CooldownStateSettings, Settings};
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup: BTreeMap<String, String> = environment
@@ -17,8 +17,8 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
         .map(|config| config.sections.cooldown_state)
 }
 
-fn loaded(source: &str, environment: &[(&str, &str)]) -> Settings {
-    load(source, environment).unwrap()
+fn loaded(source: &str, environment: &[(&str, &str)]) -> CooldownStateSettings {
+    *load(source, environment).unwrap()
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::enable_health_check_routing(
     "general_settings: {enable_health_check_routing: true}",
     &[],
-    Settings {
+    CooldownStateSettings {
         enable_health_check_routing: true,
         staleness_threshold: 600.0,
         ignore_transient_errors: false,
@@ -44,7 +44,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::health_check_staleness_threshold(
     "general_settings: {health_check_staleness_threshold: 90}",
     &[],
-    Settings {
+    CooldownStateSettings {
         enable_health_check_routing: false,
         staleness_threshold: 90.0,
         ignore_transient_errors: false,
@@ -54,7 +54,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::a_fractional_threshold(
     "general_settings: {health_check_staleness_threshold: 2.5}",
     &[],
-    Settings {
+    CooldownStateSettings {
         enable_health_check_routing: false,
         staleness_threshold: 2.5,
         ignore_transient_errors: false,
@@ -64,7 +64,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::a_threshold_from_the_environment(
     "general_settings: {health_check_staleness_threshold: os.environ/STALENESS_SECONDS}",
     &[("STALENESS_SECONDS", "45")],
-    Settings {
+    CooldownStateSettings {
         enable_health_check_routing: false,
         staleness_threshold: 45.0,
         ignore_transient_errors: false,
@@ -74,7 +74,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 #[case::health_check_ignore_transient_errors(
     "general_settings: {health_check_ignore_transient_errors: true}",
     &[],
-    Settings {
+    CooldownStateSettings {
         enable_health_check_routing: false,
         staleness_threshold: 600.0,
         ignore_transient_errors: true,
@@ -84,7 +84,7 @@ fn an_empty_config_takes_the_litellm_defaults() {
 fn each_key_alone_is_read(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
-    #[case] expected: Settings,
+    #[case] expected: CooldownStateSettings,
 ) {
     assert_eq!(loaded(source, environment), expected);
 }
@@ -98,7 +98,7 @@ fn each_key_alone_is_read(
     "general_settings: {health_check_ignore_transient_errors: null}"
 )]
 fn an_explicit_null_takes_the_default(#[case] source: &str) {
-    assert_eq!(loaded(source, &[]), Settings::default());
+    assert_eq!(loaded(source, &[]), CooldownStateSettings::default());
 }
 
 #[rstest]

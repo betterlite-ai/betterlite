@@ -5,7 +5,10 @@ mod tests;
 
 // Router.__init__: the proxy hands the four general_settings keys and the configured cooldown time to its caches
 #[must_use]
-pub const fn cooldown_settings(section: &config::Settings, default_cooldown_time: f64) -> Settings {
+pub const fn cooldown_settings(
+    section: &config::CooldownStateSettings,
+    default_cooldown_time: f64,
+) -> Settings {
     Settings {
         default_cooldown_time,
         redis_read_interval_seconds: section.read_interval_seconds,
