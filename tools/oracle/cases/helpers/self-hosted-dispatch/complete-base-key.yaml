@@ -1,0 +1,113 @@
+kind: helper
+name: complete-base-key
+call:
+  b8157:
+    op: chat
+    provider: hosted_vllm
+    model: llama
+    messages: [{role: user, content: hi}]
+    api_base: "http://passed.test/v1"
+    api_key: "sk-passed"
+    globals: {api_base: "http://global.test/v1"}
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+calls:
+  - b8157:
+      op: chat
+      provider: hosted_vllm
+      model: llama
+      messages: [{role: user, content: hi}]
+      env: {HOSTED_VLLM_API_BASE: "http://env.test/v1", HOSTED_VLLM_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8157:
+      op: chat
+      provider: hosted_vllm
+      model: llama
+      messages: [{role: user, content: hi}]
+      globals: {api_base: "http://global.test/v1"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8157:
+      op: chat
+      provider: ollama
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_key: "sk-ollama"
+      env: {OLLAMA_API_BASE: "http://ollama.test"}
+      answer:
+        status: 200
+        body: '{"model":"llama","created_at":"2026-01-01T00:00:00Z","response":"ok","done":true}'
+  - b8157:
+      op: chat
+      provider: ollama
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://passed.test"
+      globals: {api_base: "http://global.test"}
+      answer:
+        status: 200
+        body: '{"model":"llama","created_at":"2026-01-01T00:00:00Z","response":"ok","done":true}'
+  - b8157:
+      op: chat
+      provider: ollama_chat
+      model: llama
+      messages: [{role: user, content: hi}]
+      headers: {Authorization: "Basic caller"}
+      env: {OLLAMA_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"model":"llama","created_at":"2026-01-01T00:00:00Z","message":{"role":"assistant","content":"ok"},"done":true}'
+  - b8157:
+      op: chat
+      provider: ollama_chat
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://chat.test"
+      api_key: "sk-chat"
+      answer:
+        status: 200
+        body: '{"model":"llama","created_at":"2026-01-01T00:00:00Z","message":{"role":"assistant","content":"ok"},"done":true}'
+  - b8157:
+      op: chat
+      provider: lemonade
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://lemonade.test/api/v1"
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8157:
+      op: chat
+      provider: lemonade
+      model: llama
+      messages: [{role: user, content: hi}]
+      env: {LEMONADE_API_KEY: "sk-env"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8157:
+      op: chat
+      provider: lemonade
+      model: llama
+      messages: [{role: user, content: hi}]
+      globals: {lemonade_key: "sk-global"}
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"llama","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+  - b8157:
+      op: chat
+      provider: petals
+      model: llama
+      messages: [{role: user, content: hi}]
+      api_base: "http://petals.test/v1/generate"
+      api_key: "sk-ignored"
+      headers: {Authorization: "Basic caller"}
+      answer:
+        status: 200
+        body: '{"outputs":"ok"}'
+env: {}
+compare: {ignore: []}

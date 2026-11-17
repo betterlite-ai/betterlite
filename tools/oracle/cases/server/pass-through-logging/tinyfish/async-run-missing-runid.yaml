@@ -1,0 +1,12 @@
+kind: helper
+name: tinyfish-async-run-missing-runid
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      status: PENDING
+      num_of_steps: 0
+    replies: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: lemonade-models
+call:
+  b8157:
+    op: lemonade_models
+    provider: lemonade
+    api_base: "http://self-hosted.test/api/v1"
+    answer: {status: 200, body: '{"data":[{"id":"llama-3"},{"id":"qwen"}]}'}
+calls:
+  - b8157:
+      op: lemonade_models
+      provider: lemonade
+      env: {LEMONADE_API_BASE: "http://env.test/api/v1", LEMONADE_API_KEY: "sk-env"}
+      answer: {status: 200, body: '{"data":[{"id":"llama-3"}]}'}
+  - b8157:
+      op: lemonade_models
+      provider: lemonade
+      api_base: "http://passed.test/api/v1"
+      api_key: "sk-passed"
+      answer: {status: 200, body: '{"data":[{"id":"llama-3"}]}'}
+  - b8157:
+      op: lemonade_models
+      provider: lemonade
+      globals: {lemonade_key: "sk-global"}
+      answer: {status: 200, body: '{"data":[]}'}
+env: {}
+compare: {ignore: []}

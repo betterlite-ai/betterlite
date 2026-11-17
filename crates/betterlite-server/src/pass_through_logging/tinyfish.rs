@@ -1,9 +1,14 @@
+pub mod billing;
 pub mod error;
+pub mod fetch;
 pub mod payload;
+pub mod poll;
 pub mod records;
 pub mod settings;
 pub mod sse;
 pub mod tasks;
+
+use std::time::Duration;
 
 use betterlite_config::loader::startup::process_environment;
 use betterlite_http::user_url::split::urlparse;
@@ -14,8 +19,9 @@ pub const TINYFISH_AGENT_DOCS_URL: &str = "https://docs.tinyfish.ai/agent-api";
 // TinyFish's published Agent API rate in USD per run step; env TINYFISH_COST_PER_STEP overrides it
 pub const TINYFISH_DEFAULT_STEP_COST: Decimal = Decimal::from_parts(16, 0, 0, false, 3);
 pub const TINYFISH_MODEL_NAME: &str = "tinyfish/automation-run";
-pub const TINYFISH_POLL_SECONDS: f64 = 5.0;
-pub const TINYFISH_MAX_POLL_SECONDS: f64 = 3600.0;
+// LiteLLM writes the poll interval and deadline as float seconds; whole seconds stay an exact Duration here.
+pub const TINYFISH_POLL_SECONDS: Duration = Duration::from_secs(5);
+pub const TINYFISH_MAX_POLL_SECONDS: Duration = Duration::from_secs(3600);
 pub const TINYFISH_MAX_POLL_FAILURES: u32 = 12;
 pub const TINYFISH_TERMINAL_STATUSES: [&str; 3] = ["COMPLETED", "FAILED", "CANCELLED"];
 // these fields use the shared account's saved logins, so B3626 refuses them unless the run opt-in is set
@@ -107,25 +113,49 @@ pub fn is_tinyfish_async_route(url_route: &str) -> bool {
 
 #[path = "tinyfish/tests/api_base_resolution.rs"]
 mod api_base_resolution;
+#[path = "tinyfish/tests/async_polling.rs"]
+mod async_polling;
 #[path = "tinyfish/tests/async_route.rs"]
 mod async_route;
+#[path = "tinyfish/tests/background_task.rs"]
+mod background_task;
+#[path = "tinyfish/tests/blocking_run.rs"]
+mod blocking_run;
 #[path = "tinyfish/tests/cost_resolution.rs"]
 mod cost_resolution;
 #[path = "tinyfish/tests/endpoint_validation.rs"]
 mod endpoint_validation;
+#[path = "tinyfish/tests/exception_handling.rs"]
+mod exception_handling;
+#[path = "tinyfish/tests/fetch_request.rs"]
+mod fetch_request;
 #[path = "tinyfish/tests/hostname.rs"]
 mod hostname;
+#[path = "tinyfish/tests/missing_runid.rs"]
+mod missing_runid;
 #[path = "tinyfish/tests/parse_run_billing.rs"]
 mod parse_run_billing;
+#[path = "tinyfish/tests/payload_preservation.rs"]
+mod payload_preservation;
+#[path = "tinyfish/tests/polling_budget.rs"]
+mod polling_budget;
 #[path = "tinyfish/tests/request_logging.rs"]
 mod request_logging;
 #[path = "tinyfish/tests/run_cost.rs"]
 mod run_cost;
 #[path = "tinyfish/tests/run_parsing.rs"]
 mod run_parsing;
+#[path = "tinyfish/tests/runid_validation.rs"]
+mod runid_validation;
 #[path = "tinyfish/tests/sse_extraction.rs"]
 mod sse_extraction;
+#[path = "tinyfish/tests/sse_fallback.rs"]
+mod sse_fallback;
+#[path = "tinyfish/tests/sse_polling.rs"]
+mod sse_polling;
 #[path = "tinyfish/tests/support.rs"]
 mod support;
 #[path = "tinyfish/tests/task_registration.rs"]
 mod task_registration;
+#[path = "tinyfish/tests/terminal_detection.rs"]
+mod terminal_detection;
