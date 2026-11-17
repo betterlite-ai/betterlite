@@ -1,0 +1,16 @@
+kind: helper
+name: foundry-agent-results-citation-index-relocation
+call:
+  foundry_agent_results:
+    annotations:
+      - annotations: []
+      - annotations:
+          - {type: url_citation, text: "[1]", start_index: 10, end_index: 13, url_citation: {url: "https://a", title: A}}
+          - {type: url_citation, start_index: 7, url_citation: {url: "https://b", start_index: 5, end_index: 6}}
+          - {type: url_citation, start_index: 7, url_citation: {url: "https://c", start_index: null}}
+          - {type: url_citation, start_index: 0, end_index: 0}
+          - {type: file_citation, file_id: f1}
+      - annotations:
+          - {type: unknown, nested: {value: 1}}
+env: {}
+compare: {ignore: []}

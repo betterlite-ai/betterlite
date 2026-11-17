@@ -1,0 +1,14 @@
+kind: helper
+name: studio-images-zero-token-cost
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses: []
+    costs:
+      - model: oracle-studio-image
+        catalog: {output_cost_per_image: 0.04, input_cost_per_token: 0, output_cost_per_token: 0}
+        images: 2
+        usage: {input_tokens: 5, output_tokens: 6, total_tokens: 11, text_tokens: 5, image_tokens: 0}
+env: {}
+compare: {ignore: []}

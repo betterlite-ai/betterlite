@@ -48,6 +48,7 @@ percent-encoding.workspace = true
 regex.workspace = true
 rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
+selfie = "0.0.3"
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"

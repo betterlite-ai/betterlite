@@ -131,3 +131,7 @@ path = "src/zerobus/client/tests/suite.rs"
 [[test]]
 name = "rubrik_moderation"
 path = "src/rubrik_moderation/tests.rs"
+
+[[test]]
+name = "genai_metrics"
+path = "src/otel/plumbing/metrics/tests/suite.rs"
