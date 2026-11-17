@@ -1,14 +1,14 @@
 id: B1551
 milestone: M3 providers
 title: Compose Soniox transcription jobs with resource-aware finalization
-status: done
+status: todo
 depends_on: [B1548, B1549, B1550, B173, B171]
 file: tasks/B1551-soniox-transcription-pipeline.yaml
 covers:
   - "litellm/llms/soniox/audio_transcription/handler.py"
 parent: B047
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2213
+pr: null
