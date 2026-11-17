@@ -325,11 +325,11 @@ def image_value(datum: EditDatum) -> JsonObject:
 
 
 def response_value(case: ResponseCase) -> JsonObject:
-    model_response = ImageResponse()
-    # the reply alone decides whether usage exists, so no default zero usage is seeded here
-    model_response.usage = None
     raw = httpx.Response(200, content=json.dumps(case["body"]))
     finished = CONFIG.transform_image_edit_response(EDIT_MODEL, raw, None)
+    # the transform builds its own ImageResponse, whose constructor seeds a zero usage
+    if "usageMetadata" not in case["body"]:
+        finished.usage = None
     parsed = REPLY.validate_json(finished.model_dump_json())
     usage = parsed["usage"]
     return {
