@@ -24,6 +24,9 @@ deviations:
   - what: A callback with a blank code= answers 400 with param code. LiteLLM only checks that the parameter is present, and oauthlib then drops the blank value in parse_qsl, so its MissingCodeError surfaces as a 500.
     why: A blank code cannot be exchanged, and 400 is the status LiteLLM already uses for a missing code.
     link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/parameters.py#L272-L284
+  - what: A callback query that repeats code or state is read from its last occurrence. fastapi-sso reads the first value of both through Starlette's QueryParams.get, while oauthlib reads the last occurrence of error and error_description from its parsed dict.
+    why: A working Google callback carries each parameter once, so no login depends on which duplicate wins; one rule for every callback parameter keeps the checked value and the exchanged value the same.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L397-L414
   - what: The userinfo request always carries an Authorization header with the Bearer scheme. oauthlib builds the header from the token_type of the token response and raises for an unknown one, so a provider that answered another scheme would get that scheme from LiteLLM.
     why: Google answers Bearer, and the typed exchange keeps the access token without a scheme field. The Bearer header is the one Google accepts.
     link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/clients/base.py#L167-L218

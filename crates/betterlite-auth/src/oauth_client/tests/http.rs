@@ -493,6 +493,21 @@ async fn overlapping_logins_keep_their_own_tokens() {
         beta_exchanged.tokens.access_token.expose_secret(),
         "access-beta"
     );
+}
+
+#[tokio::test]
+async fn overlapping_logins_keep_their_own_refresh_tokens_and_userinfo() {
+    let provider = provider().await;
+    let client = client();
+    let transport = transport();
+    let discovery = discovery(&client, &provider).await;
+    let alpha_request = exchange_request("https://proxy.test/sso/callback?code=alpha", true);
+    let beta_request = exchange_request("https://proxy.test/sso/callback?code=beta", true);
+    let alpha_future = exchange(&client, &transport, &discovery, &alpha_request);
+    let beta_future = exchange(&client, &transport, &discovery, &beta_request);
+    let (alpha, beta) = tokio::join!(alpha_future, beta_future);
+    let alpha_exchanged = alpha.unwrap();
+    let beta_exchanged = beta.unwrap();
     assert_eq!(
         alpha_exchanged
             .tokens
@@ -516,5 +531,29 @@ async fn overlapping_logins_keep_their_own_tokens() {
     assert_eq!(
         beta_exchanged.userinfo.fields.get("email"),
         Some(&JsonValue::Text("access-beta@example.test".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn a_repeated_callback_parameter_keeps_the_last_value() {
+    let provider = provider().await;
+    let client = client();
+    let discovery = discovery(&client, &provider).await;
+    let exchanged = exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request(
+            "https://proxy.test/sso/callback?code=first&code=second",
+            true,
+        ),
+    )
+    .await
+    .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(form_value(&seen[1].body, "code"), "second");
+    assert_eq!(
+        exchanged.tokens.access_token.expose_secret(),
+        "access-second"
     );
 }
