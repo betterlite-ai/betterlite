@@ -74,7 +74,7 @@ async fn next_frame(mut state: FrameState) -> Option<(Result<String, Infallible>
             let event = select(frame.as_mut(), state.producer.as_mut());
             let mut ping = pin!(ping_due(interval));
             match select(event, ping.as_mut()).await {
-                Either::Left((Either::Left((frame, _)), _)) => NextFrame::Frame(frame),
+                Either::Left((Either::Left((received, _)), _)) => NextFrame::Frame(received),
                 Either::Left((Either::Right(((), _)), _)) => NextFrame::ProducerDone,
                 Either::Right(((), _)) => NextFrame::Ping,
             }
