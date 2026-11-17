@@ -96,18 +96,6 @@ pub(crate) fn credentials(server_url: String, timeout: Duration) -> CredentialCl
     }
 }
 
-pub(crate) fn client_for<Runtime>(
-    runtime: Runtime,
-    settings: SessionSettings,
-    url: &str,
-    timeout: Duration,
-) -> SessionClient<Runtime>
-where
-    Runtime: McpRuntime,
-{
-    client_on(Arc::new(runtime), settings, url, timeout)
-}
-
 pub(crate) fn client_on<Runtime>(
     runtime: Arc<Runtime>,
     settings: SessionSettings,

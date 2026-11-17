@@ -141,8 +141,8 @@ async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
     let runtime = DuplexRuntime {
         streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
     };
-    let mut client = support::client_for(
-        runtime,
+    let mut client = support::client_on(
+        Arc::new(runtime),
         support::settings(TransportType::Stdio),
         "",
         support::CALL_TIMEOUT,
@@ -190,8 +190,8 @@ async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
     let runtime = DuplexRuntime {
         streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
     };
-    let mut client = support::client_for(
-        runtime,
+    let mut client = support::client_on(
+        Arc::new(runtime),
         support::settings(TransportType::Stdio),
         "",
         Duration::from_millis(200),
