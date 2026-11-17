@@ -52,5 +52,8 @@ async fn an_unparsable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
     assert!(wrap_default_message);
     assert_eq!(status_code, 400);
     assert!(!blocked_content);
-    assert!(output_receiver.try_recv().is_err());
+    assert_eq!(
+        output_receiver.try_recv().unwrap_err(),
+        mpsc::error::TryRecvError::Disconnected
+    );
 }

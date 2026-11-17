@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::StreamItem;
+use crate::tool_permission::ToolPermissionGuardrail;
 use crate::tool_permission::types::{mapping_value, object_list};
 use crate::tool_permission_responses::buffer_overflow::StreamBufferLimits;
 use crate::tool_permission_responses::error::ResponseToolError;
@@ -94,7 +95,10 @@ async fn streaming_iterator_hook_blocks_an_unparsable_raw_stream() {
     .await
     .expect_err("an unparsable raw stream is blocked");
     assert!(raised(error).contains("not a parseable Anthropic SSE stream"));
-    assert!(output_receiver.try_recv().is_err());
+    assert_eq!(
+        output_receiver.try_recv().unwrap_err(),
+        mpsc::error::TryRecvError::Disconnected
+    );
 }
 
 #[tokio::test]
@@ -162,8 +166,17 @@ fn check_assembled_stream_collects_rewrite_denials() {
         &response,
     )
     .expect("rewrite mode collects denials");
-    assert_eq!(denied.len(), 1);
+    assert_eq!(denied.len(), 2);
     assert_eq!(denied[0].call.id, "c1");
+    assert_eq!(
+        denied[0].error.message,
+        "Tool 'shell' denied by rule 'block-shell'"
+    );
+    assert_eq!(denied[1].call.id, "c2");
+    assert_eq!(
+        denied[1].error.message,
+        "Tool 'read' denied by default action"
+    );
 }
 
 #[test]
@@ -180,8 +193,7 @@ fn anthropic_tool_stream(tool_names: &[&str], thinking: bool) -> String {
     let mut frames = vec![
         r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
     ];
-    let mut offset = 0;
-    if thinking {
+    let offset = if thinking {
         frames.extend(
             [
                 r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
@@ -191,18 +203,20 @@ fn anthropic_tool_stream(tool_names: &[&str], thinking: bool) -> String {
             ]
             .map(str::to_owned),
         );
-        offset = 1;
-    }
+        1
+    } else {
+        0
+    };
     for (index, tool_name) in tool_names.iter().enumerate() {
-        let index = index + offset;
+        let block_index = index.saturating_add(offset);
         frames.push(format!(
-            r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"tool_use","id":"toolu_{index}","name":"{tool_name}","input":{{}}}}}}"#
+            r#"{{"type":"content_block_start","index":{block_index},"content_block":{{"type":"tool_use","id":"toolu_{block_index}","name":"{tool_name}","input":{{}}}}}}"#
         ));
         frames.push(format!(
-            r#"{{"type":"content_block_delta","index":{index},"delta":{{"type":"input_json_delta","partial_json":"{{\"cmd\":\"ls\"}}"}}}}"#
+            r#"{{"type":"content_block_delta","index":{block_index},"delta":{{"type":"input_json_delta","partial_json":"{{\"cmd\":\"ls\"}}"}}}}"#
         ));
         frames.push(format!(
-            r#"{{"type":"content_block_stop","index":{index}}}"#
+            r#"{{"type":"content_block_stop","index":{block_index}}}"#
         ));
     }
     frames.push(
@@ -210,14 +224,22 @@ fn anthropic_tool_stream(tool_names: &[&str], thinking: bool) -> String {
             .to_owned(),
     );
     frames.push(r#"{"type":"message_stop"}"#.to_owned());
-    frames
-        .iter()
-        .map(|data| format!("data: {data}\n\n"))
-        .collect()
+    sse_frames(&frames)
+}
+
+// Every frame as an SSE data event, the way the passthrough handler writes an Anthropic stream
+fn sse_frames(frames: &[String]) -> String {
+    let mut stream = String::new();
+    for data in frames {
+        stream.push_str("data: ");
+        stream.push_str(data);
+        stream.push_str("\n\n");
+    }
+    stream
 }
 
 async fn run_stream(
-    guardrail: &crate::tool_permission::ToolPermissionGuardrail,
+    guardrail: &ToolPermissionGuardrail,
     chunks: Vec<StreamItem>,
 ) -> Vec<StreamItem> {
     let (sender, receiver) = mpsc::channel(chunks.len().max(1));
@@ -250,7 +272,7 @@ fn emitted_text(items: &[StreamItem]) -> String {
     items
         .iter()
         .filter_map(|item| match item {
-            StreamItem::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
+            StreamItem::Bytes(bytes) => str::from_utf8(bytes).ok().map(str::to_owned),
             StreamItem::Json(_) => None,
         })
         .collect()
@@ -318,9 +340,9 @@ async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_th
 
 fn openai_tool_stream() -> Vec<StreamItem> {
     [
-        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
-        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}"#,
-        r#"{"id":"chatcmpl-1","model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-test","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":""}}]},"finish_reason":null}]}"#,
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-test","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}"#,
+        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#,
     ]
     .iter()
     .map(|chunk| StreamItem::Json(GuardrailValue::Object(object(chunk))))
