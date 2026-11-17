@@ -1,0 +1,32 @@
+kind: helper
+name: runway-video-lifecycle-encoded-task-path
+call:
+  runway_video_lifecycle:
+    operation: request
+    params:
+      - kind: content
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv
+        api_base: https://api.test/v1/
+        variant: thumbnail
+      - kind: status
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv
+        api_base: https://api.test/v1
+        variant: null
+      - kind: delete
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv
+        api_base: null
+        variant: null
+      - kind: content
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnJ1bndheW1sO21vZGVsX2lkOmdlbjRfdHVyYm87dmlkZW9faWQ6dGFzay9vbmUgdHdv
+        api_base: https://api.test/v1
+        variant: null
+      - kind: status
+        video_id: task_1
+        api_base: null
+        variant: null
+      - kind: delete
+        video_id: task_1
+        api_base: https://api.test/v1
+        variant: null
+env: {}
+compare: {ignore: []}

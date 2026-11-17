@@ -1,0 +1,13 @@
+kind: helper
+name: azure-images-selection-auth-seed
+call:
+  azure_images:
+    models: [dall-e-2, DALL-E-3, MAI-Image-1, gpt-image-1]
+    auth:
+      - api_key: positional-key
+        params: {api_key: params-key}
+      - params: {azure_ad_token: params-token}
+      - api_key: positional-key
+        headers: {api-key: custom-key}
+env: {}
+compare: {ignore: []}

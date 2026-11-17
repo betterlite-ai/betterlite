@@ -1,0 +1,35 @@
+kind: helper
+name: azure-image-body-and-retry
+call:
+  azure_images:
+    generations:
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {size: 1024x1024, quality: standard, extra_body: {size: 1792x1024}}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {n: 2, response_format: b64_json}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {max_retries: 3}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {max_retries: true}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+env: {}
+compare: {ignore: []}

@@ -90,5 +90,9 @@ name = "onyx"
 path = "src/onyx/tests.rs"
 
 [[test]]
+name = "repello_lifecycle"
+path = "src/repello_lifecycle/tests.rs"
+
+[[test]]
 name = "vigil_guard"
 path = "src/vigil_guard/tests.rs"

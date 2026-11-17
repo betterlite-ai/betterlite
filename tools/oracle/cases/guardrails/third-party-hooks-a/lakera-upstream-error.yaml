@@ -1,0 +1,20 @@
+kind: helper
+name: lakera-upstream-error
+call:
+  b9451:
+    vendor: lakera
+    hook: pre_call
+    gate: null
+    api_key: lakera-key
+    moderation_check: pre_call
+    enabled_roles: null
+    add_function_to_prompt: false
+    data:
+      messages:
+        - {role: user, content: hello}
+    answers:
+      - status: 500
+        headers: {}
+        body: upstream failed
+env: {}
+compare: {ignore: []}
