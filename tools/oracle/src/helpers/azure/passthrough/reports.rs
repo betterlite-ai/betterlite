@@ -4,7 +4,9 @@ use betterlite_azure::passthrough::config::{
 use betterlite_azure::passthrough::endpoint::{
     body_model_inference_endpoint, foreign_azure_deployment, router_model_in_endpoint,
 };
-use betterlite_azure::passthrough::logging::AzureRelayedLog;
+use betterlite_azure::passthrough::logging::{
+    AzureRelayedLog, NoChatReplyProjection, NoChatStreamAssembly,
+};
 use betterlite_azure::passthrough::url::without_api_version;
 use betterlite_openai::api::responses_event_records::records::ResponsesTerminalEvent;
 use betterlite_openai::chat_choices::reply::ResponseReply;
@@ -184,17 +186,17 @@ fn auth_report(key_steps: &[KeyStep], validation_steps: &[ValidationStep]) -> Va
     json!({ "api_keys": api_keys, "headers": headers })
 }
 
-fn secret(text: Option<&str>) -> Option<SecretString> {
-    text.map(SecretString::from)
-}
-
 fn key_step(step: &KeyStep) -> Value {
     let config = AzurePassthroughConfig {
-        api_key_env: secret(step.env_key.as_deref()),
-        ..base_config(None)
+        api_base_env: None,
+        api_key_env: step.env_key.as_deref().map(SecretString::from),
+        model_call_details: None,
+        chat_reply: NoChatReplyProjection,
+        chat_stream: NoChatStreamAssembly,
     };
+    let api_key = step.api_key.as_deref().map(SecretString::from);
     config
-        .get_api_key(secret(step.api_key.as_deref()).as_ref())
+        .get_api_key(api_key.as_ref())
         .map_or(Value::Null, |key| {
             Value::String(key.expose_secret().to_owned())
         })
@@ -203,9 +205,9 @@ fn key_step(step: &KeyStep) -> Value {
 fn validation_step(step: &ValidationStep) -> Value {
     let credentials = deployment();
     let sources = NoSources;
-    let api_key = secret(step.api_key.as_deref());
-    let params_key = secret(step.params_key.as_deref());
-    let configured_key = secret(step.configured_key.as_deref());
+    let api_key = step.api_key.as_deref().map(SecretString::from);
+    let params_key = step.params_key.as_deref().map(SecretString::from);
+    let configured_key = step.configured_key.as_deref().map(SecretString::from);
     let request = AzurePassthroughEnvironment {
         headers: step.headers.clone(),
         api_key: api_key.as_ref(),
