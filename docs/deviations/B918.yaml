@@ -1,0 +1,31 @@
+task: B918
+deviations: []
+kept_bugs:
+  - what: >-
+      a non-empty previous_response_id logs "Chat provider: Warning ignoring previous response ID"
+      and stays in the built request, so the warning disagrees with the request betterlite sends
+    why: >-
+      setups that send previous_response_id rely on the request carrying it; only the warning is wrong,
+      and it is part of what they see in the logs today
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L632
+  - what: >-
+      extra_body keys that are not Responses parameters are dropped, although the docstring says
+      the unsupported ones remain in extra_body
+    why: >-
+      the code drops them and a setup that passes a vendor key today never sees it reach the provider,
+      so keeping it would start sending parameters LiteLLM never sent
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1173
+  - what: >-
+      a web_search_options entry that comes before tools is replaced by the mapped tools list, so the
+      search tool disappears, while the same two keys in the other order append it
+    why: >-
+      options are mapped in the order the caller built them and the tools arm replaces the list; changing
+      that would send a tool LiteLLM does not send for the same input order
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L525
+  - what: >-
+      metadata is merged into litellm_metadata only when both values are objects, and a non-object
+      litellm_metadata is removed from the request instead of being forwarded
+    why: >-
+      the sanitized SDK params keep the merged map under litellm_metadata and pop the original; a setup
+      that sends an object is unaffected, and a non-object one was never forwarded by LiteLLM
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L547
