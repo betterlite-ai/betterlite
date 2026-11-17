@@ -39,6 +39,8 @@ pub(crate) struct VideoCall {
     model: String,
     prompt: String,
     params: Map<String, Value>,
+    #[serde(default)]
+    allowed_hosts: Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -116,8 +118,12 @@ pub(super) fn video_value(call: &VideoCall) -> Result<Value, Box<HelperError>> {
         params_key.as_ref(),
         &call.env,
     );
+    let request = videos::VideoFormRequest {
+        params: &call.params,
+        allowed_hosts: &call.allowed_hosts,
+    };
     let form =
-        videos::transform_video_create_request(&call.model, &call.prompt, &url, &call.params, None)
+        videos::transform_video_create_request(&call.model, &call.prompt, &url, request, None)
             .map_err(|error| invalid(error.to_string()))?;
     let supported = videos::get_supported_openai_params();
     Ok(json!({

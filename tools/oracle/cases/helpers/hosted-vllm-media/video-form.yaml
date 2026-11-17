@@ -11,6 +11,7 @@ call:
         params_api_key: null
         model: "my-model"
         prompt: "a cat"
+        allowed_hosts: []
         params:
           width: 8
           generate_sound: true
@@ -30,6 +31,7 @@ call:
         params_api_key: "param-key"
         model: "my-model"
         prompt: "a cat"
+        allowed_hosts: []
         params: {image_reference: "data:image/png;base64,AA", video_reference: "", enable_frame_interpolation: false}
       - api_base: null
         env: {HOSTED_VLLM_API_BASE: "http://env", HOSTED_VLLM_API_KEY: "env-key"}
@@ -38,6 +40,16 @@ call:
         params_api_key: null
         model: "my-model"
         prompt: "a cat"
+        allowed_hosts: []
         params: {}
+      - api_base: "http://host"
+        env: {}
+        headers: {}
+        api_key: "secret"
+        params_api_key: null
+        model: "my-model"
+        prompt: "a cat"
+        allowed_hosts: ["127.0.0.1:8000"]
+        params: {image_reference: "{\"image_url\": \"http://127.0.0.1:8000/media.png\"}"}
 env: {}
 compare: {ignore: []}

@@ -99,22 +99,29 @@ pub fn get_complete_url(
     Ok(versioned_url(&base, "/videos"))
 }
 
+// the caller's options and the admin allowlist their media references are checked against
+#[derive(Debug, Clone, Copy)]
+pub struct VideoFormRequest<'request> {
+    pub params: &'request VideoOptions,
+    pub allowed_hosts: &'request [String],
+}
+
 // transform_video_create_request writes model and prompt, then every remaining option as a form string
 pub fn transform_video_create_request<'media>(
     model: &str,
     prompt: &str,
     api_base: &str,
-    params: &VideoOptions,
+    request: VideoFormRequest<'_>,
     input_reference: Option<MediaBody<'media>>,
 ) -> Result<CreateVideoForm<'media>, HostedVllmVideoError> {
     let mut fields = VideoOptions::new();
     fields.insert(String::from("model"), Value::String(model.to_owned()));
     fields.insert(String::from("prompt"), Value::String(prompt.to_owned()));
-    for (name, value) in params {
+    for (name, value) in request.params {
         if EXCLUDED_FORM_KEYS.contains(&name.as_str()) || value.is_null() {
             continue;
         }
-        let rendered = form::form_value(name, value)?;
+        let rendered = form::form_value(name, value, request.allowed_hosts)?;
         fields.insert(name.clone(), Value::String(rendered));
     }
     let mut files = Vec::new();

@@ -11,10 +11,10 @@ deviations:
       The plain string is what vLLM accepts in image_reference, video_reference and audio_reference, so leaving it unchecked lets a caller reach an internal service through a field that is meant to be a public URL. Fixed rather than copied.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L105-L116
   - what: >-
-      The media URL check resolves no DNS, so a hostname that would resolve to a private address passes it, and a localhost or *.localhost name is reported as address 127.0.0.1 where LiteLLM names the address its resolver returned.
+      The media URL check resolves no DNS, so a hostname that would resolve to a private address passes it, and a localhost or *.localhost name is reported as address 127.0.0.1 where LiteLLM names the address its resolver returned. The transform takes user_url_allowed_hosts as an argument, and a listed host skips the literal and localhost refusal with _is_host_allowlisted's matching (lowercase, trailing dot ignored, bare host or host:effective-port, IPv6 bracketed).
     why: >-
-      A transform reads no network. The check still refuses every scheme but http, https, data and the empty one, a URL without a hostname, a blocked IPv4 or IPv6 literal, and the localhost names.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L313
+      A transform reads no network and the adapter that holds the proxy config passes the list. The check still refuses every scheme but http, https, data and the empty one, a URL without a hostname, a blocked IPv4 or IPv6 literal, and the localhost names, unless the admin allowlisted the host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L266-L280
   - what: >-
       A "file" key among the caller's optional transcription params is an error, while LiteLLM's dict spread lets it replace the audio file.
     why: >-

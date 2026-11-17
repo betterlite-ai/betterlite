@@ -5,6 +5,7 @@ from functools import partial
 from typing import Final, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
+import litellm
 from httpx._types import RequestFiles
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.hosted_vllm.decisions.transformation import HostedVLLMDecisionsConfig
@@ -118,6 +119,7 @@ class DecisionsConfig(Protocol):
 
 # a call carries the keys its function reads, so one shape serves every dispatch
 class Call(TypedDict):
+    allowed_hosts: list[str]
     api_base: str | None
     api_key: str | None
     audio: str
@@ -242,6 +244,7 @@ def media_value(function: str, call: Call) -> JsonValue:
         }
         return JSON.validate_python(responses_answer)
     video_client = cast("VideoConfig", HostedVLLMVideoConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L47
+    litellm.user_url_allowed_hosts = call["allowed_hosts"]
     video_params = GenericLiteLLMParams(api_key=call["params_api_key"])
     video_url = video_client.get_complete_url(
         model=call["model"], api_base=call["api_base"], litellm_params={}

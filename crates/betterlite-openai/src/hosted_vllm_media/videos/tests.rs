@@ -8,8 +8,9 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use super::{
-    HostedVllmVideoError, VLLM_OMNI_VIDEO_PARAMS, get_complete_url, get_supported_openai_params,
-    map_openai_params, transform_video_create_request, validate_environment,
+    HostedVllmVideoError, VLLM_OMNI_VIDEO_PARAMS, VideoFormRequest, get_complete_url,
+    get_supported_openai_params, map_openai_params, transform_video_create_request,
+    validate_environment,
 };
 use crate::hosted_vllm_media::{API_BASE_ENV, API_KEY_ENV};
 use crate::openai_video_identifiers::multipart::MediaBody;
@@ -54,22 +55,26 @@ fn create(value: Value) -> VideoCreate {
     serde_json::from_value(value).expect("the create options must decode")
 }
 
-fn form(params: Value) -> Value {
+fn allowed(entries: &[&str]) -> Vec<String> {
+    entries.iter().map(|entry| (*entry).to_owned()).collect()
+}
+
+fn build(params: Value, allowed_hosts: &[String]) -> Result<Value, HostedVllmVideoError> {
     let fields = options(params);
-    let written =
-        transform_video_create_request("model", "prompt", "http://host/v1/videos", &fields, None)
-            .expect("the form builds");
-    Value::Object(written.fields)
+    let request = VideoFormRequest {
+        params: &fields,
+        allowed_hosts,
+    };
+    transform_video_create_request("model", "prompt", "http://host/v1/videos", request, None)
+        .map(|written| Value::Object(written.fields))
+}
+
+fn form(params: Value) -> Value {
+    build(params, &[]).expect("the form builds")
 }
 
 fn form_error(params: Value) -> HostedVllmVideoError {
-    let fields = options(params);
-    let written =
-        transform_video_create_request("model", "prompt", "http://host/v1/videos", &fields, None);
-    match written {
-        Ok(_) => panic!("the form must not build"),
-        Err(error) => error,
-    }
+    build(params, &[]).expect_err("the form must not build")
 }
 
 #[test]
@@ -229,11 +234,15 @@ fn the_form_renders_bools_and_containers_as_json_text() {
 #[test]
 fn the_form_echoes_the_api_base_and_adds_the_reference_file() {
     let params = options(value("{}"));
+    let request = VideoFormRequest {
+        params: &params,
+        allowed_hosts: &[],
+    };
     let form = transform_video_create_request(
         "model",
         "prompt",
         "http://host/v1/videos",
-        &params,
+        request,
         Some(MediaBody::Bytes(PNG)),
     )
     .expect("the form builds");
@@ -267,6 +276,37 @@ fn an_ipv6_loopback_reference_is_refused() {
             r#"{"image_reference": {"image_url": "http://[::1]/x.png"}}"#
         )),
         HostedVllmVideoError::UnsafeUrl(SsrfError::BlockedAddress { .. })
+    ));
+}
+
+#[rstest]
+#[case("http://127.0.0.1:8000/x.png", &["127.0.0.1:8000"])]
+#[case("http://127.0.0.1/x.png", &["127.0.0.1"])]
+#[case("http://127.0.0.1/x.png", &["127.0.0.1:80"])]
+#[case("https://127.0.0.1/x.png", &["127.0.0.1:443"])]
+#[case("http://localhost:8000/x.png", &["localhost"])]
+#[case("http://[::1]:8000/x.png", &["[::1]:8000"])]
+#[case("http://[::ffff:127.0.0.1]:8000/x.png", &["[::FFFF:127.0.0.1]:8000"])]
+fn a_media_reference_to_an_allowlisted_host_is_kept(#[case] url: &str, #[case] entries: &[&str]) {
+    let params = value(&format!(
+        r#"{{"image_reference": {{"image_url": "{url}"}}}}"#
+    ));
+    let written = build(params, &allowed(entries)).expect("an allowlisted host is accepted");
+    let expected = value(&format!(r#"{{"image_url": "{url}"}}"#)).to_string();
+    assert_eq!(
+        written.get("image_reference"),
+        Some(&Value::String(expected))
+    );
+}
+
+#[test]
+fn an_allowlist_entry_for_another_port_leaves_the_refusal() {
+    let params = value(r#"{"image_reference": {"image_url": "http://127.0.0.1:8000/x.png"}}"#);
+    assert!(matches!(
+        build(params, &allowed(&["127.0.0.1:8001"])),
+        Err(HostedVllmVideoError::UnsafeUrl(
+            SsrfError::BlockedAddress { .. }
+        ))
     ));
 }
 
