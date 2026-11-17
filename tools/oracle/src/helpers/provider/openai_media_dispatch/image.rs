@@ -16,8 +16,8 @@ use serde_json::Value;
 use super::fixtures::{self, Fixture};
 use super::views::{image_reply, parts_value, payload_value};
 use super::{
-    ImageEditCase, ImageFileCase, ImageGenerationCase, ImageVariationCase, OTHER_OUTCOME, failure,
-    leaf_failure, run,
+    ImageEditCase, ImageFileCase, ImageGenerationCase, ImageVariationCase, LeafResult,
+    OTHER_OUTCOME, failure, leaf_failure, run,
 };
 
 const NOW: i64 = 1_700_000_000;
@@ -31,32 +31,13 @@ pub(super) enum ImageLeaf<'case> {
 }
 
 pub(super) async fn image_leaf(leaf: ImageLeaf<'_>) -> HelperResult {
-    let (operation, status, reply) = match leaf {
-        ImageLeaf::Generation(case) => (
-            OpenAiMediaOperation::ImageGeneration(Box::new(ImageGenerationCall {
-                model: case.model.clone(),
-                prompt: case.prompt.clone(),
-                optional_params: case.options.clone(),
-                api_key: Some(SecretString::from("sk-media")),
-                api_base: Some(case.api_base.clone()),
-                organization: None,
-                headers: None,
-                timeout: TIMEOUT,
-                delegate_async: false,
-                now_seconds: NOW,
-            })),
-            case.status,
-            &case.reply,
-        ),
-        ImageLeaf::Variation(case) => (
-            OpenAiMediaOperation::ImageVariation(Box::new(variation_request(case))),
-            case.status,
-            &case.reply,
-        ),
+    let (status, reply) = match leaf {
+        ImageLeaf::Generation(case) => (case.status, &case.reply),
+        ImageLeaf::Variation(case) => (case.status, &case.reply),
     };
     let reply_body = serde_json::to_vec(reply).map_err(|error| failure("Serialize", error))?;
     let fixture = Fixture::new(status, &reply_body);
-    let result = run(&fixture, operation).await;
+    let result = run(&fixture, leaf_operation(leaf)).await;
     let sent = fixtures::only_request(&fixture)?;
     let request = match leaf {
         ImageLeaf::Generation(_) => serde_json::json!({
@@ -71,7 +52,29 @@ pub(super) async fn image_leaf(leaf: ImageLeaf<'_>) -> HelperResult {
             "parts": fixtures::multipart_view(&sent)?,
         }),
     };
-    image_answer(request, result)
+    image_answer(&request, result)
+}
+
+fn leaf_operation(leaf: ImageLeaf<'_>) -> OpenAiMediaOperation {
+    match leaf {
+        ImageLeaf::Generation(case) => {
+            OpenAiMediaOperation::ImageGeneration(Box::new(ImageGenerationCall {
+                model: case.model.clone(),
+                prompt: case.prompt.clone(),
+                optional_params: case.options.clone(),
+                api_key: Some(SecretString::from("sk-media")),
+                api_base: Some(case.api_base.clone()),
+                organization: None,
+                headers: None,
+                timeout: TIMEOUT,
+                delegate_async: false,
+                now_seconds: NOW,
+            }))
+        }
+        ImageLeaf::Variation(case) => {
+            OpenAiMediaOperation::ImageVariation(Box::new(variation_request(case)))
+        }
+    }
 }
 
 pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
@@ -104,7 +107,7 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
 }
 
 // Both image leaves answer with the same envelope, so one match names the reply each outcome carries.
-fn image_answer(request: Value, result: Result<OperationResult, OpenAiMediaError>) -> HelperResult {
+fn image_answer(request: &Value, result: LeafResult) -> HelperResult {
     let (reply, raised) = match result {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageGeneration(outcome))) => {
             (image_reply(&outcome.reply), Value::Null)

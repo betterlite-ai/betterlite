@@ -1,5 +1,4 @@
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
-use betterlite_openai::videos::VideoOptions;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::openai_media_dispatch::{
     MediaMethod, MediaPart, MediaPartBody, MediaPayload,
@@ -65,13 +64,4 @@ fn part_body(body: &MediaPartBody) -> Result<String, Box<HelperError>> {
         // the composition never copies a caller-held reader, so no case can project one
         MediaPartBody::Streamed => Err(failure("Fixture", "the part is a stream")),
     }
-}
-
-pub(super) fn query_value(query: &VideoOptions) -> Value {
-    Value::Object(
-        query
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-    )
 }

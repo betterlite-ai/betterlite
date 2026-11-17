@@ -2,9 +2,8 @@ use betterlite_openai::videos::VideoOptions;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_provider::openai_media_dispatch::call::{
-    CharacterCreateInput, CharacterGetInput, OpenAiMediaOperation, VideoCall, VideoContentCall,
-    VideoCreateCall, VideoDeleteCall, VideoEditCall, VideoEditInput, VideoEditOperation,
-    VideoExtensionInput, VideoListCall, VideoOperation, VideoRemixCall, VideoStatusCall,
+    OpenAiMediaOperation, VideoCall, VideoContentCall, VideoDeleteCall, VideoEditOperation,
+    VideoListCall, VideoOperation, VideoRemixCall, VideoStatusCall,
 };
 use betterlite_provider::openai_media_dispatch::{
     OpenAiMediaPrepared, OpenAiMediaResult, VideoEditOutcome, VideoEditReplyKind, VideoOutcome,
@@ -14,46 +13,38 @@ use betterlite_provider::operation::OperationResult;
 use serde_json::Value;
 
 use super::fixtures::Fixture;
-use super::views::{method_name, parts_value, payload_value, query_value};
-use super::{OTHER_OUTCOME, VideoCase, VideoCreateCase, VideoOp, failure, leaf_failure, run};
+use super::video_extended::extended_call;
+use super::views::{method_name, parts_value, payload_value};
+use super::{OTHER_OUTCOME, VideoCase, VideoOp, failure, leaf_failure, run};
 
-pub(super) async fn video_create(case: &VideoCreateCase) -> HelperResult {
-    let call = VideoCreateCall {
-        model: case.model.clone(),
-        prompt: case.prompt.clone(),
-        options: case.options.clone(),
-        input_reference: case
-            .reference
-            .as_ref()
-            .map(|reference| reference.as_bytes().to_vec()),
-        reply: case.reply.clone().into_bytes(),
-    };
-    let operation = VideoOperation {
-        api_base: Some(case.api_base.clone()),
-        provider: case.provider.clone(),
-        call: VideoCall::Create(Box::new(call)),
-    };
-    let OpenAiMediaResult::Video(outcome) =
-        media_outcome(OpenAiMediaOperation::Video(Box::new(operation))).await?
-    else {
-        return Err(failure("Variant", OTHER_OUTCOME));
-    };
-    let VideoOutcome { request, reply } = *outcome;
-    let VideoReplyKind::Video(video) = reply else {
-        return Err(failure("Variant", OTHER_OUTCOME));
-    };
-    let video = serde_json::to_value(&video).map_err(|error| failure("Serialize", error))?;
-    upload_value(request, video)
-}
-
-// The lifecycle and extended cases differ only in which call their op names, so one match builds both.
 pub(super) async fn video_case(case: &VideoCase) -> HelperResult {
-    let operation = video_operation(case)?;
-    match media_outcome(operation).await? {
-        OpenAiMediaResult::Video(outcome) => lifecycle_value(*outcome),
-        OpenAiMediaResult::VideoEdit(outcome) => edit_value(*outcome),
-        _ => Err(failure("Variant", OTHER_OUTCOME)),
+    let reply = case.reply.clone().into_bytes();
+    let api_base = Some(case.api_base.clone());
+    let provider = case.provider.clone();
+    let operation = match case.op {
+        VideoOp::List | VideoOp::Status | VideoOp::Delete | VideoOp::Content | VideoOp::Remix => {
+            OpenAiMediaOperation::Video(Box::new(VideoOperation {
+                api_base,
+                provider,
+                call: lifecycle_call(case, reply)?,
+            }))
+        }
+        VideoOp::Edit | VideoOp::Extension | VideoOp::CreateCharacter | VideoOp::GetCharacter => {
+            OpenAiMediaOperation::VideoEdit(Box::new(VideoEditOperation {
+                api_base,
+                provider,
+                call: extended_call(case, reply)?,
+            }))
+        }
+    };
+    let result = media_outcome(operation).await?;
+    if let OpenAiMediaResult::Video(outcome) = result {
+        return lifecycle_value(*outcome);
     }
+    let OpenAiMediaResult::VideoEdit(outcome) = result else {
+        return Err(failure("Variant", OTHER_OUTCOME));
+    };
+    edit_value(*outcome)
 }
 
 fn lifecycle_value(outcome: VideoOutcome) -> HelperResult {
@@ -73,7 +64,7 @@ fn lifecycle_value(outcome: VideoOutcome) -> HelperResult {
         "request": {
             "method": method_name(request.method),
             "url": request.url,
-            "params": query_value(&request.query),
+            "params": request.query,
             "body": payload_value(&request.body)?,
             "parts": parts_value(&request.parts)?,
             "multipart": request.multipart,
@@ -84,101 +75,53 @@ fn lifecycle_value(outcome: VideoOutcome) -> HelperResult {
 
 fn edit_value(outcome: VideoEditOutcome) -> HelperResult {
     let VideoEditOutcome { request, reply } = outcome;
-    let reply_value = match reply {
-        VideoEditReplyKind::Video(video) => {
-            serde_json::to_value(&video).map_err(|error| failure("Serialize", error))?
-        }
-        VideoEditReplyKind::Character(character) => {
-            serde_json::to_value(&character).map_err(|error| failure("Serialize", error))?
-        }
-    };
-    upload_value(request, reply_value)
+    let reply_value = edit_reply(reply)?;
+    upload_value(&request, &reply_value)
 }
 
-enum MediaCall {
-    Video(VideoCall),
-    Edit(VideoEditCall),
+fn edit_reply(reply: VideoEditReplyKind) -> Result<Value, Box<HelperError>> {
+    match reply {
+        VideoEditReplyKind::Video(video) => serde_json::to_value(&video),
+        VideoEditReplyKind::Character(character) => serde_json::to_value(&character),
+    }
+    .map_err(|error| failure("Serialize", error))
 }
 
-fn video_operation(case: &VideoCase) -> Result<OpenAiMediaOperation, Box<HelperError>> {
-    let reply = case.reply.clone().into_bytes();
-    let call = match case.op {
-        VideoOp::List => MediaCall::Video(VideoCall::List(Box::new(VideoListCall {
+fn lifecycle_call(case: &VideoCase, reply: Vec<u8>) -> Result<VideoCall, Box<HelperError>> {
+    match case.op {
+        VideoOp::List => Ok(VideoCall::List(Box::new(VideoListCall {
             after: case.after.clone(),
             limit: case.limit,
             order: case.order.clone(),
             extra_query: VideoOptions::new(),
             reply,
         }))),
-        VideoOp::Status => MediaCall::Video(VideoCall::Status(Box::new(VideoStatusCall {
+        VideoOp::Status => Ok(VideoCall::Status(Box::new(VideoStatusCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             reply,
         }))),
-        VideoOp::Delete => MediaCall::Video(VideoCall::Delete(Box::new(VideoDeleteCall {
+        VideoOp::Delete => Ok(VideoCall::Delete(Box::new(VideoDeleteCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             reply,
         }))),
-        VideoOp::Content => MediaCall::Video(VideoCall::Content(Box::new(VideoContentCall {
+        VideoOp::Content => Ok(VideoCall::Content(Box::new(VideoContentCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             variant: case.variant.clone(),
             reply,
         }))),
-        VideoOp::Remix => MediaCall::Video(VideoCall::Remix(Box::new(VideoRemixCall {
+        VideoOp::Remix => Ok(VideoCall::Remix(Box::new(VideoRemixCall {
             video_id: required(&case.video_id, "video_id")?.to_owned(),
             prompt: required(&case.prompt, "prompt")?.to_owned(),
             extra_body: VideoOptions::new(),
             reply,
         }))),
-        VideoOp::Edit => MediaCall::Edit(VideoEditCall::Edit(Box::new(VideoEditInput {
-            prompt: required(&case.prompt, "prompt")?.to_owned(),
-            video_id: required(&case.video_id, "video_id")?.to_owned(),
-            video_file: case
-                .video_file
-                .as_ref()
-                .map(|video| video.as_bytes().to_vec()),
-            extra_body: case.extra_body.clone(),
-            reply,
-        }))),
-        VideoOp::Extension => {
-            MediaCall::Edit(VideoEditCall::Extension(Box::new(VideoExtensionInput {
-                prompt: required(&case.prompt, "prompt")?.to_owned(),
-                video_id: required(&case.video_id, "video_id")?.to_owned(),
-                seconds: required(&case.seconds, "seconds")?.to_owned(),
-                extra_body: case.extra_body.clone(),
-                reply,
-            })))
+        VideoOp::Edit | VideoOp::Extension | VideoOp::CreateCharacter | VideoOp::GetCharacter => {
+            Err(failure("Variant", OTHER_OUTCOME))
         }
-        VideoOp::CreateCharacter => MediaCall::Edit(VideoEditCall::CreateCharacter(Box::new(
-            CharacterCreateInput {
-                name: required(&case.name, "name")?.to_owned(),
-                video: required(&case.video, "video")?.as_bytes().to_vec(),
-                reply,
-            },
-        ))),
-        VideoOp::GetCharacter => {
-            MediaCall::Edit(VideoEditCall::GetCharacter(Box::new(CharacterGetInput {
-                character_id: required(&case.character_id, "character_id")?.to_owned(),
-                reply,
-            })))
-        }
-    };
-    let api_base = Some(case.api_base.clone());
-    let provider = case.provider.clone();
-    Ok(match call {
-        MediaCall::Video(call) => OpenAiMediaOperation::Video(Box::new(VideoOperation {
-            api_base,
-            provider,
-            call,
-        })),
-        MediaCall::Edit(call) => OpenAiMediaOperation::VideoEdit(Box::new(VideoEditOperation {
-            api_base,
-            provider,
-            call,
-        })),
-    })
+    }
 }
 
-async fn media_outcome(
+pub(super) async fn media_outcome(
     operation: OpenAiMediaOperation,
 ) -> Result<OpenAiMediaResult, Box<HelperError>> {
     let fixture = Fixture::new(200, b"");
@@ -189,7 +132,7 @@ async fn media_outcome(
     }
 }
 
-fn upload_value(request: OpenAiMediaPrepared, reply: Value) -> HelperResult {
+pub(super) fn upload_value(request: &OpenAiMediaPrepared, reply: &Value) -> HelperResult {
     Ok(serde_json::json!({
         "url": request.url,
         "body": payload_value(&request.body)?,
@@ -199,7 +142,7 @@ fn upload_value(request: OpenAiMediaPrepared, reply: Value) -> HelperResult {
     }))
 }
 
-fn required<'value>(
+pub(super) fn required<'value>(
     field: &'value Option<String>,
     name: &str,
 ) -> Result<&'value str, Box<HelperError>> {

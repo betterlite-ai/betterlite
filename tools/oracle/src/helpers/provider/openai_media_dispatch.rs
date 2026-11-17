@@ -21,6 +21,8 @@ mod fixtures;
 mod image;
 mod tests;
 mod video;
+mod video_create;
+mod video_extended;
 mod views;
 mod voice;
 
@@ -159,6 +161,8 @@ pub(super) struct VideoCase {
     pub(super) reply: String,
 }
 
+pub(super) type LeafResult = Result<OperationResult, OpenAiMediaError>;
+
 pub(super) fn failure<M>(class: &str, message: M) -> Box<HelperError>
 where
     M: Display,
@@ -236,7 +240,7 @@ async fn dispatch_input(input: &Input) -> HelperResult {
         Input::ImageVariation(case) => image::image_leaf(image::ImageLeaf::Variation(case)).await,
         Input::Speech(case) => voice::speech(case).await,
         Input::Transcription(case) => voice::transcription(case).await,
-        Input::VideoCreate(case) => video::video_create(case).await,
+        Input::VideoCreate(case) => video_create::video_create(case).await,
         Input::VideoLifecycle(case) | Input::VideoExtendedOperations(case) => {
             video::video_case(case).await
         }
