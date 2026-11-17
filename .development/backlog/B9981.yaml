@@ -1,0 +1,13 @@
+id: B9981
+milestone: R2 bug fixes
+title: Test HTTP fixtures share one server that waits for its client without a deadline
+status: todo
+depends_on: []
+file: tasks/B9981-fixture-accept-without-deadline.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
