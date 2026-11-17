@@ -19,7 +19,7 @@ pub(super) struct Recorded {
 // LiteLLM writes the billed model, provider and cost onto the logging object, and the oracle compares those details.
 pub(super) fn billing_view(
     logging_obj: &StreamLoggingObject,
-    logged: Recorded,
+    logged: &Recorded,
     requests: RequestLog,
 ) -> Result<Value, Box<HelperError>> {
     let Some((details, call_id)) = logging_obj.read(&mut |state| {

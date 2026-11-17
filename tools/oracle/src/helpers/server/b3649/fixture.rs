@@ -146,6 +146,9 @@ pub(super) fn fixture(
     let clock = Arc::new(TestClock::default());
     let start_time = DateTime::parse_from_rfc3339(START_TIME).or_value_error()?;
     let end_time = DateTime::parse_from_rfc3339(END_TIME).or_value_error()?;
+    // Arc::clone cannot widen to the trait objects the deps hold, so each port is cloned as its own type first.
+    let port_transport = Arc::clone(&transport);
+    let port_clock = Arc::clone(&clock);
     let billing = TinyfishRunBilling::new(
         RunSettings {
             api_base: API_BASE.to_owned(),
@@ -155,8 +158,8 @@ pub(super) fn fixture(
             credentials: Arc::new(FixedCredentials {
                 key: key.map(|text| SecretString::from(text.to_owned())),
             }),
-            transport: Arc::clone(&transport),
-            monotonic: Arc::clone(&clock),
+            transport: port_transport,
+            monotonic: port_clock,
             sleeper: Arc::new(AdvancingSleeper { clock }),
             clock: Arc::new(FixedSuccessClock { now: end_time }),
             payload: Arc::new(ProductionPayload),

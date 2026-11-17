@@ -7,7 +7,6 @@ mod tests;
 use std::sync::Arc;
 
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use betterlite_logging::passthrough_stream_logging::object::StreamSuccessDispatch;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -75,7 +74,7 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     match input.function {
         Function::AsyncRun => {
-            let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
+            let log = Arc::clone(&fixture.recorder);
             let poll = AsyncRun {
                 logging_obj: Arc::clone(&fixture.logging_obj),
                 response_body: input.run.as_ref(),
@@ -95,7 +94,7 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 .run_id
                 .clone()
                 .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
-            let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
+            let log = Arc::clone(&fixture.recorder);
             let poll = SseRun {
                 run_id,
                 logging_obj: Arc::clone(&fixture.logging_obj),
@@ -133,9 +132,10 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
 }
 
 fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
+    let logged = view::outcome_logged(outcome)?;
     view::billing_view(
         fixture.logging_obj.as_ref(),
-        view::outcome_logged(outcome),
+        &logged,
         fixture.transport.request_log(),
     )
 }
@@ -143,9 +143,10 @@ fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
 // The poller was spawned inside the runtime above, which is what drives it to its terminal run here.
 fn polled_answer(fixture: &Fixture, runtime: &Runtime, handle: JoinHandle<()>) -> HelperResult {
     runtime.block_on(handle).or_value_error()?;
+    let logged = fixture.recorder.only_call()?;
     view::billing_view(
         fixture.logging_obj.as_ref(),
-        fixture.recorder.only_call()?,
+        &logged,
         fixture.transport.request_log(),
     )
 }
