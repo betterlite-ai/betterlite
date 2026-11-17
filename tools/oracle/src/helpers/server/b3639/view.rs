@@ -104,7 +104,10 @@ fn details_view(details: Option<&Value>) -> Value {
 }
 
 fn field_or_null(fields: &Map<String, Value>, name: &str) -> Value {
-    fields.get(name).cloned().unwrap_or(Value::Null)
+    fields
+        .get(name)
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn count(value: Option<&Json>) -> usize {
