@@ -45,19 +45,15 @@ fn function_tool(function: &Map<String, Value>) -> Result<Value, RequestError> {
     };
     let mut converted = Map::new();
     converted.insert("name".to_owned(), Value::String(name.to_owned()));
-    converted.insert(
-        "parameters".to_owned(),
-        function.get("parameters").cloned().unwrap_or(Value::Null),
-    );
-    converted.insert(
-        "strict".to_owned(),
-        function.get("strict").cloned().unwrap_or(Value::Null),
-    );
     converted.insert("type".to_owned(), Value::String("function".to_owned()));
-    converted.insert(
-        "description".to_owned(),
-        function.get("description").cloned().unwrap_or(Value::Null),
-    );
+    // the Responses function tool always carries the three chat fields, absent ones as null
+    for (key, value) in [
+        ("parameters", function.get("parameters")),
+        ("strict", function.get("strict")),
+        ("description", function.get("description")),
+    ] {
+        converted.insert(key.to_owned(), value.cloned().unwrap_or(Value::Null));
+    }
     Ok(Value::Object(converted))
 }
 
