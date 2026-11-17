@@ -69,8 +69,9 @@ fn level(environment: &BTreeMap<String, String>) -> HelperResult {
     .load(CONFIG_SOURCE)
     .map_err(failure)?;
     let settings = &config.sections.service_callback;
+    let level = settings.resolve_log_level().map_err(failure)?;
     Ok(json!({
-        "numeric": level_number(settings.log_level),
+        "numeric": level_number(level),
         "json_logs": settings.json_logs,
     }))
 }

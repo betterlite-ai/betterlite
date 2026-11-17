@@ -29,6 +29,8 @@ impl LoggingWiring {
         mut registry: CallbackRegistry,
         stream_assembler: Arc<dyn StreamAssembler>,
     ) -> Result<Self, PipelineError> {
+        // an unknown LITELLM_LOG stops the server here, as it stops LiteLLM when _logging imports
+        let log_level = settings.resolve_log_level()?;
         register_service_callbacks(&mut registry, &settings.service_callbacks);
         let worker_settings = WorkerSettings {
             max_queue_size: settings.max_queue_size,
@@ -47,7 +49,7 @@ impl LoggingWiring {
             pipeline: Arc::new(pipeline),
             stream_assembler,
             worker_settings,
-            log_level: settings.log_level,
+            log_level,
             json_logs: settings.json_logs,
         })
     }

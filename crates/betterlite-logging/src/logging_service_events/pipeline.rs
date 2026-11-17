@@ -3,6 +3,7 @@ use std::sync::Arc;
 use chrono::{DateTime, FixedOffset};
 use thiserror::Error;
 
+use betterlite_config::sections::service_callback::LogLevelError;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
@@ -25,6 +26,8 @@ pub enum PipelineError {
         #[source]
         source: RedactionError,
     },
+    #[error(transparent)]
+    LogLevel(#[from] LogLevelError),
 }
 
 pub(crate) struct PipelineConfig {

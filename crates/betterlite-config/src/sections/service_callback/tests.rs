@@ -8,7 +8,9 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
-use super::{DEFAULT_CONCURRENCY, DEFAULT_EVENT_TIMEOUT, DEFAULT_MAX_QUEUE_SIZE, level_number};
+use super::{
+    DEFAULT_CONCURRENCY, DEFAULT_EVENT_TIMEOUT, DEFAULT_MAX_QUEUE_SIZE, LogLevelError, level_number,
+};
 
 fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -130,27 +132,33 @@ fn service_callback_log_level_tests_behavior(
     .unwrap()
     .sections
     .service_callback;
-    assert_eq!(settings.log_level, level);
-    assert_eq!(level_number(settings.log_level), number);
+    let resolved = settings.resolve_log_level().unwrap();
+    assert_eq!(resolved, level);
+    assert_eq!(level_number(resolved), number);
 }
 
+// the load keeps the raw value, so a bad LITELLM_LOG fails where the level is resolved, not here
 #[rstest]
-#[case::unknown(&[("LITELLM_LOG", "verbose")])]
-#[case::numeric(&[("LITELLM_LOG", "10")])]
-#[case::untrimmed(&[("LITELLM_LOG", " info ")])]
-#[case::space_only(&[("LITELLM_LOG", " ")])]
-fn service_callback_unknown_log_level_tests_behavior(#[case] environment: &[(&str, &str)]) {
-    let named = match load_error(environment) {
-        ConfigError::InvalidScalar { path, .. } => path,
-        other @ (ConfigError::Environment { .. }
-        | ConfigError::Yaml { .. }
-        | ConfigError::Unsupported { .. }
-        | ConfigError::MissingEnvironment { .. }
-        | ConfigError::InvalidFloat { .. }
-        | ConfigError::InvalidInteger { .. }
-        | ConfigError::LoadThread { .. }) => other.to_string(),
-    };
-    assert_eq!(named, "LITELLM_LOG");
+#[case::unknown("verbose")]
+#[case::numeric("10")]
+#[case::untrimmed(" info ")]
+#[case::space_only(" ")]
+fn service_callback_unknown_log_level_tests_behavior(#[case] value: &str) {
+    let settings = ConfigLoader {
+        lookup: lookup(&[("LITELLM_LOG", value)]),
+    }
+    .load("{}")
+    .expect("the load carries the raw value")
+    .sections
+    .service_callback;
+    let error = settings
+        .resolve_log_level()
+        .expect_err("an unknown name has no logging level");
+    assert!(matches!(&error, LogLevelError::Unknown { .. }));
+    assert_eq!(
+        error.to_string(),
+        format!("LITELLM_LOG={value:?} is not a logging level name")
+    );
 }
 
 #[rstest]

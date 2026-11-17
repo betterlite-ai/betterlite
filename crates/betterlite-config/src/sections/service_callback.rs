@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_db::database_diagnostics::level::{LogLevel, parse_level};
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -15,7 +16,7 @@ const CONCURRENCY_VARIABLE: &str = "LOGGING_WORKER_CONCURRENCY";
 const EVENT_TIMEOUT_VARIABLE: &str = "LOGGING_WORKER_MAX_TIME_PER_COROUTINE";
 
 // LiteLLM's _logging module reads LITELLM_LOG with this default
-pub const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Debug;
+pub const DEFAULT_LOG_LEVEL: &str = "DEBUG";
 // LiteLLM constants.py names the three worker limits these variables override
 pub const DEFAULT_MAX_QUEUE_SIZE: usize = 50_000;
 pub const DEFAULT_CONCURRENCY: usize = 100;
@@ -33,10 +34,17 @@ struct RawSettings {
     service_callback: Option<Vec<String>>,
 }
 
+#[derive(Debug, Error)]
+pub enum LogLevelError {
+    #[error("LITELLM_LOG={value:?} is not a logging level name")]
+    Unknown { value: String },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub service_callbacks: Vec<String>,
-    pub log_level: LogLevel,
+    // the raw LITELLM_LOG text, since Python's logging module resolves the name when it is used
+    pub log_level: String,
     pub json_logs: bool,
     pub max_queue_size: usize,
     pub concurrency: usize,
@@ -47,12 +55,21 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             service_callbacks: Vec::new(),
-            log_level: DEFAULT_LOG_LEVEL,
+            log_level: DEFAULT_LOG_LEVEL.to_owned(),
             json_logs: false,
             max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
             concurrency: DEFAULT_CONCURRENCY,
             event_timeout: DEFAULT_EVENT_TIMEOUT,
         }
+    }
+}
+
+impl Settings {
+    // LiteLLM's getattr(logging, log_level.upper()) fails on a name with no logging attribute
+    pub fn resolve_log_level(&self) -> Result<LogLevel, LogLevelError> {
+        parse_level(&self.log_level).map_err(|_source| LogLevelError::Unknown {
+            value: self.log_level.clone(),
+        })
     }
 }
 
@@ -81,7 +98,7 @@ impl Section for Raw {
                 self.litellm_settings.service_callback.unwrap_or_default(),
                 lookup,
             )?,
-            log_level: log_level(lookup)?,
+            log_level: log_level(lookup),
             json_logs: json_logs(lookup),
             max_queue_size: variable(lookup, MAX_QUEUE_SIZE_VARIABLE)?
                 .unwrap_or(DEFAULT_MAX_QUEUE_SIZE),
@@ -106,20 +123,14 @@ fn resolve_names(
 }
 
 // an empty variable counts as unset, matching how betterlite reads every environment value
-fn log_level<L>(lookup: &L) -> Result<LogLevel, ConfigError>
+fn log_level<L>(lookup: &L) -> String
 where
     L: EnvironmentLookup,
 {
-    let Some(text) = lookup.lookup(LOG_LEVEL_VARIABLE) else {
-        return Ok(DEFAULT_LOG_LEVEL);
-    };
-    if text.is_empty() {
-        return Ok(DEFAULT_LOG_LEVEL);
-    }
-    parse_level(&text).map_err(|_source| ConfigError::InvalidScalar {
-        path: LOG_LEVEL_VARIABLE.to_owned(),
-        value: false,
-    })
+    lookup
+        .lookup(LOG_LEVEL_VARIABLE)
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_owned())
 }
 
 // only "true" in any case enables JSON logs; whitespace and other spellings stay false
