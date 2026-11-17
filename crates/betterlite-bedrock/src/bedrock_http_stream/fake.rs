@@ -26,7 +26,7 @@ pub struct FakeCall<'call> {
 
 // _transform_response runs on the buffered body with an empty optional_params and an empty api_key.
 pub fn buffered(
-    call: FakeCall<'_>,
+    call: &FakeCall<'_>,
     reply: &RawReply<'_>,
     log: &mut LogContext<'_, '_>,
     ids: &dyn IdSource,

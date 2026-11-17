@@ -65,8 +65,19 @@ where
 // A converter that raised a BedrockError keeps it; every other conversion failure is a bare Python exception.
 pub(crate) fn transform_failure(error: TransformError<Infallible>) -> HttpStreamError<Infallible> {
     match error {
-        TransformError::Conversion { status, error } => HttpStreamError::Provider { status, error },
-        other => HttpStreamError::Transform(other),
+        TransformError::Conversion {
+            status,
+            error: cause,
+        } => HttpStreamError::Provider {
+            status,
+            error: cause,
+        },
+        other @ (TransformError::Header(_)
+        | TransformError::Clock(_)
+        | TransformError::Reply(_)
+        | TransformError::Message(_)
+        | TransformError::TokenUsage(_)
+        | TransformError::Usage(_)) => HttpStreamError::Transform(other),
     }
 }
 

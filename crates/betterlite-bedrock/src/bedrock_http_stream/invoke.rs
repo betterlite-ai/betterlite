@@ -13,11 +13,14 @@ use crate::bedrock_http_stream::error::{
 };
 use crate::bedrock_http_stream::fake::{FakeCall, buffered};
 use crate::bedrock_http_stream::stream::{ChunkStream, FramedCall, OpenedStream, framed};
-use crate::bedrock_http_stream::{Opening, SendFailure, StreamDeps, body_text, log_open, send};
+use crate::bedrock_http_stream::{
+    Opening, PendingOpen, SendFailure, StreamDeps, body_text, log_open, send,
+};
 use crate::bedrock_settings::ResponseBody;
 use crate::converse_response::request::RawReply;
 use crate::converse_response::transform::TransformError;
 use crate::image_call::plan::LogContext;
+use crate::invoke_events::fake::FakeStream;
 
 pub(crate) const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";
 
@@ -34,11 +37,11 @@ pub struct InvokeCall<'call> {
     pub sync: bool,
 }
 
-pub async fn make_call<'deps>(
-    call: InvokeCall<'_>,
-    deps: &StreamDeps<'deps>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+// The POST, the 200 gate and the fake stream's body read; make_call finishes the stream and logs it.
+pub async fn open_call(
+    call: &InvokeCall<'_>,
+    deps: &StreamDeps<'_>,
+) -> Result<PendingOpen, HttpStreamError<Infallible>> {
     let handler: Arc<dyn StreamHandler> = deps
         .supplied
         .as_ref()
@@ -47,9 +50,9 @@ pub async fn make_call<'deps>(
         handler.as_ref(),
         Opening {
             api_base: call.api_base,
-            // The call keeps its headers for the failure and fake paths below.
+            // The call keeps its headers for the failure path below.
             headers: call.headers.clone(),
-            body: request_body(&call),
+            body: request_body(call),
             stream: !call.fake_stream,
         },
         deps.timeout,
@@ -57,26 +60,51 @@ pub async fn make_call<'deps>(
     .await
     .map_err(opening_failure)?;
     if head.status != 200 {
-        return Err(bad_status(&call, &mut head).await);
+        return Err(bad_status(call, &mut head).await);
     }
     if call.fake_stream {
-        return fake_opened(call, deps, head, log).await;
+        let body = read_body(&mut head.chunks)
+            .await
+            .map_err(|error| read_failure(&error))?;
+        return Ok(PendingOpen {
+            head,
+            body: Some(body),
+        });
     }
-    let opened = framed_opened(&call, deps, head);
+    Ok(PendingOpen { head, body: None })
+}
+
+// The opened iterator a caller consumes, after the buffered conversion and post_call LiteLLM runs before any read.
+pub fn make_call<'deps>(
+    call: &InvokeCall<'_>,
+    deps: &StreamDeps<'deps>,
+    pending: PendingOpen,
+    log: &mut LogContext<'_, '_>,
+) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+    let PendingOpen { head, body } = pending;
+    if let Some(body) = body {
+        let stream = fake_stream(call, deps, &head, &body, log)?;
+        log_open(log.state, log.env, call.messages, call.data);
+        return Ok(OpenedStream {
+            chunks: ChunkStream::Fake(stream),
+            headers: head.headers,
+        });
+    }
+    let opened = framed_opened(call, deps, head);
     log_open(log.state, log.env, call.messages, call.data);
     Ok(opened)
 }
 
-async fn fake_opened<'deps>(
-    call: InvokeCall<'_>,
-    deps: &StreamDeps<'deps>,
-    mut head: StreamHead,
+fn fake_stream(
+    call: &InvokeCall<'_>,
+    deps: &StreamDeps<'_>,
+    head: &StreamHead,
+    body: &[u8],
     log: &mut LogContext<'_, '_>,
-) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
-    let body = read_body(&mut head.chunks).await.map_err(read_failure)?;
+) -> Result<FakeStream, HttpStreamError<Infallible>> {
     let headers = header_pairs(&head.headers);
-    let stream = buffered(
-        FakeCall {
+    buffered(
+        &FakeCall {
             model: call.model,
             messages: call.messages,
             data: call.data,
@@ -85,17 +113,12 @@ async fn fake_opened<'deps>(
         },
         &RawReply {
             headers: &headers,
-            body: &body,
+            body,
         },
         log,
         deps.ids.as_ref(),
     )
-    .map_err(projection_failure)?;
-    log_open(log.state, log.env, call.messages, call.data);
-    Ok(OpenedStream {
-        chunks: ChunkStream::Fake(stream),
-        headers: head.headers,
-    })
+    .map_err(projection_failure)
 }
 
 fn framed_opened<'deps>(
@@ -104,7 +127,7 @@ fn framed_opened<'deps>(
     head: StreamHead,
 ) -> OpenedStream<'deps> {
     framed(
-        FramedCall {
+        &FramedCall {
             model: call.model,
             json_mode: call.json_mode,
             provider: call.provider,
@@ -148,7 +171,7 @@ async fn bad_status(call: &InvokeCall<'_>, head: &mut StreamHead) -> HttpStreamE
                 ResponseBody::Read(text),
             )
         }
-        Err(error) => read_failure(error),
+        Err(error) => read_failure(&error),
     }
 }
 
@@ -178,8 +201,8 @@ fn opening_failure(failure: SendFailure) -> HttpStreamError<Infallible> {
     }
 }
 
-fn read_failure(error: HttpError) -> HttpStreamError<Infallible> {
-    if read_timed_out(&error) {
+fn read_failure(error: &HttpError) -> HttpStreamError<Infallible> {
+    if read_timed_out(error) {
         return raised(408, TIMEOUT_MESSAGE.to_owned());
     }
     raised(500, error.to_string())
@@ -189,7 +212,11 @@ fn read_failure(error: HttpError) -> HttpStreamError<Infallible> {
 fn projection_failure(error: TransformError<Infallible>) -> HttpStreamError<Infallible> {
     match transform_failure(error) {
         HttpStreamError::Transform(source) => raised(500, source.to_string()),
-        other => other,
+        passthrough @ (HttpStreamError::Provider { .. }
+        | HttpStreamError::Transport(_)
+        | HttpStreamError::Url(_)
+        | HttpStreamError::Body(_)
+        | HttpStreamError::Header(_)) => passthrough,
     }
 }
 

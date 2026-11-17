@@ -46,6 +46,12 @@ pub(crate) struct Opening<'call> {
     pub stream: bool,
 }
 
+// What the POST phase leaves for the sync phase: the opened response and, for a fake stream, the body it converts.
+pub struct PendingOpen {
+    pub head: StreamHead,
+    pub body: Option<Vec<u8>>,
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum SendFailure {
     #[error("the api_base is not a URL")]

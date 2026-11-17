@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -57,9 +58,9 @@ impl StreamFailure {
 impl Stream for ChunkStream<'_> {
     type Item = Result<InvokeChunk, StreamFailure>;
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.get_mut() {
-            Self::Framed(stream) => Pin::new(stream.as_mut()).poll_next(context),
+            Self::Framed(stream) => Pin::new(stream.as_mut()).poll_next(cx),
             Self::Fake(stream) => Poll::Ready(stream.next().map(fake_item)),
         }
     }
@@ -85,7 +86,7 @@ pub struct FramedStream<'deps> {
 impl FramedStream<'_> {
     fn read_next(
         &mut self,
-        context: &mut Context<'_>,
+        cx: &mut Context<'_>,
     ) -> Poll<Option<Result<InvokeChunk, StreamFailure>>> {
         loop {
             if let Some(item) = self.pending.pop_front() {
@@ -97,7 +98,7 @@ impl FramedStream<'_> {
             if self.framing.done {
                 return Poll::Ready(None);
             }
-            match Pin::new(&mut self.chunks).poll_next(context) {
+            match Pin::new(&mut self.chunks).poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Ok(chunk))) => {
                     self.framing
@@ -120,8 +121,8 @@ impl FramedStream<'_> {
 impl Stream for FramedStream<'_> {
     type Item = Result<InvokeChunk, StreamFailure>;
 
-    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.get_mut().read_next(context)
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut().read_next(cx)
     }
 }
 
@@ -135,7 +136,7 @@ pub struct FramedCall<'call> {
 
 #[must_use]
 pub fn framed<'deps>(
-    call: FramedCall<'_>,
+    call: &FramedCall<'_>,
     deps: &StreamDeps<'deps>,
     head: StreamHead,
 ) -> OpenedStream<'deps> {
@@ -197,8 +198,8 @@ impl Framing {
     fn state<'state>(&mut self, decoder: &'state mut InvokeStreamDecoder) -> FramedState<'state> {
         FramedState {
             decoder,
-            buffer: std::mem::take(&mut self.buffer),
-            tally: std::mem::take(&mut self.tally),
+            buffer: mem::take(&mut self.buffer),
+            tally: mem::take(&mut self.tally),
             shape: self
                 .shape
                 .take()
