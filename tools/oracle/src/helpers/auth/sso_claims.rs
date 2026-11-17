@@ -4,7 +4,9 @@ use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::jwt_claims::handler::JwtHandler;
 use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
 use betterlite_auth::sso_claims::access_token::process_sso_jwt_access_token;
-use betterlite_auth::sso_claims::convert::{ConversionConfig, convert_generic_response};
+use betterlite_auth::sso_claims::convert::{
+    ConversionConfig, convert_generic_response, normalize_email,
+};
 use betterlite_auth::sso_claims::decode::{decode_sso_token_claims, merge_sso_token_claims};
 use betterlite_auth::sso_claims::roles::determine_role_from_groups;
 use betterlite_auth::sso_types::identity::OpenIdIdentity;
@@ -65,7 +67,7 @@ impl Helper for Op {
         let emails = input
             .emails
             .iter()
-            .map(|email| email.as_ref().map(|email| email.to_lowercase()))
+            .map(|email| normalize_email(email.as_deref()))
             .collect::<Vec<Option<String>>>();
         let roles = input
             .groups

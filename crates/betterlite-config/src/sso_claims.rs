@@ -24,6 +24,7 @@ pub struct ClaimAttributes {
     pub extra_attributes: Vec<String>,
 }
 
+#[must_use]
 pub fn load_claim_attributes<L>(lookup: &L) -> ClaimAttributes
 where
     L: EnvironmentLookup,

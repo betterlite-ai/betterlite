@@ -41,7 +41,7 @@ pub fn convert_generic_response(
     }
     Ok(OpenIdIdentity {
         id: claim_text(response, &attributes.user_id)?,
-        email: claim_text(response, &attributes.email)?.map(|email| email.to_lowercase()),
+        email: normalize_email(claim_text(response, &attributes.email)?.as_deref()),
         first_name: claim_text(response, &attributes.first_name)?,
         last_name: claim_text(response, &attributes.last_name)?,
         display_name: claim_text(response, &attributes.display_name)?,
@@ -124,4 +124,10 @@ fn extra_fields(
         fields.insert(name.clone(), value);
     }
     Ok(Some(fields))
+}
+
+// normalize_email: an SSO email compares case-insensitively, so the identity keeps it lowercased
+#[must_use]
+pub fn normalize_email(email: Option<&str>) -> Option<String> {
+    email.map(str::to_lowercase)
 }

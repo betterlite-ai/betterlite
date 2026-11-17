@@ -2,7 +2,7 @@ use crate::jwt_claims::claims::ClaimError;
 use crate::jwt_claims::handler::JwtHandler;
 use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::sso_claims::claims::SsoClaimsError;
-use crate::sso_claims::convert::{ConversionConfig, convert_generic_response};
+use crate::sso_claims::convert::{ConversionConfig, convert_generic_response, normalize_email};
 use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::{RoleMappings, TeamMappings};
 use crate::user_roles::UserRole;
@@ -84,6 +84,16 @@ fn custom_attribute_bindings_are_followed() {
     assert_eq!(converted.last_name.as_deref(), Some("Family"));
     assert_eq!(converted.provider.as_deref(), Some("okta"));
     assert_eq!(converted.user_role, Some(UserRole::ProxyAdmin));
+}
+
+#[test]
+fn an_email_is_lowercased_and_a_missing_one_stays_absent() {
+    assert_eq!(
+        normalize_email(Some("User@Example.COM")),
+        Some("user@example.com".to_owned())
+    );
+    assert_eq!(normalize_email(Some("")), Some(String::new()));
+    assert_eq!(normalize_email(None), None);
 }
 
 #[test]
