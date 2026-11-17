@@ -1,5 +1,5 @@
 pub mod calls;
-mod initialize;
+pub mod initialize;
 
 use std::collections::BTreeMap;
 use std::future::Future;
