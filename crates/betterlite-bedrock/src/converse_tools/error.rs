@@ -62,9 +62,9 @@ impl ConverseToolsError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::UnsupportedNone | Self::UnsupportedChoice { .. } => Some(BAD_REQUEST_STATUS),
-            Self::ForcedTool(error) => error.status_code(),
-            Self::FormatNotAnObject
+            Self::UnsupportedNone
+            | Self::UnsupportedChoice { .. }
+            | Self::FormatNotAnObject
             | Self::MissingFormatType
             | Self::JsonSchemaNotAnObject
             | Self::MissingSchemaField
@@ -77,9 +77,9 @@ impl ConverseToolsError {
             | Self::MissingParameterType
             | Self::ToolChoiceFunction
             | Self::ToolChoiceName
-            | Self::ToolsNotList
-            | Self::Append(_)
-            | Self::Wire(_) => None,
+            | Self::ToolsNotList => Some(BAD_REQUEST_STATUS),
+            Self::ForcedTool(error) => error.status_code(),
+            Self::Append(_) | Self::Wire(_) => None,
         }
     }
 }

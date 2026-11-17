@@ -3,8 +3,6 @@ use crate::sections::Section;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 
-mod tests;
-
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
