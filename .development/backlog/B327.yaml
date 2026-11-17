@@ -1,7 +1,7 @@
 id: B327
 milestone: M2 routing
 title: Embedding-based auto routing
-status: done
+status: todo
 depends_on: [B014, B006, B301, B361, B002]
 file: tasks/B327-semantic-router.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "docker/install_auto_router.sh"
 parent: B021
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2326
+pr: null
