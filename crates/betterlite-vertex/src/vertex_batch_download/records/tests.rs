@@ -456,9 +456,9 @@ fn embedding_groups_are_newline_joined() {
 fn keys_and_labels_correlate_rows() {
     {
         let keyed = ROW.replace(r#""request":{}"#, r#""key":"req%23one#0/1","request":{}"#);
-        let keyed_response = convert(&keyed, URL);
-        let keyed_body = json(&String::from_utf8(keyed_response.content).unwrap());
-        assert_eq!(field(&keyed_body, "custom_id"), &json(r#""req#one#0/1""#));
+        let response = convert(&keyed, URL);
+        let body = json(&String::from_utf8(response.content).unwrap());
+        assert_eq!(field(&body, "custom_id"), &json(r#""req#one#0/1""#));
     }
 
     {
@@ -466,8 +466,8 @@ fn keys_and_labels_correlate_rows() {
             r#""request":{}"#,
             r#""request":{"labels":{"litellm_custom_id":"req-1"}}"#,
         );
-        let labelled_response = convert(&labelled, URL);
-        let labelled_body = json(&String::from_utf8(labelled_response.content).unwrap());
-        assert_eq!(field(&labelled_body, "custom_id"), &json(r#""req-1""#));
+        let response = convert(&labelled, URL);
+        let body = json(&String::from_utf8(response.content).unwrap());
+        assert_eq!(field(&body, "custom_id"), &json(r#""req-1""#));
     }
 }
