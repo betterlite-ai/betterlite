@@ -12,7 +12,7 @@ use tracing::Level;
 use crate::api::messages_sse_events::stream::MessagesProviderStream;
 
 use super::cache_stream::MessagesStreamCacheWriter;
-use super::python_text::{decode_utf8_ignore, splitlines_keepends};
+use super::python_text::{decode_utf8_ignore, sse_lines_keepends};
 use super::replay::{CachedMessagesResult, convert_cached_messages_result};
 use super::restamp::{MAX_HELD_BYTES, is_ping_frame};
 use super::restamp_messages_stream;
@@ -365,30 +365,38 @@ fn crlf_and_cr_frame_ends_restamp(#[case] line_end: &str) {
 }
 
 #[test]
-fn splitlines_keeps_python_line_endings() {
+fn sse_lines_keep_their_line_ends() {
     let source = "one\r\ntwo\nthree\rfour\u{b}five\u{c}six\u{1c}seven\u{1d}eight\u{1e}nine\u{85}ten\u{2028}eleven\u{2029}twelve";
     assert_eq!(
-        splitlines_keepends(source),
+        sse_lines_keepends(source),
         vec![
             "one\r\n",
             "two\n",
             "three\r",
-            "four\u{b}",
-            "five\u{c}",
-            "six\u{1c}",
-            "seven\u{1d}",
-            "eight\u{1e}",
-            "nine\u{85}",
-            "ten\u{2028}",
-            "eleven\u{2029}",
-            "twelve",
+            "four\u{b}five\u{c}six\u{1c}seven\u{1d}eight\u{1e}nine\u{85}ten\u{2028}eleven\u{2029}twelve",
         ]
     );
-    assert_eq!(
-        splitlines_keepends("one\n\ntwo"),
-        vec!["one\n", "\n", "two"]
+    assert_eq!(sse_lines_keepends("one\n\ntwo"), vec!["one\n", "\n", "two"]);
+    assert_eq!(sse_lines_keepends("one\n"), vec!["one\n"]);
+}
+
+#[test]
+fn a_start_line_with_unicode_separators_is_restamped() {
+    let id = "msg_\u{85}\u{2028}\u{2029}";
+    let event = format!(
+        "{{\"type\":\"message_start\",\"message\":{{\"id\":\"{id}\",\"model\":\"upstream-model\"}}}}"
     );
-    assert_eq!(splitlines_keepends("one\n"), vec!["one\n"]);
+    let frame = format!("event: message_start\ndata: {event}\n\n");
+    let input = MessagesStreamRestampInput {
+        requested_model: REQUESTED_MODEL.to_owned(),
+        chunks: vec![text(&frame)],
+    };
+    let result = restamp_messages_stream(&input);
+    let expected = format!(
+        "event: message_start\ndata: {{\"type\":\"message_start\",\"message\":{{\"id\":\"{id}\",\"model\":\"{REQUESTED_MODEL}\"}}}}\n\n"
+    );
+    assert_eq!(result.chunks, vec![bytes(expected.as_bytes())]);
+    assert_eq!(result.flushed, bytes(b""));
 }
 
 #[rstest]

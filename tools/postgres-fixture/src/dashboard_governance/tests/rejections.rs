@@ -8,7 +8,7 @@ use crate::connection::PostgresFixture;
 use crate::dashboard_governance::DashboardGovernanceError;
 use crate::error::FixtureError;
 use crate::seed::FixtureSeed;
-use crate::tests::{FixedName, postgres_server};
+use crate::tests::{FixedName, postgres_url};
 
 use super::support::{
     boundary_governance, duplicate_guardrail_index, duplicate_metric, duplicate_tool_id,
@@ -96,7 +96,7 @@ async fn database_exists(admin_url: &SecretString, name: &str) -> bool {
 }
 
 async fn assert_provisioning_failure(seed: &FixtureSeed, failure: &Failure) {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let name = unique_name("governance_rejected");
     let result = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),

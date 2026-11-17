@@ -19,6 +19,7 @@ pub enum SdkResult {
     MessagesNativeStream { value: Vec<StepOutcome> },
     MessagesSyncStream { value: SyncRun },
     MessagesChatStream { value: ChatStreamRun },
+    ChatResponseStream { value: ChatResponseStreamRuns },
     ResponsesAgenticContinuation { value: AgenticContinuationRun },
     FileAzureStorage { value: FileStorageRun },
     Failure(Failure),
@@ -150,6 +151,23 @@ pub struct ChatStreamFailure {
 pub struct ChatStreamView {
     pub model: String,
     pub chunks: Option<Vec<String>>,
+}
+
+type ChatResponseStreamRuns = Vec<ChatResponseStreamRunOutcome>;
+
+// One run of the Responses iterator: its steps, or the provider failure that ended it before any event
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatResponseStreamRunOutcome {
+    pub steps: Vec<ChatResponseStreamStepOutcome>,
+    pub failure: Option<Failure>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatResponseStreamStepOutcome {
+    pub events: Vec<Value>,
+    pub end: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

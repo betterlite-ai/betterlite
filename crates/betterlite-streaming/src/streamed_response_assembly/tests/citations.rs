@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
+
 use super::{object, response_of};
 
 const FIRST_CHUNK: &str = r#"{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "A", "provider_specific_fields": "#;
@@ -35,10 +39,10 @@ const CASES: [(&str, &str, Option<&str>); 6] = [
     ),
 ];
 
-pub(super) async fn provider_fields_citations() {
+pub(super) async fn provider_fields_citations(redactor: &Arc<Redactor>) {
     for (first_fields, later_chunks, expected) in CASES {
         let source = format!("[{FIRST_CHUNK}{first_fields}}}}}]}}, {later_chunks}]");
-        let response = response_of(&source, 1).await;
+        let response = response_of(&source, 1, redactor).await;
         assert_eq!(
             response.choices[0].message.provider_specific_fields,
             expected.map(object),

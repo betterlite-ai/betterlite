@@ -1,4 +1,3 @@
-use std::env;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
@@ -104,16 +103,6 @@ pub(super) fn writable(
             .ok_or(GateError::NotUnicode("the coordination folder"))?
             .to_owned(),
     );
-    if let Some(socket) = env::var_os("GATE_POSTGRES_SOCKET")
-        && let Some(directory) = Path::new(&socket).parent()
-    {
-        writable.push(
-            directory
-                .to_str()
-                .ok_or(GateError::NotUnicode("the PostgreSQL socket"))?
-                .to_owned(),
-        );
-    }
     Ok(writable)
 }
 

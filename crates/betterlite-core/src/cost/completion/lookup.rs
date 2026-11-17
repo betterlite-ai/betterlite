@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_models::catalog::{CatalogError, ModelCatalog, UnknownFields};
+use betterlite_models::catalog::{CatalogError, ModelCatalog};
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
@@ -66,7 +66,7 @@ pub struct LookupSettings {
 // The B193 price map plus the B205 resolver: effective lookups resolve a name, raw lookups read one exact key.
 pub struct CatalogLookup {
     map: ModelCostMap,
-    catalog: ModelCatalog,
+    catalog: Arc<ModelCatalog>,
     settings: LookupSettings,
     hf: HfConfigClient<NoHfConfig>,
     keys: Mutex<ModelCostKeys>,
@@ -81,10 +81,15 @@ struct Tables<'raw> {
 }
 
 impl CatalogLookup {
-    pub fn new(model_cost: &[u8], settings: LookupSettings) -> Result<Self, LookupError> {
+    // the caller passes the parsed catalog, so the server parses the bundled one once for every service that reads it
+    pub fn new(
+        model_cost: &[u8],
+        catalog: Arc<ModelCatalog>,
+        settings: LookupSettings,
+    ) -> Result<Self, LookupError> {
         Ok(Self {
             map: ModelCostMap::parse(model_cost)?,
-            catalog: ModelCatalog::parse(model_cost, UnknownFields::Warn)?,
+            catalog,
             settings,
             hf: HfConfigClient {
                 client: NoHfConfig,

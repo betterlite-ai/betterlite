@@ -12,10 +12,10 @@ use url::Url;
 use uuid::Uuid;
 
 use super::{TlsMode, tls_connector};
-use crate::connection::{FixtureSource, PostgresFixture, select_source};
+use crate::connection::{PostgresFixture, configured_options};
 use crate::error::FixtureError;
 use crate::seed::FixtureSeed;
-use crate::tests::{FixedName, postgres_server};
+use crate::tests::{FixedName, postgres_url};
 
 mod front;
 
@@ -24,9 +24,7 @@ use front::{Authority, Front, authority};
 #[test]
 fn missing_sslmode_disables_tls() {
     let configured = SecretString::from("postgresql://u:p@localhost/db");
-    let FixtureSource::Configured(options) = select_source(Some(&configured)).unwrap() else {
-        panic!("configured source")
-    };
+    let options = configured_options(Some(&configured)).unwrap();
     assert_eq!(options.tls_mode, TlsMode::Disable);
     assert_eq!(options.config.get_ssl_mode(), SslMode::Disable);
 }
@@ -35,14 +33,14 @@ fn missing_sslmode_disables_tls() {
 fn explicit_sslmode_prefer_is_rejected() {
     let configured = SecretString::from("postgresql://u:p@localhost/db?sslmode=prefer");
     assert!(matches!(
-        select_source(Some(&configured)),
+        configured_options(Some(&configured)),
         Err(FixtureError::ExplicitPreferTls)
     ));
 }
 
 #[tokio::test]
 async fn trusted_ca_matching_hostname() {
-    let (_server, plain_url) = postgres_server().await;
+    let plain_url = postgres_url();
     let served = authority();
     let directory = TempDir::new().expect("a temporary directory");
     let ca_path = trust_file(&served, &directory);
@@ -66,7 +64,7 @@ async fn trusted_ca_matching_hostname() {
 
 #[tokio::test]
 async fn untrusted_ca_rejected() {
-    let (_server, plain_url) = postgres_server().await;
+    let plain_url = postgres_url();
     let served = authority();
     let untrusted = authority();
     let directory = TempDir::new().expect("a temporary directory");
@@ -89,7 +87,7 @@ async fn untrusted_ca_rejected() {
 
 #[tokio::test]
 async fn wrong_hostname_rejected() {
-    let (_server, plain_url) = postgres_server().await;
+    let plain_url = postgres_url();
     let served = authority();
     let directory = TempDir::new().expect("a temporary directory");
     let ca_path = trust_file(&served, &directory);

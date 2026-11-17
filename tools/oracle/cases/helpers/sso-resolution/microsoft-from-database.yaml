@@ -1,0 +1,12 @@
+kind: helper
+name: sso-resolution-microsoft-from-database
+call:
+  b4141:
+    salt_key: salt-one
+    db:
+      microsoft_client_id: "TOqvUNuGXl8kUrHR_I9jSmasbwGS8w6D47lBYE1iJTM2M5dkhgKZYe3MHbaxwh6-J6qfgU0stYI="
+      microsoft_client_secret: "JbC-8YTmvF5EqOl9mFKgsrEkPIpffIYX3VDS0tZZ5RqEH-FNrQCrybltjxzxqSKoMNa7pA-wETP9LQEr"
+      microsoft_tenant: tenant-1
+    env: {}
+env: {}
+compare: {ignore: []}

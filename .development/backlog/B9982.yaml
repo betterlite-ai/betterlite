@@ -1,0 +1,13 @@
+id: B9982
+milestone: R2 bug fixes
+title: SSE and JSON line splitters break only at CR, LF and CRLF
+status: done
+depends_on: [B2412]
+file: tasks/B9982-sse-line-boundaries.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2338

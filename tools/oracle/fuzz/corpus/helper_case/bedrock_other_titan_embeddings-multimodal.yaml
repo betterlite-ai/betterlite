@@ -1,0 +1,14 @@
+kind: helper
+name: titan-multimodal-image
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_multimodal_image
+    non_default:
+      dimensions: 512
+    optional_params: {}
+    input: "data:image/png;base64,aGVsbG8="
+    inference_params:
+      inputText: both
+env: {}
+compare:
+  ignore: []
