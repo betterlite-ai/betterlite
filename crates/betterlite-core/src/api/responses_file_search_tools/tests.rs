@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::{HiddenParams, Json};
+use betterlite_openai::api::responses_objects::sdk::unions::SdkOutput;
 use betterlite_openai::api::responses_objects::{ResponseApiUsage, ResponseOutputItem};
 use betterlite_openai::api::responses_shapes::{
     FunctionCallStatus, GenericResponseOutputItem, OutputFunctionToolCall, OutputText,
@@ -457,22 +458,43 @@ fn output_text_selection() {
         ),
         "yes"
     );
+    let after_call: Vec<ResponseOutputItem> = serde_json::from_str(
+        r#"[{"type":"function_call","arguments":"{}","call_id":"call_1","name":"search"},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#,
+    )
+    .expect("the complete function call and message decode");
+    assert!(matches!(
+        after_call.as_slice(),
+        [ResponseOutputItem::Sdk(first), ..]
+            if matches!(first.as_ref(), SdkOutput::FunctionCall(_))
+    ));
     assert_eq!(
-        extracted(
-            r#"[{"type":"function_call","arguments":"{}","call_id":"call_1","name":"search"},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#
-        ),
+        response_output_text(&after_call).expect("the message after a function call answers"),
         "later"
     );
+    let after_empty: Vec<ResponseOutputItem> = serde_json::from_str(
+        r#"[{"type":"message","id":"msg_empty","status":"completed","role":"assistant","content":[]},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#,
+    )
+    .expect("the empty and answer messages decode");
+    assert!(matches!(
+        after_empty.as_slice(),
+        [ResponseOutputItem::Sdk(first), ..]
+            if matches!(first.as_ref(), SdkOutput::OutputMessage(_))
+    ));
     assert_eq!(
-        extracted(
-            r#"[{"type":"message","id":"msg_empty","status":"completed","role":"assistant","content":[]},{"type":"message","id":"msg_later","status":"completed","role":"assistant","content":[{"type":"output_text","text":"later","annotations":[]}]}]"#
-        ),
+        response_output_text(&after_empty).expect("the empty message is skipped"),
         "later"
     );
+    let refusal: Vec<ResponseOutputItem> = serde_json::from_str(
+        r#"[{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}]"#,
+    )
+    .expect("the refusal and answer message decodes");
+    assert!(matches!(
+        refusal.as_slice(),
+        [ResponseOutputItem::Sdk(output)]
+            if matches!(output.as_ref(), SdkOutput::OutputMessage(_))
+    ));
     assert_eq!(
-        extracted(
-            r#"[{"type":"message","id":"msg_refusal","status":"completed","role":"assistant","content":[{"type":"refusal","refusal":"no"},{"type":"output_text","text":"later","annotations":[]}]}]"#
-        ),
+        response_output_text(&refusal).expect("the refusal part is skipped"),
         "later"
     );
     assert_eq!(
