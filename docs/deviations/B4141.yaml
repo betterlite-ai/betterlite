@@ -1,0 +1,6 @@
+task: B4141
+deviations:
+  - what: The decryption key enters resolve_sso_config as an injected DbCipher, so the function takes the cipher next to the row and env mappings and never reads the process environment; LiteLLM's _decrypt calls decrypt_value_helper, which reads LITELLM_SALT_KEY, falling back to the proxy master key, from os.environ on every call.
+    why: betterlite resolves that key once in B1600's cipher settings at the caller and passes the cipher in, per the no-global-state rule; given the same salt key both sides decrypt a stored value to the same plaintext.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/sso.py#L63-L69
+kept_bugs: []

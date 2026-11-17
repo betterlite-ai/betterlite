@@ -1,6 +1,6 @@
 mod insert;
 pub mod payload;
-mod schema;
+pub(crate) mod schema;
 mod tests;
 mod validate;
 
@@ -186,16 +186,6 @@ pub fn validate(
         if !request_ids.insert(log.request_id.as_str()) {
             return Err(DashboardFixtureError::DuplicateRequestId { row });
         }
-    }
-    Ok(())
-}
-
-pub async fn initialize(client: &Client) -> Result<(), DashboardFixtureError> {
-    for statement in schema::verified_sql().await? {
-        client
-            .batch_execute(&statement)
-            .await
-            .map_err(DashboardFixtureError::Database)?;
     }
     Ok(())
 }

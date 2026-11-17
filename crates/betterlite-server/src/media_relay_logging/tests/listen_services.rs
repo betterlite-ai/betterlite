@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::UNIX_EPOCH;
 
@@ -16,6 +18,7 @@ use betterlite_core::cost::prepare::BillingTokenCounter;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -77,7 +80,14 @@ impl Listener {
             normalizers: name_normalizers(),
         };
         Self {
-            lookup: CatalogLookup::new(&bytes, settings).expect("the catalog loads"),
+            lookup: CatalogLookup::new(
+                &bytes,
+                Arc::new(
+                    ModelCatalog::parse(&bytes, UnknownFields::Warn).expect("the catalog loads"),
+                ),
+                settings,
+            )
+            .expect("the catalog loads"),
             discount: BTreeMap::new(),
             margin: BTreeMap::new(),
             pattern: SizePattern::new().expect("the size pattern compiles"),

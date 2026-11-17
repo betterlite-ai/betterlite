@@ -1,0 +1,26 @@
+kind: helper
+name: key_field_defaults
+call:
+  key_fields:
+    calls:
+      - {function: key, body: {}}
+      - {function: key, body: {key: "k", allowed_routes: []}}
+      - {function: key, body: {allowed_routes: null}}
+      - {function: key, body: {default_estimated_output_tokens: 5, default_estimated_output_tokens_per_model: {gpt-4o: 5}}}
+      - {function: key, body: {default_estimated_output_tokens: 0}}
+      - {function: key, body: {default_estimated_output_tokens: -2}}
+      - {function: key, body: {default_estimated_output_tokens_per_model: {gpt-4: 0}}}
+      - {function: key, body: {default_estimated_output_tokens_per_model: {gpt-4: -1, gpt-4o: 5}}}
+      - {function: key, body: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, write]}]}}
+      - {function: key, body: {allowed_vector_store_indexes: [{index_name: idx, index_permissions: [read, admin]}]}}
+      - {function: key, body: {allowed_vector_store_indexes: [{index_permissions: [read]}]}}
+      - {function: key, body: {rpm_limit_type: guaranteed_throughput, tpm_limit_type: dynamic}}
+      - {function: key, body: {rpm_limit_type: best_effort_throughput}}
+      - {function: key, body: {rpm_limit_type: elastic}}
+      - {function: key, body: {rpm_limit_type: null}}
+      - {function: key, body: {tags: [], enforced_params: [], allowed_passthrough_routes: []}}
+      - {function: key, body: {key: "", budget_id: "", end_user_budget_id: "", tpd_limit: 0}}
+      - {function: key, body: {router_settings: null}}
+      - {function: key, body: {disable_global_guardrails: false, enable_prompt_caching: true, throttle_on_budget_exceeded: false}}
+env: {}
+compare: {ignore: []}

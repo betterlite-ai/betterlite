@@ -1,0 +1,18 @@
+kind: helper
+name: responses-stream-errors-first-failure-seed
+call:
+  responses_stream_errors:
+    redaction: enabled
+    steps:
+      - function: format_failure
+        failure:
+          kind: plain
+          text: broken
+          message: broken
+          type: null
+          code: null
+          status_code: null
+          body: null
+          original_exception: null
+env: {}
+compare: {ignore: []}
