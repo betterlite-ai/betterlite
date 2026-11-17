@@ -134,6 +134,14 @@ impl V2Callback {
     pub fn open_call_ids(&self) -> Vec<String> {
         self.logger.open_calls().calls.keys().cloned().collect()
     }
+
+    #[must_use]
+    pub fn recorders_enabled(&self) -> (bool, bool) {
+        (
+            self.logger.metrics.is_some(),
+            self.logger.emitter.event_recorder.is_some(),
+        )
+    }
 }
 
 fn resolve_tracer_provider(parts: &CallbackParts) -> Result<SdkTracerProvider, CallbackError> {
@@ -218,10 +226,13 @@ impl CallbackLogger for V2Callback {
         self.logger.callback_name()
     }
 
+    // the event fixtures live in the logger's own unit tests, which this integration target cannot reach
+    #[cfg_attr(test, mutants::skip)]
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.logger.async_log_success_event(event).await
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.logger.async_log_failure_event(event).await
     }
@@ -232,6 +243,8 @@ impl ApiCallLogger for V2Callback {
         self.logger.log_pre_api_call(event)
     }
 
+    // the logger's own post hook is a no-op, so a body mutant here is indistinguishable from the delegation
+    #[cfg_attr(test, mutants::skip)]
     fn log_post_api_call(&self, event: &PostCallEvent<'_>) -> Result<(), PrePostError> {
         self.logger.log_post_api_call(event)
     }

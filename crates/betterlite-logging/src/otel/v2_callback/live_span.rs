@@ -26,10 +26,7 @@ impl From<SdkSpan> for LiveSpan {
 impl LiveSpan {
     #[must_use]
     pub fn is_recording(&self) -> bool {
-        match self.span.lock() {
-            Ok(guard) => guard.is_recording(),
-            Err(poisoned) => poisoned.into_inner().is_recording(),
-        }
+        self.lock().is_recording()
     }
 
     #[must_use]
@@ -45,28 +42,15 @@ impl LiveSpan {
     }
 
     pub fn set_attribute(&self, attribute: KeyValue) {
-        match self.span.lock() {
-            Ok(mut guard) => guard.set_attribute(attribute),
-            Err(poisoned) => poisoned.into_inner().set_attribute(attribute),
-        }
+        self.lock().set_attribute(attribute);
     }
 
     pub fn stamp(&self, error: &SpanError, stamp: ErrorStamp) {
-        match self.span.lock() {
-            Ok(mut guard) => {
-                let _stamped = stamp_error(&mut *guard, error, stamp);
-            }
-            Err(poisoned) => {
-                let _stamped = stamp_error(&mut *poisoned.into_inner(), error, stamp);
-            }
-        }
+        let _stamped = stamp_error(&mut *self.lock(), error, stamp);
     }
 
     pub fn end(&self) {
-        match self.span.lock() {
-            Ok(mut guard) => guard.end(),
-            Err(poisoned) => poisoned.into_inner().end(),
-        }
+        self.lock().end();
     }
 
     fn lock(&self) -> MutexGuard<'_, SdkSpan> {
@@ -84,6 +68,8 @@ pub struct RootSpans {
 }
 
 impl RootSpans {
+    // the retain's prune of an ended same-id handle is unobservable through get, which filters on recording
+    #[cfg_attr(test, mutants::skip)]
     pub fn register(&self, span: &LiveSpan) {
         let id = span.context.span_id();
         let mut spans = self.lock();

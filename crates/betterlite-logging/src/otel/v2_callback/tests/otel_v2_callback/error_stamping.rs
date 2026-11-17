@@ -30,6 +30,7 @@ fn the_response_status_pins_the_error_code() {
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert!(matches!(spans[0].status, Status::Error { .. }));
+    assert_eq!(event_names(&spans[0]), vec!["exception".to_owned()]);
     assert_eq!(
         attribute(&spans[0], "litellm.provider.error.code").as_deref(),
         Some("400")
@@ -66,6 +67,35 @@ fn a_second_stamp_keeps_one_event_and_repins_the_code() {
     assert_eq!(
         attribute(&spans[0], "litellm.provider.error.code").as_deref(),
         Some("422")
+    );
+}
+
+#[test]
+fn a_provider_error_keeps_its_traceback_and_a_client_error_drops_it() {
+    let harness = harness(settings());
+    let traceback = "Traceback (most recent call last):\n".to_owned();
+    let client = harness.span("client");
+    let mut client_facts = exception_facts(400);
+    client_facts.llm_provider = None;
+    client_facts.traceback_lines = vec![traceback.clone()];
+    harness
+        .callback
+        .record_error_attributes_on_span(Some(&client), Some(&client_facts), 400);
+    client.end();
+    let provider = harness.span("provider");
+    let mut provider_facts = exception_facts(500);
+    provider_facts.llm_provider = None;
+    provider_facts.traceback_lines = vec![traceback.clone()];
+    harness
+        .callback
+        .record_error_attributes_on_span(Some(&provider), Some(&provider_facts), 500);
+    provider.end();
+    let spans = harness.finished();
+    let trace_key = "litellm.provider.error.stack_trace";
+    assert!(attribute(exported(&spans, "client"), trace_key).is_none());
+    assert_eq!(
+        attribute(exported(&spans, "provider"), trace_key).as_deref(),
+        Some(traceback.as_str())
     );
 }
 
@@ -127,6 +157,38 @@ fn the_msg_transport_span_beats_the_root() {
         Some("AuthenticationError")
     );
     assert!(attribute(exported(&spans, "root"), "error.type").is_none());
+}
+
+#[test]
+fn an_anchored_root_is_found_among_several() {
+    let harness = harness(settings());
+    let first = harness.span("first");
+    let second = harness.span("second");
+    let mut first_trace = RequestTraceContext::default();
+    let mut second_trace = RequestTraceContext::default();
+    harness
+        .callback
+        .mark_request_root_span(&first, None, &mut first_trace);
+    harness
+        .callback
+        .mark_request_root_span(&second, None, &mut second_trace);
+    let found = harness.callback.request_root_span(&second_trace);
+    assert_eq!(
+        found.map(|span| span.context.span_id()),
+        Some(second.context.span_id())
+    );
+}
+
+#[test]
+fn an_ended_root_is_not_handed_back() {
+    let harness = harness(settings());
+    let root = harness.span("root");
+    root.end();
+    let mut trace = RequestTraceContext::default();
+    harness
+        .callback
+        .mark_request_root_span(&root, None, &mut trace);
+    assert!(harness.callback.request_root_span(&trace).is_none());
 }
 
 #[test]

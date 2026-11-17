@@ -3,11 +3,16 @@
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SimpleSpanProcessor};
 
+use betterlite_logging::callback_logger::CallbackLogger as _;
+use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
 use betterlite_logging::otel::v2_callback::callback::V2Callback;
 use betterlite_logging::otel::v2_callback::error::CallbackError;
 use betterlite_logging::otel::v2_callback::registry::V2Registry;
+use betterlite_models::decisions::Json;
 
-use super::support::{built_harness, construction_parts, exporter_spec, harness, settings};
+use super::support::{
+    CALLBACK, built_harness, construction_parts, exporter_spec, harness, settings,
+};
 
 #[test]
 fn injected_provider_receives_the_emitted_span() {
@@ -40,6 +45,45 @@ fn builds_a_provider_when_none_is_injected() {
     let spans = harness.finished();
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].name.as_ref(), "auth");
+}
+
+#[test]
+fn callback_name_is_the_configured_one() {
+    let harness = harness(settings());
+    assert_eq!(harness.callback.callback_name(), CALLBACK);
+}
+
+#[test]
+fn metrics_and_events_stay_off_until_the_config_asks() {
+    let harness = harness(settings());
+    assert_eq!(harness.callback.recorders_enabled(), (false, false));
+}
+
+#[test]
+fn enabling_metrics_and_events_builds_their_recorders() {
+    let mut config = settings();
+    config.enable_metrics = true;
+    config.enable_events = true;
+    let harness = harness(config);
+    assert_eq!(harness.callback.recorders_enabled(), (true, true));
+}
+
+#[test]
+fn pre_api_call_stores_the_open_call() {
+    let harness = harness(settings());
+    let messages = Json::Null;
+    let details: Json = serde_json::from_value(serde_json::json!({
+        "litellm_call_id": "call-1",
+        "model": "gpt-4o",
+    }))
+    .expect("details");
+    let event = PreCallEvent {
+        model: "gpt-4o",
+        messages: &messages,
+        details: &details,
+    };
+    harness.callback.log_pre_api_call(&event).expect("pre call");
+    assert_eq!(harness.callback.open_call_ids(), vec!["call-1".to_owned()]);
 }
 
 #[test]

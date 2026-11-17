@@ -8,6 +8,7 @@ use betterlite_logging::otel::model::metadata::wire::callback::RequestData;
 use betterlite_logging::otel::model::metadata::wire::payload::{Auth, Metadata};
 use betterlite_logging::otel::plumbing::context::context_slots::RequestTraceContext;
 use betterlite_logging::otel::v2_callback::identity::IdentitySeed;
+use betterlite_logging::otel::v2_callback::registered;
 
 use super::support::{harness, settings};
 
@@ -92,6 +93,26 @@ fn an_empty_baggage_leaves_the_context_alone() {
     assert!(seeded.baggage().get(TEAM_ID).is_none());
     assert!(trace.root.is_none());
     assert!(!span.has_attribute(TEAM_ID));
+}
+
+#[test]
+fn the_module_entry_seeds_through_the_registered_logger() {
+    let harness = harness(settings());
+    let auth = team_auth();
+    let seed = IdentitySeed {
+        auth: &auth,
+        model: None,
+        request_metadata: None,
+        ambient_span: None,
+    };
+    let mut trace = RequestTraceContext::default();
+    let seeded =
+        registered::seed_request_identity(&harness.registry, &seed, &mut trace, &Context::new())
+            .expect("the registered logger seeds");
+    assert_eq!(
+        seeded.baggage().get(TEAM_ID).map(ToString::to_string),
+        Some("team-1".to_owned())
+    );
 }
 
 #[test]

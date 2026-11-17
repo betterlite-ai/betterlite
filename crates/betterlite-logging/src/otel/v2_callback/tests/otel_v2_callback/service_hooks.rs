@@ -69,6 +69,22 @@ fn a_failure_without_any_text_still_stamps_an_error() {
 }
 
 #[test]
+fn an_empty_hook_text_falls_back_to_the_error_word() {
+    let harness = harness(settings());
+    let payload = service_payload(ServiceType::Redis, "set");
+    let service_hook = hook(&payload, None, None, timing(None));
+    harness
+        .callback
+        .async_service_failure_hook(&service_hook, Some(""));
+    let spans = harness.finished();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(
+        attribute(&spans[0], "error.message").as_deref(),
+        Some("error")
+    );
+}
+
+#[test]
 fn the_payload_error_wins_over_the_hook_text() {
     let harness = harness(settings());
     let mut payload = service_payload(ServiceType::Redis, "set");
