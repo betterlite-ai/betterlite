@@ -657,14 +657,13 @@ async fn a_stream_dropped_before_its_end_stamps_nothing() {
         RelayedChunk::Chat(value(r#"{"id": "2"}"#)),
     ];
     let request_data = data(REQUEST);
-    {
-        let mut relayed = content.async_post_call_streaming_iterator_hook(
-            &key_dict(),
-            stream::iter(chunks),
-            &request_data,
-        );
-        assert!(relayed.next().await.is_some());
-    }
+    let mut relayed = content.async_post_call_streaming_iterator_hook(
+        &key_dict(),
+        stream::iter(chunks),
+        &request_data,
+    );
+    assert!(relayed.next().await.is_some());
+    drop(relayed);
     assert!(entries(&log).is_empty());
 }
 
