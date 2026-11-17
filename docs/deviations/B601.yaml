@@ -16,6 +16,3 @@ kept_bugs:
 - what: The JSON-mode fallback appends the synthetic json_tool_call tool to whatever tools the caller already sent, so a caller that already sent a tool under that name gets two tools with the same name and Bedrock rejects the request.
   why: The append does not look for an existing entry, and a working setup never sends that name itself, so the list is built the same way rather than deduplicated.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1201-L1269
-- what: An empty description in a response_format json_schema leaves the description off the synthetic json_tool_call tool, where the compatibility policy would keep an explicit empty string as given.
-  why: LiteLLM tests the description for truthiness, and a setup that sends an empty string gets the same tool either way, so the empty string is dropped as LiteLLM drops it.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L899-L900
