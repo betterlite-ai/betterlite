@@ -193,10 +193,9 @@ impl FakeSource {
 impl ChunkSource for FakeSource {
     async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, StreamSourceError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        match self.steps.pop_front() {
-            Some(step) => step.map(Some),
-            None => Ok(None),
-        }
+        self.steps
+            .pop_front()
+            .map_or(Ok(None), |step| step.map(Some))
     }
 
     async fn close(&mut self) -> Result<(), StreamSourceError> {
@@ -256,10 +255,7 @@ impl StreamLogging for FakeLogging {
     }
 
     fn completed(&self, chunks: &[StreamChunk]) -> StreamBuild {
-        {
-            let mut logged = self.logged.lock().unwrap();
-            logged.completed.push(chunks.to_vec());
-        }
+        self.logged.lock().unwrap().completed.push(chunks.to_vec());
         let build = self.build.lock().unwrap().take();
         build.unwrap_or(StreamBuild::Empty)
     }
@@ -357,7 +353,7 @@ impl RuleEvaluator for FakeRules {
 
 enum HookAction {
     Keep,
-    Replace(StreamChunk),
+    Replace(Box<StreamChunk>),
     Fail,
 }
 
@@ -389,7 +385,7 @@ impl StreamingDeploymentHook for FakeHook {
         self.call_types.lock().unwrap().push(call_type);
         match &self.action {
             HookAction::Keep => Ok(None),
-            HookAction::Replace(replacement) => Ok(Some(replacement.clone())),
+            HookAction::Replace(replacement) => Ok(Some(replacement.as_ref().clone())),
             HookAction::Fail => Err(HookError::Failed {
                 hook: "fake".to_owned(),
                 message: "boom".to_owned(),
@@ -488,17 +484,13 @@ fn content_of(chunk: &StreamChunk) -> String {
 }
 
 fn finish_of(chunk: &StreamChunk) -> Option<String> {
-    chunk
-        .choices
-        .first()
-        .and_then(|choice| choice.finish_reason.clone())
+    let choice = chunk.choices.first()?;
+    choice.finish_reason.clone()
 }
 
 fn delta_fields(chunk: &StreamChunk) -> Option<&JsonObject> {
-    chunk
-        .choices
-        .first()
-        .and_then(|choice| choice.delta.provider_specific_fields.as_ref())
+    let choice = chunk.choices.first()?;
+    choice.delta.provider_specific_fields.as_ref()
 }
 
 fn hidden_usage_total(chunk: &StreamChunk) -> Option<i64> {

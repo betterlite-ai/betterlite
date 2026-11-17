@@ -14,7 +14,7 @@ async fn next_returns_chunks_in_order() {
     assert_eq!(first.id, CHAT_ID);
     assert_eq!(first.model, MODEL);
     assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
-    assert!(first.hidden_params.get("usage").is_none());
+    assert!(!first.hidden_params.contains_key("usage"));
 
     let second = only_chunk(stream.next().await);
     assert_eq!(content_of(&second), "y");
@@ -150,13 +150,15 @@ async fn next_records_usage_chunk_after_finish() {
     // the usage chunk after the finish reason is read, then the source reports its end
     assert_eq!(reads.load(Ordering::SeqCst), 4);
 
-    let logged = world.logging.logged.lock().unwrap();
-    assert_eq!(logged.completed.len(), 1);
-    let recorded = &logged.completed[0];
-    assert_eq!(recorded.len(), 3);
-    assert!(recorded[2].choices.is_empty());
+    let completed = world.logging.logged.lock().unwrap().completed.clone();
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].len(), 3);
+    assert!(completed[0][2].choices.is_empty());
     assert_eq!(
-        recorded[2].usage.as_ref().map(|usage| usage.total_tokens),
+        completed[0][2]
+            .usage
+            .as_ref()
+            .map(|usage| usage.total_tokens),
         Some(10)
     );
 }
@@ -176,7 +178,7 @@ async fn next_sends_usage_chunk_when_asked() {
     let seen = drain(&mut stream).await;
     assert_eq!(seen.len(), 3);
     assert_eq!(finish_of(&seen[1]).as_deref(), Some("stop"));
-    assert!(seen[1].hidden_params.get("usage").is_none());
+    assert!(!seen[1].hidden_params.contains_key("usage"));
     assert_eq!(
         seen[2].usage.as_ref().map(|usage| usage.total_tokens),
         Some(10)
@@ -221,10 +223,13 @@ async fn next_async_does_not_log_chunks() {
 
     let seen = drain(&mut stream).await;
     assert_eq!(seen.len(), 2);
-    let logged = world.logging.logged.lock().unwrap();
-    assert_eq!(logged.started, Some(0));
-    assert!(logged.chunks.is_empty());
-    assert!(logged.successes[0].0.is_none());
+    assert_eq!(world.logging.logged.lock().unwrap().started, Some(0));
+    assert!(world.logging.logged.lock().unwrap().chunks.is_empty());
+    assert!(
+        world.logging.logged.lock().unwrap().successes[0]
+            .0
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -238,9 +243,8 @@ async fn next_disable_skips_chunk_logging() {
 
     let seen = drain(&mut stream).await;
     assert_eq!(seen.len(), 2);
-    let logged = world.logging.logged.lock().unwrap();
-    assert!(logged.chunks.is_empty());
-    assert!(logged.successes.is_empty());
+    assert!(world.logging.logged.lock().unwrap().chunks.is_empty());
+    assert!(world.logging.logged.lock().unwrap().successes.is_empty());
 }
 
 #[tokio::test]

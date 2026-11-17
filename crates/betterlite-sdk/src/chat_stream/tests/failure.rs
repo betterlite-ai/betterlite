@@ -103,11 +103,8 @@ async fn failure_rules_rejection_becomes_a_fallback() {
     assert!(!details.is_pre_first_chunk);
     assert_eq!(details.original_status.0, 500);
     assert!(details.context.message.contains("rule check"));
-    let logged = world.logging.logged.lock().unwrap();
-    assert!(matches!(
-        logged.failures[0].0,
-        ErrorClass::ApiResponseValidation(_)
-    ));
+    let class = world.logging.logged.lock().unwrap().failures[0].0.clone();
+    assert!(matches!(class, ErrorClass::ApiResponseValidation(_)));
 }
 
 #[tokio::test]
@@ -123,8 +120,8 @@ async fn failure_chunk_error_maps_through_dispatch() {
     let details = fallback_of(&error);
     assert_eq!(details.original_status.0, 500);
     assert_eq!(details.context.model.as_deref(), Some(MODEL));
-    let logged = world.logging.logged.lock().unwrap();
-    assert!(matches!(logged.failures[0].0, ErrorClass::ApiConnection(_)));
+    let class = world.logging.logged.lock().unwrap().failures[0].0.clone();
+    assert!(matches!(class, ErrorClass::ApiConnection(_)));
 }
 
 #[tokio::test]
@@ -144,11 +141,8 @@ async fn failure_repetition_becomes_internal_server() {
     assert!(stream.next().await.unwrap().is_some());
     let error = stream.next().await.unwrap_err();
     assert_eq!(fallback_of(&error).original_status.0, 500);
-    let logged = world.logging.logged.lock().unwrap();
-    assert!(matches!(
-        logged.failures[0].0,
-        ErrorClass::InternalServer(_)
-    ));
+    let class = world.logging.logged.lock().unwrap().failures[0].0.clone();
+    assert!(matches!(class, ErrorClass::InternalServer(_)));
 }
 
 #[tokio::test]

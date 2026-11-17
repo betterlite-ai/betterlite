@@ -37,13 +37,12 @@ async fn duration_async_logs_the_failure() {
     );
     assert_eq!(error.class.metadata().status_code, 408);
     assert_eq!(reads.load(Ordering::SeqCst), 0);
-    let logged = world.logging.logged.lock().unwrap();
-    assert_eq!(logged.failures.len(), 1);
+    assert_eq!(world.logging.logged.lock().unwrap().failures.len(), 1);
     assert_eq!(
-        logged.failures[0].1,
+        world.logging.logged.lock().unwrap().failures[0].1,
         "Stream exceeded max streaming duration of 5.0s (elapsed 6.0s)"
     );
-    assert!(logged.partial.is_empty());
+    assert!(world.logging.logged.lock().unwrap().partial.is_empty());
 }
 
 #[tokio::test]

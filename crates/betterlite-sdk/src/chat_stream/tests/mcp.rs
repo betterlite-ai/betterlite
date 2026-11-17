@@ -38,10 +38,14 @@ async fn mcp_list_tools_and_final_metadata_reach_the_chunk() {
         *hook.call_types.lock().unwrap(),
         vec![Some(CallType::Completion)]
     );
-    let seen = hook.seen.lock().unwrap();
-    assert_eq!(seen.len(), 1);
-    assert!(seen[0].hidden_params.get("usage").is_some());
-    let hook_fields = delta_fields(&seen[0]).unwrap();
+    assert_eq!(hook.seen.lock().unwrap().len(), 1);
+    assert!(
+        hook.seen.lock().unwrap()[0]
+            .hidden_params
+            .contains_key("usage")
+    );
+    let recorded = hook.seen.lock().unwrap()[0].clone();
+    let hook_fields = delta_fields(&recorded).unwrap();
     assert!(hook_fields.contains_key("mcp_list_tools"));
     assert!(!hook_fields.contains_key("mcp_tool_results"));
 }
@@ -52,7 +56,7 @@ async fn mcp_hook_replaces_the_final_chunk() {
         r#"{"id":"replacement","choices":[{"index":0,"delta":{"content":"replaced"},"finish_reason":"stop"}]}"#,
     )
     .unwrap();
-    let (world, hook) = world_with_hook(HookAction::Replace(replacement));
+    let (world, hook) = world_with_hook(HookAction::Replace(Box::new(replacement)));
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![finish_chunk()]);
     let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
