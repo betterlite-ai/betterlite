@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 use thiserror::Error;
 
 use crate::cooldown_decisions::decision::MinuteSamples;
@@ -76,7 +76,7 @@ fn cooldown_time(event: &FailureEvent<'_>, default: Seconds, now_unix_millis: i6
     let configured = event
         .model_info_cooldown_time
         .or(event.litellm_params_cooldown_time)
-        .filter(|value| value.0 >= 0.0);
+        .filter(|value| value.0 >= 0.0_f64);
     let header = event
         .retry_after
         .map(|value| value.seconds_until(now_unix_millis))
@@ -86,69 +86,68 @@ fn cooldown_time(event: &FailureEvent<'_>, default: Seconds, now_unix_millis: i6
     configured.or(header).unwrap_or(default)
 }
 
-impl RouterObservations<'_> {
-    #[must_use]
-    pub fn on_failure(
-        &self,
-        event: &FailureEvent<'_>,
-        now_unix_millis: i64,
-    ) -> Result<bool, FailureError> {
-        if skips(event.failure) {
-            return Ok(false);
-        }
-        let Some(deployment_id) = event.deployment_id else {
-            return Ok(false);
-        };
-        let time_to_cooldown = cooldown_time(event, self.cooldown_time, now_unix_millis);
-        let keys = outcome_keys(deployment_id);
-        self.counters
-            .increment(&keys.failures, 1, ROUTER_COUNTER_TTL)
-            .map_err(FailureError::Counter)?;
-        let observation = FailureObservation {
-            deployment_id,
-            failure: event.failure,
-            requested_model_group: event.requested_model_group,
-            time_to_cooldown,
-            minute: self.minute_samples(&keys),
-        };
-        self.cooldowns
-            .set_cooldown_deployments(&observation)
-            .map_err(FailureError::Cooldown)
+pub fn on_failure(
+    observations: &RouterObservations<'_>,
+    event: &FailureEvent<'_>,
+    now_unix_millis: i64,
+) -> Result<bool, FailureError> {
+    if skips(event.failure) {
+        return Ok(false);
     }
+    let Some(deployment_id) = event.deployment_id else {
+        return Ok(false);
+    };
+    let time_to_cooldown = cooldown_time(event, observations.cooldown_time, now_unix_millis);
+    let keys = outcome_keys(deployment_id);
+    observations
+        .counters
+        .increment(&keys.failures, 1, ROUTER_COUNTER_TTL)
+        .map_err(FailureError::Counter)?;
+    let observation = FailureObservation {
+        deployment_id,
+        failure: event.failure,
+        requested_model_group: event.requested_model_group,
+        time_to_cooldown,
+        minute: minute_samples(observations, &keys),
+    };
+    observations
+        .cooldowns
+        .set_cooldown_deployments(&observation)
+        .map_err(FailureError::Cooldown)
+}
 
-    #[must_use]
-    pub fn on_async_failure(
-        &self,
-        event: &AsyncFailureEvent<'_>,
-        now: DateTime<Utc>,
-    ) -> Result<(), CounterError> {
-        if event
-            .call_type
-            .is_some_and(|call_type| matches!(call_type, "retrieve_batch" | "aretrieve_batch"))
-        {
-            return Ok(());
-        }
-        // the guard needs a model group before the rpm counter is written
-        let (Some(_model_group), Some(deployment_id)) = (event.model_group, event.deployment_id)
-        else {
-            return Ok(());
-        };
-        let keys = usage_keys(deployment_id, event.deployment_name, now);
-        self.counters.increment(&keys.rpm, 1, ROUTER_COUNTER_TTL)
+pub fn on_async_failure(
+    observations: &RouterObservations<'_>,
+    event: &AsyncFailureEvent<'_>,
+    now: DateTime<Utc>,
+) -> Result<(), CounterError> {
+    if event
+        .call_type
+        .is_some_and(|call_type| matches!(call_type, "retrieve_batch" | "aretrieve_batch"))
+    {
+        return Ok(());
     }
+    // the guard needs a model group before the rpm counter is written
+    let (Some(_model_group), Some(deployment_id)) = (event.model_group, event.deployment_id) else {
+        return Ok(());
+    };
+    let keys = usage_keys(deployment_id, event.deployment_name, now);
+    observations
+        .counters
+        .increment(&keys.rpm, 1, ROUTER_COUNTER_TTL)
+}
 
-    fn minute_samples(&self, keys: &OutcomeKeys) -> MinuteSamples {
-        MinuteSamples {
-            successes: self
-                .counters
-                .read(&keys.successes)
-                .and_then(|value| u64::try_from(value).ok())
-                .unwrap_or(0),
-            failures: self
-                .counters
-                .read(&keys.failures)
-                .and_then(|value| u64::try_from(value).ok())
-                .unwrap_or(0),
-        }
+fn minute_samples(observations: &RouterObservations<'_>, keys: &OutcomeKeys) -> MinuteSamples {
+    MinuteSamples {
+        successes: observations
+            .counters
+            .read(&keys.successes)
+            .and_then(|value| u64::try_from(value).ok())
+            .unwrap_or(0),
+        failures: observations
+            .counters
+            .read(&keys.failures)
+            .and_then(|value| u64::try_from(value).ok())
+            .unwrap_or(0),
     }
 }

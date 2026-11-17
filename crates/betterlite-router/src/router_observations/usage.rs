@@ -38,37 +38,34 @@ fn tracked(deployment: &DeploymentUsage) -> bool {
     !limits.iter().all(Option::is_none) || deployment.io_token_limits
 }
 
-impl RouterObservations<'_> {
-    #[must_use]
-    pub fn increment_deployment_usage(
-        &self,
-        increment: &UsageIncrement<'_>,
-        deployment: Option<&DeploymentUsage>,
-        now: DateTime<Utc>,
-    ) -> Result<Option<String>, CounterError> {
-        let Some(deployment) = deployment else {
-            return Ok(None);
-        };
-        if !tracked(deployment) {
-            return Ok(None);
-        }
-        if increment.total_tokens <= 0 && increment.rpm_increment <= 0 {
-            return Ok(None);
-        }
-        let usage = usage_keys(increment.deployment_id, increment.deployment_name, now);
-        let operations = [
-            Increment {
-                key: usage.tpm.clone(),
-                value: increment.total_tokens,
-                ttl: ROUTER_COUNTER_TTL,
-            },
-            Increment {
-                key: usage.rpm,
-                value: increment.rpm_increment,
-                ttl: ROUTER_COUNTER_TTL,
-            },
-        ];
-        self.counters.increment_pipeline(&operations)?;
-        Ok(Some(usage.tpm))
+pub fn increment_deployment_usage(
+    observations: &RouterObservations<'_>,
+    increment: &UsageIncrement<'_>,
+    deployment: Option<&DeploymentUsage>,
+    now: DateTime<Utc>,
+) -> Result<Option<String>, CounterError> {
+    let Some(limits) = deployment else {
+        return Ok(None);
+    };
+    if !tracked(limits) {
+        return Ok(None);
     }
+    if increment.total_tokens <= 0 && increment.rpm_increment <= 0 {
+        return Ok(None);
+    }
+    let usage = usage_keys(increment.deployment_id, increment.deployment_name, now);
+    let operations = [
+        Increment {
+            key: usage.tpm.clone(),
+            value: increment.total_tokens,
+            ttl: ROUTER_COUNTER_TTL,
+        },
+        Increment {
+            key: usage.rpm,
+            value: increment.rpm_increment,
+            ttl: ROUTER_COUNTER_TTL,
+        },
+    ];
+    observations.counters.increment_pipeline(&operations)?;
+    Ok(Some(usage.tpm))
 }

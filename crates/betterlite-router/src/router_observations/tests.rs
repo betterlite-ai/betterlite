@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_core::api::responses_usage::{Usage, UsageInput, normalize_usage};
@@ -15,6 +15,7 @@ use super::failure::{
 };
 use super::success::{ObservationMetadata, RequestFacts, ResponseEvent, SuccessEvent};
 use super::usage::DeploymentUsage;
+use super::{failure, success, track};
 use crate::cooldown_decisions::failure::{
     ErrorStatus, FailureClass, FailureFacts, Seconds, TimeoutFacts,
 };
@@ -72,10 +73,7 @@ impl CounterSink for MemoryCounters {
                 key: key.to_owned(),
             });
         }
-        let mut values = self
-            .values
-            .lock()
-            .expect("the counter fixture lock is not poisoned");
+        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         let counter = values.entry(key.to_owned()).or_insert(0);
         *counter = counter.saturating_add(value);
         drop(values);
@@ -143,15 +141,13 @@ impl CooldownSink for MemoryCooldowns {
                 deployment_id: observation.deployment_id.to_owned(),
             });
         }
-        let mut recorded = self
-            .recorded
-            .lock()
-            .expect("the cooldown fixture lock is not poisoned");
+        let mut recorded = self.recorded.lock().unwrap_or_else(PoisonError::into_inner);
         recorded.push(Recorded {
             time_to_cooldown: observation.time_to_cooldown,
             successes: observation.minute.successes,
             failures: observation.minute.failures,
         });
+        drop(recorded);
         Ok(self.answer)
     }
 }
@@ -292,10 +288,13 @@ fn tpm_key(minute: &str) -> String {
 }
 
 fn case_success(harness: &Harness, event: &SuccessEvent<'_>, unix_millis: i64) -> Evidence {
-    let key =
-        harness
-            .observations()
-            .on_success(event, &ObservationMetadata::default(), at(unix_millis));
+    let observations = harness.observations();
+    let key = success::on_success(
+        &observations,
+        event,
+        &ObservationMetadata::default(),
+        at(unix_millis),
+    );
     assert_counter_ttl(harness, "dep-1:successes");
     assert_usage_ttls(harness);
     harness.evidence(key)
@@ -315,9 +314,8 @@ fn case_response(
         deployment,
     };
     let mut metadata = ObservationMetadata::default();
-    let key = harness
-        .observations()
-        .count_response_usage(&event, &mut metadata, now());
+    let observations = harness.observations();
+    let key = success::count_response_usage(&observations, &event, &mut metadata, now());
     assert_eq!(metadata.counted_tokens, counted);
     assert_usage_ttls(harness);
     harness.evidence(key)
@@ -338,12 +336,13 @@ fn case_response_then_success(
     };
     let observations = harness.observations();
     let mut metadata = ObservationMetadata::default();
-    let _counted = observations.count_response_usage(&event, &mut metadata, now());
+    let _counted = success::count_response_usage(&observations, &event, &mut metadata, now());
     if clear_marker {
         metadata.counted_tokens = None;
     }
-    let key = match total_tokens {
-        Some(total) => observations.on_success(
+    let key = total_tokens.and_then(|total| {
+        success::on_success(
+            &observations,
             &SuccessEvent {
                 call_type: None,
                 total_tokens: Some(total),
@@ -352,9 +351,8 @@ fn case_response_then_success(
             },
             &metadata,
             now(),
-        ),
-        None => None,
-    };
+        )
+    });
     harness.evidence(key)
 }
 
@@ -378,7 +376,7 @@ fn case_failure(
         litellm_params_cooldown_time: cooldown_times.1,
         retry_after: cooldown_times.2,
     };
-    let outcome = harness.observations().on_failure(&event, NOW_MILLIS);
+    let outcome = failure::on_failure(&harness.observations(), &event, NOW_MILLIS);
     let mut evidence = harness.evidence(None);
     match outcome {
         Ok(cooldown) => evidence.cooldown = Some(cooldown),
@@ -397,7 +395,7 @@ fn case_async_failure(harness: &Harness, event: &AsyncFailureEvent<'_>, calls: u
     let observations = harness.observations();
     let mut result: Result<(), CounterError> = Ok(());
     for _ in 0..calls {
-        result = observations.on_async_failure(event, now());
+        result = failure::on_async_failure(&observations, event, now());
     }
     let mut evidence = harness.evidence(None);
     if let Err(CounterError::Rejected { key }) = result {
@@ -414,7 +412,7 @@ fn case_update_usage(harness: &Harness, count_before: Option<i64>, calls: u32) -
     let observations = harness.observations();
     let mut count = 0;
     for _ in 0..calls {
-        count = observations.update_usage("dep-1");
+        count = track::update_usage(&observations, "dep-1");
     }
     let mut evidence = harness.evidence(None);
     evidence.writes = harness.counters.writes("dep-1");
@@ -424,9 +422,7 @@ fn case_update_usage(harness: &Harness, count_before: Option<i64>, calls: u32) -
 
 fn case_track(model_id: Option<&'static str>, response_present: bool) -> Evidence {
     let harness = Harness::default();
-    harness
-        .observations()
-        .track_deployment_metrics(model_id, response_present);
+    track::track_deployment_metrics(&harness.observations(), model_id, response_present);
     harness.evidence(None)
 }
 
@@ -662,10 +658,11 @@ fn router_observations_behaviors(#[case] actual: Evidence, #[case] expected: Evi
 #[case::a_background_cost_poll_500_is_the_deployment(case_failure(&Harness::default(), &FailureFacts {
     background_response_cost_poll: true,
     ..failure(FailureClass::InternalServer, ErrorStatus::Code(500))
-}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), minute: Some((0, 1)), ..Evidence::default() })]
+}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), time_to_cooldown: Some(Seconds(5.0)), minute: Some((0, 1)), ..Evidence::default() })]
 #[case::a_plain_404_is_the_deployment(case_failure(&Harness::default(), &failure(FailureClass::NotFound, ErrorStatus::Code(404)), (None, None, None), Some("dep-1"), None), Evidence {
     failures: Some(1),
     cooldown: Some(false),
+    time_to_cooldown: Some(Seconds(5.0)),
     minute: Some((0, 1)),
     ..Evidence::default()
 })]
@@ -676,11 +673,11 @@ fn router_observations_behaviors(#[case] actual: Evidence, #[case] expected: Evi
 #[case::a_caller_timeout_under_the_limit_is_the_deployment(case_failure(&Harness::default(), &FailureFacts {
     caller_timeout: Some(TimeoutFacts { client_side_timeout: true, timeout_seconds: Some(Seconds(5.0)), elapsed_seconds: Some(Seconds(4.0)) }),
     ..failure(FailureClass::Timeout, ErrorStatus::Code(408))
-}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), minute: Some((0, 1)), ..Evidence::default() })]
+}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), time_to_cooldown: Some(Seconds(5.0)), minute: Some((0, 1)), ..Evidence::default() })]
 #[case::a_provider_timeout_is_the_deployment(case_failure(&Harness::default(), &FailureFacts {
     caller_timeout: Some(TimeoutFacts { client_side_timeout: false, timeout_seconds: Some(Seconds(5.0)), elapsed_seconds: Some(Seconds(9.0)) }),
     ..failure(FailureClass::Timeout, ErrorStatus::Code(408))
-}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), minute: Some((0, 1)), ..Evidence::default() })]
+}, (None, None, None), Some("dep-1"), None), Evidence { failures: Some(1), cooldown: Some(false), time_to_cooldown: Some(Seconds(5.0)), minute: Some((0, 1)), ..Evidence::default() })]
 #[case::model_info_cooldown_time_wins(case_failure(&Harness::default(), &failure(FailureClass::RateLimit, ErrorStatus::Code(429)), (Some(Seconds(1.5)), Some(Seconds(2.5)), Some(RetryAfter::Seconds(7))), Some("dep-1"), None), Evidence {
     failures: Some(1),
     cooldown: Some(false),

@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use betterlite_core::api::responses_usage::{Usage, UsageInput, normalize_usage};
 use betterlite_router::router_observations::RouterObservations;
-use betterlite_router::router_observations::failure::{AsyncFailureEvent, FailureEvent};
+use betterlite_router::router_observations::failure::{self, AsyncFailureEvent, FailureEvent};
 use betterlite_router::router_observations::keys::{outcome_keys, usage_keys};
 use betterlite_router::router_observations::success::{
-    ObservationMetadata, RequestFacts, ResponseEvent, SuccessEvent,
+    self, ObservationMetadata, RequestFacts, ResponseEvent, SuccessEvent,
 };
 use betterlite_router::router_observations::usage::DeploymentUsage;
 
@@ -117,7 +117,7 @@ impl<'payload> Scenario<'payload> {
             request: self.request,
             deployment: Some(&self.usage),
         };
-        self.observations().on_success(&event, metadata, self.now)
+        success::on_success(&self.observations(), &event, metadata, self.now)
     }
 
     fn response(
@@ -132,9 +132,8 @@ impl<'payload> Scenario<'payload> {
             deployment: Some(&self.usage),
         };
         // LiteLLM's increment_deployment_usage_for_response reports nothing back to its caller
-        let _counted = self
-            .observations()
-            .count_response_usage(&event, metadata, self.now);
+        let _counted =
+            success::count_response_usage(&self.observations(), &event, metadata, self.now);
         Ok(())
     }
 
@@ -148,8 +147,7 @@ impl<'payload> Scenario<'payload> {
             litellm_params_cooldown_time: self.payload.deployment.params_cooldown_time,
             retry_after: retry_after(failure),
         };
-        self.observations()
-            .on_failure(&event, self.payload.now_millis)
+        failure::on_failure(&self.observations(), &event, self.payload.now_millis)
             .map_err(|error| invalid(&error.to_string()))
     }
 
@@ -160,8 +158,7 @@ impl<'payload> Scenario<'payload> {
             deployment_name: &self.payload.catalog.model,
             deployment_id: Some(&self.payload.catalog.target_id),
         };
-        self.observations()
-            .on_async_failure(&event, self.now)
+        failure::on_async_failure(&self.observations(), &event, self.now)
             .map_err(|error| invalid(&error.to_string()))
     }
 
