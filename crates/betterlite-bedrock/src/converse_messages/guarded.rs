@@ -38,7 +38,10 @@ fn user_suffix_start(messages: &[Message]) -> Option<usize> {
         .iter()
         .rposition(|message| message.role != "user")
         .map_or(0, |last_other| last_other.saturating_add(1));
-    (start < messages.len()).then_some(start)
+    if start == messages.len() {
+        return None;
+    }
+    Some(start)
 }
 
 fn guarded_message(message: &Message, index: usize) -> Result<Message, ConverseMessageError> {

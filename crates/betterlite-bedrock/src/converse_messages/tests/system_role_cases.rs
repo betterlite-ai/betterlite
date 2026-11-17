@@ -110,10 +110,17 @@ fn whitespace_content_becomes_a_text_turn() {
 
 fn drops_later_systems_without_text() {
     a_null_content_system_is_dropped();
+    an_empty_string_system_is_dropped();
     an_empty_content_list_system_is_dropped();
     an_image_only_system_is_dropped();
     a_textless_part_system_is_dropped();
     a_blank_text_system_is_dropped();
+}
+
+fn an_empty_string_system_is_dropped() {
+    let history = json_list(&[QUESTION, SYSTEM_EMPTY, REPLY]);
+    let (kept, _) = transform(&history);
+    assert_eq!(kept, expected(&format!("[{QUESTION}, {REPLY}]")));
 }
 
 fn a_null_content_system_is_dropped() {
