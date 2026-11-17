@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-tool-call-dispatch-returns-true
+call:
+  b3852:
+    function: mcp_tool_call
+    callback_name: arize
+    anchored: false
+    exporters:
+      - kind: b3852_memory
+        endpoint: null
+        headers: null
+        owner: arize
+        use_simple_processor: true
+    credentials: null
+    auth_metadata: null
+    spaces: []
+    project_name: null
+    filter: null
+env: {}
+compare:
+  ignore: []
