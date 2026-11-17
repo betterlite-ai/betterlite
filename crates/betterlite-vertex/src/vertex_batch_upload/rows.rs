@@ -4,6 +4,7 @@ use betterlite_config::sections::vertex_schema_shaping::Settings as SchemaSettin
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 
+use crate::gemini_media::gcs_metadata::GcsDeps;
 use crate::gemini_options::defaults::OptionSettings;
 use crate::gemini_thinking::settings::{MinimalEffortSupport, ThinkingSettings};
 use crate::model_policy::capabilities::ModelCapabilityLookup;
@@ -23,6 +24,11 @@ pub trait RowMappers {
     fn responses_to_chat(&self, provider: &str, body: &Object) -> Result<Object, Self::Error>;
 
     fn developer_to_system(&self, messages: Vec<Object>) -> Result<Vec<Object>, Self::Error>;
+
+    // the binder above holds the route's GCS client, and the row reads an extensionless gs:// object with it
+    fn gcs_deps(&self) -> Option<GcsDeps<'_>> {
+        None
+    }
 }
 
 pub struct RowContext<'ctx, Mappers, Fetcher> {

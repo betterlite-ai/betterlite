@@ -162,6 +162,35 @@ jobs:
       task: ${{ needs.find.outputs.task }}
       all-tests: ${{ needs.find.outputs.all-tests }}
 
+  # one cache key per shard made each part restore a single shard's answers, so most LiteLLM comparisons ran Python again (11-17)
+  oracle-answers:
+    name: oracle answers
+    needs: [find, checks]
+    if: always() && github.ref == 'refs/heads/main' && contains(needs.find.outputs.first, 'tests-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Restore the answers so far
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/betterlite-oracle
+          key: oracle-answers-all-${{ github.sha }}
+          restore-keys: oracle-answers-all-
+
+      - name: Add each shard's new answers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: oracle-answers-tests-*
+          path: ~/.cache/betterlite-oracle
+          merge-multiple: true
+
+      - name: Save every answer under one key
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/betterlite-oracle
+          key: oracle-answers-all-${{ github.sha }}
+
   gate:
     name: gate
     needs: [find, checks, mutants]

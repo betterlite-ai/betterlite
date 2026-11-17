@@ -1,0 +1,15 @@
+kind: helper
+name: metadata-auth-failure
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://my-bucket/private"}}
+    litellm_params: {vertex_project: "my-project"}
+    metadata: {status: 403, json: {error: {message: "forbidden"}}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}

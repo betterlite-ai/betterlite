@@ -1,0 +1,68 @@
+kind: helper
+name: bedrock-converse-tools-strict-tool-spec
+call:
+  bedrock_converse_tools:
+    function: tool_spec
+    name: get_weather
+    description: read the weather
+    parameters:
+      type: object
+      properties:
+        city: {type: string}
+      additionalProperties: false
+    strict: true
+    supports_strict_tools: true
+calls:
+  - bedrock_converse_tools:
+      function: tool_spec
+      name: get_weather
+      description: read the weather
+      parameters:
+        type: object
+        properties:
+          city: {type: string}
+        required: [city]
+        additionalProperties: true
+      strict: false
+      supports_strict_tools: true
+  - bedrock_converse_tools:
+      function: tool_spec
+      name: get_weather
+      description: read the weather
+      parameters:
+        type: object
+      strict: null
+      supports_strict_tools: true
+  - bedrock_converse_tools:
+      function: tool_spec
+      name: get_weather
+      description: read the weather
+      parameters:
+        type: object
+        additionalProperties: false
+      strict: true
+      supports_strict_tools: false
+  - bedrock_converse_tools:
+      function: tool_spec
+      name: get_weather
+      description: read the weather
+      parameters:
+        type: object
+        required: []
+      strict: false
+      supports_strict_tools: false
+  - bedrock_converse_tools:
+      function: tool_spec
+      name: get_weather
+      description: read the weather
+      parameters:
+        properties: {city: {type: string}}
+      strict: true
+      supports_strict_tools: true
+env: {}
+compare:
+  ignore:
+    - pointer: /error/status
+      why: >-
+        betterlite answers 400 for a tool whose parameters have no type, where LiteLLM raises KeyError
+        and answers 500; docs/deviations/B9978.yaml lists the fix.

@@ -248,3 +248,10 @@ path = "fuzz_targets/usage_ai_chat_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tinyfish_sse_frames"
+path = "fuzz_targets/tinyfish_sse_frames.rs"
+test = false
+doc = false
+bench = false

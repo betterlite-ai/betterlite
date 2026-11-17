@@ -1,0 +1,15 @@
+kind: helper
+name: metadata-reflected-format
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://my-bucket/tiny"}}
+    litellm_params: {}
+    metadata: {status: 200, json: {contentType: "image/jpg; charset=utf-8"}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}

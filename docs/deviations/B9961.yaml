@@ -1,0 +1,42 @@
+task: B9961
+deviations:
+  - what: >-
+      The GCS JSON API metadata request carries one 5-second total deadline, where LiteLLM's shared HTTPHandler
+      sets a separate 5-second connect, read, write and pool timeout.
+    why: >-
+      betterlite's outbound request takes one total deadline and the shared proxy client enforces it; a metadata
+      reply is a few hundred bytes, so the difference is only how a connect stall and a slow read share the 5
+      seconds.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L99-L103
+  - what: >-
+      Every extensionless gs:// reference in the converted messages is resolved, and its token minted, before any
+      part is converted, in message order; LiteLLM reads each object while converting its part and stops at the
+      first conversion failure, so a request that fails on an earlier part can still have read GCS and minted a
+      token here.
+    why: >-
+      The pass runs before the shared body build so conversion never performs I/O; the error the caller sees
+      carries the same status, type, param and code in both orders.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L523-L539
+  - what: >-
+      An implicitly cached request whose prefix holds an extensionless gs:// reference without a format still
+      answers 400 with code unsupported_remote_media from the cache-prefix conversion, where LiteLLM's context
+      caching transform converts those messages with no litellm_params and reads the object anonymously, so a
+      public object caches and a private one answers 400.
+    why: >-
+      The metadata read needs the deployment's litellm_params, and B1317's cache-prefix conversion runs before
+      this pass and has no credentials by design; feeding it the deployment's credentials would attach a token on
+      a path LiteLLM keeps anonymous.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L161-L202
+  - what: >-
+      The Google token counter's history conversion still answers 400 with code unsupported_remote_media for an
+      extensionless gs:// reference, where LiteLLM's Vertex token counter converts messages without litellm_params
+      and reads the object anonymously, so a public object is counted.
+    why: >-
+      B197 owns the counter's history conversion; this fix does not thread the transport or the deployment's
+      litellm_params into a path that only counts tokens.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1289-L1297
+kept_bugs: []

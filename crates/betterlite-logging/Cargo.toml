@@ -38,7 +38,7 @@ mail-builder = { version = "=2.0.0", default-features = false }
 md-5 = "0.11.0"
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
 minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
-nix = { version = "0.31.3", default-features = false, features = ["feature"] }
+nix = { version = "0.31.3", default-features = false, features = ["feature", "fs"] }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
 opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "http-json", "http-proto", "logs", "metrics", "trace"] }
@@ -135,3 +135,7 @@ path = "src/rubrik_moderation/tests.rs"
 [[test]]
 name = "genai_metrics"
 path = "src/otel/plumbing/metrics/tests/suite.rs"
+
+[[test]]
+name = "otel_lifecycle"
+path = "src/otel/logger/tests/suite.rs"

@@ -1,11 +1,16 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod fixture;
+mod input;
+mod ops;
+mod tests;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_converse_tools")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

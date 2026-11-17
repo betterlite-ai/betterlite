@@ -52,6 +52,7 @@ betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 betterlite-tracing = { path = "../betterlite-tracing" }
+betterlite-transcribe = { path = "../betterlite-transcribe" }
 betterlite-vertex = { path = "../betterlite-vertex" }
 caseless = "0.2.2"
 chrono = { workspace = true }

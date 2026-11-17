@@ -1,0 +1,21 @@
+kind: helper
+name: messages_stream_restamp-restamp-and-cache
+call:
+  messages_stream_restamp:
+    restamp:
+      requested_model: claude-3
+      chunks:
+        - kind: bytes
+          value: ZXZlbnQ6IG1lc3NhZ2Vfc3RhcnQKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9zdGFydCIsIm1lc3NhZ2UiOnsiaWQiOiJtc2dfMSIs
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+        - kind: event
+          value: {type: message_start, message: {model: claude-3}}
+    cache_stream:
+      reads:
+        - "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      preset_cache_key: null
+      fail: null
+      replay: true
+env: {}
+compare: {ignore: []}

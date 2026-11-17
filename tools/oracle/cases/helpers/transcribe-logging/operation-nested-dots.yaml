@@ -1,0 +1,7 @@
+kind: helper
+name: operation-nested-dots
+call:
+  b3646:
+    target: amazon.transcribe.Transcribe.StartTranscriptionJob
+env: {}
+compare: {ignore: []}

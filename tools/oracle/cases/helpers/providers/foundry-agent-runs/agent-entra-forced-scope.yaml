@@ -1,0 +1,28 @@
+kind: helper
+name: foundry-agent-runs-agent-entra-forced-scope
+call:
+  foundry_agent_runs:
+    dispatches:
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {}
+        litellm_params:
+          tenant_id: tenant-a
+          client_id: client-a
+          client_secret: secret-a
+          azure_scope: "https://wrong.example/.default"
+          ssl_verify: false
+          extra: kept
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: null
+        token: resolved-token
+        acompletion: false
+        stream: false
+        steps:
+          - {status: 201, body: '{"id": "thread-1"}'}
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "scoped"}}]}]}'}
+env: {}
+compare: {ignore: []}

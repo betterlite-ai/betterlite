@@ -1,0 +1,39 @@
+task: B5654
+deviations:
+  - what: The success logging of a finished stream is skipped when litellm_settings.disable_streaming_logging is true. LiteLLM's finalize calls logging_obj.success_handler and dispatch_success_handlers without checking that flag.
+    why: The task's DoD asks for the gate on the finished stream, so the config owner decided this difference; per-chunk logging follows LiteLLM and is gated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1894-L1908
+  - what: The _last_returned_hidden_params backfill is not built. When a provider sends usage in a chunk after the finish reason, LiteLLM mutates the hidden_params dict the caller already received so the earlier chunk shows the final usage.
+    why: betterlite hands chunks to the caller by value, so there is no dict shared with the wrapper to correct; the usage chunk emitted at the end of the stream carries that usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1912-L1927
+  - what: The deferred completion callback is not built. LiteLLM stores the assembled response on logging_obj._deferred_stream_complete_args when the proxy registered _on_deferred_stream_complete, so proxy guardrails fire after the stream.
+    why: betterlite's stream logging port has no deferred-callback seam, and the proxy's guardrail end-of-stream block is outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2160-L2179
+  - what: A MidStreamFallbackError's message has no "litellm.MidStreamFallbackError" prefix followed by a colon and a space, and it is the cause's text rather than str(mapped_exception).
+    why: betterlite's error taxonomy carries a typed class per failure instead of the exception object, and no accessor returns a class's own message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2318-L2325
+  - what: A truthy mcp_metadata that is not a dict makes LiteLLM's final chunk carry an empty provider_specific_fields. betterlite types mcp_metadata as a JSON object in ChatStreamConfig, so that shape arrives as a config error naming the field.
+    why: docs/compatibility.md makes a value of the wrong type an error that names the field instead of Python's duck typing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1649-L1664
+  - what: Iterating a closed stream returns None without reopening it. LiteLLM's aclose sets completion_stream to None, and the next __next__ fetches through make_call again.
+    why: betterlite's source is a ChunkSource handed in once, with no make_call to reopen it, so a closed stream stays closed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L385-L409
+  - what: __del__, _next_sync_or_exhausted, is_async_iterable and print_verbose are not built.
+    why: These are Python iteration and logging habits covered by docs/compatibility.md; a dropped Rust stream needs no destructor and the pre/post chunk verbose lines carry no data a caller acts on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L358-L383
+  - what: set_logging_event_loop is not built, so there is no way to pick the loop stream logging runs on.
+    why: Stream logging runs on the Rust runtime and no Python loop exists at this layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1536-L1549
+  - what: A finished stream is assembled, cached and success-logged once, including when stream_options.include_usage is set. LiteLLM's __next__ runs cache_streaming_response and success_handler on the StopIteration that returns the usage chunk (L1925-L1929) and again on the StopIteration that ends iteration, and __anext__ assembles the stream again on the call after its usage chunk (L2157-L2159), so LiteLLM stores and logs twice.
+    why: The task's DoD asks that a finished stream log and store in the cache exactly once, so the duplicate finalize pass is not copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1848-L1929
+kept_bugs:
+  - what: A model whose call provider is openai and whose logging provider is unset is named "None/{model}", because the f-string renders None.
+    why: A working setup reads that model name from the chunk, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L286-L289
+  - what: The last chunk of a stream always carries a usage object when stream_options is unset, even one summing to zero tokens.
+    why: Clients read that usage field to finish their own counters, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1839-L1843
+  - what: run_success_logging_and_cache_storage is called for every blocking chunk but never stores anything in the cache.
+    why: A working setup sees one cache write per stream, and betterlite's per-chunk logging port also stores nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1688-L1713

@@ -1,0 +1,15 @@
+task: B601
+deviations: []
+kept_bugs:
+- what: A tool counts as computer use when its type starts with computer_use_preview, computer_, bash_ or text_editor_, so an ordinary function tool whose type happens to start with one of those prefixes is split out of the tool list and transformed instead of being sent as it is.
+  why: LiteLLM decides by prefix on the type string rather than by a model or family test, and a setup that ships such a tool gets exactly that treatment, so the same classifier is carried.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L782-L793
+- what: The fake_stream flag is set when the model string contains meta.llama3-3-70b-instruct-v1:0 anywhere in it, so a cross-region profile such as us.meta.llama3-3-70b-instruct-v1:0 gets the flag and so does any longer id that merely carries that text.
+  why: LiteLLM tests a substring rather than the model family, and a caller using a regional inference profile relies on the flag, so the substring test is carried.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L998-L1008
+- what: The additionalProperties walk reaches properties, a mapping-valued items, $defs, definitions, anyOf, allOf and oneOf, and leaves not, patternProperties, additionalProperties itself and a list-valued items untouched, so objects nested under those keys reach Bedrock without the field the API requires.
+  why: Only those positions are walked upstream, and a schema that relies on one of the others is sent the same way it would be by LiteLLM, so the traversal keeps its exact shape.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L922-L955
+- what: The JSON-mode fallback appends the synthetic json_tool_call tool to whatever tools the caller already sent, so a caller that already sent a tool under that name gets two tools with the same name and Bedrock rejects the request.
+  why: The append does not look for an existing entry, and a working setup never sends that name itself, so the list is built the same way rather than deduplicated.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1201-L1269

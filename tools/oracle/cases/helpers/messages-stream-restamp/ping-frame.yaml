@@ -1,0 +1,18 @@
+kind: helper
+name: messages-stream-restamp-ping-frame
+call:
+  messages_stream_restamp:
+    restamp:
+      requested_model: claude-3
+      chunks:
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+        - kind: event
+          value: {type: ping}
+        - kind: event
+          value: {type: message_start, message: {id: msg_1, model: upstream-model}}
+        - kind: text
+          value: "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_2\",\"model\":\"upstream-model\"}}\n\n"
+    cache_stream: null
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,7 @@ use serde_with::skip_serializing_none;
 use crate::gemini_history::content::Content;
 use crate::gemini_history::convert::convert_messages_with_history;
 use crate::gemini_media::equivalence::equivalent_key;
+use crate::gemini_media::gcs_metadata::GcsDeps;
 use crate::gemini_media::resolution::{convert_detail, max_media_resolution};
 use crate::model_policy::capabilities::response_schema::get_supports_response_schema;
 use crate::model_policy::capabilities::{
@@ -22,6 +23,7 @@ use crate::studio_chat;
 use crate::system_instruction::{SystemExtraction, SystemInstruction, extract_system_instruction};
 
 use super::error::{BodyError, encode};
+use super::media_prepare::resolve_gcs_content_types;
 use super::merge::{merge_extra_body, rewrite_maps_response_format};
 
 const INCLUDE_SERVER_SIDE: &str = "includeServerSideToolInvocations";
@@ -60,14 +62,18 @@ struct RequestBody {
     labels: Option<BTreeMap<String, String>>,
 }
 
-pub async fn transform<Source>(
+struct Prepared {
+    instruction: Option<SystemInstruction>,
+    messages: Vec<Message>,
+    params: Object,
+    litellm_params: Object,
+}
+
+// LiteLLM's _transform_request_body order: system extraction, the schema prompt, then the litellm_param_ keys
+fn prepare_body(
     input: &BodyInput<'_>,
     capabilities: &(dyn ModelCapabilityLookup + Sync),
-    fetcher: &Source,
-) -> Result<Transformed, BodyError>
-where
-    Source: RemoteMediaFetcher + Sync,
-{
+) -> Result<Prepared, BodyError> {
     let SystemExtraction {
         instruction,
         mut messages,
@@ -79,6 +85,57 @@ where
     let mut litellm_params = input.litellm_params.clone();
     append_response_schema_prompt(&mut messages, &mut params, input, capabilities)?;
     litellm_params.extend(params.extract_if(.., |key, _value| key.starts_with("litellm_param_")));
+    Ok(Prepared {
+        instruction,
+        messages,
+        params,
+        litellm_params,
+    })
+}
+
+pub async fn transform<Source>(
+    input: &BodyInput<'_>,
+    capabilities: &(dyn ModelCapabilityLookup + Sync),
+    fetcher: &Source,
+) -> Result<Transformed, BodyError>
+where
+    Source: RemoteMediaFetcher + Sync,
+{
+    // the oracle adapters and any caller without a GCS client convert without the metadata pass
+    convert_body(input, prepare_body(input, capabilities)?, fetcher).await
+}
+
+impl BodyInput<'_> {
+    pub async fn transform_with_gcs<Source>(
+        &self,
+        gcs: &GcsDeps<'_>,
+        capabilities: &(dyn ModelCapabilityLookup + Sync),
+        fetcher: &Source,
+    ) -> Result<Transformed, BodyError>
+    where
+        Source: RemoteMediaFetcher + Sync,
+    {
+        let mut prepared = prepare_body(self, capabilities)?;
+        prepared.messages =
+            resolve_gcs_content_types(prepared.messages, &prepared.litellm_params, gcs).await?;
+        convert_body(self, prepared, fetcher).await
+    }
+}
+
+async fn convert_body<Source>(
+    input: &BodyInput<'_>,
+    prepared: Prepared,
+    fetcher: &Source,
+) -> Result<Transformed, BodyError>
+where
+    Source: RemoteMediaFetcher + Sync,
+{
+    let Prepared {
+        instruction,
+        messages,
+        mut params,
+        litellm_params,
+    } = prepared;
     let history = match input.provider {
         VertexCapabilityProvider::Gemini => {
             studio_chat::transform_messages(&messages, input.model, fetcher).await?

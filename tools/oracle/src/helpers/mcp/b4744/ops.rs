@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
+use betterlite_mcp::client::sdk_runtime::handler::ServerRequestHandlers;
 use betterlite_mcp::client::sessions::client::SessionSettings;
 use betterlite_mcp::client::sessions::environment::safe_stdio_env;
 use betterlite_mcp::client::sessions::error::SessionError;
@@ -176,6 +177,7 @@ fn initialize_settings(input: &InitializeInput) -> Result<SessionSettings, Box<H
         callbacks: Callbacks {
             kinds: input.callbacks.iter().copied().collect(),
         },
+        handlers: ServerRequestHandlers::default(),
     })
 }
 

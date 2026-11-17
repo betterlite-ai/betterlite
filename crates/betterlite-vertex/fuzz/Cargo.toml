@@ -68,6 +68,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gcs_metadata"
+path = "fuzz_targets/gcs_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemini_live_client"
 path = "fuzz_targets/gemini_live_client.rs"
 test = false

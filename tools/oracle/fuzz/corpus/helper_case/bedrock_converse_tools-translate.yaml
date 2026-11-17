@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-converse-tools-translate
+call:
+  bedrock_converse_tools:
+    function: translate
+    model: fixture-fallback
+    model_cost:
+      fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+    value:
+      type: json_schema
+      json_schema:
+        schema: {type: object, properties: {city: {type: string}}}
+    stream: true
+    is_thinking_enabled: false
+    optional_params: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,64 @@
+kind: helper
+name: foundry-agent-runs-dispatch-and-client-defaults
+call:
+  foundry_agent_runs:
+    dispatches:
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {}
+        litellm_params: {ssl_verify: true}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: null
+        token: resolved-token
+        acompletion: false
+        stream: false
+        steps:
+          - {status: 201, body: '{"id": "thread-1"}'}
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "sync"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: null
+        token: resolved-token
+        acompletion: true
+        stream: false
+        steps:
+          - {status: 201, body: '{"id": "thread-2"}'}
+          - {status: 201, body: '{"id": "run-2"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "async"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {}
+        litellm_params: {ssl_verify: false}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: explicit-key
+        token: null
+        acompletion: true
+        stream: true
+        steps:
+          - {status: 200, body: ""}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: ""
+        token: null
+        acompletion: false
+        stream: false
+        steps:
+          - {status: 201, body: '{"id": "thread-3"}'}
+          - {status: 201, body: '{"id": "run-3"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "empty-key"}}]}]}'}
+env: {}
+compare: {ignore: []}

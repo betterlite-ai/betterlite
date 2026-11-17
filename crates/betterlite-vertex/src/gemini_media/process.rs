@@ -96,7 +96,7 @@ fn inferred_gcs_mime(url: &str, field: MediaField) -> Result<String, MediaError>
     normalize_mime_type(mime_from_type(file_type))
 }
 // os.path.splitext: a dot only starts an extension when some non-dot byte precedes it in the segment
-fn splitext_extension(url: &str) -> &str {
+pub(crate) fn splitext_extension(url: &str) -> &str {
     let segment_start = url.rfind('/').map_or(0, |slash| slash.saturating_add(1));
     let segment = url.get(segment_start..).unwrap_or_default();
     let Some(dot) = segment.rfind('.') else {

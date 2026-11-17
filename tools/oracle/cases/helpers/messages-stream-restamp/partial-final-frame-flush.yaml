@@ -1,0 +1,14 @@
+kind: helper
+name: messages-stream-restamp-partial-final-frame-flush
+call:
+  messages_stream_restamp:
+    restamp:
+      requested_model: claude-3
+      chunks:
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+        - kind: text
+          value: "data: {\"type\":\"message\\u005fstart\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}"
+    cache_stream: null
+env: {}
+compare: {ignore: []}

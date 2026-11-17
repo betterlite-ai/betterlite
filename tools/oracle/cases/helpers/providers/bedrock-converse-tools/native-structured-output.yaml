@@ -1,0 +1,93 @@
+kind: helper
+name: bedrock-converse-tools-native-structured-output
+call:
+  bedrock_converse_tools:
+    function: translate
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+    value:
+      type: json_schema
+      json_schema:
+        schema:
+          type: object
+          properties:
+            city: {type: string}
+            detail:
+              type: object
+              properties: {population: {type: integer}}
+        name: place
+        description: where the reply is set
+    stream: false
+    is_thinking_enabled: false
+    optional_params: {temperature: 1}
+calls:
+  - bedrock_converse_tools:
+      function: translate
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      value:
+        type: json_object
+        response_schema:
+          type: object
+          properties: {city: {type: string}}
+        json_schema:
+          schema: {type: object, properties: {ignored: {type: string}}}
+          name: ignored
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      value:
+        type: json_object
+        response_schema: null
+        json_schema:
+          schema: {type: object}
+          name: ignored
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      value:
+        type: json_object
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      value:
+        type: json_schema
+        json_schema:
+          schema:
+            type: object
+            additionalProperties: true
+            properties: {city: {type: string}}
+      stream: true
+      is_thinking_enabled: true
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: output_config
+      json_schema:
+        type: object
+        properties: {city: {type: string}}
+      name: place
+      description: where the reply is set
+  - bedrock_converse_tools:
+      function: output_config
+      json_schema: null
+      name: null
+      description: null
+env: {}
+compare: {ignore: []}

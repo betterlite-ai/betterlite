@@ -1,0 +1,76 @@
+kind: helper
+name: bedrock-converse-tools-tool-choice-values
+call:
+  bedrock_converse_tools:
+    function: tool_choice
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+    tool_choice: auto
+    global_drop: false
+    call_drop: false
+calls:
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+      tool_choice: required
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+      tool_choice: required
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+      tool_choice: required
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      tool_choice: none
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      tool_choice: none
+      global_drop: true
+      call_drop: false
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      tool_choice:
+        type: function
+        function:
+          name: get weather!
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_tools:
+      function: tool_choice
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: true}
+      tool_choice: bogus
+      global_drop: false
+      call_drop: false
+env: {}
+compare: {ignore: []}

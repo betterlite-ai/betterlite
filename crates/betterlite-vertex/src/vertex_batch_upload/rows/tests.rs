@@ -1,17 +1,26 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "the built row is read back as JSON so the test checks the converted parts instead of a text prefix"
+)]
 
 use std::convert::Infallible;
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
+use futures_util::StreamExt as _;
 use rstest::rstest;
 use serde_json::Number;
 
+use crate::gemini_media::gcs_metadata::GcsDeps;
+use crate::gemini_media::gcs_metadata::tests::{RecordingMint, ScriptedGcs};
 use crate::vertex_batch_upload::line::decode_openai_batch_line;
+use crate::vertex_batch_upload::rows::RowMappers;
 use crate::vertex_batch_upload::rows::embeddings;
 use crate::vertex_batch_upload::sources::{FileContent, FileTypes};
-use crate::vertex_batch_upload::tests::upload;
+use crate::vertex_batch_upload::tests::{MAX_LINE_BYTES, Mappers, Settings, context, upload};
+use crate::vertex_batch_upload::upload::vertex_batch_upload;
 
 async fn rows_of(line: &str) -> Vec<String> {
     let file = FileTypes::Content(FileContent::Text(line.to_owned()));
@@ -205,6 +214,61 @@ async fn chat_key_order() {
     .await;
     let text = rows.first().unwrap();
     assert!(text.starts_with(r#"{"request": {"contents": [{"role": "user", "parts": [{"text": "hi"}]}], "generationConfig": {"temperature": 0.5, "max_output_tokens": 16}, "labels": "#));
+}
+
+struct GcsMappers {
+    inner: Mappers,
+    gcs: ScriptedGcs,
+    mint: RecordingMint,
+}
+
+impl RowMappers for GcsMappers {
+    type Error = Infallible;
+
+    fn responses_to_chat(&self, provider: &str, body: &Object) -> Result<Object, Infallible> {
+        self.inner.responses_to_chat(provider, body)
+    }
+
+    fn developer_to_system(&self, messages: Vec<Object>) -> Result<Vec<Object>, Infallible> {
+        self.inner.developer_to_system(messages)
+    }
+
+    fn gcs_deps(&self) -> Option<GcsDeps<'_>> {
+        Some(GcsDeps {
+            transport: &self.gcs,
+            tokens: &self.mint,
+        })
+    }
+}
+
+// the row builder converts with empty litellm_params, so it reads an extensionless reference anonymously
+#[tokio::test]
+async fn chat_row_resolves_gcs_metadata() {
+    let metadata = "https://storage.googleapis.com/storage/v1/b/my-bucket/o/folder%2Fmy%20photo?fields=contentType";
+    let mappers = GcsMappers {
+        inner: Mappers,
+        gcs: ScriptedGcs::answering(200, r#"{"contentType":"image/png"}"#),
+        mint: RecordingMint::default(),
+    };
+    let settings = Settings::default();
+    let context = context(&settings, &mappers);
+    let line = r#"{"url":"/v1/chat/completions","body":{"model":"gemini-2.0-flash","messages":[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"gs://my-bucket/folder/my photo"}}]}]}}"#;
+    let file = FileTypes::Content(FileContent::Text(line.to_owned()));
+    let chunks: Vec<_> =
+        vertex_batch_upload(file, "batch", &Json::Bool(false), &context, MAX_LINE_BYTES)
+            .take(usize::MAX)
+            .collect()
+            .await;
+    let bytes: Vec<u8> = chunks.into_iter().flat_map(Result::unwrap).collect();
+    let row: serde_json::Value = serde_json::from_str(&String::from_utf8(bytes).unwrap()).unwrap();
+    let parts = &row["request"]["contents"][0]["parts"];
+    assert_eq!(parts[1]["file_data"]["mime_type"], "image/png");
+    assert_eq!(
+        parts[1]["file_data"]["file_uri"],
+        "gs://my-bucket/folder/my photo"
+    );
+    assert_eq!(mappers.gcs.requested(), vec![(metadata.to_owned(), None)]);
+    assert!(mappers.mint.projects().is_empty());
 }
 
 #[rstest]

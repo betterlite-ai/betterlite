@@ -1,7 +1,7 @@
 id: B3648
 milestone: M5 api families
 title: TinyFish run policy and billing records
-status: todo
+status: done
 depends_on: [B002, B190]
 file: tasks/B3648-tinyfish-relay-records.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/passthrough_endpoints/tinyfish.py"
 parent: B103
 split_from: B103
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2252

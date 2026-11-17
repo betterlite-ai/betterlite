@@ -1,0 +1,101 @@
+kind: helper
+name: bedrock-converse-tools-unsupported-response-format
+call:
+  bedrock_converse_tools:
+    function: translate
+    model: fixture-fallback
+    model_cost:
+      fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+    value:
+      type: json_schema
+      json_schema:
+        schema: {type: object, properties: {city: {type: string}}}
+        description: where the reply is set
+    stream: true
+    is_thinking_enabled: false
+    optional_params:
+      temperature: 1
+calls:
+  - bedrock_converse_tools:
+      function: translate
+      model: fixture-fallback
+      model_cost:
+        fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+      value:
+        type: json_schema
+        json_schema:
+          schema: {type: object}
+      stream: true
+      is_thinking_enabled: true
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: meta.llama3-3-70b-instruct-v1:0
+      model_cost:
+        meta.llama3-3-70b-instruct-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: false, supports_native_structured_output: false}
+      value:
+        type: json_schema
+        json_schema:
+          schema: {type: object}
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_forced_tool_use: false, supports_tool_choice: true, supports_native_structured_output: false}
+      value:
+        type: json_schema
+        json_schema:
+          schema: {type: object}
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: fixture-fallback
+      model_cost:
+        fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+      value:
+        type: json_object
+      stream: true
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: fixture-fallback
+      model_cost:
+        fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+      value:
+        type: json_schema_v2
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+  - bedrock_converse_tools:
+      function: translate
+      model: fixture-fallback
+      model_cost:
+        fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+      value:
+        type: text
+      stream: true
+      is_thinking_enabled: false
+      optional_params:
+        temperature: 1
+  - bedrock_converse_tools:
+      function: translate
+      model: fixture-fallback
+      model_cost:
+        fixture-fallback: {litellm_provider: bedrock, supports_forced_tool_use: true, supports_tool_choice: true, supports_native_structured_output: false}
+      value: {}
+      stream: false
+      is_thinking_enabled: false
+      optional_params: {}
+env: {}
+compare:
+  ignore:
+    - pointer: /error/status
+      why: >-
+        betterlite answers 400 for a response_format with no type, where LiteLLM raises KeyError
+        and answers 500; docs/deviations/B9978.yaml lists the fix.

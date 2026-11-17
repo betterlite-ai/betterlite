@@ -1,60 +1,38 @@
 #![cfg(test)]
 
+mod gemini_request_settings;
+
+mod support;
+
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::huggingface_hub::{
-    OfflineSetting, Settings as HubSettings, TransferSetting,
-};
-use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
-use betterlite_config::types::ProxyTrust;
-use betterlite_http::hub_oauth::clock::SystemHubClock;
-use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
-use betterlite_http::proxy::outbound::OutboundRequest;
-use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::error::MediaError;
-use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
-use betterlite_prompts::message_content::Message;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_redact::structured::Payload;
 use betterlite_tokenizer::count::Counter;
-use betterlite_tokenizer::count::settings::Settings as CountSettings;
-use betterlite_tokenizer::engine::Engine;
-use betterlite_tokenizer::engine::error::EngineError;
-use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
-use betterlite_tokenizer::engine::hub::HubDownloader;
-use betterlite_tokenizer::engine::limits::{
-    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService,
-};
-use betterlite_tokenizer::engine::selection::Selector;
 use jiff::Timestamp;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
-use tokio::time::Instant;
 
+use self::support::{
+    FixtureLookup, Hooks, MapFetch, NoTransport, RequestInput, cache_provider, counter, hooks,
+    parse_json, vertex_input,
+};
 use crate::cache_create::orchestration::CacheCreateRequest;
-use crate::cache_lookup::target::CacheProvider;
-use crate::cache_lookup::transport::CacheTransport;
+use crate::gemini_history::error::HistoryError;
+use crate::gemini_media::error::MediaError as GeminiMediaError;
+use crate::gemini_media::gcs_metadata::GcsDeps;
+use crate::gemini_media::gcs_metadata::tests::{RecordingMint, ScriptedGcs, parse_object};
 use crate::gemini_request::body::Transformed;
-use crate::gemini_request::error::RequestError;
+use crate::gemini_request::error::{BodyError, RequestError};
 use crate::gemini_request::orchestration::CallRequest;
 use crate::gemini_request::orchestration::async_media::transform_request_body_async;
 use crate::gemini_request::orchestration::transform_request_body;
-use crate::model_policy::capabilities::{
-    CapabilityKind, CapabilityLookupError, ModelCapabilityLookup, VertexCapabilityProvider,
-};
+use crate::model_policy::capabilities::VertexCapabilityProvider;
 
 const NOW_SECOND: i64 = 1_794_441_600;
 const USER_MESSAGES: &str = r#"[{"role":"user","content":"hi"}]"#;
@@ -75,247 +53,17 @@ const ASSISTANT_TEXT_BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text
 const ASSISTANT_JPEG_BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/jpeg"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#;
 const STUDIO_FILE_MESSAGES: &str = r#"[{"role":"user","content":[{"type":"file","file":{"file_id":"https://example.com/doc.pdf","format":"application/pdf"}}]}]"#;
 
-struct SilentLogger;
-
-impl LoggerSink for SilentLogger {
-    fn debug(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn info(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn error(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    fn debug_enabled(&self) -> bool {
-        false
-    }
-}
-
-struct SilentConsole;
-
-impl ConsoleSink for SilentConsole {
-    fn print(&self, _payload: &Payload) -> bool {
-        false
-    }
-}
-
-type Hooks = VerboseHooks<SilentLogger, SilentConsole>;
-
-fn hooks() -> Hooks {
-    VerboseHooks {
-        logger: SilentLogger,
-        console: SilentConsole,
-        set_verbose: Payload::Bool(false),
-        redactor: Arc::new(
-            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles"),
-        ),
-    }
-}
-
-struct InlineCounter;
-
-#[async_trait]
-impl BlockingCounter for InlineCounter {
-    async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
-        job()
-    }
-
-    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
-        job()
-    }
-
-    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
-        job()
-    }
-}
-
-fn hub_settings() -> HubSettings {
-    HubSettings {
-        endpoint: "http://127.0.0.1:1".to_owned(),
-        offline: OfflineSetting::Offline,
-        etag_timeout: 10,
-        download_timeout: 10,
-        disable_implicit_token: false,
-        env_token: None,
-        hf_home: PathBuf::new(),
-        hub_cache: PathBuf::new(),
-        token_path: PathBuf::new(),
-        stored_tokens_path: PathBuf::new(),
-        transfer: TransferSetting::Standard,
-    }
-}
-
-fn counter() -> Counter {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
-    );
-    let client = Arc::new(ProxiedClient::outbound(&policy).expect("a fixture client"));
-    let settings = CountSettings::default();
-    let service = Arc::new(CountingService::new(
-        4,
-        Arc::new(InlineCounter),
-        settings.encode_limits().expect("the encode limits"),
-    ));
-    let fetcher = Arc::new(TiktokenFetcher::new(
-        Arc::clone(&client),
-        None,
-        Arc::clone(&service),
-    ));
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
-    let hub = hub_settings();
-    let clock = Arc::new(SystemHubClock::default());
-    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
-    let tokens = Arc::new(HubTokenResolver::new(
-        hub.clone(),
-        OidcSettings::default(),
-        Arc::clone(&client),
-        reader,
-        clock,
-    ));
-    let downloader = Arc::new(HubDownloader::new(
-        Arc::new(hub),
-        tokens,
-        Arc::new(Instant::now),
-    ));
-    let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
-        downloader,
-        Arc::clone(&catalog),
-        Arc::clone(&service),
-        true,
-    ));
-    Counter::new(selector, fetcher, service, catalog, settings)
-}
-
-#[derive(Clone, Copy)]
-struct Supports {
-    system_message: bool,
-    response_schema: bool,
-}
-
-struct FixtureLookup {
-    supports: Supports,
-}
-
-impl ModelCapabilityLookup for FixtureLookup {
-    fn supports(
-        &self,
-        kind: CapabilityKind,
-        _model: &str,
-        _provider: &str,
-    ) -> Result<bool, CapabilityLookupError> {
-        Ok(match kind {
-            CapabilityKind::SystemMessages => self.supports.system_message,
-            CapabilityKind::ResponseSchema => self.supports.response_schema,
-        })
-    }
-}
-
-#[derive(Default)]
-struct MapFetch {
-    urls: BTreeMap<String, String>,
-    converted: Mutex<Vec<String>>,
-    batches: Mutex<Vec<Vec<String>>>,
-}
-
-impl MapFetch {
-    fn with_urls(&mut self, urls: &[(&str, &str)]) {
-        self.urls = urls
-            .iter()
-            .map(|(url, data_url)| ((*url).to_owned(), (*data_url).to_owned()))
-            .collect();
-    }
-
-    fn lookup(&self, url: &str) -> Result<String, ImageFetchError> {
-        self.urls
-            .get(url)
-            .cloned()
-            .ok_or_else(|| ImageFetchError::Attempts {
-                url: url.to_owned(),
-            })
-    }
-
-    fn calls(&self) -> usize {
-        self.converted()
-            .len()
-            .saturating_add(self.batches.lock().expect("fixture fetcher").len())
-    }
-
-    fn converted(&self) -> Vec<String> {
-        self.converted.lock().expect("fixture fetcher").clone()
-    }
-
-    fn batches(&self) -> Vec<Vec<String>> {
-        self.batches.lock().expect("fixture fetcher").clone()
-    }
-}
-
-impl RemoteMediaFetcher for MapFetch {
-    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
-        self.converted
-            .lock()
-            .expect("fixture fetcher")
-            .push(url.to_owned());
-        ready(self.lookup(url))
-    }
-
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        self.batches
-            .lock()
-            .expect("fixture fetcher")
-            .push(urls.to_vec());
-        let values: Result<Vec<String>, ImageFetchError> =
-            urls.iter().map(|url| self.lookup(url)).collect();
-        ready(values)
-    }
-}
-
-#[derive(Default)]
-struct NoTransport {
-    calls: AtomicUsize,
-}
-
-impl NoTransport {
-    fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
-    }
-}
-
-impl CacheTransport for NoTransport {
-    fn send(
-        &self,
-        _request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        ready(Err(TransportError::Closed))
-    }
-}
-
-struct RequestInput {
-    provider: VertexCapabilityProvider,
-    model: String,
-    messages: Vec<Message>,
-    optional_params: Object,
-    litellm_params: Object,
-    modify_params: bool,
-    supports: Supports,
-}
-
 struct Harness {
     runtime: Runtime,
     counter: Counter,
     catalog: Arc<ModelCatalog>,
     hooks: Hooks,
+    auth_token: SecretString,
+    extra_headers: BTreeMap<String, String>,
     fetcher: MapFetch,
     transport: NoTransport,
+    gcs: ScriptedGcs,
+    mint: RecordingMint,
     now: Timestamp,
 }
 
@@ -328,14 +76,28 @@ impl Harness {
             counter: counter(),
             catalog: BundledCatalog::default().get(),
             hooks: hooks(),
+            auth_token: SecretString::from("token-abc"),
+            extra_headers: BTreeMap::new(),
             fetcher: MapFetch::default(),
             transport: NoTransport::default(),
+            gcs: ScriptedGcs::default(),
+            mint: RecordingMint::default(),
             now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
         }
     }
 
     fn with_fetch(mut self, urls: &[(&str, &str)]) -> Self {
         self.fetcher.with_urls(urls);
+        self
+    }
+
+    fn with_metadata(mut self, url: &str, status: u16, body: &str) -> Self {
+        self.gcs.with_reply(url, status, body);
+        self
+    }
+
+    fn with_mint_failure(mut self) -> Self {
+        self.mint = RecordingMint::failing();
         self
     }
 
@@ -348,38 +110,10 @@ impl Harness {
     }
 
     fn call(&self, input: &RequestInput, asynchronous: bool) -> Result<Transformed, RequestError> {
-        let auth_token = SecretString::from("token-abc");
-        let extra_headers = BTreeMap::new();
         let lookup = FixtureLookup {
             supports: input.supports,
         };
-        let request = CallRequest {
-            cache: CacheCreateRequest {
-                provider: cache_provider(input.provider),
-                model: &input.model,
-                messages: &input.messages,
-                api_base: None,
-                project: Some("project"),
-                location: Some("us-central1"),
-                auth_token: Some(&auth_token),
-                gemini_api_key: None,
-                extra_headers: &extra_headers,
-                deadline: Duration::from_secs(5),
-                cached_content: None,
-                disable_transform: false,
-                now: self.now,
-                minimum_token_override: None,
-                counter: &self.counter,
-                catalog: self.catalog.as_ref(),
-                capabilities: &lookup,
-                fetcher: &self.fetcher,
-            },
-            optional_params: &input.optional_params,
-            litellm_params: &input.litellm_params,
-            modify_params: input.modify_params,
-            schema_template: None,
-            capabilities: &lookup,
-        };
+        let request = self.request(input, &lookup);
         self.runtime.block_on(async {
             if asynchronous {
                 transform_request_body_async(&self.transport, request, &self.hooks).await
@@ -388,40 +122,43 @@ impl Harness {
             }
         })
     }
-}
 
-const fn cache_provider(provider: VertexCapabilityProvider) -> CacheProvider {
-    match provider {
-        VertexCapabilityProvider::VertexAi => CacheProvider::Vertex,
-        VertexCapabilityProvider::VertexAiBeta => CacheProvider::VertexBeta,
-        VertexCapabilityProvider::Gemini => CacheProvider::Gemini,
-    }
-}
-
-fn parse_messages(source: &str) -> Vec<Message> {
-    serde_json::from_str(source).expect("fixture messages")
-}
-
-fn parse_object(source: &str) -> Object {
-    serde_json::from_str(source).expect("fixture object")
-}
-
-fn parse_json(source: &str) -> Json {
-    serde_json::from_str(source).expect("fixture json")
-}
-
-fn vertex_input(model: &str, messages: &str, optional_params: &str) -> RequestInput {
-    RequestInput {
-        provider: VertexCapabilityProvider::VertexAi,
-        model: model.to_owned(),
-        messages: parse_messages(messages),
-        optional_params: parse_object(optional_params),
-        litellm_params: Object::new(),
-        modify_params: false,
-        supports: Supports {
-            system_message: true,
-            response_schema: true,
-        },
+    fn request<'fixture>(
+        &'fixture self,
+        input: &'fixture RequestInput,
+        lookup: &'fixture FixtureLookup,
+    ) -> CallRequest<'fixture, MapFetch> {
+        CallRequest {
+            cache: CacheCreateRequest {
+                provider: cache_provider(input.provider),
+                model: &input.model,
+                messages: &input.messages,
+                api_base: None,
+                project: Some("project"),
+                location: Some("us-central1"),
+                auth_token: Some(&self.auth_token),
+                gemini_api_key: None,
+                extra_headers: &self.extra_headers,
+                deadline: Duration::from_secs(5),
+                cached_content: None,
+                disable_transform: false,
+                now: self.now,
+                minimum_token_override: None,
+                counter: &self.counter,
+                catalog: self.catalog.as_ref(),
+                capabilities: lookup,
+                fetcher: &self.fetcher,
+            },
+            optional_params: &input.optional_params,
+            litellm_params: &input.litellm_params,
+            modify_params: input.modify_params,
+            schema_template: None,
+            capabilities: lookup,
+            gcs: GcsDeps {
+                transport: &self.gcs,
+                tokens: &self.mint,
+            },
+        }
     }
 }
 
@@ -995,4 +732,259 @@ fn media_sequential_fetch_order() {
         r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}},{"inline_data":{"data":"ZGVm","mime_type":"image/png"}}]}]}"#,
     );
     assert_fetched(&harness, false, &[REMOTE_A, REMOTE_B]);
+}
+
+const GCS_PHOTO: &str = "gs://my-bucket/folder/my photo";
+const GCS_WEIGHT: &str = "gs://my-bucket/100%";
+const GCS_PHOTO_METADATA: &str = "https://storage.googleapis.com/storage/v1/b/my-bucket/o/folder%2Fmy%20photo?fields=contentType";
+const GCS_WEIGHT_METADATA: &str =
+    "https://storage.googleapis.com/storage/v1/b/my-bucket/o/100%25?fields=contentType";
+const GCS_PHOTO_CONTENTS: &str = r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/folder/my photo"}}]}]}"#;
+const GCS_WEIGHT_CONTENTS: &str = r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/100%"}}]}]}"#;
+const GCS_PNG_REPLY: &str = r#"{"contentType":"image/png"}"#;
+
+fn gcs_messages(url: &str) -> String {
+    format!(
+        r#"[{{"role":"user","content":[{{"type":"text","text":"look"}},{{"type":"image_url","image_url":{{"url":"{url}"}}}}]}}]"#
+    )
+}
+
+fn gcs_input(messages: &str) -> RequestInput {
+    media_input(VertexCapabilityProvider::VertexAi, messages)
+}
+
+fn gcs_metadata_url(object: &str) -> String {
+    format!("https://storage.googleapis.com/storage/v1/b/my-bucket/o/{object}?fields=contentType")
+}
+
+fn assert_unknown_gcs_content_type(error: &RequestError, url: &str) {
+    match error {
+        RequestError::Body(BodyError::History(
+            history @ HistoryError::Media(GeminiMediaError::UnknownGcsContentType(named)),
+        )) => {
+            assert_eq!(named, url);
+            assert_eq!(history.status(), 400);
+            assert_eq!(history.error_type(), None);
+            assert_eq!(history.param(), None);
+            assert_eq!(history.code(), Some("400"));
+        }
+        other @ (RequestError::Cache(_) | RequestError::Body(_) | RequestError::Inline(_)) => {
+            panic!("a missing GCS content type is the bodyless 400, got {other:?}")
+        }
+    }
+}
+
+#[rstest]
+#[case::sequential(false)]
+#[case::concurrent(true)]
+fn gcs_request_resolves_metadata(#[case] asynchronous: bool) {
+    let harness = Harness::new().with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY);
+    let input = gcs_input(&gcs_messages(GCS_PHOTO));
+    let transformed =
+        run_entry(&harness, &input, asynchronous).expect("the object answers its content type");
+    assert_body(&transformed, GCS_PHOTO_CONTENTS);
+    assert_eq!(
+        harness.gcs.requested(),
+        vec![(GCS_PHOTO_METADATA.to_owned(), None)]
+    );
+    assert!(harness.mint.projects().is_empty());
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::vertex_ai(VertexCapabilityProvider::VertexAi)]
+#[case::vertex_ai_beta(VertexCapabilityProvider::VertexAiBeta)]
+#[case::studio(VertexCapabilityProvider::Gemini)]
+fn gcs_request_resolves_metadata_on_every_provider(#[case] provider: VertexCapabilityProvider) {
+    let raw = gcs_metadata_url("raw");
+    let harness = Harness::new()
+        .with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY)
+        .with_metadata(&raw, 200, r#"{"contentType":"application/pdf"}"#);
+    let input = media_input(
+        provider,
+        r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"gs://my-bucket/folder/my photo"}},{"type":"file","file":{"file_id":"gs://my-bucket/raw"}}]}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("both objects answer their content type");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/folder/my photo"}},{"file_data":{"mime_type":"application/pdf","file_uri":"gs://my-bucket/raw"}}]}]}"#,
+    );
+    assert_eq!(
+        harness.gcs.requested(),
+        vec![(GCS_PHOTO_METADATA.to_owned(), None), (raw, None)]
+    );
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_mints_with_explicit_project() {
+    let harness = Harness::new().with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY);
+    let mut input = gcs_input(&gcs_messages(GCS_PHOTO));
+    input.litellm_params = parse_object(r#"{"vertex_project":"my-project"}"#);
+    let transformed = harness
+        .run(&input)
+        .expect("the object answers its content type");
+    assert_body(&transformed, GCS_PHOTO_CONTENTS);
+    assert_eq!(
+        harness.gcs.requested(),
+        vec![(
+            GCS_PHOTO_METADATA.to_owned(),
+            Some("Bearer token-abc".to_owned())
+        )]
+    );
+    assert_eq!(harness.mint.projects(), vec![Some("my-project".to_owned())]);
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_uses_the_project_alias() {
+    let harness = Harness::new().with_metadata(GCS_WEIGHT_METADATA, 200, GCS_PNG_REPLY);
+    let mut input = gcs_input(&gcs_messages(GCS_WEIGHT));
+    input.litellm_params =
+        parse_object(r#"{"vertex_project":"","vertex_ai_project":"alias-project"}"#);
+    let transformed = harness
+        .run(&input)
+        .expect("the object answers its content type");
+    assert_body(&transformed, GCS_WEIGHT_CONTENTS);
+    assert_eq!(
+        harness.gcs.requested(),
+        vec![(
+            GCS_WEIGHT_METADATA.to_owned(),
+            Some("Bearer token-abc".to_owned())
+        )]
+    );
+    assert_eq!(
+        harness.mint.projects(),
+        vec![Some("alias-project".to_owned())]
+    );
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_resolves_file_and_assistant_images() {
+    let raw = gcs_metadata_url("raw");
+    let plot = gcs_metadata_url("plot");
+    let harness = Harness::new()
+        .with_metadata(&raw, 200, r#"{"contentType":"application/pdf"}"#)
+        .with_metadata(&plot, 200, GCS_PNG_REPLY);
+    let input = gcs_input(
+        r#"[{"role":"user","content":[{"type":"text","text":"read"},{"type":"file","file":{"file_id":"gs://my-bucket/raw"}}]},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"gs://my-bucket/plot"},"index":0}]}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("both objects answer their content type");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"read"},{"file_data":{"mime_type":"application/pdf","file_uri":"gs://my-bucket/raw"}}]},{"role":"model","parts":[{"text":"a"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/plot"}}]}]}"#,
+    );
+    assert_eq!(harness.gcs.requested(), vec![(raw, None), (plot, None)]);
+    assert!(harness.mint.projects().is_empty());
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::charset_and_alias("upper", "IMAGE/JPG; charset=utf-8", "image/jpeg")]
+#[case::mixed_case("spaced", "Image/PNG", "image/png")]
+fn gcs_request_normalizes_metadata_type(
+    #[case] object: &str,
+    #[case] content_type: &str,
+    #[case] expected_mime: &str,
+) {
+    let url = format!("gs://my-bucket/{object}");
+    let metadata = gcs_metadata_url(object);
+    let reply = format!(r#"{{"contentType":"{content_type}"}}"#);
+    let harness = Harness::new().with_metadata(&metadata, 200, &reply);
+    let input = gcs_input(&gcs_messages(&url));
+    let transformed = harness
+        .run(&input)
+        .expect("the object answers its content type");
+    assert_body(
+        &transformed,
+        &format!(
+            r#"{{"contents":[{{"role":"user","parts":[{{"text":"look"}},{{"file_data":{{"mime_type":"{expected_mime}","file_uri":"{url}"}}}}]}}]}}"#
+        ),
+    );
+    assert_eq!(harness.gcs.requested(), vec![(metadata, None)]);
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_skips_explicit_references() {
+    let harness = Harness::new();
+    let input = gcs_input(
+        r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"gs://my-bucket/cat.png"}},{"type":"image_url","image_url":{"url":"gs://my-bucket/untitled","mime_type":"image/webp"}},{"type":"image_url","image_url":{"url":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}},{"type":"image_url","image_url":{"url":"https://example.com/cat.png"}},{"type":"image_url","image_url":{"url":"data:image/png;base64,YWJj"}}]}]"#,
+    );
+    let transformed = harness
+        .run(&input)
+        .expect("the references stay as they are");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/cat.png"}},{"file_data":{"mime_type":"image/webp","file_uri":"gs://my-bucket/untitled"}},{"file_data":{"file_uri":"https://generativelanguage.googleapis.com/v1beta/files/abc123"}},{"file_data":{"mime_type":"image/png","file_uri":"https://example.com/cat.png"}},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]}]}"#,
+    );
+    assert!(harness.gcs.requested().is_empty());
+    assert!(harness.mint.projects().is_empty());
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::sequential(false)]
+#[case::concurrent(true)]
+fn gcs_request_fails_without_metadata(#[case] asynchronous: bool) {
+    let harness = Harness::new();
+    let error = run_entry(&harness, &gcs_input(&gcs_messages(GCS_PHOTO)), asynchronous)
+        .expect_err("the lookup is refused");
+    assert_unknown_gcs_content_type(&error, GCS_PHOTO);
+    let requested = harness.gcs.requested();
+    assert_eq!(requested.len(), 1);
+    assert_eq!(requested[0].0, GCS_PHOTO_METADATA);
+    assert_eq!(requested[0].1, None);
+    assert_no_io(&harness);
+}
+
+#[rstest]
+#[case::too_short("gs://ab/thing")]
+#[case::uppercase("gs://My-Bucket/thing")]
+fn gcs_request_invalid_bucket_makes_no_request(#[case] url: &str) {
+    let harness = Harness::new();
+    let input = gcs_input(&gcs_messages(url));
+    let error = harness
+        .run(&input)
+        .expect_err("an invalid bucket has no object metadata");
+    assert_unknown_gcs_content_type(&error, url);
+    assert!(harness.gcs.requested().is_empty());
+    assert!(harness.mint.projects().is_empty());
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_mint_failure_fails() {
+    let harness = Harness::new().with_mint_failure();
+    let mut input = gcs_input(&gcs_messages(GCS_PHOTO));
+    input.litellm_params = parse_object(r#"{"vertex_project":"my-project"}"#);
+    let error = harness
+        .run(&input)
+        .expect_err("a failed mint has no object metadata");
+    assert_unknown_gcs_content_type(&error, GCS_PHOTO);
+    assert!(harness.gcs.requested().is_empty());
+    assert_eq!(harness.mint.projects(), vec![Some("my-project".to_owned())]);
+    assert_no_io(&harness);
+}
+
+#[test]
+fn gcs_request_resolves_a_system_reference() {
+    let metadata = gcs_metadata_url("system-photo");
+    let harness = Harness::new().with_metadata(&metadata, 200, GCS_PNG_REPLY);
+    let mut input = gcs_input(
+        r#"[{"role":"system","content":[{"type":"text","text":"rules"},{"type":"image_url","image_url":{"url":"gs://my-bucket/system-photo"}}]},{"role":"user","content":"hi"}]"#,
+    );
+    input.supports.system_message = false;
+    let transformed = harness.run(&input).expect("the system reference resolves");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"rules"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/system-photo"}},{"text":"hi"}]}]}"#,
+    );
+    assert_eq!(harness.gcs.requested(), vec![(metadata, None)]);
+    assert_no_io(&harness);
 }

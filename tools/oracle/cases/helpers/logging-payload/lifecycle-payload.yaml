@@ -1,0 +1,62 @@
+kind: helper
+name: logging-payload-lifecycle
+call:
+  logging_payload:
+    init:
+      model: gpt-4o
+      call_type: completion
+      start_time: "2024-01-01T00:00:00+00:00"
+      litellm_call_id: call-8
+      function_id: fn-8
+      messages:
+        - role: user
+          content: "Hello"
+      stream: true
+      litellm_trace_id: trace-8
+      litellm_params:
+        api_base: https://api.openai.com/
+    model_call_details:
+      custom_llm_provider: openai
+      optional_params: {}
+      response_cost: 0.5
+      served_output_texts:
+        - "post-processed answer"
+      complete_streaming_response:
+        id: chatcmpl-8
+        object: chat.completion
+        created: 1704067200
+        model: gpt-4o
+        choices:
+          - index: 0
+            message:
+              role: assistant
+              content: "raw answer"
+            finish_reason: stop
+        usage:
+          prompt_tokens: 2
+          completion_tokens: 3
+          total_tokens: 5
+    response:
+      id: chatcmpl-8
+      object: chat.completion
+      created: 1704067200
+      model: gpt-4o
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: "raw answer"
+          finish_reason: stop
+      usage:
+        prompt_tokens: 2
+        completion_tokens: 3
+        total_tokens: 5
+    start_time: "2024-01-01T00:00:00+00:00"
+    completion_start_time: "2024-01-01T00:00:00.5+00:00"
+    end_time: "2024-01-01T00:00:01.25+00:00"
+    status: success
+env: {}
+compare:
+  ignore:
+    - pointer: /value/model_map_information
+      why: B068's model cost source fills this map, and this task only passes that source through

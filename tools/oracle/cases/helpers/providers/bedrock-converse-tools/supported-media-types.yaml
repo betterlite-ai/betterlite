@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-tools-supported-media-types
+call:
+  bedrock_converse_tools:
+    function: media_types
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B980
 milestone: M5 api families
 title: Messages stream restamp
-status: todo
+status: done
 depends_on: [B4296, B4297, B4302, B171, B978, B1087, B002, B4304]
 file: tasks/B980-messages-stream-restamp.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/anthropic/pass_through/messages/response_cache.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2246

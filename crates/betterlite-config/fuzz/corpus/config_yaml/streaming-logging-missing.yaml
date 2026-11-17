@@ -1,0 +1,2 @@
+litellm_settings:
+  turn_off_message_logging: true

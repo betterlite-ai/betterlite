@@ -1,0 +1,12 @@
+kind: helper
+name: tinyfish-failed-run-zero-cost
+call:
+  b3648:
+    function: run_billing
+    run:
+      run_id: run_failed
+      status: FAILED
+      num_of_steps: 5
+      error: {message: boom}
+env: {}
+compare: {ignore: []}
