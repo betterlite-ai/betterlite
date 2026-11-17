@@ -46,11 +46,10 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> JsonValue:
     fields = input_value["config"]
-    config = OpenTelemetryV2Config.model_construct(
-        exporters=[ExporterSpec(**item) for item in fields["exporters"]],
-        mapper_names=list(fields["mapper_names"]),
-        capture_message_content=fields["capture_message_content"],
-    )
+    config = OpenTelemetryV2Config()
+    config.exporters = [ExporterSpec.model_validate(exporter) for exporter in fields["exporters"]]
+    config.mapper_names = list(fields["mapper_names"])
+    config.capture_message_content = fields["capture_message_content"]
     function = input_value["function"]
     if function == "logger_class":
         return _logger_class(config).__name__
