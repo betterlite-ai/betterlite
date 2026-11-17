@@ -4,12 +4,11 @@ use betterlite_env::EnvError;
 use rstest::rstest;
 
 use crate::sections::Sections;
-use crate::vertex::VertexRagChunkDefaults;
 
 const CHUNK_SIZE: &str = "DEFAULT_CHUNK_SIZE";
 const CHUNK_OVERLAP: &str = "DEFAULT_CHUNK_OVERLAP";
 
-fn load(environment: &[(&str, &str)]) -> Result<VertexRagChunkDefaults, EnvError> {
+fn load(environment: &[(&str, &str)]) -> Result<(i64, i64), EnvError> {
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -23,9 +22,9 @@ fn load(environment: &[(&str, &str)]) -> Result<VertexRagChunkDefaults, EnvError
 #[case::zero(&[(CHUNK_SIZE, "0")], 0)]
 #[case::empty(&[(CHUNK_SIZE, "")], 1000)]
 fn loads_default_chunk_size(#[case] environment: &[(&str, &str)], #[case] expected: i64) {
-    let defaults = load(environment).unwrap();
-    assert_eq!(defaults.chunk_size, expected);
-    assert_eq!(defaults.chunk_overlap, 200);
+    let (chunk_size, chunk_overlap) = load(environment).unwrap();
+    assert_eq!(chunk_size, expected);
+    assert_eq!(chunk_overlap, 200);
 }
 
 #[rstest]
@@ -34,9 +33,9 @@ fn loads_default_chunk_size(#[case] environment: &[(&str, &str)], #[case] expect
 #[case::zero(&[(CHUNK_OVERLAP, "0")], 0)]
 #[case::empty(&[(CHUNK_OVERLAP, "")], 200)]
 fn loads_default_chunk_overlap(#[case] environment: &[(&str, &str)], #[case] expected: i64) {
-    let defaults = load(environment).unwrap();
-    assert_eq!(defaults.chunk_overlap, expected);
-    assert_eq!(defaults.chunk_size, 1000);
+    let (chunk_size, chunk_overlap) = load(environment).unwrap();
+    assert_eq!(chunk_overlap, expected);
+    assert_eq!(chunk_size, 1000);
 }
 
 #[test]

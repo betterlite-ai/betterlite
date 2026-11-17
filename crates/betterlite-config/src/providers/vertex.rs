@@ -3,7 +3,6 @@ use betterlite_env::EnvError;
 use crate::loader::EnvironmentLookup;
 use crate::rag::document::chunking::{DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE};
 use crate::sections::Sections;
-use crate::vertex::VertexRagChunkDefaults;
 
 pub(crate) mod dispatch;
 pub(crate) mod embeddings;
@@ -34,15 +33,11 @@ impl Sections {
     // LiteLLM reads int(os.getenv(name, default)) once at import; the loader reads each value per load
     pub fn vertex_rag_chunk_defaults(
         lookup: &dyn EnvironmentLookup,
-    ) -> Result<VertexRagChunkDefaults, EnvError> {
-        Ok(VertexRagChunkDefaults {
-            chunk_size: number_setting(lookup, DEFAULT_CHUNK_SIZE_ENV, DEFAULT_CHUNK_SIZE)?,
-            chunk_overlap: number_setting(
-                lookup,
-                DEFAULT_CHUNK_OVERLAP_ENV,
-                DEFAULT_CHUNK_OVERLAP,
-            )?,
-        })
+    ) -> Result<(i64, i64), EnvError> {
+        Ok((
+            number_setting(lookup, DEFAULT_CHUNK_SIZE_ENV, DEFAULT_CHUNK_SIZE)?,
+            number_setting(lookup, DEFAULT_CHUNK_OVERLAP_ENV, DEFAULT_CHUNK_OVERLAP)?,
+        ))
     }
 }
 
