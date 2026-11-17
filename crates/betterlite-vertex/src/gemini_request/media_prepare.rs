@@ -142,7 +142,7 @@ async fn gcs_content_type(
     }
     match object_content_type(url, auth, deps).await {
         Ok(Some(content_type)) => Ok(Some(normalize_mime_type(&content_type)?)),
-        Ok(None) | Err(_failure) => Err(HistoryError::Media(
+        Ok(None) | Err(_) => Err(HistoryError::Media(
             GeminiMediaError::UnknownGcsContentType(url.to_owned()),
         )),
     }
