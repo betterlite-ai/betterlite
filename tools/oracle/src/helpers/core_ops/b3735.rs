@@ -27,7 +27,7 @@ use betterlite_guardrails::model_armor::decisions::{
     build_api_error_detail, build_block_error_detail, build_logging_response,
     get_sanitized_content, has_deidentify_match, should_block_content,
 };
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -48,7 +48,7 @@ const APPLIED_KEY: &str = "applied_guardrails";
 struct Flag(bool);
 
 #[derive(Debug, Deserialize)]
-struct Input {
+pub(crate) struct Input {
     chunks: Vec<ChunkInput>,
     mask_response_content: Flag,
     fail_on_error: Flag,

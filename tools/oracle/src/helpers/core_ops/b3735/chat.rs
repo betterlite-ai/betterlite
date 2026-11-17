@@ -167,15 +167,13 @@ fn emitted_choices(body: &Value) -> Result<Vec<Value>, WireError> {
         return Err(WireError::Missing("choices"));
     };
     let mut emitted = Vec::with_capacity(items.len());
-    let mut position = 0_i64;
     for item in items {
-        emitted.push(emitted_choice(item, position)?);
-        position = position.saturating_add(1);
+        emitted.push(emitted_choice(item)?);
     }
     Ok(emitted)
 }
 
-fn emitted_choice(item: &Value, position: i64) -> Result<Value, WireError> {
+fn emitted_choice(item: &Value) -> Result<Value, WireError> {
     let Some(message) = item.get("message") else {
         return Err(WireError::Missing("message"));
     };
@@ -190,7 +188,7 @@ fn emitted_choice(item: &Value, position: i64) -> Result<Value, WireError> {
     let index = item
         .get("index")
         .and_then(Value::as_i64)
-        .unwrap_or(position);
+        .unwrap_or_default();
     Ok(json!({
         "index": index,
         "delta": {"role": role, "content": content},
