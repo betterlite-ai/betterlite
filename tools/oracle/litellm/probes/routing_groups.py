@@ -1,5 +1,6 @@
 import litellm
 from litellm.router import Router
+from litellm.router_utils.common_utils import resolve_model_group_alias
 from litellm.router_utils.reasoning_effort_capability import (
     declared_reasoning_efforts_for_model,
     deployment_is_catalog_mapped,
@@ -13,6 +14,8 @@ from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
+
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 
 class Group(Strict):
@@ -93,15 +96,16 @@ def declared_result(lookup: Lookup) -> list[str] | None:
     return None if declared is None else list(declared)
 
 
-def name_facts(router: Router, name: str) -> Name:
+def name_facts(router: Router, aliases: dict[str, str], name: str) -> Name:
     group = router.get_routing_group(name)
+    targeted = router.get_routing_group(resolve_model_group_alias(aliases, name) or name)
     ids: list[str] | None = None
     if group is not None:
         ids = sorted(router.get_candidate_model_ids_for_route(name))
     return Name(
         name=name,
         is_callable=group is not None,
-        priority=group is not None and group.routing_strategy == "priority",
+        priority=targeted is not None and targeted.routing_strategy == "priority",
         alternatives=router.routing_group_has_alternatives(name),
         ids=ids,
     )
@@ -110,6 +114,7 @@ def name_facts(router: Router, name: str) -> Name:
 class RoutingGroups(Operation):
     groups: list[dict[str, JsonValue]] | None = None
     deployments: list[Deployment] = Field(default_factory=list)
+    aliases: dict[str, str] = Field(default_factory=dict)
     names: list[str] = Field(default_factory=list)
     cost_map: dict[str, JsonValue] = Field(default_factory=dict)
     efforts: list[Effort] = Field(default_factory=list)
@@ -131,7 +136,7 @@ class RoutingGroups(Operation):
         try:
             router = self.build()
             groups = [GROUP.validate_json(group.model_dump_json()) for group in self.parse()]
-            names = [name_facts(router, name) for name in self.names]
+            names = [name_facts(router, self.aliases, name) for name in self.names]
         except ValueError as failure:
             error = str(failure)
         return Output(
@@ -161,4 +166,8 @@ class RoutingGroups(Operation):
         raw = self.groups if self.groups is not None else []
         groups: list[RoutingGroup | dict[str, JsonValue]] = []
         groups.extend(raw)
-        return Router(model_list=entries, routing_groups=groups)
+        return Router(
+            model_list=entries,
+            routing_groups=groups,
+            model_group_alias=dict(self.aliases),
+        )

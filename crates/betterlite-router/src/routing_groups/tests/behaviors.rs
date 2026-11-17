@@ -50,7 +50,10 @@ fn parsed(groups: &[JsonMap], known: &[&str]) -> Vec<RoutingGroup> {
 
 fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> RoutingGroupIndex {
     let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    let aliases: BTreeSet<String> = aliases.iter().map(|name| (*name).to_owned()).collect();
+    let aliases: BTreeMap<String, String> = aliases
+        .iter()
+        .map(|name| ((*name).to_owned(), (*name).to_owned()))
+        .collect();
     RoutingGroupIndex::build(groups, &known, &aliases)
         .unwrap()
         .index
@@ -188,7 +191,7 @@ fn rows_cover_every_callable_group() {
 
 fn a_shadowed_group_is_not_callable() {
     let known: BTreeSet<String> = BTreeSet::from([String::from("cheap")]);
-    let aliases = BTreeSet::new();
+    let aliases = BTreeMap::new();
     let built = RoutingGroupIndex::build(
         vec![group("cheap", &["a"], "simple-shuffle")],
         &known,
@@ -429,9 +432,16 @@ fn intersection_keeps_the_advertisement_order() {
     assert_eq!(
         intersect_supported_efforts(
             Some(&[ReasoningEffort::High, ReasoningEffort::Low]),
-            Some(&[ReasoningEffort::Low, ReasoningEffort::Max]),
+            Some(&[ReasoningEffort::Low, ReasoningEffort::High]),
         ),
-        Some(vec![ReasoningEffort::Low])
+        Some(vec![ReasoningEffort::Low, ReasoningEffort::High])
+    );
+    assert_eq!(
+        intersect_supported_efforts(
+            Some(&[ReasoningEffort::High, ReasoningEffort::None]),
+            Some(&[ReasoningEffort::None, ReasoningEffort::High]),
+        ),
+        Some(vec![ReasoningEffort::None, ReasoningEffort::High])
     );
 }
 

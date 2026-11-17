@@ -16,6 +16,7 @@ pub struct RoutingGroupIndex {
     groups: IndexMap<String, RoutingGroup>,
     model_to_group: BTreeMap<String, String>,
     shadowing: BTreeSet<String>,
+    aliases: BTreeMap<String, String>,
 }
 
 // The index plus the shadowing warnings _init_routing_groups logs.
@@ -30,12 +31,13 @@ impl RoutingGroupIndex {
     pub fn build(
         groups: Vec<RoutingGroup>,
         known_model_names: &BTreeSet<String>,
-        alias_names: &BTreeSet<String>,
+        aliases: &BTreeMap<String, String>,
     ) -> Result<Built, RoutingGroupError> {
         let mut index = Self {
             groups: IndexMap::new(),
             model_to_group: BTreeMap::new(),
-            shadowing: known_model_names.union(alias_names).cloned().collect(),
+            shadowing: aliases.keys().chain(&known_model_names).cloned().collect(),
+            aliases: aliases.clone(),
         };
         let mut warnings = Vec::new();
         for group in groups {
@@ -74,10 +76,15 @@ impl RoutingGroupIndex {
         self.groups.get(name)
     }
 
-    // _is_priority_routing_group, over the alias-resolved name the caller passes.
+    // _get_model_from_alias: a plain target rewrites the name, an absent or empty one does not.
+    fn resolved_name<'name>(&'name self, name: &'name str) -> &'name str {
+        self.aliases.get(name).map_or(name, String::as_str)
+    }
+
+    // _is_priority_routing_group: the alias target names the group, not the alias.
     #[must_use]
     pub fn is_priority_group(&self, name: &str) -> bool {
-        self.callable_group(name)
+        self.callable_group(self.resolved_name(name))
             .is_some_and(|group| matches!(group.routing_strategy, GroupStrategy::Priority))
     }
 
@@ -113,10 +120,10 @@ impl RoutingGroupIndex {
         Ok(RoutingGroups::new(routes)?)
     }
 
-    // routing_group_has_alternatives, over the alias-resolved name and each member's deployment count.
+    // routing_group_has_alternatives: the alias target names the group, and each member's deployment count.
     #[must_use]
     pub fn has_alternatives(&self, name: &str, deployments_of: &dyn Fn(&str) -> usize) -> bool {
-        let Some(group) = self.callable_group(name) else {
+        let Some(group) = self.callable_group(self.resolved_name(name)) else {
             return false;
         };
         group

@@ -58,7 +58,7 @@ pub(super) fn group_index(
             model_priorities: group.model_priorities.clone(),
         })
         .collect();
-    let built = RoutingGroupIndex::build(parsed.groups, &known, &BTreeSet::new())?;
+    let built = RoutingGroupIndex::build(parsed.groups, &known, &input.aliases)?;
     Ok((built.index, rows))
 }
 

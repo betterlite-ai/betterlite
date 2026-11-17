@@ -17,6 +17,7 @@ use crate::router_probes::random::InjectedRandom;
 pub struct Input {
     pub groups: Option<Vec<JsonMap>>,
     pub deployments: Vec<DeploymentInput>,
+    pub aliases: BTreeMap<String, String>,
     pub names: Vec<String>,
     pub cost_map: JsonMap,
     pub efforts: Vec<EffortInput>,

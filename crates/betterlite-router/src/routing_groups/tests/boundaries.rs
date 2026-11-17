@@ -44,7 +44,10 @@ fn parse_error(groups: &[JsonMap], known: &[&str]) -> String {
 
 fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> RoutingGroupIndex {
     let known: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    let aliases: BTreeSet<String> = aliases.iter().map(|name| (*name).to_owned()).collect();
+    let aliases: BTreeMap<String, String> = aliases
+        .iter()
+        .map(|name| ((*name).to_owned(), (*name).to_owned()))
+        .collect();
     RoutingGroupIndex::build(groups, &known, &aliases)
         .unwrap()
         .index
@@ -316,7 +319,7 @@ fn field_types_name_the_field_and_the_expected_shape() {
 
 fn a_priority_group_name_may_not_shadow_a_model() {
     let known: BTreeSet<String> = BTreeSet::from([String::from("tiers")]);
-    let aliases = BTreeSet::new();
+    let aliases = BTreeMap::new();
     let error =
         RoutingGroupIndex::build(vec![priority_group("tiers", &[("a", 1)])], &known, &aliases)
             .unwrap_err();
@@ -328,7 +331,7 @@ fn a_priority_group_name_may_not_shadow_a_model() {
 
 fn a_shadowing_strategy_group_warns_and_keeps_its_members() {
     let known: BTreeSet<String> = BTreeSet::from([String::from("cheap")]);
-    let aliases = BTreeSet::new();
+    let aliases = BTreeMap::new();
     let built = RoutingGroupIndex::build(
         vec![group("cheap", &["a"], "simple-shuffle")],
         &known,
@@ -361,9 +364,28 @@ fn an_alias_shadows_a_group_just_the_same() {
     assert!(!index.is_priority_group("cheap"));
 }
 
+fn an_alias_resolves_before_the_priority_and_alternatives_lookups() {
+    let mut aliases = BTreeMap::new();
+    aliases.insert(String::from("premium"), String::from("escalation"));
+    let known = BTreeSet::new();
+    let index = RoutingGroupIndex::build(
+        vec![priority_group("escalation", &[("a", 1), ("b", 2)])],
+        &known,
+        &aliases,
+    )
+    .unwrap()
+    .index;
+    assert!(index.callable_group("premium").is_none());
+    assert!(index.is_priority_group("premium"));
+    assert!(index.is_priority_group("escalation"));
+    assert!(index.has_alternatives("premium", &|_| 1));
+    assert!(!index.has_alternatives("premium", &|member| usize::from(member == "a")));
+    assert!(!index.is_priority_group("unknown"));
+}
+
 fn a_duplicate_group_in_the_index_names_the_group() {
     let known = BTreeSet::new();
-    let aliases = BTreeSet::new();
+    let aliases = BTreeMap::new();
     let error = RoutingGroupIndex::build(
         vec![
             group("cheap", &["a"], "simple-shuffle"),
@@ -582,6 +604,9 @@ fn a_kept_tier_param_keeps_its_value() {
     a_shadowing_strategy_group_warns_and_keeps_its_members
 ))]
 #[case::an_alias_shadows_a_group_just_the_same(settled(an_alias_shadows_a_group_just_the_same))]
+#[case::an_alias_resolves_before_the_priority_and_alternatives_lookups(settled(
+    an_alias_resolves_before_the_priority_and_alternatives_lookups
+))]
 #[case::a_duplicate_group_in_the_index_names_the_group(settled(
     a_duplicate_group_in_the_index_names_the_group
 ))]
