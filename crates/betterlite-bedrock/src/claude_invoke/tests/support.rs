@@ -16,7 +16,7 @@ use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_core::api::anthropic_beta_config::matrix::BetaMatrix;
+use betterlite_core::api::anthropic_beta_config::matrix::{BetaMatrix, BetaNode};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -309,6 +309,17 @@ impl Fixture {
             matrix: serde_json::from_str(BUNDLED_BETA_CONFIG).map_err(failed)?,
             defaults: OptionDefaults::default(),
         })
+    }
+
+    // The bundled bedrock matrix maps the mcp beta to null, so this keeps it to observe the header.
+    pub(super) fn keep_mcp_betas(&mut self) {
+        let Some(BetaNode::Map(bedrock)) = self.matrix.0.get_mut("bedrock") else {
+            panic!("the bundled beta matrix maps bedrock");
+        };
+        bedrock.insert(
+            "mcp-client-2025-04-04".to_owned(),
+            BetaNode::Text("mcp-client-2025-04-04".to_owned()),
+        );
     }
 
     pub(super) fn request<'request>(

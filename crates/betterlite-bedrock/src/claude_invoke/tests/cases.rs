@@ -1,6 +1,8 @@
 use std::convert::Infallible;
 
+use betterlite_anthropic::feature_flags::FeatureFlagsError;
 use betterlite_anthropic::headers::AnthropicHeaders;
+use betterlite_anthropic::params::error::ParamsError;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -8,8 +10,10 @@ use super::support::{
     Fixture, MapFetcher, Mode, RefusingFetcher, Session, at, field, headers_of, json, map_of,
     messages_of, model_cost_of, plain_body, prompt_message, response, transformed,
 };
+use crate::claude_invoke::beta::InvokeBetaError;
 use crate::claude_invoke::documents::DocumentError;
 use crate::claude_invoke::error::ClaudeInvokeError;
+use crate::claude_invoke::params::MapParamsError;
 use crate::claude_invoke::tools::ToolSearchToolsError;
 use crate::claude_invoke::{STRIPS_BILLING_METADATA, USES_ASYNC_TRANSFORM_REQUEST};
 use betterlite_prompts::media::error::MediaError;
@@ -35,6 +39,7 @@ const FORCED_COST: &str = r#"{
 }"#;
 const OUTPUT_COST: &str = r#"{
     "bedrock/claude-native": {"litellm_provider": "bedrock", "supports_native_structured_output": true},
+    "bedrock/claude-effort": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true},
     "bedrock/claude-plain": {"litellm_provider": "bedrock"}
 }"#;
 const RESPONSE_FORMAT: &str = r#"{"type": "json_schema", "json_schema": {"name": "answer", "schema": {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}}}"#;
@@ -53,6 +58,7 @@ const TOOL_SEARCH_TOOLS: &str = r#"[{"type": "tool_search_tool_regex_20251119"},
 const TOOL_SEARCH_EXPECTED: &str = r#"[{"name": "tool_search_tool_regex", "type": "tool_search_tool_regex"}, {"name": "custom_search", "type": "tool_search_tool_regex"}, {"name": null, "type": "tool_search_tool_regex", "input_schema": {"type": "object", "properties": {}}}, {"name": "get_weather", "input_schema": {"type": "object", "properties": {}}, "defer_loading": true}]"#;
 const TOOL_SEARCH_BETAS: &str =
     r#"["fine-grained-tool-streaming-2025-05-14", "tool-search-tool-2025-10-19"]"#;
+const EAGER_TOOL: &str = r#"[{"type": "computer_20250124", "name": "computer", "display_width_px": 1024, "display_height_px": 768, "eager_input_streaming": "yes"}]"#;
 const CHOICE_JSON_TOOL: &str = r#"{"type": "function", "function": {"name": "json_tool_call"}}"#;
 const CHOICE_WEATHER: &str = r#"{"type": "function", "function": {"name": "get_weather"}}"#;
 const CHOICE_STUB_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}]}"#;
@@ -205,6 +211,8 @@ pub(super) fn bedrock_beta_filter() {
     let mut session = Session::new(&fixture).expect("the session builds");
     beta_scenarios(&fixture, &mut session);
     effort_beta(&fixture, &mut session);
+    eager_tool_beta();
+    mcp_beta();
 }
 
 fn effort_beta(fixture: &Fixture, session: &mut Session<'_>) {
@@ -217,6 +225,38 @@ fn effort_beta(fixture: &Fixture, session: &mut Session<'_>) {
         AnthropicHeaders::default(),
     );
     assert_eq!(beta, Some(json(r#"["effort-2025-11-24"]"#)));
+}
+
+fn eager_tool_beta() {
+    let fixture = Fixture::new(&model_cost_of(TOOL_COST)).expect("the fixture builds");
+    let mut session = Session::new(&fixture).expect("the session builds");
+    let error = error_of(tool_body(&fixture, &mut session, json(EAGER_TOOL)));
+    assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(
+        error,
+        ClaudeInvokeError::Beta(InvokeBetaError::Features(
+            FeatureFlagsError::EagerInputStreaming
+        ))
+    ));
+}
+
+fn mcp_beta() {
+    let mut fixture = plain_fixture();
+    fixture.keep_mcp_betas();
+    let mut session = Session::new(&fixture).expect("the session builds");
+    let request = fixture.request(
+        "claude-plain",
+        prompt_message(),
+        map_of(BETA_MCP_PARAMS),
+        AnthropicHeaders::default(),
+    );
+    let fetcher = MapFetcher::default();
+    let body = transformed(&mut session, &request, &fetcher, Mode::Sync)
+        .expect("the mcp beta request transforms");
+    assert_eq!(
+        field(&body, "anthropic_beta"),
+        Some(&json(r#"["mcp-client-2025-04-04"]"#))
+    );
 }
 
 fn beta_scenarios(fixture: &Fixture, session: &mut Session<'_>) {
@@ -310,8 +350,9 @@ fn tool_search_cases(fixture: &Fixture, session: &mut Session<'_>) {
     assert_eq!(field(&empty, "tools"), Some(&json("[]")));
     match tool_body(fixture, session, json("[42]")) {
         Ok(_body) => panic!("the malformed tools entry must fail the request"),
-        Err(ClaudeInvokeError::Tools(ToolSearchToolsError::NotObject { index })) => {
-            assert_eq!(index, 0);
+        Err(ClaudeInvokeError::Tools(error)) => {
+            assert_eq!(error, ToolSearchToolsError::NotObject { index: 0 });
+            assert_eq!(error.status_code(), 400);
         }
         Err(other) => panic!("unexpected error: {other}"),
     }
@@ -390,6 +431,32 @@ fn text_document_inlined(fixture: &Fixture, session: &mut Session<'_>) {
         ))
     );
     assert_eq!(fetcher.calls(), vec!["https://example.test/doc.pdf"]);
+    data_url_fetched(fixture, session);
+}
+
+fn data_url_fetched(fixture: &Fixture, session: &mut Session<'_>) {
+    let fetched = MapFetcher::new(&[("data:text/plain,plain", "data:application/pdf;base64,U0VN")]);
+    let plain = document_bodies(1, |_| "data:text/plain,plain".to_owned());
+    let body = plain_body(fixture, session, plain, &fetched, Mode::Sync)
+        .expect("the non-base64 data URL is fetched");
+    assert_eq!(
+        body,
+        json(
+            r#"{"anthropic_version": "bedrock-2023-05-31", "max_tokens": 64, "messages": [{"content": [{"source": {"data": "U0VN", "media_type": "application/pdf", "type": "base64"}, "type": "document"}], "role": "user"}]}"#,
+        )
+    );
+    assert_eq!(fetched.calls(), vec!["data:text/plain,plain"]);
+    let quiet = MapFetcher::default();
+    let inline = document_bodies(1, |_| "data:application/pdf;base64,QUJD".to_owned());
+    let unchanged = plain_body(fixture, session, inline, &quiet, Mode::Sync)
+        .expect("the base64 data URL passes through");
+    assert_eq!(
+        unchanged,
+        json(
+            r#"{"anthropic_version": "bedrock-2023-05-31", "max_tokens": 64, "messages": [{"content": [{"source": {"data": "QUJD", "media_type": "application/pdf", "type": "base64"}, "type": "document"}], "role": "user"}]}"#,
+        )
+    );
+    assert!(quiet.calls().is_empty());
 }
 
 pub(super) fn claude_response_usage() {
@@ -429,6 +496,8 @@ pub(super) fn response_format_tool_stub() {
     structured_mapping(&mut session);
     display_update_params(&mut session);
     supported_param_list(&mut session);
+    parameter_error_status(&mut session);
+    pre_mapped_thinking(&mut session);
 }
 
 fn structured_mapping(session: &mut Session<'_>) {
@@ -490,6 +559,43 @@ fn supported_param_list(session: &mut Session<'_>) {
             "thinking",
             "reasoning_effort",
         ]
+    );
+}
+
+fn parameter_error_status(session: &mut Session<'_>) {
+    let mut optional_params = IndexMap::new();
+    let error = session
+        .map_params(
+            "claude-test",
+            false,
+            &map_of(r#"{"max_tokens": "many"}"#),
+            &mut optional_params,
+        )
+        .expect_err("a text max_tokens must fail the mapping");
+    assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(
+        error,
+        MapParamsError::Params(ParamsError::NotNumber {
+            field: "max_tokens"
+        })
+    ));
+}
+
+fn pre_mapped_thinking(session: &mut Session<'_>) {
+    let mut optional_params = IndexMap::new();
+    optional_params.insert(
+        "thinking".to_owned(),
+        json(r#"{"type": "enabled", "budget_tokens": 1024, "display": "summarized"}"#),
+    );
+    let mapped = map_params_of(
+        session,
+        "claude-test",
+        &structured_params(RESPONSE_FORMAT),
+        optional_params,
+    );
+    assert_eq!(
+        field(&mapped, "thinking"),
+        Some(&json(r#"{"type": "adaptive", "display": "summarized"}"#))
     );
 }
 
@@ -707,6 +813,17 @@ fn unsupported_output_config(fixture: &Fixture, session: &mut Session<'_>) {
         json(inlined),
         json(r#"{"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}"#)
     );
+    let kept = model_body(
+        fixture,
+        session,
+        "claude-effort",
+        prompt_message(),
+        map_of(r#"{"max_tokens": 64, "output_config": {"effort": "high"}}"#),
+    );
+    assert_eq!(
+        field(&kept, "output_config"),
+        Some(&json(r#"{"effort": "high"}"#))
+    );
 }
 
 fn document_bodies<Url>(count: usize, url: Url) -> Vec<Json>
@@ -745,8 +862,10 @@ pub(super) fn remote_url_limit() {
         &fetcher,
         Mode::Sync,
     );
+    let error = error_of(over);
+    assert_eq!(error.status_code(), Some(400));
     assert!(matches!(
-        error_of(over),
+        error,
         ClaudeInvokeError::Documents(DocumentError::Media(MediaError::TooManyRemoteUrls {
             limit: MAX_REMOTE_URLS,
         }))
