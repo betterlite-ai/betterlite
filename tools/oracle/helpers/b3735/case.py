@@ -12,14 +12,16 @@ from typing import (
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.types.llms.openai import (
     ErrorEvent,
-    FunctionCallArgumentsDeltaEvent as ArgsDeltaEvent,
     OutputTextDeltaEvent,
     ReasoningSummaryTextDeltaEvent,
     ResponseCompletedEvent,
     ResponseCreatedEvent,
 )
+from litellm.types.llms.openai import (
+    FunctionCallArgumentsDeltaEvent as ArgsDeltaEvent,
+)
 from litellm.types.utils import ModelResponseStream
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 RESPONSE_KEY: Final = "_model_armor_response"
 STATUS_KEY: Final = "_model_armor_status"
@@ -90,6 +92,14 @@ class StartMessage(TypedDict):
     id: str
 
 
+class ModelResponseData(TypedDict, total=False):
+    text: str | None
+
+
+class ScanBody(TypedDict, total=False):
+    modelResponseData: ModelResponseData
+
+
 class FrameDelta(TypedDict):
     type: NotRequired[str]
     text: NotRequired[str]
@@ -127,6 +137,8 @@ class UnknownEventError(Exception):
     pass
 
 
+ITEMS: Final[TypeAdapter[OutputItem]] = TypeAdapter(OutputItem)
+SCAN: Final[TypeAdapter[ScanBody]] = TypeAdapter(ScanBody)
 CHAT_IN: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 CREATED: Final[TypeAdapter[ResponseCreatedEvent]] = TypeAdapter(ResponseCreatedEvent)
 COMPLETED: Final[TypeAdapter[ResponseCompletedEvent]] = TypeAdapter(ResponseCompletedEvent)
@@ -253,17 +265,16 @@ def frame_view(frame: str) -> JsonValue:
 
 
 def project(item: OutputItem) -> JsonValue:
-    match item:
-        case ModelResponseStream():
-            return chat_view(CHAT_OUT.validate_json(item.model_dump_json()))
+    payload = JSON.validate_json(ITEMS.dump_json(item))
+    match payload:
         case str():
-            return frame_view(item)
-        case bytes():
-            return frame_view(item.decode("utf-8"))
-        case ErrorEvent():
-            return error_view(ERROR_OUT.validate_json(item.model_dump_json()))
-        case BaseModel():
-            return event_view(EVENT_OUT.validate_json(item.model_dump_json()))
+            return frame_view(payload)
+        case {"type": "error"}:
+            return error_view(ERROR_OUT.validate_python(payload))
+        case {"type": str(kind)} if kind.startswith("response."):
+            return event_view(EVENT_OUT.validate_python(payload))
+        case None | bool() | int() | float() | list() | dict():
+            return chat_view(CHAT_OUT.validate_python(payload))
 
 
 def metadata_view(request_data: dict[str, JsonValue]) -> JsonValue:

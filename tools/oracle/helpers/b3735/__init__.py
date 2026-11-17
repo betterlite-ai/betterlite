@@ -9,10 +9,9 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.model_armor.model_armor import (
     ModelArmorGuardrail,
 )
-from litellm.types.guardrails import GuardrailEventHooks
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
-from b3735.case import JSON, Hook, Input, build_items, feed, metadata_view, project
+from b3735.case import SCAN, Hook, Input, build_items, feed, metadata_view, project
 
 GUARDRAIL_NAME: Final = "model-armor"
 TEMPLATE_ID: Final = "t"
@@ -46,12 +45,11 @@ class Recorder(httpx.MockTransport):
 def scanned(recorder: Recorder) -> JsonValue:
     if not recorder.requests:
         return None
-    body = JSON.validate_json(recorder.requests[0].content)
-    match body:
-        case {"modelResponseData": {"text": text}}:
-            return text
-        case None | bool() | int() | float() | str() | list() | dict():
-            return None
+    body = SCAN.validate_json(recorder.requests[0].content)
+    data = body.get("modelResponseData")
+    if data is None:
+        return None
+    return data.get("text")
 
 
 async def run_case(hook: Hook, recorder: Recorder, request: Input) -> JsonValue:
@@ -64,8 +62,7 @@ async def run_case(hook: Hook, recorder: Recorder, request: Input) -> JsonValue:
         UserAPIKeyAuth(), feed(items), request_data
     )
     async with aclosing(streamed) as stream:
-        async for item in stream:
-            chunks.append(project(item))
+        chunks.extend([project(item) async for item in stream])
     return {
         "items": chunks,
         "scanned": scanned(recorder),
@@ -82,7 +79,6 @@ def build_guardrail(request: Input, recorder: Recorder) -> ModelArmorGuardrail:
         async_handler=AsyncHTTPHandler(transport=recorder),
         sanitize_error_detail=request["sanitize_error_detail"],
         guardrail_name=GUARDRAIL_NAME,
-        event_hook=[GuardrailEventHooks.post_call],
         mask_response_content=request["mask_response_content"],
         fail_on_error=request["fail_on_error"],
     )
