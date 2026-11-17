@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 use std::sync::Mutex;
@@ -152,14 +153,14 @@ fn widened(hook: Option<LitellmParamsMode>) -> Option<LitellmParamsMode> {
 }
 
 fn recognizers(path: Option<&str>) -> Result<Option<Vec<GuardrailValue>>, PresidioRuntimeError> {
-    let Some(path) = path else {
+    let Some(file) = path else {
         return Ok(None);
     };
-    let text = std::fs::read_to_string(path).map_err(|source| read_error(path, source))?;
+    let text = fs::read_to_string(file).map_err(|source| read_error(file, source))?;
     // A JSON null reads as no recognizers, which LiteLLM leaves out of the analyze payload
     serde_json::from_str::<Option<Vec<GuardrailValue>>>(&text).map_err(|source| {
         PresidioRuntimeError::Decode {
-            path: path.to_owned(),
+            path: file.to_owned(),
             source,
         }
     })

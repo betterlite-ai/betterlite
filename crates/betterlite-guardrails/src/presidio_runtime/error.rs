@@ -1,4 +1,3 @@
-use std::error::Error as StdError;
 use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 
@@ -8,7 +7,8 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::presidio_actions::error::PresidioActionsError;
 use crate::presidio_analysis::error::PresidioAnalysisError;
 use crate::presidio_response::error::PresidioResponseError;
-use crate::presidio_streams::error::PresidioStreamError;
+
+pub(super) const INTERNAL_STATUS: u16 = 500;
 
 #[derive(Debug, Error)]
 pub enum PresidioRuntimeError {
@@ -48,6 +48,10 @@ pub enum PresidioRuntimeError {
     Response(#[from] PresidioResponseError),
 }
 
+const fn http_failure(status: u16, detail: String) -> GuardrailFailure {
+    GuardrailFailure::Http { status, detail }
+}
+
 impl From<PresidioActionsError> for GuardrailFailure {
     fn from(error: PresidioActionsError) -> Self {
         // LiteLLM's exception message prints None for a guardrail without a name, so an empty name stays None
@@ -73,27 +77,23 @@ impl From<PresidioActionsError> for GuardrailFailure {
                 status_code: 400,
                 blocked_content: false,
             },
-            other => {
-                let status = other.status();
-                Self::Http {
-                    status,
-                    detail: other.to_string(),
-                }
-            }
-        }
-    }
-}
-
-impl From<PresidioResponseError> for GuardrailFailure {
-    fn from(error: PresidioResponseError) -> Self {
-        match error {
-            PresidioResponseError::Actions(actions) => actions.into(),
-            other => {
-                let status = other.status();
-                Self::Http {
-                    status,
-                    detail: other.to_string(),
-                }
+            other @ (PresidioActionsError::MissingAnalyzerApiBase
+            | PresidioActionsError::MissingAnonymizerApiBase
+            | PresidioActionsError::MetadataNotObject { .. }
+            | PresidioActionsError::PiiTokensNotObject { .. }
+            | PresidioActionsError::GuardrailConfigNotObject { .. }
+            | PresidioActionsError::GuardrailConfigField { .. }
+            | PresidioActionsError::AnonymizerRequest { .. }
+            | PresidioActionsError::ResponseTooLarge { .. }
+            | PresidioActionsError::AnonymizerHttpStatus { .. }
+            | PresidioActionsError::AnonymizerContentType { .. }
+            | PresidioActionsError::AnonymizerResponseJson { .. }
+            | PresidioActionsError::MissingSpan { .. }
+            | PresidioActionsError::SpanOutOfBounds { .. }
+            | PresidioActionsError::MissingEntityType
+            | PresidioActionsError::Analysis { .. }
+            | PresidioActionsError::Serialize { .. }) => {
+                http_failure(other.status(), other.to_string())
             }
         }
     }
@@ -102,28 +102,17 @@ impl From<PresidioResponseError> for GuardrailFailure {
 impl From<PresidioRuntimeError> for GuardrailFailure {
     fn from(error: PresidioRuntimeError) -> Self {
         match error {
-            PresidioRuntimeError::Actions(actions) => actions.into(),
-            PresidioRuntimeError::Response(response) => response.into(),
-            other => Self::Http {
-                status: 500,
+            other @ (PresidioRuntimeError::FileNotFound { .. }
+            | PresidioRuntimeError::Decode { .. }
+            | PresidioRuntimeError::Read { .. }
+            | PresidioRuntimeError::Timeout { .. }
+            | PresidioRuntimeError::MockRedactedText { .. }
+            | PresidioRuntimeError::Data { .. }) => Self::Http {
+                status: INTERNAL_STATUS,
                 detail: other.to_string(),
             },
-        }
-    }
-}
-
-impl<Failure> From<PresidioStreamError<Failure>> for GuardrailFailure
-where
-    Failure: StdError + 'static,
-{
-    fn from(error: PresidioStreamError<Failure>) -> Self {
-        match error {
-            PresidioStreamError::Actions(actions) => actions.into(),
-            PresidioStreamError::Response(response) => response.into(),
-            other => Self::Http {
-                status: 500,
-                detail: other.to_string(),
-            },
+            PresidioRuntimeError::Actions(actions) => Self::from(actions),
+            PresidioRuntimeError::Response(response) => Self::from(response),
         }
     }
 }

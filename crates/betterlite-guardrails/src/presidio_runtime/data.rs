@@ -10,11 +10,9 @@ use crate::presidio_runtime::error::PresidioRuntimeError;
 pub(super) fn to_request_data(
     data: &BTreeMap<String, GuardrailValue>,
 ) -> Result<RequestData, PresidioRuntimeError> {
-    let mut request = RequestData::with_capacity(data.len());
-    for (key, value) in data {
-        request.insert(key.clone(), to_raw_value(value)?);
-    }
-    Ok(request)
+    data.iter()
+        .map(|(key, value)| Ok((key.clone(), to_raw_value(value)?)))
+        .collect()
 }
 
 pub(super) fn store_request_data(
