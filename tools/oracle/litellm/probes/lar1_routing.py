@@ -24,12 +24,12 @@ class Deployment(Strict):
 
 class ReturnedInfo(Strict):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
-    id: str | None = None
+    id: str
 
 
 class Returned(Strict):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
-    model_info: ReturnedInfo = ReturnedInfo()
+    model_info: ReturnedInfo
 
 
 class Selected(Strict):
@@ -41,9 +41,10 @@ class RouterView(Protocol):
     async def async_get_available_deployment(
         self,
         model: str,
+        *,
         request_kwargs: dict[str, object],
         specific_deployment: bool,
-    ) -> object: ...
+    ) -> dict[str, JsonValue] | None: ...
 
 
 def model_list_entry(group: str, deployment: Deployment) -> dict[str, object]:
@@ -68,7 +69,9 @@ class Lar1Routing(Operation):
         return asyncio.run(self.execute())
 
     async def execute(self) -> Selected:
-        args = {} if self.routing_strategy_args is None else Args.validate_json(self.routing_strategy_args)
+        args: dict[str, JsonValue] = (
+            {} if self.routing_strategy_args is None else Args.validate_json(self.routing_strategy_args)
+        )
         entries = [model_list_entry(self.group, deployment) for deployment in self.deployments]
         try:
             router = Router(model_list=entries, routing_strategy="lar1", routing_strategy_args=args)
@@ -82,7 +85,7 @@ class Lar1Routing(Operation):
             lar1 = Value.validate_json(self.metadata + " " * self.padding_bytes)
             request_kwargs["metadata"] = {"lar1": lar1}
         deployment = await router.async_get_available_deployment(
-            model=self.model,
+            self.model,
             request_kwargs=request_kwargs,
             specific_deployment=self.specific_deployment,
         )
