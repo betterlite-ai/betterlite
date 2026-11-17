@@ -19,6 +19,7 @@ from probes.tag_matchers import Collector
 
 EMPTY_DOCUMENT: Final = "[]"
 INFO: Final = TypeAdapter(JsonValue)
+RULE_LIST: Final = TypeAdapter(list[JsonValue])
 
 MatchRouting = Callable[[str], str | None]
 MatchInfo = Callable[[str], object]
@@ -134,10 +135,9 @@ def parse_rules(payload: ParsePayload) -> ValidParse:
     if payload.bytes < len(EMPTY_DOCUMENT):
         raise ProbeError("invalid_request", "the parse payload is shorter than an empty rule list")
     document = EMPTY_DOCUMENT + " " * (payload.bytes - len(EMPTY_DOCUMENT))
-    parsed = INFO.validate_json(document)
-    rules = parsed if isinstance(parsed, list) else None
+    rules = RULE_LIST.validate_json(document)
     SET_RULES(rules)
-    return ValidParse(rules=0 if rules is None else len(rules))
+    return ValidParse(rules=len(rules))
 
 
 class ModelGeneralizations(Operation):

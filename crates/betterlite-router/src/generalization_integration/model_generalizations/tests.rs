@@ -60,15 +60,23 @@ where
     format!("{answer} {warnings}")
 }
 
+fn json_text<T>(value: &T) -> String
+where
+    T: Serialize,
+{
+    serde_json::to_string(value).unwrap()
+}
+
 fn rendered(service: &mut ModelGeneralizations, probe: Probe) -> String {
     match probe {
         Probe::Routing(model) => {
-            let found = service.routing(model);
-            format!("route {model} {}", found_text(&found))
+            format!("route {model} {}", found_text(&service.routing(model)))
         }
         Probe::Capabilities(model) => {
-            let found = service.capabilities(model);
-            format!("capabilities {model} {}", found_text(&found))
+            format!(
+                "capabilities {model} {}",
+                found_text(&service.capabilities(model))
+            )
         }
         Probe::FillMissing(model, provider) => {
             let found = service.fill_missing(model, provider);
@@ -86,19 +94,12 @@ fn rendered(service: &mut ModelGeneralizations, probe: Probe) -> String {
             Err(GeneralizationError::Rules(_)) => String::from("reload other-rules"),
             Err(GeneralizationError::Json { .. }) => String::from("reload json"),
         },
-        Probe::Warnings => {
-            let warnings = serde_json::to_string(&service.warnings).unwrap();
-            format!("warnings {warnings}")
-        }
-        Probe::EngineWarnings => {
-            let warnings = serde_json::to_string(&service.engine_warnings).unwrap();
-            format!("engine {warnings}")
-        }
+        Probe::Warnings => format!("warnings {}", json_text(&service.warnings)),
+        Probe::EngineWarnings => format!("engine {}", json_text(&service.engine_warnings)),
         Probe::FillAbsent(exact, proposed) => {
             let mut exact_info = info(exact);
             fill_absent(&mut exact_info, info(proposed));
-            let filled = serde_json::to_string(&exact_info).unwrap();
-            format!("fill-absent {filled}")
+            format!("fill-absent {}", json_text(&exact_info))
         }
     }
 }
@@ -343,45 +344,48 @@ fn slow_warning() -> String {
     String::from(r#"{"kind":"match_limit_exceeded","pattern":"(?i)(a|b|ab)*(?>c)"}"#)
 }
 
+fn install_error(error: &GeneralizationError) -> String {
+    match error {
+        GeneralizationError::Rules(ModelsError::RulesTooLarge { size }) => {
+            format!("install too-large {size}")
+        }
+        GeneralizationError::Rules(ModelsError::RulesJson { .. }) => {
+            String::from("install rules-json")
+        }
+        GeneralizationError::Rules(_) => String::from("install other-rules"),
+        GeneralizationError::Json { .. } => String::from("install json"),
+    }
+}
+
 fn boundary_line(
     installed: &Result<ModelGeneralizations, GeneralizationError>,
     probe: Boundary,
 ) -> String {
-    match (probe, installed) {
-        (Boundary::Outcome, Ok(_)) => String::from("install ok"),
-        (
-            Boundary::Outcome,
-            Err(GeneralizationError::Rules(ModelsError::RulesTooLarge { size })),
-        ) => {
-            format!("install too-large {size}")
-        }
-        (Boundary::Outcome, Err(GeneralizationError::Rules(ModelsError::RulesJson { .. }))) => {
-            String::from("install rules-json")
-        }
-        (Boundary::Outcome, Err(GeneralizationError::Rules(_))) => {
-            String::from("install other-rules")
-        }
-        (Boundary::Outcome, Err(GeneralizationError::Json { .. })) => String::from("install json"),
-        (Boundary::Warnings, Ok(service)) => {
-            let warnings = serde_json::to_string(&service.warnings).unwrap();
-            format!("warnings {warnings}")
-        }
-        (Boundary::Warnings, Err(_)) => String::from("warnings none"),
-        (Boundary::Routing(model), Ok(service)) => {
-            let found = service.routing(model);
-            format!("route {model} {}", found_text(&found))
-        }
-        (Boundary::Routing(_), Err(_)) => String::from("route not-installed"),
-        (Boundary::Capabilities(model), Ok(service)) => {
-            let found = service.capabilities(model);
-            format!("capabilities {model} {}", found_text(&found))
-        }
-        (Boundary::Capabilities(_), Err(_)) => String::from("capabilities not-installed"),
-        (Boundary::FillMissing(model, provider), Ok(service)) => {
-            let found = service.fill_missing(model, provider);
-            format!("fill {model}/{provider} {}", found_text(&found))
-        }
-        (Boundary::FillMissing(..), Err(_)) => String::from("fill not-installed"),
+    match installed {
+        Err(error) => match probe {
+            Boundary::Outcome => install_error(error),
+            Boundary::Warnings => String::from("warnings none"),
+            Boundary::Routing(_) => String::from("route not-installed"),
+            Boundary::Capabilities(_) => String::from("capabilities not-installed"),
+            Boundary::FillMissing(..) => String::from("fill not-installed"),
+        },
+        Ok(service) => match probe {
+            Boundary::Outcome => String::from("install ok"),
+            Boundary::Warnings => format!("warnings {}", json_text(&service.warnings)),
+            Boundary::Routing(model) => {
+                format!("route {model} {}", found_text(&service.routing(model)))
+            }
+            Boundary::Capabilities(model) => {
+                format!(
+                    "capabilities {model} {}",
+                    found_text(&service.capabilities(model))
+                )
+            }
+            Boundary::FillMissing(model, provider) => {
+                let found = service.fill_missing(model, provider);
+                format!("fill {model}/{provider} {}", found_text(&found))
+            }
+        },
     }
 }
 
