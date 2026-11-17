@@ -181,13 +181,10 @@ impl Session<'_> {
         &mut self,
         request: &Request<'_>,
     ) -> Result<Processed, ToolsAndBetaError> {
-        let tools: Vec<Json> =
-            serde_json::from_str(request.tools).expect("the fixture tools parse");
-        let headers: Option<BTreeMap<String, BetaHeader>> = request
-            .headers
-            .map(|source| serde_json::from_str(source).expect("the fixture headers parse"));
-        let mut params: IndexMap<String, Json> =
-            serde_json::from_str(request.params).expect("the fixture params parse");
+        let tools: Vec<Json> = serde_json::from_str(request.tools)?;
+        let headers: Option<BTreeMap<String, BetaHeader>> =
+            request.headers.map(serde_json::from_str).transpose()?;
+        let mut params: IndexMap<String, Json> = serde_json::from_str(request.params)?;
         let catalogs = self.fixture.catalogs();
         let mut environment =
             self.fixture
