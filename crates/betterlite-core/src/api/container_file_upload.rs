@@ -85,15 +85,17 @@ where
 {
     let caller = caller_defaults(request);
     let adapter = BlockingAsAsync { executor };
-    match poll_once(aupload_container_file(&adapter, deps, request)) {
-        Some(outcome) => outcome,
+    poll_once(aupload_container_file(&adapter, deps, request)).map_or_else(
         // the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
-        None => Err(error::failure(
-            ContainerFileUploadError::Suspended,
-            caller.provider,
-            deps.redactor,
-        )),
-    }
+        || {
+            Err(error::failure(
+                ContainerFileUploadError::Suspended,
+                caller.provider,
+                deps.redactor,
+            ))
+        },
+        |outcome| outcome,
+    )
 }
 
 // aupload_container_file: the mock, the named credentials, the managed id, the logging update, then the awaited handler

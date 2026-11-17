@@ -193,6 +193,7 @@ fn log_call(
             additional_params,
         },
     )?;
-    state.call_type = CALL_TYPE.to_owned();
+    CALL_TYPE.clone_into(&mut state.call_type);
+    drop(state);
     Ok(())
 }
