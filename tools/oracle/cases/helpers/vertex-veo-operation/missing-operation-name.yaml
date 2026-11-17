@@ -1,0 +1,21 @@
+kind: helper
+name: missing-operation-name
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: vertex_ai
+        request_data: null
+        response: {done: false}
+calls:
+  - vertex_veo_operation:
+      default_duration_seconds: 8
+      calls:
+        - function: edit_response
+          provider: vertex_ai
+          request_data: null
+          response: {name: ''}
+env: {}
+compare: {ignore: []}

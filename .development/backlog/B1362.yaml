@@ -1,7 +1,7 @@
 id: B1362
 milestone: M3 providers
 title: Vertex Veo operation results, content and usage defaults
-status: todo
+status: done
 depends_on: [B1361, B1306, B1301, B002, B525, B672, B171]
 file: tasks/B1362-vertex-veo-operations.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/constants.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2191

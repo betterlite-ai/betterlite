@@ -1,0 +1,30 @@
+task: B8330
+deviations:
+  - what: The twelve data-cloud cases are helper cases, so they call the dispatch module directly.
+    why: No proxy route reaches databricks, snowflake or oci yet; the provider slugs belong to B2230, so an HTTP case has no betterlite entry point. Both sides record the prepared request and the mapped error status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5145-L5300
+  - what: The Databricks OAuth M2M token POST goes through the dispatch transport instead of a Python requests.post.
+    why: LiteLLM's DatabricksBase calls requests.post directly. betterlite posts through the same transport the provider calls use, with the same URL, Basic authorization, form body and 30 second timeout, and maps a failure to the same status and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L209-L258
+  - what: The chat arms write the post_call stream record with a null original_response.
+    why: LiteLLM passes the returned iterator as original_response. A null keeps the hook firing, which is what a logging callback observes, without rendering a stream object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5300-L5340
+  - what: The OCI stream helper compares the request URL and the prepared headers, not the decoded events or the signature headers.
+    why: The signature covers the request body and a timestamp, and the body and event transforms belong to B5843. Signing and its header values stay with the provider transform that this arm hands the request to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py
+  - what: The chat cases compare the request URL and the headers both sides prepare, not the request body.
+    why: The databricks, snowflake and oci request bodies are built by B5841, B5844 and B5843 after the arm resolves its values. The arm owns the resolution order, the base URL choice and the headers, and those are what the cases compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py
+  - what: The embedding cases compare the request URL, the headers and the body, not the reply.
+    why: The embedding reply transforms belong to B5980, B5844 and B5941, and the arm only hands the upstream answer to them; the request it prepares is what this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6556-L6657
+  - what: The dispatch arms take one path for the sync and async completions.
+    why: LiteLLM's acompletion resolves the same values and calls the same base handler in an async task. The resolution order, the values and the logged record are the same, so a second copy would only repeat them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5800-L5900
+  - what: The embedding arms do not run the pre_call and post_call logging themselves.
+    why: The generic embedding handler owns the pre_call record for every provider, and the arm returns the reply to it. Running the hooks here would log each embedding twice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py
+  - what: The snowflake embedding exception converts its reply headers with betterlite-openai's reply_headers, the function its container client already uses for the same httpx.Headers to mapping conversion.
+    why: LiteLLM hands get_error_class a dict built from httpx.Headers, and that object lower-cases names, comma-joins repeats and decodes each value as UTF-8 with a Latin-1 fallback. reply_headers does all three. Both alternatives in this crate fall short, since model_hub_dispatch::hub::headers_from drops a value that is not UTF-8 and lets its collect overwrite a repeated name, and a loop written in the arm had the same two faults. A 429 whose retry-after repeats or carries Latin-1 bytes keeps it only through reply_headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6090-L6109
+kept_bugs: []

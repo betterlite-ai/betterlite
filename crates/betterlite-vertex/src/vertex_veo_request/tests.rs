@@ -834,6 +834,7 @@ fn complete_url_prefers_the_params_alias_over_the_settings() {
         location: None,
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     let aliased = VertexParams {
         project: None,

@@ -1,0 +1,70 @@
+kind: helper
+name: foundry-agent-results-run-terminal-stream
+call:
+  foundry_agent_results:
+    streams:
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          event: thread.created
+          data: {"id": "thread_1"}
+
+          event: thread.message.delta
+          data: {"delta":{"content":[{"type":"text","text":{"value":"Hi"}}]}}
+
+          event: thread.message.completed
+          data: {"content":[{"type":"text","text":{"value":"","annotations":[{"type":"url_citation","start_index":1,"url_citation":{"url":"https://a"}}]}}]}
+
+          event: run.failed
+          data: {"error": "boom"}
+
+          event: thread.message.completed
+          data: {"content":[{"type":"text","text":{"annotations":[{"type":"url_citation","start_index":1,"url_citation":{"url":"https://a"}}]}}]}
+
+          data: [DONE]
+
+          data: {"delta":{"content":[{"type":"text","text":{"value":"after"}}]}}
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          event: thread.created
+          data: {"id": "thread_2"}
+
+          event: thread.created
+          data: {"note": "no id"}
+
+          event: thread.message.delta
+          data: {"delta":{"content":[{"type":"text","text":{"value":"c"}}]}}
+
+          event: thread.created
+          data: {"id": null}
+
+          event: thread.message.delta
+          data: {"delta":{"content":[{"type":"text","text":{"value":"d"}}]}}
+
+          data: [DONE]
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          event: thread.message.delta
+          data: {"delta":{"content":[{"type":"text","text":{"value":"only"}}]}}
+      - model: azure_ai/agents/a
+        id: chatcmpl-00000000
+        created: 1700000000
+        split: null
+        body: |
+          event: thread.message.completed
+          data: {"content":[{"type":"image_url"},{"type":"text","text":{"value":"no annotations"}},{"type":"text"}]}
+
+          event: thread.message.completed
+          data: {"content":[]}
+
+          data: [DONE]
+env: {}
+compare: {ignore: []}

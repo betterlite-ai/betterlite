@@ -33,6 +33,7 @@ fn settings(project: Option<&str>, location: Option<&str>) -> VertexSettings {
         location: location.map(str::to_owned),
         credentials: None,
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     }
 }
 
