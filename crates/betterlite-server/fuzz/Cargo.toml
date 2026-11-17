@@ -227,3 +227,10 @@ path = "fuzz_targets/guardrail_write_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "blocked_words_file"
+path = "fuzz_targets/blocked_words_file.rs"
+test = false
+doc = false
+bench = false

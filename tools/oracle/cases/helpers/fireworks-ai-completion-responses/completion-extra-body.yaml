@@ -1,0 +1,62 @@
+kind: helper
+name: fireworks-ai-completion-extra-body
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          temperature: 0.5
+          extra_body: {truncate_prompt_tokens: 42, prompt_truncate_len: 9, stop_token_ids: [1, 2], nvext: true, custom: {kept: true}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {truncate_prompt_tokens: null, custom: "kept"}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: "not-a-map", temperature: 0.1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {}, temperature: 0.1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          response_format: {type: json_object}
+          reasoning_effort: "low"
+          thinking: {type: enabled}
+          extra_body: {response_format: "old", thinking: null, kept: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          response_format: null
+          reasoning_effort: null
+          thinking: null
+          extra_body: {response_format: "kept", reasoning_effort: "kept", thinking: "kept"}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {response_format: {type: json_object}, extra_body: {}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {response_format: null}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {chat_template_kwargs: {foo: 1}, custom: "kept"}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {chat_template_kwargs: "not-a-map", custom: "kept"}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {chat_template_kwargs: null, custom: "kept"}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          reasoning_effort: "high"
+          extra_body: {chat_template_kwargs: {low_effort: true}, custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {thinking: {type: enabled}, chat_template_kwargs: {low_effort: true}, custom: 1}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {reasoning_effort: null, extra_body: {chat_template_kwargs: {low_effort: true}}}
+env: {}
+compare: {ignore: []}
