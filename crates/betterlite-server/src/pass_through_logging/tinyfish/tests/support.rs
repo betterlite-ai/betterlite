@@ -239,7 +239,12 @@ pub(super) fn outcome_text(outcome: &HandlerOutcome) -> String {
     match outcome.result.as_ref() {
         Some(PassThroughResponse::Standard(response)) => match &response.response {
             Json::Text(text) => text.clone(),
-            other => panic!("the standard response carries a text: {other:?}"),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                panic!(
+                    "the standard response carries a text: {:?}",
+                    response.response
+                )
+            }
         },
         other => panic!("the outcome carries a standard response: {other:?}"),
     }
