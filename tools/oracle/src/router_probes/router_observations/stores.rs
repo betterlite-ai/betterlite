@@ -32,6 +32,7 @@ impl CounterSink for ProbeCounters {
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         let counter = values.entry(key.to_owned()).or_insert(0);
         *counter = counter.saturating_add(value);
+        drop(values);
         Ok(())
     }
 
@@ -110,7 +111,7 @@ impl ProbeCooldowns {
         active
             .get(deployment_id)
             .copied()
-            .filter(|seconds| seconds.0 > 0.0)
+            .filter(|seconds| seconds.0 > 0.0_f64)
     }
 }
 

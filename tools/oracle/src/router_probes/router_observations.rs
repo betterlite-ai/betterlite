@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::Path;
+use std::process;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -226,12 +230,12 @@ fn run_steps(payload: &Payload) -> Result<ProbeOutput, OperationError> {
 }
 
 fn dump_diagnostic(name: &str, body: &str) {
-    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(".git/betterlite/B397/gate");
-    let _created = std::fs::create_dir_all(&directory);
-    let path = directory.join(format!("b397-{name}-{}.txt", std::process::id()));
-    let _written = std::fs::write(path, body);
+    let _created = fs::create_dir_all(&directory);
+    let path = directory.join(format!("b397-{name}-{}.txt", process::id()));
+    let _written = fs::write(path, body);
 }
 
 fn group_id(target_id: &str, index: u32) -> String {

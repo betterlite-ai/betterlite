@@ -169,8 +169,6 @@ pub(super) fn failure_facts(failure: &FailureInput) -> FailureFacts {
 }
 
 pub(super) fn retry_after(failure: &FailureInput) -> Option<RetryAfter> {
-    failure
-        .retry_after
-        .as_deref()
-        .and_then(|value| parse_retry_after(value.as_bytes()).ok())
+    let value = failure.retry_after.as_deref()?;
+    parse_retry_after(value.as_bytes()).ok()
 }

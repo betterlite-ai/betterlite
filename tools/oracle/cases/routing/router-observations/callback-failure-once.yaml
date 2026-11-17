@@ -11,11 +11,37 @@ probes:
         model: openai/gpt-4o
         target_id: dep-1
         group_size: 2
+      router: {disable_cooldowns: true}
+      steps:
+      - {kind: failure, failure: {class: rate_limit, status: 429}}
+      - {kind: failure, failure: {class: bad_request, status: 400}}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
         limits: {params_tpm: 1000, params_rpm: 100}
       steps:
       - {kind: failure, failure: {class: rate_limit, status: 429, advisor_orchestration: true}}
       - {kind: failure, failure: {class: not_found, status: 404, background_response_cost_poll: true}}
       - {kind: failure, failure: {class: internal_server, status: 500, background_response_cost_poll: true}}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+        limits: {params_tpm: 1000, params_rpm: 100}
+      steps:
       - kind: failure
         failure:
           class: timeout
@@ -26,6 +52,18 @@ probes:
           class: timeout
           status: 408
           caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: 4.0}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+        limits: {params_tpm: 1000, params_rpm: 100}
+      steps:
       - {kind: failure, failure: {class: rate_limit, status: 429}}
       - {kind: failure, failure: {class: rate_limit, status: 429, retry_after: "7"}}
       - {kind: failure, failure: {class: not_found, status: 404}}
@@ -88,17 +126,3 @@ probes:
       deployment: {provider_default: true}
       steps:
       - {kind: failure, failure: {class: rate_limit, status: 429}}
-- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
-  samples: []
-  operation:
-    router_observations:
-      now_millis: 1700000000000
-      catalog:
-        model_group: probe-group
-        model: openai/gpt-4o
-        target_id: dep-1
-        group_size: 2
-      router: {disable_cooldowns: true}
-      steps:
-      - {kind: failure, failure: {class: rate_limit, status: 429}}
-      - {kind: failure, failure: {class: bad_request, status: 400}}
