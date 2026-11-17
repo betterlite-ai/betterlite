@@ -1,6 +1,6 @@
 task: B1610
 deviations:
-  - what: 'A tuple, set or bytes inside the GENERIC_ROLE_MAPPINGS_ROLES literal is refused. pydantic coerces a tuple or set into the declared list[str] and bytes into str, so LiteLLM accepts them.'
+  - what: 'A tuple or set used as a role''s groups, or a bytes group name inside a list, is refused. pydantic coerces a tuple or set into the declared list[str] and a bytes entry into str, so LiteLLM accepts all three.'
     why: 'parity stops at the declared types, and a value of the wrong type is an error here; a set would also make the stored group order arbitrary.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1391'
   - what: 'Two escapes are refused instead of decoded: \N{NAME}, whose Unicode name table betterlite does not carry, and a \u or \U escape naming a lone surrogate, which Rust''s str cannot hold.'
