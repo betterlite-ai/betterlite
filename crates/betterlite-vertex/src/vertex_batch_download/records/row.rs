@@ -25,8 +25,7 @@ pub(crate) fn transform_line(
     serde_json::to_vec(&output).map_err(RecordsError::Encode)
 }
 
-// a status answers with vertex_ai_error and a failed conversion with a transformation_error row,
-// while a row whose own shape breaks the mapper fails the caller's fallback instead
+// a status is vertex_ai_error, a failed conversion a transformation_error, and a broken row fails the caller
 fn transform_row(
     row: &VertexBatchRow,
     context: &mut ConversionContext,

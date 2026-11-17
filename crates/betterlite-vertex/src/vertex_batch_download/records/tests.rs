@@ -236,14 +236,22 @@ fn a_generation_row_carries_the_usage_and_metadata() {
         ]
     );
     assert_eq!(field(usage, "cache_read_input_tokens"), &Json::Null);
-    for name in [
-        "vertex_ai_grounding_metadata",
-        "vertex_ai_url_context_metadata",
-        "vertex_ai_safety_results",
-        "vertex_ai_citation_metadata",
-    ] {
-        assert_eq!(field(body, name), &Json::List(Vec::new()));
-    }
+    assert_eq!(
+        field(body, "vertex_ai_grounding_metadata"),
+        &Json::List(Vec::new())
+    );
+    assert_eq!(
+        field(body, "vertex_ai_url_context_metadata"),
+        &Json::List(Vec::new())
+    );
+    assert_eq!(
+        field(body, "vertex_ai_safety_results"),
+        &Json::List(Vec::new())
+    );
+    assert_eq!(
+        field(body, "vertex_ai_citation_metadata"),
+        &Json::List(Vec::new())
+    );
 }
 
 #[test]
@@ -332,7 +340,7 @@ fn a_failed_conversion_becomes_a_transformation_error_row() {
 }
 
 #[test]
-fn a_later_unparseable_row_returns_the_whole_payload() {
+fn a_later_unparsable_row_returns_the_whole_payload() {
     let content = format!("{ROW}\nnot json\n{ROW}");
     let response = convert(&content, URL);
     assert_eq!(response.content, content.as_bytes());
@@ -408,15 +416,13 @@ fn embedding_groups_are_newline_joined() {
     let response = convert(EMBEDDING_GROUPS, URL);
     let body = rows(&response);
     assert_eq!(body.len(), 2);
-    let mut custom_ids: Vec<String> = Vec::new();
-    for row in &body {
-        let Json::Text(custom_id) = field(row, "custom_id") else {
-            panic!("custom_id is not text");
-        };
-        custom_ids.push(custom_id.clone());
-    }
-    custom_ids.sort();
-    assert_eq!(custom_ids, ["id#one", "id#two"]);
+    let Json::Text(first) = field(&body[0], "custom_id") else {
+        panic!("custom_id is not text");
+    };
+    let Json::Text(second) = field(&body[1], "custom_id") else {
+        panic!("custom_id is not text");
+    };
+    assert_eq!([first.as_str(), second.as_str()], ["id#one", "id#two"]);
     assert_eq!(declared_length(&response), response.content.len());
 }
 

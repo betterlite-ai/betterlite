@@ -28,6 +28,7 @@ pub struct ContentResponse {
 
 // LiteLLM converts while the whole file is in memory and hands the original bytes back on any failure
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn transform_file_content_response(
     content: &[u8],
     request_url: &str,

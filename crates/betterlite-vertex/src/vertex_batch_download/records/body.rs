@@ -2,7 +2,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails, Usage};
 use http::header::HeaderMap;
 use indexmap::IndexMap;
-use serde::Serialize;
 use serde_json::Number;
 
 use crate::gemini_candidates::choice::{Choice, Choices, Message};
@@ -50,7 +49,7 @@ fn project(
 ) -> Result<IndexMap<String, Json>, ConversionError> {
     let mut body = IndexMap::new();
     body.insert(String::from("id"), Json::Text(response.id.clone()));
-    insert_number(&mut body, "created", now);
+    body.insert(String::from("created"), Json::Number(Number::from(now)));
     body.insert(String::from("model"), Json::Text(response.model.clone()));
     body.insert(
         String::from("object"),
@@ -98,10 +97,17 @@ fn choice_body(choice: &Choice) -> Result<Json, ConversionError> {
         String::from("finish_reason"),
         Json::Text(choice.finish_reason.to_owned()),
     );
-    insert_number(&mut fields, "index", i64::from(choice.index));
+    fields.insert(
+        String::from("index"),
+        Json::Number(Number::from(i64::from(choice.index))),
+    );
     fields.insert(String::from("message"), message_body(&choice.message)?);
     if let Some(logprobs) = &choice.logprobs {
-        fields.insert(String::from("logprobs"), to_json(logprobs)?);
+        let encoded = serde_json::to_value(logprobs).map_err(ConversionError::Encode)?;
+        fields.insert(
+            String::from("logprobs"),
+            serde_json::from_value(encoded).map_err(ConversionError::Encode)?,
+        );
     }
     if let Some(native) = &choice.native_finish_reason {
         let mut specific = IndexMap::new();
@@ -118,7 +124,10 @@ fn choice_body(choice: &Choice) -> Result<Json, ConversionError> {
 }
 
 fn message_body(message: &Message) -> Result<Json, ConversionError> {
-    let Json::Object(mut fields) = to_json(message)? else {
+    let encoded = serde_json::to_value(message).map_err(ConversionError::Encode)?;
+    let Json::Object(mut fields) =
+        serde_json::from_value(encoded).map_err(ConversionError::Encode)?
+    else {
         return Err(ConversionError::Shape);
     };
     for name in CONDITIONAL_MESSAGE_FIELDS {
@@ -131,9 +140,18 @@ fn message_body(message: &Message) -> Result<Json, ConversionError> {
 
 fn usage_body(usage: &Usage, blocked: bool) -> Json {
     let mut fields = IndexMap::new();
-    insert_number(&mut fields, "completion_tokens", usage.completion_tokens);
-    insert_number(&mut fields, "prompt_tokens", usage.prompt_tokens);
-    insert_number(&mut fields, "total_tokens", usage.total_tokens);
+    fields.insert(
+        String::from("completion_tokens"),
+        Json::Number(Number::from(usage.completion_tokens)),
+    );
+    fields.insert(
+        String::from("prompt_tokens"),
+        Json::Number(Number::from(usage.prompt_tokens)),
+    );
+    fields.insert(
+        String::from("total_tokens"),
+        Json::Number(Number::from(usage.total_tokens)),
+    );
     let completion = match &usage.completion_tokens_details {
         Some(details) => completion_details(details),
         None => Json::Null,
@@ -196,13 +214,9 @@ fn prompt_details(details: &PromptTokensDetails) -> Json {
     Json::Object(fields)
 }
 
-fn insert_number(fields: &mut IndexMap<String, Json>, name: &str, value: i64) {
-    fields.insert(name.to_owned(), Json::Number(Number::from(value)));
-}
-
 fn insert_optional(fields: &mut IndexMap<String, Json>, name: &str, value: Option<i64>) {
     if let Some(number) = value {
-        insert_number(fields, name, number);
+        fields.insert(name.to_owned(), Json::Number(Number::from(number)));
     }
 }
 
@@ -211,12 +225,4 @@ fn insert_nullable(fields: &mut IndexMap<String, Json>, name: &str, value: Optio
         name.to_owned(),
         value.map_or(Json::Null, |number| Json::Number(Number::from(number))),
     );
-}
-
-fn to_json<T>(value: &T) -> Result<Json, ConversionError>
-where
-    T: Serialize,
-{
-    let encoded = serde_json::to_value(value).map_err(ConversionError::Encode)?;
-    serde_json::from_value(encoded).map_err(ConversionError::Encode)
 }
