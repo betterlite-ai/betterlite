@@ -101,7 +101,7 @@ fn list(
 fn listing_prefixes_sorts_and_dedupes_the_names() {
     let transport = FakeTransport::answering(
         200,
-        r#"{"models":[{"name":"b"},{"name":"ollama/a"},{"model":"c"},{"name":""},{"name":7},{"model":""},3]}"#,
+        r#"{"models":[{"name":"b"},{"name":"ollama/a"},{"model":"c"},{"name":""},{"name":"","model":"d"},{"name":7},{"model":""},3]}"#,
     );
     let names = list(
         &ollama_settings(None, None),
@@ -111,7 +111,10 @@ fn listing_prefixes_sorts_and_dedupes_the_names() {
         None,
         None,
     );
-    assert_eq!(names, ["ollama/", "ollama/a", "ollama/b", "ollama/c"]);
+    assert_eq!(
+        names,
+        ["ollama/", "ollama/a", "ollama/b", "ollama/c", "ollama/d"]
+    );
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url, "http://localhost:11434/api/tags");
@@ -387,6 +390,16 @@ fn tags_request_carries_the_first_resolved_key() {
         )
         .is_empty(),
         "a passed base without its own key drops every key"
+    );
+    assert!(
+        tags_headers(
+            Some("http://passed"),
+            Some(""),
+            ollama_settings(None, Some("sk-env")),
+            no_globals()
+        )
+        .is_empty(),
+        "an empty passed key is no key, so an explicit base drops the environment key too"
     );
     assert_eq!(
         tags_headers(
