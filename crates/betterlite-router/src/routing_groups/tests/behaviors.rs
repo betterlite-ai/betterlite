@@ -922,6 +922,7 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
     classifier_detection_reads_both_metadata_keys
 ))]
 #[case::a_classifier_effort_follows_the_target(settled(a_classifier_effort_follows_the_target))]
+#[case::an_allowed_classifier_effort_stays(settled(an_allowed_classifier_effort_stays))]
 #[case::a_request_that_is_not_a_classifier_call_keeps_its_effort(settled(
     a_request_that_is_not_a_classifier_call_keeps_its_effort
 ))]

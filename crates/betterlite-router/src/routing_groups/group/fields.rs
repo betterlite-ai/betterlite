@@ -12,7 +12,7 @@ fn field<'map>(
     expected: &'static str,
 ) -> Result<&'map Json, RoutingGroupError> {
     map.get(field)
-        .map_or(Err(RoutingGroupError::Field { field, expected }), Ok)
+        .ok_or(RoutingGroupError::Field { field, expected })
 }
 
 pub(super) fn text_field(map: &JsonMap, key: &'static str) -> Result<String, RoutingGroupError> {

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -81,7 +80,9 @@ pub(super) fn cost_map(entries: &[(&str, &str)]) -> ModelCostMap {
         if position > 0 {
             source.push(',');
         }
-        write!(source, "{key:?}:{entry}").unwrap();
+        source.push_str(&serde_json::to_string(key).unwrap());
+        source.push(':');
+        source.push_str(entry);
     }
     source.push('}');
     ModelCostMap::parse(source.as_bytes()).unwrap()
