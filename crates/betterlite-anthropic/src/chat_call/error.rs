@@ -5,7 +5,7 @@ use http::HeaderMap;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 
-use crate::anthropic_http_stream::completion::ParameterError;
+use crate::anthropic_http_stream::completion::{CompletionError, ParameterError};
 use crate::anthropic_http_stream::error::StreamOpenError;
 use crate::headers::HeadersError;
 use crate::response::error::ResponseError;
@@ -85,6 +85,21 @@ where
             Self::Anthropic { status_code, .. } => Some(*status_code),
             // httpx raises while building or sending, and the handler catches every one of those as a 500
             Self::Endpoint(_) | Self::HeaderName(_) | Self::HeaderValue(_) => Some(500),
+        }
+    }
+}
+
+// The stream helper reports the two failures this call already wraps, so ? converts them without a mapping step
+impl<ClientFailure, CounterFailure> From<CompletionError<ClientFailure>>
+    for ChatCallError<ClientFailure, CounterFailure>
+where
+    ClientFailure: StdError + Send + Sync + 'static,
+    CounterFailure: StdError + Send + Sync + 'static,
+{
+    fn from(source: CompletionError<ClientFailure>) -> Self {
+        match source {
+            CompletionError::Parameter(error) => Self::Parameter(error),
+            CompletionError::Open(error) => Self::Open(error),
         }
     }
 }

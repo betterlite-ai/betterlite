@@ -1,4 +1,3 @@
-use std::error::Error as StdError;
 use std::time::Duration;
 
 use betterlite_logging::python_json;
@@ -10,7 +9,7 @@ use crate::anthropic_http_stream::call::{
     StreamBuild, StreamCall, StreamClients, StreamLogger, StreamOpening,
 };
 use crate::anthropic_http_stream::completion::{
-    CompletionError, CompletionStream, ParameterError, WrappedStream, acompletion_stream_function,
+    CompletionStream, ParameterError, WrappedStream, acompletion_stream_function,
 };
 use crate::chat_call::error::ChatCallError;
 use crate::chat_call::transport::{ChatTransport, ClientKind};
@@ -59,24 +58,25 @@ where
         let wrapped = send_sync(wrapping, facts, build).await?;
         return Ok(ChatOutcome::Stream(Box::new(wrapped)));
     }
-    let wrapped = acompletion_stream_function(wrapping, async_request(facts), build)
-        .await
-        .map_err(completion_error)?;
+    let wrapped =
+        acompletion_stream_function(wrapping, CompletionStream::from(facts), build).await?;
     Ok(ChatOutcome::Stream(Box::new(wrapped)))
 }
 
 // The async helper sends the request its own struct carries through the module-level async client
-const fn async_request(facts: StreamFacts<'_>) -> CompletionStream<'_> {
-    CompletionStream {
-        model: facts.model,
-        api_base: facts.api_base,
-        headers: facts.headers,
-        data: facts.data,
-        messages: facts.messages,
-        timeout: facts.timeout,
-        json_mode: facts.json_mode,
-        optional_params: facts.optional_params,
-        litellm_params: facts.litellm_params,
+impl<'facts> From<StreamFacts<'facts>> for CompletionStream<'facts> {
+    fn from(facts: StreamFacts<'facts>) -> Self {
+        Self {
+            model: facts.model,
+            api_base: facts.api_base,
+            headers: facts.headers,
+            data: facts.data,
+            messages: facts.messages,
+            timeout: facts.timeout,
+            json_mode: facts.json_mode,
+            optional_params: facts.optional_params,
+            litellm_params: facts.litellm_params,
+        }
     }
 }
 
@@ -116,19 +116,6 @@ where
         custom_llm_provider: "anthropic",
         response_headers: process_anthropic_headers(&opened.headers),
     })
-}
-
-const fn completion_error<ClientFailure, CounterFailure>(
-    source: CompletionError<ClientFailure>,
-) -> ChatCallError<ClientFailure, CounterFailure>
-where
-    ClientFailure: StdError + Send + Sync + 'static,
-    CounterFailure: StdError + Send + Sync + 'static,
-{
-    match source {
-        CompletionError::Parameter(error) => ChatCallError::Parameter(error),
-        CompletionError::Open(error) => ChatCallError::Open(error),
-    }
 }
 
 // make_sync_call takes the speed and the reverse name map as arguments, so this branch types them before the call
