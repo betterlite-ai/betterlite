@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-converse-response-fake-stream-capability
+call:
+  bedrock_converse_response:
+    fake_stream:
+      - {model: null, stream: null, provider: null, fake_stream: null}
+      - {model: ai21.j2-mid, stream: true, provider: bedrock, fake_stream: null}
+      - {model: ai21.j2-mid, stream: false, provider: bedrock, fake_stream: null}
+      - {model: ai21.j2-mid, stream: null, provider: bedrock, fake_stream: null}
+      - {model: anthropic.claude-3-sonnet, stream: true, provider: bedrock, fake_stream: null}
+      - {model: anthropic.claude-3-sonnet, stream: true, provider: bedrock, fake_stream: false}
+      - {model: anthropic.claude-3-sonnet, stream: null, provider: bedrock, fake_stream: true}
+      - {model: anthropic.claude-3-sonnet, stream: null, provider: some-other-provider, fake_stream: true}
+      - {model: AI21.J2, stream: true, provider: bedrock, fake_stream: null}
+      - {model: "", stream: true, provider: bedrock, fake_stream: null}
+      - {model: ai21.j2-mid, stream: false, provider: bedrock, fake_stream: true}
+env: {}
+compare: {ignore: []}
