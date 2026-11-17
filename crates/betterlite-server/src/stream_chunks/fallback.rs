@@ -45,14 +45,9 @@ fn positive_number(number: &Number) -> bool {
 
 fn positive_int_text(text: &str) -> bool {
     let trimmed = text.trim();
-    let (negative, digits) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
-    match digits_nonzero(digits) {
-        Some(nonzero) => nonzero && !negative,
-        None => false,
-    }
+    let negative = trimmed.starts_with('-');
+    let digits = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
+    digits_nonzero(digits).is_some_and(|nonzero| nonzero && !negative)
 }
 
 // int("1_0") is 10, while "_1", "1_" and "1__0" raise ValueError

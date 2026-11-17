@@ -1,4 +1,5 @@
 from typing import Literal, TypeAlias, TypedDict
+from unittest.mock import patch
 
 import litellm
 from litellm.proxy import proxy_server
@@ -174,11 +175,12 @@ def int_like_answer(input_value: IntLikeInput) -> JsonValue:
 
 
 def include_errors_answer(input_value: IncludeErrorsInput) -> JsonValue:
-    proxy_server.general_settings = {
+    settings: dict[str, bool] = {
         "expose_fallback_errors_to_caller": input_value["expose"]
     }
     answers: list[JsonValue] = []
-    answers.extend(_should_include_fallback_errors(request) for request in input_value["requests"])  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9366
+    with patch.object(proxy_server, "general_settings", settings):
+        answers.extend(_should_include_fallback_errors(request) for request in input_value["requests"])  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9366
     return answers
 
 
