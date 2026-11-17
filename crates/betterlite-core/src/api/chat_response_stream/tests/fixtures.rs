@@ -158,24 +158,24 @@ impl StreamAssembly for FixtureAssembly {
 }
 
 fn signed_reply() -> Response {
-    let mut response = chat("", "stop", None);
-    message_of(&mut response).thinking_blocks = Some(vec![ThinkingBlock::Thinking {
+    let thinking = ThinkingBlock::Thinking {
         thinking: String::from("t"),
         signature: String::from("sig"),
-    }]);
+    };
+    let mut response = chat("", "stop", None);
+    message_of(&mut response).thinking_blocks = Some(vec![thinking]);
     response
 }
 
 fn float_tool_reply() -> Response {
+    let score = serde_json::Number::from_f64(0.5).expect("0.5 is finite");
+    let score_field = ("score".to_owned(), ToolJsonValue::Number(score));
     let mut response = chat("", "tool_calls", Some(("call_1", "lookup", r#"{"x":1}"#)));
     let tool = &mut message_of(&mut response)
         .tool_calls
         .as_mut()
         .expect("the fixture reply carries one tool call")[0];
-    tool.provider_specific_fields = Some(BTreeMap::from([(
-        "score".to_owned(),
-        ToolJsonValue::Number(serde_json::Number::from_f64(0.5).expect("0.5 is finite")),
-    )]));
+    tool.provider_specific_fields = Some(BTreeMap::from([score_field]));
     response
 }
 

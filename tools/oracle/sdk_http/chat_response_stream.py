@@ -6,13 +6,13 @@ from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import litellm
 import openai
+from litellm.chat_completions.dispatch import ChatResult
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.responses.litellm_completion_transformation.streaming_iterator import (
     LiteLLMCompletionStreamingIterator as ResponsesIterator,
 )
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
-from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 
@@ -21,7 +21,8 @@ from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
 
-CompletionAnswer: TypeAlias = ModelResponse | CustomStreamWrapper
+# completion returns the chat answer or a coroutine of it, and stream=True settles on the wrapper
+CompletionAnswer: TypeAlias = ChatResult | Awaitable[ChatResult]
 
 
 # A LiteLLM class reads as Any to mypy, so pydantic's field check is the wrapper's boundary
@@ -121,10 +122,10 @@ def event_view(event: BaseResponse) -> dict[str, Json]:
 
 
 def build_iterator(call: ChatResponseStreamCall, answer: CompletionAnswer) -> ResponsesIterator:
-    wrapper = StreamedAnswer.model_validate({"wrapper": answer}).wrapper
+    fields: dict[str, CompletionAnswer] = {"wrapper": answer}
     return ResponsesIterator(
         model=call.model,
-        litellm_custom_stream_wrapper=wrapper,
+        litellm_custom_stream_wrapper=StreamedAnswer.model_validate(fields).wrapper,
         request_input=call.request_input,
         # LiteLLM's request TypedDict carries `metadata: dict[str, Any] | None`
         responses_api_request=cast("RequestParams", call.responses_api_request),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283

@@ -66,17 +66,13 @@ impl StreamAssembly for AssemblyContext {
             metadata: None,
             now: 0,
         };
-        block_on(stream_chunk_builder(&request, &self.hooks))
-    }
-}
-
-// The builder's awaited futures are ready on first poll, so polling here needs no second runtime
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
+        // The builder's awaited futures are ready on first poll, so polling here needs no second runtime
+        let mut future = std::pin::pin!(stream_chunk_builder(&request, &self.hooks));
+        let mut context = Context::from_waker(Waker::noop());
+        loop {
+            if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
+                return output;
+            }
         }
     }
 }
