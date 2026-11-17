@@ -2,7 +2,7 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_openai::output_limits::raw_send::{
-    AsyncRawChatTransport, RawChatError, RawChatResponse, SyncRawChatTransport,
+    AsyncRawChatTransport, BadRequestReply, RawChatError, RawChatResponse, SyncRawChatTransport,
 };
 use serde_json::{Map, Value};
 
@@ -11,7 +11,7 @@ use super::project::header_map;
 
 pub(crate) struct Scripted {
     pub seen: Mutex<Vec<Value>>,
-    pub outcome: AzureOutcome,
+    pub outcome: Box<AzureOutcome>,
 }
 
 impl Scripted {
@@ -20,16 +20,18 @@ impl Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Value::Object(data.clone()));
-        match &self.outcome {
+        match self.outcome.as_ref() {
             AzureOutcome::Reply { headers, body } => Ok(RawChatResponse {
                 headers: header_map(headers),
                 body: body.clone(),
             }),
-            AzureOutcome::BadRequest { headers, body } => Err(RawChatError::BadRequest {
-                message: error_message(body),
-                headers: header_map(headers),
-                body: body.clone(),
-            }),
+            AzureOutcome::BadRequest { headers, body } => {
+                Err(RawChatError::BadRequest(Box::new(BadRequestReply {
+                    message: error_message(body),
+                    headers: header_map(headers),
+                    body: body.clone(),
+                })))
+            }
             AzureOutcome::Timeout => Err(RawChatError::Timeout {
                 message: String::from("Request timed out."),
             }),

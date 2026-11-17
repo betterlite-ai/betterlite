@@ -9,4 +9,7 @@ call:
       outcome:
         kind: timeout
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: "LiteLLM appends its own wall-clock elapsed time and Python's float repr; betterlite renders both with a fixed two-decimal format"

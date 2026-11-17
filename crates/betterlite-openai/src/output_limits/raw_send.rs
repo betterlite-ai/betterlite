@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use http::HeaderMap;
 use serde_json::{Map, Value};
 
-use super::build::{Recovery, build_output_token_limit_response};
-use super::is_output_token_limit_error;
+use super::ErrorBody;
+use super::build::{Recovery, build_limit_response};
 
 // the openai SDK's with_raw_response.create(...).parse(): the parsed answer plus the response's own headers
 #[derive(Debug, Clone)]
@@ -14,21 +14,21 @@ pub struct RawChatResponse {
     pub body: Value,
 }
 
+// the SDK's BadRequestError payload: its message is matched and its response travels on for a caller's error reply
+#[derive(Debug, Clone)]
+pub struct BadRequestReply {
+    pub message: String,
+    pub headers: HeaderMap,
+    pub body: Value,
+}
+
 #[derive(Debug, Clone)]
 pub enum RawChatError {
-    // the SDK's BadRequestError: its message is matched and its response travels on for a caller's error reply
-    BadRequest {
-        message: String,
-        headers: HeaderMap,
-        body: Value,
-    },
+    // boxed so the two word-sized failures stay within 3x of it, the limit variant_size_differences enforces
+    BadRequest(Box<BadRequestReply>),
     // the SDK's APITimeoutError, which carries no response
-    Timeout {
-        message: String,
-    },
-    Other {
-        message: String,
-    },
+    Timeout { message: String },
+    Other { message: String },
 }
 
 pub trait SyncRawChatTransport {
@@ -55,15 +55,13 @@ pub async fn send_raw_chat_sync(
     timeout: f64,
     recovery: &Recovery<'_>,
 ) -> Result<RawChatResponse, RawChatError> {
-    match transport.create(data, timeout) {
-        Ok(response) => Ok(response),
-        Err(RawChatError::BadRequest {
-            message,
-            headers,
-            body,
-        }) if is_output_token_limit_error(&message) => recover(data, headers, recovery).await,
-        Err(error) => Err(error),
-    }
+    answer(
+        transport.create(data, timeout),
+        |message| RawChatError::Timeout { message },
+        data,
+        recovery,
+    )
+    .await
 }
 
 // LiteLLM's make_azure_openai_chat_completion_request: the timeout keeps its elapsed time, the output limit recovers
@@ -75,16 +73,32 @@ pub async fn send_raw_chat_async(
     recovery: &Recovery<'_>,
 ) -> Result<RawChatResponse, RawChatError> {
     let started = (now)();
-    match transport.create(data, timeout).await {
+    let created = transport.create(data, timeout).await;
+    let timed_out = |message| RawChatError::Timeout {
+        message: timeout_message(&message, timeout, (now)().saturating_sub(started)),
+    };
+    answer(created, timed_out, data, recovery).await
+}
+
+// only a BadRequestError whose message carries the whole output-limit sentence becomes a reply; the rest travels on
+async fn answer<F>(
+    created: Result<RawChatResponse, RawChatError>,
+    timed_out: F,
+    data: &Map<String, Value>,
+    recovery: &Recovery<'_>,
+) -> Result<RawChatResponse, RawChatError>
+where
+    F: FnOnce(String) -> RawChatError,
+{
+    match created {
         Ok(response) => Ok(response),
-        Err(RawChatError::Timeout { message }) => Err(RawChatError::Timeout {
-            message: timeout_message(&message, timeout, (now)().saturating_sub(started)),
-        }),
-        Err(RawChatError::BadRequest {
-            message,
-            headers,
-            body,
-        }) if is_output_token_limit_error(&message) => recover(data, headers, recovery).await,
+        Err(RawChatError::Timeout { message }) => Err(timed_out(message)),
+        Err(RawChatError::BadRequest(rejected))
+            if ErrorBody::Http(rejected.message.as_bytes()).reaches_output_limit() =>
+        {
+            let BadRequestReply { headers, .. } = *rejected;
+            recover(data, headers, recovery).await
+        }
         Err(error) => Err(error),
     }
 }
@@ -94,7 +108,7 @@ async fn recover(
     headers: HeaderMap,
     recovery: &Recovery<'_>,
 ) -> Result<RawChatResponse, RawChatError> {
-    let response = build_output_token_limit_response(data, headers, recovery)
+    let response = build_limit_response(data, headers, recovery)
         .await
         .map_err(|error| RawChatError::Other {
             message: error.to_string(),

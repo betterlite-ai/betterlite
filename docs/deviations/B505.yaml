@@ -44,6 +44,13 @@ deviations:
       The marker is a provider sentence, and both texts contain it for every reply that carries it. Matching the
       provider's own text keeps the check off the SDK's string formatting, which betterlite does not reproduce.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L138-L145
+  - what: >-
+      The async Azure timeout text renders the elapsed seconds with two decimals and an integer-valued timeout
+      without a trailing zero, where LiteLLM interpolates Python's repr of the rounded float.
+    why: >-
+      Python's float repr is the runtime formatting docs/compatibility.md keeps out of parity, so betterlite prints
+      its own fixed two-decimal local string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L184-L187
 kept_bugs:
   - what: >-
       Any 400 whose text carries the full output-limit sentence is repaired, whatever model the call names. There is

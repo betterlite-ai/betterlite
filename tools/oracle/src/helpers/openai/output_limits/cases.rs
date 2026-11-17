@@ -1,24 +1,16 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::time::Duration;
 
-use betterlite_openai::output_limits::build::{
-    RecoveredBody, Recovery, build_output_token_limit_response,
-};
+use betterlite_openai::output_limits::build::{Recovery, build_limit_response};
 use betterlite_openai::output_limits::raw_send::{send_raw_chat_async, send_raw_chat_sync};
-use betterlite_openai::output_limits::tokens::TokenizerPromptTokens;
-use betterlite_openai::output_limits::{
-    ErrorBody, drop_params_from_unprocessable_entity_error, is_output_token_limit_error,
-};
+use betterlite_openai::output_limits::{ErrorBody, RejectedFieldsError, without_rejected_fields};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
-use super::project::{
-    body_of, encoded, failure, header_map, header_of, projected_chunk, projected_completion,
-    raw_failure,
-};
+use super::project::{failure, header_map, raw_failure, reply_report};
 use super::transports::{Scripted, recorded};
-use super::{fixed_clock, fixed_id, no_elapsed};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -54,7 +46,8 @@ pub(crate) struct AzureCase {
     pub asynchronous: bool,
     pub data: Map<String, Value>,
     pub timeout: f64,
-    pub outcome: AzureOutcome,
+    // boxed so it stays within 3x of MarkerCase, the limit variant_size_differences enforces
+    pub outcome: Box<AzureOutcome>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -77,57 +70,54 @@ pub(crate) fn drop_case(case: &DropCase) -> HelperResult {
         DropChannel::Http => ErrorBody::Http(case.body.as_str().unwrap_or_default().as_bytes()),
         DropChannel::Sdk => ErrorBody::Sdk(&case.body),
     };
-    let dropped = drop_params_from_unprocessable_entity_error(body, &case.data)
-        .map_err(|error| failure("RejectedFieldsError", None, error.to_string()))?;
-    Ok(Value::Object(dropped))
+    // LiteLLM decodes the reply as JSON, then reads the message and each detail entry through attribute access, so a non-JSON reply fails as JSONDecodeError and every other failure here as Python's AttributeError
+    match without_rejected_fields(body, &case.data) {
+        Ok(dropped) => Ok(Value::Object(dropped)),
+        Err(error @ RejectedFieldsError::Json { .. }) => {
+            Err(failure("JSONDecodeError", None, error.to_string()))
+        }
+        Err(error) => Err(failure("AttributeError", None, error.to_string())),
+    }
 }
 
-pub(crate) fn marker_case(case: &MarkerCase) -> Value {
-    Value::Bool(is_output_token_limit_error(&case.message))
+pub(crate) async fn build_case(case: &BuildCase, recovery: &Recovery<'_>) -> HelperResult {
+    let response = build_limit_response(&case.data, header_map(&case.headers), recovery)
+        .await
+        .map_err(|error| failure("PromptCountError", None, error.to_string()))?;
+    let report = reply_report(
+        &response.headers,
+        "x-request-id",
+        &response.body,
+        &case.data,
+    )?;
+    Ok(Value::Object(report))
 }
 
-pub(crate) async fn build_case(case: &BuildCase) -> HelperResult {
-    let tokens = TokenizerPromptTokens;
-    let recovery = Recovery {
-        clock: fixed_clock,
-        next_id: fixed_id,
-        tokens: &tokens,
-    };
-    let response =
-        build_output_token_limit_response(&case.data, header_map(&case.headers), &recovery)
-            .await
-            .map_err(|error| failure("PromptCountError", None, error.to_string()))?;
-    let body = match &response.body {
-        RecoveredBody::Completion(completion) => projected_completion(&encoded(completion)?),
-        RecoveredBody::Chunk(chunk) => projected_chunk(&encoded(chunk)?),
-    };
-    Ok(json!({
-        "header": header_of(&response.headers, "x-request-id"),
-        "body": body,
-    }))
-}
-
-pub(crate) async fn azure_case(case: &AzureCase) -> HelperResult {
+pub(crate) async fn azure_case(case: &AzureCase, recovery: &Recovery<'_>) -> HelperResult {
     let transport = Scripted {
         seen: Mutex::new(Vec::new()),
         outcome: case.outcome.clone(),
     };
-    let tokens = TokenizerPromptTokens;
-    let recovery = Recovery {
-        clock: fixed_clock,
-        next_id: fixed_id,
-        tokens: &tokens,
-    };
     let response = if case.asynchronous {
-        send_raw_chat_async(&transport, &case.data, case.timeout, no_elapsed, &recovery).await
+        send_raw_chat_async(
+            &transport,
+            &case.data,
+            case.timeout,
+            || Duration::ZERO,
+            recovery,
+        )
+        .await
     } else {
-        send_raw_chat_sync(&transport, &case.data, case.timeout, &recovery).await
+        send_raw_chat_sync(&transport, &case.data, case.timeout, recovery).await
     };
     let requests = recorded(&transport);
     let answered = response.map_err(raw_failure)?;
-    Ok(json!({
-        "requests": requests,
-        "header": header_of(&answered.headers, "x-ms-request-id"),
-        "body": body_of(&answered.body, &case.data),
-    }))
+    let mut report = reply_report(
+        &answered.headers,
+        "x-ms-request-id",
+        &answered.body,
+        &case.data,
+    )?;
+    report.insert(String::from("requests"), requests);
+    Ok(Value::Object(report))
 }

@@ -10,7 +10,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -34,15 +33,11 @@ use tokio::time::timeout;
 use url::Url;
 use uuid::Uuid;
 
-use super::build::{RecoveredBody, Recovery, build_output_token_limit_response};
-use super::raw_send::{
-    AsyncRawChatTransport, RawChatError, RawChatResponse, SyncRawChatTransport,
-    send_raw_chat_async, send_raw_chat_sync,
-};
+use super::build::{RecoveredBody, Recovery, build_limit_response};
 use super::tokens::{PromptCountError, PromptTokens};
 use super::{
     ErrorBody, OUTPUT_TOKEN_LIMIT_MARKER, RejectedFieldsError, decode_rejected_fields,
-    drop_params_from_unprocessable_entity_error, is_output_token_limit_error,
+    without_rejected_fields,
 };
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::execution::{ChatError, ChatExecutor};
@@ -116,14 +111,17 @@ fn recovery(tokens: &dyn PromptTokens) -> Recovery<'_> {
 }
 
 fn deployment(base_url: &str) -> ChatDeployment {
+    let api_base = format!("{base_url}/v1");
+    let endpoint = Url::parse(&format!("{base_url}/v1/chat/completions")).expect("endpoint");
+    let provider = Provider::OpenAi {
+        model: String::from("gpt-3.5-turbo"),
+    };
     ChatDeployment {
         model_group: String::from("g"),
         litellm_model: String::from("openai/gpt-3.5-turbo"),
-        provider: Provider::OpenAi {
-            model: String::from("gpt-3.5-turbo"),
-        },
-        api_base: format!("{base_url}/v1"),
-        endpoint: Url::parse(&format!("{base_url}/v1/chat/completions")).expect("endpoint"),
+        provider,
+        api_base,
+        endpoint,
         authorization: None,
         api_key: Some(secrecy::SecretString::from(String::from("k"))),
         organization: None,
@@ -157,8 +155,9 @@ fn unused_embedding(
 
 fn executor(base_url: &str) -> ChatExecutor {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("proxy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
     ChatExecutor {
-        client: ProxiedClient::outbound(&Arc::new(policy)).expect("client"),
+        client,
         deployments: vec![deployment(base_url)],
         catalog: CatalogCapabilities {
             chat_models: BTreeSet::new(),
@@ -242,28 +241,25 @@ fn two_element_loc() {
         ("top_p", json!(2)),
         ("seed", json!(3)),
     ]);
-    let dropped = drop_params_from_unprocessable_entity_error(ErrorBody::Sdk(&body), &data)
-        .expect("sdk body");
+    let dropped = without_rejected_fields(ErrorBody::Sdk(&body), &data).expect("sdk body");
     assert_eq!(dropped, fields(&[("seed", json!(3))]));
     assert_eq!(data.len(), 3, "the caller's map is untouched");
     let http = json!({"error": {"message": "{\"detail\": [{\"loc\": [\"body\", \"seed\"]}]}"}});
     let text = serde_json::to_vec(&http).expect("http body");
-    let dropped =
-        drop_params_from_unprocessable_entity_error(ErrorBody::Http(&text), &data).expect("http");
+    let dropped = without_rejected_fields(ErrorBody::Http(&text), &data).expect("http");
     assert_eq!(
         dropped,
         fields(&[("temperature", json!(1)), ("top_p", json!(2))])
     );
     let direct = json!({"message": {"detail": [{"loc": ["body", "top_p"]}]}});
-    let dropped = drop_params_from_unprocessable_entity_error(ErrorBody::Sdk(&direct), &data)
-        .expect("direct");
+    let dropped = without_rejected_fields(ErrorBody::Sdk(&direct), &data).expect("direct");
     assert_eq!(
         dropped,
         fields(&[("temperature", json!(1)), ("seed", json!(3))])
     );
     let unparsable = json!({"message": "not json at all"});
-    let dropped = drop_params_from_unprocessable_entity_error(ErrorBody::Sdk(&unparsable), &data)
-        .expect("unparsable message");
+    let dropped =
+        without_rejected_fields(ErrorBody::Sdk(&unparsable), &data).expect("unparsable message");
     assert_eq!(dropped, data);
 }
 
@@ -282,31 +278,30 @@ fn malformed_detail_keeps_fields() {
         json!({"message": "{\"detail\": [5, {\"loc\": [\"body\", \"temperature\"]}]}"}),
     ];
     for body in kept {
-        let dropped = drop_params_from_unprocessable_entity_error(ErrorBody::Sdk(&body), &data)
-            .expect("kept fields");
+        let dropped = without_rejected_fields(ErrorBody::Sdk(&body), &data).expect("kept fields");
         assert_eq!(dropped, data, "{body}");
     }
-    let dropped = drop_params_from_unprocessable_entity_error(ErrorBody::Http(b"{}"), &data)
-        .expect("no error key");
+    let dropped = without_rejected_fields(ErrorBody::Http(b"{}"), &data).expect("no error key");
     assert_eq!(dropped, data);
 }
 
 fn output_limit_case_insensitive() {
     let marker = OUTPUT_TOKEN_LIMIT_MARKER.to_uppercase();
-    assert!(is_output_token_limit_error(&format!(
-        "Error code: 400 - {{\"error\": {{\"message\": \"{marker}\"}}}}"
-    )));
-    assert!(is_output_token_limit_error(&format!(
-        "Azure rejected gpt-5.1 with: {marker} for this request"
-    )));
-    assert!(!is_output_token_limit_error("could not finish the message"));
-    assert!(!is_output_token_limit_error(
-        "max_tokens or model output limit was reached"
-    ));
-    assert!(!is_output_token_limit_error(
-        "Error code: 400 - invalid max_tokens value"
-    ));
-    assert!(!is_output_token_limit_error(""));
+    let rendered = format!("Error code: 400 - {{\"error\": {{\"message\": \"{marker}\"}}}}");
+    assert!(ErrorBody::Http(rendered.as_bytes()).reaches_output_limit());
+    let rendered = format!("Azure rejected gpt-5.1 with: {marker} for this request");
+    assert!(ErrorBody::Http(rendered.as_bytes()).reaches_output_limit());
+    for shorter in [
+        "could not finish the message",
+        "max_tokens or model output limit was reached",
+        "Error code: 400 - invalid max_tokens value",
+        "",
+    ] {
+        assert!(
+            !ErrorBody::Http(shorter.as_bytes()).reaches_output_limit(),
+            "{shorter}"
+        );
+    }
 }
 
 async fn empty_length_completion() {
@@ -318,7 +313,7 @@ async fn empty_length_completion() {
             json!([{"role": "user", "content": "hello world"}]),
         ),
     ]);
-    let answer = build_output_token_limit_response(
+    let answer = build_limit_response(
         &data,
         header_map(&[("x-request-id", "r1")]),
         &recovery(&recorder),
@@ -365,7 +360,7 @@ async fn single_length_stream_chunk() {
         ("messages", json!([{"role": "user", "content": "hi"}])),
         ("stream", json!(true)),
     ]);
-    let answer = build_output_token_limit_response(
+    let answer = build_limit_response(
         &data,
         header_map(&[("x-request-id", "r1")]),
         &recovery(&recorder),
@@ -402,7 +397,7 @@ async fn prompt_token_count() {
         ("model", json!("gpt-3.5-turbo")),
         ("messages", messages.clone()),
     ]);
-    let answer = build_output_token_limit_response(
+    let answer = build_limit_response(
         &data,
         header_map(&[("x-request-id", "r1")]),
         &recovery(&recorder),
@@ -415,7 +410,7 @@ async fn prompt_token_count() {
         vec![(String::from("gpt-3.5-turbo"), messages.to_vec())]
     );
     let unmodelled = fields(&[("messages", json!([]))]);
-    build_output_token_limit_response(&unmodelled, HeaderMap::new(), &recovery(&recorder))
+    build_limit_response(&unmodelled, HeaderMap::new(), &recovery(&recorder))
         .await
         .expect("empty model");
     assert_eq!(
@@ -430,10 +425,9 @@ async fn prompt_token_count() {
             ("messages", json!("not a list")),
         ]),
     ] {
-        let answer =
-            build_output_token_limit_response(&data, HeaderMap::new(), &recovery(&uncounted))
-                .await
-                .expect("uncounted reply");
+        let answer = build_limit_response(&data, HeaderMap::new(), &recovery(&uncounted))
+            .await
+            .expect("uncounted reply");
         let RecoveredBody::Completion(completion) = answer.body else {
             panic!("a buffered request recovers a completion");
         };
@@ -441,7 +435,7 @@ async fn prompt_token_count() {
         assert_eq!(completion.usage.total_tokens, 0);
     }
     assert!(uncounted.calls().is_empty());
-    let counted = build_output_token_limit_response(
+    let counted = build_limit_response(
         &fields(&[
             ("model", json!("gpt-3.5-turbo")),
             (
@@ -765,245 +759,7 @@ fn malformed_nested_error_failure() {
     ));
 }
 
-struct SyncTransport {
-    calls: Mutex<Vec<(Map<String, Value>, f64)>>,
-    answer: Result<RawChatResponse, RawChatError>,
-}
-
-impl SyncRawChatTransport for SyncTransport {
-    fn create(
-        &self,
-        data: &Map<String, Value>,
-        timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
-        self.calls
-            .lock()
-            .expect("calls")
-            .push((data.clone(), timeout));
-        self.answer.clone()
-    }
-}
-
-struct AsyncTransport {
-    calls: Mutex<Vec<(Map<String, Value>, f64)>>,
-    answer: Result<RawChatResponse, RawChatError>,
-}
-
-#[async_trait]
-impl AsyncRawChatTransport for AsyncTransport {
-    async fn create(
-        &self,
-        data: &Map<String, Value>,
-        timeout: f64,
-    ) -> Result<RawChatResponse, RawChatError> {
-        self.calls
-            .lock()
-            .expect("calls")
-            .push((data.clone(), timeout));
-        self.answer.clone()
-    }
-}
-
-fn fixed_now() -> Duration {
-    Duration::ZERO
-}
-
-fn raw_answer(headers: HeaderMap, body: Value) -> Result<RawChatResponse, RawChatError> {
-    Ok(RawChatResponse { headers, body })
-}
-
-async fn azure_raw_send_headers() {
-    let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
-    let recorder = Recorder::new(0);
-    let body: Value = serde_json::from_str(COMPLETION).expect("fixture");
-    let sync = SyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: raw_answer(header_map(&[("x-ms-request-id", "s1")]), body.clone()),
-    };
-    let sent = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
-        .await
-        .expect("raw answer");
-    assert_eq!(sent.headers, header_map(&[("x-ms-request-id", "s1")]));
-    assert_eq!(sent.body, body);
-    assert_eq!(
-        sync.calls.lock().expect("calls").clone(),
-        vec![(data.clone(), 2.5)]
-    );
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: raw_answer(header_map(&[("x-ms-request-id", "a1")]), body.clone()),
-    };
-    let sent = send_raw_chat_async(&background, &data, 1.5, fixed_now, &recovery(&recorder))
-        .await
-        .expect("raw answer");
-    assert_eq!(sent.headers, header_map(&[("x-ms-request-id", "a1")]));
-    assert_eq!(sent.body, body);
-    assert_eq!(
-        background.calls.lock().expect("calls").clone(),
-        vec![(data, 1.5)]
-    );
-}
-
-async fn azure_output_limit_recovery() {
-    let recorder = Recorder::new(3);
-    let data = fields(&[
-        ("model", json!("gpt-3.5-turbo")),
-        ("messages", json!([{"role": "user", "content": "hi"}])),
-    ]);
-    let error = RawChatError::BadRequest {
-        message: OUTPUT_TOKEN_LIMIT_MARKER.to_uppercase(),
-        headers: header_map(&[("x-ms-request-id", "e1")]),
-        body: json!({"error": {"message": "limit"}}),
-    };
-    let sync = SyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(error.clone()),
-    };
-    let recovered = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
-        .await
-        .expect("the sync wrapper recovers");
-    assert_eq!(recovered.headers, header_map(&[("x-ms-request-id", "e1")]));
-    assert_eq!(
-        recovered.body.get("object"),
-        Some(&json!("chat.completion"))
-    );
-    assert_eq!(
-        recovered.body.get("id"),
-        Some(&json!("chatcmpl-00000000-0000-0000-0000-000000000007"))
-    );
-    assert_eq!(
-        recovered.body.pointer("/usage/prompt_tokens"),
-        Some(&json!(3))
-    );
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(error.clone()),
-    };
-    let recovered = send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder))
-        .await
-        .expect("the async wrapper recovers");
-    assert_eq!(recovered.headers, header_map(&[("x-ms-request-id", "e1")]));
-    assert_eq!(
-        recovered.body.get("object"),
-        Some(&json!("chat.completion"))
-    );
-    let streamed = fields(&[
-        ("model", json!("gpt-3.5-turbo")),
-        ("messages", json!([{"role": "user", "content": "hi"}])),
-        ("stream", json!(true)),
-    ]);
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(error),
-    };
-    let recovered =
-        send_raw_chat_async(&background, &streamed, 2.5, fixed_now, &recovery(&recorder))
-            .await
-            .expect("the async wrapper recovers a chunk");
-    assert_eq!(
-        recovered.body.get("object"),
-        Some(&json!("chat.completion.chunk"))
-    );
-    let unrelated = RawChatError::BadRequest {
-        message: String::from("invalid temperature"),
-        headers: header_map(&[("x-ms-request-id", "e2")]),
-        body: json!({"error": {"message": "invalid temperature"}}),
-    };
-    let sync = SyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(unrelated.clone()),
-    };
-    let failure = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
-        .await
-        .expect_err("an unrelated bad request travels on");
-    match &failure {
-        RawChatError::BadRequest {
-            message,
-            headers,
-            body,
-        } => {
-            assert_eq!(message, "invalid temperature");
-            assert_eq!(headers, &header_map(&[("x-ms-request-id", "e2")]));
-            assert_eq!(body, &json!({"error": {"message": "invalid temperature"}}));
-        }
-        other => panic!("{other:?}"),
-    }
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(unrelated),
-    };
-    assert!(matches!(
-        send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder)).await,
-        Err(RawChatError::BadRequest { .. })
-    ));
-    let other = SyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(RawChatError::Other {
-            message: String::from("boom"),
-        }),
-    };
-    assert!(matches!(
-        send_raw_chat_sync(&other, &data, 2.5, &recovery(&recorder)).await,
-        Err(RawChatError::Other { message }) if message == "boom"
-    ));
-}
-
-// the async wrapper reads the wall clock twice, so the fixture advances it on each read
-static TICKS: AtomicU64 = AtomicU64::new(0);
-
-fn ticking_now() -> Duration {
-    Duration::from_millis(TICKS.fetch_add(1_250, Ordering::SeqCst))
-}
-
-fn failure_text(error: &RawChatError) -> String {
-    match error {
-        RawChatError::Timeout { message } | RawChatError::Other { message } => message.clone(),
-        RawChatError::BadRequest { message, .. } => message.clone(),
-    }
-}
-
-async fn azure_async_timeout() {
-    let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
-    let recorder = Recorder::new(0);
-    TICKS.store(0, Ordering::SeqCst);
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(RawChatError::Timeout {
-            message: String::from("Request timed out."),
-        }),
-    };
-    let failure = send_raw_chat_async(&background, &data, 2.5, ticking_now, &recovery(&recorder))
-        .await
-        .expect_err("the timeout travels on");
-    assert_eq!(
-        failure_text(&failure),
-        "Request timed out. - timeout value=2.5, time taken=1.25 seconds"
-    );
-    let sync = SyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(RawChatError::Timeout {
-            message: String::from("Request timed out."),
-        }),
-    };
-    let failure = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
-        .await
-        .expect_err("the sync timeout keeps its text");
-    assert_eq!(failure_text(&failure), "Request timed out.");
-    TICKS.store(0, Ordering::SeqCst);
-    let background = AsyncTransport {
-        calls: Mutex::new(Vec::new()),
-        answer: Err(RawChatError::Timeout {
-            message: String::from("gone"),
-        }),
-    };
-    let failure = send_raw_chat_async(&background, &data, 0.5, ticking_now, &recovery(&recorder))
-        .await
-        .expect_err("the second timeout also travels on");
-    assert_eq!(
-        failure_text(&failure),
-        "gone - timeout value=0.5, time taken=1.25 seconds"
-    );
-}
+mod raw_send;
 
 #[derive(Clone, Copy)]
 enum Scenario {
@@ -1052,9 +808,9 @@ async fn output_limits_cases(#[case] scenario: Scenario) {
         Scenario::OpenAiOutputLimitStream => openai_output_limit_stream().await,
         Scenario::OpenAi422DropRetry => openai_422_drop_retry().await,
         Scenario::MalformedNestedErrorFailure => malformed_nested_error_failure(),
-        Scenario::AzureRawSendHeaders => azure_raw_send_headers().await,
-        Scenario::AzureOutputLimitRecovery => azure_output_limit_recovery().await,
-        Scenario::AzureAsyncTimeout => azure_async_timeout().await,
+        Scenario::AzureRawSendHeaders => raw_send::azure_raw_send_headers().await,
+        Scenario::AzureOutputLimitRecovery => raw_send::azure_output_limit_recovery().await,
+        Scenario::AzureAsyncTimeout => raw_send::azure_async_timeout().await,
     }
 }
 
@@ -1079,6 +835,7 @@ fn replays_the_openai_output_limits_corpus() {
     let seeds: Vec<PathBuf> = std::fs::read_dir(corpus)
         .expect("corpus directory")
         .map(|entry| entry.expect("seed").path())
+        .filter(|path| path.is_file())
         .collect();
     assert!(!seeds.is_empty());
     assert_eq!(seeds.iter().find(|path| !replays(path)), None);

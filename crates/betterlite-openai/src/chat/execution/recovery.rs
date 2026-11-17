@@ -10,11 +10,9 @@ use super::{ChatError, ChatExecutor, ChatOutcome};
 use crate::chat::ChatRequest;
 use crate::chat::deployment::ChatDeployment;
 use crate::chat::response::ChatResponse;
-use crate::output_limits::build::{RecoveredBody, Recovery, build_output_token_limit_response};
+use crate::output_limits::build::{RecoveredBody, Recovery, build_limit_response};
 use crate::output_limits::tokens::TokenizerPromptTokens;
-use crate::output_limits::{
-    ErrorBody, drop_params_from_unprocessable_entity_error, is_output_token_limit_error,
-};
+use crate::output_limits::{ErrorBody, without_rejected_fields};
 use crate::stream::ChatStream;
 
 impl ChatExecutor {
@@ -46,7 +44,7 @@ impl ChatExecutor {
         upstream: UpstreamResponse,
         upstream_time: Duration,
     ) -> Result<ChatOutcome, ChatError> {
-        if upstream.status == 400 && output_limit_reached(&upstream.body) {
+        if upstream.status == 400 && ErrorBody::Http(&upstream.body).reaches_output_limit() {
             return self
                 .recovered_outcome(request, body, upstream, upstream_time)
                 .await;
@@ -79,7 +77,7 @@ impl ChatExecutor {
             next_id: self.next_id,
             tokens: &tokens,
         };
-        let recovered = build_output_token_limit_response(body, upstream.headers, &injected)
+        let recovered = build_limit_response(body, upstream.headers, &injected)
             .await
             .map_err(|source| ChatError::OutputLimit { source })?;
         let RecoveredBody::Completion(completion) = recovered.body else {
@@ -101,7 +99,7 @@ impl ChatExecutor {
         body: &Map<String, Value>,
         upstream: UpstreamResponse,
     ) -> Result<ChatStream, ChatError> {
-        if upstream.status == 400 && output_limit_reached(&upstream.body) {
+        if upstream.status == 400 && ErrorBody::Http(&upstream.body).reaches_output_limit() {
             return self.recovered_chunk(body, upstream).await;
         }
         Err(ChatError::Provider {
@@ -121,7 +119,7 @@ impl ChatExecutor {
             next_id: self.next_id,
             tokens: &tokens,
         };
-        let recovered = build_output_token_limit_response(body, upstream.headers, &injected)
+        let recovered = build_limit_response(body, upstream.headers, &injected)
             .await
             .map_err(|source| ChatError::OutputLimit { source })?;
         let RecoveredBody::Chunk(chunk) = recovered.body else {
@@ -146,9 +144,8 @@ pub(super) fn rejected_retry(
     if response.status != 422 || dropped || !drop_params_enabled(request) {
         return Ok(None);
     }
-    let mut retried =
-        drop_params_from_unprocessable_entity_error(ErrorBody::Http(&response.body), data)
-            .map_err(|source| ChatError::RejectedFields { source })?;
+    let mut retried = without_rejected_fields(ErrorBody::Http(&response.body), data)
+        .map_err(|source| ChatError::RejectedFields { source })?;
     // LiteLLM drops the rejected fields from the transformed body, so a retry that named model or messages would go out without them; a retry that cannot succeed is a fix none relies on, so the two required fields stay
     for name in ["messages", "model"] {
         if let Some(value) = data.get(name) {
@@ -164,9 +161,4 @@ fn drop_params_enabled(request: &ChatRequest) -> bool {
         request.passthrough.get("drop_params"),
         Some(Value::Bool(true))
     )
-}
-
-// LiteLLM matches the marker inside the whole exception text, which for the SDK is the raw response body
-fn output_limit_reached(body: &[u8]) -> bool {
-    is_output_token_limit_error(str::from_utf8(body).unwrap_or_default())
 }

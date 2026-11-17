@@ -17,6 +17,18 @@ pub enum ErrorBody<'body> {
     Http(&'body [u8]),
 }
 
+impl ErrorBody<'_> {
+    // LiteLLM's is_output_token_limit_error: the marker is matched inside the whole exception text
+    #[must_use]
+    pub fn reaches_output_limit(&self) -> bool {
+        let text = match self {
+            Self::Sdk(value) => value.as_str().unwrap_or_default(),
+            Self::Http(bytes) => std::str::from_utf8(bytes).unwrap_or_default(),
+        };
+        text.to_lowercase().contains(OUTPUT_TOKEN_LIMIT_MARKER)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum RejectedFieldsError {
     #[error("the error response is not JSON: {source}")]
@@ -54,7 +66,7 @@ fn decode_body(error_body: &Value) -> Result<Vec<Value>, RejectedFieldsError> {
     let Value::Object(fields) = error_body else {
         return Ok(Vec::new());
     };
-    let Some(message) = fields.get("message").filter(|message| truthy(message)) else {
+    let Some(message) = fields.get("message").filter(|message| present(message)) else {
         return Ok(Vec::new());
     };
     let Some(message) = decoded_message(message)? else {
@@ -92,7 +104,7 @@ fn rejected_fields(detail: &[Value]) -> Result<Vec<Value>, RejectedFieldsError> 
         let Value::Object(fields) = entry else {
             return Err(RejectedFieldsError::DetailEntryNotObject { index });
         };
-        if let Some(location) = fields.get("loc").filter(|location| truthy(location)) {
+        if let Some(location) = fields.get("loc").filter(|location| present(location)) {
             if let Value::Array(location) = location
                 && location.len() == 2
             {
@@ -104,30 +116,22 @@ fn rejected_fields(detail: &[Value]) -> Result<Vec<Value>, RejectedFieldsError> 
 }
 
 // LiteLLM re-reads the caller's data as a new dict, so the caller's map is never changed
-pub fn drop_params_from_unprocessable_entity_error(
+pub fn without_rejected_fields(
     body: ErrorBody<'_>,
     data: &Map<String, Value>,
 ) -> Result<Map<String, Value>, RejectedFieldsError> {
     let rejected = decode_rejected_fields(body)?;
-    Ok(data
-        .iter()
-        .filter(|(name, _value)| {
-            !rejected
-                .iter()
-                .any(|field| field.as_str() == Some(name.as_str()))
-        })
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect())
-}
-
-// LiteLLM's is_output_token_limit_error: the marker is matched inside the whole exception message
-#[must_use]
-pub fn is_output_token_limit_error(message: &str) -> bool {
-    message.to_lowercase().contains(OUTPUT_TOKEN_LIMIT_MARKER)
+    let mut kept = data.clone();
+    kept.retain(|name, _value| {
+        !rejected
+            .iter()
+            .any(|field| field.as_str() == Some(name.as_str()))
+    });
+    Ok(kept)
 }
 
 // Python's truthiness of a decoded JSON value: the checks decide whether the message and detail fields are read at all
-fn truthy(value: &Value) -> bool {
+fn present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,

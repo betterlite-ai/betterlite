@@ -3,10 +3,12 @@ mod project;
 mod tests;
 mod transports;
 
-use std::time::Duration;
-
+use betterlite_openai::output_limits::ErrorBody;
+use betterlite_openai::output_limits::build::Recovery;
+use betterlite_openai::output_limits::tokens::TokenizerPromptTokens;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::runtime::Builder;
 use uuid::Uuid;
 
@@ -23,12 +25,21 @@ impl Helper for Op {
             .enable_all()
             .build()
             .map_err(|error| failure("OSError", None, error.to_string()))?;
+        let tokens = TokenizerPromptTokens;
+        // the same injected clock and id the Rust tests use, so the recovered shape stays comparable
+        let recovery = Recovery {
+            clock: || 1_700_000_000,
+            next_id: || Uuid::from_u128(7),
+            tokens: &tokens,
+        };
         runtime.block_on(async {
             match input {
                 Input::Drop(case) => cases::drop_case(case),
-                Input::Marker(case) => Ok(cases::marker_case(case)),
-                Input::Build(case) => cases::build_case(case).await,
-                Input::Azure(case) => cases::azure_case(case).await,
+                Input::Marker(case) => Ok(Value::Bool(
+                    ErrorBody::Http(case.message.as_bytes()).reaches_output_limit(),
+                )),
+                Input::Build(case) => cases::build_case(case, &recovery).await,
+                Input::Azure(case) => cases::azure_case(case, &recovery).await,
             }
         })
     }
@@ -41,17 +52,4 @@ pub(crate) enum Input {
     Marker(MarkerCase),
     Build(BuildCase),
     Azure(AzureCase),
-}
-
-// the same injected clock and id the Rust tests use, so the recovered shape stays comparable
-pub(crate) const fn fixed_clock() -> u64 {
-    1_700_000_000
-}
-
-pub(crate) const fn fixed_id() -> Uuid {
-    Uuid::from_u128(7)
-}
-
-pub(crate) const fn no_elapsed() -> Duration {
-    Duration::ZERO
 }

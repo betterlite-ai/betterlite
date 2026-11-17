@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::output_limits::raw_send::RawChatError;
+use betterlite_openai::output_limits::raw_send::{BadRequestReply, RawChatError};
 use betterlite_oracle_helper_api::error::HelperError;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 // python's dispatch answers every failure with type, param and code present and null
@@ -19,17 +20,13 @@ pub(crate) fn failure(class: &str, status: Option<u16>, message: String) -> Box<
 
 pub(crate) fn raw_failure(error: RawChatError) -> Box<HelperError> {
     match error {
-        RawChatError::BadRequest { message, .. } => failure("BadRequestError", Some(400), message),
+        RawChatError::BadRequest(rejected) => {
+            let BadRequestReply { message, .. } = *rejected;
+            failure("BadRequestError", Some(400), message)
+        }
         RawChatError::Timeout { message } => failure("APITimeoutError", None, message),
         RawChatError::Other { message } => failure("RawChatError", None, message),
     }
-}
-
-pub(crate) fn encoded<T>(value: &T) -> Result<Value, Box<HelperError>>
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_err(|error| failure("Encode", None, error.to_string()))
 }
 
 pub(crate) fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
@@ -52,28 +49,42 @@ pub(crate) fn header_of(headers: &HeaderMap, name: &str) -> Value {
         .map_or(Value::Null, |value| Value::String(value.to_owned()))
 }
 
-pub(crate) fn body_of(body: &Value, data: &Map<String, Value>) -> Value {
-    if matches!(data.get("stream"), Some(Value::Bool(true))) {
-        projected_chunk(body)
+// the two entries every case reports for an answered request: its chosen header and the projected body
+pub(crate) fn reply_report<T>(
+    headers: &HeaderMap,
+    header_name: &str,
+    body: &T,
+    data: &Map<String, Value>,
+) -> Result<Map<String, Value>, Box<HelperError>>
+where
+    T: Serialize,
+{
+    let mut report = Map::new();
+    report.insert(String::from("header"), header_of(headers, header_name));
+    report.insert(String::from("body"), body_of(body, data)?);
+    Ok(report)
+}
+
+// the reply the case's request asked for: a chunk when it streamed, a completion otherwise
+pub(crate) fn body_of<T>(body: &T, data: &Map<String, Value>) -> Result<Value, Box<HelperError>>
+where
+    T: Serialize,
+{
+    let encoded =
+        serde_json::to_value(body).map_err(|error| failure("Encode", None, error.to_string()))?;
+    let body_key = if matches!(data.get("stream"), Some(Value::Bool(true))) {
+        "delta"
     } else {
-        projected_completion(body)
-    }
+        "message"
+    };
+    Ok(projected_body(&encoded, body_key))
 }
 
-pub(crate) fn projected_completion(value: &Value) -> Value {
+fn projected_body(value: &Value, body_key: &str) -> Value {
     json!({
         "object": value.get("object"),
         "model": value.get("model"),
-        "choices": projected_choices(value, "message"),
-        "usage": projected_usage(value),
-    })
-}
-
-pub(crate) fn projected_chunk(value: &Value) -> Value {
-    json!({
-        "object": value.get("object"),
-        "model": value.get("model"),
-        "choices": projected_choices(value, "delta"),
+        "choices": projected_choices(value, body_key),
         "usage": projected_usage(value),
     })
 }
@@ -110,9 +121,12 @@ fn projected_usage(value: &Value) -> Value {
     let Some(usage) = value.get("usage").filter(|usage| usage.is_object()) else {
         return Value::Null;
     };
-    json!({
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    })
+    let mut projected = Map::new();
+    for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+        projected.insert(
+            name.to_owned(),
+            usage.get(name).cloned().unwrap_or(Value::Null),
+        );
+    }
+    Value::Object(projected)
 }

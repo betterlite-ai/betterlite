@@ -102,6 +102,9 @@ def marker_value(fields: MarkerFields) -> JsonValue:
     return is_output_token_limit_error(error)
 
 
+ChoiceFields = tuple[int, str | None, str | None, str | None]
+
+
 def projected_usage(usage: CompletionUsage) -> JsonValue:
     return {
         "prompt_tokens": usage.prompt_tokens,
@@ -110,46 +113,44 @@ def projected_usage(usage: CompletionUsage) -> JsonValue:
     }
 
 
-def projected_choice(
-    index: int, finish_reason: str | None, role: str | None, content: str | None
+def projected_reply(
+    object_name: str,
+    model: str,
+    choices: list[ChoiceFields],
+    usage: CompletionUsage | None,
+    body_key: Literal["message", "delta"],
 ) -> JsonValue:
     return {
-        "index": index,
-        "finish_reason": finish_reason,
-        "message": {"role": role, "content": content},
+        "object": object_name,
+        "model": model,
+        "choices": [
+            {
+                "index": index,
+                "finish_reason": finish_reason,
+                body_key: {"role": role, "content": content},
+            }
+            for index, finish_reason, role, content in choices
+        ],
+        "usage": None if usage is None else projected_usage(usage),
     }
 
 
 def projected_completion(completion: ChatCompletion) -> JsonValue:
-    usage = completion.usage
-    choices = [
-        projected_choice(
-            choice.index, choice.finish_reason, choice.message.role, choice.message.content
-        )
+    choices: list[ChoiceFields] = [
+        (choice.index, choice.finish_reason, choice.message.role, choice.message.content)
         for choice in completion.choices
     ]
-    return {
-        "object": completion.object,
-        "model": completion.model,
-        "choices": choices,
-        "usage": None if usage is None else projected_usage(usage),
-    }
+    return projected_reply(
+        completion.object, completion.model, choices, completion.usage, "message"
+    )
 
 
 def projected_chunk(chunk: ChatCompletionChunk) -> JsonValue:
-    usage = chunk.usage
-    choices = [
-        projected_choice(
-            choice.index, choice.finish_reason, choice.delta.role, choice.delta.content
-        )
+    choices: list[ChoiceFields] = [
+        (choice.index, choice.finish_reason, choice.delta.role, choice.delta.content)
         for choice in chunk.choices
     ]
-    return {
-        "object": chunk.object,
-        "model": chunk.model,
-        "choices": choices,
-        "usage": None if usage is None else projected_usage(usage),
-    }
+    return projected_reply(chunk.object, chunk.model, choices, chunk.usage, "delta")
 
 
 def build_value(fields: BuildFields) -> JsonValue:
@@ -183,6 +184,7 @@ def logging_object() -> Logging:
 
 def azure_value(fields: AzureFields) -> JsonValue:
     scripted = Scripted(fields["outcome"])
+    data: dict[str, JsonValue] = dict(fields["data"])
     headers: dict[str, str]
     reply: ChatCompletion
     if fields["asynchronous"]:
@@ -197,7 +199,7 @@ def azure_value(fields: AzureFields) -> JsonValue:
             "Coroutine[None, None, tuple[dict[str, str], ChatCompletion]]",
             AzureChatCompletion().make_azure_openai_chat_completion_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L164-L194
                 async_client,
-                dict(fields["data"]),
+                data,
                 fields["timeout"],
                 logging_obj=logging_object(),
             ),
@@ -214,7 +216,7 @@ def azure_value(fields: AzureFields) -> JsonValue:
         headers, reply = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L140-L162
             "tuple[dict[str, str], ChatCompletion]",
             AzureChatCompletion().make_sync_azure_openai_chat_completion_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L140-L162
-                client, dict(fields["data"]), fields["timeout"]
+                client, data, fields["timeout"]
             ),
         )
     return {
