@@ -17,12 +17,28 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2340-L2352
   - what: >-
       A callback_vars that is explicitly null, or not an object, fails with a 422 validation error
-      in AddTeamCallback and in TeamCallbackMetadata. LiteLLM raises AttributeError on null and
-      TypeError on a list, which the route turns into a 500.
+      in AddTeamCallback. LiteLLM calls .items() on it in the before-validator, which raises
+      AttributeError and the route turns into a 500.
     why: >-
       A body the caller can fix is a 4xx; the declared type is dict[str, str], so a non-object is a
       wrong type rather than a crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2341-L2343
+  - what: >-
+      A TeamCallbackMetadata callback_vars that is a list holding an object fails with a 422 decode
+      error. LiteLLM checks each item as a dict key, raises TypeError on the unhashable object and
+      the route returns a 500.
+    why: >-
+      Same rule as the AddTeamCallback case: a wrong type the caller can fix is a 4xx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2398-L2401
+  - what: >-
+      A request body that is not a JSON object fails with a 422 validation error in every record.
+      LiteLLM's before-validators call .get on the raw body, so a string, list or number body raises
+      AttributeError and the route returns a 500, in AddTeamCallback, TeamCallbackMetadata,
+      OrganizationTableUpdate and the four member delete and update requests.
+    why: >-
+      A body the caller wrote wrong is a 4xx, and every one of these records declares an object
+      body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4666-L4668
   - what: >-
       A callback_vars value that is a JSON number is kept as its decimal text, while a boolean,
       array or object is a wrong-type error. LiteLLM runs str() over every value, so a boolean
