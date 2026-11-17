@@ -139,7 +139,7 @@ async fn anthropic_http_stream_proxied_status_error() {
         .unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn anthropic_http_stream_proxied_open_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
@@ -190,7 +190,7 @@ async fn anthropic_http_stream_proxied_connect_refused() {
         .expect("the transport owner drains");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn anthropic_http_stream_proxied_error_body_stalls() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
@@ -261,7 +261,7 @@ async fn anthropic_http_stream_proxied_error_body_truncated_keeps_429() {
 }
 
 // LiteLLM caps the streaming error body read at five seconds, so a stalled body ends well before a long call deadline
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn anthropic_http_stream_error_body_read_capped() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());

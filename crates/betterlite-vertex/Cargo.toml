@@ -49,7 +49,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["rt", "time"] }
+tokio = { workspace = true, features = ["rt", "test-util", "time"] }
 tracing-subscriber.workspace = true
 uuid.workspace = true
 
