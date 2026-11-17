@@ -22,6 +22,12 @@ async fn next(
         .expect("the progress update arrived")
 }
 
+fn fill(registry: &ProgressRegistry, token: &ProgressToken, count: u32) {
+    for step in 1..=count {
+        registry.deliver(update(token, f64::from(step)));
+    }
+}
+
 #[tokio::test]
 async fn updates_that_arrive_before_their_subscription_are_kept_per_token() {
     let registry = Arc::new(ProgressRegistry::default());
@@ -64,9 +70,7 @@ async fn the_early_queue_drops_its_oldest_update_at_its_limit() {
     let oldest = token("oldest");
     let filler = token("filler");
     registry.deliver(update(&oldest, 0.0));
-    for step in 1..=63 {
-        registry.deliver(update(&filler, f64::from(step)));
-    }
+    fill(&registry, &filler, 63);
     registry.deliver(update(&oldest, 1.0));
     let (mut updates, _subscription) = registry.subscribe(&oldest);
     let received = next(&mut updates).await.expect("the newest update");
