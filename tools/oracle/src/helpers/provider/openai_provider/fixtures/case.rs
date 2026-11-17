@@ -66,7 +66,8 @@ pub(super) struct Globals {
 // One call the Python helper can make, keyed the way LiteLLM reads its own arguments
 #[derive(Debug, Deserialize)]
 pub(crate) struct Case {
-    pub(super) case: Operation,
+    #[serde(rename = "case")]
+    pub(super) operation: Operation,
     pub(super) model: String,
     #[serde(default)]
     pub(super) api_base: Option<String>,
@@ -106,7 +107,7 @@ const fn default_status() -> u16 {
 }
 
 // The clock a projected text reply stamps its created field with, fixed so a case can compare it
-fn fixed_now() -> StreamInstant {
+const fn fixed_now() -> StreamInstant {
     StreamInstant {
         seconds: 1_700_000_000,
         timestamp: 1_700_000_000.0,

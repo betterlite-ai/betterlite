@@ -20,8 +20,8 @@ pub(super) fn requests_view(
     answer: &FixtureAnswer,
     text: &FixtureTextSource,
 ) -> Result<Value, Box<HelperError>> {
-    match case.case {
-        Operation::Text => text_requests(text),
+    match case.operation {
+        Operation::Text => Ok(text_requests(text)),
         Operation::Chat | Operation::Embedding => answer_requests(case, answer),
     }
 }
@@ -50,7 +50,7 @@ fn answer_requests(case: &Case, answer: &FixtureAnswer) -> Result<Value, Box<Hel
 }
 
 // The text transport posts to its base URL's completions path; the case compares the composed body only
-fn text_requests(text: &FixtureTextSource) -> Result<Value, Box<HelperError>> {
+fn text_requests(text: &FixtureTextSource) -> Value {
     let attempts = text.attempts();
     let bodies = text.bodies();
     let mut rendered = Vec::with_capacity(bodies.len());
@@ -62,7 +62,7 @@ fn text_requests(text: &FixtureTextSource) -> Result<Value, Box<HelperError>> {
             "body": Value::Object(body),
         }));
     }
-    Ok(Value::Array(rendered))
+    Value::Array(rendered)
 }
 
 // The headers the Python case keeps: its own fixed set plus every name the case itself supplied

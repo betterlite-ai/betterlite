@@ -21,7 +21,7 @@ fn explicit_credentials(case: &Case) -> Credentials {
 }
 
 pub(super) fn operation(case: &Case) -> Result<OpenAiOperation, Box<HelperError>> {
-    match case.case {
+    match case.operation {
         Operation::Chat => Ok(OpenAiOperation::Chat(Box::new(chat::chat_call(case)?))),
         Operation::Embedding => Ok(OpenAiOperation::Embedding(Box::new(
             embedding::embedding_call(case)?,
@@ -50,7 +50,7 @@ fn metadata(
 // completion() takes the supplied map or else the extra one, then writes the extra map over it
 fn merged_headers(case: &Case) -> Option<Headers> {
     let supplied = case.headers.as_ref().filter(|map| !map.is_empty());
-    let base = supplied.or(case.extra_headers.as_ref().filter(|map| !map.is_empty()));
+    let base = supplied.or_else(|| case.extra_headers.as_ref().filter(|map| !map.is_empty()));
     let mut merged = base.cloned().unwrap_or_default();
     if let Some(extra) = &case.extra_headers {
         merged.extend(extra.clone());

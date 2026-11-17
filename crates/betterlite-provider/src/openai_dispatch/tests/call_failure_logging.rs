@@ -228,19 +228,17 @@ pub(super) fn check_b249_logger() {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a redactor");
     let mut state = logging_state(&redactor);
     let env = logging_env(&redactor);
-    {
-        let mut logger = B249Logger {
-            completion: PrePostLogger {
-                state: &mut state,
-                env: &env,
-            },
-        };
-        logger.post_call(LoggedCall {
-            input: Json::List(Vec::new()),
-            original_response: Json::Text(String::from("the model is overloaded")),
-            headers: Some(logged_caller_headers()),
-        });
-    }
+    let mut logger = B249Logger {
+        completion: PrePostLogger {
+            state: &mut state,
+            env: &env,
+        },
+    };
+    logger.post_call(LoggedCall {
+        input: Json::List(Vec::new()),
+        original_response: Json::Text(String::from("the model is overloaded")),
+        headers: Some(logged_caller_headers()),
+    });
     let details = &state.model_call_details;
     assert_eq!(
         details.get("original_response"),
