@@ -143,31 +143,23 @@ pub(super) async fn retry_skip_keeps_pool() {
     assert_eq!(picked(&result), "a");
 }
 
+fn aliased_fixture(group: &[(&str, &str)], model: &[(&str, &str)]) -> Fixture {
+    Fixture::aliased(vec![deployment("gpt-4o", "a", &[])], group, model)
+}
+
 pub(super) async fn group_alias() {
-    let fixture = Fixture::aliased(
-        vec![deployment("gpt-4o", "a", &[])],
-        &[("gpt", "gpt-4o")],
-        &[],
-    );
-    alias_resolves(&fixture, "gpt", "gpt-4o", AliasSource::ModelGroupAlias).await;
+    let fixture = aliased_fixture(&[("gpt", "gpt-4o")], &[]);
+    let source = AliasSource::ModelGroupAlias;
+    alias_resolves(&fixture, source, "gpt", "gpt-4o").await;
 }
 
 pub(super) async fn model_alias_map() {
-    let fixture = Fixture::aliased(
-        vec![deployment("gpt-4o", "a", &[])],
-        &[],
-        &[("gpt-4o", "gpt-4o-mini")],
-    );
-    alias_resolves(
-        &fixture,
-        "gpt-4o",
-        "gpt-4o-mini",
-        AliasSource::ModelAliasMap,
-    )
-    .await;
+    let fixture = aliased_fixture(&[], &[("gpt-4o", "gpt-4o-mini")]);
+    let source = AliasSource::ModelAliasMap;
+    alias_resolves(&fixture, source, "gpt-4o", "gpt-4o-mini").await;
 }
 
-async fn alias_resolves(fixture: &Fixture, requested: &str, resolved: &str, source: AliasSource) {
+async fn alias_resolves(fixture: &Fixture, source: AliasSource, requested: &str, resolved: &str) {
     let result = run_simple(fixture, &RequestSetup::new(requested))
         .await
         .unwrap();
