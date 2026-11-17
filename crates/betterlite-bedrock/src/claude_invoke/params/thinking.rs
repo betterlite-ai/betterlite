@@ -64,21 +64,10 @@ where
         write_effort(params, &clamped);
         Ok(())
     }
-
-    pub(super) async fn translate_thinking<Source, Transport>(
-        &self,
-        optional_params: &mut IndexMap<String, Json>,
-        environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-    ) -> Result<(), MapParamsError>
-    where
-        Source: DynamicMetadataSource,
-        Transport: ModelInfoClient,
-    {
-        translated(self, optional_params, environment).await
-    }
 }
 
-async fn translated<Source, Transport, Lookup>(
+// LiteLLM translates after the parent mapping, with the original model and the bedrock provider.
+pub(super) async fn translate_thinking<Source, Transport, Lookup>(
     request: &MapParamsRequest<'_, Lookup>,
     optional_params: &mut IndexMap<String, Json>,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,

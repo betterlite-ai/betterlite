@@ -113,9 +113,7 @@ where
         environment,
     )
     .await?;
-    request
-        .translate_thinking(optional_params, environment)
-        .await?;
+    thinking::translate_thinking(request, optional_params, environment).await?;
     thinking::apply_display_updates(display_updates, optional_params);
     remove_forced_tool_choice(
         has_response_format,
