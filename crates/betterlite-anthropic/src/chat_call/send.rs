@@ -9,7 +9,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use url::Url;
 
-use crate::anthropic_http_stream::call::StreamBuild;
 use crate::anthropic_http_stream::error::PostFailure;
 use crate::anthropic_http_stream::transport::StreamPost;
 use crate::response::{Logging, RawResponse, ResponseRequest};
@@ -17,93 +16,21 @@ use crate::usage::ReasoningTokenCounter;
 
 use super::config::ChatConfig;
 use super::error::ChatCallError;
-use super::prepare::{Options, Prepared};
+use super::prepare::Options;
 use super::transport::{ChatTransport, ClientKind};
-use super::{ChatCall, ChatClients, ChatDeps, ChatOutcome};
+use super::{ChatCall, ChatClients, ChatOutcome};
 
-mod streams;
+pub(super) mod streams;
 
-use streams::{StreamFacts, open_async, open_sync};
-
-struct BufferedCall<'call> {
-    call: ChatCall<'call>,
-    body: IndexMap<String, Json>,
-    header_map: http::HeaderMap,
-    optional_params: IndexMap<String, Json>,
-    options: Options,
+pub(super) struct BufferedCall<'call> {
+    pub(super) call: ChatCall<'call>,
+    pub(super) body: IndexMap<String, Json>,
+    pub(super) header_map: http::HeaderMap,
+    pub(super) optional_params: IndexMap<String, Json>,
+    pub(super) options: Options,
 }
 
-pub(super) async fn send<Config, Client, Counter>(
-    call: ChatCall<'_>,
-    deps: ChatDeps<'_, Config, Client, Counter>,
-    prepared: Prepared,
-) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
-where
-    Config: ChatConfig,
-    Client: ChatTransport,
-    Counter: ReasoningTokenCounter + Clone + Unpin + Send,
-{
-    let Prepared {
-        body,
-        header_map,
-        optional_params,
-        options,
-    } = prepared;
-    let ChatDeps {
-        config,
-        clients,
-        state,
-        env,
-        stream_logger,
-        counter,
-        ids,
-        max_event_bytes,
-        max_error_body_bytes,
-    } = deps;
-    if options.stream {
-        // the stream helper takes the messages as one JSON list, the way LiteLLM passes its copied list
-        let messages = Json::List(call.messages);
-        let facts = StreamFacts {
-            model: call.model,
-            api_base: call.api_base,
-            messages: &messages,
-            data: body,
-            headers: header_map,
-            timeout: call.timeout,
-            json_mode: options.json_mode,
-            optional_params: &optional_params,
-            litellm_params: &call.litellm_params,
-        };
-        let build = StreamBuild {
-            ids,
-            counter: counter.clone(),
-            max_event_bytes,
-            max_error_body_bytes,
-        };
-        return if call.acompletion {
-            open_async(clients, stream_logger, build, facts).await
-        } else {
-            open_sync(clients, stream_logger, build, facts).await
-        };
-    }
-    buffered(
-        BufferedCall {
-            call,
-            body,
-            header_map,
-            optional_params,
-            options,
-        },
-        config,
-        &clients,
-        state,
-        env,
-        &counter,
-    )
-    .await
-}
-
-async fn buffered<Config, Client, Counter>(
+pub(super) async fn buffered<Config, Client, Counter>(
     facts: BufferedCall<'_>,
     config: &Config,
     clients: &ChatClients<'_, Client>,
@@ -203,8 +130,12 @@ where
                 input: Json::List(call.messages.clone()),
                 original_response: Json::Text(message.clone()),
                 additional_args: AdditionalArgs {
+                    api_base: None,
+                    headers: None,
                     complete_input_dict: Some(RawBody::Object(body.clone())),
-                    ..AdditionalArgs::default()
+                    request_str: None,
+                    openai_sdk: None,
+                    passthrough: IndexMap::new(),
                 },
             },
             env,

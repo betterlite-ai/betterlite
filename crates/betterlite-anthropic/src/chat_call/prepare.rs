@@ -49,7 +49,7 @@ where
 
     let header_options = header_params(&optional_params, is_vertex_request)?;
     let lite_llm_params = lite_llm_params(&call.litellm_params)?;
-    let messages = prompt_messages(&call.messages);
+    let messages: Vec<PromptJson> = call.messages.iter().map(prompt_json).collect();
     let validated = validate_environment(
         &EnvironmentRequest {
             model: call.model,
@@ -102,7 +102,9 @@ where
                 api_base: Some(call.api_base.to_owned()),
                 headers: Some(headers_args(&headers)),
                 complete_input_dict: Some(RawBody::Object(body.clone())),
-                ..AdditionalArgs::default()
+                request_str: None,
+                openai_sdk: None,
+                passthrough: IndexMap::new(),
             },
         },
         deps.env,
@@ -124,9 +126,7 @@ fn take_bool(
     match options.shift_remove(field) {
         None | Some(Json::Null) => Ok(default),
         Some(Json::Bool(value)) => Ok(value),
-        Some(Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ParameterError { field })
-        }
+        Some(_) => Err(ParameterError { field }),
     }
 }
 
@@ -147,12 +147,10 @@ fn option_list(
     options: &IndexMap<String, Json>,
     field: &'static str,
 ) -> Result<Option<Vec<PromptJson>>, ParameterError> {
-    match options.get(field) {
-        None | Some(Json::Null) => Ok(None),
+    match non_null(options, field) {
+        None => Ok(None),
         Some(Json::List(items)) => Ok(Some(items.iter().map(prompt_json).collect())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(ParameterError { field })
-        }
+        Some(_) => Err(ParameterError { field }),
     }
 }
 
@@ -186,10 +184,6 @@ fn lite_llm_params(params: &IndexMap<String, Json>) -> Result<HeaderLiteLlmParam
         api_base,
         use_bearer_for_custom_base,
     })
-}
-
-fn prompt_messages(messages: &[Json]) -> Vec<PromptJson> {
-    messages.iter().map(prompt_json).collect()
 }
 
 // LiteLLM passes the same values to the header checks and to the request transform, which keeps them as sent

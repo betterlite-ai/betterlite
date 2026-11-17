@@ -122,6 +122,33 @@ impl FixtureTransport {
         }
     }
 
+    fn record(&self, post: StreamPost) {
+        self.posts.lock().unwrap().push(post);
+    }
+
+    fn failure(&self) -> Option<PostFailure<FixtureFailure>> {
+        match &self.trip {
+            Trip::Reply => None,
+            Trip::Unknown(message) => Some(PostFailure::Unknown(FixtureFailure {
+                message: (*message).to_owned(),
+            })),
+            Trip::Timed => Some(PostFailure::Unknown(FixtureFailure {
+                message: "timed out after 1.5 seconds".to_owned(),
+            })),
+            Trip::Status {
+                status_code,
+                headers,
+                body,
+                exception_headers,
+            } => Some(PostFailure::Status(Box::new(StatusFailure {
+                status_code: *status_code,
+                body: body.clone(),
+                exception_headers: exception_headers.then(|| headers.clone()),
+                response_headers: (!exception_headers).then(|| headers.clone()),
+            }))),
+        }
+    }
+
     pub(super) fn posted_bodies(&self) -> Vec<IndexMap<String, Json>> {
         self.posts
             .lock()
@@ -152,38 +179,20 @@ impl StreamTransport for FixtureTransport {
         &self,
         post: StreamPost,
     ) -> Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>> {
-        self.posts.lock().unwrap().push(post);
-        match &self.trip {
-            Trip::Reply => {
-                let lines: Vec<String> = self.reply.lines.clone();
-                let decoded: LineChunks<FixtureFailure> = futures_util::stream::iter(
-                    lines.into_iter().map(|line| Ok(TransportChunk::Text(line))),
-                )
-                .boxed();
-                Ok(StreamReply {
-                    status_code: self.reply.status_code,
-                    headers: self.reply.headers.clone(),
-                    lines: decoded,
-                })
-            }
-            Trip::Unknown(message) => Err(PostFailure::Unknown(FixtureFailure {
-                message: (*message).to_owned(),
-            })),
-            Trip::Timed => Err(PostFailure::Unknown(FixtureFailure {
-                message: "timed out after 1.5 seconds".to_owned(),
-            })),
-            Trip::Status {
-                status_code,
-                headers,
-                body,
-                exception_headers,
-            } => Err(PostFailure::Status(Box::new(StatusFailure {
-                status_code: *status_code,
-                body: body.clone(),
-                exception_headers: exception_headers.then(|| headers.clone()),
-                response_headers: (!exception_headers).then(|| headers.clone()),
-            }))),
+        self.record(post);
+        if let Some(failure) = self.failure() {
+            return Err(failure);
         }
+        let lines: Vec<String> = self.reply.lines.clone();
+        let decoded: LineChunks<FixtureFailure> = futures_util::stream::iter(
+            lines.into_iter().map(|line| Ok(TransportChunk::Text(line))),
+        )
+        .boxed();
+        Ok(StreamReply {
+            status_code: self.reply.status_code,
+            headers: self.reply.headers.clone(),
+            lines: decoded,
+        })
     }
 }
 
@@ -192,30 +201,14 @@ impl ChatTransport for FixtureTransport {
         &self,
         post: StreamPost,
     ) -> Result<BufferedReply, PostFailure<FixtureFailure>> {
-        self.posts.lock().unwrap().push(post);
-        match &self.trip {
-            Trip::Reply => Ok(BufferedReply {
+        self.record(post);
+        match self.failure() {
+            Some(failure) => Err(failure),
+            None => Ok(BufferedReply {
                 status_code: self.reply.status_code,
                 headers: self.reply.headers.clone(),
                 body: self.reply.body.clone(),
             }),
-            Trip::Unknown(message) => Err(PostFailure::Unknown(FixtureFailure {
-                message: (*message).to_owned(),
-            })),
-            Trip::Timed => Err(PostFailure::Unknown(FixtureFailure {
-                message: "timed out after 1.5 seconds".to_owned(),
-            })),
-            Trip::Status {
-                status_code,
-                headers,
-                body,
-                exception_headers,
-            } => Err(PostFailure::Status(Box::new(StatusFailure {
-                status_code: *status_code,
-                body: body.clone(),
-                exception_headers: exception_headers.then(|| headers.clone()),
-                response_headers: (!exception_headers).then(|| headers.clone()),
-            }))),
         }
     }
 }
@@ -237,16 +230,6 @@ pub(super) struct FixtureConfig {
 }
 
 impl FixtureConfig {
-    pub(super) fn new(body: IndexMap<String, Json>) -> Self {
-        Self {
-            body,
-            transform_failure: None,
-            filter_failure: None,
-            transforms: Mutex::new(Vec::new()),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
     fn record(
         &self,
         request: &TransformRequest<'_>,

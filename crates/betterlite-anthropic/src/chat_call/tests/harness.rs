@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
@@ -165,21 +167,23 @@ pub(super) fn execute(setup: Setup) -> Run {
     let sink = Silent;
     let mut state = logging_state(&redactor);
     let env = logging_env(&redactor, &sink);
-    let mut config = FixtureConfig::new(setup.body);
-    config.transform_failure = setup.transform_failure.map(str::to_owned);
-    config.filter_failure = setup.filter_failure.map(str::to_owned);
+    let config = FixtureConfig {
+        body: setup.body,
+        transform_failure: setup.transform_failure.map(str::to_owned),
+        filter_failure: setup.filter_failure.map(str::to_owned),
+        transforms: Mutex::new(Vec::new()),
+        calls: Mutex::new(Vec::new()),
+    };
     let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let pooled = FixtureTransport::new(setup.reply, setup.trip);
     let logger = RecordingLogger::default();
     let caller_key = setup
         .caller_key
         .map(|key| SecretString::from(key.to_owned()));
-    let settings = AnthropicSettings {
-        api_key: setup
-            .settings_key
-            .map(|key| SecretString::from(key.to_owned())),
-        ..AnthropicSettings::default()
-    };
+    let mut settings = AnthropicSettings::default();
+    settings.api_key = setup
+        .settings_key
+        .map(|key| SecretString::from(key.to_owned()));
     let call = ChatCall {
         model: MODEL,
         custom_llm_provider: "anthropic",

@@ -32,56 +32,46 @@ pub(super) struct StreamFacts<'facts> {
     pub(super) litellm_params: &'facts IndexMap<String, Json>,
 }
 
-pub(super) async fn open_async<Client, Counter>(
+// acompletion_stream_function accepts only an AsyncHTTPHandler, while make_sync_call takes any supplied client
+pub(super) async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
     logger: &dyn StreamLogger,
     build: StreamBuild<'_, Counter>,
     facts: StreamFacts<'_>,
+    acompletion: bool,
 ) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
 where
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Unpin + Send,
 {
-    // acompletion_stream_function accepts only an AsyncHTTPHandler, so a supplied sync client is ignored
     let supplied = clients
         .supplied
         .as_ref()
-        .filter(|item| item.kind == ClientKind::Async)
+        .filter(|item| !acompletion || item.kind == ClientKind::Async)
         .map(|item| item.transport);
-    let stream = CompletionStream {
-        model: facts.model,
-        api_base: facts.api_base,
-        headers: facts.headers,
-        data: facts.data,
-        messages: facts.messages,
-        timeout: facts.timeout,
-        json_mode: facts.json_mode,
-        optional_params: facts.optional_params,
-        litellm_params: facts.litellm_params,
-    };
-    let wrapping = StreamClients {
-        supplied,
-        module_level_aclient: clients.pooled,
-        module_level_client: clients.pooled,
-        logger,
-    };
-    let wrapped = acompletion_stream_function(wrapping, stream, build)
-        .await
-        .map_err(completion_error)?;
-    Ok(ChatOutcome::Stream(Box::new(wrapped)))
-}
-
-pub(super) async fn open_sync<Client, Counter>(
-    clients: ChatClients<'_, Client>,
-    logger: &dyn StreamLogger,
-    build: StreamBuild<'_, Counter>,
-    facts: StreamFacts<'_>,
-) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
-where
-    Client: ChatTransport,
-    Counter: ReasoningTokenCounter + Unpin + Send,
-{
-    let supplied = clients.supplied.as_ref().map(|item| item.transport);
+    if acompletion {
+        let stream = CompletionStream {
+            model: facts.model,
+            api_base: facts.api_base,
+            headers: facts.headers,
+            data: facts.data,
+            messages: facts.messages,
+            timeout: facts.timeout,
+            json_mode: facts.json_mode,
+            optional_params: facts.optional_params,
+            litellm_params: facts.litellm_params,
+        };
+        let wrapping = StreamClients {
+            supplied,
+            module_level_aclient: clients.pooled,
+            module_level_client: clients.pooled,
+            logger,
+        };
+        let wrapped = acompletion_stream_function(wrapping, stream, build)
+            .await
+            .map_err(completion_error)?;
+        return Ok(ChatOutcome::Stream(Box::new(wrapped)));
+    }
     let body = python_json::dumps_object(&facts.data);
     let (speed, reverse) = stream_names(facts.optional_params, facts.litellm_params)?;
     let request = StreamCall {

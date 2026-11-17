@@ -2,7 +2,6 @@ pub mod config;
 pub mod error;
 mod prepare;
 mod send;
-#[cfg(test)]
 mod tests;
 pub mod transport;
 
@@ -14,7 +13,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::anthropic_http_stream::call::StreamLogger;
+use crate::anthropic_http_stream::call::{StreamBuild, StreamLogger};
 use crate::anthropic_http_stream::completion::WrappedStream;
 use crate::credentials::AnthropicSettings;
 use crate::response::wire::ResponseEnvelope;
@@ -23,6 +22,9 @@ use crate::usage::ReasoningTokenCounter;
 
 use config::ChatConfig;
 use error::ChatCallError;
+use prepare::Prepared;
+use send::BufferedCall;
+use send::streams::{StreamFacts, open_stream};
 use transport::{ChatTransport, SuppliedChatClient};
 
 // embedding() is an empty pass body: it builds no request, sends none and returns None
@@ -71,13 +73,65 @@ pub enum ChatOutcome<ClientFailure, Counter> {
 // LiteLLM's AnthropicChatCompletion.completion around the selected config: prepare, filter, log, then send
 pub async fn chat_call<Config, Client, Counter>(
     call: ChatCall<'_>,
-    deps: ChatDeps<'_, Config, Client, Counter>,
+    mut deps: ChatDeps<'_, Config, Client, Counter>,
 ) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
 where
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Clone + Unpin + Send,
 {
-    let prepared = prepare::prepare(&call, &mut deps).await?;
-    send::send(call, deps, prepared).await
+    let Prepared {
+        body,
+        header_map,
+        optional_params,
+        options,
+    } = prepare::prepare(&call, &mut deps).await?;
+    let ChatDeps {
+        config,
+        clients,
+        state,
+        env,
+        stream_logger,
+        counter,
+        ids,
+        max_event_bytes,
+        max_error_body_bytes,
+    } = deps;
+    if options.stream {
+        // the stream helper takes the messages as one JSON list, the way LiteLLM passes its copied list
+        let messages = Json::List(call.messages);
+        let facts = StreamFacts {
+            model: call.model,
+            api_base: call.api_base,
+            messages: &messages,
+            data: body,
+            headers: header_map,
+            timeout: call.timeout,
+            json_mode: options.json_mode,
+            optional_params: &optional_params,
+            litellm_params: &call.litellm_params,
+        };
+        let build = StreamBuild {
+            ids,
+            counter: counter.clone(),
+            max_event_bytes,
+            max_error_body_bytes,
+        };
+        return open_stream(clients, stream_logger, build, facts, call.acompletion).await;
+    }
+    send::buffered(
+        BufferedCall {
+            call,
+            body,
+            header_map,
+            optional_params,
+            options,
+        },
+        config,
+        &clients,
+        state,
+        env,
+        &counter,
+    )
+    .await
 }

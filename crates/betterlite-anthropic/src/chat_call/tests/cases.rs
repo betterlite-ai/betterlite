@@ -77,21 +77,19 @@ fn object_of(value: &Json) -> &IndexMap<String, Json> {
 }
 
 fn messages_post_request() {
-    let asynchronous = execute(Setup {
-        acompletion: true,
-        optional_params: popped_options(),
-        ..Setup::default()
-    });
+    let mut asynchronous_setup = Setup::default();
+    asynchronous_setup.acompletion = true;
+    asynchronous_setup.optional_params = popped_options();
+    let asynchronous = execute(asynchronous_setup);
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_eq!(asynchronous.posts_pooled, 0);
     assert_posted(&asynchronous);
     assert_prepared(&asynchronous, "async");
 
     // the sync branch keeps only an HTTPHandler client, so an async one falls back to the pooled client
-    let synchronous = execute(Setup {
-        optional_params: popped_options(),
-        ..Setup::default()
-    });
+    let mut synchronous_setup = Setup::default();
+    synchronous_setup.optional_params = popped_options();
+    let synchronous = execute(synchronous_setup);
     assert_eq!(synchronous.posts_supplied, 0);
     assert_eq!(synchronous.posts_pooled, 1);
     assert_posted(&synchronous);
@@ -159,11 +157,10 @@ fn assert_buffered_logged(run: &Run) {
 }
 
 fn buffered_success() {
-    let asynchronous = execute(Setup {
-        acompletion: true,
-        optional_params: speed_options(),
-        ..Setup::default()
-    });
+    let mut asynchronous_setup = Setup::default();
+    asynchronous_setup.acompletion = true;
+    asynchronous_setup.optional_params = speed_options();
+    let asynchronous = execute(asynchronous_setup);
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_reply(&asynchronous);
     assert_buffered_logged(&asynchronous);
@@ -176,19 +173,17 @@ fn buffered_success() {
         Some(&text(&text_body("hello")))
     );
 
-    let synchronous = execute(Setup {
-        optional_params: speed_options(),
-        ..Setup::default()
-    });
+    let mut synchronous_setup = Setup::default();
+    synchronous_setup.optional_params = speed_options();
+    let synchronous = execute(synchronous_setup);
     assert_eq!(synchronous.posts_pooled, 1);
     assert_reply(&synchronous);
 
     // a supplied sync client is the one a sync buffered call keeps
-    let kept = execute(Setup {
-        supplied_kind: ClientKind::Sync,
-        optional_params: speed_options(),
-        ..Setup::default()
-    });
+    let mut kept_setup = Setup::default();
+    kept_setup.supplied_kind = ClientKind::Sync;
+    kept_setup.optional_params = speed_options();
+    let kept = execute(kept_setup);
     assert_eq!(kept.posts_supplied, 1);
     assert_eq!(kept.posts_pooled, 0);
     assert_reply(&kept);
@@ -213,17 +208,16 @@ fn tool_name_map() -> IndexMap<String, Json> {
 fn stream_setup() -> Setup {
     let mut headers = HeaderMap::new();
     headers.insert("request-id", HeaderValue::from_static("stream-1"));
-    Setup {
-        stream: true,
-        supplied_kind: ClientKind::Sync,
-        optional_params: speed_options(),
-        litellm_params: tool_name_map(),
-        reply: FixtureReply {
-            headers,
-            ..FixtureReply::text("hello")
-        },
-        ..Setup::default()
-    }
+    let mut setup = Setup::default();
+    setup.stream = true;
+    setup.supplied_kind = ClientKind::Sync;
+    setup.optional_params = speed_options();
+    setup.litellm_params = tool_name_map();
+    setup.reply = FixtureReply {
+        headers,
+        ..FixtureReply::text("hello")
+    };
+    setup
 }
 
 fn stream_request() {
@@ -285,10 +279,9 @@ fn assert_streamed(run: &Run) {
 
 fn pre_stream_error() {
     // validation runs before any config or transport work
-    let unauthenticated = execute(Setup {
-        caller_key: None,
-        ..Setup::default()
-    });
+    let mut unauthenticated_setup = Setup::default();
+    unauthenticated_setup.caller_key = None;
+    let unauthenticated = execute(unauthenticated_setup);
     assert_eq!(unauthenticated.status(), Some(401));
     assert_eq!(
         unauthenticated.posts_supplied + unauthenticated.posts_pooled,
@@ -297,20 +290,18 @@ fn pre_stream_error() {
     assert!(unauthenticated.transforms.is_empty());
     assert!(unauthenticated.calls.is_empty());
 
-    let unprepared = execute(Setup {
-        transform_failure: Some("the case's transform refuses"),
-        ..Setup::default()
-    });
+    let mut unprepared_setup = Setup::default();
+    unprepared_setup.transform_failure = Some("the case's transform refuses");
+    let unprepared = execute(unprepared_setup);
     assert_eq!(unprepared.status(), None);
     assert!(format!("{}", unprepared.error()).contains("the case's transform refuses"));
     assert_eq!(unprepared.posts_supplied + unprepared.posts_pooled, 0);
     assert_eq!(unprepared.calls, ["sync".to_owned()]);
 
-    let unfiltered = execute(Setup {
-        acompletion: true,
-        filter_failure: Some("the case's filter refuses"),
-        ..Setup::default()
-    });
+    let mut unfiltered_setup = Setup::default();
+    unfiltered_setup.acompletion = true;
+    unfiltered_setup.filter_failure = Some("the case's filter refuses");
+    let unfiltered = execute(unfiltered_setup);
     assert_eq!(unfiltered.status(), None);
     assert!(format!("{}", unfiltered.error()).contains("the case's filter refuses"));
     assert_eq!(unfiltered.posts_supplied + unfiltered.posts_pooled, 0);
@@ -327,11 +318,10 @@ fn error_body() -> &'static str {
 fn native_error_body() {
     let body = error_body();
     for acompletion in [true, false] {
-        let run = execute(Setup {
-            acompletion,
-            reply: FixtureReply::raw(200, HeaderMap::new(), body),
-            ..Setup::default()
-        });
+        let mut setup = Setup::default();
+        setup.acompletion = acompletion;
+        setup.reply = FixtureReply::raw(200, HeaderMap::new(), body);
+        let run = execute(setup);
         // an error body at HTTP 200 is the upstream's own error, not a decode failure
         assert_eq!(run.status(), Some(200));
         assert!(format!("{}", run.error()).contains("slow down"));
@@ -349,26 +339,24 @@ fn unsupported_embedding() {
 }
 
 fn failed_call(acompletion: bool) -> Run {
-    execute(Setup {
-        acompletion,
-        trip: Trip::Unknown("boom"),
-        ..Setup::default()
-    })
+    let mut setup = Setup::default();
+    setup.acompletion = acompletion;
+    setup.trip = Trip::Unknown("boom");
+    execute(setup)
 }
 
 fn status_call(status_code: u16, body: &[u8], exception_headers: bool) -> Run {
     let mut headers = HeaderMap::new();
     headers.insert("x-request-id", HeaderValue::from_static("req-1"));
-    execute(Setup {
-        acompletion: true,
-        trip: Trip::Status {
-            status_code,
-            headers,
-            body: body.to_vec(),
-            exception_headers,
-        },
-        ..Setup::default()
-    })
+    let mut setup = Setup::default();
+    setup.acompletion = true;
+    setup.trip = Trip::Status {
+        status_code,
+        headers,
+        body: body.to_vec(),
+        exception_headers,
+    };
+    execute(setup)
 }
 
 fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
@@ -411,13 +399,11 @@ fn chat_failure_projection() {
     );
     assert_eq!(synchronous.posts_pooled, 1);
 
-    // a deadline with no response is a bare transport error here, so it takes the 500 path;
-    // litellm.Timeout would carry a status of its own
-    let timed = execute(Setup {
-        acompletion: true,
-        trip: Trip::Timed,
-        ..Setup::default()
-    });
+    // a deadline with no response is a bare transport error here, so it takes the 500 path
+    let mut timed_setup = Setup::default();
+    timed_setup.acompletion = true;
+    timed_setup.trip = Trip::Timed;
+    let timed = execute(timed_setup);
     assert_eq!(timed.status(), Some(500));
     assert!(format!("{}", timed.error()).contains("timed out after 1.5 seconds"));
 

@@ -22,29 +22,19 @@ fn posted_header(run: &Run, name: &str) -> String {
     value.to_str().unwrap().to_owned()
 }
 
-fn first_identity() -> Run {
-    execute(Setup {
-        acompletion: true,
-        caller_headers: identity_headers("one"),
-        caller_key: Some(FIRST_KEY),
-        settings_key: Some(SECOND_KEY),
-        ..Setup::default()
-    })
-}
-
-fn second_identity() -> Run {
-    execute(Setup {
-        caller_headers: identity_headers("two"),
-        caller_key: Some(SECOND_KEY),
-        settings_key: Some(FIRST_KEY),
-        ..Setup::default()
-    })
+fn identity(header: &str, caller: Option<&'static str>, settings_key: Option<&'static str>) -> Run {
+    let mut setup = Setup::default();
+    setup.acompletion = true;
+    setup.caller_headers = identity_headers(header);
+    setup.caller_key = caller;
+    setup.settings_key = settings_key;
+    execute(setup)
 }
 
 #[test]
 fn chat_call_credential_identity_isolation() {
-    let first = first_identity();
-    let second = second_identity();
+    let first = identity("one", Some(FIRST_KEY), Some(SECOND_KEY));
+    let second = identity("two", Some(SECOND_KEY), Some(FIRST_KEY));
     // each call sends its own caller key, and the configured key never overrides it
     assert_eq!(posted_header(&first, "x-api-key"), FIRST_KEY);
     assert_eq!(posted_header(&second, "x-api-key"), SECOND_KEY);
@@ -70,13 +60,12 @@ fn chat_call_credential_identity_isolation() {
 }
 
 fn assert_settings_identity() {
-    let settings_only = execute(Setup {
-        acompletion: true,
-        caller_headers: IndexMap::new(),
-        caller_key: None,
-        settings_key: Some(SECOND_KEY),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.acompletion = true;
+    setup.caller_headers = IndexMap::new();
+    setup.caller_key = None;
+    setup.settings_key = Some(SECOND_KEY);
+    let settings_only = execute(setup);
     assert_eq!(posted_header(&settings_only, "x-api-key"), SECOND_KEY);
     assert!(settings_only.posted_headers[0].get("x-identity").is_none());
     assert!(
@@ -88,12 +77,12 @@ fn assert_settings_identity() {
 }
 
 fn assert_no_identity() {
-    let anonymous = execute(Setup {
-        caller_headers: identity_headers("three"),
-        caller_key: None,
-        settings_key: None,
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.acompletion = true;
+    setup.caller_headers = identity_headers("three");
+    setup.caller_key = None;
+    setup.settings_key = None;
+    let anonymous = execute(setup);
     assert_eq!(anonymous.status(), Some(401));
     assert!(anonymous.transforms.is_empty());
     assert_eq!(anonymous.posts_supplied + anonymous.posts_pooled, 0);
@@ -119,22 +108,19 @@ fn assert_secret_safe(run: &Run) {
 
 #[test]
 fn chat_call_secret_safe_failure() {
-    let settings = AnthropicSettings {
-        api_key: Some(SecretString::from(SETTINGS_KEY.to_owned())),
-        ..AnthropicSettings::default()
-    };
+    let mut settings = AnthropicSettings::default();
+    settings.api_key = Some(SecretString::from(SETTINGS_KEY.to_owned()));
     assert!(!format!("{settings:?}").contains(SETTINGS_KEY));
 
-    let rejected = execute(Setup {
-        acompletion: true,
-        trip: Trip::Status {
-            status_code: 401,
-            headers: failure_headers(),
-            body: b"{\"error\":{\"message\":\"invalid api key\"}}".to_vec(),
-            exception_headers: false,
-        },
-        ..Setup::default()
-    });
+    let mut rejected_setup = Setup::default();
+    rejected_setup.acompletion = true;
+    rejected_setup.trip = Trip::Status {
+        status_code: 401,
+        headers: failure_headers(),
+        body: b"{\"error\":{\"message\":\"invalid api key\"}}".to_vec(),
+        exception_headers: false,
+    };
+    let rejected = execute(rejected_setup);
     assert_eq!(rejected.status(), Some(401));
     assert_secret_safe(&rejected);
     // the recorded request masks the credential rather than dropping the header
@@ -143,16 +129,14 @@ fn chat_call_secret_safe_failure() {
         .unwrap();
     assert_ne!(masked, &Json::Text(CALLER_KEY.to_owned()));
 
-    let unreachable = execute(Setup {
-        acompletion: true,
-        trip: Trip::Unknown("connect failed"),
-        ..Setup::default()
-    });
+    let mut unreachable_setup = Setup::default();
+    unreachable_setup.acompletion = true;
+    unreachable_setup.trip = Trip::Unknown("connect failed");
+    let unreachable = execute(unreachable_setup);
     assert_secret_safe(&unreachable);
 
-    let unprepared = execute(Setup {
-        transform_failure: Some("the config refused"),
-        ..Setup::default()
-    });
+    let mut unprepared_setup = Setup::default();
+    unprepared_setup.transform_failure = Some("the config refused");
+    let unprepared = execute(unprepared_setup);
     assert_secret_safe(&unprepared);
 }
