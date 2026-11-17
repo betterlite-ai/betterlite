@@ -143,7 +143,7 @@ fn decrypt_row_decrypts_only_strings_and_skips_structured_keys() {
     let raw = row(&[
         ("google_client_id", sealed(&cipher, "plain-id")),
         ("saml_allow_unsolicited", JsonValue::Bool(true)),
-        ("generic_scope", JsonValue::from(5)),
+        ("generic_scope", JsonValue::from(5_i32)),
         ("saml_idp_metadata_xml", JsonValue::Null),
         ("proxy_base_url", JsonValue::from("not-a-ciphertext")),
         ("role_mappings", JsonValue::from("sealed")),
@@ -159,7 +159,10 @@ fn decrypt_row_decrypts_only_strings_and_skips_structured_keys() {
         decrypted.get("saml_allow_unsolicited"),
         Some(&JsonValue::Bool(true))
     );
-    assert_eq!(decrypted.get("generic_scope"), Some(&JsonValue::from(5)));
+    assert_eq!(
+        decrypted.get("generic_scope"),
+        Some(&JsonValue::from(5_i32))
+    );
     assert_eq!(
         decrypted.get("saml_idp_metadata_xml"),
         Some(&JsonValue::Null)

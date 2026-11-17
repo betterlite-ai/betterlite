@@ -4,7 +4,7 @@ use betterlite_auth::sso_resolution::{
     SSO_DESCRIPTORS, resolve_sso_config, sso_field_env_vars, sso_secret_fields,
 };
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};

@@ -10,7 +10,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use crate::sso_types::records::{RoleMappings, SsoConfig, TeamMappings, UiAccessMode};
+use crate::sso_types::records::SsoConfig;
 
 mod tests;
 
@@ -276,10 +276,10 @@ fn optional_typed<T>(
 where
     T: DeserializeOwned,
 {
-    let Some(value) = value.filter(|value| !value.is_null()) else {
+    let Some(raw) = value.filter(|candidate| !candidate.is_null()) else {
         return Ok(None);
     };
-    serde_json::from_value(value.clone())
+    serde_json::from_value(raw.clone())
         .map(Some)
         .map_err(|source| SsoResolutionError::Field { field, source })
 }
