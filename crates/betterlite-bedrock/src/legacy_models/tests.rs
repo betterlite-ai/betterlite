@@ -443,61 +443,38 @@ fn titan_stop_filter() {
     assert_eq!(token_order, object(r#"{"maxTokenCount": 5}"#));
 
     titan_filtered_stop_sequences();
+    titan_stop_with_method_drop_params();
     titan_stop_argument_kept();
 }
 
 fn titan_filtered_stop_sequences() {
-    let kept = titan_stop(
-        r#"["|", "x", "User:", "|\n", "User:\n", "||", "", "user:", "User:\n\n", 5]"#,
-        StopFlags {
-            method_drop_params: false,
-            global_drop_params: true,
-        },
-    );
-    assert_eq!(
-        kept,
-        object(r#"{"stopSequences": ["|", "User:", "|\n", "User:\n", "||"]}"#)
-    );
-    assert_eq!(
-        titan_stop(
-            r#""END""#,
-            StopFlags {
-                method_drop_params: false,
-                global_drop_params: true,
-            },
+    let global_drops = StopFlags {
+        method_drop_params: false,
+        global_drop_params: true,
+    };
+    for (stop, expected) in [
+        (
+            r#"["|", "x", "User:", "|\n", "User:\n", "||", "", "user:", "User:\n\n", 5]"#,
+            r#"{"stopSequences": ["|", "User:", "|\n", "User:\n", "||"]}"#,
         ),
-        object(r#"{"stopSequences": []}"#)
-    );
-    assert_eq!(
-        titan_stop(
-            "null",
-            StopFlags {
-                method_drop_params: false,
-                global_drop_params: true,
-            },
-        ),
-        object(r#"{"stopSequences": []}"#)
-    );
-    assert_eq!(
-        titan_stop(
-            r#""END""#,
-            StopFlags {
-                method_drop_params: true,
-                global_drop_params: false,
-            },
-        ),
-        object(r#"{"stopSequences": "END"}"#)
-    );
-    assert_eq!(
-        titan_stop(
-            r#"["|"]"#,
-            StopFlags {
-                method_drop_params: true,
-                global_drop_params: false,
-            },
-        ),
-        object(r#"{"stopSequences": ["|"]}"#)
-    );
+        (r#""END""#, r#"{"stopSequences": []}"#),
+        ("null", r#"{"stopSequences": []}"#),
+    ] {
+        assert_eq!(titan_stop(stop, global_drops), object(expected), "{stop}");
+    }
+}
+
+fn titan_stop_with_method_drop_params() {
+    let method_drops = StopFlags {
+        method_drop_params: true,
+        global_drop_params: false,
+    };
+    for (stop, expected) in [
+        (r#""END""#, r#"{"stopSequences": "END"}"#),
+        (r#"["|"]"#, r#"{"stopSequences": ["|"]}"#),
+    ] {
+        assert_eq!(titan_stop(stop, method_drops), object(expected), "{stop}");
+    }
 }
 
 fn stop_argument_after(provider: &str, model: &str, supported: &str) -> Object {
