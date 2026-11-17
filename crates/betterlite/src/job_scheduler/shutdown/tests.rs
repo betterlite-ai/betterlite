@@ -113,7 +113,7 @@ async fn stop_in_flight_jobs_waits_for_a_job_that_finishes() {
     assert!(!logs.contents().contains("Cancelling"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn stop_in_flight_jobs_counts_only_the_jobs_it_cancels() {
     let mut scheduler = scheduler();
     let finished = Arc::new(AtomicUsize::new(0));

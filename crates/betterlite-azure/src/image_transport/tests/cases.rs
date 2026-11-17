@@ -31,7 +31,7 @@ fn image_transport_cases(#[case] scenario: fn()) {
     scenario();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn system_clock_measures_and_pauses() {
     let clock = SystemClock {
         origin: Instant::now(),

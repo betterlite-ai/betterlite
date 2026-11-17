@@ -1,0 +1,50 @@
+kind: helper
+name: anthropic-batches-auth-headers
+call:
+  anthropic_batches:
+    auth_headers:
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fixture}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: [[anthropic-beta, ""], [accept, text/plain], [content-type, text/csv], [x-keep, keep]]
+          expected_auth: sk-ant-fixture
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fixture}
+          api_key: sk-explicit
+          api_base: "https://custom.example"
+          params_api_base: null
+          caller_headers: [[anthropic-beta, caller-beta]]
+          expected_auth: sk-explicit
+        - environment: {ANTHROPIC_API_KEY: sk-env}
+          api_key: null
+          api_base: null
+          params_api_base: "https://params.example"
+          caller_headers: []
+          expected_auth: sk-env
+        - environment: {ANTHROPIC_AUTH_TOKEN: auth-token}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: []
+          expected_auth: "Bearer auth-token"
+        - environment: {ANTHROPIC_API_KEY: sk-ant-oat-abc}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: []
+          expected_auth: "Bearer sk-ant-oat-abc"
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fresh, ANTHROPIC_API_BASE: "https://env.example/"}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: [[anthropic-beta, ""]]
+          expected_auth: sk-ant-fresh
+        - environment: {}
+          api_key: null
+          api_base: null
+          params_api_base: null
+          caller_headers: []
+          expected_auth: null
+env: {}
+compare: {ignore: []}

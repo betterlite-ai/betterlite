@@ -1,0 +1,49 @@
+kind: helper
+name: anthropic-batches-retrieve
+call:
+  anthropic_batches:
+    retrieve:
+      now: 1704067200
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fixture}
+          batch_id: msgbatch_9
+          api_base: null
+          api_key: null
+          sync: false
+          status: 200
+          headers: []
+          body: '{"id":"msgbatch_9","processing_status":"ended","created_at":"2024-01-01T00:00:00Z","ended_at":"2024-01-01T01:00:00Z","request_counts":{"succeeded":1}}'
+        - environment: {ANTHROPIC_API_KEY: sk-env, ANTHROPIC_API_BASE: "https://env-base.example/"}
+          batch_id: "a b/c?d"
+          api_base: ""
+          api_key: ""
+          sync: false
+          status: 200
+          headers: []
+          body: '{"id":"b","processing_status":"ended"}'
+        - environment: {ANTHROPIC_API_KEY: sk-env}
+          batch_id: msgbatch_9
+          api_base: "https://explicit.example"
+          api_key: sk-explicit
+          sync: true
+          status: 200
+          headers: []
+          body: '{"id":"msgbatch_9","processing_status":"ended","created_at":"2024-01-01T00:00:00Z","ended_at":"2024-01-01T01:00:00Z","request_counts":{"succeeded":1}}'
+        - environment: {ANTHROPIC_API_KEY: sk-ant-fixture}
+          batch_id: msgbatch_9
+          api_base: null
+          api_key: null
+          sync: false
+          status: 429
+          headers: [[retry-after, "7"]]
+          body: '{"error":{"message":"slow down"}}'
+        - environment: {ANTHROPIC_AUTH_TOKEN: auth-token-only}
+          batch_id: b
+          api_base: null
+          api_key: null
+          sync: false
+          status: 200
+          headers: []
+          body: '{}'
+env: {}
+compare: {ignore: []}

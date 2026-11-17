@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-batches-create-requests
+call:
+  anthropic_batches:
+    create_requests:
+      environment: {ANTHROPIC_API_KEY: sk-ant-fixture, ANTHROPIC_API_BASE: "https://env.example/"}
+      url_bases:
+        - null
+        - ""
+        - "https://api.anthropic.com"
+        - "https://x.example/"
+        - "https://x.example/v1/messages/batches"
+        - "https://x.example/v1/messages/batches/"
+env: {}
+compare: {ignore: []}
