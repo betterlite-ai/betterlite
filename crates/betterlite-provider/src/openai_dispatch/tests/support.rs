@@ -16,14 +16,12 @@ use uuid::Uuid;
 
 use crate::openai_dispatch::OpenAiRequest;
 use crate::openai_dispatch::call::Credentials;
-use crate::openai_dispatch::call::{
-    ChatCall, Composition, EmbeddingCall, OpenAiOperation, TextCall,
-};
+use crate::openai_dispatch::call::{Composition, OpenAiOperation};
 use crate::openai_dispatch::dispatch::dispatch;
 use crate::openai_dispatch::error::OpenAiProviderError;
 use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
 use crate::openai_dispatch::fixtures::logger::FixtureLogger;
-use crate::openai_dispatch::fixtures::text_transport::{FixtureTextSource, TextReply};
+use crate::openai_dispatch::fixtures::text_transport::FixtureTextSource;
 use crate::openai_dispatch::logging::LoggedCall;
 use crate::openai_dispatch::transport::Deps;
 use crate::operation::{OperationRequest, OperationResult};
@@ -48,20 +46,6 @@ pub fn composition() -> Composition {
     }
 }
 
-pub fn globals(
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    openai_key: Option<&str>,
-    organization: Option<&str>,
-) -> LiteLlmGlobals {
-    LiteLlmGlobals {
-        api_base: api_base.map(str::to_owned),
-        api_key: api_key.map(SecretString::from),
-        openai_key: openai_key.map(SecretString::from),
-        organization: organization.map(str::to_owned),
-    }
-}
-
 pub fn credentials(
     api_base: Option<&str>,
     api_key: Option<&str>,
@@ -71,6 +55,16 @@ pub fn credentials(
         api_base: api_base.map(str::to_owned),
         api_key: api_key.map(SecretString::from),
         organization: organization.map(str::to_owned),
+    }
+}
+
+// litellm's globals carry the same identity as a call's explicit credentials, beside litellm.openai_key
+pub fn globals(identity: Credentials, openai_key: Option<&str>) -> LiteLlmGlobals {
+    LiteLlmGlobals {
+        api_base: identity.api_base,
+        api_key: identity.api_key,
+        openai_key: openai_key.map(SecretString::from),
+        organization: identity.organization,
     }
 }
 
@@ -153,63 +147,19 @@ pub fn fixed_id() -> Uuid {
     Uuid::from_u128(1)
 }
 
-pub async fn dispatch_chat(
+async fn run(
     composition: &Composition,
-    call: ChatCall,
+    operation: OpenAiOperation,
     answer: &FixtureAnswer,
-    logger: &mut FixtureLogger,
-) -> Result<OperationResult, OpenAiProviderError> {
-    let text = FixtureTextSource::new(TextReply::new(200, Vec::new()));
-    dispatch(
-        OperationRequest::OpenAi(OpenAiRequest),
-        OpenAiOperation::Chat(Box::new(call)),
-        composition,
-        Deps {
-            answer,
-            text: &text,
-            now: fixed_now,
-            next_id: fixed_id,
-        },
-        logger,
-    )
-    .await
-}
-
-pub async fn dispatch_embedding(
-    composition: &Composition,
-    call: EmbeddingCall,
-    answer: &FixtureAnswer,
-) -> Result<OperationResult, OpenAiProviderError> {
-    let text = FixtureTextSource::new(TextReply::new(200, Vec::new()));
-    let mut logger = FixtureLogger::default();
-    dispatch(
-        OperationRequest::OpenAi(OpenAiRequest),
-        OpenAiOperation::Embedding(Box::new(call)),
-        composition,
-        Deps {
-            answer,
-            text: &text,
-            now: fixed_now,
-            next_id: fixed_id,
-        },
-        &mut logger,
-    )
-    .await
-}
-
-pub async fn dispatch_text(
-    composition: &Composition,
-    call: TextCall,
     text: &FixtureTextSource,
     logger: &mut FixtureLogger,
 ) -> Result<OperationResult, OpenAiProviderError> {
-    let answer = FixtureAnswer::new(200, Vec::new());
     dispatch(
         OperationRequest::OpenAi(OpenAiRequest),
-        OpenAiOperation::Text(Box::new(call)),
+        operation,
         composition,
         Deps {
-            answer: &answer,
+            answer,
             text,
             now: fixed_now,
             next_id: fixed_id,
@@ -218,3 +168,11 @@ pub async fn dispatch_text(
     )
     .await
 }
+
+mod dispatch_chat;
+mod dispatch_embedding;
+mod dispatch_text;
+
+pub use dispatch_chat::dispatch_chat;
+pub use dispatch_embedding::dispatch_embedding;
+pub use dispatch_text::dispatch_text;
