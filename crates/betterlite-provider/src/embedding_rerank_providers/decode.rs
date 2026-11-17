@@ -1,7 +1,6 @@
 use std::io::Error as IoError;
 
 use betterlite_context::chat_config_selection::cohere::CohereRoute;
-use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::cohere_chat_v1::reply::{ReplyInput as V1ReplyInput, decode_cohere_chat_v1};
 use betterlite_openai::cohere_chat_v2::reply::{
@@ -46,7 +45,8 @@ fn decoded(
         Decode::InfinityEmbedding => Ok(EmbeddingRerankResult::InfinityEmbedding(Box::new(
             decode_infinity_embedding(&response.body, response.status)?,
         ))),
-        Decode::Rerank(config) => rerank_answer(*config, response),
+        Decode::Rerank(config) => rerank::decode(*config, response.status, &response.body)
+            .map(|reply| EmbeddingRerankResult::Rerank(Box::new(reply))),
     }
 }
 
@@ -56,14 +56,6 @@ fn decode_error(error: FamilyError) -> OperationError {
         operation: "embedding_rerank",
         source: serde_json::Error::io(IoError::other(error.to_string())),
     }
-}
-
-fn rerank_answer(
-    config: RerankConfig,
-    response: &UpstreamResponse,
-) -> Result<EmbeddingRerankResult, FamilyError> {
-    let answer = rerank::decode(config, response.status, &response.body)?;
-    Ok(EmbeddingRerankResult::Rerank(Box::new(answer)))
 }
 
 fn cohere_chat(

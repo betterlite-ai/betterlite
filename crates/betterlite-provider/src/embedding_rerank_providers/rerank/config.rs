@@ -12,24 +12,11 @@ use crate::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, MapCohereRerankParams, Params, ResponseTransform,
 };
 
-const COHERE_V1_PARAMS: [&str; 6] = [
-    "query",
-    "documents",
-    "top_n",
-    "max_chunks_per_doc",
-    "rank_fields",
-    "return_documents",
-];
-const COHERE_V2_PARAMS: [&str; 6] = [
-    "query",
-    "documents",
-    "top_n",
-    "max_tokens_per_doc",
-    "rank_fields",
-    "return_documents",
-];
-const JINA_PARAMS: [&str; 4] = ["query", "top_n", "documents", "return_documents"];
-const VOYAGE_PARAMS: [&str; 4] = ["query", "documents", "top_n", "return_documents"];
+// LiteLLM's supported_rerank_params names, in the order each family's config lists them
+const V1_PARAMS: &str = "query documents top_n max_chunks_per_doc rank_fields return_documents";
+const V2_PARAMS: &str = "query documents top_n max_tokens_per_doc rank_fields return_documents";
+const JINA_PARAMS: &str = "query top_n documents return_documents";
+const VOYAGE_PARAMS: &str = "query documents top_n return_documents";
 
 impl BaseRerankConfig for FamilyRerankConfig<'_> {
     type Error = FamilyError;
@@ -102,20 +89,20 @@ impl BaseRerankConfig for FamilyRerankConfig<'_> {
     fn get_complete_url(
         &self,
         api_base: Option<&str>,
-        model: &str,
+        _model: &str,
         _optional_params: Option<&Params>,
     ) -> String {
-        self.url(api_base, model).unwrap_or_default()
+        self.url(api_base).unwrap_or_default()
     }
 
     fn supported_rerank_params(&self, _model: &str) -> Vec<String> {
         let names = match self.config {
-            RerankConfig::Cohere | RerankConfig::Infinity => &COHERE_V1_PARAMS[..],
-            RerankConfig::CohereV2 => &COHERE_V2_PARAMS[..],
-            RerankConfig::JinaAi => &JINA_PARAMS[..],
-            RerankConfig::Voyage => &VOYAGE_PARAMS[..],
+            RerankConfig::Cohere | RerankConfig::Infinity => V1_PARAMS,
+            RerankConfig::CohereV2 => V2_PARAMS,
+            RerankConfig::JinaAi => JINA_PARAMS,
+            RerankConfig::Voyage => VOYAGE_PARAMS,
         };
-        names.iter().map(|name| (*name).to_owned()).collect()
+        names.split_whitespace().map(str::to_owned).collect()
     }
 
     fn map_cohere_rerank_params(

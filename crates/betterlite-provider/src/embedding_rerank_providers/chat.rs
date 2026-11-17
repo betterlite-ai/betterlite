@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use betterlite_config::sections::embedding_provider_settings::Settings;
 use betterlite_context::chat_config_selection::cohere::{CohereRoute, get_cohere_route};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::chat::ChatRequest;
@@ -9,12 +8,12 @@ use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::cohere_chat_v1::{self, CohereV1ChatConfig};
 use betterlite_openai::cohere_chat_v2;
 use betterlite_openai::cohere_streams;
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
 use uuid::Uuid;
 
+use super::Common;
 use super::error::FamilyError;
 use super::request::{encode, http_headers, plain, url};
 use super::{Call, CohereChatDecode, Decode, EmbeddingRerankPrepared};
@@ -26,53 +25,44 @@ const V2_DEFAULT_URL: &str = "https://api.cohere.com/v2/chat";
 // the fields LiteLLM reads itself, so none of them is an optional provider parameter
 const REMOVED_FIELDS: [&str; 3] = ["model", "messages", "stream"];
 
-pub struct ChatCallInput<'request> {
-    pub provider: ProviderId,
-    pub model: &'request str,
-    pub request: &'request ChatRequest,
-    pub stream: bool,
-    pub api_key: Option<&'request SecretString>,
-    pub api_base: Option<&'request str>,
-    pub headers: Option<&'request Headers>,
-    pub extra_headers: &'request Headers,
-    pub settings: &'request Settings,
-    pub timeout: Duration,
-}
-
-pub fn prepare(input: &ChatCallInput<'_>) -> Result<EmbeddingRerankPrepared, FamilyError> {
-    if !matches!(input.provider, ProviderId::Cohere | ProviderId::CohereChat) {
+pub fn prepare(
+    common: &Common<'_>,
+    request: &ChatRequest,
+    stream: bool,
+) -> Result<EmbeddingRerankPrepared, FamilyError> {
+    if !matches!(common.provider, ProviderId::Cohere | ProviderId::CohereChat) {
         return Err(FamilyError::Unsupported {
-            provider: input.provider.to_string(),
+            provider: common.provider.to_string(),
         });
     }
-    let route = get_cohere_route(input.model);
+    let route = get_cohere_route(common.model);
     // v2 drops every version prefix from the model it sends, and v1 keeps it
     let model = match route {
-        CohereRoute::V1 => input.model.to_owned(),
-        CohereRoute::V2 => input.model.replace("v2/", ""),
+        CohereRoute::V1 => common.model.to_owned(),
+        CohereRoute::V2 => common.model.replace("v2/", ""),
     };
     let default = match route {
         CohereRoute::V1 => V1_DEFAULT_URL,
         CohereRoute::V2 => V2_DEFAULT_URL,
     };
-    let base = input
+    let base = common
         .settings
-        .resolve_api_base(input.api_base)
+        .resolve_api_base(common.api_base)
         .unwrap_or_else(|| default.to_owned());
-    let mut headers = input
+    let mut headers = common
         .settings
-        .resolve_headers(input.headers, input.extra_headers);
-    let key = input
+        .resolve_headers(common.headers, common.extra_headers);
+    let key = common
         .settings
-        .resolve_api_key(input.api_key)
+        .resolve_api_key(common.api_key)
         .unwrap_or_else(|| SecretString::from(String::new()));
     cohere_streams::validate_environment(&mut headers, &key);
-    let body = body(route, &model, &base, input)?;
+    let body = body(route, &model, &base, request, stream)?;
     Ok(EmbeddingRerankPrepared(Call {
         url: url("cohere", &base)?,
         headers: http_headers(&headers)?,
         body: encode(&Json::Object(body))?,
-        timeout: input.timeout,
+        timeout: common.timeout,
         decode: Decode::CohereChat(Box::new(chat_decode(route, model))),
     }))
 }
@@ -93,14 +83,15 @@ fn body(
     route: CohereRoute,
     model: &str,
     base: &str,
-    input: &ChatCallInput<'_>,
+    request: &ChatRequest,
+    stream: bool,
 ) -> Result<Object, FamilyError> {
-    let non_default = non_default_params(input.request, input.stream)?;
+    let non_default = non_default_params(request, stream)?;
     match route {
         CohereRoute::V1 => {
             let mapped = cohere_chat_v1::map_openai_params(&non_default, Object::new());
             let config = CohereV1ChatConfig::with_settings(Object::new())?;
-            let value = serde_json::to_value(&input.request.messages)
+            let value = serde_json::to_value(&request.messages)
                 .map_err(|source| FamilyError::Encode { source })?;
             let messages: Vec<Message> =
                 serde_json::from_value(value).map_err(|source| FamilyError::Encode { source })?;
@@ -117,7 +108,7 @@ fn body(
             let complete = cohere_chat_v2::complete_url(Some(base))?;
             let body = cohere_chat_v2::request_body(&cohere_chat_v2::RequestInput {
                 model,
-                messages: &input.request.messages,
+                messages: &request.messages,
                 optional_params: &mapped,
                 api_base: Some(complete.as_str()),
                 environment: &environment,

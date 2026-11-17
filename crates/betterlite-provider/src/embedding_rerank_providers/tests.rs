@@ -23,12 +23,15 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use url::Url;
 
-use super::chat::{self, ChatCallInput};
-use super::embedding::{self, EmbeddingCallInput};
+use super::chat;
+use super::embedding;
 use super::error::FamilyError;
-use super::rerank::{self, RerankCallInput};
-use super::{EmbeddingRerank, EmbeddingRerankPrepared, EmbeddingRerankResult};
-use crate::api::rerank_contracts::ReturnDocuments;
+use super::rerank::{self, FamilyRerankConfig};
+use super::{Common, EmbeddingRerank, EmbeddingRerankPrepared, EmbeddingRerankResult};
+use crate::api::rerank_contracts::{
+    BaseRerankConfig as _, EnvironmentRequest, OptionalRerankParams, Params, ReturnDocuments,
+    get_optional_rerank_params,
+};
 use crate::operation::{OperationError, OperationResult};
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
@@ -195,18 +198,22 @@ impl ChatFixture {
     }
 
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
-        chat::prepare(&ChatCallInput {
-            provider: self.provider,
-            model: &self.model,
-            request: &self.request,
-            stream: self.stream,
-            api_key: self.api_key.as_ref(),
-            api_base: self.api_base.as_deref(),
-            headers: self.headers.as_ref(),
-            extra_headers: &self.extra,
-            settings: &self.settings,
-            timeout: TIMEOUT,
-        })
+        chat::prepare(
+            &Common {
+                provider: self.provider,
+                model: &self.model,
+                api_key: self.api_key.as_ref(),
+                api_base: self.api_base.as_deref(),
+                headers: self.headers.as_ref(),
+                extra_headers: &self.extra,
+                settings: &self.settings,
+                host: &embedding_host_settings::Settings::default(),
+                environment: &BTreeMap::<String, String>::new(),
+                timeout: TIMEOUT,
+            },
+            &self.request,
+            self.stream,
+        )
     }
 
     fn prepared(&self) -> EmbeddingRerankPrepared {
@@ -244,19 +251,21 @@ impl EmbeddingFixture {
     }
 
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
-        embedding::prepare(&EmbeddingCallInput {
-            provider: self.provider,
-            model: &self.model,
-            request: &self.request,
-            api_key: self.api_key.as_ref(),
-            api_base: self.api_base.as_deref(),
-            headers: self.headers.as_ref(),
-            extra_headers: &self.extra,
-            settings: &self.settings,
-            host: &self.host,
-            environment: &self.environment,
-            timeout: TIMEOUT,
-        })
+        embedding::prepare(
+            &Common {
+                provider: self.provider,
+                model: &self.model,
+                api_key: self.api_key.as_ref(),
+                api_base: self.api_base.as_deref(),
+                headers: self.headers.as_ref(),
+                extra_headers: &self.extra,
+                settings: &self.settings,
+                host: &self.host,
+                environment: &self.environment,
+                timeout: TIMEOUT,
+            },
+            &self.request,
+        )
     }
 
     fn prepared(&self) -> EmbeddingRerankPrepared {
@@ -308,26 +317,70 @@ impl RerankFixture {
     }
 
     fn prepare(&self) -> Result<EmbeddingRerankPrepared, FamilyError> {
-        rerank::prepare(&RerankCallInput {
-            provider: self.provider,
-            model: &self.model,
-            query: &self.query,
-            documents: &self.documents,
-            top_n: self.top_n,
-            rank_fields: self.rank_fields.as_deref(),
-            return_documents: self.return_documents,
-            max_chunks_per_doc: self.max_chunks_per_doc,
-            max_tokens_per_doc: self.max_tokens_per_doc,
-            instruction: self.instruction.as_deref(),
-            api_key: self.api_key.as_ref(),
-            api_base: self.api_base.as_deref(),
-            headers: self.headers.as_ref(),
+        let mut present = Vec::new();
+        if self.max_chunks_per_doc.is_some() {
+            present.push(String::from("max_chunks_per_doc"));
+        }
+        if self.max_tokens_per_doc.is_some() {
+            present.push(String::from("max_tokens_per_doc"));
+        }
+        let config = betterlite_core::embedding_rerank_providers::rerank_config(
+            self.provider,
+            self.api_base.as_deref(),
+            &present,
+        )
+        .ok_or(FamilyError::Unsupported {
+            provider: self.provider.to_string(),
+        })?;
+        let family = FamilyRerankConfig {
+            config,
             cohere: &self.cohere,
             host: &self.host,
-            settings: &self.settings,
             environment: &self.environment,
-            timeout: TIMEOUT,
-        })
+        };
+        let mut non_default = Params::new();
+        if let Some(rank_fields) = self.rank_fields.as_deref() {
+            non_default.insert(
+                String::from("rank_fields"),
+                betterlite_models::decisions::Json::List(
+                    rank_fields
+                        .iter()
+                        .cloned()
+                        .map(betterlite_models::decisions::Json::Text)
+                        .collect(),
+                ),
+            );
+        }
+        let params = get_optional_rerank_params(
+            &family,
+            OptionalRerankParams {
+                model: &self.model,
+                drop_params: false,
+                query: &self.query,
+                documents: &self.documents,
+                custom_llm_provider: Some(<&'static str>::from(self.provider)),
+                top_n: self.top_n,
+                rank_fields: self.rank_fields.as_deref(),
+                return_documents: self.return_documents,
+                max_chunks_per_doc: self.max_chunks_per_doc,
+                max_tokens_per_doc: self.max_tokens_per_doc,
+                instruction: self.instruction.as_deref(),
+                non_default_params: Some(&mut non_default),
+            },
+        )?;
+        let supplied = self
+            .settings
+            .resolve_headers(self.headers.as_ref(), &Headers::new());
+        let headers = family.validate_environment(EnvironmentRequest {
+            headers: &supplied,
+            model: &self.model,
+            api_key: self.api_key.as_ref(),
+            optional_params: Some(&params),
+            litellm_params: None,
+        })?;
+        let endpoint = family.url(self.api_base.as_deref())?;
+        let body = family.transform_rerank_request(&self.model, &params, &headers, None)?;
+        rerank::prepare(family.config, endpoint, headers, &body, TIMEOUT)
     }
 
     fn prepared(&self) -> EmbeddingRerankPrepared {

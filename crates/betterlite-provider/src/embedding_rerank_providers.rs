@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_config::sections::{embedding_host_settings, embedding_provider_settings};
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::{embedding_host_settings, embedding_provider_settings::Settings};
 use betterlite_context::chat_config_selection::cohere::CohereRoute;
 use betterlite_core::embedding_rerank_providers::RerankConfig;
 use betterlite_http::proxy::ProxiedClient;
@@ -21,10 +22,7 @@ use http::{HeaderMap, Method};
 use secrecy::SecretString;
 use url::Url;
 
-use crate::operation::{
-    ChatOperation, EmbeddingOperation, OperationError, OperationRequest, OperationResult,
-    RequestKind,
-};
+use crate::operation::{OperationError, OperationRequest, OperationResult, RequestKind};
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Adapter;
@@ -41,7 +39,7 @@ mod tests;
 pub struct EmbeddingRerank;
 
 // the framework's OperationRequest tests build this variant from its bare name, so it stays a unit;
-// the call's data is ChatCallInput, EmbeddingCallInput or RerankCallInput
+// the call's data is Common, next to the operation's own request
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EmbeddingRerankRequest;
 
@@ -123,71 +121,18 @@ fn unavailable() -> OperationError {
     }
 }
 
-// the process-wide values main.py reads while it prepares a family call
-struct Globals {
-    settings: embedding_provider_settings::Settings,
-    host: embedding_host_settings::Settings,
-    environment: BTreeMap<String, String>,
-    extra_headers: Headers,
-}
-
-struct CallContext<'request> {
-    provider: ProviderId,
-    model: &'request str,
-    deployment: &'request Deployment,
-    globals: &'request Globals,
-}
-
-fn route(
-    operation: &OperationRequest,
-    context: &CallContext<'_>,
-) -> Result<EmbeddingRerankPrepared, OperationError> {
-    match operation.kind() {
-        RequestKind::Chat(chat) => chat_form(context, chat, false),
-        RequestKind::Stream(chat) => chat_form(context, chat, true),
-        RequestKind::Embedding(embedding) => embedding_form(context, embedding),
-        RequestKind::Other => Err(unavailable()),
-    }
-}
-
-fn chat_form(
-    context: &CallContext<'_>,
-    chat: &ChatOperation,
-    stream: bool,
-) -> Result<EmbeddingRerankPrepared, OperationError> {
-    chat::prepare(&chat::ChatCallInput {
-        provider: context.provider,
-        model: context.model,
-        request: &chat.request,
-        stream,
-        api_key: context.deployment.api_key.as_ref(),
-        api_base: Some(context.deployment.api_base.as_str()),
-        headers: None,
-        extra_headers: &context.globals.extra_headers,
-        settings: &context.globals.settings,
-        timeout: context.deployment.timeout,
-    })
-    .map_err(OperationError::from)
-}
-
-fn embedding_form(
-    context: &CallContext<'_>,
-    embedding: &EmbeddingOperation,
-) -> Result<EmbeddingRerankPrepared, OperationError> {
-    embedding::prepare(&embedding::EmbeddingCallInput {
-        provider: context.provider,
-        model: context.model,
-        request: &embedding.request,
-        api_key: context.deployment.api_key.as_ref(),
-        api_base: Some(context.deployment.api_base.as_str()),
-        headers: None,
-        extra_headers: &context.globals.extra_headers,
-        settings: &context.globals.settings,
-        host: &context.globals.host,
-        environment: &context.globals.environment,
-        timeout: context.deployment.timeout,
-    })
-    .map_err(OperationError::from)
+// the process-wide values main.py reads while it prepares a family call, shared by the three forms
+pub struct Common<'request> {
+    pub provider: ProviderId,
+    pub model: &'request str,
+    pub api_key: Option<&'request SecretString>,
+    pub api_base: Option<&'request str>,
+    pub headers: Option<&'request Headers>,
+    pub extra_headers: &'request Headers,
+    pub settings: &'request Settings,
+    pub host: &'request embedding_host_settings::Settings,
+    pub environment: &'request (dyn EnvironmentLookup + Send + Sync),
+    pub timeout: Duration,
 }
 
 impl Adapter for EmbeddingRerank {
@@ -202,19 +147,30 @@ impl Adapter for EmbeddingRerank {
         let Some((provider, model)) = family(&deployment.model) else {
             return Err(unavailable());
         };
-        let globals = Globals {
-            settings: embedding_provider_settings::Settings::default(),
-            host: embedding_host_settings::Settings::default(),
-            environment: BTreeMap::new(),
-            extra_headers: Headers::new(),
-        };
-        let context = CallContext {
+        let settings = Settings::default();
+        let host = embedding_host_settings::Settings::default();
+        let environment = BTreeMap::new();
+        let extra_headers = Headers::new();
+        let common = Common {
             provider,
             model,
-            deployment,
-            globals: &globals,
+            api_key: deployment.api_key.as_ref(),
+            api_base: Some(deployment.api_base.as_str()),
+            headers: None,
+            extra_headers: &extra_headers,
+            settings: &settings,
+            host: &host,
+            environment: &environment,
+            timeout: deployment.timeout,
         };
-        route(operation, &context).map(PreparedRequest::EmbeddingRerank)
+        let prepared = match operation.kind() {
+            RequestKind::Chat(chat) => chat::prepare(&common, &chat.request, false),
+            RequestKind::Stream(chat) => chat::prepare(&common, &chat.request, true),
+            RequestKind::Embedding(embedding) => embedding::prepare(&common, &embedding.request),
+            RequestKind::Other => return Err(unavailable()),
+        }
+        .map_err(OperationError::from)?;
+        Ok(PreparedRequest::EmbeddingRerank(prepared))
     }
 
     async fn execute(

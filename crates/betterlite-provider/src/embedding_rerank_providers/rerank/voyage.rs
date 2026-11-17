@@ -62,19 +62,14 @@ impl voyage_rerank::RerankLogging for VoyageLogging {
 
 // Voyage's own map: query and documents always, top_k and return_documents when the caller set them
 pub(super) fn voyage_params(request: &MapCohereRerankParams<'_>) -> Params {
-    let mut params = Params::from([
-        (String::from("query"), Json::Text(request.query.to_owned())),
-        (
-            String::from("documents"),
-            Json::List(
-                request
-                    .documents
-                    .iter()
-                    .map(RerankDocument::as_json)
-                    .collect(),
-            ),
-        ),
-    ]);
+    let documents = request
+        .documents
+        .iter()
+        .map(RerankDocument::as_json)
+        .collect();
+    let mut params = Params::new();
+    params.insert(String::from("query"), Json::Text(request.query.to_owned()));
+    params.insert(String::from("documents"), Json::List(documents));
     if let Some(top_n) = request.top_n {
         params.insert(String::from("top_k"), Json::Number(Number::from(top_n)));
     }
