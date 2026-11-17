@@ -16,7 +16,7 @@ use betterlite_server::pass_through_logging::tinyfish::billing::{
 };
 use fixture::Fixture;
 use serde::Deserialize;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinHandle;
 
 pub(crate) struct Op;
@@ -71,6 +71,7 @@ impl Helper for Op {
 
 // Each route bills from its own point: run-async and run-sse spawn a poller, while the other two return their payload.
 fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
     match input.function {
         Function::AsyncRun => {
             let log: Arc<dyn StreamSuccessDispatch> = Arc::clone(&fixture.recorder);
@@ -82,7 +83,11 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 log,
                 start_time: fixture.start_time,
             };
-            finish(fixture, fixture.billing.start_async_run_billing(poll))
+            let handle = {
+                let _entered = runtime.enter();
+                fixture.billing.start_async_run_billing(poll)
+            };
+            finish(fixture, &runtime, handle)
         }
         Function::SseRun => {
             let run_id = input
@@ -96,7 +101,11 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 log,
                 start_time: fixture.start_time,
             };
-            finish(fixture, fixture.billing.start_sse_run_billing(poll))
+            let handle = {
+                let _entered = runtime.enter();
+                fixture.billing.start_sse_run_billing(poll)
+            };
+            finish(fixture, &runtime, handle)
         }
         Function::Blocking => {
             let result = result_text(input)?;
@@ -110,7 +119,6 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
             payload_view(fixture, &outcome)
         }
         Function::CollectedChunks => {
-            let runtime = Builder::new_current_thread().build().or_value_error()?;
             let outcome =
                 runtime.block_on(fixture.billing.handle_logging_tinyfish_collected_chunks(
                     CollectedChunks {
@@ -131,8 +139,8 @@ fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
     )
 }
 
-fn finish(fixture: &Fixture, handle: JoinHandle<()>) -> HelperResult {
-    let runtime = Builder::new_current_thread().build().or_value_error()?;
+// The poller was spawned inside the runtime above, which is what drives it to its terminal run here.
+fn finish(fixture: &Fixture, runtime: &Runtime, handle: JoinHandle<()>) -> HelperResult {
     runtime.block_on(handle).or_value_error()?;
     view::billing_view(
         fixture.logging_obj.as_ref(),
