@@ -1,6 +1,6 @@
 import os
 from collections.abc import Awaitable
-from typing import TypedDict
+from typing import TypeAlias, TypedDict
 
 import httpx
 import litellm
@@ -16,6 +16,8 @@ EXPERIMENTAL_HANDLER_FLAG = "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER"
 KEPT_HEADERS = frozenset({"authorization", "content-type", "openai-organization"})
 
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+# mypy reads litellm.completion's decorated return as Any; this names its declared type.
+CompletionCall: TypeAlias = ModelResponse | CustomStreamWrapper
 
 
 class Globals(TypedDict):
@@ -154,10 +156,7 @@ def call(
         )
         return TypeAdapter(EmbeddingResponse).validate_python(embedding)
     if family == "text":
-        # litellm.completion's decorated return is Any to mypy, so its type is named here.
-        text: (
-            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
-        ) = litellm.completion(
+        text: CompletionCall | Awaitable[CompletionCall] = litellm.completion(
             model=f"text-completion-openai/{case['model']}",
             messages=case["messages"],
             api_base=case["api_base"],
@@ -173,9 +172,7 @@ def call(
     flag = os.environ.get(EXPERIMENTAL_HANDLER_FLAG)
     if flag is not None and flag.strip().lower() == "true":
         client = HTTPHandler(client=httpx.Client(transport=transport))
-        experimental: (
-            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
-        ) = litellm.completion(
+        experimental: CompletionCall | Awaitable[CompletionCall] = litellm.completion(
             model=case["model"],
             messages=case["messages"],
             api_base=case["api_base"],
@@ -189,9 +186,7 @@ def call(
             **case["optional_params"],
         )
         return TypeAdapter(ModelResponse).validate_python(experimental)
-    chat: (
-        ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
-    ) = litellm.completion(
+    chat: CompletionCall | Awaitable[CompletionCall] = litellm.completion(
         model=case["model"],
         messages=case["messages"],
         api_base=case["api_base"],
