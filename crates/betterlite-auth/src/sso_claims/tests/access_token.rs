@@ -34,9 +34,9 @@ fn an_opaque_token_adds_nothing() {
         None,
     );
     assert!(payload.is_none());
-    let updated = updated.unwrap();
-    assert!(updated.team_ids.is_empty());
-    assert!(updated.user_role.is_none());
+    let filled = updated.unwrap();
+    assert!(filled.team_ids.is_empty());
+    assert!(filled.user_role.is_none());
 }
 
 #[test]
