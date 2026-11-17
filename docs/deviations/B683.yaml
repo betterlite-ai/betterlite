@@ -1,0 +1,12 @@
+task: B683
+deviations: []
+kept_bugs:
+- what: A hosted computer-use tool appends its version beta to anthropic_beta without looking at what the caller already sent, so a request whose anthropic-beta header already lists, say, computer-use-2025-01-24 carries that beta twice in anthropic_beta.
+  why: The append has no membership test while the eager, effort and compact additions each deduplicate, and a working setup that sends the beta itself still gets a request Bedrock accepts only because it tolerates the repeat, so the append is copied as it is.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1790
+- what: A tool whose type is exactly tool_search_tool_regex_20251119 or tool_search_tool_bm25_20251119 disappears from the request with no warning and no error, even when the caller sent it deliberately.
+  why: Converse has no tool-search equivalent, so LiteLLM drops the tool rather than failing the request, and a working setup sends such a tool list precisely because the drop keeps the call going; the drop is carried with the same silence.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1706-L1712
+- what: For an Anthropic-base model, context_management edits other than compact_20260112 are removed from the request without a warning, and a context_management value that is not an object or whose edits are not a list removes the whole field.
+  why: Bedrock Converse accepts only compact edits, and LiteLLM keeps the request going instead of rejecting it, so a working setup depends on the field being trimmed rather than an error; the trim is carried without a warning, as upstream does.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1850-L1860
