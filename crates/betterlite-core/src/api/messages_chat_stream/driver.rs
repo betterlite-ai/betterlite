@@ -28,14 +28,13 @@ where
             if let Transition::Event(event) = engine::transition(&mut self.state) {
                 return Ok(Some(event));
             }
-            match self.state.completion_stream.source.next_chunk().await {
-                Ok(Some(chunk)) => {
-                    if let Some(event) = engine::update(&mut self.state, &chunk, &self.ids)? {
-                        return Ok(Some(event));
-                    }
-                }
+            let chunk = match self.state.completion_stream.source.next_chunk().await {
+                Ok(Some(chunk)) => chunk,
                 Ok(None) => return self.ended(),
                 Err(failure) => return Err(ChatStreamError::Stream { failure }),
+            };
+            if let Some(event) = engine::update(&mut self.state, &chunk, &self.ids)? {
+                return Ok(Some(event));
             }
         }
     }

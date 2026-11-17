@@ -460,14 +460,14 @@ async fn sse_frame_encoding() {
             .as_bytes()
             .to_vec()
     );
-    let payload = String::from_utf8(escaped)
-        .expect("the frame is text")
+    let escaped_text = String::from_utf8(escaped).expect("the frame is text");
+    let payload = escaped_text
         .lines()
         .nth(1)
         .and_then(|line| line.strip_prefix("data: "))
         .expect("the data line");
     let decoded: Object = serde_json::from_str(payload).expect("the payload is an object");
-    assert_eq!(decoded.get("text"), Some(&Json::Text("é".to_owned())));
+    assert_eq!(decoded.get("text"), Some(&Json::Text("\u{e9}".to_owned())));
 
     let raw = b"event: raw\ndata: {}\n\n".to_vec();
     assert_eq!(

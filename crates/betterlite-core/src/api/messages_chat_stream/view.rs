@@ -94,7 +94,7 @@ where
 
     #[must_use]
     // ast-grep-ignore: no-one-line-functions
-    pub const fn model(&self) -> &str {
+    pub fn model(&self) -> &str {
         &self.stream.state.model
     }
 }
