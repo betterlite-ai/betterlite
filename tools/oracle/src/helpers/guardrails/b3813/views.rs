@@ -4,8 +4,6 @@ use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::tool_permission::types::{mapping_value, object_list, object_mapping};
 use serde_json::Value;
 
-use betterlite_oracle_helper_api::error::HelperError;
-
 use super::Format;
 
 fn text_of(value: &GuardrailValue) -> Value {
@@ -22,35 +20,28 @@ fn text_of(value: &GuardrailValue) -> Value {
 }
 
 fn tool_call_view(call: &GuardrailValue) -> Value {
-    let function = mapping_value(call, "function");
     let id = mapping_value(call, "id").map_or(Value::Null, text_of);
     let kind = mapping_value(call, "type").map_or(Value::Null, text_of);
-    let name = function
-        .and_then(|function| mapping_value(function, "name"))
-        .map_or(Value::Null, text_of);
-    let arguments = function
-        .and_then(|function| mapping_value(function, "arguments"))
-        .map_or(Value::Null, text_of);
     serde_json::json!({
         "id": id,
         "type": kind,
-        "function": {"name": name, "arguments": arguments},
+        "function": function_view(mapping_value(call, "function")),
     })
 }
 
 fn tool_calls_view(calls: Option<&GuardrailValue>) -> Value {
-    let Some(calls) = calls.and_then(object_list) else {
+    let Some(entries) = calls.and_then(object_list) else {
         return Value::Null;
     };
-    Value::Array(calls.iter().map(tool_call_view).collect())
+    Value::Array(entries.iter().map(tool_call_view).collect())
 }
 
 fn function_view(function: Option<&GuardrailValue>) -> Value {
-    let Some(function) = function else {
+    let Some(fields) = function.and_then(object_mapping) else {
         return Value::Null;
     };
-    let name = mapping_value(function, "name").map_or(Value::Null, text_of);
-    let arguments = mapping_value(function, "arguments").map_or(Value::Null, text_of);
+    let name = fields.get("name").map_or(Value::Null, text_of);
+    let arguments = fields.get("arguments").map_or(Value::Null, text_of);
     serde_json::json!({"name": name, "arguments": arguments})
 }
 
@@ -111,16 +102,13 @@ fn anthropic_view(response: &Object) -> Value {
     })
 }
 
-pub(crate) fn response_view(
-    format: Format,
-    response: &GuardrailValue,
-) -> Result<Value, Box<HelperError>> {
+pub(crate) fn response_view(format: Format, response: &GuardrailValue) -> Value {
     let Some(fields) = object_mapping(response) else {
-        return Ok(Value::Null);
+        return Value::Null;
     };
     match format {
-        Format::Openai => Ok(serde_json::json!({ "choices": choices_view(fields) })),
-        Format::Anthropic => Ok(anthropic_view(fields)),
+        Format::Openai => serde_json::json!({ "choices": choices_view(fields) }),
+        Format::Anthropic => anthropic_view(fields),
     }
 }
 

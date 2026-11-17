@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
@@ -35,7 +37,7 @@ fn stream_items(input: &Input) -> Vec<StreamItem> {
 }
 
 fn raw_chunk_view(bytes: &[u8]) -> Value {
-    let Ok(text) = std::str::from_utf8(bytes) else {
+    let Ok(text) = from_utf8(bytes) else {
         return serde_json::json!({ "events": Value::Array(Vec::new()) });
     };
     let events: Vec<Value> = text.split("\n\n").filter_map(event_object).collect();

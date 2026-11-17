@@ -39,7 +39,7 @@ pub(crate) fn success(input: &Input) -> HelperResult {
             None => return Err(failure("GuardrailFailure", error.to_string())),
         },
     };
-    let projected = response_view(input.format, &response)?;
+    let projected = response_view(input.format, &response);
     Ok(serde_json::json!({
         "blocked": blocked,
         "response": projected,
