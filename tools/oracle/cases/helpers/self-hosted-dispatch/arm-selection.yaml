@@ -38,4 +38,5 @@ calls:
       messages: [{role: user, content: hi}]
       api_base: "http://self-hosted.test/v1/generate"
       answer: {status: 400, body: '{"error":"bad request"}'}
+env: {}
 compare: {ignore: []}

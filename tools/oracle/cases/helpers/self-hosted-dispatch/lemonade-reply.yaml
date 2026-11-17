@@ -29,4 +29,5 @@ calls:
       answer:
         status: 200
         body: '{"id":"chatcmpl-3","object":"chat.completion","created":1700000002,"model":"mistral","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'
+env: {}
 compare: {ignore: []}

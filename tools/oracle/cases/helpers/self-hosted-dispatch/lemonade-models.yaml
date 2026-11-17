@@ -23,4 +23,5 @@ calls:
       provider: lemonade
       globals: {lemonade_key: "sk-global"}
       answer: {status: 200, body: '{"data":[]}'}
+env: {}
 compare: {ignore: []}

@@ -24,4 +24,5 @@ calls:
       api_base: "{{upstream}}/api/chat"
       env: {OLLAMA_API_KEY: "sk-env"}
       answer: {status: 200, body: '{"models":[{"name":"llama3:8b"}]}'}
+env: {}
 compare: {ignore: []}
