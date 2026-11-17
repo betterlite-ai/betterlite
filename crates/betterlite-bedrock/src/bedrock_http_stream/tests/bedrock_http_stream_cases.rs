@@ -259,6 +259,27 @@ fn case_2_http_error_before_frame() {
         Some("Timeout error occurred.")
     );
 
+    // A read failure that is not a timeout is the catch-all's 500.
+    let failed_read_inputs = Inputs::new(Reply {
+        status: 500,
+        headers: Vec::new(),
+        reads: vec![Err(HttpError::TooLarge { limit: 7 })],
+        refused: None,
+    });
+    let mut failed_read_call = invoke(BASE, DATA, &messages);
+    failed_read_call.fake_stream = true;
+    let failed_read_outcome = run(
+        Call::Invoke(failed_read_call),
+        &failed_read_inputs,
+        Consume::None,
+    );
+    assert_eq!(failed_read_outcome.provider_status(), Some(500));
+    assert!(
+        failed_read_outcome
+            .provider_message()
+            .is_some_and(|message| message.contains("larger than 7 bytes"))
+    );
+
     let refused_inputs = Inputs::new(Reply::refusing(Refusal::ReadTimeout));
     let refused_outcome = run(
         Call::Invoke(invoke(BASE, DATA, &messages)),
@@ -321,6 +342,21 @@ fn case_2_http_error_before_frame() {
         bytes_outcome.provider_message(),
         Some(r#"b'it\'s "x" \\\t\r\xff'"#)
     );
+
+    // A body with a single quote and no double quote takes double quotes, as Python's repr does.
+    let apostrophe_inputs = Inputs::new(Reply {
+        status: 500,
+        headers: Vec::new(),
+        reads: vec![Ok(b"it's".to_vec())],
+        refused: None,
+    });
+    let apostrophe_outcome = run(
+        Call::Converse(converse(&messages)),
+        &apostrophe_inputs,
+        Consume::None,
+    );
+    assert_eq!(apostrophe_outcome.provider_status(), Some(500));
+    assert_eq!(apostrophe_outcome.provider_message(), Some(r#"b"it's""#));
 
     let transport_inputs = Inputs::new(Reply::refusing(Refusal::ReadTimeout));
     let transport_outcome = run(

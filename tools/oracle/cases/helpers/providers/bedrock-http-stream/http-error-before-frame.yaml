@@ -113,6 +113,28 @@ call:
         message: true
         headers: true
       provider: null
+    - path: converse_sync
+      api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/converse-stream
+      headers:
+        content-type: application/json
+      data: '{"messages":[{"role":"user","content":[{"text":"hi"}]}]}'
+      signed_json_body: null
+      model: bedrock/anthropic.claude-3
+      messages:
+      - role: user
+        content: hi
+      json_mode: null
+      fake_stream: false
+      status: 500
+      response_headers:
+        x-amzn-requestid: req-1
+      body: '69742773'
+      failure: null
+      consume: none
+      compare:
+        message: true
+        headers: true
+      provider: null
     - path: invoke_sync
       api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
       headers:
