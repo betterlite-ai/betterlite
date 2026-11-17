@@ -1,4 +1,6 @@
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 
@@ -12,16 +14,16 @@ use super::{
     Harness, chat, chat_of, cost_stream, failed, hidden_stream, object, ok, plain_stream, value,
 };
 
-pub(super) async fn usage_hidden_metadata() {
-    usage_reasoning_and_hidden().await;
-    hidden_provider_fields().await;
-    hidden_provider_fields_error().await;
-    prompt_callback_failure().await;
-    usage_first_chunk_model().await;
-    metadata_after_cost().await;
+pub(super) async fn usage_hidden_metadata(redactor: &Arc<Redactor>) {
+    usage_reasoning_and_hidden(redactor).await;
+    hidden_provider_fields(redactor).await;
+    hidden_provider_fields_error(redactor).await;
+    prompt_callback_failure(redactor).await;
+    usage_first_chunk_model(redactor).await;
+    metadata_after_cost(redactor).await;
 }
 
-pub(super) async fn usage_reasoning_and_hidden() {
+pub(super) async fn usage_reasoning_and_hidden(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -31,7 +33,7 @@ pub(super) async fn usage_reasoning_and_hidden() {
          "_hidden_params": {"provider_specific_fields": {"traffic_type": "on_demand"}}}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.prompt = Some(Box::new(|| Ok(10)));
     harness.counter.text = 1;
     harness.counter.response_text = 2;
@@ -64,7 +66,7 @@ const HIDDEN_STREAM: &str = r#"[
 ]"#;
 
 // The nearest later chunk with provider_specific_fields wins and stops the scan, even when its map is empty.
-pub(super) async fn hidden_provider_fields() {
+pub(super) async fn hidden_provider_fields(redactor: &Arc<Redactor>) {
     let cases = [
         (
             r#"{"other": "x"}"#,
@@ -78,21 +80,21 @@ pub(super) async fn hidden_provider_fields() {
     ];
     for (later, expected) in cases {
         let stream = chunks(&HIDDEN_STREAM.replace("LATER", later));
-        let response = chat_of(&Harness::new(Some(stream))).await;
+        let response = chat_of(&Harness::new(Some(stream), redactor)).await;
         assert_eq!(response.hidden_params, object(expected), "{later}");
     }
 }
 
 const NOT_AN_OBJECT: &str = "provider_specific_fields is not a JSON object";
 
-pub(super) async fn hidden_provider_fields_error() {
+pub(super) async fn hidden_provider_fields_error(redactor: &Arc<Redactor>) {
     let stream = hidden_stream(r#"{"provider_specific_fields": "nope"}"#);
-    let (result, _logs) = Harness::new(Some(stream)).run().await;
+    let (result, _logs) = Harness::new(Some(stream), redactor).run().await;
     assert_eq!(failed(result).to_string(), NOT_AN_OBJECT);
 }
 
-pub(super) async fn prompt_callback_failure() {
-    let mut harness = Harness::new(Some(plain_stream()));
+pub(super) async fn prompt_callback_failure(redactor: &Arc<Redactor>) {
+    let mut harness = Harness::new(Some(plain_stream()), redactor);
     harness.messages = true;
     harness.prompt = Some(Box::new(|| Err(CountError::MissingInput)));
     harness.counter.response_text = 1;
@@ -106,7 +108,7 @@ pub(super) async fn prompt_callback_failure() {
     );
 }
 
-pub(super) async fn usage_first_chunk_model() {
+pub(super) async fn usage_first_chunk_model(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "azure-model-router",
@@ -114,7 +116,7 @@ pub(super) async fn usage_first_chunk_model() {
         {"model": "gpt-4.1-nano", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.messages = true;
     harness.counter.response_text = 1;
     let response = chat_of(&harness).await;
@@ -125,19 +127,18 @@ pub(super) async fn usage_first_chunk_model() {
     );
 }
 
-pub(super) async fn metadata_after_cost() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
+pub(super) async fn metadata_after_cost(redactor: &Arc<Redactor>) {
     let resolver = FixtureResolver;
     let selector = FixtureSelector;
     let projection = RecordingProjection::default();
     let services = MetadataServices {
-        redactor: &redactor,
+        redactor,
         resolver: &resolver,
         selector: &selector,
         projection: Some(&projection),
     };
     let logging = priced_logging("openai", Some(Decimal::new(75, 6)));
-    let mut harness = Harness::new(Some(cost_stream(None)));
+    let mut harness = Harness::new(Some(cost_stream(None)), redactor);
     harness.logging = Some(&logging);
     harness.metadata = Some(&services);
     let response = chat_of(&harness).await;
