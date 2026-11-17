@@ -1,0 +1,14 @@
+kind: helper
+name: stream-reasoning-and-arguments
+call:
+  b9450:
+    operation: stream
+    settings: {api_key: oracle-key, inspection_type: chat}
+    request_data: {metadata: {}}
+    chunks:
+      - {id: chatcmpl-1, object: chat.completion.chunk, created: 1, model: gpt-4o, choices: [{index: 0, delta: {role: assistant, content: ""}, finish_reason: null}]}
+      - {id: chatcmpl-1, object: chat.completion.chunk, created: 1, model: gpt-4o, choices: [{index: 0, delta: {content: "hi", reasoning_content: "think", tool_calls: [{index: 0, id: call_1, type: function, function: {name: f, arguments: "{\"a\":1}"}}]}, finish_reason: stop}]}
+    should_run: true
+    answer: {status: 200, headers: {}, body: {action: allow}}
+env: {}
+compare: {ignore: []}

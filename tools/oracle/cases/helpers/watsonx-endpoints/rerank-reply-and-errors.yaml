@@ -1,0 +1,106 @@
+kind: helper
+name: watsonx-rerank-reply-and-errors
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: rerank
+    env: {WATSONX_PROJECT_ID: env-project}
+    step:
+      model: rerank-model
+      headers: {Authorization: "Bearer caller"}
+      api_key: null
+      reply: '{"id":"rid","results":[{"index":0,"score":0.75,"input":"doc"}],"input_token_count":4}'
+      status: 200
+      options: {}
+calls:
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[{"index":1,"score":0.5,"input":{"text":"obj"}}]}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[{"index":2,"score":0.125}],"input_token_count":2}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[],"input_token_count":2}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[{"index":0,"score":0.5}]}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":null}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid"}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: not json
+        status: 502
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[{"index":0}]}'
+        status: 200
+        options: {}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: '{"id":"rid","results":[1]}'
+        status: 200
+        options: {}

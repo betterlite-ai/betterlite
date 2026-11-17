@@ -1,0 +1,1 @@
+{"mcp_servers":[{"name":"remote","url":"https://mcp.example.test/mcp","authorizationToken":"list-token"},{"url":"https://mcp.example.test/other"},{"name":"","command":"node","args":["server.js"]}]}
