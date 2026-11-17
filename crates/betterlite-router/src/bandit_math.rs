@@ -55,7 +55,7 @@ impl BanditCell {
     #[must_use]
     pub fn total_samples(self) -> u64 {
         let observed = self.alpha + self.beta - COLD_START_MASS;
-        if observed <= 0.0 {
+        if observed <= 0.0_f64 {
             return 0;
         }
         let text = format!("{:.0}", observed.trunc());
@@ -88,7 +88,7 @@ pub fn initial_cell(
     let bonus = if preferences.strengths.contains(&request_type) {
         STRENGTH_BONUS
     } else {
-        0.0
+        0.0_f64
     };
     let prior = (weight + bonus).min(PRIOR_MEAN_CEILING);
     BanditCell::new(prior * COLD_START_MASS, (1.0 - prior) * COLD_START_MASS)

@@ -84,14 +84,14 @@ fn an_unsupported_tier_names_the_supported_tiers(#[case] tier: u8) {
 }
 
 #[rstest]
-#[case::prior_mass(3.0, 7.0, "0.300000", "0.300000", 0)]
-#[case::balanced_prior(5.0, 5.0, "0.500000", "0.500000", 0)]
-#[case::empty_falls_back(0.0, 0.0, "0.500000", "0.000000", 0)]
-#[case::observed_mass(11.0, 9.0, "0.550000", "0.550000", 10)]
-#[case::fractional_mass_truncates(10.4, 10.4, "0.500000", "0.500000", 10)]
-#[case::even_mass(12.0, 8.0, "0.600000", "0.600000", 10)]
-#[case::positive_total_under_the_prior(0.5, 0.0, "1.000000", "1.000000", 0)]
-#[case::negative_total_falls_back(-5.0, 4.0, "0.500000", "0.000000", 0)]
+#[case::prior_mass(3.0_f64, 7.0_f64, "0.300000", "0.300000", 0)]
+#[case::balanced_prior(5.0_f64, 5.0_f64, "0.500000", "0.500000", 0)]
+#[case::empty_falls_back(0.0_f64, 0.0_f64, "0.500000", "0.000000", 0)]
+#[case::observed_mass(11.0_f64, 9.0_f64, "0.550000", "0.550000", 10)]
+#[case::fractional_mass_truncates(10.4_f64, 10.4_f64, "0.500000", "0.500000", 10)]
+#[case::even_mass(12.0_f64, 8.0_f64, "0.600000", "0.600000", 10)]
+#[case::positive_total_under_the_prior(0.5_f64, 0.0_f64, "1.000000", "1.000000", 0)]
+#[case::negative_total_falls_back(-5.0_f64, 4.0_f64, "0.500000", "0.000000", 0)]
 fn cells_report_their_mean_mass_and_samples(
     #[case] alpha: f64,
     #[case] beta: f64,
@@ -106,8 +106,8 @@ fn cells_report_their_mean_mass_and_samples(
 }
 
 #[rstest]
-#[case::nan_alpha(f64::NAN, 1.0, "alpha")]
-#[case::infinite_beta(1.0, f64::INFINITY, "beta")]
+#[case::nan_alpha(f64::NAN, 1.0_f64, "alpha")]
+#[case::infinite_beta(1.0_f64, f64::INFINITY, "beta")]
 #[case::overflowing_sum(f64::MAX, f64::MAX, "alpha+beta")]
 fn a_non_finite_cell_names_the_field(
     #[case] alpha: f64,
@@ -121,29 +121,36 @@ fn a_non_finite_cell_names_the_field(
 }
 
 #[rstest]
-#[case::under_the_cap(50.0, 50.0, 1.0, 1.0, "51.000000", "51.000000", 92)]
-#[case::at_the_cap(99.0, 99.0, 1.0, 1.0, "100.000000", "100.000000", 190)]
-#[case::fractional_at_the_cap(199.5, 0.0, 0.5, 0.0, "200.000000", "0.000000", 190)]
-#[case::over_the_cap_keeps_the_cell(100.0, 99.0, 1.0, 1.0, "100.000000", "99.000000", 189)]
-#[case::fractional_over_the_cap_keeps_it(199.5, 0.0, 0.5, 0.000001, "199.500000", "0.000000", 189)]
+#[case::under_the_cap((50.0_f64, 50.0_f64), (1.0_f64, 1.0_f64), ("51.000000", "51.000000"), 92)]
+#[case::at_the_cap((99.0_f64, 99.0_f64), (1.0_f64, 1.0_f64), ("100.000000", "100.000000"), 190)]
+#[case::fractional_at_the_cap((199.5_f64, 0.0_f64), (0.5_f64, 0.0_f64), ("200.000000", "0.000000"), 190)]
+#[case::over_the_cap_keeps_the_cell(
+    (100.0_f64, 99.0_f64),
+    (1.0_f64, 1.0_f64),
+    ("100.000000", "99.000000"),
+    189
+)]
+#[case::fractional_over_the_cap_keeps_it(
+    (199.5_f64, 0.0_f64),
+    (0.5_f64, 0.000_001_f64),
+    ("199.500000", "0.000000"),
+    189
+)]
 #[case::negative_delta_shrinks(
-    100.0,
-    100.0,
-    -50.0,
-    -50.0,
-    "50.000000",
-    "50.000000",
+    (100.0_f64, 100.0_f64),
+    (-50.0_f64, -50.0_f64),
+    ("50.000000", "50.000000"),
     90
 )]
 fn updates_respect_the_sample_cap(
-    #[case] alpha: f64,
-    #[case] beta: f64,
-    #[case] delta_alpha: f64,
-    #[case] delta_beta: f64,
-    #[case] expected_alpha: &str,
-    #[case] expected_beta: &str,
+    #[case] cell_values: (f64, f64),
+    #[case] deltas: (f64, f64),
+    #[case] expected_cell: (&str, &str),
     #[case] expected_samples: u64,
 ) {
+    let (alpha, beta) = cell_values;
+    let (delta_alpha, delta_beta) = deltas;
+    let (expected_alpha, expected_beta) = expected_cell;
     let updated = apply_delta(cell(alpha, beta), delta_alpha, delta_beta).unwrap();
     assert_cell(updated, expected_alpha, expected_beta, expected_samples);
 }
@@ -155,11 +162,11 @@ fn a_non_finite_delta_is_refused() {
 }
 
 #[rstest]
-#[case::quality_only(0.8, 0.0, 0.7, 0.3, "0.560000")]
-#[case::cost_only(0.0, 0.5, 0.7, 0.3, "0.150000")]
-#[case::mixed(0.5, 0.5, 0.7, 0.3, "0.500000")]
-#[case::all_quality(0.4, 0.9, 1.0, 0.0, "0.400000")]
-#[case::all_cost(0.4, 0.9, 0.0, 1.0, "0.900000")]
+#[case::quality_only(0.8_f64, 0.0_f64, 0.7_f64, 0.3_f64, "0.560000")]
+#[case::cost_only(0.0_f64, 0.5_f64, 0.7_f64, 0.3_f64, "0.150000")]
+#[case::mixed(0.5_f64, 0.5_f64, 0.7_f64, 0.3_f64, "0.500000")]
+#[case::all_quality(0.4_f64, 0.9_f64, 1.0_f64, 0.0_f64, "0.400000")]
+#[case::all_cost(0.4_f64, 0.9_f64, 0.0_f64, 1.0_f64, "0.900000")]
 fn the_score_is_the_weighted_sum(
     #[case] quality_sample: f64,
     #[case] cost_score: f64,
@@ -187,10 +194,10 @@ fn the_weighted_score_fuses_the_quality_product() {
 }
 
 #[rstest]
-#[case::quality_sample((f64::NAN, 0.5), (0.7, 0.3), "quality sample")]
-#[case::cost_score((0.5, f64::INFINITY), (0.7, 0.3), "cost score")]
-#[case::quality_weight((0.5, 0.5), (f64::NAN, 0.3), "score weight")]
-#[case::cost_weight((0.5, 0.5), (0.7, f64::NEG_INFINITY), "score weight")]
+#[case::quality_sample((f64::NAN, 0.5_f64), (0.7_f64, 0.3_f64), "quality sample")]
+#[case::cost_score((0.5_f64, f64::INFINITY), (0.7_f64, 0.3_f64), "cost score")]
+#[case::quality_weight((0.5_f64, 0.5_f64), (f64::NAN, 0.3_f64), "score weight")]
+#[case::cost_weight((0.5_f64, 0.5_f64), (0.7_f64, f64::NEG_INFINITY), "score weight")]
 fn a_non_finite_score_names_the_field(
     #[case] sample: (f64, f64),
     #[case] weight: (f64, f64),
@@ -230,10 +237,14 @@ fn pick(samples: &[f64], costs: &[f64]) -> Result<String, BanditMathError> {
 }
 
 #[rstest]
-#[case::highest_sample_wins(&[0.2, 0.9, 0.5], &[0.0, 0.0, 0.0], "b")]
-#[case::first_of_a_tie_wins(&[0.5, 0.5], &[0.0, 0.0], "a")]
-#[case::cost_breaks_a_tie(&[0.5, 0.5], &[1.0, 0.0], "b")]
-#[case::cost_and_quality_mix(&[0.2, 0.95, 0.4], &[1.0, 0.5, 0.0], "b")]
+#[case::highest_sample_wins(&[0.2_f64, 0.9_f64, 0.5_f64], &[0.0_f64, 0.0_f64, 0.0_f64], "b")]
+#[case::first_of_a_tie_wins(&[0.5_f64, 0.5_f64], &[0.0_f64, 0.0_f64], "a")]
+#[case::cost_breaks_a_tie(&[0.5_f64, 0.5_f64], &[1.0_f64, 0.0_f64], "b")]
+#[case::cost_and_quality_mix(
+    &[0.2_f64, 0.95_f64, 0.4_f64],
+    &[1.0_f64, 0.5_f64, 0.0_f64],
+    "b"
+)]
 fn the_best_candidate_wins_each_draw(
     #[case] samples: &[f64],
     #[case] costs: &[f64],
@@ -252,7 +263,7 @@ fn no_candidate_has_a_best_model() {
 #[test]
 fn an_exhausted_scripted_sampler_says_so() {
     let mut sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
-        samples: vec![0.25, 0.75],
+        samples: vec![0.25_f64, 0.75_f64],
         position: 0,
     }));
     let fifth = cell(5.0, 5.0);
@@ -297,8 +308,8 @@ fn a_seeded_beta_draw_follows_the_shape_orientation() {
     let mut high = QualitySampler::Beta(Box::new(StdRng::seed_from_u64(11)));
     let low_sample = low.sample(cell(1.0, 99.0)).unwrap();
     let high_sample = high.sample(cell(99.0, 1.0)).unwrap();
-    assert!(low_sample < 0.5, "Beta(1, 99) drew {low_sample}");
-    assert!(high_sample > 0.5, "Beta(99, 1) drew {high_sample}");
+    assert!(low_sample < 0.5_f64, "Beta(1, 99) drew {low_sample}");
+    assert!(high_sample > 0.5_f64, "Beta(99, 1) drew {high_sample}");
 }
 
 #[test]
@@ -310,7 +321,12 @@ fn a_non_positive_shape_is_refused_by_the_beta_draw() {
             assert_eq!(alpha.to_bits(), 0.0_f64.to_bits());
             assert_eq!(beta.to_bits(), 5.0_f64.to_bits());
         }
-        other => panic!("expected a refused Beta draw, got {other:?}"),
+        other @ BanditMathError::NonFinite { .. }
+        | other @ BanditMathError::UnsupportedTier { .. }
+        | other @ BanditMathError::NoModels
+        | other @ BanditMathError::SamplesExhausted => {
+            panic!("expected a refused Beta draw, got {other:?}");
+        }
     }
 }
 
