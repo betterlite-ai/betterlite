@@ -45,29 +45,35 @@ pub async fn streaming_iterator_hook(
         .await;
     }
     // A raw stream is assembled as Anthropic SSE; any assembly failure reads as no response to check.
-    let Some(mut assembled) = assemble_anthropic_stream(&chunks, services).await else {
+    let Some(mut stream) = assemble_anthropic_stream(&chunks, services).await else {
         if raw {
-            return Err(ResponseToolError::Guardrail(
-                GuardrailFailure::GuardrailRaised {
-                    guardrail_name: Some(guardrail.args.name.clone()),
-                    message: UNPARSABLE_STREAM_MESSAGE.to_owned(),
-                    wrap_default_message: true,
-                    status_code: 400,
-                    blocked_content: false,
-                },
+            return Err(blocking_failure(
+                guardrail,
+                UNPARSABLE_STREAM_MESSAGE.to_owned(),
             ));
         }
         return relay(&output, chunks).await;
     };
-    let denied = check_assembled_stream(guardrail, &assembled.response)?;
+    let denied = check_assembled_stream(guardrail, &stream.response)?;
     if denied.is_empty() {
         return relay(&output, chunks).await;
     }
     // The assembled Anthropic stream is OpenAI-shaped, so LiteLLM rewrites it before translating it back to SSE.
-    rewrite_openai_responses(&mut assembled.response, &denied);
-    let record = rewritten_record(&assembled.response, &assembled.record);
+    rewrite_openai_responses(&mut stream.response, &denied);
+    let record = rewritten_record(&stream.response, &stream.record);
     let frames = sse_chunks_from_response(&record)?;
     relay(&output, frames.into_iter().map(StreamItem::Bytes).collect()).await
+}
+
+// A blocking refusal naming the guardrail, the fields LiteLLM's GuardrailRaisedException carries
+fn blocking_failure(guardrail: &ToolPermissionGuardrail, message: String) -> ResponseToolError {
+    ResponseToolError::Guardrail(GuardrailFailure::GuardrailRaised {
+        guardrail_name: Some(guardrail.args.name.clone()),
+        message,
+        wrap_default_message: true,
+        status_code: 400,
+        blocked_content: false,
+    })
 }
 
 // LiteLLM collects every chunk; the configured ceilings refuse the chunk that would exceed either one.
@@ -91,16 +97,11 @@ async fn buffer_stream(
             StreamItem::Json(value) => serde_json::to_vec(value)?.len(),
         };
         if budget.accept(bytes).is_err() {
-            return Err(ResponseToolError::Guardrail(
-                GuardrailFailure::GuardrailRaised {
-                    guardrail_name: Some(guardrail.args.name.clone()),
-                    message: format!(
-                        "Streamed response exceeded the {max_chunks} chunk or {max_bytes} byte buffer limit for tool permission checks, blocking it"
-                    ),
-                    wrap_default_message: true,
-                    status_code: 400,
-                    blocked_content: false,
-                },
+            return Err(blocking_failure(
+                guardrail,
+                format!(
+                    "Streamed response exceeded the {max_chunks} chunk or {max_bytes} byte buffer limit for tool permission checks, blocking it"
+                ),
             ));
         }
         chunks.push(item);
