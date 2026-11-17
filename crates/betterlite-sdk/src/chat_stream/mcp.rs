@@ -1,4 +1,6 @@
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChunk, item_count,
+};
 
 // _add_mcp_list_tools_to_first_chunk: only the tool list, never tool results or the other keys.
 pub(super) fn add_list_tools(chunk: &mut StreamChunk, metadata: Option<&JsonObject>) {
@@ -39,9 +41,7 @@ fn holds_metadata(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|amount| amount.abs() > 0.0),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
+        JsonValue::Number(number) => number.as_f64().is_some_and(|amount| amount != 0.0),
+        JsonValue::String(_) | JsonValue::Array(_) | JsonValue::Object(_) => item_count(value) > 0,
     }
 }
