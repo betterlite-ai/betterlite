@@ -1,0 +1,34 @@
+task: B328
+deviations:
+  - what: >-
+      betterlite's configuration section names the tier-to-model map `tier_models` and the token
+      thresholds `complexity_thresholds`, and accepts LiteLLM's `tiers` and `token_thresholds` as
+      aliases of each, where LiteLLM declares only the latter pair.
+    why: >-
+      The task names `tier_models` and `complexity_thresholds` as the configuration boundary this
+      module introduces, and betterlite's own config fixtures spell them that way. A LiteLLM YAML
+      file that spells `tiers` or `token_thresholds` still loads with identical behavior, so no
+      working configuration changes meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L856-L863
+  - what: >-
+      A weight, tier boundary or reasoning floor that is not finite is rejected with an error
+      naming the field, and a weighted score that overflows to infinity is rejected instead of
+      classified, where LiteLLM computes with both.
+    why: >-
+      A NaN boundary makes every comparison false, so LiteLLM's mapping silently lands on
+      REASONING, and a non-finite score reaches the routing-decision JSON that the proxy must
+      serialize, turning a bad tuning value into a lost record or a 500 where a 4xx belongs. The
+      compatibility policy makes a value of the wrong type an error that names the field. A YAML
+      file cannot carry a non-finite number at all, so the field check guards programmatic
+      configuration and the score check guards finite weights whose sum overflows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1747-L1769
+  - what: >-
+      A tier configured with a pool of two or more models has no answer in betterlite's baseline
+      tier-to-model mapping and raises an error, where LiteLLM picks one entry with
+      `random.choice`.
+    why: >-
+      This task builds the single configured model per tier that its description scopes, and a
+      random pick needs the injected random source that B334's pool picking owns. Refusing the
+      request beats picking from an unseeded generator whose answer a test cannot state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2826-L2832
+kept_bugs: []
