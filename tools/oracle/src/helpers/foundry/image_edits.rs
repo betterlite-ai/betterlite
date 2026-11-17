@@ -24,60 +24,44 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut answer = Map::new();
-        insert_strings(&mut answer, "models", input.models.as_deref(), model_step);
-        insert_strings(
+        insert(
+            &mut answer,
+            "models",
+            input.models.as_deref(),
+            |model: &String| Ok(model_step(model.as_str())),
+        )?;
+        insert(
             &mut answer,
             "supported",
             input.supported.as_deref(),
-            supported_step,
-        );
-        insert_results(&mut answer, "auths", input.auths.as_deref(), auth_step)?;
-        insert_results(&mut answer, "urls", input.urls.as_deref(), url_step)?;
-        insert_values(
+            |model: &String| Ok(supported_step(model.as_str())),
+        )?;
+        insert(&mut answer, "auths", input.auths.as_deref(), auth_step)?;
+        insert(&mut answer, "urls", input.urls.as_deref(), url_step)?;
+        insert(
             &mut answer,
             "transforms",
             input.transforms.as_deref(),
-            transform_step,
-        );
-        insert_values(&mut answer, "replies", input.replies.as_deref(), reply_step);
+            |step| Ok(transform_step(step)),
+        )?;
+        insert(&mut answer, "replies", input.replies.as_deref(), |step| {
+            Ok(reply_step(step))
+        })?;
         Ok(Value::Object(answer))
     }
 }
 
-fn insert_strings(
-    answer: &mut Map<String, Value>,
-    key: &str,
-    values: Option<&[String]>,
-    step: fn(&str) -> Value,
-) {
-    if let Some(entries) = values {
-        let mapped: Vec<Value> = entries.iter().map(String::as_str).map(step).collect();
-        answer.insert(key.to_owned(), json!(mapped));
-    }
-}
-
-fn insert_values<T>(
-    answer: &mut Map<String, Value>,
-    key: &str,
-    values: Option<&[T]>,
-    step: fn(&T) -> Value,
-) {
-    if let Some(entries) = values {
-        let mapped: Vec<Value> = entries.iter().map(step).collect();
-        answer.insert(key.to_owned(), json!(mapped));
-    }
-}
-
-fn insert_results<T>(
+fn insert<T>(
     answer: &mut Map<String, Value>,
     key: &str,
     values: Option<&[T]>,
     step: fn(&T) -> Result<Value, Box<HelperError>>,
 ) -> Result<(), Box<HelperError>> {
-    if let Some(entries) = values {
-        let mapped: Vec<Value> = entries.iter().map(step).collect::<Result<Vec<_>, _>>()?;
-        answer.insert(key.to_owned(), json!(mapped));
-    }
+    let Some(entries) = values else {
+        return Ok(());
+    };
+    let mapped: Vec<Value> = entries.iter().map(step).collect::<Result<Vec<_>, _>>()?;
+    answer.insert(key.to_owned(), json!(mapped));
     Ok(())
 }
 

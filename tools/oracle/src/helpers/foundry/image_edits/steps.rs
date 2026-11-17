@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -6,14 +7,18 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::foundry_credentials::Settings as FoundrySettings;
+use betterlite_config::types::Config;
 use betterlite_foundry::credentials::model_info::ModelInfoAccessors;
 use betterlite_foundry::image_edits::auth::{ValidateEnvironmentRequest, validate_environment};
+use betterlite_foundry::image_edits::error::ImageEditError;
 use betterlite_foundry::image_edits::flux2::{self, Flux2EditRequest};
 use betterlite_foundry::image_edits::image_source::ImageSource;
 use betterlite_foundry::image_edits::mai::{self, MaiEditRequest};
 use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_edits::url::{CompleteUrlRequest, complete_url};
 use betterlite_openai::image_edits::file::ImageEditFile;
+use betterlite_openai::image_edits::request::ImageEditForm;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -65,21 +70,36 @@ impl CredentialSources for EmptySources {
     }
 }
 
-pub(super) fn auth_step(step: &AuthStep) -> Result<Value, Box<HelperError>> {
-    let config = ConfigLoader {
-        lookup: step.environment.clone(),
+fn load(environment: &BTreeMap<String, String>) -> Result<Config, Box<HelperError>> {
+    ConfigLoader {
+        lookup: environment.clone(),
     }
     .load("")
-    .or_config_error()?;
-    let settings = &config.sections.foundry_credentials;
-    let explicit = step.api_key.clone().map(SecretString::from);
-    let global = step.global_api_key.clone().map(SecretString::from);
-    let accessors = ModelInfoAccessors {
-        global_api_base: step.global_api_base.as_deref(),
-        global_api_key: global.as_ref(),
+    .or_config_error()
+}
+
+fn model_accessors<'data>(
+    settings: &'data FoundrySettings,
+    global_api_base: Option<&'data str>,
+    global_api_key: Option<&'data SecretString>,
+) -> ModelInfoAccessors<'data> {
+    ModelInfoAccessors {
+        global_api_base,
+        global_api_key,
         environment_api_base: settings.api_base.as_deref(),
         environment_api_key: settings.api_key.as_ref(),
-    };
+    }
+}
+
+pub(super) fn auth_step(step: &AuthStep) -> Result<Value, Box<HelperError>> {
+    let config = load(&step.environment)?;
+    let explicit = step.api_key.clone().map(SecretString::from);
+    let global = step.global_api_key.clone().map(SecretString::from);
+    let accessors = model_accessors(
+        &config.sections.foundry_credentials,
+        step.global_api_base.as_deref(),
+        global.as_ref(),
+    );
     let base = accessors.api_base(step.api_base.as_deref());
     let result = validate_environment(ValidateEnvironmentRequest {
         headers: step.headers.clone(),
@@ -91,42 +111,40 @@ pub(super) fn auth_step(step: &AuthStep) -> Result<Value, Box<HelperError>> {
         refresh_enabled: false,
         sources: &EmptySources,
     });
-    Ok(match result {
-        Ok(built) => json!({
+    Ok(step_value(result.map(|built| {
+        json!({
             "class": ImageEditVariant::select(&step.model).map_or("", ImageEditVariant::class_name),
             "multipart": ImageEditVariant::select(&step.model).is_ok_and(ImageEditVariant::uses_multipart),
             "base": base,
             "headers": built,
-        }),
-        Err(error) => error_value(&error),
-    })
+        })
+    })))
 }
 
 pub(super) fn url_step(step: &UrlStep) -> Result<Value, Box<HelperError>> {
-    let config = ConfigLoader {
-        lookup: step.environment.clone(),
-    }
-    .load("")
-    .or_config_error()?;
-    let settings = &config.sections.foundry_credentials;
-    let accessors = ModelInfoAccessors {
-        global_api_base: None,
-        global_api_key: None,
-        environment_api_base: settings.api_base.as_deref(),
-        environment_api_key: settings.api_key.as_ref(),
-    };
-    let result = complete_url(&CompleteUrlRequest {
+    let config = load(&step.environment)?;
+    let request = url_request(step, &config);
+    Ok(step_value(
+        complete_url(&request).map(|url| json!({"value": url})),
+    ))
+}
+
+fn url_request<'data>(step: &'data UrlStep, config: &'data Config) -> CompleteUrlRequest<'data> {
+    CompleteUrlRequest {
         model: &step.model,
-        accessors,
+        accessors: model_accessors(&config.sections.foundry_credentials, None, None),
         api_base: step.api_base.as_deref(),
         api_version: step.api_version.as_deref(),
         global_api_version: step.global_api_version.as_deref(),
         environment: &config.sections.foundry_image_edits,
-    });
-    Ok(match result {
-        Ok(url) => json!({"value": url}),
+    }
+}
+
+fn step_value(result: Result<Value, ImageEditError>) -> Value {
+    match result {
+        Ok(value) => value,
         Err(error) => error_value(&error),
-    })
+    }
 }
 
 // a null entry stays in the list, since FLUX 2 counts it and refuses it as an unsupported image
@@ -162,17 +180,17 @@ fn image_source(field: Option<&ImageField>) -> ImageSource {
     }
 }
 
-fn mai_file(field: Option<&ImageField>) -> Option<ImageEditFile> {
-    field.map(|image| ImageEditFile {
+fn mai_file(image: &ImageField) -> ImageEditFile {
+    ImageEditFile {
         content: image.text.clone().into_bytes(),
         name: None,
-    })
+    }
 }
 
 pub(super) fn transform_step(step: &TransformStep) -> Value {
     match ImageEditVariant::select(&step.model) {
         Ok(ImageEditVariant::Flux2) => flux2_step(step),
-        Ok(ImageEditVariant::Mai) => mai_step(step),
+        Ok(ImageEditVariant::Mai) => projected("mai", mai_form(step)),
         Ok(ImageEditVariant::Flux1) => Value::Null,
         Err(_) => json!({"error": {"kind": "ValueError", "status": null, "provider": null}}),
     }
@@ -188,37 +206,37 @@ fn flux2_step(step: &TransformStep) -> Value {
     let result = flux2::transform_request(Flux2EditRequest {
         model: &step.model,
         prompt: step.prompt.as_deref(),
-        images: built.as_mut().map(Vec::as_mut_slice),
+        images: built.as_deref_mut(),
         options: &mapped,
     });
-    match result {
-        Ok(form) => json!({"value": {"kind": "flux2", "data": form.data, "files": []}}),
-        Err(error) => error_value(&error),
-    }
+    result.map_or_else(|error| error_value(&error), |form| projected("flux2", form))
 }
 
-fn mai_step(step: &TransformStep) -> Value {
-    let files: Option<Vec<Option<ImageEditFile>>> = step
-        .images
-        .as_ref()
-        .map(|list| list.iter().map(Option::as_ref).map(mai_file).collect());
-    let single_files = step.image.as_ref().map(|image| vec![mai_file(Some(image))]);
-    let form = mai::transform_request(&MaiEditRequest {
+fn mai_form(step: &TransformStep) -> ImageEditForm {
+    let images = mai_images(step);
+    mai::transform_request(&MaiEditRequest {
         model: &step.model,
         prompt: step.prompt.as_deref(),
-        image: files.as_deref().or(single_files.as_deref()),
+        image: images.as_deref(),
         options: &step.options,
-    });
-    let projected: Vec<Value> = form
+    })
+}
+
+// a null entry stays in the list, since MAI uploads the first non-None image and ignores the rest
+fn mai_images(step: &TransformStep) -> Option<Vec<Option<ImageEditFile>>> {
+    let Some(list) = &step.images else {
+        return step.image.as_ref().map(|image| vec![Some(mai_file(image))]);
+    };
+    Some(list.iter().map(Option::as_ref).map(mai_file).collect())
+}
+
+fn projected(kind: &str, form: ImageEditForm) -> Value {
+    let files: Vec<Value> = form
         .files
         .iter()
         .map(|(field, file)| {
-            json!({
-                "field": field,
-                "filename": file.filename,
-                "content_type": file.content_type,
-            })
+            json!({"field": field, "filename": file.filename, "content_type": file.content_type})
         })
         .collect();
-    json!({"value": {"kind": "mai", "data": form.data, "files": projected}})
+    json!({"value": {"kind": kind, "data": form.data, "files": files}})
 }
