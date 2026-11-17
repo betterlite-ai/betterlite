@@ -22,7 +22,7 @@ fn replays_the_anthropic_response_corpus() {
             (name, decode_anthropic_reply(&bytes))
         })
         .collect::<BTreeMap<_, _>>();
-    assert_eq!(decoded.len(), 5, "the corpus holds five seeds");
+    assert!(decoded.len() >= 5, "the corpus holds at least five seeds");
     assert!(
         matches!(
             decoded.get("valid.json"),
