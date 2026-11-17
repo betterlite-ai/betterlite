@@ -88,7 +88,7 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 let _entered = runtime.enter();
                 fixture.billing.start_async_run_billing(poll)
             };
-            finish(fixture, &runtime, handle)
+            polled_answer(fixture, &runtime, handle)
         }
         Function::SseRun => {
             let run_id = input
@@ -106,7 +106,7 @@ fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
                 let _entered = runtime.enter();
                 fixture.billing.start_sse_run_billing(poll)
             };
-            finish(fixture, &runtime, handle)
+            polled_answer(fixture, &runtime, handle)
         }
         Function::Blocking => {
             let result = result_text(input)?;
@@ -141,7 +141,7 @@ fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
 }
 
 // The poller was spawned inside the runtime above, which is what drives it to its terminal run here.
-fn finish(fixture: &Fixture, runtime: &Runtime, handle: JoinHandle<()>) -> HelperResult {
+fn polled_answer(fixture: &Fixture, runtime: &Runtime, handle: JoinHandle<()>) -> HelperResult {
     runtime.block_on(handle).or_value_error()?;
     view::billing_view(
         fixture.logging_obj.as_ref(),
