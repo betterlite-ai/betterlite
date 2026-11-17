@@ -147,6 +147,14 @@ fn a_cause_without_detail_attributes_still_emits_a_frame() {
 }
 
 #[test]
+fn empty_exception_message_falls_back_to_the_exception_text() {
+    let mut failure = plain("from the exception");
+    failure.message = Some(text(""));
+    let frame = failed_frame(state(None).format_failure(&failure));
+    assert_eq!(error_message(&frame), "from the exception");
+}
+
+#[test]
 fn committed_identity_is_used_without_generating_new_values() {
     let mut state = state_without_sources();
     state
@@ -261,6 +269,17 @@ fn empty_observed_identity_does_not_erase_committed_values() {
     assert_eq!(
         json_text(member(member(&payload(&frame), "response"), "id")),
         "resp_a"
+    );
+}
+
+#[test]
+fn an_empty_committed_id_is_replaced_by_a_generated_one() {
+    let mut state = state(None);
+    state.response_id = Some(String::new());
+    let frame = failed_frame(state.format_failure(&plain("broken")));
+    assert_eq!(
+        json_text(member(member(&payload(&frame), "response"), "id")),
+        "resp_0123456789abcdef0123456789abcdef"
     );
 }
 
