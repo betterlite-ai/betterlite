@@ -60,9 +60,9 @@ pub(super) fn rerank_url_api_version() {
     // httpx rejects the path it would have to rewrite when the decoded base path holds '?' or '#'
     for path in ["/a%3Fb", "/a%23b", "/a%3Fb/v1?x=1"] {
         let base = format!("{BASE}{path}");
-        let rejected = complete_url(Some(&base)).unwrap_err();
+        let unwritable = complete_url(Some(&base)).unwrap_err();
         assert!(
-            matches!(rejected, FoundryRerankError::UnwritablePath),
+            matches!(unwritable, FoundryRerankError::UnwritablePath),
             "{path}"
         );
     }
