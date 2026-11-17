@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_bedrock::agentcore_stream::IdSource;
-use betterlite_bedrock::bedrock_settings::error_response_text;
+use betterlite_bedrock::bedrock_settings::{BedrockError, error_response_text};
 use betterlite_bedrock::converse_response::environment::{
     get_error_class, should_fake_stream, validate_environment,
 };
@@ -14,12 +14,13 @@ use betterlite_bedrock::converse_response::transform::{
 };
 use betterlite_bedrock::converse_response::wire::ModelResponse;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::request_policy::BedrockRequestPolicy;
+use betterlite_bedrock::request_policy::{BedrockRequestPolicy, Params};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -101,11 +102,26 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Operation::Transform(cases) => collect(cases, transform_case),
-            Operation::FakeStream(cases) => {
-                Ok(json!(cases.iter().map(fake_stream).collect::<Vec<_>>()))
-            }
+            Operation::FakeStream(cases) => Ok(json!(
+                cases
+                    .iter()
+                    .map(|case| should_fake_stream(
+                        case.model.as_deref(),
+                        case.stream,
+                        case.fake_stream
+                    ))
+                    .collect::<Vec<_>>()
+            )),
             Operation::Environment(cases) => collect(cases, environment_case),
-            Operation::ErrorClass(cases) => collect(cases, error_class_case),
+            Operation::ErrorClass(cases) => {
+                let errors = cases
+                    .iter()
+                    .map(|case| {
+                        get_error_class(&case.message, case.status, &case.headers).map_err(failure)
+                    })
+                    .collect::<Result<Vec<_>, Box<HelperError>>>()?;
+                Ok(json!(errors.iter().map(error_view).collect::<Vec<_>>()))
+            }
         }
     }
 }
@@ -124,25 +140,44 @@ where
     serde_json::to_value(outputs).map_err(failure)
 }
 
+struct Prepared<'case> {
+    request: ReplyRequest<'case>,
+    reply: RawReply<'case>,
+    ids: FixedIds,
+}
+
+fn prepare<'case>(
+    case: &'case ReplyCase,
+    mappings: &'case IndexMap<String, String>,
+) -> Result<Prepared<'case>, Box<HelperError>> {
+    Ok(Prepared {
+        request: ReplyRequest {
+            model: &case.model,
+            messages: &case.messages,
+            data: RawBody::Object(case.data.clone()),
+            json_mode: case.json_mode,
+            optional: &case.optional_params,
+            tool_name_mappings: mappings,
+        },
+        reply: RawReply {
+            headers: &case.headers,
+            body: case.body.as_bytes(),
+        },
+        ids: FixedIds {
+            values: Mutex::new(parse_ids(&case.ids)?),
+        },
+    })
+}
+
 fn transform_case(case: &ReplyCase) -> Result<Value, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     let (mut state, env) = fixture(&redactor)?;
     let mappings: IndexMap<String, String> = IndexMap::new();
-    let request = ReplyRequest {
-        model: &case.model,
-        messages: &case.messages,
-        data: RawBody::Object(case.data.clone()),
-        json_mode: case.json_mode,
-        optional: &case.optional_params,
-        tool_name_mappings: &mappings,
-    };
-    let reply = RawReply {
-        headers: &case.headers,
-        body: case.body.as_bytes(),
-    };
-    let ids = FixedIds {
-        values: Mutex::new(parse_ids(&case.ids)?),
-    };
+    let Prepared {
+        request,
+        reply,
+        ids,
+    } = prepare(case, &mappings)?;
     let result = transform_response(
         TransformCall {
             request,
@@ -220,26 +255,41 @@ fn parse_ids(values: &[String]) -> Result<Vec<Uuid>, Box<HelperError>> {
         .collect()
 }
 
-fn fake_stream(case: &FakeStreamCase) -> bool {
-    should_fake_stream(case.model.as_deref(), case.stream, case.fake_stream)
+struct Environment {
+    headers: IndexMap<String, String>,
+    key: Option<SecretString>,
+    policy: Option<BedrockRequestPolicy>,
+    params: Params,
 }
 
-fn environment_case(case: &EnvironmentCase) -> Result<Value, Box<HelperError>> {
+fn environment_parts(case: &EnvironmentCase) -> Environment {
     let policy = (!case.fields.is_empty()).then(|| BedrockRequestPolicy {
         fields: case.fields.iter().cloned().collect(),
     });
-    let headers: IndexMap<String, String> = case.headers.iter().cloned().collect();
-    let params = entries(&case.litellm_params);
-    let merged = validate_environment(&headers, case.api_key.as_deref(), policy.as_ref(), &params)
+    Environment {
+        headers: case.headers.iter().cloned().collect(),
+        key: case.api_key.as_deref().map(SecretString::from),
+        policy,
+        params: entries(&case.litellm_params),
+    }
+}
+
+fn environment_case(case: &EnvironmentCase) -> Result<Value, Box<HelperError>> {
+    let Environment {
+        headers,
+        key,
+        policy,
+        params,
+    } = environment_parts(case);
+    let merged = validate_environment(&headers, key.as_ref(), policy.as_ref(), &params)
         .map_err(|error| status_failure(&error))?;
     Ok(json!({"headers": merged.into_iter().collect::<Vec<_>>()}))
 }
 
-fn error_class_case(case: &ErrorClassCase) -> Result<Value, Box<HelperError>> {
-    let error = get_error_class(&case.message, case.status, &case.headers).map_err(failure)?;
+fn error_view(error: &BedrockError) -> Value {
     let request = &error.error.request;
     let response = &error.error.response;
-    Ok(json!({
+    json!({
         "status_code": error.error.status_code,
         "status_code_is_synthesized": error.error.status_code_is_synthesized,
         "message": error.error.message,
@@ -249,5 +299,5 @@ fn error_class_case(case: &ErrorClassCase) -> Result<Value, Box<HelperError>> {
             "status_code": response.status_code,
             "text": error_response_text(&error.response_body),
         },
-    }))
+    })
 }

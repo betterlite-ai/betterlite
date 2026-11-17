@@ -12,11 +12,9 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
-use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -90,15 +88,11 @@ pub(crate) fn fixture(
 pub(crate) fn log_view(state: &LoggingState) -> Value {
     let details = &state.model_call_details;
     json!({
-        "input": detail(details, "input"),
-        "original_response": detail(details, "original_response"),
-        "additional_args": detail(details, "additional_args"),
-        "log_event_type": detail(details, "log_event_type"),
+        "input": details.get("input").map_or(Value::Null, |value| json!(value)),
+        "original_response": details.get("original_response").map_or(Value::Null, |value| json!(value)),
+        "additional_args": details.get("additional_args").map_or(Value::Null, |value| json!(value)),
+        "log_event_type": details.get("log_event_type").map_or(Value::Null, |value| json!(value)),
     })
-}
-
-fn detail(details: &IndexMap<String, Json>, name: &str) -> Value {
-    details.get(name).map_or(Value::Null, |value| json!(value))
 }
 
 // The reply clock is injected as whole seconds, so the fixture never reads the wall clock.
