@@ -43,6 +43,9 @@ class LoggingShape(TypedDict, total=False):
 RECORD: Final = TypeAdapter(Object)
 CHOICES: Final = TypeAdapter(list[Choice])
 LOGGING: Final = TypeAdapter(LoggingShape)
+CHAT_ANSWER: Final[TypeAdapter[ModelResponse]] = TypeAdapter(ModelResponse)
+RESPONSES_ANSWER: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
+STREAM_CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 
 
 class CallLog(dict[str, JsonValue]):
@@ -97,9 +100,9 @@ def run_success(input_value: Call, handler: Lines) -> Object:
     response = input_value["response"]
     answer: Answer
     if response.get("object") == RESPONSES_OBJECT:
-        answer = ResponsesAPIResponse.model_validate(response)
+        answer = RESPONSES_ANSWER.validate_python(response)
     else:
-        answer = ModelResponse.model_validate(response)
+        answer = CHAT_ANSWER.validate_python(response)
     request = hook_request(input_value["request_data"])
     return outcome(asyncio.run(call(request, answer, None)), handler)
 
@@ -107,7 +110,7 @@ def run_success(input_value: Call, handler: Lines) -> Object:
 def run_streaming(input_value: Call, handler: Lines) -> Object:
     hook = VectorStorePreCallHook()
     call = cast(CallHook, hook.async_post_call_streaming_deployment_hook)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L472-L512
-    chunk = ModelResponseStream.model_validate(input_value["response"])
+    chunk = STREAM_CHUNK.validate_python(input_value["response"])
     return outcome(asyncio.run(call(input_value["request_data"], chunk, None)), handler)
 
 
