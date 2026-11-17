@@ -1,7 +1,7 @@
 id: B627
 milestone: M3 providers
 title: Bedrock Titan and Cohere embeddings
-status: done
+status: todo
 depends_on: [B006, B183, B1417, B002, B171]
 file: tasks/B627-bedrock-other-titan-embeddings.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/bedrock/embed/cohere_transformation.py"
 parent: B029
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2311
+pr: null
