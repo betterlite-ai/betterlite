@@ -21,6 +21,7 @@ use serde_json::Number;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
+use super::poll::TokioSleeper;
 use super::{
     AssemblyAiError, AssemblyAiLogging, AssemblyAiPorts, AssemblyAiSettings,
     AssemblyCredentialSource, AssemblyLogCall, AssemblySleeper, AssemblyTranscriptLog,
@@ -419,6 +420,8 @@ fn default_settings_match_litellm() {
 #[case::no_scheme(Some("eu.assemblyai.com/v2/transcript"), None)]
 #[case::empty(Some(""), None)]
 #[case::ipv6(Some("https://[::1]/x"), None)]
+#[case::bracketed_eu(Some("https://[eu.assemblyai.com]/x"), Some("eu"))]
+#[case::numeric_scheme(Some("1https://eu.assemblyai.com/x"), None)]
 #[case::empty_authority(Some("https:///x"), None)]
 fn assembly_region_follows_the_url_host(#[case] url: Option<&str>, #[case] expected: Option<&str>) {
     assert_eq!(assembly_region_from_url(url), expected, "{url:?}");
@@ -866,6 +869,16 @@ async fn only_post_requests_are_logged(#[case] method: &str, #[case] expected: u
         (harness.sink.count(), harness.transport.request_count()),
         (expected, expected)
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_tokio_sleeper_waits_for_the_whole_interval() {
+    let waited = tokio::time::timeout(
+        Duration::from_millis(1),
+        TokioSleeper.sleep(Duration::from_secs(60)),
+    )
+    .await;
+    assert!(waited.is_err());
 }
 
 #[test]
