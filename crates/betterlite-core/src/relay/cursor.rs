@@ -70,6 +70,7 @@ pub struct CursorPassthroughLogger {
 
 impl CursorPassthroughLogger {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - B3606 constructs the logger through this fixed name
     pub fn new(payload_builder: Arc<dyn StandardPayloadBuilder>) -> Self {
         Self { payload_builder }
     }
@@ -147,7 +148,7 @@ fn record(input: &CursorPassthroughInput<'_>, model_name: &str) -> PassThroughLo
         ("response_cost".to_owned(), zero_cost),
     ]);
     input.logging_obj.edit(&mut |state| {
-        state.model = model_name.to_owned();
+        model_name.clone_into(&mut state.model);
         for (key, value) in &details {
             state.model_call_details.insert(key.clone(), value.clone());
         }
@@ -171,7 +172,7 @@ fn response_object(summary: &str) -> Json {
 // A payload that cannot be written as JSON stands in as Null, the way a failed build does in LiteLLM.
 fn payload_entry(payload: Option<&StandardLoggingPayload>) -> Json {
     payload
-        .and_then(|payload| serde_json::to_string(payload).ok())
+        .and_then(|built| serde_json::to_string(built).ok())
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Json::Null)
 }

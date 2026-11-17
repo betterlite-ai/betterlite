@@ -47,6 +47,7 @@ pub struct ComprehendMedicalLogger {
 
 impl ComprehendMedicalLogger {
     #[must_use]
+    // ast-grep-ignore: no-one-line-functions - B3606 constructs the logger through this fixed name
     pub fn new(payload_builder: Arc<dyn StandardPayloadBuilder>) -> Self {
         Self { payload_builder }
     }
@@ -119,7 +120,7 @@ fn record(
     let mut kwargs = input.kwargs.clone();
     kwargs.entries.extend(details.clone());
     input.logging_obj.edit(&mut |state| {
-        state.model = model_name.to_owned();
+        model_name.clone_into(&mut state.model);
         state.custom_llm_provider = Some(PROVIDER.to_owned());
         for (key, value) in &details {
             state.model_call_details.insert(key.clone(), value.clone());
@@ -129,8 +130,6 @@ fn record(
 }
 
 // The tariff table is the operation list B3621 checks against; the tariffs are USD per started 100-character unit.
-#[must_use]
-// ast-grep-ignore: no-one-line-functions - the task fixes this signature and the body is the table's key list
 pub fn supported_operations() -> impl Iterator<Item = &'static str> {
     tariff()
         .into_iter()
@@ -217,7 +216,7 @@ fn response_object(result: &str) -> Json {
 // A payload that cannot be written as JSON stands in as Null, the way a failed build does in LiteLLM.
 fn payload_entry(payload: Option<&StandardLoggingPayload>) -> Json {
     payload
-        .and_then(|payload| serde_json::to_string(payload).ok())
+        .and_then(|built| serde_json::to_string(built).ok())
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Json::Null)
 }

@@ -297,17 +297,20 @@ fn comprehend_supported_operations_are_the_five_tariff_keys() {
 }
 
 #[rstest]
-#[case::prefixed("ComprehendMedical_V20181030.DetectPHI", "comprehendmedical/DetectPHI")]
+#[case::prefixed(
+    Some("ComprehendMedical_V20181030.DetectPHI"),
+    "comprehendmedical/DetectPHI"
+)]
 #[case::last_component(
-    "ComprehendMedical_V20181030.A.DetectEntitiesV2",
+    Some("ComprehendMedical_V20181030.A.DetectEntitiesV2"),
     "comprehendmedical/DetectEntitiesV2"
 )]
-#[case::bare("InferICD10CM", "comprehendmedical/InferICD10CM")]
-#[case::trailing_dot("ComprehendMedical_V20181030.", "comprehendmedical/")]
-#[case::empty("", "comprehendmedical/")]
+#[case::bare(Some("InferICD10CM"), "comprehendmedical/InferICD10CM")]
+#[case::trailing_dot(Some("ComprehendMedical_V20181030."), "comprehendmedical/")]
+#[case::empty(Some(""), "comprehendmedical/")]
 #[case::missing(None, "comprehendmedical/")]
 #[case::unknown(
-    "ComprehendMedical_V20181030.DetectSentiment",
+    Some("ComprehendMedical_V20181030.DetectSentiment"),
     "comprehendmedical/DetectSentiment"
 )]
 fn comprehend_names_the_operation_from_the_amz_target_header(
@@ -362,7 +365,7 @@ fn comprehend_charges_nothing_for_an_unknown_operation_without_a_warning() {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 #[case::not_a_string(r#"{"Text": 5}"#)]
 #[case::null(r#"{"Text": null}"#)]
 fn comprehend_reads_a_missing_text_as_one_unit(#[case] body: &str) {
@@ -423,9 +426,9 @@ fn comprehend_writes_the_model_provider_cost_and_result() {
 #[test]
 fn comprehend_warns_and_returns_the_raw_result_for_a_body_that_is_not_an_object() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let mut caller = IndexMap::new();
-    caller.insert("model".to_owned(), Json::Text("caller-model".to_owned()));
-    let caller = PassThroughLoggingKwargs { entries: caller };
+    let mut entries = IndexMap::new();
+    entries.insert("model".to_owned(), Json::Text("caller-model".to_owned()));
+    let caller = PassThroughLoggingKwargs { entries };
     let fixture = Fixture::new(Some("ComprehendMedical_V20181030.DetectPHI"), "[]")
         .caller_kwargs(caller.clone());
     let outcome = run(&fixture);

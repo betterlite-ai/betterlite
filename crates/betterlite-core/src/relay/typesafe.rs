@@ -78,7 +78,7 @@ impl TypesafePassthroughLogger {
     #[must_use]
     pub fn typesafe_passthrough_handler(
         &self,
-        input: TypesafePassthroughInput<'_>,
+        input: &TypesafePassthroughInput<'_>,
     ) -> HandlerOutcome {
         let response = parse_response(input.response_body);
         let provider = input.custom_llm_provider;
@@ -90,12 +90,12 @@ impl TypesafePassthroughLogger {
             .unwrap_or(UNKNOWN_MODEL);
         let model_name = format!("{provider}/{logged_model}");
         let usage = response.usage.clone().unwrap_or_default();
-        let response_cost = self.response_cost(&input, &response, requested_model, &usage);
+        let response_cost = self.response_cost(input, &response, requested_model, &usage);
         let usage_json = usage_object(&usage);
-        let mut kwargs = record(&input, &model_name, &usage_json, response_cost);
+        let mut kwargs = record(input, &model_name, &usage_json, response_cost);
         let init_response =
             envelope::response_envelope(&model_name, usage_json, input.end_time.timestamp());
-        let payload = self.build_payload(&input, &init_response);
+        let payload = self.build_payload(input, &init_response);
         kwargs.entries.insert(
             STANDARD_LOGGING_OBJECT.to_owned(),
             payload_entry(payload.as_ref()),
@@ -246,7 +246,7 @@ fn record(
     let mut kwargs = input.kwargs.clone();
     kwargs.entries.extend(details.clone());
     input.logging_obj.edit(&mut |state| {
-        state.model = model_name.to_owned();
+        model_name.clone_into(&mut state.model);
         state.custom_llm_provider = Some(input.custom_llm_provider.to_owned());
         for (key, value) in &details {
             state.model_call_details.insert(key.clone(), value.clone());
@@ -275,7 +275,7 @@ fn details(
 // A payload that cannot be written as JSON stands in as Null, the way a failed build does in LiteLLM.
 fn payload_entry(payload: Option<&StandardLoggingPayload>) -> Json {
     payload
-        .and_then(|payload| serde_json::to_string(payload).ok())
+        .and_then(|built| serde_json::to_string(built).ok())
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Json::Null)
 }

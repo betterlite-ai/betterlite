@@ -191,8 +191,9 @@ fn run(fixture: &Fixture) -> HandlerOutcome {
 }
 
 fn run_with(fixture: &Fixture, entries: &[(&str, &str)]) -> HandlerOutcome {
+    let input = fixture.input();
     TypesafePassthroughLogger::new(payload_builder(), catalog(entries))
-        .typesafe_passthrough_handler(fixture.input())
+        .typesafe_passthrough_handler(&input)
 }
 
 fn payload(outcome: &HandlerOutcome) -> Json {
@@ -594,6 +595,7 @@ fn typesafe_writes_the_combined_usage_into_the_call_details() {
     let outcome = run(&fixture);
     let call_details = details(&fixture.logging_obj);
 
+    assert_eq!(text(entry(&outcome, "model")), "typesafe/gpt-4o");
     assert_eq!(text(&call_details["model"]), "typesafe/gpt-4o");
     assert_eq!(text(&call_details["custom_llm_provider"]), "typesafe");
     assert_eq!(

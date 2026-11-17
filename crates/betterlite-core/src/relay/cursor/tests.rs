@@ -427,9 +427,9 @@ fn cursor_logs_the_operation_and_agent_id_at_debug() {
 #[test]
 fn cursor_warns_and_returns_the_raw_result_when_the_route_is_not_a_url() {
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
-    let mut caller = IndexMap::new();
-    caller.insert("model".to_owned(), Json::Text("caller-model".to_owned()));
-    let caller = PassThroughLoggingKwargs { entries: caller };
+    let mut entries = IndexMap::new();
+    entries.insert("model".to_owned(), Json::Text("caller-model".to_owned()));
+    let caller = PassThroughLoggingKwargs { entries };
     let fixture =
         Fixture::new("GET", "https://api.cursor.com:bad/v0/me").caller_kwargs(caller.clone());
     let outcome = run(&fixture);
