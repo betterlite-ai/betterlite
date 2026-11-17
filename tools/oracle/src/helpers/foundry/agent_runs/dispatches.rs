@@ -13,7 +13,7 @@ use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
-use super::fixtures::{
+use super::harness::{
     CountingCounter, RecordingFactory, RecordingResolver, RecordingSleeper, ScriptedTransport,
     secret_headers, shown_headers,
 };

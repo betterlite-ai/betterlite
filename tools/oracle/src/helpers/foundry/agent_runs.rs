@@ -4,7 +4,8 @@ use serde_json::{Map, Value};
 use tokio::runtime::Builder;
 
 mod dispatches;
-mod fixtures;
+#[path = "agent_runs/fixtures/harness.rs"]
+mod harness;
 mod input;
 mod runs;
 mod tests;

@@ -11,7 +11,7 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
-use super::fixtures::{
+use super::harness::{
     CountingCounter, RecordingFactory, RecordingSleeper, ScriptedTransport, secret_headers,
 };
 use super::input::{Mode, RunCall};
