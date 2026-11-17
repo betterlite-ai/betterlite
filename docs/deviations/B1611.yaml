@@ -12,7 +12,7 @@ deviations:
   - what: >-
       The skipped unsafe destination and the persistence success and failure messages are tracing events with
       structured fields (destination, user id, flattened keys, error), where LiteLLM passes formatted text to
-      verbose_proxy_logger. The levels and the information carried are the same.
+      verbose_proxy_logger. The levels are the same, and the logged key list is sorted rather than in claim order.
     why: >-
       betterlite logs through tracing in every crate, and structured fields keep the user id and keys filterable.
     link: >-
