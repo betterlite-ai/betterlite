@@ -14,16 +14,10 @@ use super::super::convert::{
     DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION, capabilities_wire, client_capabilities,
     protocol_failure as sdk_protocol_failure, protocol_version, unexpected_response,
 };
-use super::SdkSession;
+use super::{SdkSession, Silent};
 
 pub struct SdkInitializeResult {
     result: rmcp::model::InitializeResult,
-}
-
-impl SdkInitializeResult {
-    fn from_result(result: rmcp::model::InitializeResult) -> Self {
-        Self { result }
-    }
 }
 
 impl InitializeOutcome for SdkInitializeResult {
@@ -43,7 +37,10 @@ impl SdkSession {
     ) -> Result<rmcp::model::InitializeResult, SdkError> {
         let request = SdkInitializeRequest::new(params);
         match self
-            .exchange(rmcp::model::ClientRequest::InitializeRequest(request))
+            .exchange_with_progress(
+                rmcp::model::ClientRequest::InitializeRequest(request),
+                &Silent,
+            )
             .await?
         {
             ServerResult::InitializeResult(result) => Ok(result),
@@ -63,7 +60,8 @@ impl ClientSession for SdkSession {
             Implementation::new(DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION),
         )
         .with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE);
-        let outcome = SdkInitializeResult::from_result(self.send_initialize_request(params).await?);
+        let result = self.send_initialize_request(params).await?;
+        let outcome = SdkInitializeResult { result };
         self.adopt(&outcome);
         self.send_initialized().await?;
         Ok(outcome)
@@ -84,11 +82,14 @@ impl ClientSession for SdkSession {
         )
         .with_protocol_version(version);
         let result = self.send_initialize_request(params).await?;
-        Ok(SdkInitializeResult::from_result(result))
+        Ok(SdkInitializeResult { result })
     }
 
     // The SDK adopts after the version check, which B4744 keeps, so the server's capabilities and instructions land here
     fn adopt(&mut self, result: &SdkInitializeResult) {
+        if let Some(protocol_version) = self.protocol_version.as_ref() {
+            protocol_version.set(result.protocol_version());
+        }
         self.server_capabilities = Some(capabilities_wire(&result.result.capabilities));
         self.peer
             .set_peer_info(ServerPeerInfo::from(result.result.clone()));

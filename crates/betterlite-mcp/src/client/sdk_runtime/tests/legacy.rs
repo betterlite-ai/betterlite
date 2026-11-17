@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, Bytes};
@@ -17,6 +18,7 @@ use serde_json::value::RawValue;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use crate::client::sessions::error::SessionError;
 use crate::client::sessions::stream::StreamFailureKind;
@@ -107,7 +109,7 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
     let answer = match request.method.as_str() {
         "initialize" => Some(initialize_reply(&id)),
         "tools/list" => Some(list_reply(&id, request.params.as_deref())),
-        "tools/call" => call_reply(&id, request.params.as_deref()),
+        "tools/call" => call_reply(&id, request.params.as_deref()).await,
         other => Some(failure_reply(&id, &format!("unknown method {other}"))),
     };
     let frame = match answer {
@@ -139,10 +141,15 @@ fn cursor(params: Option<&RawValue>) -> Option<String> {
     serde_json::from_str::<Cursored>(raw.get()).ok()?.cursor
 }
 
-fn call_reply(id: &str, params: Option<&RawValue>) -> Option<String> {
+async fn call_reply(id: &str, params: Option<&RawValue>) -> Option<String> {
     match tool_name(params).as_deref() {
         Some("echo") => Some(echo_reply(id, params)),
         Some("stream-fail") => None,
+        // the delay keeps this answer behind another session's stream failure on a shared runtime
+        Some("rpc-error") => {
+            sleep(Duration::from_millis(500)).await;
+            Some(failure_reply(id, "bad arguments"))
+        }
         Some(other) => Some(failure_reply(id, &format!("unknown tool {other}"))),
         None => Some(failure_reply(id, "missing tool name")),
     }
@@ -244,6 +251,45 @@ async fn a_legacy_sse_session_lists_every_tool_page_and_calls_a_tool() {
         }
         other => panic!("unexpected content blocks: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn a_stream_failure_in_one_session_leaves_another_sessions_error_alone() {
+    let broken = serve_legacy().await;
+    let plain = serve_legacy().await;
+    let runtime = Arc::new(support::runtime());
+    let mut broken_client = support::client_on(
+        Arc::clone(&runtime),
+        support::settings(TransportType::Sse),
+        &broken.url,
+        support::CALL_TIMEOUT,
+    );
+    let mut plain_client = support::client_on(
+        Arc::clone(&runtime),
+        support::settings(TransportType::Sse),
+        &plain.url,
+        support::CALL_TIMEOUT,
+    );
+    let stream_call = call_tool(
+        &mut broken_client,
+        &call("stream-fail"),
+        None::<&RecordingHost>,
+        RAISE,
+    );
+    let error_call = call_tool(
+        &mut plain_client,
+        &call("rpc-error"),
+        None::<&RecordingHost>,
+        RAISE,
+    );
+    let (streamed, answered) = tokio::join!(stream_call, error_call);
+    assert!(matches!(streamed.unwrap_err(), SessionError::Stream(_)));
+    let failure = match answered.unwrap_err() {
+        SessionError::Protocol(failure) => failure,
+        other => panic!("expected a protocol failure, got {other}"),
+    };
+    assert_eq!(failure.code, -32_602);
+    assert_eq!(failure.message, "bad arguments");
 }
 
 #[tokio::test]

@@ -105,9 +105,21 @@ pub(crate) fn client_for<Runtime>(
 where
     Runtime: McpRuntime,
 {
+    client_on(Arc::new(runtime), settings, url, timeout)
+}
+
+pub(crate) fn client_on<Runtime>(
+    runtime: Arc<Runtime>,
+    settings: SessionSettings,
+    url: &str,
+    timeout: Duration,
+) -> SessionClient<Runtime>
+where
+    Runtime: McpRuntime,
+{
     let auth = credentials(url.to_owned(), timeout);
     SessionClient {
-        runtime: Arc::new(runtime),
+        runtime,
         auth,
         settings,
         tracker: TaskTracker::new(),

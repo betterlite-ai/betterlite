@@ -5,9 +5,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use rmcp::model::{
-    ClientCapabilities, ClientConfig, ClientResult, CustomResult, ElicitationAction, ErrorCode,
-    ErrorData, Implementation, InitializeRequestParams, JsonObject, ProtocolVersion,
-    ServerNotification, ServerRequest,
+    ClientConfig, ClientResult, CustomResult, ElicitationAction, ErrorCode, ErrorData,
+    Implementation, InitializeRequestParams, JsonObject, ProtocolVersion, ServerNotification,
+    ServerRequest,
 };
 use rmcp::service::{NotificationContext, RequestContext};
 use rmcp::{RoleClient, Service};
@@ -18,9 +18,8 @@ use crate::sampling_convert::model_preferences::ModelPreferences;
 use crate::sampling_convert::response::SamplingResponse;
 use crate::sampling_convert::tools::{McpTool, McpToolChoice};
 
+use self::progress::ProgressRegistry;
 use super::convert::{DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION, client_capabilities};
-
-pub use self::progress::ProgressRegistry;
 
 const SAMPLING_UNSUPPORTED: &str = "Sampling not supported";
 const ELICITATION_UNSUPPORTED: &str = "Elicitation not supported";
@@ -33,25 +32,18 @@ pub struct ServerRequestHandlers {
     pub elicitation: Option<Arc<dyn ElicitationResponder>>,
 }
 
-impl ServerRequestHandlers {
-    #[must_use]
-    pub fn capabilities(&self) -> ClientCapabilities {
-        client_capabilities(self.sampling.is_some(), self.elicitation.is_some())
-    }
-}
-
 pub trait SamplingResponder: Send + Sync + 'static {
-    fn respond<'a>(
-        &'a self,
+    fn respond<'responder>(
+        &'responder self,
         request: SamplingRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<SamplingResponse, ErrorData>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<SamplingResponse, ErrorData>> + Send + 'responder>>;
 }
 
 pub trait ElicitationResponder: Send + Sync + 'static {
-    fn respond<'a>(
-        &'a self,
+    fn respond<'responder>(
+        &'responder self,
         request: ElicitationRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<ElicitationResult, ErrorData>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<ElicitationResult, ErrorData>> + Send + 'responder>>;
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -110,50 +102,47 @@ pub struct ElicitationResult {
 }
 
 pub struct SdkClientHandler {
-    handlers: ServerRequestHandlers,
-    progress: Arc<ProgressRegistry>,
+    pub(super) handlers: ServerRequestHandlers,
+    pub(super) progress: Arc<ProgressRegistry>,
 }
 
 impl SdkClientHandler {
-    #[must_use]
-    pub const fn new(handlers: ServerRequestHandlers, progress: Arc<ProgressRegistry>) -> Self {
-        Self { handlers, progress }
-    }
-
     async fn handle_server_request(
         &self,
         request: ServerRequest,
     ) -> Result<ClientResult, ErrorData> {
+        // The request arrives as rmcp's own params, which serialize to the wire shape the responders decode
         match request {
             ServerRequest::PingRequest(_) => Ok(ClientResult::empty(())),
-            ServerRequest::CreateMessageRequest(request) => self.sample(&request.params).await,
-            ServerRequest::ElicitRequest(request) => self.elicit(&request.params).await,
+            ServerRequest::CreateMessageRequest(request) => {
+                let responder = require(self.handlers.sampling.as_ref(), SAMPLING_UNSUPPORTED)?;
+                sampling_result(
+                    responder
+                        .respond(decode(&request.params, "sampling")?)
+                        .await?,
+                )
+            }
+            ServerRequest::ElicitRequest(request) => {
+                let responder =
+                    require(self.handlers.elicitation.as_ref(), ELICITATION_UNSUPPORTED)?;
+                custom(
+                    &responder
+                        .respond(decode(&request.params, "elicitation")?)
+                        .await?,
+                )
+            }
             ServerRequest::ListRootsRequest(_) => {
                 Err(ErrorData::invalid_request(ROOTS_UNSUPPORTED, None))
             }
             unknown => Err(method_not_found(&unknown)),
         }
     }
-
-    // The request arrives as rmcp's own params, which serialize to the wire shape the responders decoded
-    async fn sample<T>(&self, params: &T) -> Result<ClientResult, ErrorData>
-    where
-        T: Serialize + ?Sized,
-    {
-        let responder = require(self.handlers.sampling.as_ref(), SAMPLING_UNSUPPORTED)?;
-        sampling_result(responder.respond(decode(params, "sampling")?).await?)
-    }
-
-    async fn elicit<T>(&self, params: &T) -> Result<ClientResult, ErrorData>
-    where
-        T: Serialize + ?Sized,
-    {
-        let responder = require(self.handlers.elicitation.as_ref(), ELICITATION_UNSUPPORTED)?;
-        custom(&responder.respond(decode(params, "elicitation")?).await?)
-    }
 }
 
-fn require<R>(responder: Option<&Arc<R>>, unsupported: &str) -> Result<&R, ErrorData>
+fn require<'responder, R>(
+    responder: Option<&'responder Arc<R>>,
+    unsupported: &str,
+) -> Result<&'responder R, ErrorData>
 where
     R: ?Sized,
 {
@@ -167,8 +156,11 @@ where
     T: serde::de::DeserializeOwned,
     P: Serialize + ?Sized,
 {
-    let encoded = serde_json::to_value(params).map_err(|error| internal(operation, &error))?;
-    serde_json::from_value(encoded).map_err(|error| invalid(operation, &error))
+    serde_json::to_value(params)
+        .map_err(|error| internal(operation, &error))
+        .and_then(|encoded| {
+            serde_json::from_value(encoded).map_err(|error| invalid(operation, &error))
+        })
 }
 
 fn sampling_result(response: SamplingResponse) -> Result<ClientResult, ErrorData> {
@@ -184,8 +176,9 @@ fn custom<T>(value: &T) -> Result<ClientResult, ErrorData>
 where
     T: Serialize,
 {
-    let encoded = serde_json::to_value(value).map_err(|error| internal("result", &error))?;
-    Ok(ClientResult::CustomResult(CustomResult::new(encoded)))
+    serde_json::to_value(value)
+        .map_err(|error| internal("result", &error))
+        .map(|encoded| ClientResult::CustomResult(CustomResult::new(encoded)))
 }
 
 // The Python SDK answers a method it doesn't know with -32601 and the method name as the error data
@@ -231,8 +224,10 @@ impl Service<RoleClient> for SdkClientHandler {
     }
 
     fn get_info(&self) -> ClientConfig {
+        let sampling = self.handlers.sampling.is_some();
+        let elicitation = self.handlers.elicitation.is_some();
         InitializeRequestParams::new(
-            self.handlers.capabilities(),
+            client_capabilities(sampling, elicitation),
             Implementation::new(DEFAULT_CLIENT_NAME, DEFAULT_CLIENT_VERSION),
         )
         .with_protocol_version(ProtocolVersion::LATEST_WITH_INITIALIZE)

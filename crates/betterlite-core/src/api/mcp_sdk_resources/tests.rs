@@ -133,7 +133,7 @@ impl McpRuntime for DuplexRuntime {
         streams: DuplexStreams,
         options: SessionOptions<SdkError>,
     ) -> SdkSessionContext<DuplexStreams> {
-        SdkSessionContext::new(streams, options, self.handler.clone())
+        SdkSessionContext::new(streams, options, self.handler.clone(), None)
     }
 
     fn close_http_client(

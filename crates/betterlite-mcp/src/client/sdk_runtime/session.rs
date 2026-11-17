@@ -16,8 +16,9 @@ use crate::client::sessions::error::ExitFailure;
 use crate::client::sessions::runtime::{SessionContext, SessionOptions};
 use crate::client::sessions::stream::{MessageHandler, StreamMessage};
 
-use super::convert::{ServerCapabilitiesWire, request_error};
-use super::handler::{ProgressRegistry, SdkClientHandler};
+use super::convert::{ServerCapabilitiesWire, client_capabilities, request_error};
+use super::handler::{SdkClientHandler, progress::ProgressRegistry};
+use super::runtime::ProtocolVersionHandle;
 
 pub struct SdkSessionContext<Streams>
 where
@@ -26,6 +27,7 @@ where
     streams: Option<Streams>,
     options: SessionOptions<SdkError>,
     session_handler: MessageHandler<SdkError>,
+    protocol_version: Option<ProtocolVersionHandle>,
     progress: Arc<ProgressRegistry>,
     running: Option<RunningService<RoleClient, SdkClientHandler>>,
 }
@@ -39,24 +41,16 @@ where
         streams: Streams,
         options: SessionOptions<SdkError>,
         session_handler: MessageHandler<SdkError>,
+        protocol_version: Option<ProtocolVersionHandle>,
     ) -> Self {
         Self {
             streams: Some(streams),
             options,
             session_handler,
+            protocol_version,
             progress: Arc::new(ProgressRegistry::default()),
             running: None,
         }
-    }
-
-    // A runtime shares its stream handler across sessions, so the previous session's failure must not fail this one
-    fn forget_stream_failure(&self) {
-        let mut recorded = self
-            .session_handler
-            .recorded
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        *recorded = None;
     }
 }
 
@@ -71,9 +65,10 @@ where
         let Some(streams) = self.streams.take() else {
             return Err(SdkError::AlreadyOpen);
         };
-        self.forget_stream_failure();
-        let handler =
-            SdkClientHandler::new(self.options.handlers.clone(), Arc::clone(&self.progress));
+        let handler = SdkClientHandler {
+            handlers: self.options.handlers.clone(),
+            progress: Arc::clone(&self.progress),
+        };
         // The service starts without a handshake because B4744's initialize_session drives it
         let running = serve_directly::<
             RoleClient,
@@ -85,9 +80,13 @@ where
         let session = SdkSession {
             peer: running.peer().clone(),
             read_timeout: self.options.read_timeout,
-            capabilities: self.options.handlers.capabilities(),
+            capabilities: client_capabilities(
+                self.options.handlers.sampling.is_some(),
+                self.options.handlers.elicitation.is_some(),
+            ),
             message_handler: self.options.message_handler.clone(),
             session_handler: self.session_handler.clone(),
+            protocol_version: self.protocol_version.clone(),
             progress: Arc::clone(&self.progress),
             server_capabilities: None,
         };
@@ -109,12 +108,14 @@ where
 }
 
 pub struct SdkSession {
-    peer: Peer<RoleClient>,
-    read_timeout: Duration,
-    capabilities: ClientCapabilities,
-    message_handler: MessageHandler<SdkError>,
-    session_handler: MessageHandler<SdkError>,
-    progress: Arc<ProgressRegistry>,
+    pub peer: Peer<RoleClient>,
+    pub read_timeout: Duration,
+    pub capabilities: ClientCapabilities,
+    pub message_handler: MessageHandler<SdkError>,
+    pub session_handler: MessageHandler<SdkError>,
+    // the streamable transport's version setter, absent when the session runs on stdio or legacy SSE
+    pub protocol_version: Option<ProtocolVersionHandle>,
+    pub progress: Arc<ProgressRegistry>,
     // the initialize result's capabilities on the wire, for betterlite-core's typed decode
     pub server_capabilities: Option<ServerCapabilitiesWire>,
 }
@@ -131,10 +132,6 @@ impl ProgressSink for Silent {
 }
 
 impl SdkSession {
-    async fn exchange(&self, request: ClientRequest) -> Result<ServerResult, SdkError> {
-        self.exchange_with_progress(request, &Silent).await
-    }
-
     async fn exchange_with_progress<Sink>(
         &self,
         request: ClientRequest,
@@ -151,7 +148,7 @@ impl SdkSession {
             .await
             .map_err(|error| self.request_failure(&method, error))?;
         let token = handle.progress_token.clone();
-        let mut progress = self.progress.subscribe(&token);
+        let (mut progress, _subscription) = self.progress.subscribe(&token);
         let response = {
             let mut pending = pin!(handle.await_response());
             let mut closed = false;
@@ -165,7 +162,6 @@ impl SdkSession {
                 }
             }
         };
-        self.progress.unsubscribe(&token);
         response.map_err(|error| self.request_failure(&method, error))
     }
 

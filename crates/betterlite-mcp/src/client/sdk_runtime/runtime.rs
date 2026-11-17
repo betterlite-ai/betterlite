@@ -1,7 +1,10 @@
 use std::fmt::Display;
-use std::future::ready;
-use std::sync::Arc;
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, PoisonError};
 
+use rmcp::RoleClient;
+use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
+use rmcp::transport::Transport;
 use tokio_util::task::TaskTracker;
 use tracing::warn;
 use url::Url;
@@ -20,7 +23,7 @@ use crate::client::sessions::runtime::{
 };
 use crate::client::sessions::stdio::StdioTransport;
 use crate::client::sessions::stream::MessageHandler;
-use crate::client::sessions::transport::StdioServerParameters;
+use crate::client::sessions::transport::{StdioServerParameters, TransportContext};
 
 use super::session::SdkSessionContext;
 
@@ -45,12 +48,99 @@ impl HttpClientHandle for SdkHttpClient {
     }
 }
 
+// The transport a session runs on stays with the context for its exit, so the session gets this handle to stamp the negotiated version on every later streamable request
+#[derive(Clone)]
+pub struct ProtocolVersionHandle {
+    transport: Arc<Mutex<Option<SdkTransport>>>,
+}
+
+impl ProtocolVersionHandle {
+    pub fn set(&self, version: &str) {
+        let transport = self
+            .transport
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(SdkTransport::Streamable(http)) = transport.as_ref() {
+            http.set_protocol_version(version);
+        }
+    }
+}
+
+// The streams carry this session's own stream handler, so enter and a replayed failure never read another session's slot
+pub struct SdkSessionStreams {
+    pub(super) streams: SdkStreams,
+    pub(super) handler: MessageHandler<SdkError>,
+    pub(super) protocol_version: ProtocolVersionHandle,
+}
+
+impl Transport<RoleClient> for SdkSessionStreams {
+    type Error = SdkError;
+
+    fn send(
+        &mut self,
+        item: TxJsonRpcMessage<RoleClient>,
+    ) -> impl Future<Output = Result<(), SdkError>> + Send + 'static {
+        self.streams.send(item)
+    }
+
+    async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
+        self.streams.receive().await
+    }
+
+    async fn close(&mut self) -> Result<(), SdkError> {
+        self.streams.close().await
+    }
+}
+
+pub struct SdkTransportContext {
+    transport: Arc<Mutex<Option<SdkTransport>>>,
+    handler: MessageHandler<SdkError>,
+}
+
+impl TransportContext for SdkTransportContext {
+    type Streams = SdkSessionStreams;
+    type Error = SdkError;
+
+    async fn enter(&mut self) -> Result<SdkSessionStreams, SdkError> {
+        let Some(mut transport) = self
+            .transport
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        else {
+            return Err(SdkError::AlreadyOpen);
+        };
+        let opened = transport.enter().await;
+        *self
+            .transport
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(transport);
+        Ok(SdkSessionStreams {
+            streams: opened?,
+            handler: self.handler.clone(),
+            protocol_version: ProtocolVersionHandle {
+                transport: Arc::clone(&self.transport),
+            },
+        })
+    }
+
+    async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
+        let transport = self
+            .transport
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        match transport {
+            Some(transport) => transport.exit().await,
+            None => Ok(()),
+        }
+    }
+}
+
 pub struct SdkRuntime {
     base: HttpBase,
     capture: Arc<dyn ErrorCapture>,
     tracker: TaskTracker,
-    // One handler serves every transport this runtime builds, and a session mirrors its failure into B4744's handler
-    handler: MessageHandler<SdkError>,
 }
 
 impl SdkRuntime {
@@ -61,58 +151,81 @@ impl SdkRuntime {
             base,
             capture,
             tracker,
-            handler: MessageHandler::default(),
         }
     }
 
-    fn legacy_sse(&self, request: SseRequest) -> Result<LegacySse, SdkError> {
+    fn legacy_sse(&self, request: SseRequest) -> Result<SdkTransportContext, SdkError> {
         let url = Url::parse(&request.url).map_err(SdkError::EndpointUrl)?;
         let http = McpHttpTransport::new(&request.client, &self.base, Arc::clone(&self.capture))?;
-        Ok(LegacySse {
+        let handler = MessageHandler::default();
+        let transport = SdkTransport::LegacySse(LegacySse {
             url,
             http: Arc::new(http),
-            handler: self.handler.clone(),
-        })
+            handler: handler.clone(),
+        });
+        let transport = Arc::new(Mutex::new(Some(transport)));
+        Ok(SdkTransportContext { transport, handler })
     }
 
-    fn streamable(&self, url: &str, client: &SdkHttpClient) -> Result<StreamableHttp, SdkError> {
+    fn streamable(
+        &self,
+        url: &str,
+        client: &SdkHttpClient,
+    ) -> Result<SdkTransportContext, SdkError> {
         let url = Url::parse(url).map_err(SdkError::EndpointUrl)?;
-        Ok(StreamableHttp::new(
+        let handler = MessageHandler::default();
+        let transport = SdkTransport::Streamable(StreamableHttp::new(
             url,
             Arc::clone(&client.transport),
             Arc::clone(&client.client),
-            self.handler.clone(),
-        ))
+            handler.clone(),
+        ));
+        let transport = Arc::new(Mutex::new(Some(transport)));
+        Ok(SdkTransportContext { transport, handler })
     }
 }
 
 // McpRuntime::sse_client has no Result, so a transport that can't be built stands in as an unavailable one
-fn unsupported(name: &'static str, error: &dyn Display) -> SdkTransport {
+fn unsupported(name: &'static str, error: &dyn Display) -> SdkTransportContext {
     warn!("the MCP {name} client is unavailable: {error}");
-    SdkTransport::Stdio(StdioContext(StdioTransport::Unsupported(name)))
+    SdkTransportContext {
+        transport: Arc::new(Mutex::new(Some(SdkTransport::Stdio(StdioContext(
+            StdioTransport::Unsupported(name),
+        ))))),
+        handler: MessageHandler::default(),
+    }
 }
 
 impl McpRuntime for SdkRuntime {
     type Error = SdkError;
-    type Streams = SdkStreams;
-    type Transport = SdkTransport;
+    type Streams = SdkSessionStreams;
+    type Transport = SdkTransportContext;
     type HttpClient = SdkHttpClient;
-    type Session = SdkSessionContext<SdkStreams>;
+    type Session = SdkSessionContext<SdkSessionStreams>;
 
-    fn stdio_client(&self, parameters: StdioServerParameters) -> SdkTransport {
-        SdkTransport::Stdio(StdioContext(stdio_transport(parameters)))
+    fn stdio_client(&self, parameters: StdioServerParameters) -> SdkTransportContext {
+        SdkTransportContext {
+            transport: Arc::new(Mutex::new(Some(SdkTransport::Stdio(StdioContext(
+                stdio_transport(parameters),
+            ))))),
+            handler: MessageHandler::default(),
+        }
     }
 
-    fn sse_client(&self, request: SseRequest) -> SdkTransport {
+    fn sse_client(&self, request: SseRequest) -> SdkTransportContext {
         match self.legacy_sse(request) {
-            Ok(sse) => SdkTransport::LegacySse(sse),
+            Ok(context) => context,
             Err(error) => unsupported("legacy SSE", &error),
         }
     }
 
-    fn streamable_http_client(&self, url: String, client: Arc<SdkHttpClient>) -> SdkTransport {
+    fn streamable_http_client(
+        &self,
+        url: String,
+        client: Arc<SdkHttpClient>,
+    ) -> SdkTransportContext {
         match self.streamable(&url, &client) {
-            Ok(transport) => SdkTransport::Streamable(transport),
+            Ok(context) => context,
             Err(error) => unsupported("streamable HTTP", &error),
         }
     }
@@ -132,16 +245,18 @@ impl McpRuntime for SdkRuntime {
 
     fn session_context(
         &self,
-        streams: SdkStreams,
+        streams: SdkSessionStreams,
         options: SessionOptions<SdkError>,
-    ) -> SdkSessionContext<SdkStreams> {
-        SdkSessionContext::new(streams, options, self.handler.clone())
+    ) -> SdkSessionContext<SdkSessionStreams> {
+        let handler = streams.handler.clone();
+        let protocol_version = streams.protocol_version.clone();
+        SdkSessionContext::new(streams, options, handler, Some(protocol_version))
     }
 
     fn close_http_client(
         self: Arc<Self>,
         _client: Arc<SdkHttpClient>,
-    ) -> impl std::future::Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
+    ) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
         ready(Ok(()))
     }
 }

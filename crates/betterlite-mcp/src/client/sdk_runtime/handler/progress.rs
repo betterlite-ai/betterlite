@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use rmcp::model::{ProgressNotificationParam, ProgressToken};
 use tokio::sync::mpsc;
@@ -19,8 +19,28 @@ struct State {
     early: VecDeque<(ProgressToken, ProgressNotificationParam)>,
 }
 
+// Dropping the subscription is what ends a call's wait, so no caller can leave its waiter behind
+pub struct Subscription {
+    registry: Arc<ProgressRegistry>,
+    token: ProgressToken,
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        let mut state = self
+            .registry
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.waiters.remove(&self.token);
+    }
+}
+
 impl ProgressRegistry {
-    pub fn subscribe(&self, token: &ProgressToken) -> mpsc::Receiver<ProgressNotificationParam> {
+    pub fn subscribe(
+        self: &Arc<Self>,
+        token: &ProgressToken,
+    ) -> (mpsc::Receiver<ProgressNotificationParam>, Subscription) {
         let (sender, receiver) = mpsc::channel(BUFFER);
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let mut kept = VecDeque::with_capacity(state.early.len());
@@ -35,12 +55,11 @@ impl ProgressRegistry {
         state.early = kept;
         state.waiters.insert(token.clone(), sender);
         drop(state);
-        receiver
-    }
-
-    pub fn unsubscribe(&self, token: &ProgressToken) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.waiters.remove(token);
+        let subscription = Subscription {
+            registry: Arc::clone(self),
+            token: token.clone(),
+        };
+        (receiver, subscription)
     }
 
     pub fn deliver(&self, param: ProgressNotificationParam) {

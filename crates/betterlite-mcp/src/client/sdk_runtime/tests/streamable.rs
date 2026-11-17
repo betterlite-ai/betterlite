@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use rmcp::model::{ClientCapabilities, ProtocolVersion as SdkProtocolVersion};
+
 use crate::client::sdk_runtime::convert::ServerCapabilitiesWire;
 use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::client::sdk_transport::error::SdkError;
@@ -249,15 +251,29 @@ async fn a_roots_request_answers_the_sdk_default() {
 async fn the_client_capabilities_name_the_configured_callbacks_only() {
     let handlers = ServerRequestHandlers {
         sampling: Some(Arc::new(TestSampling)),
-        elicitation: None,
+        elicitation: Some(Arc::new(TestElicitation)),
     };
     let default = answered("capabilities", ServerRequestHandlers::default())
         .await
         .unwrap();
     assert!(!default.contains("sampling"), "{default}");
+    assert!(!default.contains("elicitation"), "{default}");
     let configured = answered("capabilities", handlers).await.unwrap();
-    assert!(configured.contains("\"sampling\""), "{configured}");
-    assert!(!configured.contains("elicitation"), "{configured}");
+    let capabilities: ClientCapabilities = serde_json::from_str(&configured).unwrap();
+    assert!(capabilities.sampling.is_some(), "{configured}");
+    let elicitation = capabilities
+        .elicitation
+        .expect("the elicitation capability is advertised");
+    assert!(elicitation.form.is_some(), "{configured}");
+    assert!(elicitation.url.is_some(), "{configured}");
+}
+
+#[tokio::test]
+async fn a_request_after_initialize_carries_the_negotiated_protocol_version() {
+    let version = answered("protocol-version", ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert_eq!(version, SdkProtocolVersion::LATEST_WITH_INITIALIZE.as_str());
 }
 
 #[tokio::test]

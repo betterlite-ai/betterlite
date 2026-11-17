@@ -11,8 +11,8 @@ use rmcp::model::{
 use crate::client::cleanup::failure::{ErrorContext, SDK_READ_TIMEOUT_CODE};
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::{McpFailure, SessionError};
+use crate::client::tools::result::{CallToolResult, InputRequiredResult, ToolCallResult};
 use crate::tools::pagination::Page;
-use crate::tools::result::{CallToolResult, InputRequiredResult, ToolCallResult};
 
 // The MCP SDK's DEFAULT_CLIENT_INFO
 pub const DEFAULT_CLIENT_NAME: &str = "mcp";

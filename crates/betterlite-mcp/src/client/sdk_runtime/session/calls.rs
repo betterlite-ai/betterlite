@@ -10,10 +10,10 @@ use rmcp::model::{
 
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::SessionError;
+use crate::client::tools::progress::{ProgressForwarder, ProgressHost};
+use crate::client::tools::result::ToolCallResult;
+use crate::client::tools::session::ToolCallSession;
 use crate::tools::pagination::{McpSession, Page};
-use crate::tools::progress::{ProgressForwarder, ProgressHost};
-use crate::tools::result::ToolCallResult;
-use crate::tools::session::ToolCallSession;
 use crate::tools::tool_calls::CallRequest;
 
 use super::super::convert::{
@@ -22,11 +22,11 @@ use super::super::convert::{
 };
 use super::{ProgressSink, SdkSession, Silent};
 
-struct Forward<'a, 'host, Host>
+struct Forward<'forward, 'host, Host>
 where
     Host: ProgressHost + Sync,
 {
-    forwarder: &'a ProgressForwarder<'host, Host>,
+    forwarder: &'forward ProgressForwarder<'host, Host>,
 }
 
 impl<Host> ProgressSink for Forward<'_, '_, Host>
@@ -52,8 +52,8 @@ where
     if let Some(arguments) = request.arguments.as_ref() {
         params = params.with_arguments(json_object(arguments)?);
     }
-    let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
-    match session.exchange_with_progress(request, sink).await? {
+    let sdk_request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
+    match session.exchange_with_progress(sdk_request, sink).await? {
         ServerResult::CallToolResult(result) => tool_call_result(&result),
         ServerResult::InputRequiredResult(result) => input_required_result(&result),
         other => Err(unexpected_response(&other)),
@@ -67,7 +67,11 @@ impl McpSession for SdkSession {
     async fn list_tools(&mut self, cursor: Option<&str>) -> Result<Page, SessionError<SdkError>> {
         let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
         let request = ClientRequest::ListToolsRequest(ListToolsRequest::with_param(params));
-        match self.exchange(request).await.map_err(session_failure)? {
+        let response = self
+            .exchange_with_progress(request, &Silent)
+            .await
+            .map_err(session_failure)?;
+        match response {
             ServerResult::ListToolsResult(result) => tool_page(&result).map_err(session_failure),
             other => Err(session_failure(unexpected_response(&other))),
         }
@@ -116,17 +120,6 @@ impl ToolCallSession for SdkSession {
     }
 }
 
-fn paginated(cursor: Option<&str>) -> PaginatedRequestParams {
-    PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned))
-}
-
-fn wire<T>(value: &T) -> Result<String, SdkError>
-where
-    T: serde::Serialize,
-{
-    serde_json::to_string(value).map_err(SdkError::Json)
-}
-
 fn prompt_arguments(arguments: &BTreeMap<String, String>) -> JsonObject {
     arguments
         .iter()
@@ -134,86 +127,17 @@ fn prompt_arguments(arguments: &BTreeMap<String, String>) -> JsonObject {
         .collect()
 }
 
-fn prompts_request(cursor: Option<&str>) -> ClientRequest {
-    ClientRequest::ListPromptsRequest(ListPromptsRequest::with_param(paginated(cursor)))
-}
-
-fn resources_request(cursor: Option<&str>) -> ClientRequest {
-    ClientRequest::ListResourcesRequest(ListResourcesRequest::with_param(paginated(cursor)))
-}
-
-fn templates_request(cursor: Option<&str>) -> ClientRequest {
-    let request = ListResourceTemplatesRequest::with_param(paginated(cursor));
-    ClientRequest::ListResourceTemplatesRequest(request)
-}
-
-fn prompt_request(
-    name: &str,
-    arguments: Option<&BTreeMap<String, String>>,
-) -> Result<ClientRequest, SdkError> {
-    let mut params = GetPromptRequestParams::new(name.to_owned());
-    if let Some(arguments) = arguments {
-        params = params.with_arguments(prompt_arguments(arguments));
-    }
-    Ok(ClientRequest::GetPromptRequest(GetPromptRequest::new(
-        params,
-    )))
-}
-
-fn read_request(uri: &str) -> ClientRequest {
-    ClientRequest::ReadResourceRequest(ReadResourceRequest::new(ReadResourceRequestParams::new(
-        uri.to_owned(),
-    )))
-}
-
-fn prompts_wire(response: &ServerResult) -> Result<String, SdkError> {
-    match response {
-        ServerResult::ListPromptsResult(result) => wire(result),
-        other => Err(unexpected_response(other)),
-    }
-}
-
-fn prompt_wire(response: &ServerResult) -> Result<String, SdkError> {
-    match response {
-        ServerResult::GetPromptResult(result) => wire(result),
-        other => Err(unexpected_response(other)),
-    }
-}
-
-fn resources_wire(response: &ServerResult) -> Result<String, SdkError> {
-    match response {
-        ServerResult::ListResourcesResult(result) => wire(result),
-        other => Err(unexpected_response(other)),
-    }
-}
-
-fn templates_wire(response: &ServerResult) -> Result<String, SdkError> {
-    match response {
-        ServerResult::ListResourceTemplatesResult(result) => wire(result),
-        other => Err(unexpected_response(other)),
-    }
-}
-
-fn resource_wire(response: &ServerResult) -> Result<String, SdkError> {
-    match response {
-        ServerResult::ReadResourceResult(result) => wire(result),
-        other => Err(unexpected_response(other)),
-    }
-}
-
 // The prompt and resource results belong to betterlite-core's types, so the session hands their wire text on
 impl SdkSession {
-    async fn wire_response(
-        &self,
-        request: ClientRequest,
-        pick: fn(&ServerResult) -> Result<String, SdkError>,
-    ) -> Result<String, SdkError> {
-        pick(&self.exchange(request).await?)
-    }
-
     pub async fn list_prompts_wire(&self, cursor: Option<&str>) -> Result<String, SdkError> {
-        self.wire_response(prompts_request(cursor), prompts_wire)
-            .await
+        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+        let request = ClientRequest::ListPromptsRequest(ListPromptsRequest::with_param(params));
+        match self.exchange_with_progress(request, &Silent).await? {
+            ServerResult::ListPromptsResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            other => Err(unexpected_response(&other)),
+        }
     }
 
     pub async fn get_prompt_wire(
@@ -221,24 +145,54 @@ impl SdkSession {
         name: &str,
         arguments: Option<&BTreeMap<String, String>>,
     ) -> Result<String, SdkError> {
-        self.wire_response(prompt_request(name, arguments)?, prompt_wire)
-            .await
+        let mut params = GetPromptRequestParams::new(name.to_owned());
+        if let Some(arguments) = arguments {
+            params = params.with_arguments(prompt_arguments(arguments));
+        }
+        let request = ClientRequest::GetPromptRequest(GetPromptRequest::new(params));
+        match self.exchange_with_progress(request, &Silent).await? {
+            ServerResult::GetPromptResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            other => Err(unexpected_response(&other)),
+        }
     }
 
     pub async fn list_resources_wire(&self, cursor: Option<&str>) -> Result<String, SdkError> {
-        self.wire_response(resources_request(cursor), resources_wire)
-            .await
+        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+        let request = ClientRequest::ListResourcesRequest(ListResourcesRequest::with_param(params));
+        match self.exchange_with_progress(request, &Silent).await? {
+            ServerResult::ListResourcesResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            other => Err(unexpected_response(&other)),
+        }
     }
 
     pub async fn list_resource_templates_wire(
         &self,
         cursor: Option<&str>,
     ) -> Result<String, SdkError> {
-        self.wire_response(templates_request(cursor), templates_wire)
-            .await
+        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+        let request = ClientRequest::ListResourceTemplatesRequest(
+            ListResourceTemplatesRequest::with_param(params),
+        );
+        match self.exchange_with_progress(request, &Silent).await? {
+            ServerResult::ListResourceTemplatesResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            other => Err(unexpected_response(&other)),
+        }
     }
 
     pub async fn read_resource_wire(&self, uri: &str) -> Result<String, SdkError> {
-        self.wire_response(read_request(uri), resource_wire).await
+        let params = ReadResourceRequestParams::new(uri.to_owned());
+        let request = ClientRequest::ReadResourceRequest(ReadResourceRequest::new(params));
+        match self.exchange_with_progress(request, &Silent).await? {
+            ServerResult::ReadResourceResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            other => Err(unexpected_response(&other)),
+        }
     }
 }

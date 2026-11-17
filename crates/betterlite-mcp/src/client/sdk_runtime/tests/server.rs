@@ -5,9 +5,8 @@ use std::pin::Pin;
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
-    Implementation, JsonObject, ListToolsResult, LoggingLevel, LoggingMessageNotificationParam,
-    PaginatedRequestParams, ProgressNotificationParam, ProtocolVersion, ServerCapabilities,
-    ServerConfig, ServerRequest, Tool,
+    Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam,
+    ProtocolVersion, ServerCapabilities, ServerConfig, ServerNotification, ServerRequest, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -107,7 +106,7 @@ impl ServerHandler for TestServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let outcome = match request.name.as_str() {
+        let outcome = match request.name.as_ref() {
             "echo" => CallToolResult::success(vec![ContentBlock::text("echoed")]),
             "fail" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
             "rpc-error" => return Err(ErrorData::invalid_params("bad arguments", None)),
@@ -175,6 +174,15 @@ impl ServerHandler for TestServer {
                     peer_answer(&context, request).await,
                 )])
             }
+            "protocol-version" => {
+                let version = context
+                    .extensions
+                    .get::<axum::http::request::Parts>()
+                    .and_then(|parts| parts.headers.get("mcp-protocol-version"))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("missing");
+                CallToolResult::success(vec![ContentBlock::text(version)])
+            }
             "capabilities" => {
                 let text = context.peer.peer_info().map_or_else(
                     || "no peer info".to_owned(),
@@ -183,11 +191,14 @@ impl ServerHandler for TestServer {
                 CallToolResult::success(vec![ContentBlock::text(text)])
             }
             "log" => {
-                let params =
-                    LoggingMessageNotificationParam::new(LoggingLevel::Info, json!("a log line"));
+                let notification: ServerNotification = serde_json::from_value(json!({
+                    "method": "notifications/message",
+                    "params": {"level": "info", "data": "a log line"}
+                }))
+                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
                 context
                     .peer
-                    .notify_logging_message(params)
+                    .send_notification(notification)
                     .await
                     .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
                 CallToolResult::success(vec![ContentBlock::text("logged")])
@@ -250,10 +261,11 @@ pub(crate) async fn serve_http(server: TestServer) -> HttpServer {
 pub(crate) struct TestSampling;
 
 impl SamplingResponder for TestSampling {
-    fn respond<'a>(
-        &'a self,
+    fn respond<'responder>(
+        &'responder self,
         request: SamplingRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<SamplingResponse, ErrorData>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<SamplingResponse, ErrorData>> + Send + 'responder>>
+    {
         Box::pin(async move { Ok(sampled(&request)) })
     }
 }
@@ -271,10 +283,11 @@ fn sampled(request: &SamplingRequest) -> SamplingResponse {
 pub(crate) struct TestElicitation;
 
 impl ElicitationResponder for TestElicitation {
-    fn respond<'a>(
-        &'a self,
+    fn respond<'responder>(
+        &'responder self,
         request: ElicitationRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<ElicitationResult, ErrorData>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ElicitationResult, ErrorData>> + Send + 'responder>>
+    {
         Box::pin(async move { Ok(accepted(&request)) })
     }
 }

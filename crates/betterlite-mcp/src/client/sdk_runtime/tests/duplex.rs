@@ -83,7 +83,6 @@ impl HttpClientHandle for NoHttpClient {
 
 pub(crate) struct DuplexRuntime {
     streams: Mutex<Option<DuplexStreams>>,
-    handler: MessageHandler<SdkError>,
 }
 
 impl McpRuntime for DuplexRuntime {
@@ -119,7 +118,7 @@ impl McpRuntime for DuplexRuntime {
         streams: DuplexStreams,
         options: SessionOptions<SdkError>,
     ) -> SdkSessionContext<DuplexStreams> {
-        SdkSessionContext::new(streams, options, self.handler.clone())
+        SdkSessionContext::new(streams, options, MessageHandler::default(), None)
     }
 
     fn close_http_client(
@@ -141,7 +140,6 @@ async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
     let (read, write) = split(client_half);
     let runtime = DuplexRuntime {
         streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
-        handler: MessageHandler::default(),
     };
     let mut client = support::client_for(
         runtime,
@@ -191,7 +189,6 @@ async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
     let (read, write) = split(client_half);
     let runtime = DuplexRuntime {
         streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
-        handler: MessageHandler::default(),
     };
     let mut client = support::client_for(
         runtime,
