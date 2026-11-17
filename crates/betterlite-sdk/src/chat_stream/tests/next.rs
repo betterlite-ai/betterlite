@@ -222,6 +222,19 @@ async fn next_effective_model_keeps_openai_when_the_logging_provider_matches() {
 }
 
 #[tokio::test]
+async fn next_effective_model_renders_none_when_the_logging_provider_is_unset() {
+    let mut config = config(CallMode::Blocking);
+    config.provider = Some("openai".to_owned());
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi")]);
+    let mut stream = start(&world, &mut correlation, config, source);
+
+    assert_eq!(only_chunk(stream.next().await).model, MODEL);
+    assert_eq!(only_chunk(stream.next().await).model, "None/gpt-4o");
+}
+
+#[tokio::test]
 async fn next_stamps_base_hidden_params() {
     let mut config = config(CallMode::Blocking);
     config.logging_provider = Some("custom".to_owned());
