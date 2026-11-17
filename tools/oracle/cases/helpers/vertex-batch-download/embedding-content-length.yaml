@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-batch-download-embedding-content-length
+call:
+  vertex_batch_download:
+    operation: stream
+    chunks:
+      - 'eyJrZXkiOiJpZCUyM29uZSMxLzIiLCJyZXF1ZXN0Ijp7ImNvbnRlbnQiOnt9fSwic3RhdHVzIjoiIiwicmVzcG9uc2UiOnsiZW1iZWRkaW5nIjp7InZhbHVlcyI6WzJdfSwidXNhZ2VNZXRhZGF0YSI6eyJwcm9tcHRUb2tlbkNvdW50IjoyfX19Cnsia2V5IjoiaWQlMjNvbmUjMC8yIiwicmVxdWVzdCI6eyJjb250ZW50Ijp7fX0sInN0YXR1cyI6IiIsInJlc3BvbnNlIjp7ImVtYmVkZGluZyI6eyJ2YWx1ZXMiOlsxXX0sInVzYWdlTWV0YWRhdGEiOnsicHJvbXB0VG9rZW5Db3VudCI6MX19fQ=='
+      - 'Cm5vdCBqc29uCg=='
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-embedding-001%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare: {ignore: []}

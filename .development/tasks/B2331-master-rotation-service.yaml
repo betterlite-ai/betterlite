@@ -115,7 +115,7 @@ out_of_scope:
   - B785 owns migration HTTP wrappers; B061 owns scanning/walking and credential routes, except the
     two credential helpers moved here. B895 owns master-key activation. B2332 owns MCP rotations.
   - B8382 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B4144 configuration publication,
-    B4663 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
+    B4663 SSO assertion rotation, B725 model rows, B730 credential/config rows, B725 table adapters,
     B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as master_rotation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/master_rotation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/master_rotation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -119,7 +119,7 @@ description: >-
   malformed, duplicate-field and limit-boundary inputs and add key_fields::tests::replays_the_key_fields_corpus.
   Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
   decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B770 owns crates/betterlite-server/fuzz; create its manifest with this real decoder target
+  fetching URLs. B003 created crates/betterlite-server/fuzz on main; add this real decoder target to its manifest
   here.
 
 
@@ -139,9 +139,9 @@ description: >-
   differing results to oracle equality cases.
 
 
-  Create crates/betterlite-server/fuzz/Cargo.toml and .gitignore exactly once here, with this task’s actual
-  decoder as its first target; no empty untargeted manifest is created earlier. Later betterlite-server
-  parser tasks depend directly on B770 and only register targets.
+  crates/betterlite-server/fuzz/Cargo.toml and .gitignore are on main since B003; add this task’s actual
+  decoder as one more target there and do not recreate them. Other betterlite-server
+  parser tasks register their own targets in the same manifest.
 scope:
   paths:
     - crates/betterlite-server/src/key_fields.rs

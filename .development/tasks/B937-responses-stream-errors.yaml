@@ -7,7 +7,7 @@ description: >-
   unless a terminal frame was already emitted. This state machine neither opens HTTP nor
   decides whether a disconnected client can receive another frame. B080 owns those transport decisions.
   Inject B198 clock and UUID sources; B1113/B1138 supply event/response records, B184 supplies
-  MidStreamFallbackError causes, and B012 supplies client-message redaction from _logging.py.
+  MidStreamFallbackError causes, and B187 supplies the redactor behind _logging.py's client-message redaction.
 
   The responses_stream_errors helper calls the pinned state and methods with parsed records
   and independently constructed exceptions. Compare exact frame structure after masking only
@@ -61,7 +61,7 @@ dod:
     null/399/500->server_error. code or type=insufficient_quota yields insufficient_quota;
     code/type=429,"429" or rate_limit_custom yields rate_limit_exceeded. code=rate_limit_custom
     beats type=insufficient_quota because code is inspected first. A nonempty nondigit string
-    code=custom wins over status, numeric strings fall back to status. With default B012
+    code=custom wins over status, numeric strings fall back to status. With default B187
     redaction enabled, message="upstream http://service.internal:8080/v1 failed" becomes
     "upstream http://REDACTED:8080/v1 failed". With its explicit redaction-disable setting,
     that message remains unchanged. A missing message uses str(original) before redaction.
@@ -83,7 +83,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B080 chooses HTTP versus SSE delivery and handles disconnects; there is no disconnect branch in this owned file.
-- B012 owns _logging.redact_internal_details_from_client_message and its redaction setting; B184 owns exception construction. B925 decodes provider events before this state observes them.
+- B187 owns the internal-detail redactor that _logging.redact_internal_details_from_client_message applies unless LITELLM_DISABLE_REDACT_SECRETS is true; B184 owns exception construction. B925 decodes provider events before this state observes them.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_stream_errors in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_stream_errors.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_stream_errors.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Observing response.completed does not make it terminal until mark_emitted runs; a serialization failure must still emit failure.

@@ -12,7 +12,7 @@ description: >-
   request-root slot holds. The trait takes strings only, because every value stamped here is text or a string list
   already built by the mapper.
 
-  `LangfuseOtel` wraps B3853's OpenTelemetryV2 callback by composition (Rust has no inheritance) and implements the same
+  `LangfuseOtel` wraps B3852's OpenTelemetryV2 callback by composition (Rust has no inheritance) and implements the same
   pre-call hook. Its `log_pre_api_call(model, messages, kwargs)` takes the root from B3847's `request_root_span`; when the
   root exists and is recording, it sets the attributes `LangfuseMapper::trace_attributes(caller_trace_controls(kwargs))`
   returns (B3846 and B3892). Then it calls the wrapped callback's own pre-call hook. The stamp comes first, the wrapped

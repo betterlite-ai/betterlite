@@ -1,36 +1,10 @@
-import { groupOf, type Merge, type Milestone } from "../backlog.ts";
-import { dayKey, idNumber, mean, quantile, sum } from "../format.ts";
-import type { AgentRun, Boot, Entry, Hour, Pull, Run, Target } from "../schema.ts";
+import { groupOf, type Merge, type Milestone, type PullMerge } from "../backlog.ts";
+import { dayKey, idNumber, quantile, sum } from "../format.ts";
+import type { AgentRun, Boot, Entry, Hour, Target } from "../schema.ts";
 
 // Stage 2 starts when #722 merges and stage 3 when #1544 does.
 export const CUTOVER_PRS = [722, 1544];
 export const STAGE_COLORS: Record<number, string> = { 1: "--c7", 2: "--c4", 3: "--c5" };
-
-export type StepKey = "build" | "checks" | "queue" | "total";
-
-export interface Step {
-  key: StepKey;
-  label: string;
-  about: string;
-}
-
-export const STEPS: (Step & { color: string })[] = [
-  { key: "build", label: "Build", about: "First commit to pull request opened, including the local checks, review and fix rounds, usage-limit pauses and the wait for the architect to push", color: "--c1" },
-  { key: "checks", label: "Checks", about: "Opened to added to the merge queue", color: "--c2" },
-  { key: "queue", label: "Queue", about: "Added to the merge queue to merged", color: "--c3" },
-];
-export const TOTAL: Step = { key: "total", label: "Total", about: "First commit to merged" };
-
-export const CI_EVENTS = [
-  { key: "pull_request", label: "Pull request", color: "--c1" },
-  { key: "merge_group", label: "Merge queue", color: "--c2" },
-  { key: "push", label: "Push on main", color: "--c3" },
-];
-export const CI_RESULTS = [
-  { key: "success", label: "Passed", color: "--c3" },
-  { key: "failure", label: "Failed", color: "--c2" },
-  { key: "cancelled", label: "Cancelled", color: "--other" },
-];
 
 export type Tally = { [K in keyof AgentRun]: AgentRun[K] extends number | null ? K : never }[keyof AgentRun];
 
@@ -57,19 +31,7 @@ export interface Period {
 export interface PeriodStats {
   length: number;
   tasks: number;
-  prs: number;
   tasksADay: number | null;
-  prsADay: number | null;
-  taskMedian: number | null;
-  task90: number | null;
-  build: number | null;
-  checks: number | null;
-  queue: number | null;
-  lines: number | null;
-  queues: number | null;
-  ciPerPr: number | null;
-  failed: number | null;
-  cancelled: number | null;
   agentRuns: number;
   agentHours: number;
   tokensPerTask: number | null;
@@ -84,24 +46,6 @@ export interface Measured extends Period {
   stats: PeriodStats;
 }
 
-export interface StageRow {
-  number: number;
-  task: string | null;
-  merged: number;
-  x: number;
-  mergedStage: number;
-  stage: number;
-  build: number | null;
-  checks: number | null;
-  queue: number | null;
-  total: number | null;
-  lines: number;
-  files: number;
-  commits: number;
-  queues: number;
-  runs: number;
-}
-
 export interface Series {
   label: string;
   color: string;
@@ -109,33 +53,27 @@ export interface Series {
   weights: number[] | null;
 }
 
-export type ViewKey = "tasks" | "milestones" | "prs";
+export type ViewKey = "tasks" | "milestones";
 export type StagedMerge = Merge & { stage: number };
-export type StagedRun = Run & { stage: number };
 export type StagedAgentRun = AgentRun & { stage: number };
 export type StagedHour = Hour & { stage: number };
 
 export interface HistoryData {
-  pulls: Pull[];
-  runs: Run[];
   agentRuns: AgentRun[];
   targets: Target[];
   boot: Boot | null;
   hours: Hour[];
+  merged: PullMerge[];
   merges: Merge[];
   milestones: Map<string, Milestone>;
-  byPull: Map<number, Entry>;
   entries: Entry[];
 }
 
 interface Staged {
   now: number;
   cutovers: number[];
-  rows: StageRow[];
-  taskRows: StageRow[];
   tasks: StagedMerge[];
   days: number[];
-  runs: StagedRun[];
   agentRuns: StagedAgentRun[];
   traced: StagedAgentRun[];
   hours: StagedHour[];
@@ -172,10 +110,6 @@ export function weighted(hours: Hour[], key: HourKey): number | null {
   return minutes === 0 ? null : sum(hours.map((hour) => hour[key] * hour.minutes)) / minutes;
 }
 
-function minutesBetween(from: number | null, to: number | null): number | null {
-  return from !== null && to !== null ? Math.max(0, (to - from) / 60) : null;
-}
-
 function dayStarts(first: number, now: number): number[] {
   const days: number[] = [];
   const cursor = new Date(first);
@@ -200,56 +134,8 @@ export function countPerDay(days: number[], times: number[], weights: number[] |
   return counts;
 }
 
-// Pull request runs often carry no PR number, so they are matched by branch within the PR's lifetime.
-function attachRuns(runs: Run[], pulls: Pull[]): Map<number, number> {
-  const byBranch = new Map<string, Pull[]>();
-  for (const pull of pulls) {
-    byBranch.set(pull.branch, [...(byBranch.get(pull.branch) ?? []), pull]);
-  }
-  const counts = new Map<number, number>();
-  for (const run of runs) {
-    let pr = run.pr;
-    if (pr === null && run.event === "pull_request" && run.branch !== null) {
-      pr = (byBranch.get(run.branch) ?? []).find((pull) => run.created >= pull.first - 300 && run.created <= pull.merged + 300)?.number ?? null;
-    }
-    if (pr !== null && run.event !== "push") {
-      counts.set(pr, (counts.get(pr) ?? 0) + 1);
-    }
-  }
-  return counts;
-}
-
-function stageRows(pulls: Pull[], byPull: Map<number, Entry>, cutovers: number[], runCounts: Map<number, number>): StageRow[] {
-  const rows = pulls.map((pull) => {
-    const mergedStage = stageOf(pull.merged, cutovers);
-    return {
-      number: pull.number,
-      task: byPull.get(pull.number)?.id ?? null,
-      merged: pull.merged,
-      x: pull.merged,
-      mergedStage,
-      stage: stageOf(pull.first, cutovers) === mergedStage ? mergedStage : 0,
-      build: minutesBetween(pull.first, pull.opened),
-      checks: minutesBetween(pull.opened, pull.queued),
-      queue: minutesBetween(pull.queued, pull.merged),
-      total: minutesBetween(pull.first, pull.merged),
-      lines: pull.lines,
-      files: pull.files,
-      commits: pull.commits,
-      queues: pull.queues,
-      runs: runCounts.get(pull.number) ?? 0,
-    };
-  });
-  rows.sort((a, b) => a.merged - b.merged);
-  // uPlot needs rising x values, and some pull requests merged in the same second.
-  for (let i = 1; i < rows.length; i++) {
-    rows[i].x = Math.max(rows[i].x, rows[i - 1].x + 1);
-  }
-  return rows;
-}
-
 // Each view is a list of series: a label, a color variable and the merge times the series counts.
-function historyViews(merges: Merge[], milestones: Map<string, Milestone>, pulls: Pull[], byPull: Map<number, Entry>): Record<ViewKey, Series[]> {
+function historyViews(merges: Merge[], milestones: Map<string, Milestone>): Record<ViewKey, Series[]> {
   const taskTimes = merges.map((merge) => merge.time);
   const byGroup = new Map<Milestone, number[]>();
   for (const merge of merges) {
@@ -264,14 +150,9 @@ function historyViews(merges: Merge[], milestones: Map<string, Milestone>, pulls
   if (rest.length > 0) {
     byMilestone.push({ label: `Other: ${rest.map(([group]) => group.code).join(", ")}`, color: "--other", times: rest.flatMap(([, times]) => times), weights: null });
   }
-  const otherTimes = pulls.filter((pull) => !byPull.has(pull.number)).map((pull) => pull.merged * 1000);
   return {
     tasks: [{ label: "Tasks", color: "--done", times: taskTimes, weights: null }],
     milestones: byMilestone,
-    prs: [
-      { label: "Tasks", color: "--c6", times: taskTimes, weights: null },
-      { label: "Other PRs", color: "--c1", times: otherTimes, weights: null },
-    ],
   };
 }
 
@@ -292,11 +173,7 @@ function ssdPerDay(facts: Staged, period: Period): number | null {
 
 function periodStats(facts: Staged, period: Period): PeriodStats {
   const length = spanDays(period);
-  const taskRows = facts.taskRows.filter((row) => inStage(period, row.stage));
-  const rows = facts.rows.filter((row) => inStage(period, row.stage));
   const tasks = facts.tasks.filter((merge) => inStage(period, merge.stage)).length;
-  const prs = facts.rows.filter((row) => inStage(period, row.mergedStage)).length;
-  const runs = facts.runs.filter((run) => inStage(period, run.stage));
   const agents = facts.agentRuns.filter((run) => inStage(period, run.stage));
   const workers = facts.traced.filter((run) => inStage(period, run.stage));
   const active = totals(workers, WAIT_KEYS);
@@ -305,37 +182,7 @@ function periodStats(facts: Staged, period: Period): PeriodStats {
   return {
     length,
     tasks,
-    prs,
     tasksADay: length > 0 ? tasks / length : null,
-    prsADay: length > 0 ? prs / length : null,
-    taskMedian: quantile(
-      taskRows.map((row) => row.total),
-      0.5,
-    ),
-    task90: quantile(
-      taskRows.map((row) => row.total),
-      0.9,
-    ),
-    build: quantile(
-      taskRows.map((row) => row.build),
-      0.5,
-    ),
-    checks: quantile(
-      taskRows.map((row) => row.checks),
-      0.5,
-    ),
-    queue: quantile(
-      taskRows.map((row) => row.queue),
-      0.5,
-    ),
-    lines: quantile(
-      taskRows.map((row) => row.lines),
-      0.5,
-    ),
-    queues: mean(taskRows.map((row) => row.queues)),
-    ciPerPr: mean(rows.map((row) => row.runs)),
-    failed: runs.length === 0 ? null : runs.filter((run) => run.conclusion === "failure").length / runs.length,
-    cancelled: runs.length === 0 ? null : runs.filter((run) => run.conclusion === "cancelled").length / runs.length,
     agentRuns: agents.length,
     agentHours: sum(agents.map((run) => (run.end - run.start) / 3600)),
     tokensPerTask: tasks === 0 ? null : sum(agents.map((run) => run.output_tokens)) / tasks,
@@ -349,20 +196,16 @@ function periodStats(facts: Staged, period: Period): PeriodStats {
 
 export function historyFacts(data: HistoryData, clock: number): History {
   const now = clock / 1000;
-  const cutovers = CUTOVER_PRS.map((number) => data.pulls.find((pull) => pull.number === number)?.merged ?? null).filter((time) => time !== null);
-  const rows = stageRows(data.pulls, data.byPull, cutovers, attachRuns(data.runs, data.pulls));
+  const cutovers = CUTOVER_PRS.map((number) => data.merged.find((merge) => merge.pull === number)?.time ?? null).filter((time) => time !== null);
   const tasks = data.merges.map((merge) => ({ ...merge, stage: stageOf(merge.time / 1000, cutovers) }));
-  const days = rows.length === 0 ? [] : dayStarts(Math.min(rows[0].merged * 1000, ...tasks.map((merge) => merge.time)), clock);
+  const days = data.merged.length === 0 ? [] : dayStarts(Math.min(...data.merged.map((merge) => merge.time)) * 1000, clock);
   const first = days.length === 0 ? now : days[0] / 1000;
   const agentRuns = data.agentRuns.map((run) => ({ ...run, model: run.model.replace(/-\d{8}$/, ""), stage: stageOf(run.start, cutovers) }));
   const staged: Staged = {
     now,
     cutovers,
-    rows,
-    taskRows: rows.filter((row) => row.task !== null),
     tasks,
     days,
-    runs: data.runs.map((run) => ({ ...run, stage: stageOf(run.created, cutovers) })),
     agentRuns,
     traced: agentRuns.filter((run) => run.role === "w" && run.calls !== null),
     hours: data.hours.map((hour) => ({ ...hour, stage: stageOf(hour.hour, cutovers) })),
@@ -376,7 +219,7 @@ export function historyFacts(data: HistoryData, clock: number): History {
     ...staged,
     live,
     columns: cutovers.length === 0 ? live : [...live, { ...all, stats: periodStats(staged, all) }],
-    views: historyViews(data.merges, data.milestones, data.pulls, data.byPull),
+    views: historyViews(data.merges, data.milestones),
     entries: data.entries,
     milestones: data.milestones,
   };

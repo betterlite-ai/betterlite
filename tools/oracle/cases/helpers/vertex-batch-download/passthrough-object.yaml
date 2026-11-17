@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-batch-download-passthrough-object
+call:
+  vertex_batch_download:
+    operation: buffer
+    content: 'eyJjdXN0b21faWQiOiAieCIsICJyZXNwb25zZSI6IHsic3RhdHVzX2NvZGUiOiAyMDB9fQ=='
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare: {ignore: []}
