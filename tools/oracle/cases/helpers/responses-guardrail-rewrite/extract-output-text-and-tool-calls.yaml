@@ -1,0 +1,6 @@
+kind: helper
+name: responses-extract-output-text-and-tool-calls
+call:
+  b3671: {"function": "output", "scenarios": [{"response": {"model": "m", "output": [{"type": "message", "id": "msg_1", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "hello", "annotations": []}, {"type": "output_text", "text": ""}]}, {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": "{\"a\":1}", "status": "completed"}, {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_2", "name": "g", "input": "raw"}, {"type": "reasoning", "id": "rs_1", "summary": []}]}, "request_data": null, "reply": null}, {"response": {"output": [{"type": "message", "id": "msg_1", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": "hello", "annotations": []}, {"type": "output_text", "text": ""}]}, {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": "{\"a\":1}", "status": "completed"}, {"type": "custom_tool_call", "id": "ctc_1", "call_id": "call_2", "name": "g", "input": "raw"}, {"type": "reasoning", "id": "rs_1", "summary": []}]}, "request_data": {"keep": 1}, "reply": null}, {"response": {"model": "", "output": [{"type": "reasoning", "id": "rs_1", "summary": []}]}, "request_data": null, "reply": null}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-services-passthrough-invoke-id-encoding
+call:
+  bedrock_services_passthrough:
+    kind: url
+    runs:
+      - {model: "anthropic.claude-3-sonnet-20240229-v1:0", endpoint: "/model/anthropic.claude-3-sonnet-20240229-v1:0/invoke", region: us-east-1}
+      - {model: "anthropic.claude-3-sonnet-20240229-v1:0", endpoint: "/model/anthropic.claude-3-sonnet-20240229-v1:0/invoke", region: us-east-1, model_id: "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123"}
+      - {model: m, endpoint: /model/placeholder/invoke, region: us-east-1, model_id: "arn:aws:bedrock:us-east-1:123456789012:foundation-model/anthropic.claude-v2"}
+      - {model: m, endpoint: /model/place/invoke, region: us-east-1, model_id: plain/withslash}
+      - {model: m, endpoint: /model/place/invoke, region: us-east-1, model_id: ""}
+      - {model: m, endpoint: /model/x/invoke-with-response-stream, region: us-east-1}
+env: {}
+compare: {ignore: []}

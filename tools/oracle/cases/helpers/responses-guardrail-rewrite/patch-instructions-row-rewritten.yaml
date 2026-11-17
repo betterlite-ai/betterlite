@@ -1,0 +1,6 @@
+kind: helper
+name: responses-patch-instructions-row-rewritten
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "system", "content": "SYS"}, {"role": "user", "content": "a"}]}}, {"data": {"instructions": "sys", "input": [{"role": "user", "content": "a"}]}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "system"}, {"role": "user", "content": "a"}]}}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+task: B1538
+deviations:
+  - what: "A retrieved task's progress rounds half-even on the exact decimal share, where LiteLLM rounds the binary float: 0.545 gives 54 here and 55 there, 0.575 gives 58 here and 57 there. The rounding lives in the shared B1537 helper this task's retrieval calls."
+    why: "The task pins Decimal for the shared progress rounding, so the tie rule applies to the decimal share rather than to the float's representation error; docs/deviations/B1537.yaml records the same deviation for creation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L103-L104
+  - what: "The artifact download stops at ApiLimits.max_json_bytes (16 MiB) and reports the limit error, where LiteLLM reads the whole response body into memory without a bound."
+    why: "The task requires the bounded read through B1087 so one provider artifact cannot exhaust proxy memory; a video larger than the limit is refused rather than buffered."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L468-L471
+  - what: "An artifact error body that is not valid UTF-8 keeps the text up to its first invalid byte, where LiteLLM decodes the whole body with the charset the response's Content-Type declares, or UTF-8, and replacement characters."
+    why: "RunwayML's artifact storage reports failures in UTF-8 or ASCII, so the message text agrees for real responses; a body of another encoding is cut at the first invalid byte rather than mangled with replacement characters."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6083
+  - what: "An artifact response outside the 2xx range is reported as the provider error, where LiteLLM's raise_for_status raises only for 4xx and 5xx and returns a 3xx body it did not follow as the video content."
+    why: "Only a 2xx response carries the artifact, as in every other download path in the proxy; a redirect that was not followed is a failed download, not video bytes."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L469
+  - what: "An output that is not a valid URL fails the call with the task-level artifact URL error, where LiteLLM passes it to httpx and reports the InvalidURL as a provider error with a synthesized 500 status."
+    why: "The URL is validated before any transport is built, so a malformed provider artifact is a task-level failure, not an upstream HTTP response."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L468
+kept_bugs:
+  - what: "The cancel reply always reports status cancelled, keeps the provider's raw id and drops usage, even when the upstream task body still carries RUNNING or another status."
+    why: "LiteLLM's delete endpoint answers with a cancelled video object, and an OpenAI-style client that deletes a task reads that status back as the result of the call."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L576-L590

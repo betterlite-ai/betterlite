@@ -1,0 +1,16 @@
+kind: helper
+name: cloudflare-model-null
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://gateway.ai.cloudflare.com/v1/account/gw/resource
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {max_retries: 2}
+env: {}
+compare: {ignore: []}

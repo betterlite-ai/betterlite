@@ -1,0 +1,56 @@
+kind: helper
+name: runway-video-lifecycle-lowercase-processing-error
+call:
+  runway_video_lifecycle:
+    operation: content
+    params:
+      - body: '{"id":"t","status":"running"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"Running"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"RUNNING "}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"running","failure":"boom"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"RUNNING"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"FAILED","failure":"boom"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"FAILED"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"FAILED","failure":""}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"CANCELLED"}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"SUCCEEDED","output":""}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"RUNNING","output":[]}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t"}'
+        reply:
+          status: 200
+          body: unused
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: lasso-gate-off
+call:
+  b9451:
+    vendor: lasso
+    hook: pre_call
+    gate: false
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: false
+    timeout: 5.0
+    data:
+      litellm_call_id: call-1
+      messages:
+        - {role: user, content: hello}
+    outputs: []
+    answers: []
+env: {}
+compare: {ignore: []}

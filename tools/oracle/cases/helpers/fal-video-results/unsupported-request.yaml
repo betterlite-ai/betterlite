@@ -1,0 +1,8 @@
+kind: helper
+name: fal-video-results-unsupported-request
+call:
+  fal_video_results:
+    operation: unsupported_request
+env: {}
+compare:
+  ignore: []

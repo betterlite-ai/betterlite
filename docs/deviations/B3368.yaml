@@ -1,0 +1,117 @@
+task: B3368
+deviations:
+  - what: >-
+      There is no _is_async flag, async_call kwarg, run_in_executor wrapper or coroutine-or-value
+      return. The blocking and async operations are two Rust functions, container_file_call and
+      acontainer_file_call, and the ten generated functions become one pair keyed by endpoint name.
+    why: >-
+      Rust has no Union return type, and a worker thread plus a contextvars copy adds nothing to an
+      async fn that awaits the handler's async form.
+    link: ""
+  - what: >-
+      Each path maps an error once instead of LiteLLM's sync-body mapping followed by the async
+      wrapper's second pass. On the blocking path the provider is the resolved one after the
+      container id is decoded. On the async path an error raised while preparing is mapped with the
+      resolved provider, and an error the handler raises at ahandle is mapped with the caller's
+      custom_llm_provider.
+    why: >-
+      LiteLLM's async path never reaches the sync body's except for a handler error: the sync body
+      returns the unstarted coroutine and the error surfaces at the wrapper's await, so only the
+      wrapper's mapping with the caller's provider runs there. A preparation error is mapped in the
+      sync body first, and the wrapper's exception_type returns that LiteLLM exception unchanged.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L172-L185
+  - what: >-
+      The import-time endpoint table, the ten module-level aliases and containers/__init__.py have no
+      Rust code. all_endpoint_names and async_endpoint_names are the export surface and the endpoints
+      pair handles every name, so upload_container_file is exported like the other four, where
+      __init__.py re-exports eight of the ten names and leaves out upload_container_file and
+      aupload_container_file.
+    why: >-
+      Rust modules have no import side effects or package re-exports, and the router registers all ten
+      names anyway.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/__init__.py#L1-L42
+  - what: >-
+      The catalog entry is resolved from the endpoint name before the mock body is parsed. LiteLLM has
+      no such step: create_sync_endpoint_function reads name and response_type from the config at
+      import and bakes them into the function, and an endpoint name that matches nothing cannot be
+      called at all. In betterlite an unknown endpoint name is an error even when a mock is set.
+    why: >-
+      The name arrives per call in Rust, and the catalog entry is what supplies the response model a
+      mock decodes into.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L51-L52
+  - what: >-
+      A mock body that is not valid JSON or does not decode into the catalog entry's model ends as this
+      module's MockJson or MockModel error and reaches B185 as a ValueError-like ApiConnection error
+      with the caller's provider. LiteLLM's json.loads raises JSONDecodeError, and response_type(**
+      mock_response) raises pydantic's ValidationError or a TypeError, neither of which exception_type
+      classifies as a provider error.
+    why: >-
+      Error messages and classes are betterlite's own for errors outside LiteLLM's provider family, and
+      a mock body of the wrong shape is a caller error rather than a provider answer.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L71-L78
+  - what: >-
+      A litellm_params.model_id of a type other than a string, which B3361's managed id decoder rejects
+      with ContainerFieldTypeError, is an error here. LiteLLM only skips setting model_id when the
+      caller's value is falsy, so a truthy list or number stays in litellm_params and reaches the
+      provider request.
+    why: >-
+      docs/compatibility.md rejects a value the declared type cannot hold with an error that names the
+      field instead of passing it on.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L29-L31
+  - what: >-
+      An unknown provider name is this module's UnknownProvider error, "<name>" is not a provider
+      betterlite knows. LiteLLM builds a litellm.LlmProviders from the name there and the enum raises
+      ValueError("<name> is not a valid LlmProviders"), so both reach the exception mapping with no
+      status code and the provider resolved so far.
+    why: >-
+      The provider set is betterlite's own ProviderId enum, and its parse failure names the value the
+      caller gave. The class is the same, since neither error carries a status.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L94-L99
+  - what: >-
+      The default request timeout reaches this module as a float number of seconds and must convert into
+      a usable duration. A negative, infinite or NaN value is this module's Timeout error, mapped as a
+      ValueError-like connection error before the handler runs. LiteLLM's DEFAULT_REQUEST_TIMEOUT is a
+      module constant that always works, so only a call that injects a bad value can tell the two apart.
+    why: >-
+      The route passes betterlite_config's RequestTimeout.seconds, which an operator sets through
+      REQUEST_TIMEOUT, and Duration::from_secs_f64 is banned because it panics, so the value is checked
+      where it first becomes a Duration.
+    link: ""
+  - what: >-
+      A transport deadline or connect timeout the handler returns on a POST (blocking and async) or on a
+      blocking DELETE reaches B185 as a 408 with the container provider in the context and betterlite's own
+      message. LiteLLM's HTTPHandler.post, AsyncHTTPHandler.post and blocking HTTPHandler.delete catch
+      httpx.TimeoutException and raise litellm.Timeout, whose message is "Connection timed out after
+      {timeout} seconds." and whose llm_provider is "litellm-httpx-handler" with model "default-model-name".
+      A GET or async DELETE timeout is uncaught there and reaches this module's ValueError-like connection
+      error, where LiteLLM's router turns the raw httpx.TimeoutException into a 500.
+    why: >-
+      The 408 is the status LiteLLM's Timeout carries, and the resolved container provider is the one a
+      caller can act on; litellm-httpx-handler names an internal client, not a provider either side routes
+      by, and betterlite has no litellm.Timeout that escapes the module.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
+kept_bugs:
+  - what: >-
+      The mock short circuit runs before the provider is parsed or its container config looked up, so a
+      call with an unknown custom_llm_provider or a provider without a container config still succeeds
+      when mock_response is set, and nothing about the call is logged.
+    why: >-
+      Mocking without provider credentials is the point of the short circuit and setups use it that
+      way, so the name and config are never checked when a mock answers.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L71-L78
+  - what: >-
+      retrieve_container_file_content has response_type "raw", which is in no RESPONSE_TYPES entry, so
+      its mock comes back as the parsed JSON value instead of the bytes the real call returns.
+    why: >-
+      Tests written against the mock path read a JSON body there, so the shape of a mock answer is kept
+      as LiteLLM gives it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L30-L35

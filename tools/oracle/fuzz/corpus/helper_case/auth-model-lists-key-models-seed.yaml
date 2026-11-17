@@ -1,0 +1,13 @@
+kind: helper
+name: auth-model-lists-key-models-seed
+call:
+  auth_model_lists:
+    function: key_models
+    key_models: [all-team-models, alpha]
+    team_models: [beta]
+    proxy_model_list: [gamma]
+    model_access_groups:
+      delta: [epsilon]
+    include_model_access_groups: true
+env: {}
+compare: {ignore: []}
