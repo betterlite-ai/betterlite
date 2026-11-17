@@ -56,6 +56,8 @@ struct Harness {
     counter: Counter,
     catalog: Arc<ModelCatalog>,
     hooks: Hooks,
+    auth_token: SecretString,
+    extra_headers: BTreeMap<String, String>,
     fetcher: MapFetch,
     transport: NoTransport,
     gcs: ScriptedGcs,
@@ -72,6 +74,8 @@ impl Harness {
             counter: counter(),
             catalog: BundledCatalog::default().get(),
             hooks: hooks(),
+            auth_token: SecretString::from("token-abc"),
+            extra_headers: BTreeMap::new(),
             fetcher: MapFetch::default(),
             transport: NoTransport::default(),
             gcs: ScriptedGcs::default(),
@@ -104,50 +108,10 @@ impl Harness {
     }
 
     fn call(&self, input: &RequestInput, asynchronous: bool) -> Result<Transformed, RequestError> {
-        let auth_token = SecretString::from("token-abc");
-        let extra_headers = BTreeMap::new();
         let lookup = FixtureLookup {
             supports: input.supports,
         };
-        let request = CallRequest {
-            cache: CacheCreateRequest {
-                provider: cache_provider(input.provider),
-                model: &input.model,
-                messages: &input.messages,
-                api_base: None,
-                project: Some("project"),
-                location: Some("us-central1"),
-                auth_token: Some(&auth_token),
-                gemini_api_key: None,
-                extra_headers: &extra_headers,
-                deadline: Duration::from_secs(5),
-                cached_content: None,
-                disable_transform: false,
-                now: self.now,
-                minimum_token_override: None,
-                counter: &self.counter,
-                catalog: self.catalog.as_ref(),
-                capabilities: &lookup,
-                fetcher: &self.fetcher,
-            },
-            optional_params: &input.optional_params,
-            litellm_params: &input.litellm_params,
-            modify_params: input.modify_params,
-            schema_template: None,
-            capabilities: &lookup,
-            gcs: GcsDeps {
-                transport: &self.gcs,
-                tokens: &self.mint,
-            },
-        };
-        self.dispatch(request, asynchronous)
-    }
-
-    fn dispatch(
-        &self,
-        request: CallRequest<'_, MapFetch>,
-        asynchronous: bool,
-    ) -> Result<Transformed, RequestError> {
+        let request = self.request(input, &lookup);
         self.runtime.block_on(async {
             if asynchronous {
                 transform_request_body_async(&self.transport, request, &self.hooks).await
@@ -155,6 +119,44 @@ impl Harness {
                 transform_request_body(&self.transport, request, &self.hooks).await
             }
         })
+    }
+
+    fn request<'fixture>(
+        &'fixture self,
+        input: &'fixture RequestInput,
+        lookup: &'fixture FixtureLookup,
+    ) -> CallRequest<'fixture, MapFetch> {
+        CallRequest {
+            cache: CacheCreateRequest {
+                provider: cache_provider(input.provider),
+                model: &input.model,
+                messages: &input.messages,
+                api_base: None,
+                project: Some("project"),
+                location: Some("us-central1"),
+                auth_token: Some(&self.auth_token),
+                gemini_api_key: None,
+                extra_headers: &self.extra_headers,
+                deadline: Duration::from_secs(5),
+                cached_content: None,
+                disable_transform: false,
+                now: self.now,
+                minimum_token_override: None,
+                counter: &self.counter,
+                catalog: self.catalog.as_ref(),
+                capabilities: lookup,
+                fetcher: &self.fetcher,
+            },
+            optional_params: &input.optional_params,
+            litellm_params: &input.litellm_params,
+            modify_params: input.modify_params,
+            schema_template: None,
+            capabilities: lookup,
+            gcs: GcsDeps {
+                transport: &self.gcs,
+                tokens: &self.mint,
+            },
+        }
     }
 }
 

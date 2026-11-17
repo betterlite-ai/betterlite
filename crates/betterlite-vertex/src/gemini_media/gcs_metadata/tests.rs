@@ -263,11 +263,10 @@ fn gcs_metadata_bucket_lengths() {
     assert!(!bucket_is_valid(&"a".repeat(64)));
     assert!(bucket_is_valid(&format!("{}.b", "a".repeat(62))));
     assert!(!bucket_is_valid(&format!("{}.b", "a".repeat(64))));
-    dotted_bucket_lengths();
-    bucket_label_rules();
 }
 
-fn dotted_bucket_lengths() {
+#[test]
+fn gcs_metadata_dotted_bucket_lengths() {
     let longest_dotted = format!(
         "{}.{}.{}.{}",
         "a".repeat(63),
@@ -288,7 +287,8 @@ fn dotted_bucket_lengths() {
     assert!(!bucket_is_valid(&too_long_dotted));
 }
 
-fn bucket_label_rules() {
+#[test]
+fn gcs_metadata_bucket_labels() {
     assert!(bucket_is_valid("1.2.3.4.5"));
     assert!(bucket_is_valid("1.2.3.a"));
     assert!(!bucket_is_valid("1.2.3.4"));
