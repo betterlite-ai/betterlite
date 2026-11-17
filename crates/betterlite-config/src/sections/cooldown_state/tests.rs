@@ -5,20 +5,20 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::cooldown_state::{CooldownStateSettings, Settings};
+use crate::sections::cooldown_state::CooldownStateSettings;
 
-fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+fn load(source: &str, environment: &[(&str, &str)]) -> Result<CooldownStateSettings, ConfigError> {
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     ConfigLoader { lookup }
         .load(source)
-        .map(|config| config.sections.cooldown_state)
+        .map(|config| *config.sections.cooldown_state)
 }
 
 fn loaded(source: &str, environment: &[(&str, &str)]) -> CooldownStateSettings {
-    *load(source, environment).unwrap()
+    load(source, environment).unwrap()
 }
 
 #[test]
