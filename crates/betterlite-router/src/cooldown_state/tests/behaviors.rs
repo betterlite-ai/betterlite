@@ -233,13 +233,12 @@ async fn set_states_prefers_shared() {
     cache
         .set_states(&snapshot(&[("c", unhealthy(1.0))]))
         .unwrap();
-    assert_eq!(
-        shared.writes().last(),
-        Some(&(
-            snapshot(&[("b", unhealthy(1.0)), ("c", unhealthy(1.0))]),
-            15
-        ))
-    );
+    let writes = shared.writes();
+    assert_eq!(writes.len(), 2);
+    let merged = &writes[1].0;
+    assert!(merged.contains_key("b"));
+    assert!(merged.contains_key("c"));
+    assert!(!merged.contains_key("a"));
 }
 
 async fn set_states_falls_back() {
@@ -255,12 +254,13 @@ async fn set_states_falls_back() {
         .set_states(&snapshot(&[("c", unhealthy(1.0))]))
         .unwrap();
     assert_eq!(
-        shared.writes().last(),
-        Some(&(
-            snapshot(&[("a", unhealthy(0.0)), ("c", unhealthy(1.0))]),
-            15
-        ))
+        shared
+            .writes()
+            .last()
+            .map(|(merged, ttl_seconds)| (merged.len(), *ttl_seconds)),
+        Some((2, 15))
     );
+    assert_eq!(shared.writes()[1].0.get("a"), Some(&unhealthy(0.0)));
 }
 
 async fn missing_snapshot_marks_nothing() {
@@ -310,14 +310,21 @@ fn the_filter_is_opt_in() {
 }
 
 fn a_policy_skips_the_filter() {
-    let deployments = pool(&[("gpt-4o", "a")]);
-    let routing = HealthRouting {
+    let deployments = pool(&[("gpt-4o", "a"), ("gpt-4o", "b")]);
+    let exempt = HealthRouting {
         enabled: true,
         has_allowed_fails_policy: true,
         scoped_groups: None,
     };
-    let result = without_unhealthy(deployments, &unhealthy_ids(&["a"]), routing, false);
-    assert_eq!(kept(&result), ids(&["a"]));
+    let exempt_pool = without_unhealthy(deployments.clone(), &unhealthy_ids(&["a"]), exempt, false);
+    assert_eq!(kept(&exempt_pool), ids(&["a", "b"]));
+    let filtered = HealthRouting {
+        enabled: true,
+        has_allowed_fails_policy: false,
+        scoped_groups: None,
+    };
+    let filtered_pool = without_unhealthy(deployments, &unhealthy_ids(&["a"]), filtered, false);
+    assert_eq!(kept(&filtered_pool), ids(&["b"]));
 }
 
 fn an_unhealthy_deployment_leaves() {

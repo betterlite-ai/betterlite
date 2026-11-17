@@ -125,28 +125,45 @@ impl DeploymentHealthCache {
         Some(snapshot)
     }
 
-    // async_get_unhealthy_deployment_ids: memory first, then the shared snapshot
+    // async_get_unhealthy_deployment_ids: memory first, and the shared snapshot only when memory has none
     #[must_use]
     pub async fn unhealthy(&self) -> BTreeSet<String> {
-        let now = (self.clock)();
         let local = self.tier.batch_get(std::slice::from_ref(&self.key));
-        let snapshot = match local.into_iter().next().flatten() {
-            Some(snapshot) => Some(snapshot),
-            None => self.backfilled(self.shared.read().await),
+        let fetched = if local.first().is_some_and(Option::is_some) {
+            None
+        } else {
+            self.shared.read().await
         };
+        self.unhealthy_from(&local, fetched)
+    }
+
+    // get_unhealthy_deployment_ids: the sync facade, over the memory tier or a raw shared read
+    #[must_use]
+    pub fn unhealthy_now(&self) -> BTreeSet<String> {
+        let snapshot = self.stored_or_raw();
+        let now = (self.clock)();
         extract_unhealthy(snapshot.as_ref(), now, self.staleness_threshold)
     }
 
-    // get_unhealthy_deployment_ids: the sync facade over the same extraction and backfill
-    #[must_use]
-    pub fn unhealthy_now(&self) -> BTreeSet<String> {
-        let now = (self.clock)();
+    // the memory tier's snapshot, else the raw shared one, which lands in memory when it answers
+    fn stored_or_raw(&self) -> Option<HealthSnapshot> {
         let local = self.tier.batch_get(std::slice::from_ref(&self.key));
-        let snapshot = match local.into_iter().next().flatten() {
+        let stored = local.into_iter().next().flatten();
+        stored.or_else(|| self.backfilled(self.shared.read_raw()))
+    }
+
+    // _extract_unhealthy_ids: the stored snapshot wins, and a fetched one lands in memory when it answers
+    fn unhealthy_from(
+        &self,
+        local: &[Option<HealthSnapshot>],
+        fetched: Option<HealthSnapshot>,
+    ) -> BTreeSet<String> {
+        let stored = local.first().cloned().flatten();
+        let snapshot = match stored {
             Some(snapshot) => Some(snapshot),
-            None => self.backfilled(self.shared.read_raw()),
+            None => self.backfilled(fetched),
         };
-        extract_unhealthy(snapshot.as_ref(), now, self.staleness_threshold)
+        extract_unhealthy(snapshot.as_ref(), (self.clock)(), self.staleness_threshold)
     }
 }
 

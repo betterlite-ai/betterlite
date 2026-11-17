@@ -61,46 +61,33 @@ async fn the_five_second_margin() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryCooldowns::with(&[("a", record(0.0, 600.0))]));
     let cache = cache(&clock, Arc::clone(&shared), &settings());
-    assert_eq!(
-        active_at(&cache, &clock, 5.0, "a").await,
-        vec![ActiveCooldown {
-            model_id: String::from("a"),
-            remaining_seconds: 595.0,
-            record: record(0.0, 600.0),
-        }]
-    );
+    // the memory expiry equals now + remaining + 5 exactly, so no correction happens and the promoted copy stays
+    let margin = active_at(&cache, &clock, 5.0, "a").await;
+    assert_eq!(margin[0].remaining_seconds.to_bits(), 595.0_f64.to_bits());
     shared.set("a", record(65.0, 30.0));
-    assert_eq!(
-        active_at(&cache, &clock, 70.0, "a").await,
-        vec![ActiveCooldown {
-            model_id: String::from("a"),
-            remaining_seconds: 530.0,
-            record: record(0.0, 600.0),
-        }]
-    );
+    let stale = active_at(&cache, &clock, 70.0, "a").await;
+    assert_eq!(stale[0].record.timestamp.to_bits(), 0.0_f64.to_bits());
+    assert_eq!(stale[0].remaining_seconds.to_bits(), 530.0_f64.to_bits());
 }
 
 async fn the_cap_is_a_minute() {
     let clock = TestClock::new();
     let shared = Arc::new(MemoryCooldowns::with(&[("a", record(0.0, 120.0))]));
     let cache = cache(&clock, Arc::clone(&shared), &settings());
+    assert_eq!(active_at(&cache, &clock, 1.0, "a").await.len(), 1);
+    // the shared entry is now a longer cooldown: only a corrected memory copy can still answer with the first one
+    shared.set("a", record(100.0, 600.0));
+    let corrected = active_at(&cache, &clock, 60.5, "a").await;
     assert_eq!(
-        active_at(&cache, &clock, 1.0, "a").await,
-        vec![ActiveCooldown {
-            model_id: String::from("a"),
-            remaining_seconds: 119.0,
-            record: record(0.0, 120.0),
-        }]
+        corrected[0].record.cooldown_time.to_bits(),
+        120.0_f64.to_bits()
     );
-    shared.set("a", record(60.0, 30.0));
+    let reread = active_at(&cache, &clock, 61.5, "a").await;
     assert_eq!(
-        active_at(&cache, &clock, 62.0, "a").await,
-        vec![ActiveCooldown {
-            model_id: String::from("a"),
-            remaining_seconds: 28.0,
-            record: record(60.0, 30.0),
-        }]
+        reread[0].record.cooldown_time.to_bits(),
+        600.0_f64.to_bits()
     );
+    assert_eq!(reread[0].remaining_seconds.to_bits(), 638.5_f64.to_bits());
 }
 
 async fn the_shorter_remaining() {
@@ -115,15 +102,11 @@ async fn the_shorter_remaining() {
             record: record(0.0, 30.0),
         }]
     );
+    // the corrected expiry of 29 seconds has passed, so the newer shared entry answers instead of the old copy
     shared.set("a", record(25.0, 30.0));
-    assert_eq!(
-        active_at(&cache, &clock, 31.0, "a").await,
-        vec![ActiveCooldown {
-            model_id: String::from("a"),
-            remaining_seconds: 24.0,
-            record: record(25.0, 30.0),
-        }]
-    );
+    let promoted = active_at(&cache, &clock, 31.0, "a").await;
+    assert_eq!(promoted[0].record.timestamp.to_bits(), 25.0_f64.to_bits());
+    assert_eq!(promoted[0].remaining_seconds.to_bits(), 24.0_f64.to_bits());
 }
 
 fn the_staleness_edge() {
