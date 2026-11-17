@@ -48,19 +48,19 @@ pub struct EffortFlags {
 }
 
 impl EffortFlags {
-    pub(super) fn any_present(&self) -> bool {
+    pub(super) fn any_present(self) -> bool {
         [self.none, self.minimal, self.low, self.xhigh, self.max]
             .into_iter()
             .any(|flag| !matches!(flag, EffortFlag::Absent))
     }
 
-    pub(super) fn all_absent(&self) -> bool {
+    pub(super) fn all_absent(self) -> bool {
         [self.none, self.minimal, self.low, self.xhigh, self.max]
             .into_iter()
             .all(|flag| matches!(flag, EffortFlag::Absent))
     }
 
-    pub(super) const fn get(&self, effort: ReasoningEffort) -> EffortFlag {
+    pub(super) const fn get(self, effort: ReasoningEffort) -> EffortFlag {
         match effort {
             ReasoningEffort::None => self.none,
             ReasoningEffort::Minimal => self.minimal,
@@ -97,10 +97,10 @@ pub fn declared_effort_flags(model_info: &JsonMap, model_cost: &ModelCostMap) ->
                 .get(flag)
                 .filter(|value| !matches!(value, Json::Null)),
         );
-        if !matches!(own, EffortFlag::Absent) {
-            own
-        } else {
+        if matches!(own, EffortFlag::Absent) {
             EffortFlag::read(bare.get(flag).filter(|value| !matches!(value, Json::Null)))
+        } else {
+            own
         }
     };
     EffortFlags {
@@ -119,15 +119,16 @@ pub fn declared_reasoning_efforts(
     model_cost: &ModelCostMap,
 ) -> Option<Vec<ReasoningEffort>> {
     let bare = bare_model_entry(model_info, model_cost);
-    let raw = match model_info
+    let raw = model_info
         .get(DECLARED_EFFORTS_KEY)
         .filter(|value| !matches!(value, Json::Null))
-    {
-        Some(value) => Some(value),
-        None => bare
-            .get(DECLARED_EFFORTS_KEY)
-            .filter(|value| !matches!(value, Json::Null)),
-    };
+        .map_or_else(
+            || {
+                bare.get(DECLARED_EFFORTS_KEY)
+                    .filter(|value| !matches!(value, Json::Null))
+            },
+            Some,
+        );
     let Some(Json::List(entries)) = raw else {
         return None;
     };
@@ -189,12 +190,14 @@ fn model_cost_entry(model_cost: &ModelCostMap, key: &str) -> Option<JsonMap> {
     }
 }
 
+#[must_use]
 pub fn effort_from_wire(name: &str) -> Option<ReasoningEffort> {
     ADVERTISEMENT_ORDER
         .into_iter()
         .find(|effort| effort_wire_name(*effort) == name)
 }
 
+#[must_use]
 pub const fn effort_wire_name(effort: ReasoningEffort) -> &'static str {
     match effort {
         ReasoningEffort::None => "none",

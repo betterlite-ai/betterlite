@@ -126,12 +126,11 @@ impl RawGroup {
 
 // validate_routing_strategy: None passes, and only the strategy names LiteLLM lists are accepted.
 pub fn validate_routing_strategy(value: Option<&str>) -> Result<(), RoutingGroupError> {
-    match value {
-        None => Ok(()),
-        Some(name) => RoutingStrategy::parse(name)
+    value.map_or(Ok(()), |name| {
+        RoutingStrategy::parse(name)
             .map(|_| ())
-            .map_err(RoutingGroupError::from),
-    }
+            .map_err(RoutingGroupError::from)
+    })
 }
 
 // parse_routing_groups: pydantic's constructor on every entry, then the pinned name, strategy, ownership and unknown-member checks in order.
@@ -181,12 +180,11 @@ fn check_names(groups: &[RawGroup]) -> Result<(), RoutingGroupError> {
             duplicates.insert(group.group_name.as_str());
         }
     }
-    match duplicates.iter().next() {
-        Some(duplicate) => Err(RoutingGroupError::DuplicateName {
+    duplicates.iter().next().map_or(Ok(()), |duplicate| {
+        Err(RoutingGroupError::DuplicateName {
             group: (*duplicate).to_owned(),
-        }),
-        None => Ok(()),
-    }
+        })
+    })
 }
 
 fn check_ownership(groups: &[RoutingGroup]) -> Result<(), RoutingGroupError> {

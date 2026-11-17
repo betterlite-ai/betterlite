@@ -264,7 +264,7 @@ fn a_groups_selector_takes_the_arguments_its_owner_decoded() {
         ttl_seconds: 3600.0,
         lowest_latency_buffer: 0.0,
         max_latency_list_size: 10,
-        ttft_percentile: Some(2.0),
+        ttft_percentile: Some(2.0_f64),
     });
     let error = index
         .dispatch_groups(&mut dispatch, &|_| Some(invalid))

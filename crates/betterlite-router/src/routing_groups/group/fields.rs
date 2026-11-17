@@ -11,22 +11,18 @@ fn field<'map>(
     field: &'static str,
     expected: &'static str,
 ) -> Result<&'map Json, RoutingGroupError> {
-    match map.get(field) {
-        Some(value) => Ok(value),
-        None => Err(RoutingGroupError::Field { field, expected }),
-    }
+    map.get(field)
+        .map_or(Err(RoutingGroupError::Field { field, expected }), Ok)
 }
 
 pub(super) fn text_field(map: &JsonMap, key: &'static str) -> Result<String, RoutingGroupError> {
-    match field(map, key, "a string")? {
-        Json::Text(text) => Ok(text.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(RoutingGroupError::Field {
-                field: key,
-                expected: "a string",
-            })
-        }
-    }
+    let Json::Text(text) = field(map, key, "a string")? else {
+        return Err(RoutingGroupError::Field {
+            field: key,
+            expected: "a string",
+        });
+    };
+    Ok(text.clone())
 }
 
 const fn models_shape() -> RoutingGroupError {

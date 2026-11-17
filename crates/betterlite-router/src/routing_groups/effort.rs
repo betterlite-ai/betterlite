@@ -94,11 +94,11 @@ pub fn resolve_supported_efforts(
     if flags.all_absent() {
         return None;
     }
-    Some(advertised_levels(model_info, &flags))
+    Some(advertised_levels(model_info, flags))
 }
 
 // The opt-out, unconditional and opt-in levels a reasoning model advertises from its flags.
-fn advertised_levels(model_info: &JsonMap, flags: &EffortFlags) -> Vec<ReasoningEffort> {
+fn advertised_levels(model_info: &JsonMap, flags: EffortFlags) -> Vec<ReasoningEffort> {
     let mut allowed: Vec<ReasoningEffort> = Vec::new();
     for effort in [ReasoningEffort::Minimal, ReasoningEffort::Low] {
         if !matches!(flags.get(effort), EffortFlag::False) {

@@ -90,7 +90,7 @@ fn an_unknown_strategy_names_itself() {
 }
 
 fn every_valid_strategy_is_accepted() {
-    assert!(validate_routing_strategy(None).is_ok());
+    validate_routing_strategy(None).unwrap();
     for strategy in VALID_ROUTING_STRATEGIES {
         assert!(
             validate_routing_strategy(Some(strategy.wire_name())).is_ok(),

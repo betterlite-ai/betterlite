@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -80,7 +81,7 @@ pub(super) fn cost_map(entries: &[(&str, &str)]) -> ModelCostMap {
         if position > 0 {
             source.push(',');
         }
-        source.push_str(&format!("{key:?}:{entry}"));
+        write!(source, "{key:?}:{entry}").unwrap();
     }
     source.push('}');
     ModelCostMap::parse(source.as_bytes()).unwrap()
@@ -166,12 +167,12 @@ impl RouteServices for GroupServices {
 pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

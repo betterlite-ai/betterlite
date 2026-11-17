@@ -46,21 +46,24 @@ impl RoutingGroupIndex {
                     group: group.group_name,
                 });
             }
-            if index.shadowing.contains(&group.group_name) {
-                if matches!(group.routing_strategy, GroupStrategy::Priority) {
-                    return Err(RoutingGroupError::PriorityShadow);
-                }
+            let shadowed = index.shadowing.contains(&group.group_name);
+            if shadowed && matches!(group.routing_strategy, GroupStrategy::Priority) {
+                return Err(RoutingGroupError::PriorityShadow);
+            }
+            if shadowed {
                 warnings.push(format!(
                     "routing_groups: group_name '{}' is shadowed by an existing model_name or model_group_alias; the group's strategy still applies to its members, but the name is not callable until renamed.",
                     group.group_name
                 ));
             }
-            if !matches!(group.routing_strategy, GroupStrategy::Priority) {
-                for model in &group.models {
-                    index
-                        .model_to_group
-                        .insert(model.clone(), group.group_name.clone());
-                }
+            let mapped_models: &[String] = match group.routing_strategy {
+                GroupStrategy::Priority => &[],
+                GroupStrategy::Routing(_) => &group.models,
+            };
+            for model in mapped_models {
+                index
+                    .model_to_group
+                    .insert(model.clone(), group.group_name.clone());
             }
             index.groups.insert(group.group_name.clone(), group);
         }
@@ -87,9 +90,8 @@ impl RoutingGroupIndex {
     // _model_to_group: the group a member model belongs to for strategy dispatch.
     #[must_use]
     pub fn claiming_group(&self, model: &str) -> Option<&RoutingGroup> {
-        self.model_to_group
-            .get(model)
-            .and_then(|group| self.groups.get(group))
+        let group = self.model_to_group.get(model)?;
+        self.groups.get(group)
     }
 
     // _replace_routing_groups: each group's own selector with the args its owner decoded, then B019's routes over the same names and members.
@@ -138,25 +140,35 @@ impl RoutingGroupIndex {
         requested: Option<&str>,
         deployments_of: &dyn Fn(&str) -> Vec<DeploymentSpec>,
     ) -> Vec<DeploymentSpec> {
-        let groups: Vec<&RoutingGroup> = match requested {
-            Some(name) => self.callable_group(name).into_iter().collect(),
-            None => self
-                .groups
-                .keys()
-                .filter_map(|name| self.callable_group(name))
-                .collect(),
-        };
+        let groups: Vec<&RoutingGroup> = requested.map_or_else(
+            || {
+                self.groups
+                    .keys()
+                    .filter_map(|name| self.callable_group(name))
+                    .collect()
+            },
+            |name| self.callable_group(name).into_iter().collect(),
+        );
         let mut rows = Vec::new();
         for group in groups {
-            for member in &group.models {
-                for deployment in deployments_of(member) {
-                    rows.push(group_row(
-                        &group.group_name,
-                        &prioritized(group, &deployment),
-                    ));
-                }
-            }
+            rows.extend(group_rows(group, deployments_of));
         }
         rows
     }
+}
+
+fn group_rows(
+    group: &RoutingGroup,
+    deployments_of: &dyn Fn(&str) -> Vec<DeploymentSpec>,
+) -> Vec<DeploymentSpec> {
+    let mut rows = Vec::new();
+    for member in &group.models {
+        for deployment in deployments_of(member) {
+            rows.push(group_row(
+                &group.group_name,
+                &prioritized(group, &deployment),
+            ));
+        }
+    }
+    rows
 }
