@@ -127,7 +127,7 @@ pub(super) fn is_empty_document(document: &TypedValue) -> bool {
     let json = &document.json;
     if json.is_null()
         || json.as_bool() == Some(false)
-        || json.as_f64() == Some(0.0)
+        || json.as_f64() == Some(0.0_f64)
         || json.as_str() == Some("")
     {
         return true;

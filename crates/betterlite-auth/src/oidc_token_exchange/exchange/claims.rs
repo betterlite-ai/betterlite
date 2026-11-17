@@ -21,15 +21,13 @@ pub(super) fn fallback_claims(
         tracing::error!("the SSO id_token is not a decodable JWT");
         return Err(OidcTokenExchangeError::IdTokenInvalid);
     };
-    let empty_payload = match document.json.as_object() {
-        Some(fields) => fields.is_empty(),
-        None => true,
-    };
-    if empty_payload {
+    let claims: ProviderClaims =
+        serde_json::from_value(document.json).map_err(OidcTokenExchangeError::IdTokenClaims)?;
+    if claims.is_empty() {
         tracing::warn!("the SSO id_token payload held no identity claims");
         return Err(OidcTokenExchangeError::UserinfoUnavailable);
     }
-    serde_json::from_value(document.json).map_err(OidcTokenExchangeError::IdTokenClaims)
+    Ok(claims)
 }
 
 // LiteLLM's `merged = {**token_response, **userinfo}` then its loop over the bearer fields: a token value wins, an explicit null removes the key, an absent one keeps the userinfo value
