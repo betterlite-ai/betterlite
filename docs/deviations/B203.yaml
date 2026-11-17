@@ -15,6 +15,15 @@ deviations:
   - what: A provider failure before a completion stream starts answers an internal_server_error envelope whose message is betterlite's own.
     why: the provider's exception text is Python-specific and carries the SDK's call detail, so betterlite writes the failure itself.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2072-L2078
+  - what: A text request's extra_headers does not become request headers on the chat provider call; betterlite's chat call sends only authorization, accept and organization.
+    why: the chat call builds its own header set in the chat executor, which this bridge cannot reach, so the headers are dropped rather than applied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L673-L696
+  - what: The 400 for a parameter the text config does not support writes betterlite's own message, and it ignores litellm_settings.drop_params, where LiteLLM names its exception class, quotes drop_params advice, and drops the parameter when drop_params is set.
+    why: betterlite builds message text from typed fields and this bridge sees no drop_params setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4527-L4538
+  - what: A chat request to a text-completion-codestral or text-completion-inception deployment is checked against the OpenAI text config's parameter list, so the provider's own suffix, min_tokens and random_seed are refused and the OpenAI list is accepted.
+    why: one request builder serves all three text endpoints, and the provider-specific text configs are not ported into the bridge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L40-L50
 kept_bugs:
   - what: The fine-tuned completion models on the chat route answer the raw text_completion body, model renamed to the caller's, instead of a chat completion.
     why: LiteLLM's completion() sends these two models to the text endpoint without converting the answer back, and a setup that calls them through the chat route relies on reading that text body.
