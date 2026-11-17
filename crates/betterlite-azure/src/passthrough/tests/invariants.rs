@@ -125,8 +125,8 @@ fn refresh_caches_are_per_instance() {
     assert_eq!(left_sources.calls(), vec![String::from("left:scope-a")]);
     let right_sources = RecordingSources::new("right");
     let mut right_cache = RefreshProviderCache::new(&right_sources);
-    let provider = right_cache.provider("scope-a").unwrap();
-    assert_eq!(provider_token(provider.as_ref()), "right:scope-a");
+    let right_provider = right_cache.provider("scope-a").unwrap();
+    assert_eq!(provider_token(right_provider.as_ref()), "right:scope-a");
     assert_eq!(right_sources.calls(), vec![String::from("right:scope-a")]);
     let other = right_cache.provider("scope-b").unwrap();
     assert_eq!(provider_token(other.as_ref()), "right:scope-b");
@@ -162,7 +162,7 @@ fn failed_lookups_name_no_secret() {
     assert_eq!(error.to_string(), "Azure api base not found");
     assert!(!format!("{error:?}").contains("hunter2-azure-key"));
     let query = object(r#"{"api-version": {"nested": "hunter2-azure-key"}}"#);
-    let error = complete(
+    let query_error = complete(
         &base_config(None),
         Some("https://x.test"),
         target("m", "chat/completions"),
@@ -171,10 +171,10 @@ fn failed_lookups_name_no_secret() {
     )
     .unwrap_err();
     assert_eq!(
-        error.to_string(),
+        query_error.to_string(),
         "the query parameter api-version is not a string or a number"
     );
-    assert!(!format!("{error:?}").contains("hunter2-azure-key"));
+    assert!(!format!("{query_error:?}").contains("hunter2-azure-key"));
 }
 
 fn the_key_never_reaches_the_url() {

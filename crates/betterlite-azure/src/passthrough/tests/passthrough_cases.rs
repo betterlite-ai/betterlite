@@ -4,11 +4,13 @@ use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
 use betterlite_openai::passthrough::transformation::types::RelayCallType;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use url::Url;
 
 use crate::passthrough::config::{
     AzurePassthroughConfig, AzurePassthroughEnvironment, validate_environment,
 };
 use crate::passthrough::endpoint;
+use crate::passthrough::error::AzurePassthroughError;
 use crate::passthrough::logging::{
     AzureRelayedLog, NoChatReplyProjection, NoChatStreamAssembly, relayed_messages,
 };
@@ -439,7 +441,7 @@ fn wrong_version_types_name_the_field() {
         "the query parameter api-version is not a string or a number"
     );
     let listed = object(r#"{"api_version": ["2024"]}"#);
-    let error = complete(
+    let listed_error = complete(
         &base_config(None),
         Some(RESOURCE),
         target("m", CHAT_ENDPOINT),
@@ -448,7 +450,7 @@ fn wrong_version_types_name_the_field() {
     )
     .unwrap_err();
     assert_eq!(
-        error.to_string(),
+        listed_error.to_string(),
         "the query parameter api-version is not a string or a number"
     );
 }
@@ -460,55 +462,41 @@ fn environment_base_fallbacks() {
     missing_base_is_named();
 }
 
-fn environment_base_fallback() {
-    let config = base_config(Some("https://env.test"));
-    let (url, base_target) = complete(
-        &config,
-        None,
+fn completed_base(
+    config: &AzurePassthroughConfig,
+    api_base: Option<&str>,
+) -> Result<(Url, String), AzurePassthroughError> {
+    complete(
+        config,
+        api_base,
         target("m", "chat/completions"),
         None,
         &object("{}"),
     )
-    .unwrap();
+}
+
+fn environment_base_fallback() {
+    let (url, base_target) = completed_base(&base_config(Some("https://env.test")), None).unwrap();
     assert_eq!(base_target, "https://env.test");
     assert_eq!(url.as_str(), "https://env.test/chat/completions");
 }
 
 fn explicit_base_beats_the_environment() {
-    let config = base_config(Some("https://env.test"));
-    let (_url, base_target) = complete(
-        &config,
+    let (_url, base_target) = completed_base(
+        &base_config(Some("https://env.test")),
         Some("https://caller.test"),
-        target("m", "chat/completions"),
-        None,
-        &object("{}"),
     )
     .unwrap();
     assert_eq!(base_target, "https://caller.test");
 }
 
 fn empty_environment_base_is_unset() {
-    let config = base_config(Some(""));
-    let error = complete(
-        &config,
-        None,
-        target("m", "chat/completions"),
-        None,
-        &object("{}"),
-    )
-    .unwrap_err();
+    let error = completed_base(&base_config(Some("")), None).unwrap_err();
     assert_eq!(error.to_string(), "Azure api base not found");
 }
 
 fn missing_base_is_named() {
-    let error = complete(
-        &base_config(None),
-        None,
-        target("m", "chat/completions"),
-        None,
-        &object("{}"),
-    )
-    .unwrap_err();
+    let error = completed_base(&base_config(None), None).unwrap_err();
     assert_eq!(error.to_string(), "Azure api base not found");
 }
 
@@ -693,10 +681,10 @@ fn chat_chunks_reach_it_without_valid_messages() {
         chat_reply: NoChatReplyProjection,
         chat_stream: RecordingStream::default(),
     };
-    let mut logging = RecordingLogging::default();
+    let mut no_details_logging = RecordingLogging::default();
     no_details.handle_collected_chunks(
         &chat_chunks(),
-        &mut logging,
+        &mut no_details_logging,
         &target("gpt-4.1-mini", CHAT_ENDPOINT),
     );
     assert_eq!(no_details.chat_stream.taken().unwrap().messages, None);
@@ -814,46 +802,45 @@ fn validation_headers_from_each_source() {
     assert_eq!(kept.get("api-key").map(String::as_str), Some("sent-key"));
 }
 
+fn header_key(
+    positional: Option<&SecretString>,
+    configured: Option<&SecretString>,
+    params: Option<&SecretString>,
+    credentials: &DeploymentSettings,
+) -> Option<String> {
+    validate_environment(environment(
+        &[],
+        positional,
+        configured,
+        params,
+        credentials,
+    ))
+    .unwrap()
+    .get("api-key")
+    .map(|key| key.to_owned())
+}
+
 fn validation_header_precedence() {
     let positional = secret("positional-key");
     let configured = secret("configured-key");
     let params = secret("params-key");
     let credentials = deployment();
-    let from_positional = validate_environment(environment(
-        &[],
-        Some(&positional),
-        Some(&configured),
-        Some(&params),
-        &credentials,
-    ))
-    .unwrap();
     assert_eq!(
-        from_positional.get("api-key").map(String::as_str),
-        Some("positional-key")
+        header_key(
+            Some(&positional),
+            Some(&configured),
+            Some(&params),
+            &credentials
+        ),
+        Some(String::from("positional-key"))
     );
-    let from_globals_after_params = validate_environment(environment(
-        &[],
-        None,
-        Some(&configured),
-        Some(&params),
-        &credentials,
-    ))
-    .unwrap();
     assert_eq!(
-        from_globals_after_params.get("api-key").map(String::as_str),
-        Some("configured-key")
+        header_key(None, Some(&configured), Some(&params), &credentials),
+        Some(String::from("configured-key"))
     );
     let empty = secret("");
-    let from_configured = validate_environment(environment(
-        &[],
-        Some(&empty),
-        Some(&configured),
-        Some(&params),
-        &credentials,
-    ))
-    .unwrap();
     assert_eq!(
-        from_configured.get("api-key").map(String::as_str),
-        Some("configured-key")
+        header_key(Some(&empty), Some(&configured), Some(&params), &credentials),
+        Some(String::from("configured-key"))
     );
 }

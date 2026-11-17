@@ -38,6 +38,8 @@ use crate::passthrough::logging::{
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const NOW: &str = "2026-01-01T00:05:00+00:00";
+const THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH: &str =
+    "the recording fixture serves only the SDK refresh";
 
 pub struct Silent;
 
@@ -231,6 +233,14 @@ impl ChatStreamAssembly for RecordingStream {
     }
 }
 
+fn unavailable(message: &str) -> SourceFailure {
+    SourceFailure {
+        class: String::from("AssertionError"),
+        status: None,
+        message: String::from(message),
+    }
+}
+
 pub struct NoSources;
 
 impl CredentialSources for NoSources {
@@ -238,33 +248,21 @@ impl CredentialSources for NoSources {
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no client secret source is configured"),
-        })
+        Err(unavailable("no client secret source is configured"))
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no username and password source is configured"),
-        })
+        Err(unavailable("no username and password source is configured"))
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no refresh source is configured"),
-        })
+        Err(unavailable("no refresh source is configured"))
     }
 
     fn default_credential<'source>(
@@ -275,11 +273,7 @@ impl CredentialSources for NoSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("no oidc source is configured"),
-        })
+        Err(unavailable("no oidc source is configured"))
     }
 }
 
@@ -342,22 +336,18 @@ impl CredentialSources for RecordingSources {
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("the recording fixture serves only the SDK refresh"),
-        })
+        Err(unavailable(
+            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
+        ))
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("the recording fixture serves only the SDK refresh"),
-        })
+        Err(unavailable(
+            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
+        ))
     }
 
     fn sdk_refresh<'source>(
@@ -375,11 +365,9 @@ impl CredentialSources for RecordingSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("AssertionError"),
-            status: None,
-            message: String::from("the recording fixture serves only the SDK refresh"),
-        })
+        Err(unavailable(
+            THE_RECORDING_FIXTURE_SERVES_ONLY_THE_SDK_REFRESH,
+        ))
     }
 }
 

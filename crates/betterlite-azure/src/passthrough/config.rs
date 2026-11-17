@@ -124,11 +124,10 @@ impl<Reply, Stream> AzurePassthroughConfig<Reply, Stream> {
             })
     }
 
-    pub fn logging_non_streaming_response(
+    pub fn logging_reply_with_headers(
         &self,
         target: &PassthroughTarget<'_>,
-        response: &RelayedResponse<'_>,
-        headers: &Headers,
+        reply: &ResponseReply<'_>,
         request_data: &Object,
         logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<AzureRelayedLog>
@@ -138,20 +137,15 @@ impl<Reply, Stream> AzurePassthroughConfig<Reply, Stream> {
         if !target.endpoint.contains(CHAT_COMPLETIONS) {
             let relayed = logged_relay_shape(
                 &OPENAI_RELAY_SHAPES,
-                response.status_code,
-                response.body,
+                reply.status,
+                reply.body,
                 logging_obj,
                 target.endpoint,
             )?;
             return Some(AzureRelayedLog::Relay(relayed));
         }
-        let reply = ResponseReply {
-            status: response.status_code,
-            headers,
-            body: response.body,
-        };
         self.chat_reply
-            .project_chat_reply(target.model, &reply, passthrough_log_input(request_data))
+            .project_chat_reply(target.model, reply, passthrough_log_input(request_data))
             .map(AzureRelayedLog::Chat)
     }
 }
@@ -219,13 +213,13 @@ where
         logging_obj: &mut dyn PassthroughLogging,
     ) -> Option<Self::Logged> {
         // the trait cannot see the reply headers, so a caller holding them calls the inherent method
-        self.logging_non_streaming_response(
-            target,
-            response,
-            &Headers::new(),
-            request_data,
-            logging_obj,
-        )
+        let headers = Headers::new();
+        let reply = ResponseReply {
+            status: response.status_code,
+            headers: &headers,
+            body: response.body,
+        };
+        self.logging_reply_with_headers(target, &reply, request_data, logging_obj)
     }
 
     fn handle_collected_chunks(

@@ -21,20 +21,14 @@ use secrecy::SecretString;
 pub(crate) fn base_config(api_base_env: Option<&str>) -> AzurePassthroughConfig {
     AzurePassthroughConfig {
         api_base_env: api_base_env.map(str::to_owned),
-        api_key_env: None,
-        model_call_details: None,
-        chat_reply: NoChatReplyProjection,
-        chat_stream: NoChatStreamAssembly,
+        ..Default::default()
     }
 }
 
 pub(crate) fn config_with_reply<Reply: Default>(reply: Reply) -> AzurePassthroughConfig<Reply> {
     AzurePassthroughConfig {
-        api_base_env: None,
-        api_key_env: None,
-        model_call_details: None,
         chat_reply: reply,
-        chat_stream: NoChatStreamAssembly,
+        ..Default::default()
     }
 }
 
@@ -42,11 +36,8 @@ pub(crate) fn config_with_stream<Stream: Default>(
     stream: Stream,
 ) -> AzurePassthroughConfig<NoChatReplyProjection, Stream> {
     AzurePassthroughConfig {
-        api_base_env: None,
-        api_key_env: None,
-        model_call_details: None,
-        chat_reply: NoChatReplyProjection,
         chat_stream: stream,
+        ..Default::default()
     }
 }
 

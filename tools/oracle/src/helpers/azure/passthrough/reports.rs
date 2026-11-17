@@ -7,10 +7,9 @@ use betterlite_azure::passthrough::endpoint::{
 use betterlite_azure::passthrough::logging::AzureRelayedLog;
 use betterlite_azure::passthrough::url::without_api_version;
 use betterlite_openai::api::responses_event_records::records::ResponsesTerminalEvent;
+use betterlite_openai::chat_choices::reply::ResponseReply;
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
-use betterlite_openai::passthrough::transformation::types::{
-    PassthroughUrlRequest, RelayedResponse,
-};
+use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
@@ -53,7 +52,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
 }
 
 fn inference_report(steps: &[InferenceStep]) -> Value {
-    let steps: Vec<Value> = steps
+    let views: Vec<Value> = steps
         .iter()
         .map(|step| {
             let config = base_config(None);
@@ -63,15 +62,15 @@ fn inference_report(steps: &[InferenceStep]) -> Value {
             })
         })
         .collect();
-    json!({ "steps": steps })
+    json!({ "steps": views })
 }
 
 fn router_report(steps: &[RouterStep]) -> Value {
-    let steps: Vec<Value> = steps
+    let views: Vec<Value> = steps
         .iter()
         .map(|step| json!({ "model": router_model_in_endpoint(&step.endpoint, &step.router_models) }))
         .collect();
-    json!({ "steps": steps })
+    json!({ "steps": views })
 }
 
 fn deployment_step(step: &DeploymentStep) -> Value {
@@ -84,13 +83,10 @@ fn deployment_step(step: &DeploymentStep) -> Value {
 fn removal_report(removals: &[String], steps: &[UrlStep]) -> Value {
     let stripped: Vec<Value> = removals
         .iter()
-        .map(|base| match without_api_version(base) {
-            Ok(stripped) => Value::String(stripped),
-            Err(_error) => Value::Null,
-        })
+        .map(|base| without_api_version(base).map_or(Value::Null, Value::String))
         .collect();
-    let steps: Vec<Value> = steps.iter().map(url_step).collect();
-    json!({ "removals": stripped, "steps": steps })
+    let views: Vec<Value> = steps.iter().map(url_step).collect();
+    json!({ "removals": stripped, "steps": views })
 }
 
 fn url_step(step: &UrlStep) -> Value {
@@ -147,8 +143,8 @@ fn relay_step(step: &RelayStep) -> Value {
     );
     let assembly = config.chat_stream.assembly();
     let called = assembly.is_some();
-    let messages = assembly.as_ref().map(|assembly| assembly.messages.clone());
-    let model = assembly.map_or_else(|| step.model.clone(), |assembly| assembly.model);
+    let messages = assembly.as_ref().map(|recorded| recorded.messages.clone());
+    let model = assembly.map_or_else(|| step.model.clone(), |recorded| recorded.model);
     json!({
         "called": called,
         "result": logged.is_some(),
@@ -162,14 +158,14 @@ fn nonstream_step(step: &NonstreamStep) -> Value {
     let config = config_with_reply(OracleChatProjection::default());
     let mut logging_obj = RecordingLogging::default();
     let body = serde_json::to_vec(&Value::Object(step.body.clone())).unwrap_or_default();
-    let reply = RelayedResponse {
-        status_code: step.status,
+    let reply = ResponseReply {
+        status: step.status,
+        headers: &step.headers,
         body: &body,
     };
-    let logged = config.logging_non_streaming_response(
+    let logged = config.logging_reply_with_headers(
         &target(&step.model, &step.endpoint),
         &reply,
-        &step.headers,
         &step.request_data,
         &mut logging_obj,
     );
@@ -188,45 +184,28 @@ fn auth_report(key_steps: &[KeyStep], validation_steps: &[ValidationStep]) -> Va
     json!({ "api_keys": api_keys, "headers": headers })
 }
 
+fn secret(text: Option<&str>) -> Option<SecretString> {
+    text.map(SecretString::from)
+}
+
 fn key_step(step: &KeyStep) -> Value {
-    let env_key = step
-        .env_key
-        .as_deref()
-        .map(str::to_owned)
-        .map(SecretString::from);
     let config = AzurePassthroughConfig {
-        api_key_env: env_key,
+        api_key_env: secret(step.env_key.as_deref()),
         ..base_config(None)
     };
-    let api_key = step
-        .api_key
-        .as_deref()
-        .map(str::to_owned)
-        .map(SecretString::from);
-    match config.get_api_key(api_key.as_ref()) {
-        Some(key) => Value::String(key.expose_secret().to_owned()),
-        None => Value::Null,
-    }
+    config
+        .get_api_key(secret(step.api_key.as_deref()).as_ref())
+        .map_or(Value::Null, |key| {
+            Value::String(key.expose_secret().to_owned())
+        })
 }
 
 fn validation_step(step: &ValidationStep) -> Value {
     let credentials = deployment();
     let sources = NoSources;
-    let api_key = step
-        .api_key
-        .as_deref()
-        .map(str::to_owned)
-        .map(SecretString::from);
-    let params_key = step
-        .params_key
-        .as_deref()
-        .map(str::to_owned)
-        .map(SecretString::from);
-    let configured_key = step
-        .configured_key
-        .as_deref()
-        .map(str::to_owned)
-        .map(SecretString::from);
+    let api_key = secret(step.api_key.as_deref());
+    let params_key = secret(step.params_key.as_deref());
+    let configured_key = secret(step.configured_key.as_deref());
     let request = AzurePassthroughEnvironment {
         headers: step.headers.clone(),
         api_key: api_key.as_ref(),
@@ -237,15 +216,13 @@ fn validation_step(step: &ValidationStep) -> Value {
         provider: None,
         sources: &sources,
     };
-    match validate_environment(request) {
-        Ok(headers) => serde_json::to_value(headers).unwrap_or(Value::Null),
-        Err(_error) => Value::Null,
-    }
+    validate_environment(request).map_or(Value::Null, |headers| {
+        serde_json::to_value(headers).unwrap_or(Value::Null)
+    })
 }
 
 fn call_type(logging_obj: &RecordingLogging) -> Value {
-    match logging_obj.call_type {
-        Some(call_type) => Value::String(call_type.as_str().to_owned()),
-        None => Value::Null,
-    }
+    logging_obj.call_type.map_or(Value::Null, |call_type| {
+        Value::String(call_type.as_str().to_owned())
+    })
 }

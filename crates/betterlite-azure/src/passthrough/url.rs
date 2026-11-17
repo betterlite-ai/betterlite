@@ -2,6 +2,7 @@ use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::PassthroughError;
+use serde::Serialize;
 
 use crate::azure_urls::AzureUrlError;
 use crate::azure_urls::url_parts::{encoded_query, query_pairs};
@@ -13,7 +14,7 @@ pub(crate) fn is_filled(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_none_or(|number| number != 0.0),
+        Json::Number(number) => number.as_f64().is_none_or(|magnitude| magnitude != 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
@@ -56,14 +57,10 @@ fn version_text(value: &Json) -> Result<String, PassthroughError> {
     }
 }
 
-// request_query_params.get("api-version"): an absent or empty value leaves the base untouched
-pub(crate) fn request_api_version(
-    params: Option<&Object>,
-) -> Result<Option<String>, PassthroughError> {
-    let Some(value) = params
-        .filter(|params| !params.is_empty())
-        .and_then(|params| params.get(API_VERSION))
-        .and_then(|value| serde_json::from_value::<Json>(value.clone()).ok())
+fn version_from<Raw: Serialize>(raw: Option<&Raw>) -> Result<Option<String>, PassthroughError> {
+    let Some(value) = raw
+        .and_then(|supplied| serde_json::to_value(supplied).ok())
+        .and_then(|converted| serde_json::from_value::<Json>(converted).ok())
         .filter(is_filled)
     else {
         return Ok(None);
@@ -71,14 +68,15 @@ pub(crate) fn request_api_version(
     version_text(&value).map(Some)
 }
 
+// request_query_params.get("api-version"): an absent or empty value leaves the base untouched
+pub(crate) fn request_api_version(
+    params: Option<&Object>,
+) -> Result<Option<String>, PassthroughError> {
+    let provided = params.filter(|supplied| !supplied.is_empty());
+    version_from(provided.and_then(|supplied| supplied.get(API_VERSION)))
+}
+
 // litellm_params["api_version"] after the caller's value overrides it, read with the same emptiness rule
 pub(crate) fn params_api_version(params: &Object) -> Result<Option<String>, PassthroughError> {
-    let Some(value) = params
-        .get(API_VERSION)
-        .and_then(|value| serde_json::from_value::<Json>(value.clone()).ok())
-        .filter(is_filled)
-    else {
-        return Ok(None);
-    };
-    version_text(&value).map(Some)
+    version_from(params.get(API_VERSION))
 }
