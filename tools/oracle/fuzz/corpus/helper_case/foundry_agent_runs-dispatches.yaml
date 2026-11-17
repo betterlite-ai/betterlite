@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-agent-runs-dispatches-seed
+call:
+  foundry_agent_runs:
+    dispatches:
+      - model: azure_ai/agents/seed
+        messages: []
+        optional_params: {}
+        litellm_params: {tenant_id: tenant-seed}
+        headers: {X-Seed: "1"}
+        api_base: "https://seed.example"
+        api_key: null
+        token: token-seed
+        acompletion: true
+        stream: true
+        steps: []
+env: {}
+compare: {ignore: []}

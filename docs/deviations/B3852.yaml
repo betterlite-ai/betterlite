@@ -1,0 +1,31 @@
+task: B3852
+deviations:
+  - what: >-
+      upstream_started for a close with no pre_call carrier is read from the payload's own start time.
+      LiteLLM reads a separate api_call_start_time stamp that its proxy and SDK set at the provider
+      handoff, and betterlite's typed logging event carries no such stamp. A payload-carrying failure
+      that never reached a provider, and is not flagged litellm_no_upstream_llm_call, therefore emits a
+      deferred span here, where LiteLLM's guard emits none.
+    why: >-
+      The payload start is the only affirmative signal in the typed event that the call ran. A payload
+      with a zero start time still emits nothing, a synthetic gate rejection is flagged no-upstream and
+      skips in both, and every call that reached a provider carries a non-zero payload start.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L512
+  - what: >-
+      The LLM-call span is created in the close callback from what pre_call captured (the request
+      parent, the routed tracer, the detached links and the start instant), not opened live at pre_call.
+      The exported span carries the same name, parent, start time, links and end time either way.
+    why: >-
+      The Rust SDK ends and exports any span it drops, so a carrier dropped unclosed (an MCP stray
+      carrier, an evicted or an abandoned one) would export a phantom span, while LiteLLM's abandoned
+      Python span never ends and never exports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L321
+  - what: >-
+      A close that finishes the boundary span marks the emitter's dedup marker under the payload's
+      call id, the key the deferred branch marks, and emits through it; LiteLLM marks the event's call
+      id and finishes the span even when the marker was already set.
+    why: >-
+      Both ids are the same litellm_call_id for every payload LiteLLM builds, so one close dedups the
+      same way; only a client that reuses one litellm_call_id for a second run that re-enters pre_call
+      differs, exporting one span here and two in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L574
