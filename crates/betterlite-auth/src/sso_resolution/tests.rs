@@ -442,12 +442,9 @@ fn invalid_structured_values_name_their_field(#[case] field: &'static str, #[cas
     let database = row(&[(field, serde_json::from_str(stored).unwrap())]);
     let error = resolve_sso_config(Some(&database), &BTreeMap::new(), &cipher()).unwrap_err();
 
-    let SsoResolutionError::Field {
-        field: named,
-        source,
-    } = &error;
+    let SsoResolutionError::Field { field: named, .. } = &error;
     assert_eq!(*named, field);
-    assert!(source.source().is_some());
+    assert!(error.source().is_some());
     assert!(error.to_string().contains(field));
 }
 
