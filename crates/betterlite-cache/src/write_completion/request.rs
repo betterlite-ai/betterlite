@@ -41,15 +41,17 @@ pub(crate) fn add_parent_otel_span(kwargs: &mut KeyObject) {
         params: params.as_ref(),
         span: span.as_ref(),
     });
-    let stored = match parent {
-        Some(found) => KeyValue::String(format!(
-            "00-{}-{}-{:02x}",
-            hex::encode(found.trace_id().to_bytes()),
-            hex::encode(found.span_id().to_bytes()),
-            found.trace_flags().to_u8()
-        )),
-        None => KeyValue::Null,
-    };
+    let stored = parent.map_or_else(
+        || KeyValue::Null,
+        |found| {
+            KeyValue::String(format!(
+                "00-{}-{}-{:02x}",
+                hex::encode(found.trace_id().to_bytes()),
+                hex::encode(found.span_id().to_bytes()),
+                found.trace_flags().to_u8()
+            ))
+        },
+    );
     kwargs.insert(PARENT_OTEL_SPAN_KWARG.to_owned(), stored);
 }
 
