@@ -93,7 +93,7 @@ impl DownloadDecoder {
     fn classify(&mut self, buffered: Vec<u8>, range: Range<usize>, at_eof: bool) -> Vec<u8> {
         let Some(row) = buffered
             .get(range)
-            .and_then(|line| decode_vertex_batch_row(line).ok())
+            .and_then(|line| decode_vertex_batch_row(line.trim_ascii()).ok())
         else {
             return self.keep_original(buffered);
         };

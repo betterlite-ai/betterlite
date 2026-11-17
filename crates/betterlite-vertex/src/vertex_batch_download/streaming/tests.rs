@@ -194,6 +194,17 @@ fn a_vertical_tab_prefix_replays_the_download() {
     assert_eq!(output.as_slice(), content.as_bytes());
 }
 
+// bytes.strip drops a form feed, so a padded first row still selects the converted mode
+#[test]
+fn a_form_feed_padded_first_row_is_converted() {
+    let content = format!("\x0c{ROW}\x0c\n");
+    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
+    let lines = lines(&output);
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].starts_with(r#"{"id":"batch_req_"#));
+}
+
 #[test]
 fn a_trailing_row_without_a_newline_is_converted() {
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[ROW.as_bytes()]);
