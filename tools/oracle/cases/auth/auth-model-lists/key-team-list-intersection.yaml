@@ -1,0 +1,14 @@
+name: auth-model-lists-key-team-list-intersection
+config: |
+  model_list:
+    - {model_name: shared, litellm_params: {model: openai/shared-upstream}}
+    - {model_name: shared, litellm_params: {model: openai/shared-second-upstream}}
+    - {model_name: alpha, litellm_params: {model: openai/alpha-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

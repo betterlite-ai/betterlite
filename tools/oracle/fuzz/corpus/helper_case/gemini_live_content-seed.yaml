@@ -1,0 +1,36 @@
+kind: helper
+name: gemini-live-content-seed
+call:
+  gemini_live_content:
+    calls:
+      - op: map_event
+        key: serverContent
+        value:
+          modelTurn:
+            parts:
+              - text: seed
+      - op: modality
+        event: response.text.delta
+        delta_type: text
+        frame:
+          serverContent:
+            modelTurn:
+              parts:
+                - text: seed
+      - op: update
+        chunks: delta
+        steps:
+          - kind: single
+            event:
+              type: response.output_text.delta
+              delta: seed
+calls:
+  - gemini_live_content:
+      calls:
+        - op: start
+          response_id: resp-seed
+          output_item_id: item-seed
+          conversation_id: conv-seed
+          delta_type: audio
+env: {}
+compare: {ignore: []}

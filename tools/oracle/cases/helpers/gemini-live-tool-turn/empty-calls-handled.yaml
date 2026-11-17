@@ -1,0 +1,15 @@
+kind: helper
+name: empty-calls-handled
+call:
+  gemini_live_tool_turn:
+    ids: {conversation_id: conv_given, response_id: resp_given, output_item_id: item_given}
+    tool_call:
+      functionCalls: []
+calls:
+  - gemini_live_tool_turn:
+      ids: {}
+      tool_call:
+        functionCalls: []
+      pending_usage: {promptTokenCount: 4, candidatesTokenCount: 1, totalTokenCount: 5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: azure_completion-auth-seed
+call:
+  azure_completion:
+    function: auth
+    cases:
+      - {api_key: "", azure_ad_token: seeded}
+      - {api_key: null, azure_ad_token: null}
+env: {}
+compare: {ignore: []}

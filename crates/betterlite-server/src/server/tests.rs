@@ -4,10 +4,13 @@ use std::collections::BTreeMap;
 use std::fs::{File, read_to_string};
 use std::future::pending;
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Router;
 use axum::http::{HeaderMap, Method};
+use axum::routing::get;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -17,14 +20,18 @@ use rstest::rstest;
 use signal_hook::consts::SIGTERM;
 use signal_hook::low_level::raise;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
 use tracing::subscriber::set_default;
 use url::Url;
 
 use super::chat_setup::chat_executor;
-use super::connections::CONNECTION_DRAIN_TIMEOUT;
+use super::component::serve_component;
+use super::connections::{
+    CONNECTION_DRAIN_TIMEOUT, configure_connection_builder, serve_connection,
+};
+use super::filter::ComponentRoutes;
 use super::{OUTBOUND_DRAIN_TIMEOUT, run_with_listener};
 
 // Answers with headers and then keeps the response open, so the client holds a lease on it.
@@ -119,4 +126,45 @@ async fn http_pool_tests_behavior(#[case] release: Option<Duration>, #[case] war
         "{written}"
     );
     assert_eq!(elapsed >= OUTBOUND_DRAIN_TIMEOUT, warned, "{elapsed:?}");
+}
+
+// the server answers one request per connection, so a client that asks for keep-alive still reads to the end
+#[tokio::test]
+async fn a_connection_closes_after_its_first_response() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = Router::new().route("/", get(|| async { "ok" }));
+    let mut serving = JoinSet::new();
+    serving.spawn(async move {
+        let (stream, remote) = listener.accept().await.unwrap();
+        serve_connection(configure_connection_builder(), router, stream, remote).await;
+    });
+    let mut client = TcpStream::connect(address).await.unwrap();
+    client
+        .write_all(b"GET / HTTP/1.1\r\nhost: localhost\r\n\r\n")
+        .await
+        .unwrap();
+    let mut raw = String::new();
+    timeout(Duration::from_secs(5), client.read_to_string(&mut raw))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(raw.starts_with("HTTP/1.1 200 OK\r\n"), "{raw}");
+    assert!(raw.ends_with("\r\n\r\nok"), "{raw}");
+    serving.join_next().await.unwrap().unwrap();
+}
+
+static NO_ROUTES: phf::Set<&'static str> = phf::phf_set! { "/unrouted" };
+
+// a config that cannot be read stops startup with a failure code before anything binds
+#[test]
+fn a_component_without_a_readable_config_exits_with_failure() {
+    let folder = tempfile::tempdir().unwrap();
+    let routes = ComponentRoutes {
+        prefixes: &[],
+        exact: &NO_ROUTES,
+        mounts: &NO_ROUTES,
+    };
+    let code = serve_component(&folder.path().join("missing.yaml"), "127.0.0.1", 0, routes);
+    assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::FAILURE));
 }

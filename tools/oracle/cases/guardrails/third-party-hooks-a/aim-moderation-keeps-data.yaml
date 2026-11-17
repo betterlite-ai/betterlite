@@ -1,0 +1,27 @@
+kind: helper
+name: aim-moderation-keeps-data
+call:
+  b9451:
+    vendor: aim
+    hook: moderation
+    api_key: aim-key
+    inspect_embeddings: false
+    call_type: completion
+    data:
+      litellm_call_id: call-1
+      model: gpt-4o
+      messages:
+        - {role: user, content: my card is 4111}
+    outputs: []
+    key_alias: null
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          required_action: {action_type: anonymize_action}
+          analysis_result: {analysis_time_ms: 1, policy_drill_down: {}}
+          redacted_chat:
+            all_redacted_messages:
+              - {role: user, content: "my card is [CARD]"}
+env: {}
+compare: {ignore: []}

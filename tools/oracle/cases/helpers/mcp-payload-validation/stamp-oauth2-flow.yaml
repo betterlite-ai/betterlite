@@ -1,0 +1,79 @@
+kind: helper
+name: mcp-payload-validation-stamp-oauth2-flow
+call:
+  b4716:
+    function: stamp_flow
+    payload:
+      auth_type: oauth2
+      token_url: https://token.example
+      credentials:
+        client_id: test-client
+        client_secret: test-secret
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        token_url: https://token.example
+        authorization_url: https://authorize.example
+        credentials:
+          client_id: test-client
+          client_secret: test-secret
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        oauth2_flow: authorization_code
+        token_url: https://token.example
+        credentials:
+          client_id: test-client
+          client_secret: test-secret
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        authorization_url: https://authorize.example
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        token_url: https://token.example
+        credentials:
+          client_id: test-client
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        token_url: https://token.example
+        credentials:
+          client_id: test-client
+          client_secret: ""
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: api_key
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+        token_url: https://token.example
+        credentials:
+          client_id: test-client
+          client_secret: test-secret
+        delegate_auth_to_upstream: true
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: stamp_flow
+      payload:
+        auth_type: oauth2
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

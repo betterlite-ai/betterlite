@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-requested-guardrail
+call:
+  b9450:
+    operation: mcp
+    settings: {api_key: oracle-key, inspection_type: mcp, event_hook: during_mcp_call}
+    kwargs:
+      mcp_tool_name: get_weather
+      guardrails: [cisco-ai-defense]
+      metadata: {}
+    tool_response:
+      - {type: text, text: "secret"}
+    answer: {status: 200, headers: {}, body: {action: block}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-payload-validation-validate-payload
+call:
+  b4716:
+    function: validate_payload
+    payload:
+      server_name: test-server
+      transport: http
+      url: https://mcp.example/mcp
+      credentials:
+        upstream_token_header: esb-oauth
+      static_headers: {}
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: validate_payload
+      payload: {server_name: "test server"}
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: validate_payload
+      payload:
+        server_name: test-server
+        tool_name_to_display_name: {beta_bad: "tool one", alpha_bad: "tool two"}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

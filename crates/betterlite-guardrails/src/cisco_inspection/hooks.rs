@@ -145,7 +145,7 @@ const fn skips_applied_guardrail(outcome: &FinalizeOutcome) -> bool {
 }
 
 // Mirrors LiteLLM's fn _extract_response_messages.
-fn extract_response_messages(response: &Fields) -> Vec<InspectMessage> {
+pub(crate) fn extract_response_messages(response: &Fields) -> Vec<InspectMessage> {
     if has_choice_key(response, "message") {
         return chat_messages(response);
     }
@@ -169,7 +169,7 @@ fn has_choice_key(response: &Fields, key: &str) -> bool {
 }
 
 // Mirrors LiteLLM's fn add_guardrail_to_applied_guardrails_header.
-fn record_applied_guardrail(request_data: &mut Fields, guardrail_name: &str) {
+pub(crate) fn record_applied_guardrail(request_data: &mut Fields, guardrail_name: &str) {
     let bucket_key = if request_data.contains_key("litellm_metadata") {
         "litellm_metadata"
     } else {

@@ -1,0 +1,6 @@
+kind: helper
+name: responses-write-back-converts-string-input-to-array
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"instructions": "sys", "input": "hi"}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "system", "content": "SYS"}, {"role": "user", "content": "HI"}]}}, {"data": {"instructions": "sys", "input": "hi"}, "skip_system": false, "covers_full": false, "reply": {"structured_messages": [{"role": "user", "content": "HI"}]}}]}
+env: {}
+compare: {ignore: []}

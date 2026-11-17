@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-discovery-search-native-query-wins
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: original query
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params:
+          max_num_results: 5
+        extra_body:
+          query: native query
+          pageSize: 3
+        response:
+          status: 200
+          body: '{"results":[]}'
+env: {}
+compare: {ignore: []}

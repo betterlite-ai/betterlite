@@ -1,0 +1,67 @@
+kind: helper
+name: fireworks-ai-completion-request
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: completion
+        model: "llama-v3p1-8b-instruct"
+        messages:
+          - {role: user, content: "hello"}
+        optional_params:
+          temperature: 0.2
+          max_tokens: 5
+          stop: ["\n"]
+          response_format: {type: json_object}
+          extra_body: {truncate_prompt_tokens: 4, custom: 1}
+      - op: completion
+        model: "fireworks_ai/accounts/fireworks/models/x"
+        messages:
+          - {role: user, content: ""}
+      - op: completion
+        model: "models/y"
+        messages:
+          - {role: user, content: null}
+      - op: completion
+        model: "accounts/fireworks/models/z"
+        messages:
+          - {role: user, content: [1, 2]}
+      - op: completion
+        model: "routers/auto"
+        messages:
+          - {role: user, content: [[1, 2], [3]]}
+      - op: completion
+        model: "my-model-fast"
+        messages:
+          - {role: user, content: "a"}
+          - {role: user, content: "b"}
+      - op: completion
+        model: "firerouter/x"
+        messages:
+          - {role: user, content: "x"}
+      - op: completion
+        model: "FW-foundry#route"
+        messages:
+          - {role: user, content: "x"}
+      - op: completion
+        model: "auto"
+        messages:
+          - {role: user, content: [0]}
+      - op: completion
+        model: "empty-model"
+        messages: []
+      - op: completion
+        model: "stream-model"
+        messages:
+          - {role: user, content: "s"}
+        optional_params: {stream: true, seed: 7, user: "u"}
+      - op: completion
+        model: "m"
+        messages:
+          - {role: user, content: "x"}
+        optional_params:
+          reasoning_effort: "low"
+          thinking: null
+          extra_body: {thinking: {type: enabled}}
+env: {}
+compare: {ignore: []}

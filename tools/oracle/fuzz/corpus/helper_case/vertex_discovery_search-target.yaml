@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-discovery-search-target-seed
+call:
+  vertex_discovery_search:
+    calls:
+      - function: target
+        litellm_params:
+          vertex_project: project-example
+          vertex_location: us-central1
+          vector_store_id: store-example
+      - function: cost
+env: {}
+compare: {ignore: []}

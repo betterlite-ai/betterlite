@@ -1,0 +1,22 @@
+kind: helper
+name: watsonx-embed-reply-errors
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: embed
+    env: {WATSONX_PROJECT_ID: env-project}
+    step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":null}'}
+calls:
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[{"input":"x"}]}'}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[1]}'}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: not json}

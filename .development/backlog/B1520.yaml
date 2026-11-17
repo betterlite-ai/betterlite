@@ -1,14 +1,14 @@
 id: B1520
 milestone: M3 providers
 title: Execute BFL image edits with first-image selection and shared polling
-status: todo
+status: done
 depends_on: [B1517, B1518, B1519, B173, B249, B171]
 file: tasks/B1520-bfl-edit-execution.yaml
 covers:
   - "litellm/llms/black_forest_labs/image_edit/handler.py"
 parent: B046
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2170
