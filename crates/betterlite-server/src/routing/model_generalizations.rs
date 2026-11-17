@@ -6,7 +6,7 @@ use betterlite_router::router_core::services::RouteServices;
 mod tests;
 
 // The server's copy of the fallback_generalizations rules, which a route reads through RouteServices.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct GeneralizationServices {
     installed: ModelGeneralizations,
 }
