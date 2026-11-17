@@ -262,3 +262,10 @@ path = "fuzz_targets/key_fields.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "member_request_contracts"
+path = "fuzz_targets/member_request_contracts.rs"
+test = false
+doc = false
+bench = false
