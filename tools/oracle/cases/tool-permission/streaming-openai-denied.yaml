@@ -1,0 +1,49 @@
+kind: helper
+name: streaming-openai-denied
+call:
+  b3813:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: post_call
+    default_on: true
+    mode: streaming
+    format: openai
+    data: {}
+    chunks:
+      - id: chatcmpl-6
+        object: chat.completion.chunk
+        created: 1700000000
+        model: gpt-4o
+        choices:
+          - index: 0
+            delta:
+              role: assistant
+              tool_calls:
+                - index: 0
+                  id: call_1
+                  type: function
+                  function: {name: Bash, arguments: ""}
+                - index: 1
+                  id: call_2
+                  type: function
+                  function: {name: Read, arguments: ""}
+            finish_reason: null
+      - choices:
+          - index: 0
+            delta:
+              tool_calls:
+                - index: 0
+                  function: {arguments: '{"cmd": "ls"}'}
+                - index: 1
+                  function: {arguments: '{"path": "a.txt"}'}
+            finish_reason: null
+      - choices:
+          - index: 0
+            delta: {}
+            finish_reason: tool_calls
+    raw_chunks: []
+env: {}
+compare: {ignore: []}

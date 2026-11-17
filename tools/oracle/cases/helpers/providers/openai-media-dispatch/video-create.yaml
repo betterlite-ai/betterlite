@@ -1,0 +1,43 @@
+kind: helper
+name: video-create
+call:
+  openai_media_dispatch:
+    case: video_create
+    api_base: https://mock.example/v1/videos/
+    model: sora-2
+    prompt: a cat surfing
+    options:
+      seconds: '4'
+      size: 1280x720
+    reference: null
+    provider: openai
+    reply: '{"id": "vid-1", "object": "video", "status": "queued", "created_at": 1767225600,
+      "completed_at": null, "expires_at": null, "error": null, "progress": 0,
+      "remixed_from_video_id": null, "seconds": "4", "size": "1280x720", "model": "sora-2",
+      "usage": null}'
+calls:
+  - openai_media_dispatch:
+      case: video_create
+      api_base: https://mock.example/v1
+      model: sora-2
+      prompt: a cat surfing
+      options: {}
+      reference: reference-image-bytes
+      provider: null
+      reply: '{"id": "vid-2", "object": "video", "status": "in_progress", "model": null}'
+  - openai_media_dispatch:
+      case: video_create
+      api_base: https://mock.example/v1
+      model: sora-2
+      prompt: a cat surfing with a friend
+      options:
+        seconds: '0'
+        characters:
+          - id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+            name: hero
+      reference: null
+      provider: openai
+      reply: '{"id": "vid-3", "object": "video", "status": "queued", "seconds": "0",
+        "model": "sora-2"}'
+env: {}
+compare: {ignore: []}
