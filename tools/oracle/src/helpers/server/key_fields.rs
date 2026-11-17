@@ -1,3 +1,5 @@
+use std::io::Error;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -91,7 +93,7 @@ fn evaluate(call: &Call) -> Result<serde_json::Value, Box<HelperError>> {
 
 fn document(call: &Call) -> Result<TypedValue, Box<HelperError>> {
     let Some(body) = &call.body else {
-        return Err(std::io::Error::other("the body must be an object")).or_value_error();
+        return Err(Error::other("the body must be an object")).or_value_error();
     };
     let bytes = serde_json::to_vec(body).or_value_error()?;
     decode_key_request(&bytes).or_value_error()
@@ -129,17 +131,17 @@ fn policy(call: &Call) -> Result<serde_json::Value, Box<HelperError>> {
 
 fn token(call: &Call) -> Result<serde_json::Value, Box<HelperError>> {
     let Some(JsonData::String(token)) = &call.token else {
-        return Err(std::io::Error::other("the token must be a string")).or_value_error();
+        return Err(Error::other("the token must be a string")).or_value_error();
     };
     serde_json::to_value(hash_token_if_needed(token)).or_value_error()
 }
 
 fn settings(call: &Call) -> Result<serde_json::Value, Box<HelperError>> {
     let Some(JsonData::Object(body)) = &call.body else {
-        return Err(std::io::Error::other("the body must be an object")).or_value_error();
+        return Err(Error::other("the body must be an object")).or_value_error();
     };
     let Some(JsonData::String(now_text)) = &call.now else {
-        return Err(std::io::Error::other("the now must be a string")).or_value_error();
+        return Err(Error::other("the now must be a string")).or_value_error();
     };
     let now = DateTime::parse_from_rfc3339(now_text)
         .or_value_error()?
