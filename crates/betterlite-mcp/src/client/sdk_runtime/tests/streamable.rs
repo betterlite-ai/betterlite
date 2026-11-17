@@ -4,6 +4,7 @@ use crate::client::sdk_runtime::convert::ServerCapabilitiesWire;
 use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::SessionError;
+use crate::client::sessions::negotiate::{LegacyVersion, ProtocolVersion};
 use crate::client::sessions::run::run_with_session;
 use crate::client::sessions::transport::TransportType;
 use crate::client::tools::calling::{CallToolOptions, call_tool};
@@ -74,6 +75,27 @@ async fn the_handshake_adopts_the_fallback_version_capabilities_and_instructions
     let capabilities = capabilities.expect("the server's capabilities were adopted");
     assert!(capabilities.prompts.is_some());
     assert!(capabilities.resources.is_some());
+    assert_eq!(
+        client.last_initialize_instructions.as_deref(),
+        Some(INSTRUCTIONS)
+    );
+}
+
+#[tokio::test]
+async fn a_configured_version_goes_out_in_the_initialize_request() {
+    let server = serve_http(TestServer::legacy()).await;
+    let mut settings = support::settings(TransportType::Http);
+    settings.protocol_version = ProtocolVersion::Legacy(LegacyVersion::Jun2025);
+    let mut client = support::client_for(
+        support::runtime(),
+        settings,
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let tools = list_tools(&mut client, support::CALL_TIMEOUT, true)
+        .await
+        .unwrap();
+    assert_eq!(tools.len(), 3);
     assert_eq!(
         client.last_initialize_instructions.as_deref(),
         Some(INSTRUCTIONS)
