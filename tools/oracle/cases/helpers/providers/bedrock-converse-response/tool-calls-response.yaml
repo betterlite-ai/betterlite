@@ -80,5 +80,16 @@ call:
         supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
         ids: []
         now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: false
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
 env: {}
 compare: {ignore: []}

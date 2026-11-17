@@ -34,6 +34,17 @@ fn converse_reply_envelope() {
     envelope_rebuilds_the_supplied_response();
     envelope_treats_a_null_message_as_empty();
     envelope_keeps_supplied_tier_and_trace();
+    a_clock_before_the_epoch_keeps_its_sign();
+}
+
+fn a_clock_before_the_epoch_keeps_its_sign() {
+    let fixture = Fixture {
+        now: instant(-5),
+        ..Fixture::default()
+    };
+    let body = r#"{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&fixture, body);
+    assert_eq!(run.response().created, -5);
 }
 
 fn envelope_rebuilds_the_supplied_response() {

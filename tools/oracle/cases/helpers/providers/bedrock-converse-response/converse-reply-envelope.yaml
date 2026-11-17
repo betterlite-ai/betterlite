@@ -36,5 +36,16 @@ call:
         supplied: {id: chatcmpl-kept, model: stale-model, object: chat.completion, system_fingerprint: null, service_tier: priority, trace: {guardrail: kept}}
         ids: []
         now: 1700000001
+      - body: '{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: -5
 env: {}
 compare: {ignore: []}

@@ -99,6 +99,7 @@ fn recovery_only_matches_an_offered_tool() {
 }
 
 fn json_mode_filters_synthetic_calls() {
+    an_explicit_false_json_mode_suppresses_the_option();
     let mixed = Fixture {
         optional: optional_params(
             r#"{"tools": [{"toolSpec": {"name": "real", "inputSchema": {"json": {"type": "object"}}}}]}"#,
@@ -129,7 +130,27 @@ fn json_mode_filters_synthetic_calls() {
     assert_eq!(run.message().content.as_deref(), Some(r#"{"answer": 42}"#));
 }
 
-pub(super) fn citation_content_alignment() {
+pub(super) fn an_explicit_false_json_mode_suppresses_the_option() {
+    let fixture = Fixture {
+        optional: optional_params(
+            r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#,
+        ),
+        json_mode: Some(false),
+        ..Fixture::default()
+    };
+    let body = r#"{"output": {"message": {"content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = run(&fixture, body);
+    assert_eq!(run.finish(), "tool_calls");
+    assert_eq!(run.message().content.as_deref(), Some(""));
+    assert_eq!(
+        rendered(&run.message().tool_calls),
+        json(
+            r#"[{"index": 0, "function": {"arguments": "{\"answer\": 42}", "name": "json_tool_call"}, "id": "tooluse_json", "type": "function"}]"#
+        )
+    );
+}
+
+fn citation_content_alignment() {
     whitespace_content_is_replaced_by_the_cited_text();
     punctuation_content_gets_the_cited_text_prepended();
     alphanumeric_content_keeps_its_own_text();

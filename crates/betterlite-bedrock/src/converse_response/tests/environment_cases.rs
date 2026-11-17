@@ -44,6 +44,7 @@ pub(super) fn malformed_json() {
     a_non_object_body_is_a_422();
     missing_output_members_keep_their_own_failure();
     missing_later_members_keep_their_own_failure();
+    a_non_list_content_is_not_a_block_list();
     error_class_delegates_the_supplied_fields();
 }
 
@@ -174,6 +175,21 @@ fn missing_later_members_keep_their_own_failure() {
     assert!(matches!(
         missing_stop_reason.failure(),
         TransformError::Reply(ReplyFieldError::Missing { path: "stopReason" })
+    ));
+}
+
+fn a_non_list_content_is_not_a_block_list() {
+    let run = super::support::run(
+        &Fixture::default(),
+        r#"{"output": {"message": {"content": "just text"}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
+    );
+    assert_eq!(run.status(), None);
+    assert!(matches!(
+        run.failure(),
+        TransformError::Reply(ReplyFieldError::NotA {
+            path: "output.message.content",
+            expected: "a list of content blocks"
+        })
     ));
 }
 
