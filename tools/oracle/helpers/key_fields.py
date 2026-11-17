@@ -8,9 +8,9 @@ from litellm.proxy._types import (
     KeyRequestBase,
     RegenerateKeyRequest,
     UpdateKeyRequest,
-    hash_token,
 )
 from litellm.proxy.management_helpers.key_settings_audit import with_settings_updated_at
+from litellm.proxy.utils import _hash_token_if_needed  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7188-L7197
 from litellm.types.proxy.management_endpoints.key_management_endpoints import (
     BulkUpdateTeamKeysRequest,
     CustomKeyPolicyRequest,
@@ -106,9 +106,7 @@ def settings_answer(call: SettingsCall) -> JsonValue:
 
 
 def token_answer(call: TokenCall) -> JsonValue:
-    token = call["token"]
-    hashed = hash_token(token) if token.startswith("sk-") else token
-    return _JSON.validate_python(hashed)
+    return _JSON.validate_python(_hash_token_if_needed(call["token"]))
 
 
 def answer(call: Call) -> JsonValue:
