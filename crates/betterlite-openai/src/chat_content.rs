@@ -9,6 +9,8 @@ use thiserror::Error;
 
 use crate::chat::ChatMessage;
 
+pub mod media;
+
 mod cache_control;
 mod messages;
 mod tests;
