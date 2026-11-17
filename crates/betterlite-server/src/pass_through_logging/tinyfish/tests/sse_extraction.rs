@@ -82,11 +82,7 @@ fn reads_a_collected_stream_as_lines() {
 #[case::no_trailing_empty_line("a\n", &["a"])]
 #[case::no_text("", &[])]
 fn splits_lines_like_python(#[case] text: &str, #[case] expected: &[&str]) {
-    let lines = expected
-        .iter()
-        .map(|line| (*line).to_owned())
-        .collect::<Vec<String>>();
-    assert_eq!(split_lines(text), lines);
+    assert_eq!(split_lines(text), expected);
 }
 
 #[test]
