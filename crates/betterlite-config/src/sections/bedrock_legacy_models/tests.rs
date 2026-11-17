@@ -379,6 +379,16 @@ fn anthropic_max_tokens_to_sample() {
         Some(128),
         "a deployment without one takes the module value"
     );
+    anthropic_max_tokens_environment();
+    let zero = resolved_from(&deployment("max_tokens_to_sample: 0"));
+    assert_eq!(
+        zero.anthropic.max_tokens_to_sample,
+        Some(0),
+        "an explicit zero is used as given"
+    );
+}
+
+fn anthropic_max_tokens_environment() {
     let environment = load_with("", &[("DEFAULT_MAX_TOKENS", "1000")]).unwrap();
     assert_eq!(
         resolved(&environment, 0).anthropic.max_tokens_to_sample,
@@ -394,12 +404,6 @@ fn anthropic_max_tokens_to_sample() {
         resolved(&explicit, 0).anthropic.max_tokens_to_sample,
         Some(12),
         "an explicit value wins over the environment default"
-    );
-    let zero = resolved_from(&deployment("max_tokens_to_sample: 0"));
-    assert_eq!(
-        zero.anthropic.max_tokens_to_sample,
-        Some(0),
-        "an explicit zero is used as given"
     );
 }
 

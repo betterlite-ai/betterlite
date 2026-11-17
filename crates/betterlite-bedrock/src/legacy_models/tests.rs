@@ -152,6 +152,10 @@ fn cohere_max_tokens() {
         "cohere.command-text-v14",
     );
     assert_eq!(token_before, object(r#"{"max_tokens": 5}"#));
+    cohere_parameter_mapping();
+}
+
+fn cohere_parameter_mapping() {
     let mapped = mapped(
         Family::Cohere,
         r#"{"stream": true, "temperature": 0.2, "frequency_penalty": 0.3, "presence_penalty": 0.4,
@@ -249,6 +253,11 @@ fn mistral_output_text() {
     assert_eq!(null_content.text, Json::Null);
     assert_eq!(null_content.finish_reason, Json::Null);
 
+    mistral_output_unexpected();
+    mistral_output_malformed();
+}
+
+fn mistral_output_unexpected() {
     match output_text(&object("{}")) {
         Err(MistralOutputError::Unexpected(error)) => {
             assert_eq!(error.error.status_code, 400);
@@ -263,7 +272,9 @@ fn mistral_output_text() {
         ),
         Err(other) => panic!("expected the unexpected-response error, got {other}"),
     }
+}
 
+fn mistral_output_malformed() {
     assert_malformed(r#"{"choices": []}"#, "choices");
     assert_malformed(r#"{"choices": {}}"#, "choices");
     assert_malformed(r#"{"choices": ["text"]}"#, "choices");
@@ -300,114 +311,97 @@ fn legacy_config_defaults() {
         projected(&LegacyConfig::new(Family::Anthropic, 1024)),
         object(r#"{"max_tokens_to_sample": 1024, "_abc_impl": {"kind": "abc_data"}}"#)
     );
+    legacy_config_overrides();
+}
 
-    let mut class = LegacyConfig::new(Family::Titan, 4096);
+fn legacy_config_overrides() {
+    let mut titan = LegacyConfig::new(Family::Titan, 4096);
     apply(
-        &mut class.attributes,
+        &mut titan.attributes,
         &titan_values(r#"{"maxTokenCount": 0, "stopSequences": [], "temperature": 0, "topP": 0}"#),
     )
     .unwrap();
-    apply(&mut class.attributes, &titan_values("{}")).unwrap();
+    apply(&mut titan.attributes, &titan_values("{}")).unwrap();
     assert_eq!(
-        projected(&class),
+        projected(&titan),
         object(r#"{"maxTokenCount": 0, "stopSequences": [], "temperature": 0, "topP": 0}"#)
     );
 
-    let mut class = LegacyConfig::new(Family::Anthropic, 4096);
+    let mut anthropic = LegacyConfig::new(Family::Anthropic, 4096);
     apply(
-        &mut class.attributes,
+        &mut anthropic.attributes,
         &anthropic_values(r#"{"temperature": 0.5}"#),
     )
     .unwrap();
     assert_eq!(
-        projected(&class),
+        projected(&anthropic),
         object(
             r#"{"max_tokens_to_sample": 4096, "temperature": 0.5,
                 "_abc_impl": {"kind": "abc_data"}}"#
         )
     );
-    assert!(!class.attributes.contains_key("anthropic_version"));
+    assert!(!anthropic.attributes.contains_key("anthropic_version"));
 }
 
 fn legacy_config_projection() {
-    let mut class = LegacyConfig::new(Family::Ai21, 4096);
-    class.attributes.insert(
-        "__dunder__".to_owned(),
-        ClassAttribute::Value(ConfigJson::Text("dir".to_owned())),
-    );
-    class.attributes.insert(
-        "function".to_owned(),
-        ClassAttribute::Special {
-            kind: AttributeKind::Function,
-        },
-    );
-    class.attributes.insert(
-        "builtin".to_owned(),
-        ClassAttribute::Special {
-            kind: AttributeKind::Builtin,
-        },
-    );
-    class.attributes.insert(
-        "class_method".to_owned(),
-        ClassAttribute::Special {
-            kind: AttributeKind::ClassMethod,
-        },
-    );
-    class.attributes.insert(
-        "static_method".to_owned(),
-        ClassAttribute::Special {
-            kind: AttributeKind::StaticMethod,
-        },
-    );
-    class.attributes.insert(
-        "descriptor".to_owned(),
-        ClassAttribute::Special {
-            kind: AttributeKind::Descriptor,
-        },
-    );
-    class.attributes.insert(
-        "nothing".to_owned(),
-        ClassAttribute::Value(ConfigJson::Null),
-    );
-    class.attributes.insert(
-        "_private".to_owned(),
-        ClassAttribute::Value(ConfigJson::Text("kept".to_owned())),
-    );
-    class.attributes.insert(
-        "_abc_value".to_owned(),
-        ClassAttribute::Value(ConfigJson::Text("abc".to_owned())),
-    );
+    let mut ai21 = LegacyConfig::new(Family::Ai21, 4096);
+    for (name, kind) in [
+        ("function", AttributeKind::Function),
+        ("builtin", AttributeKind::Builtin),
+        ("class_method", AttributeKind::ClassMethod),
+        ("static_method", AttributeKind::StaticMethod),
+        ("descriptor", AttributeKind::Descriptor),
+    ] {
+        ai21.attributes
+            .insert(name.to_owned(), ClassAttribute::Special { kind });
+    }
+    for (name, value) in [
+        ("__dunder__", ConfigJson::Text("dir".to_owned())),
+        ("nothing", ConfigJson::Null),
+        ("_private", ConfigJson::Text("kept".to_owned())),
+        ("_abc_value", ConfigJson::Text("abc".to_owned())),
+    ] {
+        ai21.attributes
+            .insert(name.to_owned(), ClassAttribute::Value(value));
+    }
     assert_eq!(
-        projected(&class),
+        projected(&ai21),
         object(r#"{"descriptor": {"kind": "descriptor"}, "_private": "kept"}"#)
     );
 
-    let mut class = LegacyConfig::new(Family::Anthropic, 4096);
-    class.attributes.insert(
+    projection_keeps_abc_values();
+    projection_merges_family_values();
+}
+
+fn projection_keeps_abc_values() {
+    let mut anthropic = LegacyConfig::new(Family::Anthropic, 4096);
+    anthropic.attributes.insert(
         "_abc_value".to_owned(),
         ClassAttribute::Value(ConfigJson::Text("abc".to_owned())),
     );
     assert_eq!(
-        projected(&class),
+        projected(&anthropic),
         object(
             r#"{"max_tokens_to_sample": 4096, "_abc_value": "abc",
                 "_abc_impl": {"kind": "abc_data"}}"#
         )
     );
+}
 
-    let mut class = LegacyConfig::new(Family::Cohere, 4096);
+fn projection_merges_family_values() {
+    let mut cohere = LegacyConfig::new(Family::Cohere, 4096);
     apply(
-        &mut class.attributes,
+        &mut cohere.attributes,
         &cohere_values(r#"{"max_tokens": 8, "return_likelihood": "ALL"}"#),
     )
     .unwrap();
     apply(
-        &mut class.attributes,
+        &mut cohere.attributes,
         &cohere_values(r#"{"temperature": 0.1}"#),
     )
     .unwrap();
     assert_eq!(
-        projected(&class),
+        projected(&cohere),
         object(r#"{"max_tokens": 8, "return_likelihood": "ALL", "temperature": 0.1}"#)
     );
 }
@@ -435,14 +429,19 @@ fn titan_stop_filter() {
         aliases,
         object(r#"{"maxTokenCount": 9, "topP": 0.5, "stream": true, "temperature": 0.2}"#)
     );
-    let aliases = mapped(
+    let token_order = mapped(
         Family::Titan,
         r#"{"max_completion_tokens": 9, "max_tokens": 5}"#,
         "{}",
         "amazon.titan-text-express-v1",
     );
-    assert_eq!(aliases, object(r#"{"maxTokenCount": 5}"#));
+    assert_eq!(token_order, object(r#"{"maxTokenCount": 5}"#));
 
+    titan_filtered_stop_sequences();
+    titan_stop_argument_kept();
+}
+
+fn titan_filtered_stop_sequences() {
     let kept = titan_stop(
         r#"["|", "x", "User:", "|\n", "User:\n", "||", "", "user:", "User:\n\n", 5]"#,
         false,
@@ -468,43 +467,45 @@ fn titan_stop_filter() {
         titan_stop(r#"["|"]"#, true, false),
         object(r#"{"stopSequences": ["|"]}"#)
     );
+}
 
-    let mut supported = object(r#"{"stop": "END"}"#);
+fn stop_argument_after(provider: &str, model: &str, supported: &str) -> Object {
+    let mut arguments = object(supported);
     map_and_modify_arg(
-        &mut supported,
+        &mut arguments,
         true,
-        "bedrock",
-        "cohere.command-text-v14",
+        provider,
+        model,
         &Json::Text("END".to_owned()),
     );
-    assert_eq!(supported, object(r#"{"stop": "END"}"#));
-    let mut supported = object(r#"{"stop": "END"}"#);
-    map_and_modify_arg(
-        &mut supported,
-        true,
-        "bedrock",
-        "Amazon.titan-text-express-v1",
-        &Json::Text("END".to_owned()),
+    arguments
+}
+
+fn titan_stop_argument_kept() {
+    assert_eq!(
+        stop_argument_after("bedrock", "cohere.command-text-v14", r#"{"stop": "END"}"#),
+        object(r#"{"stop": "END"}"#)
     );
-    assert_eq!(supported, object(r#"{"stop": "END"}"#));
-    let mut supported = object(r#"{"stop": "END"}"#);
-    map_and_modify_arg(
-        &mut supported,
-        true,
-        "vertex",
-        "amazon.titan-text-express-v1",
-        &Json::Text("END".to_owned()),
+    assert_eq!(
+        stop_argument_after(
+            "bedrock",
+            "Amazon.titan-text-express-v1",
+            r#"{"stop": "END"}"#
+        ),
+        object(r#"{"stop": "END"}"#)
     );
-    assert_eq!(supported, object(r#"{"stop": "END"}"#));
-    let mut supported = object("{}");
-    map_and_modify_arg(
-        &mut supported,
-        true,
-        "bedrock",
-        "amazon.titan-text-express-v1",
-        &Json::Text("END".to_owned()),
+    assert_eq!(
+        stop_argument_after(
+            "vertex",
+            "amazon.titan-text-express-v1",
+            r#"{"stop": "END"}"#
+        ),
+        object(r#"{"stop": "END"}"#)
     );
-    assert_eq!(supported, object("{}"));
+    assert_eq!(
+        stop_argument_after("bedrock", "amazon.titan-text-express-v1", "{}"),
+        object("{}")
+    );
 }
 
 fn claude2_parameters() {
@@ -533,14 +534,18 @@ fn claude2_parameters() {
                 "top_p": 0.8}"#
         )
     );
-    let mapped = mapped(
+    let token_order = mapped(
         Family::Anthropic,
         r#"{"max_completion_tokens": 9, "max_tokens": 5}"#,
         "{}",
         "anthropic.claude-v2",
     );
-    assert_eq!(mapped, object(r#"{"max_tokens_to_sample": 5}"#));
+    assert_eq!(token_order, object(r#"{"max_tokens_to_sample": 5}"#));
 
+    claude2_stream_rule();
+}
+
+fn claude2_stream_rule() {
     assert_eq!(
         mapped(
             Family::Anthropic,

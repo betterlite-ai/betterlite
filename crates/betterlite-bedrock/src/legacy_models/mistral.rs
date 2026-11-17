@@ -21,43 +21,46 @@ pub enum MistralOutputError {
 // choices wins over outputs when both exist, and the finish reason is copied as given.
 pub fn output_text(response: &Object) -> Result<MistralOutput, MistralOutputError> {
     if let Some(choices) = response.get("choices") {
-        let choice = first_record(choices, "choices")?;
-        let message = choice.get("message").and_then(Json::as_object).ok_or(
-            MistralOutputError::Malformed {
-                field: "choices.message",
-            },
-        )?;
-        return Ok(MistralOutput {
-            text: message
-                .get("content")
-                .cloned()
-                .ok_or(MistralOutputError::Malformed {
-                    field: "choices.message.content",
-                })?,
-            finish_reason: choice.get("finish_reason").cloned().ok_or(
-                MistralOutputError::Malformed {
-                    field: "choices.finish_reason",
-                },
-            )?,
-        });
+        return from_choices(choices);
     }
     if let Some(outputs) = response.get("outputs") {
-        let output = first_record(outputs, "outputs")?;
-        return Ok(MistralOutput {
-            text: output
-                .get("text")
-                .cloned()
-                .ok_or(MistralOutputError::Malformed {
-                    field: "outputs.text",
-                })?,
-            finish_reason: output.get("stop_reason").cloned().ok_or(
-                MistralOutputError::Malformed {
-                    field: "outputs.stop_reason",
-                },
-            )?,
-        });
+        return from_outputs(outputs);
     }
-    let error = BedrockError::try_from(ErrorInput {
+    Err(MistralOutputError::Unexpected(Box::new(unexpected()?)))
+}
+
+fn from_choices(choices: &Json) -> Result<MistralOutput, MistralOutputError> {
+    let choice = first_record(choices, "choices")?;
+    let message =
+        choice
+            .get("message")
+            .and_then(Json::as_object)
+            .ok_or(MistralOutputError::Malformed {
+                field: "choices.message",
+            })?;
+    Ok(MistralOutput {
+        text: required(message, "content", "choices.message.content")?,
+        finish_reason: required(choice, "finish_reason", "choices.finish_reason")?,
+    })
+}
+
+fn from_outputs(outputs: &Json) -> Result<MistralOutput, MistralOutputError> {
+    let output = first_record(outputs, "outputs")?;
+    Ok(MistralOutput {
+        text: required(output, "text", "outputs.text")?,
+        finish_reason: required(output, "stop_reason", "outputs.stop_reason")?,
+    })
+}
+
+fn required(record: &Object, key: &str, field: &'static str) -> Result<Json, MistralOutputError> {
+    record
+        .get(key)
+        .cloned()
+        .ok_or(MistralOutputError::Malformed { field })
+}
+
+fn unexpected() -> Result<BedrockError, HeaderError> {
+    BedrockError::try_from(ErrorInput {
         status_code: 400,
         message: "Unexpected mistral completion response".to_owned(),
         request: None,
@@ -65,8 +68,7 @@ pub fn output_text(response: &Object) -> Result<MistralOutput, MistralOutputErro
         status_code_is_synthesized: false,
         headers: None,
         response: None,
-    })?;
-    Err(MistralOutputError::Unexpected(Box::new(error)))
+    })
 }
 
 fn first_record<'value>(
