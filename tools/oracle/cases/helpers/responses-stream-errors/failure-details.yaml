@@ -47,7 +47,7 @@ calls:
         - function: format_failure
           failure:
             kind: plain
-            text: mapped
+            text: from_the_exception
             message: mapped
             type: old
             code: old

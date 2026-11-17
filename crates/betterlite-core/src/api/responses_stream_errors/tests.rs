@@ -80,6 +80,21 @@ fn fallback(original: FailureCause) -> FailureCause {
     }
 }
 
+fn created_event() -> Json {
+    object(vec![
+        ("type", text("response.created")),
+        ("sequence_number", number(4)),
+        (
+            "response",
+            object(vec![
+                ("id", text("resp_a")),
+                ("model", text("m")),
+                ("created_at", number(0)),
+            ]),
+        ),
+    ])
+}
+
 fn failed_frame(emitted: Option<String>) -> String {
     emitted.expect("the failure emits a frame")
 }
@@ -102,10 +117,10 @@ fn member<'value>(value: &'value Json, key: &str) -> &'value Json {
 }
 
 fn json_text(value: &Json) -> String {
-    match value {
-        Json::Text(text) => text.clone(),
-        other => panic!("expected text, found {other:?}"),
-    }
+    let Json::Text(text) = value else {
+        panic!("expected text, found {value:?}");
+    };
+    text.clone()
 }
 
 fn error_of(frame: &str) -> Json {
@@ -158,18 +173,7 @@ fn empty_exception_message_falls_back_to_the_exception_text() {
 fn committed_identity_is_used_without_generating_new_values() {
     let mut state = state_without_sources();
     state
-        .observe_chunk(&object(vec![
-            ("type", text("response.created")),
-            ("sequence_number", number(4)),
-            (
-                "response",
-                object(vec![
-                    ("id", text("resp_a")),
-                    ("model", text("m")),
-                    ("created_at", number(0)),
-                ]),
-            ),
-        ]))
+        .observe_chunk(&created_event())
         .expect("an event mapping");
     assert_eq!(state.response_id, None);
     assert_eq!(state.sequence_number, -1);
@@ -216,18 +220,7 @@ fn mark_emitted_returns_the_bytes_it_was_given() {
 fn observed_identity_is_not_used_before_mark_emitted() {
     let mut state = state(None);
     state
-        .observe_chunk(&object(vec![
-            ("type", text("response.created")),
-            ("sequence_number", number(4)),
-            (
-                "response",
-                object(vec![
-                    ("id", text("resp_a")),
-                    ("model", text("m")),
-                    ("created_at", number(0)),
-                ]),
-            ),
-        ]))
+        .observe_chunk(&created_event())
         .expect("an event mapping");
     let payload = payload(&failed_frame(state.format_failure(&plain("broken"))));
     let response = member(&payload, "response");
@@ -362,6 +355,7 @@ fn body_type_overrides_or_falls_back(#[case] body_type: Json, #[case] expected: 
 #[test]
 fn empty_body_text_falls_back_but_a_zero_code_does_not() {
     let mut failure = plain("mapped");
+    failure.text = "from the exception".to_owned();
     failure.code = Some(text("old"));
     failure.error_type = Some(text("old"));
     failure.status_code = Some(number(429));
@@ -529,12 +523,17 @@ fn status_codes_map_to_error_codes(#[case] status_code: Option<i64>, #[case] exp
     assert_eq!(response_error_code(&details), expected);
 }
 
-fn code_text(value: &str) -> Option<FailureCode> {
-    Some(FailureCode::Text(value.to_owned()))
+fn code_text(value: &str) -> FailureCode {
+    FailureCode::Text(value.to_owned())
 }
 
 #[rstest]
-#[case::quota_code(code_text("insufficient_quota"), None, None, "insufficient_quota")]
+#[case::quota_code(
+    Some(code_text("insufficient_quota")),
+    None,
+    None,
+    "insufficient_quota"
+)]
 #[case::quota_type(None, Some("insufficient_quota"), None, "insufficient_quota")]
 #[case::integer_429(
     Some(FailureCode::Integer(429)),
@@ -542,26 +541,31 @@ fn code_text(value: &str) -> Option<FailureCode> {
     Some(400),
     "rate_limit_exceeded"
 )]
-#[case::text_429(code_text("429"), None, Some(400), "rate_limit_exceeded")]
+#[case::text_429(Some(code_text("429")), None, Some(400), "rate_limit_exceeded")]
 #[case::rate_limit_prefix(None, Some("rate_limit_custom"), Some(400), "rate_limit_exceeded")]
 #[case::code_before_type(
-    code_text("rate_limit_custom"),
+    Some(code_text("rate_limit_custom")),
     Some("insufficient_quota"),
     None,
     "rate_limit_exceeded"
 )]
 #[case::type_checked_after_code(
-    code_text("custom"),
+    Some(code_text("custom")),
     Some("insufficient_quota"),
     None,
     "insufficient_quota"
 )]
-#[case::custom_code_wins_over_status(code_text("custom"), None, Some(400), "custom")]
-#[case::decimal_code_falls_back(code_text("12"), None, Some(429), "rate_limit_exceeded")]
-#[case::empty_code_falls_back(code_text(""), None, Some(404), "not_found_error")]
-#[case::spaces_are_not_decimal(code_text("  "), None, Some(404), "  ")]
-#[case::superscript_is_not_decimal(code_text("\u{b2}"), None, Some(404), "\u{b2}")]
-#[case::arabic_digits_are_decimal(code_text("\u{660}"), None, Some(400), "invalid_request_error")]
+#[case::custom_code_wins_over_status(Some(code_text("custom")), None, Some(400), "custom")]
+#[case::decimal_code_falls_back(Some(code_text("12")), None, Some(429), "rate_limit_exceeded")]
+#[case::empty_code_falls_back(Some(code_text("")), None, Some(404), "not_found_error")]
+#[case::spaces_are_not_decimal(Some(code_text("  ")), None, Some(404), "  ")]
+#[case::superscript_is_not_decimal(Some(code_text("\u{b2}")), None, Some(404), "\u{b2}")]
+#[case::arabic_digits_are_decimal(
+    Some(code_text("\u{660}")),
+    None,
+    Some(400),
+    "invalid_request_error"
+)]
 #[case::type_429(None, Some("429"), Some(400), "rate_limit_exceeded")]
 fn response_codes_follow_code_then_type_then_status(
     #[case] code: Option<FailureCode>,

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use betterlite_core::api::responses_stream_errors::ResponsesStreamErrorState;
 use betterlite_core::api::responses_stream_errors::failure::FailureCause;
+use betterlite_core::api::responses_stream_errors::{ResponsesStreamErrorState, StateSnapshot};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -54,18 +54,9 @@ struct Committed {
 }
 
 #[derive(serde::Serialize)]
-struct StateView {
-    response_id: Option<String>,
-    model: Option<String>,
-    created_at: Option<i64>,
-    sequence_number: i64,
-    terminal_emitted: bool,
-}
-
-#[derive(serde::Serialize)]
 struct Output {
     results: Vec<StepResult>,
-    state: StateView,
+    state: StateSnapshot,
 }
 
 pub(crate) struct Op;
@@ -88,12 +79,10 @@ impl Helper for Op {
                     frame: state.mark_emitted(frame.clone()),
                 },
                 Step::FormatFailure { failure } => {
+                    let view = state.snapshot();
                     let committed = Committed {
-                        id: state
-                            .response_id
-                            .as_deref()
-                            .is_some_and(|id| !id.is_empty()),
-                        time: state.created_at.is_some(),
+                        id: view.response_id.as_deref().is_some_and(|id| !id.is_empty()),
+                        time: view.created_at.is_some(),
                     };
                     let text = state
                         .format_failure(failure)
@@ -104,13 +93,7 @@ impl Helper for Op {
         }
         let output = Output {
             results,
-            state: StateView {
-                response_id: state.response_id,
-                model: state.model,
-                created_at: state.created_at,
-                sequence_number: state.sequence_number,
-                terminal_emitted: state.terminal_emitted,
-            },
+            state: state.snapshot(),
         };
         serde_json::to_value(output).map_err(|error| helper_error(&error.to_string()))
     }

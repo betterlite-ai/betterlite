@@ -36,13 +36,13 @@ fn special_text_code(text: &str) -> Option<String> {
 }
 
 pub(super) fn status_error_code(status_code: Option<i64>) -> String {
-    let Some(status_code) = status_code else {
+    let Some(value) = status_code else {
         return "server_error".to_owned();
     };
-    if !(400..500).contains(&status_code) {
+    if !(400..500).contains(&value) {
         return "server_error".to_owned();
     }
-    match status_code {
+    match value {
         401 => "authentication_error".to_owned(),
         403 => "permission_error".to_owned(),
         404 => "not_found_error".to_owned(),

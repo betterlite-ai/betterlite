@@ -42,12 +42,21 @@ pub enum StreamEventError {
     Chunk(#[from] serde_json::Error),
 }
 
-pub struct ResponsesStreamErrorState {
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct StateSnapshot {
     pub response_id: Option<String>,
     pub model: Option<String>,
     pub created_at: Option<i64>,
     pub sequence_number: i64,
     pub terminal_emitted: bool,
+}
+
+pub struct ResponsesStreamErrorState {
+    response_id: Option<String>,
+    model: Option<String>,
+    created_at: Option<i64>,
+    sequence_number: i64,
+    terminal_emitted: bool,
     pending_event: Option<StreamEvent>,
     now: Arc<dyn Fn() -> SystemTime + Send + Sync>,
     next_id: Arc<dyn Fn() -> Uuid + Send + Sync>,
@@ -71,6 +80,17 @@ impl ResponsesStreamErrorState {
             now,
             next_id,
             redactor,
+        }
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> StateSnapshot {
+        StateSnapshot {
+            response_id: self.response_id.clone(),
+            model: self.model.clone(),
+            created_at: self.created_at,
+            sequence_number: self.sequence_number,
+            terminal_emitted: self.terminal_emitted,
         }
     }
 
@@ -167,10 +187,8 @@ impl ResponsesStreamErrorState {
     }
 
     fn failure_created_at(&self) -> i64 {
-        match self.created_at {
-            Some(created_at) => created_at,
-            None => epoch_seconds((self.now)()),
-        }
+        self.created_at
+            .unwrap_or_else(|| epoch_seconds((self.now)()))
     }
 
     fn client_message(&self, details: &FailureDetails, original: &FailureCause) -> String {
