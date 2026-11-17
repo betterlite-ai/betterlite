@@ -72,24 +72,15 @@ pub(crate) fn scorer(input: &section::Config) -> Scorer {
     Scorer::new(resolved(input)).expect("the test keywords and patterns compile")
 }
 
-pub(crate) fn classify(input: &section::Config, prompt: &str) -> ClassificationOutcome {
-    scorer(input)
-        .score_and_classify(&PromptInput {
-            prompt,
-            system_prompt: None,
-        })
-        .expect("the test prompt scores")
-}
-
-pub(crate) fn classify_with_system(
+pub(crate) fn classify(
     input: &section::Config,
     prompt: &str,
-    system_prompt: &str,
+    system_prompt: Option<&str>,
 ) -> ClassificationOutcome {
     scorer(input)
         .score_and_classify(&PromptInput {
             prompt,
-            system_prompt: Some(system_prompt),
+            system_prompt,
         })
         .expect("the test prompt scores")
 }
@@ -99,25 +90,13 @@ pub(crate) fn fixed(score: f64) -> String {
     format!("{score:.6}")
 }
 
-// the load error of a corpus seed the parser must refuse
-pub(crate) fn corpus_error(source: &str) -> String {
-    let loaded = ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(source);
-    match loaded {
-        Ok(_config) => panic!("the corpus seed should be refused"),
-        Err(error) => error.to_string(),
-    }
-}
-
 // the router config of the one deployment in a corpus seed, resolved as the server resolves it
-pub(crate) fn corpus_config(source: &str) -> Config {
+pub(crate) fn corpus_config(source: &str) -> Result<Config, String> {
     let config = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(source)
-    .expect("the corpus seed loads");
+    .map_err(|error| error.to_string())?;
     let configured = config
         .sections
         .complexity_scoring
@@ -125,6 +104,6 @@ pub(crate) fn corpus_config(source: &str) -> Config {
         .into_iter()
         .flatten()
         .next()
-        .expect("the seed configures the complexity router");
-    resolved(&configured)
+        .ok_or_else(|| "the seed configures no complexity router".to_owned())?;
+    resolve(&configured).map_err(|error| error.to_string())
 }

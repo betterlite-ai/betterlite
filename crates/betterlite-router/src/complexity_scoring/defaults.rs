@@ -3,10 +3,9 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use crate::complexity_scoring::config::{TierBoundaries, TokenThresholds};
-use crate::complexity_scoring::error::ScoringError;
 
 // the pinned LiteLLM keyword, weight and boundary data, kept as one reviewed fixture
-const SOURCE: &str = include_str!("fixtures/defaults.json");
+pub(crate) const SOURCE: &str = include_str!("fixtures/defaults.json");
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -20,8 +19,4 @@ pub struct Defaults {
     pub token_thresholds: TokenThresholds,
     pub tier_models: BTreeMap<String, String>,
     pub multi_step_patterns: Vec<String>,
-}
-
-pub fn load() -> Result<Defaults, ScoringError> {
-    Ok(serde_json::from_str(SOURCE)?)
 }

@@ -24,15 +24,11 @@ impl ComplexityTier {
 
     // _built_in_tier_or_none: a name that spells a built-in tier is that tier
     #[must_use]
-    pub const fn built_in(name: &str) -> Option<Self> {
-        match name {
-            "NON_REASONING" => Some(Self::NonReasoning),
-            "SIMPLE" => Some(Self::Simple),
-            "MEDIUM" => Some(Self::Medium),
-            "COMPLEX" => Some(Self::Complex),
-            "REASONING" => Some(Self::Reasoning),
-            _ => None,
-        }
+    pub fn built_in(name: &str) -> Option<Self> {
+        NON_REASONING_ORDER
+            .iter()
+            .copied()
+            .find(|tier| tier.name() == name)
     }
 }
 
@@ -46,7 +42,10 @@ pub enum Tier {
 impl Tier {
     #[must_use]
     pub fn from_name(name: &str) -> Self {
-        ComplexityTier::built_in(name).map_or_else(|| Self::Named(name.to_owned()), Self::BuiltIn)
+        match ComplexityTier::built_in(name) {
+            Some(tier) => Self::BuiltIn(tier),
+            None => Self::Named(name.to_owned()),
+        }
     }
 
     // _tier_name: the plain tier name, whether the pipeline carries a built-in tier or a defined name

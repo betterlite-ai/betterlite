@@ -7,7 +7,6 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_string};
 use crate::sections::Section;
-use crate::sections::settings::JsonValue;
 
 mod tests;
 
@@ -56,9 +55,6 @@ pub struct RawRouterConfig {
     simple_keywords: Option<Vec<String>>,
     #[serde(default)]
     default_model: Option<String>,
-    // ComplexityRouterConfig allows extra keys; these belong to other tasks
-    #[serde(flatten)]
-    pub siblings: BTreeMap<String, JsonValue>,
 }
 
 // B374 owns the parameterized tier entry schema, so this baseline view reads only the bare shapes
@@ -117,34 +113,12 @@ impl RawRouterConfig {
         L: EnvironmentLookup,
     {
         let prefix = format!("model_list.{index}.{PATH_ROOT}");
-        Ok(Config {
+        let config = Config {
             tier_models: tier_map(self.tier_models, "tier_models", &prefix, lookup)?,
-            complexity_thresholds: numbers(
-                self.complexity_thresholds,
-                "complexity_thresholds",
-                &prefix,
-                lookup,
-                parse_threshold,
-            )?,
-            dimension_weights: numbers(
-                self.dimension_weights,
-                "dimension_weights",
-                &prefix,
-                lookup,
-                parse_float,
-            )?,
-            tier_boundaries: numbers(
-                self.tier_boundaries,
-                "tier_boundaries",
-                &prefix,
-                lookup,
-                parse_float,
-            )?,
-            reasoning_override_min_score: optional_number(
-                self.reasoning_override_min_score,
-                &format!("{prefix}.reasoning_override_min_score"),
-                lookup,
-            )?,
+            complexity_thresholds: None,
+            dimension_weights: None,
+            tier_boundaries: None,
+            reasoning_override_min_score: None,
             code_keywords: self.code_keywords,
             reasoning_keywords: self.reasoning_keywords,
             technical_keywords: self.technical_keywords,
@@ -154,8 +128,60 @@ impl RawRouterConfig {
                 .default_model
                 .map(|model| resolve_string(model, &format!("{prefix}.default_model"), lookup))
                 .transpose()?,
-        })
+        };
+        let raw = RawNumbers {
+            complexity_thresholds: self.complexity_thresholds,
+            dimension_weights: self.dimension_weights,
+            tier_boundaries: self.tier_boundaries,
+            reasoning_override_min_score: self.reasoning_override_min_score,
+        };
+        with_numbers(config, raw, &prefix, lookup)
     }
+}
+
+struct RawNumbers {
+    complexity_thresholds: Option<BTreeMap<String, RawNumber>>,
+    dimension_weights: Option<BTreeMap<String, RawNumber>>,
+    tier_boundaries: Option<BTreeMap<String, RawNumber>>,
+    reasoning_override_min_score: Option<RawNumber>,
+}
+
+fn with_numbers<L>(
+    mut config: Config,
+    raw: RawNumbers,
+    prefix: &str,
+    lookup: &L,
+) -> Result<Config, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    config.complexity_thresholds = numbers(
+        raw.complexity_thresholds,
+        "complexity_thresholds",
+        prefix,
+        lookup,
+        parse_threshold,
+    )?;
+    config.dimension_weights = numbers(
+        raw.dimension_weights,
+        "dimension_weights",
+        prefix,
+        lookup,
+        parse_float,
+    )?;
+    config.tier_boundaries = numbers(
+        raw.tier_boundaries,
+        "tier_boundaries",
+        prefix,
+        lookup,
+        parse_float,
+    )?;
+    config.reasoning_override_min_score = optional_number(
+        raw.reasoning_override_min_score,
+        &format!("{prefix}.reasoning_override_min_score"),
+        lookup,
+    )?;
+    Ok(config)
 }
 
 // a tier's single model is a mapping value, so an os.environ reference in it is resolved; pool items stay literal

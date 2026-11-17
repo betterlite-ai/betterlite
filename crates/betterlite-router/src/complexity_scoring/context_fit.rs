@@ -14,8 +14,11 @@ impl RequestContextFit {
     // accepts: an unknown window or token count always fits; a known window must hold the buffered request
     #[must_use]
     pub fn accepts(&self, model: &str) -> bool {
-        let window = self.windows.get(model).copied().flatten();
-        complexity_math::window_holds(window, self.needed, self.buffer)
+        complexity_math::window_holds(
+            self.windows.get(model).copied().flatten(),
+            self.needed,
+            self.buffer,
+        )
     }
 }
 

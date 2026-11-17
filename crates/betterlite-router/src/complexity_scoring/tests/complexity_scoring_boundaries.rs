@@ -9,7 +9,7 @@ use crate::complexity_math::{
 use crate::complexity_scoring::classify::{PromptInput, Scorer};
 use crate::complexity_scoring::config::{TierBoundaries, TokenThresholds};
 use crate::complexity_scoring::dimensions::{
-    CODE_PRESENCE, CustomDimension, Dimension, DimensionScore, REASONING_MARKERS,
+    CODE_PRESENCE, CustomDimension, Dimension, DimensionScore, KeywordRule, REASONING_MARKERS,
     SIMPLE_INDICATORS, ScoringMode, TECHNICAL_TERMS, score_keyword_match, score_multi_step,
     score_question_complexity, score_token_count,
 };
@@ -62,52 +62,50 @@ fn a_score_on_a_boundary_takes_the_tier_above_it(
 
 // the reference values: one code keyword scores 0.5, two score 1.0, and four technical terms add 0.25
 #[rstest]
-#[case::simple_medium(
+#[case::at_simple_medium(
     "please review the following content and tell me what matters api",
-    "MEDIUM"
+    "MEDIUM",
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
 )]
-#[case::medium_complex(
+#[case::at_medium_complex(
     "please review the following content and tell me what matters api sql",
-    "COMPLEX"
+    "COMPLEX",
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
 )]
-#[case::complex_reasoning(
+#[case::at_complex_reasoning(
     "please review the following content and tell me what matters api sql architecture distributed encryption authentication",
-    "REASONING"
+    "REASONING",
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
 )]
-fn a_score_equal_to_a_boundary_selects_the_higher_tier(#[case] prompt: &str, #[case] tier: &str) {
+#[case::below_simple_medium(
+    "please review the following content and tell me what matters api",
+    "SIMPLE",
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+)]
+#[case::below_medium_complex(
+    "please review the following content and tell me what matters api sql",
+    "MEDIUM",
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+)]
+#[case::below_complex_reasoning(
+    "please review the following content and tell me what matters api sql architecture distributed encryption authentication",
+    "COMPLEX",
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+)]
+fn a_score_on_a_boundary_takes_the_tier_above_it_and_a_hair_below_keeps_the_lower(
+    #[case] prompt: &str,
+    #[case] tier: &str,
+    #[case] boundaries: &[(&str, f64)],
+) {
     let mut input = blank();
     input.dimension_weights = Some(weights(&[("codePresence", 1.0), ("technicalTerms", 0.25)]));
-    input.tier_boundaries = Some(BTreeMap::from([
-        ("simple_medium".to_owned(), 0.5_f64),
-        ("medium_complex".to_owned(), 1.0_f64),
-        ("complex_reasoning".to_owned(), 1.25_f64),
-    ]));
-    let outcome = classify(&input, prompt);
-    assert_eq!(outcome.tier.name(), tier);
-}
-
-#[rstest]
-#[case::simple_medium(
-    "please review the following content and tell me what matters api",
-    "SIMPLE"
-)]
-#[case::medium_complex(
-    "please review the following content and tell me what matters api sql",
-    "MEDIUM"
-)]
-#[case::complex_reasoning(
-    "please review the following content and tell me what matters api sql architecture distributed encryption authentication",
-    "COMPLEX"
-)]
-fn a_score_a_hair_below_a_boundary_keeps_the_lower_tier(#[case] prompt: &str, #[case] tier: &str) {
-    let mut input = blank();
-    input.dimension_weights = Some(weights(&[("codePresence", 1.0), ("technicalTerms", 0.25)]));
-    input.tier_boundaries = Some(BTreeMap::from([
-        ("simple_medium".to_owned(), 0.500_001_f64),
-        ("medium_complex".to_owned(), 1.000_001_f64),
-        ("complex_reasoning".to_owned(), 1.250_001_f64),
-    ]));
-    let outcome = classify(&input, prompt);
+    input.tier_boundaries = Some(
+        boundaries
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), *value))
+            .collect(),
+    );
+    let outcome = classify(&input, prompt, None);
     assert_eq!(outcome.tier.name(), tier);
 }
 
@@ -127,94 +125,79 @@ fn a_token_count_at_a_threshold_is_neither_short_nor_long(
 }
 
 #[rstest]
-#[case::none(&[] as &[&str], "nothing here", "0.000000", None, 0)]
-#[case::one(&["api"], "call the api", "0.500000", Some("code (api)"), 1)]
-#[case::two(&["api", "sql"], "api and sql", "1.000000", Some("code (api, sql)"), 2)]
-#[case::three(&["api", "sql", "function"], "api sql function", "1.000000", Some("code (api, sql, function)"), 3)]
-fn the_code_rule_scores_half_at_one_match_and_full_at_two(
-    #[case] keywords: &[&str],
-    #[case] text: &str,
-    #[case] score: &str,
-    #[case] signal: Option<&str>,
-    #[case] count: usize,
-) {
-    let compiled = KeywordList::compile(&strings(keywords)).unwrap();
-    let (scored, matched) = score_keyword_match(text, &compiled, &CODE_PRESENCE);
-    assert_eq!(fixed(scored.score), score);
-    assert_eq!(scored.signal.as_deref(), signal);
-    assert_eq!(matched, count);
-}
-
-#[rstest]
-#[case::none(&[] as &[&str], "nothing here", "0.000000", None, 0)]
-#[case::one(&["think through"], "think through this", "0.700000", Some("reasoning (think through)"), 1)]
-#[case::two(
+#[case::code_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, CODE_PRESENCE)]
+#[case::code_one(&["api"], "call the api", ("0.500000", Some("code (api)")), 1, CODE_PRESENCE)]
+#[case::code_two(&["api", "sql"], "api and sql", ("1.000000", Some("code (api, sql)")), 2, CODE_PRESENCE)]
+#[case::code_three(
+    &["api", "sql", "function"],
+    "api sql function",
+    ("1.000000", Some("code (api, sql, function)")),
+    3,
+    CODE_PRESENCE
+)]
+#[case::reasoning_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, REASONING_MARKERS)]
+#[case::reasoning_one(
+    &["think through"],
+    "think through this",
+    ("0.700000", Some("reasoning (think through)")),
+    1,
+    REASONING_MARKERS
+)]
+#[case::reasoning_two(
     &["step by step", "think through"],
     "step by step think through",
-    "1.000000",
-    Some("reasoning (step by step, think through)"),
-    2
+    ("1.000000", Some("reasoning (step by step, think through)")),
+    2,
+    REASONING_MARKERS
 )]
-fn the_reasoning_rule_scores_seventy_percent_at_one_marker(
-    #[case] keywords: &[&str],
-    #[case] text: &str,
-    #[case] score: &str,
-    #[case] signal: Option<&str>,
-    #[case] count: usize,
-) {
-    let compiled = KeywordList::compile(&strings(keywords)).unwrap();
-    let (scored, matched) = score_keyword_match(text, &compiled, &REASONING_MARKERS);
-    assert_eq!(fixed(scored.score), score);
-    assert_eq!(scored.signal.as_deref(), signal);
-    assert_eq!(matched, count);
-}
-
-#[rstest]
-#[case::below(&["architecture"], "architecture", "0.000000", None, 1)]
-#[case::at_low(&["architecture", "distributed"], "architecture distributed", "0.500000", Some("technical (architecture, distributed)"), 2)]
-#[case::between(
+#[case::technical_below(
+    &["architecture"],
+    "architecture",
+    ("0.000000", None),
+    1,
+    TECHNICAL_TERMS
+)]
+#[case::technical_at_low(
+    &["architecture", "distributed"],
+    "architecture distributed",
+    ("0.500000", Some("technical (architecture, distributed)")),
+    2,
+    TECHNICAL_TERMS
+)]
+#[case::technical_between(
     &["architecture", "distributed", "encryption"],
     "architecture distributed encryption",
-    "0.500000",
-    Some("technical (architecture, distributed, encryption)"),
-    3
+    ("0.500000", Some("technical (architecture, distributed, encryption)")),
+    3,
+    TECHNICAL_TERMS
 )]
-#[case::high(
+#[case::technical_high(
     &["architecture", "distributed", "encryption", "authentication"],
     "architecture distributed encryption authentication",
-    "1.000000",
-    Some("technical (architecture, distributed, encryption)"),
-    4
+    ("1.000000", Some("technical (architecture, distributed, encryption)")),
+    4,
+    TECHNICAL_TERMS
 )]
-fn the_technical_rule_starts_at_two_matches_and_saturates_at_four(
+#[case::simple_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, SIMPLE_INDICATORS)]
+#[case::simple_one(&["hello"], "hello there", ("-1.000000", Some("simple (hello)")), 1, SIMPLE_INDICATORS)]
+#[case::simple_two(
+    &["hello", "thanks"],
+    "hello and thanks",
+    ("-1.000000", Some("simple (hello, thanks)")),
+    2,
+    SIMPLE_INDICATORS
+)]
+fn the_keyword_rules_score_at_their_thresholds(
     #[case] keywords: &[&str],
     #[case] text: &str,
-    #[case] score: &str,
-    #[case] signal: Option<&str>,
+    #[case] expected: (&str, Option<&str>),
     #[case] count: usize,
+    #[case] rule: KeywordRule,
 ) {
     let compiled = KeywordList::compile(&strings(keywords)).unwrap();
-    let (scored, matched) = score_keyword_match(text, &compiled, &TECHNICAL_TERMS);
-    assert_eq!(fixed(scored.score), score);
-    assert_eq!(scored.signal.as_deref(), signal);
-    assert_eq!(matched, count);
-}
-
-#[rstest]
-#[case::none(&[] as &[&str], "nothing here", "0.000000", None, 0)]
-#[case::one(&["hello"], "hello there", "-1.000000", Some("simple (hello)"), 1)]
-#[case::two(&["hello", "thanks"], "hello and thanks", "-1.000000", Some("simple (hello, thanks)"), 2)]
-fn the_simple_rule_penalises_the_first_match(
-    #[case] keywords: &[&str],
-    #[case] text: &str,
-    #[case] score: &str,
-    #[case] signal: Option<&str>,
-    #[case] count: usize,
-) {
-    let compiled = KeywordList::compile(&strings(keywords)).unwrap();
-    let (scored, matched) = score_keyword_match(text, &compiled, &SIMPLE_INDICATORS);
-    assert_eq!(fixed(scored.score), score);
-    assert_eq!(scored.signal.as_deref(), signal);
+    let (scored, matched) = score_keyword_match(text, &compiled, &rule);
+    assert_eq!(fixed(scored.score), expected.0);
+    assert_eq!(scored.signal.as_deref(), expected.1);
     assert_eq!(matched, count);
 }
 
@@ -440,7 +423,7 @@ fn a_partial_boundary_map_fills_each_unset_key() {
 fn an_empty_weight_map_scores_every_dimension_at_zero() {
     let mut input = blank();
     input.dimension_weights = Some(BTreeMap::new());
-    let outcome = classify(&input, "function class architecture distributed");
+    let outcome = classify(&input, "function class architecture distributed", None);
     assert_eq!(fixed(outcome.score), "0.000000");
     assert_eq!(outcome.tier.name(), "SIMPLE");
 }
@@ -449,7 +432,7 @@ fn an_empty_weight_map_scores_every_dimension_at_zero() {
 fn an_unknown_dimension_weight_never_scores() {
     let mut input = blank();
     input.dimension_weights = Some(weights(&[("unknownDimension", 1.0)]));
-    let outcome = classify(&input, "function class def");
+    let outcome = classify(&input, "function class def", None);
     assert_eq!(fixed(outcome.score), "0.000000");
     assert!(
         outcome

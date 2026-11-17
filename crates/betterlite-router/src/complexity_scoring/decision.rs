@@ -1,5 +1,8 @@
+use std::str::FromStr;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
@@ -66,7 +69,7 @@ pub struct DecisionInput<'input> {
     pub escalation_keyword: Option<&'input str>,
     pub escalated: bool,
     pub classifier_model: Option<&'input str>,
-    pub classifier_cost: Option<f64>,
+    pub classifier_cost: Option<Decimal>,
     // the tier the decision had placed the request on before the context gate moved it
     pub context_original_tier: Option<&'input Tier>,
     pub tier_litellm_params: Option<&'input IndexMap<String, Json>>,
@@ -76,7 +79,7 @@ pub struct DecisionInput<'input> {
 
 pub fn build_routing_decision(input: &DecisionInput<'_>) -> Result<RoutingDecision, ScoringError> {
     let mut decision = RoutingDecision::new();
-    // LiteLLM carries every classifier_* fact and the heuristic_v2 forecast from the previous decision
+    // LiteLLM carries every classifier_* fact and the heuristic_v2 forecast from the decision being replaced
     if let Some(previous) = input.previous_decision {
         for (key, value) in previous {
             if key.starts_with("classifier_") || key == "heuristic_v2_forecast" {
@@ -84,6 +87,17 @@ pub fn build_routing_decision(input: &DecisionInput<'_>) -> Result<RoutingDecisi
             }
         }
     }
+    insert_base(&mut decision, input)?;
+    insert_route(&mut decision, input)?;
+    insert_evidence(&mut decision, input);
+    insert_classifier_facts(&mut decision, input)?;
+    Ok(decision)
+}
+
+fn insert_base(
+    decision: &mut RoutingDecision,
+    input: &DecisionInput<'_>,
+) -> Result<(), ScoringError> {
     decision.insert(
         "router_model_name".to_owned(),
         Json::Text(input.router_model_name.to_owned()),
@@ -96,7 +110,10 @@ pub fn build_routing_decision(input: &DecisionInput<'_>) -> Result<RoutingDecisi
         "routed_model".to_owned(),
         Json::Text(input.routed_model.to_owned()),
     );
-    decision.insert("cause".to_owned(), cause_json(input.cause)?);
+    let cause = serde_json::to_value(input.cause)
+        .and_then(serde_json::from_value::<Json>)
+        .map_err(|source| ScoringError::Record { source })?;
+    decision.insert("cause".to_owned(), cause);
     decision.insert(
         "conversation_continuing".to_owned(),
         Json::Bool(input.conversation_continuing),
@@ -113,9 +130,7 @@ pub fn build_routing_decision(input: &DecisionInput<'_>) -> Result<RoutingDecisi
             );
         }
     }
-    insert_route(&mut decision, input)?;
-    insert_evidence(&mut decision, input)?;
-    Ok(decision)
+    Ok(())
 }
 
 // the tier and score travel with the boundaries and floor that mapped the score, which alone give them meaning
@@ -149,10 +164,7 @@ fn insert_route(
     Ok(())
 }
 
-fn insert_evidence(
-    decision: &mut RoutingDecision,
-    input: &DecisionInput<'_>,
-) -> Result<(), ScoringError> {
+fn insert_evidence(decision: &mut RoutingDecision, input: &DecisionInput<'_>) {
     if !input.signals.is_empty() {
         let signals = input
             .signals
@@ -172,35 +184,49 @@ fn insert_evidence(
         );
         decision.insert("escalated".to_owned(), Json::Bool(input.escalated));
     }
+}
+
+fn insert_classifier_facts(
+    decision: &mut RoutingDecision,
+    input: &DecisionInput<'_>,
+) -> Result<(), ScoringError> {
+    let mut facts = Vec::with_capacity(4);
     if let Some(model) = input.classifier_model {
-        decision.insert("classifier_model".to_owned(), Json::Text(model.to_owned()));
+        facts.push(("classifier_model", Json::Text(model.to_owned())));
     }
     if let Some(cost) = input.classifier_cost {
-        decision.insert(
-            "classifier_cost".to_owned(),
-            number(cost, "classifier_cost")?,
-        );
+        facts.push(("classifier_cost", classifier_cost(cost)?));
     }
     if let Some(original) = input.context_original_tier {
         // the gate moved the request off its decided tier, and the original tier names where it was
-        decision.insert("context_escalated".to_owned(), Json::Bool(true));
-        decision.insert(
-            "context_escalation_original_tier".to_owned(),
+        facts.push(("context_escalated", Json::Bool(true)));
+        facts.push((
+            "context_escalation_original_tier",
             Json::Text(original.name().to_owned()),
-        );
+        ));
     }
     if let Some(params) = input.tier_litellm_params
         && let Some(masked) = masked_params(params)
     {
-        decision.insert("tier_litellm_params".to_owned(), masked);
+        facts.push(("tier_litellm_params", masked));
+    }
+    for (key, value) in facts {
+        decision.insert(key.to_owned(), value);
     }
     Ok(())
 }
 
-// a routing decision is JSON, so the cause takes the spelling its serializer gives it
-fn cause_json(cause: RoutingDecisionCause) -> Result<Json, ScoringError> {
-    let value = serde_json::to_value(cause).map_err(|source| ScoringError::Record { source })?;
-    serde_json::from_value(value).map_err(|source| ScoringError::Record { source })
+// LiteLLM records the cost as a float, so a whole number keeps the decimal point its float carries
+fn classifier_cost(value: Decimal) -> Result<Json, ScoringError> {
+    let normalized = value.normalize().to_string();
+    let written = if normalized.contains('.') {
+        normalized
+    } else {
+        format!("{normalized}.0")
+    };
+    Number::from_str(&written)
+        .map(Json::Number)
+        .map_err(|source| ScoringError::Record { source })
 }
 
 fn number(value: f64, field: &str) -> Result<Json, ScoringError> {

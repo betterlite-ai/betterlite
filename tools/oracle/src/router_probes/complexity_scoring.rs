@@ -56,9 +56,17 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let configured = payload
-        .config
-        .as_ref()
+    let config = resolved_config(payload.config.as_ref())?;
+    let fields = match payload.function {
+        Function::Classify => classify_fields(config, payload)?,
+        Function::TierModel => tier_model_fields(&config, payload.tier.as_deref())?,
+    };
+    Ok(ProbeOutput::ComplexityScoring(Output(Box::new(fields))))
+}
+
+// the section's typed view, so the probe configures the scorer exactly as a config file does
+fn resolved_config(configured: Option<&Json>) -> Result<Config, OperationError> {
+    let configured = configured
         .map(|config| {
             serde_json::to_value(config)
                 .and_then(serde_json::from_value::<section::Config>)
@@ -68,42 +76,44 @@ pub(crate) fn run(
         })
         .transpose()?
         .unwrap_or_default();
-    let config = Config::resolve(&configured).map_err(|source| OperationError::InvalidRequest {
+    Config::resolve(&configured).map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
+    })
+}
+
+fn classify_fields(config: Config, payload: &Payload) -> Result<Fields, OperationError> {
+    let prompt = PromptInput {
+        prompt: &payload.prompt,
+        system_prompt: payload.system_prompt.as_deref(),
+    };
+    let outcome = Scorer::new(config)
+        .and_then(|scorer| scorer.score_and_classify(&prompt))
+        .map_err(|source| OperationError::InvalidRequest {
+            message: source.to_string(),
+        })?;
+    Ok(Fields {
+        tier: Some(outcome.tier.name().to_owned()),
+        score: Some(format!("{:.6}", outcome.score)),
+        signals: Some(outcome.signals),
+        cause: Some(outcome.cause),
+        model: None,
+    })
+}
+
+fn tier_model_fields(config: &Config, tier: Option<&str>) -> Result<Fields, OperationError> {
+    let tier = tier.ok_or_else(|| OperationError::InvalidRequest {
+        message: "tier is required for tier_model".to_owned(),
     })?;
-    let mut fields = Fields::default();
-    match payload.function {
-        Function::Classify => {
-            let prompt = PromptInput {
-                prompt: &payload.prompt,
-                system_prompt: payload.system_prompt.as_deref(),
-            };
-            let outcome = Scorer::new(config)
-                .and_then(|scorer| scorer.score_and_classify(&prompt))
-                .map_err(|source| OperationError::InvalidRequest {
-                    message: source.to_string(),
-                })?;
-            fields.tier = Some(outcome.tier.name().to_owned());
-            fields.score = Some(format!("{:.6}", outcome.score));
-            fields.signals = Some(outcome.signals);
-            fields.cause = Some(outcome.cause);
-        }
-        Function::TierModel => {
-            let tier = payload
-                .tier
-                .as_deref()
-                .ok_or_else(|| OperationError::InvalidRequest {
-                    message: "tier is required for tier_model".to_owned(),
-                })?;
-            fields.model = Some(
-                config
-                    .single_model_for_tier(&Tier::from_name(tier))
-                    .map_err(|source| OperationError::InvalidRequest {
-                        message: source.to_string(),
-                    })?
-                    .to_owned(),
-            );
-        }
-    }
-    Ok(ProbeOutput::ComplexityScoring(Output(Box::new(fields))))
+    let model = config
+        .single_model_for_tier(&Tier::from_name(tier))
+        .map_err(|source| OperationError::InvalidRequest {
+            message: source.to_string(),
+        })?;
+    Ok(Fields {
+        tier: None,
+        score: None,
+        signals: None,
+        cause: None,
+        model: Some(model.to_owned()),
+    })
 }

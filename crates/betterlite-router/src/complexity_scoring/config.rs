@@ -69,7 +69,7 @@ pub struct Config {
 
 impl Config {
     pub fn resolve(input: &section::Config) -> Result<Self, ScoringError> {
-        let defaults = defaults::load()?;
+        let defaults: Defaults = serde_json::from_str(defaults::SOURCE)?;
         let tier_boundaries = boundaries(input.tier_boundaries.as_ref(), defaults.tier_boundaries)?;
         Ok(Self {
             tier_models: tier_models(input.tier_models.as_ref(), &defaults),
@@ -126,6 +126,14 @@ impl Config {
         medium.model().ok_or_else(|| ScoringError::TierPool {
             tier: "MEDIUM".to_owned(),
         })
+    }
+}
+
+// a keyword list the deployment sets replaces the default one, and an unset list keeps it
+fn keywords(configured: Option<&[String]>, default: &[String]) -> Vec<String> {
+    match configured {
+        Some(configured) => configured.to_vec(),
+        None => default.to_vec(),
     }
 }
 
@@ -194,11 +202,6 @@ fn weights(values: &BTreeMap<String, f64>) -> Result<BTreeMap<String, f64>, Scor
         );
     }
     Ok(resolved)
-}
-
-fn keywords(configured: Option<&[String]>, default: &[String]) -> Vec<String> {
-    let configured = configured.unwrap_or(default);
-    configured.to_vec()
 }
 
 fn require_finite(value: f64, field: &str) -> Result<f64, ScoringError> {

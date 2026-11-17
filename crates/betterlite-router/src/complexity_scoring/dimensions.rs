@@ -21,17 +21,6 @@ fn dedupe_lowered(keywords: &[String]) -> Vec<String> {
     deduped
 }
 
-fn dedupe(patterns: &[String]) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    let mut deduped = Vec::with_capacity(patterns.len());
-    for pattern in patterns {
-        if seen.insert(pattern.clone()) {
-            deduped.push(pattern.clone());
-        }
-    }
-    deduped
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Dimension {
     TokenCount,
@@ -101,11 +90,19 @@ pub struct CustomDimensionMatcher {
 
 impl CustomDimensionMatcher {
     pub fn compile(dimension: &CustomDimension) -> Result<Self, ScoringError> {
+        // a repeated pattern counts once, matched on the exact pattern text
+        let mut seen = BTreeSet::new();
+        let patterns: Vec<String> = dimension
+            .patterns
+            .iter()
+            .filter(|pattern| seen.insert((*pattern).clone()))
+            .cloned()
+            .collect();
         Ok(Self {
             name: dimension.name.clone(),
             weight: dimension.weight,
             keywords: KeywordList::compile(&dedupe_lowered(&dimension.keywords))?,
-            patterns: compile_insensitive_patterns(&dedupe(&dimension.patterns))?,
+            patterns: compile_insensitive_patterns(&patterns)?,
             saturation: dimension.scoring_mode.saturation(),
         })
     }

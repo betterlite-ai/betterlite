@@ -6,8 +6,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::{
-    CONFIG_INVALID, CONFIG_VALID, blank, classify, classify_with_system, corpus_config,
-    corpus_error, fixed, resolved, strings, tiers, weights,
+    CONFIG_INVALID, CONFIG_VALID, blank, classify, corpus_config, fixed, resolved, strings, tiers,
+    weights,
 };
 use crate::complexity_scoring::classify::{ClassificationOutcome, PromptInput, Scorer};
 use crate::complexity_scoring::config::{Config, TierBoundaries};
@@ -202,7 +202,7 @@ fn the_seven_dimensions_score_the_reference_table(
     #[case] signals: &[&str],
     #[case] cause: RoutingDecisionCause,
 ) {
-    let outcome = classify(&blank(), prompt);
+    let outcome = classify(&blank(), prompt, None);
     assert_eq!(outcome.tier.name(), tier);
     assert_eq!(fixed(outcome.score), score);
     assert_eq!(outcome.signals, strings(signals));
@@ -212,8 +212,8 @@ fn the_seven_dimensions_score_the_reference_table(
 #[test]
 fn the_system_prompt_never_scores() {
     let system = "function class def const architecture distributed step by step";
-    let with_system = classify_with_system(&blank(), "please review this", system);
-    let without_system = classify(&blank(), "please review this");
+    let with_system = classify(&blank(), "please review this", Some(system));
+    let without_system = classify(&blank(), "please review this", None);
     assert_eq!(with_system, without_system);
     assert_eq!(with_system.signals, strings(&["short (4 tokens)"]));
 }
@@ -232,11 +232,11 @@ fn tokens_come_from_characters_divided_by_four(#[case] input: &str, #[case] expe
 #[test]
 fn a_long_prompt_scores_for_its_token_count() {
     let just_over = "b".repeat(1604);
-    let over = classify(&blank(), &just_over);
+    let over = classify(&blank(), &just_over, None);
     assert_eq!(over.signals, strings(&["long (401 tokens)"]));
     assert_eq!(fixed(over.score), "0.100000");
     let at_limit = "b".repeat(1600);
-    assert!(classify(&blank(), &at_limit).signals.is_empty());
+    assert!(classify(&blank(), &at_limit, None).signals.is_empty());
 }
 
 #[test]
@@ -246,11 +246,11 @@ fn a_configured_threshold_map_moves_the_short_and_long_signals() {
         ("simple".to_owned(), 10_i64),
         ("complex".to_owned(), 20_i64),
     ]));
-    let short = classify(&input, &"a".repeat(24));
+    let short = classify(&input, &"a".repeat(24), None);
     assert_eq!(short.signals, strings(&["short (6 tokens)"]));
-    let middle = classify(&input, &"a".repeat(80));
+    let middle = classify(&input, &"a".repeat(80), None);
     assert!(middle.signals.is_empty());
-    let long = classify(&input, &"a".repeat(84));
+    let long = classify(&input, &"a".repeat(84), None);
     assert_eq!(long.signals, strings(&["long (21 tokens)"]));
     assert_eq!(fixed(long.score), "0.100000");
 }
@@ -264,7 +264,7 @@ fn custom_keywords_replace_and_extend_the_baseline_lists() {
     input.simple_keywords = Some(strings(&["howdy"]));
     let prompt =
         "please review the following content and tell me what matters widget gizmo sprocket howdy";
-    let outcome = classify(&input, prompt);
+    let outcome = classify(&input, prompt, None);
     assert_eq!(outcome.tier.name(), "MEDIUM");
     assert_eq!(fixed(outcome.score), "0.225000");
     assert_eq!(
@@ -281,7 +281,7 @@ fn custom_keywords_replace_and_extend_the_baseline_lists() {
 fn an_empty_keyword_list_is_used_as_given() {
     let mut input = blank();
     input.code_keywords = Some(Vec::new());
-    let outcome = classify(&input, "function class def");
+    let outcome = classify(&input, "function class def", None);
     assert_eq!(outcome.signals, strings(&["short (4 tokens)"]));
     assert_eq!(fixed(outcome.score), "-0.100000");
 }
@@ -290,7 +290,7 @@ fn an_empty_keyword_list_is_used_as_given() {
 fn a_phrase_keyword_is_a_literal_substring() {
     let mut input = blank();
     input.simple_keywords = Some(strings(&["what is 2+2?"]));
-    let outcome = classify(&input, "please tell me what is 2+2? now");
+    let outcome = classify(&input, "please tell me what is 2+2? now", None);
     assert_eq!(
         outcome.signals,
         strings(&["short (7 tokens)", "simple (what is 2+2?)"])
@@ -302,7 +302,7 @@ fn a_phrase_keyword_is_a_literal_substring() {
 fn a_cjk_keyword_matches_inside_running_text() {
     let mut input = blank();
     input.custom_technical_keywords = Some(strings(&["发票", "报销"]));
-    let outcome = classify(&input, "我需要开发票和报销");
+    let outcome = classify(&input, "我需要开发票和报销", None);
     assert_eq!(
         outcome.signals,
         strings(&["short (2 tokens)", "technical (发票, 报销)"])
@@ -312,9 +312,9 @@ fn a_cjk_keyword_matches_inside_running_text() {
 
 #[test]
 fn a_single_word_keyword_misses_a_longer_word() {
-    let missed = classify(&blank(), "capital terrorism");
+    let missed = classify(&blank(), "capital terrorism", None);
     assert_eq!(missed.signals, strings(&["short (4 tokens)"]));
-    let hit = classify(&blank(), "api");
+    let hit = classify(&blank(), "api", None);
     assert_eq!(hit.signals, strings(&["short (0 tokens)", "code (api)"]));
 }
 
@@ -322,12 +322,12 @@ fn a_single_word_keyword_misses_a_longer_word() {
 fn the_reasoning_override_needs_two_markers_and_the_floor() {
     let mut weighted = blank();
     weighted.dimension_weights = Some(weights(&[("reasoningMarkers", 0.05)]));
-    let below_floor = classify(&weighted, "step by step think through");
+    let below_floor = classify(&weighted, "step by step think through", None);
     assert_eq!(below_floor.tier.name(), "SIMPLE");
     assert_eq!(below_floor.cause, RoutingDecisionCause::HeuristicScorer);
     let mut explicit_zero = weighted.clone();
     explicit_zero.reasoning_override_min_score = Some(0.0);
-    let overridden = classify(&explicit_zero, "step by step think through");
+    let overridden = classify(&explicit_zero, "step by step think through", None);
     assert_eq!(overridden.tier.name(), "REASONING");
     assert_eq!(overridden.cause, RoutingDecisionCause::ReasoningOverride);
     assert_eq!(fixed(overridden.score), "0.050000");
@@ -337,7 +337,7 @@ fn the_reasoning_override_needs_two_markers_and_the_floor() {
 fn one_reasoning_marker_never_overrides() {
     let mut input = blank();
     input.dimension_weights = Some(weights(&[("reasoningMarkers", 1.0)]));
-    let outcome = classify(&input, "please think through this");
+    let outcome = classify(&input, "please think through this", None);
     assert_eq!(outcome.tier.name(), "REASONING");
     assert_eq!(outcome.cause, RoutingDecisionCause::HeuristicScorer);
     assert_eq!(fixed(outcome.score), "0.700000");
@@ -779,7 +779,7 @@ fn a_non_finite_score_cannot_be_recorded() {
 
 #[test]
 fn the_valid_corpus_seed_loads_and_the_invalid_one_is_refused() {
-    let config = corpus_config(CONFIG_VALID);
+    let config = corpus_config(CONFIG_VALID).expect("the valid seed loads");
     assert_eq!(
         config
             .single_model_for_tier(&Tier::from_name("SIMPLE"))
@@ -787,6 +787,6 @@ fn the_valid_corpus_seed_loads_and_the_invalid_one_is_refused() {
         "gpt-4o-mini"
     );
     assert_eq!(config.token_thresholds.simple, 15);
-    let refused = corpus_error(CONFIG_INVALID);
+    let refused = corpus_config(CONFIG_INVALID).unwrap_err();
     assert!(refused.contains("complexity_thresholds"), "got {refused}");
 }

@@ -97,14 +97,6 @@ impl Scorer {
         })
     }
 
-    pub fn classify(
-        &self,
-        input: &PromptInput<'_>,
-    ) -> Result<(Tier, f64, Vec<String>), ScoringError> {
-        let outcome = self.score_and_classify(input)?;
-        Ok((outcome.tier, outcome.score, outcome.signals))
-    }
-
     fn evaluation(&self, prompt: &str) -> Evaluation {
         let user_text = prompt.to_lowercase();
         let (code, _) = score_keyword_match(&user_text, &self.code_keywords, &CODE_PRESENCE);
