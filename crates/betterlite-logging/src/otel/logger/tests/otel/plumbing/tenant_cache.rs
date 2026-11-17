@@ -105,6 +105,27 @@ mod eviction {
     }
 
     #[test]
+    fn eviction_keeps_a_retired_provider_until_its_last_lease_releases() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        let first = tenants
+            .route_for(&default, Some(&creds("S0")), None, &[])
+            .expect("route");
+        tenants
+            .route_for(&default, Some(&creds("S0")), None, &[])
+            .expect("route");
+        route_spaces(&tenants, &default, 1, MAX_CACHED_PROVIDERS);
+        let drained = built.sink(0);
+        // S0 carries two leases, so the overflow retires it rather than shutting it down
+        assert!(!drained.is_shutdown_called());
+        tenants.release(first.provider.as_ref());
+        assert!(!drained.is_shutdown_called());
+        tenants.release(first.provider.as_ref());
+        assert!(drained.is_shutdown_called());
+    }
+
+    #[test]
     fn eviction_shuts_down_the_stalest_retiree_past_the_retired_cap() {
         let built = Built::default();
         let tenants = cache(owned_http(), Some("arize"), &built);
@@ -344,7 +365,24 @@ mod routing {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use crate::otel::support::{Built, cache, creds, default_tracer, owned_http, phoenix_http};
+    use crate::otel::support::{
+        Built, cache, creds, default_tracer, destination, owned_http, phoenix_http,
+    };
+
+    #[test]
+    fn routing_keeps_a_service_name_route_unrouted_while_a_destination_applies() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        let auth = BTreeMap::from([("otel_service_name".to_owned(), "payments".to_owned())]);
+        let destinations = vec![destination("langfuse_otel")];
+        let route = tenants
+            .route_for(&default, None, Some(&auth), &destinations)
+            .expect("route");
+        // a request-level destination already picks the backend, so the service name stays unrouted
+        assert!(route.provider.is_none());
+        assert_eq!(built.builds(), 0);
+    }
 
     #[test]
     fn routing_caches_one_provider_per_credential_set() {
@@ -409,8 +447,11 @@ mod transport {
     use std::collections::BTreeMap;
 
     use betterlite_logging::otel::config::ExporterOwner;
+    use tracing_subscriber::layer::SubscriberExt as _;
 
-    use crate::otel::support::{Built, cache, creds, default_tracer, settings};
+    use crate::otel::support::{
+        Built, Warnings, cache, creds, default_tracer, settings, text_params,
+    };
 
     #[test]
     fn transport_keeps_credentials_off_a_headerless_exporter() {
@@ -472,5 +513,100 @@ mod transport {
         assert!(route.provider.is_none());
         assert!(!route.detached);
         assert_eq!(built.builds(), 0);
+    }
+
+    #[test]
+    fn transport_warns_once_about_credential_routing_without_an_otlp_exporter() {
+        let built = Built::default();
+        let tenants = cache(
+            settings("in_memory", Some(ExporterOwner::ArizeAx), None, None),
+            Some("arize"),
+            &built,
+        );
+        let default = default_tracer();
+        let warnings = Warnings::default();
+        let subscriber = tracing_subscriber::registry().with(warnings.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+        tenants
+            .route_for(&default, Some(&creds("S")), None, &[])
+            .expect("route");
+        assert_eq!(warnings.messages().len(), 1);
+        tenants
+            .route_for(&default, Some(&creds("S")), None, &[])
+            .expect("route");
+        assert_eq!(warnings.messages().len(), 1);
+    }
+
+    #[test]
+    fn transport_warns_once_about_project_routing_without_http() {
+        let built = Built::default();
+        let tenants = cache(
+            settings(
+                "otlp_grpc",
+                Some(ExporterOwner::ArizePhoenix),
+                None,
+                Some("http://localhost:4317"),
+            ),
+            Some("arize_phoenix"),
+            &built,
+        );
+        let default = default_tracer();
+        let auth = BTreeMap::from([("phoenix_project_name".to_owned(), "proj".to_owned())]);
+        let warnings = Warnings::default();
+        let subscriber = tracing_subscriber::registry().with(warnings.clone());
+        let _guard = tracing::subscriber::set_default(subscriber);
+        tenants
+            .route_for(&default, None, Some(&auth), &[])
+            .expect("route");
+        assert_eq!(warnings.messages().len(), 1);
+        tenants
+            .route_for(&default, None, Some(&auth), &[])
+            .expect("route");
+        assert_eq!(warnings.messages().len(), 1);
+    }
+
+    #[test]
+    fn transport_keeps_another_callbacks_exporter_untouched() {
+        let built = Built::default();
+        let tenants = cache(
+            settings(
+                "otlp_http",
+                Some(ExporterOwner::ArizePhoenix),
+                Some("space=static"),
+                Some("http://phoenix:6006"),
+            ),
+            Some("arize"),
+            &built,
+        );
+        let default = default_tracer();
+        let route = tenants
+            .route_for(&default, Some(&creds("S")), None, &[])
+            .expect("route");
+        // the only exporter belongs to arize_phoenix, so an arize credential has nowhere to go
+        assert!(route.provider.is_none());
+        assert_eq!(built.builds(), 0);
+    }
+
+    #[test]
+    fn transport_routes_a_newrelic_tenant_endpoint() {
+        let built = Built::default();
+        let tenants = cache(
+            settings(
+                "otlp_http",
+                Some(ExporterOwner::Newrelic),
+                None,
+                Some("http://static:4318"),
+            ),
+            Some("newrelic"),
+            &built,
+        );
+        let default = default_tracer();
+        let dynamic = text_params(&[("newrelic_api_key", "K")]);
+        let route = tenants
+            .route_for(&default, Some(&dynamic), None, &[])
+            .expect("route");
+        assert!(route.detached);
+        let spec = built.specs().first().cloned().expect("exporter");
+        assert_eq!(spec.endpoint.as_deref(), Some("https://otlp.nr-data.net"));
     }
 }
