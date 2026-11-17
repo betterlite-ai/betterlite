@@ -100,7 +100,7 @@ impl Assembled {
         body.insert(
             "choices".to_owned(),
             json!([{
-                "index": 0,
+                "index": 0_i32,
                 "message": {"role": "assistant", "content": self.text},
                 "finish_reason": reason,
             }]),
@@ -118,9 +118,10 @@ impl Assembled {
 
 fn integer(value: &Value) -> Option<i64> {
     match value {
-        Value::Number(number) => number
-            .as_i64()
-            .or_else(|| number.as_u64().and_then(|raw| i64::try_from(raw).ok())),
+        Value::Number(number) => number.as_i64().or_else(|| {
+            let raw = number.as_u64()?;
+            i64::try_from(raw).ok()
+        }),
         Value::Null | Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_) => {
             None
         }
@@ -148,7 +149,7 @@ pub(super) fn emit(body: &GuardrailValue) -> Result<Vec<Chunk>, WireError> {
 pub(super) fn error_item(error: &HttpError) -> Option<GuardrailValue> {
     let item = json!({
         "type": "error",
-        "sequence_number": 0,
+        "sequence_number": 0_i32,
         "error": {
             "type": "guardrail_error",
             "code": error.status.to_string(),
@@ -183,8 +184,8 @@ fn detail_message(detail: &GuardrailValue) -> String {
 }
 
 fn text_or_encoded(detail: &Value) -> String {
-    match detail {
-        Value::String(text) => text.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
+    if let Value::String(text) = detail {
+        return text.clone();
     }
+    serde_json::to_string(detail).unwrap_or_default()
 }

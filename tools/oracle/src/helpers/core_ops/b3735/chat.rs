@@ -122,14 +122,14 @@ fn completion_body(
         "object".to_owned(),
         Value::String("chat.completion".to_owned()),
     );
-    if let Some(id) = id {
-        body.insert("id".to_owned(), Value::String(id));
+    if let Some(identifier) = id {
+        body.insert("id".to_owned(), Value::String(identifier));
     }
-    if let Some(model) = model {
-        body.insert("model".to_owned(), Value::String(model));
+    if let Some(model_name) = model {
+        body.insert("model".to_owned(), Value::String(model_name));
     }
-    if let Some(created) = created {
-        body.insert("created".to_owned(), Value::from(created));
+    if let Some(timestamp) = created {
+        body.insert("created".to_owned(), Value::from(timestamp));
     }
     body.insert("choices".to_owned(), Value::Array(entries));
     Value::Object(body)

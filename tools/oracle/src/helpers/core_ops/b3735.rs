@@ -165,12 +165,14 @@ impl StreamWire for Wire {
         content: &str,
     ) -> impl Future<Output = Result<GuardrailValue, ScanFailure<WireError>>> + Send {
         *self.scanned.lock().unwrap_or_else(PoisonError::into_inner) = Some(content.to_owned());
-        let reply = match &self.api_error {
-            Some(detail) => Err(ScanFailure::Api {
-                detail: detail.clone(),
-            }),
-            None => Ok(self.raw.clone()),
-        };
+        let reply = self.api_error.as_ref().map_or_else(
+            || Ok(self.raw.clone()),
+            |detail| {
+                Err(ScanFailure::Api {
+                    detail: detail.clone(),
+                })
+            },
+        );
         ready(reply)
     }
 
