@@ -1,0 +1,10 @@
+kind: helper
+name: tinyfish-api-base-https-promotion
+call:
+  b3648:
+    function: api_base
+    environment:
+      TINYFISH_AGENT_API_BASE: agent.example.test/
+env:
+  TINYFISH_AGENT_API_BASE: agent.example.test/
+compare: {ignore: []}

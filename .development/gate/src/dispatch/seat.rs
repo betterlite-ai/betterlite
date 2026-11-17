@@ -1,3 +1,4 @@
+use std::env;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -29,7 +30,11 @@ pub(crate) enum Run {
     Limited,
 }
 
-fn prepare_sandbox(places: &Places<'_>, stem: &Path) -> Result<(PathBuf, String), GateError> {
+fn prepare_sandbox(
+    places: &Places<'_>,
+    stem: &Path,
+    seat: Seat,
+) -> Result<(PathBuf, String), GateError> {
     let worktree = places
         .worktree
         .to_str()
@@ -38,8 +43,22 @@ fn prepare_sandbox(places: &Places<'_>, stem: &Path) -> Result<(PathBuf, String)
         .home
         .to_str()
         .ok_or(GateError::NotUnicode("the home folder"))?;
+    let gate = env::current_exe().map_err(|source| GateError::Read {
+        path: PathBuf::from("/proc/self/exe"),
+        source,
+    })?;
+    // only a worker commits, and its stop hook runs the same gate binary that dispatched it
+    let stop_gate = match seat {
+        Seat::Worker => Some(
+            gate.to_str()
+                .ok_or(GateError::NotUnicode("the gate executable path"))?,
+        ),
+        Seat::Reviewer | Seat::ReviewerAgain | Seat::ParityReviewer | Seat::ParityReviewerAgain => {
+            None
+        }
+    };
     let settings = stem.with_extension("sandbox.json");
-    sandbox::write_settings(&settings, worktree, home, places.writable)?;
+    sandbox::write_settings(&settings, worktree, home, places.writable, stop_gate)?;
     let roots = serde_json::to_string(places.writable).map_err(|source| GateError::Json {
         what: "the writable folders".to_owned(),
         source,
@@ -78,7 +97,7 @@ pub(crate) fn invoke(
     let log: PathBuf = stem.with_extension("log");
     let places = attempt.places;
     let folder = places.worktree.join(".development");
-    let (sandbox_settings, writable_roots) = prepare_sandbox(places, &stem)?;
+    let (sandbox_settings, writable_roots) = prepare_sandbox(places, &stem, seat)?;
     let invocation = Invocation {
         worktree: places.worktree,
         git_common_dir: places.git_common_dir,

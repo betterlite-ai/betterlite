@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-tools-tool-spec
+call:
+  bedrock_converse_tools:
+    function: tool_spec
+    name: get_weather
+    description: read the weather
+    parameters: {type: object, properties: {city: {type: string}}, additionalProperties: false}
+    strict: true
+    supports_strict_tools: true
+env: {}
+compare: {ignore: []}

@@ -148,28 +148,33 @@ pub fn generated_image(item: &Json) -> Option<Locator> {
     Some((url, image.clone()))
 }
 
+pub(crate) fn media_locator(
+    item: &ContentPart,
+) -> Result<Option<(Locator, MediaField)>, HistoryError> {
+    let fields = &item.fields;
+    match item.kind.as_str() {
+        IMAGE_URL => Ok(Some((image_source(fields)?, MediaField::ImageUrl))),
+        INPUT_AUDIO => Ok(audio_source(fields)?.map(|locator| (locator, MediaField::ImageUrl))),
+        FILE => Ok(Some((file_source(fields)?, MediaField::File))),
+        _ => Ok(None),
+    }
+}
+
 pub fn append_user_part(
     item: &ContentPart,
     model: Option<&str>,
     parts: &mut Vec<Object>,
 ) -> Result<(), HistoryError> {
-    let fields = &item.fields;
-    let (locator, field) = match item.kind.as_str() {
-        TEXT => {
-            if let Some(text) = text_of(fields, TEXT)
-                && !text.is_empty()
-            {
-                parts.push(object!(TEXT => Json::Text(text)));
-            }
-            return Ok(());
+    if item.kind.as_str() == TEXT {
+        if let Some(text) = text_of(&item.fields, TEXT)
+            && !text.is_empty()
+        {
+            parts.push(object!(TEXT => Json::Text(text)));
         }
-        IMAGE_URL => (image_source(fields)?, MediaField::ImageUrl),
-        INPUT_AUDIO => match audio_source(fields)? {
-            Some(locator) => (locator, MediaField::ImageUrl),
-            None => return Ok(()),
-        },
-        FILE => (file_source(fields)?, MediaField::File),
-        _ => return Ok(()),
+        return Ok(());
+    }
+    let Some((locator, field)) = media_locator(item)? else {
+        return Ok(());
     };
     push_source(parts, &locator, field, model)
 }
