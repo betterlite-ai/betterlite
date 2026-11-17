@@ -91,6 +91,8 @@ fn parses_an_accepted_literal(#[case] input: &str, #[case] expected: Literal) {
 #[case::leading_zero_underscore("0_1", LiteralError::Syntax)]
 #[case::double_underscore("1__0", LiteralError::Syntax)]
 #[case::trailing_underscore("1_", LiteralError::Syntax)]
+#[case::exponent_underscore("1e_5", LiteralError::Syntax)]
+#[case::fraction_underscore("1._5", LiteralError::Syntax)]
 #[case::empty_exponent("1e", LiteralError::Syntax)]
 #[case::empty_radix("0x", LiteralError::Syntax)]
 #[case::bad_octal_digit("0o8", LiteralError::Syntax)]

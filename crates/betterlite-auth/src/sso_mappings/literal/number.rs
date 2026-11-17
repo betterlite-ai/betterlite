@@ -125,7 +125,7 @@ impl Cursor<'_> {
             if byte != b'_' {
                 break;
             }
-            if after_underscore {
+            if after_underscore || digits.count == 0 {
                 return Err(LiteralError::Syntax);
             }
             after_underscore = true;
