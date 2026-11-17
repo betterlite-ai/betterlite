@@ -319,6 +319,9 @@ fn case_success() -> Evidence {
         &ObservationMetadata::default(),
         now(),
     );
+    assert_eq!(harness.counters.value("dep-1:successes"), Some(1));
+    let rpm_key = "global_router:dep-1:openai/gpt-4o:rpm:22-13";
+    assert_eq!(harness.counters.value(rpm_key), Some(1));
     harness.evidence(key)
 }
 
@@ -577,7 +580,9 @@ fn case_failure_minute_counts() -> Evidence {
         Some(ROUTER_COUNTER_TTL),
     );
     let facts = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
-    run_failure(&harness, &facts, None, None, None)
+    let evidence = run_failure(&harness, &facts, None, None, None);
+    assert_eq!(harness.counters.value("dep-1:fails"), Some(1));
+    evidence
 }
 
 fn case_failure_filters(facts: &FailureFacts) -> Evidence {
