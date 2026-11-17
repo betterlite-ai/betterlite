@@ -4,7 +4,8 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::sse::{
-    mark_sse_poller_spawned, run_id_from_sse_frames, run_id_from_sse_lines, sse_poller_spawned,
+    mark_sse_poller_spawned, run_id_from_sse_frames, run_id_from_sse_lines, split_lines,
+    sse_poller_spawned,
 };
 use super::support::logging_object;
 
@@ -70,6 +71,22 @@ fn reads_a_collected_stream_as_lines() {
         String::from("data: {\"run_id\": \"collected\"}"),
     ];
     assert_eq!(run_id_from_sse_lines(&lines), Some("collected".to_owned()));
+}
+
+#[rstest]
+#[case::a_unix_break("a\nb", &["a", "b"])]
+#[case::a_crlf_pair("a\r\nb", &["a", "b"])]
+#[case::a_lone_carriage_return("a\rb", &["a", "b"])]
+#[case::a_blank_line_between("a\n\nb", &["a", "", "b"])]
+#[case::a_line_separator("a\u{2028}b", &["a", "b"])]
+#[case::no_trailing_empty_line("a\n", &["a"])]
+#[case::no_text("", &[])]
+fn splits_lines_like_python(#[case] text: &str, #[case] expected: &[&str]) {
+    let lines = expected
+        .iter()
+        .map(|line| (*line).to_owned())
+        .collect::<Vec<String>>();
+    assert_eq!(split_lines(text), lines);
 }
 
 #[test]

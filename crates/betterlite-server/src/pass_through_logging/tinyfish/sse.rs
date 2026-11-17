@@ -69,7 +69,7 @@ pub fn sse_poller_spawned(logging_obj: &StreamLoggingObject) -> bool {
 }
 
 // Python splits a line at every one of these separators and adds no empty line after a trailing break.
-fn split_lines(text: &str) -> Vec<String> {
+pub(super) fn split_lines(text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut characters = text.chars().peekable();
