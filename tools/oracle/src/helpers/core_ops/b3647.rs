@@ -15,6 +15,7 @@ use betterlite_core::relay::assemblyai::{
     assembly_base_url_from_region, assembly_region_from_url,
 };
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_metadata_resolution::names::NameNormalizers;
@@ -135,7 +136,9 @@ fn poll(call: &Call) -> Result<Outcome, Box<HelperError>> {
     let transport = ScriptedTransport::new(&call.transcripts);
     let sink = RecordingSink::default();
     let bytes = serde_json::to_vec(&call.catalog).map_err(failure)?;
-    let pricing = CatalogLookup::new(&bytes, lookup_settings()).map_err(failure)?;
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Warn).map_err(failure)?;
+    let pricing =
+        CatalogLookup::new(&bytes, Arc::new(catalog), lookup_settings()).map_err(failure)?;
     let service = Arc::new(AssemblyAiLogging::new(
         AssemblyAiPorts {
             credentials: StaticCredentials {
