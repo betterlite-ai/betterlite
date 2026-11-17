@@ -174,7 +174,7 @@ impl SessionBudgetCache for FakeCache {
         _script: &FakeScript,
         key: &str,
         amount: Decimal,
-        _ttl: Duration,
+        ttl: Duration,
     ) -> impl Future<Output = Result<Decimal, FakeFailure>> + Send {
         if self.fails_script.load(Ordering::SeqCst) {
             return ready(Err(FakeFailure));
