@@ -144,21 +144,20 @@ fn bytes_text(body: &[u8]) -> String {
     } else {
         '\''
     };
-    let mut shown = format!("b{quote}");
-    for &byte in body {
-        match byte {
-            b'\\' => shown.push_str("\\\\"),
-            b'\n' => shown.push_str("\\n"),
-            b'\r' => shown.push_str("\\r"),
-            b'\t' => shown.push_str("\\t"),
-            _ if char::from(byte) == quote => {
-                shown.push('\\');
-                shown.push(char::from(byte));
-            }
-            0x20..=0x7e => shown.push(char::from(byte)),
-            _ => shown.push_str(&format!("\\x{byte:02x}")),
-        }
+    let escaped: String = body.iter().map(|byte| escaped_byte(*byte, quote)).collect();
+    format!("b{quote}{escaped}{quote}")
+}
+
+fn escaped_byte(byte: u8, quote: char) -> String {
+    if char::from(byte) == quote {
+        return format!("\\{quote}");
     }
-    shown.push(quote);
-    shown
+    match byte {
+        b'\\' => "\\\\".to_owned(),
+        b'\n' => "\\n".to_owned(),
+        b'\r' => "\\r".to_owned(),
+        b'\t' => "\\t".to_owned(),
+        _ if byte.is_ascii_graphic() || byte == b' ' => char::from(byte).to_string(),
+        _ => format!("\\x{byte:02x}"),
+    }
 }
