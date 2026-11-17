@@ -9,7 +9,7 @@ TEXT = TypeAdapter(str)
 
 
 class BlankClient(PrismaClient):
-    # hash_token and jsonify_object read no instance state, and the real __init__ builds a Prisma engine
+    # hash_token and jsonify_object read no state; the real __init__ builds a Prisma engine
     def __init__(self) -> None:
         pass
 
@@ -45,5 +45,9 @@ def run(input_value: Input) -> JsonValue:
                 reported[name] = {"kind": "encoded", "value": parsed}
         return {"fields": reported}
     if input_value["function"] == "class_hash":
-        return {"hashes": [client.hash_token(token) for token in input_value["tokens"]]}
-    return {"hashes": [hash_token(token) for token in input_value["tokens"]]}
+        hashes = [
+            TEXT.validate_python(client.hash_token(token)) for token in input_value["tokens"]
+        ]
+        return MAPPING.validate_python({"hashes": hashes})
+    hashes = [TEXT.validate_python(hash_token(token)) for token in input_value["tokens"]]
+    return MAPPING.validate_python({"hashes": hashes})
