@@ -341,6 +341,7 @@ async fn false_wait_no_rpc() {
 #[rstest]
 #[case::default_timeout(None, "the import timed out after 600 seconds")]
 #[case::explicit_timeout(Some(5), "the import timed out after 5 seconds")]
+#[case::negative_timeout(Some(-1), "the import timed out after 0 seconds")]
 #[tokio::test(start_paused = true)]
 async fn import_timeout(#[case] import_timeout: Option<i64>, #[case] message: &str) {
     let (_guard, logs) = install();
