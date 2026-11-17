@@ -9,9 +9,7 @@ use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 use betterlite_prompts::media::parts::RemoteMedia;
 use betterlite_prompts::message_content::Message;
 
-use crate::gemini_history::content::{CONTENT_TYPE, FORMAT, MIME_TYPE};
-use crate::gemini_history::media_source::{generated_image, text_of};
-use crate::gemini_media::mime::MimeHints;
+use crate::gemini_history::media_source::{generated_image, hints_of};
 use crate::gemini_media::policy::{GoogleProvider, inlines_remote};
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 
@@ -55,14 +53,6 @@ where
     let data_urls = fetch_images(urls, fetcher, mode).await?;
     rewrite_images(&mut prepared, &data_urls);
     Ok(prepared)
-}
-
-fn hints_of(fields: &Object) -> MimeHints {
-    MimeHints {
-        format: text_of(fields, FORMAT),
-        mime_type: text_of(fields, MIME_TYPE),
-        content_type: text_of(fields, CONTENT_TYPE),
-    }
 }
 
 // An assistant image is processed by LiteLLM's Gemini media walker even on Studio, so it always takes the Vertex policy
