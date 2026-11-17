@@ -2,6 +2,7 @@ mod scripted;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
+use std::mem::take;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
@@ -98,12 +99,13 @@ fn lookup_settings() -> LookupSettings {
     }
 }
 
-fn build_lookup(catalog: &IndexMap<String, Json>) -> Result<CatalogLookup, Box<HelperError>> {
-    let bytes = serde_json::to_vec(catalog).map_err(failure)?;
-    CatalogLookup::new(&bytes, lookup_settings()).map_err(failure)
-}
-
 fn outcome_of(transport: &ScriptedTransport, sink: &RecordingSink) -> Outcome {
+    let requests = take(
+        &mut *transport
+            .requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    );
     let logs = sink.logs.lock().unwrap_or_else(PoisonError::into_inner);
     let details = logs.first().map(|log| {
         (
@@ -114,7 +116,7 @@ fn outcome_of(transport: &ScriptedTransport, sink: &RecordingSink) -> Outcome {
     });
     let (model, provider, cost) = details.unwrap_or((None, None, None));
     Outcome {
-        requests: transport.take_requests(),
+        requests,
         model,
         provider,
         cost,
@@ -128,13 +130,15 @@ fn poll(call: &Call) -> Result<Outcome, Box<HelperError>> {
         .map_err(failure)?;
     let transport = ScriptedTransport::new(&call.transcripts);
     let sink = RecordingSink::default();
+    let bytes = serde_json::to_vec(&call.catalog).map_err(failure)?;
+    let pricing = CatalogLookup::new(&bytes, lookup_settings()).map_err(failure)?;
     let service = Arc::new(AssemblyAiLogging::new(
         AssemblyAiPorts {
             credentials: StaticCredentials {
                 key: call.api_key.as_deref().map(SecretString::from),
             },
             transport: transport.clone(),
-            pricing: build_lookup(&call.catalog)?,
+            pricing,
             sleeper: TokioSleeper,
             sink: sink.clone(),
         },

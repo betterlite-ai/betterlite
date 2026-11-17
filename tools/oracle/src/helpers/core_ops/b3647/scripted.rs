@@ -30,7 +30,7 @@ pub(super) struct Recorded {
 pub(super) struct ScriptedTransport {
     replies: Arc<Mutex<VecDeque<Reply>>>,
     repeat: Reply,
-    requests: Arc<Mutex<Vec<Recorded>>>,
+    pub(super) requests: Arc<Mutex<Vec<Recorded>>>,
 }
 
 impl ScriptedTransport {
@@ -44,10 +44,6 @@ impl ScriptedTransport {
             repeat,
             requests: Arc::new(Mutex::new(Vec::new())),
         }
-    }
-
-    pub(super) fn take_requests(&self) -> Vec<Recorded> {
-        std::mem::take(&mut *self.requests.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
