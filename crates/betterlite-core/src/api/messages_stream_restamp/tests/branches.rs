@@ -481,6 +481,7 @@ fn flush_disarms_the_stream() {
 #[case::done_payload("event: message_start\ndata: [DONE]\n\n")]
 #[case::empty_payload("event: message_start\ndata:   \n\n")]
 #[case::invalid_json("event: message_start\ndata: {oops\n\n")]
+#[case::non_object_payload("event: message_start\ndata: [1,2]\n\n")]
 #[case::no_data_line("event: message_start\n\n")]
 fn restamp_leaves_unrestampable_frames_alone(#[case] frame: &str) {
     let input = MessagesStreamRestampInput {
@@ -496,6 +497,15 @@ fn restamp_leaves_unrestampable_frames_alone(#[case] frame: &str) {
 fn restamp_chunk_keeps_bytes_without_the_marker() {
     let chunk = bytes(b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n");
     assert_eq!(restamp_chunk(&chunk, REQUESTED_MODEL), chunk);
+}
+
+#[test]
+fn restamp_chunk_restamps_bytes_with_the_marker() {
+    let frame = start_frame("upstream-model");
+    assert_eq!(
+        restamp_chunk(&bytes(frame.as_bytes()), REQUESTED_MODEL),
+        bytes(start_frame(REQUESTED_MODEL).as_bytes())
+    );
 }
 
 #[test]

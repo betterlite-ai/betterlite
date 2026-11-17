@@ -260,6 +260,25 @@ fn ping_frame(#[case] case: RestampCase) {
 }
 
 #[rstest]
+#[case::number(json("{\"type\":1}"))]
+#[case::boolean(json("{\"type\":true}"))]
+#[case::array(json("{\"type\":[]}"))]
+#[case::object(json("{\"type\":{}}"))]
+fn non_text_event_types_disarm_the_stream(#[case] first: Json) {
+    let input = MessagesStreamRestampInput {
+        requested_model: REQUESTED_MODEL.to_owned(),
+        chunks: vec![event(first.clone()), event(start_event("upstream-model"))],
+    };
+    let result = restamp_messages_stream(&input);
+    assert_eq!(
+        result.chunks,
+        vec![event(first), event(start_event("upstream-model"))],
+        "a non-text event type is neither absent nor ping, so the stream disarms"
+    );
+    assert_eq!(result.flushed, bytes(b""));
+}
+
+#[rstest]
 #[case::event_line(b"event: ping", true)]
 #[case::spaced_type(b"x \"type\": \"ping\" y", true)]
 #[case::compact_type(b"x \"type\":\"ping\" y", true)]
@@ -267,6 +286,33 @@ fn ping_frame(#[case] case: RestampCase) {
 #[case::empty(b"", false)]
 fn ping_marker_matching(#[case] frame: &[u8], #[case] expected: bool) {
     assert_eq!(is_ping_frame(frame), expected);
+}
+
+#[rstest]
+#[case::crlf("\r\n")]
+#[case::cr("\r")]
+fn crlf_and_cr_frame_ends_restamp(#[case] line_end: &str) {
+    let frame = format!(
+        "event: message_start{line_end}data: {}{line_end}{line_end}",
+        start_event_text("upstream-model")
+    );
+    let input = MessagesStreamRestampInput {
+        requested_model: REQUESTED_MODEL.to_owned(),
+        chunks: vec![text(&frame)],
+    };
+    let result = restamp_messages_stream(&input);
+    assert_eq!(
+        result.chunks,
+        vec![bytes(
+            format!(
+                "event: message_start{line_end}data: {}{line_end}{line_end}",
+                start_event_text(REQUESTED_MODEL)
+            )
+            .as_bytes()
+        )],
+        "{line_end:?} is one of LiteLLM's frame terminators"
+    );
+    assert_eq!(result.flushed, bytes(b""));
 }
 
 #[test]
