@@ -1,0 +1,13 @@
+kind: helper
+name: tinyfish-polling-invalid-runid
+call:
+  b3649:
+    function: async_run
+    api_key: key-1
+    run:
+      run_id: run/1
+      status: PENDING
+      num_of_steps: 0
+    replies: []
+env: {}
+compare: {ignore: []}
