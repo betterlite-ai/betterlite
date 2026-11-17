@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-batches-create-requests-seed
+call:
+  anthropic_batches:
+    create_requests:
+      environment: {ANTHROPIC_API_KEY: seed-key, ANTHROPIC_API_BASE: "https://seed.example/"}
+      url_bases: [null, "", "https://seed.example/v1/messages/batches"]
+env: {}
+compare: {ignore: []}

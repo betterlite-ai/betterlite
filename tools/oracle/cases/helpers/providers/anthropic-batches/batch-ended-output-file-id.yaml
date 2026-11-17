@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-batches-ended-output-file-id
+call:
+  anthropic_batches:
+    lifecycle:
+      now: 1704067200
+      bodies:
+        - '{"id":"msgbatch_1","processing_status":"ended","custom_id":"c1","results_url":"https://results.example","ended_at":"2024-01-01T01:02:03Z","request_counts":{"processing":1,"succeeded":2,"errored":3,"canceled":4,"expired":5}}'
+        - '{"id":"msgbatch_running","processing_status":"in_progress"}'
+        - '{"id":"msgbatch_canceling","processing_status":"canceling"}'
+        - '{"id":"msgbatch_other","processing_status":"other"}'
+env: {}
+compare: {ignore: []}
