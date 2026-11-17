@@ -30,6 +30,7 @@ fn an_opaque_or_malformed_token_has_no_claims() {
     assert!(decode_sso_token_claims(Some("opaque-token")).is_empty());
     assert!(decode_sso_token_claims(Some("one.two")).is_empty());
     assert!(decode_sso_token_claims(Some("a.b.c")).is_empty());
+    assert!(decode_sso_token_claims(Some(&token("[1,2]"))).is_empty());
 }
 
 #[test]
