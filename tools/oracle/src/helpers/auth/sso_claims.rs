@@ -15,7 +15,7 @@ use betterlite_config::sso_claims::{ClaimAttributes, load_claim_attributes};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -64,47 +64,68 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let attributes = load_claim_attributes(&input.attributes);
-        let emails = input
-            .emails
-            .iter()
-            .map(|email| normalize_email(email.as_deref()))
-            .collect::<Vec<Option<String>>>();
-        let roles = input
-            .groups
-            .iter()
-            .map(|groups| group_role(groups, input.role_mappings.as_ref()))
-            .collect::<Vec<Option<String>>>();
-        let decoded = input
-            .decode_tokens
-            .iter()
-            .map(|token| json!(decode_sso_token_claims(token.as_deref())))
-            .collect::<Vec<_>>();
-        let merged = input
-            .merge
-            .iter()
-            .map(|call| {
-                json!(merge_sso_token_claims(
-                    &call.userinfo,
-                    call.id_token.as_deref(),
-                    call.access_token.as_deref()
-                ))
-            })
-            .collect::<Vec<_>>();
-        let processed = input
-            .process
-            .iter()
-            .map(|call| process_call(call, &attributes))
-            .collect::<Result<Vec<_>, _>>()?;
-        let converted = convert_call(&input.convert, &attributes)?;
+        let claims = claim_results(input);
+        let (processed, converted) = exchange_results(input, &attributes)?;
         Ok(json!({
-            "emails": emails,
-            "roles": roles,
-            "decoded": decoded,
-            "merged": merged,
+            "emails": claims.emails,
+            "roles": claims.roles,
+            "decoded": claims.decoded,
+            "merged": claims.merged,
             "processed": processed,
             "converted": converted,
         }))
     }
+}
+
+struct ClaimResults {
+    emails: Vec<Option<String>>,
+    roles: Vec<Option<String>>,
+    decoded: Vec<BTreeMap<String, TypedValue>>,
+    merged: Vec<BTreeMap<String, TypedValue>>,
+}
+
+fn claim_results(input: &Input) -> ClaimResults {
+    ClaimResults {
+        emails: input
+            .emails
+            .iter()
+            .map(|email| normalize_email(email.as_deref()))
+            .collect(),
+        roles: input
+            .groups
+            .iter()
+            .map(|groups| group_role(groups, input.role_mappings.as_ref()))
+            .collect(),
+        decoded: input
+            .decode_tokens
+            .iter()
+            .map(|token| decode_sso_token_claims(token.as_deref()))
+            .collect(),
+        merged: input
+            .merge
+            .iter()
+            .map(|call| {
+                merge_sso_token_claims(
+                    &call.userinfo,
+                    call.id_token.as_deref(),
+                    call.access_token.as_deref(),
+                )
+            })
+            .collect(),
+    }
+}
+
+fn exchange_results(
+    input: &Input,
+    attributes: &ClaimAttributes,
+) -> Result<(Vec<Value>, OpenIdIdentity), Box<HelperError>> {
+    let processed = input
+        .process
+        .iter()
+        .map(|call| process_call(call, attributes))
+        .collect::<Result<Vec<_>, _>>()?;
+    let converted = convert_call(&input.convert, attributes)?;
+    Ok((processed, converted))
 }
 
 fn handler(settings: &JwtAuthSettings) -> JwtHandler {
