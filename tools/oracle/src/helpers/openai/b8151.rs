@@ -56,7 +56,7 @@ impl Helper for Op {
             }),
             Input::TranscriptionRequest { calls } => collect(calls, media::transcription_value),
             Input::VideoForm { calls } => collect(calls, media::video_value),
-            Input::DecisionsKey { calls } => collect(calls, decisions::key_value),
+            Input::DecisionsKey { calls } => collect(calls, |call| Ok(decisions::key_value(call))),
         }
     }
 }

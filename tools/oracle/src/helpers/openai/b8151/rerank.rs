@@ -78,17 +78,16 @@ pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(response).map_err(|error| invalid(error.to_string()))
 }
 
-fn rerank_call<'call>(call: &'call ParamsCall) -> CohereRerankCall<'call> {
+fn rerank_call(call: &ParamsCall) -> CohereRerankCall<'_> {
     CohereRerankCall {
         model: &call.model,
         query: &call.query,
         documents: &call.documents,
         top_n: call.top_n,
         rank_fields: call.rank_fields.as_deref(),
-        return_documents: match call.return_documents {
-            Some(flag) => ReturnDocuments::Value(flag),
-            None => ReturnDocuments::Null,
-        },
+        return_documents: call
+            .return_documents
+            .map_or(ReturnDocuments::Null, ReturnDocuments::Value),
         max_chunks_per_doc: call.max_chunks_per_doc,
         max_tokens_per_doc: call.max_tokens_per_doc,
         instruction: call.instruction.as_deref(),
@@ -106,6 +105,13 @@ fn rerank_failure(error: HostedVllmRerankError) -> Box<HelperError> {
             code: None,
             message: format!("hosted_vllm rerank: {source}"),
         }),
-        other => invalid(other.to_string()),
+        other @ (HostedVllmRerankError::MissingApiBase
+        | HostedVllmRerankError::MaxChunksPerDoc
+        | HostedVllmRerankError::Parse { .. }
+        | HostedVllmRerankError::NoResults { .. }
+        | HostedVllmRerankError::MissingResultFields { .. }
+        | HostedVllmRerankError::Shape(..)
+        | HostedVllmRerankError::Encode(..)
+        | HostedVllmRerankError::Score(..)) => invalid(other.to_string()),
     }
 }
