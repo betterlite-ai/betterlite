@@ -39,6 +39,24 @@ fn explicit_values_keep_zero_and_default_only_the_missing_key(
     assert_eq!(record.chunking_config.chunk_overlap, chunk_overlap);
 }
 
+#[rstest]
+#[case::absent_strategy(None, 4096, 300)]
+#[case::partial_strategy(Some(r#"{"chunk_size":512}"#), 512, 300)]
+fn the_injected_defaults_fill_the_missing_keys(
+    #[case] text: Option<&str>,
+    #[case] chunk_size: i64,
+    #[case] chunk_overlap: i64,
+) {
+    let parsed = text.map(strategy);
+    let defaults = ChunkDefaults {
+        chunk_size: 4096,
+        chunk_overlap: 300,
+    };
+    let record = transform_chunking_strategy(parsed.as_ref(), defaults);
+    assert_eq!(record.chunking_config.chunk_size, chunk_size);
+    assert_eq!(record.chunking_config.chunk_overlap, chunk_overlap);
+}
+
 #[test]
 fn custom_separators_warn_and_are_ignored() {
     let (_guard, logs) = install();

@@ -38,6 +38,15 @@ fn missing_corpus() {
 }
 
 #[test]
+fn an_empty_corpus_id_is_missing() {
+    let mut record = corpus_record();
+    record.vector_store_id = Some(String::new());
+    // resolution fails, so no store call exists that could reach the upload or the import
+    let error = resolve(&options(record, None)).unwrap_err();
+    assert!(matches!(error, RagIngestError::MissingCorpus));
+}
+
+#[test]
 fn the_other_required_fields() {
     let mut without_bucket = corpus_record();
     without_bucket.vertex_project = Some(PROJECT.to_owned());
@@ -227,6 +236,19 @@ async fn upload_then_import() {
         "Uploading file to GCS via litellm.files.acreate_file: report.txt (bucket: {BUCKET})"
     )));
     assert!(debugs.contains(&format!("Importing {GCS_URI} into corpus {CORPUS_ID}")));
+}
+
+#[tokio::test]
+async fn an_empty_content_type_takes_the_default() {
+    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    ingest
+        .store(store_request(b"hello", "report.txt", Some("")))
+        .await
+        .unwrap();
+    assert_eq!(
+        recorder.upload().content_type.as_deref(),
+        Some(DEFAULT_CONTENT_TYPE)
+    );
 }
 
 #[tokio::test]

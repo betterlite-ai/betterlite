@@ -110,7 +110,7 @@ async fn import_request_carries_the_chunking_config() {
         other => panic!("the import source is a GCS source, got {other:?}"),
     };
     assert_eq!(source.uris, vec![GCS_URI.to_owned()]);
-    let chunking = config
+    let wire_chunking = config
         .rag_file_transformation_config
         .as_ref()
         .expect("the transformation config is set")
@@ -120,7 +120,7 @@ async fn import_request_carries_the_chunking_config() {
         .chunking_config
         .as_ref()
         .expect("the chunking entry is set");
-    let WireChunkingConfig::FixedLengthChunking(fixed) = chunking else {
+    let WireChunkingConfig::FixedLengthChunking(fixed) = wire_chunking else {
         panic!("the chunking config is fixed length");
     };
     assert_eq!(fixed.chunk_size, 512);
