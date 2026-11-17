@@ -13,13 +13,23 @@ SPEECH_MAX_RETRIES: Final = 0
 OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 OBJECTS: Final = TypeAdapter(list[JsonValue])
 TEXT: Final = TypeAdapter(str)
-BYTES: Final = TypeAdapter(bytes)
+BYTES: Final = TypeAdapter(list[int])
 
 
 def required(value: str | None, name: str) -> str:
     if value is None:
         raise ValueError(f"the case needs {name}")
     return value
+
+
+def status_error(given: JsonValue) -> JsonValue:
+    raised = OBJECT.validate_python(given)
+    return {
+        "status": raised["status"],
+        "type": raised["type"],
+        "param": raised["param"],
+        "code": raised["code"],
+    }
 
 
 def leaf_parts(files: list[JsonValue]) -> list[JsonValue]:

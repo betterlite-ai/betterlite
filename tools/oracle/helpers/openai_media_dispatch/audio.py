@@ -21,7 +21,7 @@ from openai_transcription.probe import Answer as TranscriptionAnswer
 from openai_transcription.probe import Probe as TranscriptionProbe
 
 from .cases import AudioCases, SpeechCase, TranscriptionCase
-from .support import BYTES, OBJECT, OBJECTS, SPEECH_MAX_RETRIES, TEXT, TIMEOUT
+from .support import BYTES, OBJECT, OBJECTS, SPEECH_MAX_RETRIES, TEXT, TIMEOUT, status_error
 
 litellm.suppress_debug_info = True
 
@@ -67,20 +67,14 @@ def speech(case: SpeechCase) -> JsonValue:
     result = OBJECT.validate_python(outcome["result"])
     raised = result.get("raised")
     if raised is not None:
-        error = OBJECT.validate_python(raised)
         return {
             "request": sent_view,
             "status": None,
             "content_type": None,
             "body": None,
-            "error": {
-                "status": error["status"],
-                "type": error["type"],
-                "param": error["param"],
-                "code": error["code"],
-            },
+            "error": status_error(raised),
         }
-    content = BYTES.validate_python(result["body"])
+    content = bytes(BYTES.validate_python(result["body"]))
     return {
         "request": sent_view,
         "status": result["status"],
@@ -122,16 +116,10 @@ def transcription(case: TranscriptionCase) -> JsonValue:
     }
     error = outcome["error"]
     if error is not None:
-        raised = OBJECT.validate_python(error)
         return {
             "request": request,
             "reply": None,
-            "error": {
-                "status": raised["status"],
-                "type": raised["type"],
-                "param": raised["param"],
-                "code": raised["code"],
-            },
+            "error": status_error(error),
         }
     result = OBJECT.validate_python(outcome["result"])
     response = OBJECT.validate_python(result["response"])
