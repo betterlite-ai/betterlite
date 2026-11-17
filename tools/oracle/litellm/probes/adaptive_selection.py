@@ -1,6 +1,6 @@
 import asyncio
 import random
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from random import betavariate as stock_betavariate
 from typing import ClassVar, Literal
@@ -177,7 +177,7 @@ class ScriptedRandom(random.Random):
 
 
 @contextmanager
-def scripted_betavariate(scripted: ScriptedRandom) -> Iterator[None]:
+def scripted_betavariate(scripted: ScriptedRandom) -> Generator[None, None, None]:
     random.betavariate = scripted.betavariate
     try:
         yield
