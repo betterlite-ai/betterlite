@@ -9,7 +9,6 @@ use betterlite_core::api::messages_chat_stream::view::AnthropicSseStream;
 use betterlite_core::api::messages_stream_split::AsyncChunkSplitter;
 use betterlite_core::api::messages_stream_split::errors::StreamFailure;
 use betterlite_core::api::messages_stream_usage::state::{StreamSetup, StreamState};
-use betterlite_models::decisions::HiddenParams;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
@@ -75,13 +74,7 @@ pub(super) async fn run(
         RunStream::Wrapper(driver)
     } else {
         RunStream::View {
-            view: AnthropicSseStream {
-                stream: driver,
-                hidden_params: HiddenParams::new(),
-                closed: false,
-                finished: false,
-                limits: wire_limits(),
-            },
+            view: AnthropicSseStream::new(driver, wire_limits()),
             observing: spec.mode == ChatMode::View,
         }
     };

@@ -212,13 +212,7 @@ fn started(chunks: Vec<StreamChunk>) -> Driver {
 }
 
 fn byte_view(source: Scripted, setup: StreamSetup) -> ByteView {
-    AnthropicSseStream {
-        stream: driver(source, setup),
-        hidden_params: IndexMap::new(),
-        closed: false,
-        finished: false,
-        limits: LIMITS,
-    }
+    AnthropicSseStream::new(driver(source, setup), LIMITS)
 }
 
 fn sync_frames(chunks: Vec<StreamChunk>, message_id: &str) -> SyncStream {
@@ -695,7 +689,14 @@ async fn async_byte_view_metadata() {
     source.chunks = Some(vec![recorded.clone()]);
     source.messages = Some(messages.clone());
     let mut view = byte_view(source, setup());
-    assert!(view.hidden_params.is_empty(), "the view starts with none");
+    assert!(
+        view.hidden_params.is_empty(),
+        "the constructor starts the view with none"
+    );
+    view.hidden_params.insert(
+        "cache_key".to_owned(),
+        decisions::Json::Text("k".to_owned()),
+    );
     assert_eq!(view.model(), "claude-sonnet-4-5");
     assert_eq!(
         view.chunks(),
@@ -716,6 +717,11 @@ async fn async_byte_view_metadata() {
     assert!(
         view.next_frame().await.is_none(),
         "closing twice changes nothing"
+    );
+    assert_eq!(
+        view.hidden_params.get("cache_key"),
+        Some(&decisions::Json::Text("k".to_owned())),
+        "the hidden params the proxy stamped survive the frames and aclose"
     );
     assert!(
         view.stream

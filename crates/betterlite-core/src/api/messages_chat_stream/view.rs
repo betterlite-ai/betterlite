@@ -26,6 +26,18 @@ where
     S: AsyncChunkSource + Send,
     I: IdSource,
 {
+    // LiteLLM's AnthropicSSEStream.__init__: the byte generator, no hidden params yet, and an open view
+    #[must_use]
+    pub fn new(stream: ChatStreamDriver<S, I>, limits: WireDecodeLimits) -> Self {
+        Self {
+            stream,
+            hidden_params: HiddenParams::new(),
+            closed: false,
+            finished: false,
+            limits,
+        }
+    }
+
     // __anext__: the next encoded frame, and the one error event instead of a failure that would end the stream
     pub async fn next_frame(&mut self) -> Option<Vec<u8>> {
         if self.closed || self.finished {
