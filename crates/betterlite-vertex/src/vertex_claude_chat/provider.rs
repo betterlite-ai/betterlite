@@ -4,8 +4,7 @@ use super::PROVIDER;
 
 pub const PROVIDER_BETA: &str = "vertex_ai_beta";
 
-// LiteLLM accepts the two Vertex routing names, any model carrying "claude", and every model its
-// vertex_anthropic_models catalog lists.
+// LiteLLM accepts both Vertex routing names, any model carrying "claude", and the vertex_anthropic_models list.
 #[must_use]
 pub fn is_supported_model(
     model: &str,

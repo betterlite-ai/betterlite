@@ -27,11 +27,7 @@ const EXTRA_HEADERS: &str = "extra_headers";
 const ANTHROPIC_BETA: &str = "anthropic_beta";
 const VERTEX_REQUEST: &str = "is_vertex_request";
 
-// Vertex AI Claude wants every host to see the image bytes, so every image_url part is inlined, https
-// included, before the parent shaping. LiteLLM reads the beta features after that shaping, off the
-// params it filtered, so compose reads the shaped body and the messages still carry the file ids.
-// model and extra_headers then leave the body, output_config is filtered for the real model, and the
-// betas go to both the body field and the header.
+// Inline every image_url, drop model and extra_headers, and write the betas to the body list and the header.
 pub async fn prepare<Source, Transport, Fetcher, Blocks, Ids>(
     mut request: AnthropicRequest<'_>,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
@@ -75,8 +71,7 @@ where
     Ok(prepared)
 }
 
-// The message records and the wire records differ only in their field shapes, so one JSON pass converts
-// either way; a string pass keeps arbitrary-precision numbers out of the flattened fields.
+// One JSON string pass converts between the message and wire records, keeping arbitrary-precision numbers out.
 fn convert_each<Source, Target, FileFailure>(
     items: &[Source],
 ) -> Result<Vec<Target>, RequestError<FileFailure>>
@@ -93,8 +88,7 @@ where
     Ok(converted)
 }
 
-// LiteLLM writes a list into the body and a comma-joined string into the header, both in set order;
-// betterlite sorts, so the bytes stay the same run to run.
+// LiteLLM writes set order; betterlite sorts so the body list and the comma-joined header are run-stable.
 fn write_betas(
     body: &mut IndexMap<String, Json>,
     headers: &mut AnthropicHeaders,

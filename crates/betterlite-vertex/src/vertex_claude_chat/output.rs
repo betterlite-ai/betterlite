@@ -16,8 +16,7 @@ pub const EFFORT: &str = "effort";
 // Keys Vertex AI Claude rejects whatever the model; the set is empty at the pin.
 pub const UNSUPPORTED_OUTPUT_CONFIG_KEYS: [&str; 0] = [];
 
-// output_format passes untouched, output_config keeps every key but an effort the model cannot take,
-// and an output_config left empty goes away so the body carries no empty object.
+// output_format passes untouched; output_config keeps every key but an unsupported effort and vanishes when empty.
 pub async fn sanitize_output_params<Source, Transport>(
     body: &mut IndexMap<String, Json>,
     model: &str,

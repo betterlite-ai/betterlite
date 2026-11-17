@@ -17,8 +17,7 @@ use super::PROVIDER;
 // LiteLLM maps a schema-backed response_format through this model so the tool shape is chosen.
 pub const RESPONSE_FORMAT_FALLBACK_MODEL: &str = "claude-3-sonnet-20240229";
 
-// The response_format branch reads the model's native structured-output capability, maps through the
-// fallback model when the model has none, then translates legacy thinking for the model actually asked for.
+// A response_format maps through the fallback model unless the model has native structured output; thinking then sees the real model.
 pub async fn map_openai_params<Source, Transport>(
     request: &ParamsRequest<'_>,
     non_default_params: &IndexMap<String, Json>,

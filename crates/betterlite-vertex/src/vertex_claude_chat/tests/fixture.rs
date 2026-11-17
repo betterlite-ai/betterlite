@@ -60,8 +60,7 @@ use crate::vertex_claude_chat::params::map_openai_params;
 use crate::vertex_claude_chat::request::prepare;
 use crate::vertex_claude_chat::response::{TransformCall, transform_response};
 
-// Every model that has to resolve only under vertex_ai carries the provider prefix, so a request that
-// failed to force the provider would fall back to the plain map and lose the capability.
+// Models that resolve only under vertex_ai carry the prefix, so a missed provider override loses the capability.
 pub(crate) const MODELS: &str = r#"{
     "claude-haiku-4-5": {"litellm_provider": "vertex_ai", "supports_speed": true},
     "claude-3-sonnet-20240229": {"litellm_provider": "vertex_ai", "supports_forced_tool_use": false},
@@ -119,13 +118,10 @@ impl RemoteMediaFetcher for RefusingFetcher {
         ready(Err(refused(url)))
     }
 
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        let url = urls.first().map_or("", String::as_str);
-        ready(Err(refused(url)))
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let first = urls.first().map_or("", String::as_str);
+        self.convert_url(first).await?;
+        Ok(Vec::new())
     }
 }
 
@@ -158,11 +154,15 @@ impl RemoteMediaFetcher for InliningFetcher {
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        self.urls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend(urls.iter().cloned());
-        ready(Ok(vec![INLINED_DATA_URL.to_owned(); urls.len()]))
+        let mut inlined = Vec::with_capacity(urls.len());
+        for url in urls {
+            self.urls
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(url.clone());
+            inlined.push(INLINED_DATA_URL.to_owned());
+        }
+        ready(Ok(inlined))
     }
 }
 

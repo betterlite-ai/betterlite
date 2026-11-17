@@ -55,8 +55,7 @@ impl BetaError {
     }
 }
 
-// The subclass's own set: B568's automatic betas, the Vertex tool-search beta, its context edits and
-// the caller's anthropic-beta extras. The parent's header step is skipped, so this is the whole set.
+// The whole set: B568's automatic betas, tool search, context edits and the caller's extras, since the parent header step is skipped.
 pub async fn compose<Source, Transport>(
     model: &str,
     params: &IndexMap<String, Json>,
@@ -115,8 +114,7 @@ where
     Ok(betas)
 }
 
-// Only compact_20260112 selects the compact beta; every other edit type, "compaction" included,
-// selects the context-management beta. The parent classifier folds "compaction" into compact.
+// Only compact_20260112 selects the compact beta; every other edit type, "compaction" included, selects context management.
 fn add_context_management(
     betas: &mut BTreeSet<String>,
     context_management: &Json,
