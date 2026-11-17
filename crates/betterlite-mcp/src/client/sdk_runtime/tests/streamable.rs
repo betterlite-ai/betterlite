@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use rmcp::model::{ClientCapabilities, ProtocolVersion as SdkProtocolVersion};
 
 use crate::client::sdk_runtime::convert::ServerCapabilitiesWire;
 use crate::client::sdk_runtime::handler::ServerRequestHandlers;
+use crate::client::sdk_runtime::session::SdkSession;
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::SessionError;
 use crate::client::sessions::negotiate::{LegacyVersion, ProtocolVersion};
@@ -12,6 +14,7 @@ use crate::client::sessions::transport::TransportType;
 use crate::client::tools::calling::{CallToolOptions, call_tool};
 use crate::client::tools::listing::list_tools;
 use crate::client::tools::result::{ContentBlock, ToolCallResult};
+use crate::tools::pagination::McpSession;
 use crate::tools::tool_calls::CallRequest;
 
 use super::server::{
@@ -43,8 +46,8 @@ fn text_of(result: &ToolCallResult) -> &str {
 #[tokio::test]
 async fn a_streamable_http_session_lists_every_tool_page() {
     let server = serve_http(TestServer::standard()).await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Http),
         &server.url,
         support::CALL_TIMEOUT,
@@ -63,8 +66,8 @@ async fn a_streamable_http_session_lists_every_tool_page() {
 #[tokio::test]
 async fn the_handshake_adopts_the_fallback_version_capabilities_and_instructions() {
     let server = serve_http(TestServer::legacy()).await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Http),
         &server.url,
         support::CALL_TIMEOUT,
@@ -90,8 +93,8 @@ async fn a_configured_version_goes_out_in_the_initialize_request() {
     let server = serve_http(TestServer::standard()).await;
     let mut settings = support::settings(TransportType::Http);
     settings.protocol_version = ProtocolVersion::Legacy(LegacyVersion::Jun2025);
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         settings,
         &server.url,
         support::CALL_TIMEOUT,
@@ -109,8 +112,8 @@ async fn a_configured_version_goes_out_in_the_initialize_request() {
 #[tokio::test]
 async fn a_tool_call_forwards_every_progress_update() {
     let server = serve_http(TestServer::standard()).await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Http),
         &server.url,
         support::CALL_TIMEOUT,
@@ -131,8 +134,8 @@ async fn a_tool_call_forwards_every_progress_update() {
 #[tokio::test]
 async fn an_is_error_result_stays_a_complete_result() {
     let server = serve_http(TestServer::standard()).await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Http),
         &server.url,
         support::CALL_TIMEOUT,
@@ -155,8 +158,8 @@ async fn an_is_error_result_stays_a_complete_result() {
 #[tokio::test]
 async fn a_json_rpc_error_is_a_protocol_failure() {
     let server = serve_http(TestServer::standard()).await;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         support::settings(TransportType::Http),
         &server.url,
         support::CALL_TIMEOUT,
@@ -182,17 +185,29 @@ async fn answered(
     name: &str,
     handlers: ServerRequestHandlers,
 ) -> Result<String, SessionError<SdkError>> {
-    let server = serve_http(TestServer::standard()).await;
+    let (result, _listings) = called_on(TestServer::standard(), name, RAISE, handlers).await?;
+    Ok(text_of(&result).to_owned())
+}
+
+async fn called_on(
+    server: TestServer,
+    name: &str,
+    options: CallToolOptions,
+    handlers: ServerRequestHandlers,
+) -> Result<(ToolCallResult, usize), SessionError<SdkError>> {
+    let listings = Arc::clone(&server.listings);
+    let server = serve_http(server).await;
     let mut settings = support::settings(TransportType::Http);
     settings.handlers = handlers;
-    let mut client = support::client_for(
-        support::runtime(),
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
         settings,
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let result = call_tool(&mut client, &call(name), None::<&RecordingHost>, RAISE).await?;
-    Ok(text_of(&result).to_owned())
+    let result = call_tool(&mut client, &call(name), None::<&RecordingHost>, options).await?;
+    let count = listings.load(Ordering::SeqCst);
+    Ok((result, count))
 }
 
 #[tokio::test]
@@ -327,4 +342,148 @@ async fn a_method_the_handler_does_not_know_is_method_not_found() {
         answer,
         "error -32601: Method not found: \"not/a-real-method\""
     );
+}
+
+#[tokio::test]
+async fn a_tool_result_that_matches_its_output_schema_is_complete() {
+    let server = TestServer::standard().with_output_schemas();
+    let (result, listings) =
+        called_on(server, "schema-ok", RAISE, ServerRequestHandlers::default())
+            .await
+            .unwrap();
+    assert_eq!(text_of(&result), "structured");
+    // the session had not seen the tool's schema, so it listed the tools once before validating
+    assert_eq!(listings, 1);
+}
+
+#[tokio::test]
+async fn a_listed_tool_without_an_output_schema_skips_validation() {
+    let server = TestServer::standard().with_output_schemas();
+    let (result, listings) = called_on(server, "plain", RAISE, ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert_eq!(text_of(&result), "plain");
+    assert_eq!(listings, 1);
+}
+
+#[tokio::test]
+async fn a_tool_the_listing_does_not_name_is_called_without_validation() {
+    let server = TestServer::standard().with_output_schemas();
+    let (result, listings) = called_on(server, "echo", RAISE, ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert_eq!(text_of(&result), "echoed");
+    assert_eq!(listings, 1);
+}
+
+#[tokio::test]
+async fn a_result_missing_the_structured_content_its_schema_needs_is_a_runtime_failure() {
+    let server = TestServer::standard().with_output_schemas();
+    let error = called_on(
+        server,
+        "schema-missing",
+        RAISE,
+        ServerRequestHandlers::default(),
+    )
+    .await
+    .expect_err("the tool declares an output schema");
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+}
+
+#[tokio::test]
+async fn structured_content_that_breaks_the_output_schema_is_a_runtime_failure() {
+    let server = TestServer::standard().with_output_schemas();
+    let error = called_on(
+        server,
+        "schema-invalid",
+        RAISE,
+        ServerRequestHandlers::default(),
+    )
+    .await
+    .expect_err("the structured content is not an integer");
+    assert!(matches!(error, SessionError::Runtime(_)), "{error}");
+}
+
+#[tokio::test]
+async fn an_error_result_with_an_output_schema_skips_validation() {
+    let server = TestServer::standard().with_output_schemas();
+    let (result, listings) = called_on(
+        server,
+        "schema-error",
+        CallToolOptions::default(),
+        ServerRequestHandlers::default(),
+    )
+    .await
+    .unwrap();
+    let ToolCallResult::Complete(complete) = &result else {
+        panic!("expected a complete tool result");
+    };
+    assert!(complete.is_error);
+    assert_eq!(text_of(&result), "the tool failed");
+    assert_eq!(listings, 0);
+}
+
+#[tokio::test]
+async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
+    let server = TestServer::standard().with_output_schemas();
+    let listings = Arc::clone(&server.listings);
+    let server = serve_http(server).await;
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
+        support::settings(TransportType::Http),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let result = run_with_session(
+        &mut client,
+        async |session| {
+            let first = <SdkSession as McpSession>::call_tool(session, call("schema-ok"))
+                .await
+                .unwrap();
+            let second = <SdkSession as McpSession>::call_tool(session, call("schema-ok"))
+                .await
+                .unwrap();
+            assert_eq!(text_of(&first), "structured");
+            Ok::<ToolCallResult, SessionError<SdkError>>(second)
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(text_of(&result), "structured");
+    assert_eq!(listings.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
+    let server = TestServer::standard().with_output_schemas();
+    let listings = Arc::clone(&server.listings);
+    let server = serve_http(server).await;
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
+        support::settings(TransportType::Http),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let result = run_with_session(
+        &mut client,
+        async |session| {
+            let first = <SdkSession as McpSession>::list_tools(session, None)
+                .await
+                .unwrap();
+            assert_eq!(first.tools.len(), 7);
+            let second =
+                <SdkSession as McpSession>::list_tools(session, first.next_cursor.as_deref())
+                    .await
+                    .unwrap();
+            assert_eq!(second.tools.len(), 1);
+            <SdkSession as McpSession>::call_tool(session, call("schema-ok")).await
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(text_of(&result), "structured");
+    // the second page is complete, so schema-ok left the cache and the call lists the first page again
+    assert_eq!(listings.load(Ordering::SeqCst), 3);
 }

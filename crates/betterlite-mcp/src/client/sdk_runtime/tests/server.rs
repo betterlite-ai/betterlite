@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
@@ -35,6 +37,8 @@ pub(crate) struct TestServer {
     protocol_version: ProtocolVersion,
     supported: Vec<ProtocolVersion>,
     instructions: &'static str,
+    schemas: bool,
+    pub(crate) listings: Arc<AtomicUsize>,
 }
 
 impl TestServer {
@@ -43,6 +47,8 @@ impl TestServer {
             protocol_version: ProtocolVersion::LATEST_WITH_INITIALIZE,
             supported: ProtocolVersion::KNOWN_VERSIONS.to_vec(),
             instructions: INSTRUCTIONS,
+            schemas: false,
+            listings: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -51,7 +57,14 @@ impl TestServer {
             protocol_version: ProtocolVersion::V_2025_06_18,
             supported: vec![ProtocolVersion::V_2025_06_18],
             instructions: INSTRUCTIONS,
+            schemas: false,
+            listings: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    pub(crate) fn with_output_schemas(mut self) -> Self {
+        self.schemas = true;
+        self
     }
 
     fn config(&self) -> ServerConfig {
@@ -87,8 +100,9 @@ impl ServerHandler for TestServer {
         if context.meta.get_progress_token().is_none() {
             return Err(ErrorData::invalid_params("missing progress token", None));
         }
+        let _previous = self.listings.fetch_add(1, Ordering::SeqCst);
         let cursor = request.and_then(|params| params.cursor);
-        let (tools, next) = match cursor.as_deref() {
+        let (mut tools, next) = match cursor.as_deref() {
             None => (
                 vec![
                     Tool::new("alpha", "the first tool", JsonObject::new()),
@@ -102,6 +116,9 @@ impl ServerHandler for TestServer {
             ),
             Some(_) => (Vec::new(), None),
         };
+        if self.schemas && cursor.is_none() {
+            tools.extend(schema_tools());
+        }
         let mut result = ListToolsResult::with_all_items(tools);
         result.next_cursor = next;
         Ok(result)
@@ -116,6 +133,19 @@ impl ServerHandler for TestServer {
             "echo" => CallToolResult::success(vec![ContentBlock::text("echoed")]),
             "fail" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
             "rpc-error" => return Err(ErrorData::invalid_params("bad arguments", None)),
+            "plain" => CallToolResult::success(vec![ContentBlock::text("plain")]),
+            "schema-ok" => {
+                let mut result = CallToolResult::success(vec![ContentBlock::text("structured")]);
+                result.structured_content = Some(json!({"answer": 42}));
+                result
+            }
+            "schema-missing" => CallToolResult::success(vec![ContentBlock::text("unstructured")]),
+            "schema-invalid" => {
+                let mut result = CallToolResult::success(vec![ContentBlock::text("wrong")]);
+                result.structured_content = Some(json!({"answer": "no"}));
+                result
+            }
+            "schema-error" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
             "progress" => {
                 let token = context
                     .meta
@@ -197,7 +227,7 @@ impl ServerHandler for TestServer {
             "protocol-version" => {
                 let version = context
                     .extensions
-                    .get::<axum::http::request::Parts>()
+                    .get::<http::request::Parts>()
                     .and_then(|parts| parts.headers.get("mcp-protocol-version"))
                     .and_then(|value| value.to_str().ok())
                     .unwrap_or("missing");
@@ -249,6 +279,50 @@ impl ServerHandler for TestServer {
         };
         Ok(CallToolResponse::from(outcome))
     }
+}
+
+fn schema_tools() -> Vec<Tool> {
+    let schema = Arc::new(output_schema());
+    vec![
+        Tool::new(
+            "plain",
+            "a tool without an output schema",
+            JsonObject::new(),
+        ),
+        Tool::new(
+            "schema-ok",
+            "a tool with a matching output schema",
+            JsonObject::new(),
+        )
+        .with_raw_output_schema(Arc::clone(&schema)),
+        Tool::new(
+            "schema-missing",
+            "a tool that returns no structured content",
+            JsonObject::new(),
+        )
+        .with_raw_output_schema(Arc::clone(&schema)),
+        Tool::new(
+            "schema-invalid",
+            "a tool that returns the wrong structured content",
+            JsonObject::new(),
+        )
+        .with_raw_output_schema(Arc::clone(&schema)),
+        Tool::new(
+            "schema-error",
+            "a tool whose error result skips validation",
+            JsonObject::new(),
+        )
+        .with_raw_output_schema(Arc::clone(&schema)),
+    ]
+}
+
+fn output_schema() -> JsonObject {
+    serde_json::from_value(json!({
+        "type": "object",
+        "properties": {"answer": {"type": "integer"}},
+        "required": ["answer"]
+    }))
+    .expect("the test output schema is an object")
 }
 
 // The outcome of a server-initiated request is reported through the tool result, so a case asserts on the wire answer

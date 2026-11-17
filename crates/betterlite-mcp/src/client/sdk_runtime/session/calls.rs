@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::PoisonError;
 
 use rmcp::ServiceError;
 use rmcp::model::{
@@ -54,10 +55,60 @@ where
     }
     let sdk_request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
     match session.exchange_with_progress(sdk_request, sink).await? {
-        ServerResult::CallToolResult(result) => tool_call_result(&result),
+        ServerResult::CallToolResult(result) => {
+            // The SDK validates every non-error tool result against the tool's declared output schema
+            if result.is_error != Some(true) {
+                validate_tool_result(session, &request.name, &result).await?;
+            }
+            tool_call_result(&result)
+        }
         ServerResult::InputRequiredResult(result) => input_required_result(&result),
         other => Err(unexpected_response(&other)),
     }
+}
+
+// The SDK lists the tools when it has not seen the tool's schema, then insists on structured content that matches it
+async fn validate_tool_result(
+    session: &SdkSession,
+    name: &str,
+    result: &rmcp::model::CallToolResult,
+) -> Result<(), SdkError> {
+    let known = session
+        .tool_output_schemas
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .contains_key(name);
+    if !known {
+        let params = PaginatedRequestParams::default();
+        let request = ClientRequest::ListToolsRequest(ListToolsRequest::with_param(params));
+        let response = session.exchange_with_progress(request, &Silent).await?;
+        let ServerResult::ListToolsResult(listing) = response else {
+            return Err(unexpected_response(&response));
+        };
+        session.absorb_tool_listing(&listing);
+    }
+    let schema = session
+        .tool_output_schemas
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(name)
+        .cloned()
+        .flatten();
+    let Some(schema) = schema else {
+        return Ok(());
+    };
+    let Some(content) = result.structured_content.as_ref() else {
+        return Err(SdkError::Service(ServiceError::UnexpectedResponse));
+    };
+    let schema = serde_json::Value::Object(schema);
+    let validator = jsonschema::options()
+        .should_validate_formats(false)
+        .offline()
+        .build(&schema)
+        .map_err(|_error| SdkError::Service(ServiceError::UnexpectedResponse))?;
+    validator
+        .validate(content)
+        .map_err(|_error| SdkError::Service(ServiceError::UnexpectedResponse))
 }
 
 impl McpSession for SdkSession {
@@ -72,7 +123,10 @@ impl McpSession for SdkSession {
             .await
             .map_err(session_failure)?;
         match response {
-            ServerResult::ListToolsResult(result) => tool_page(&result).map_err(session_failure),
+            ServerResult::ListToolsResult(result) => {
+                self.absorb_tool_listing(&result);
+                tool_page(&result).map_err(session_failure)
+            }
             other => Err(session_failure(unexpected_response(&other))),
         }
     }
@@ -127,13 +181,49 @@ fn prompt_arguments(arguments: &BTreeMap<String, String>) -> JsonObject {
         .collect()
 }
 
-// The prompt and resource results belong to betterlite-core's types, so the session hands their wire text on
+// Which prompt or resource request the session sends; the result comes back as wire text for betterlite-core's types
+pub enum WireRequest<'request> {
+    ListPrompts(Option<&'request str>),
+    ListResources(Option<&'request str>),
+    ListResourceTemplates(Option<&'request str>),
+    ReadResource(&'request str),
+}
+
 impl SdkSession {
-    pub async fn list_prompts_wire(&self, cursor: Option<&str>) -> Result<String, SdkError> {
-        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
-        let request = ClientRequest::ListPromptsRequest(ListPromptsRequest::with_param(params));
+    pub async fn wire_request(&self, wire: WireRequest<'_>) -> Result<String, SdkError> {
+        let request = match wire {
+            WireRequest::ListPrompts(cursor) => {
+                let params =
+                    PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+                ClientRequest::ListPromptsRequest(ListPromptsRequest::with_param(params))
+            }
+            WireRequest::ListResources(cursor) => {
+                let params =
+                    PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+                ClientRequest::ListResourcesRequest(ListResourcesRequest::with_param(params))
+            }
+            WireRequest::ListResourceTemplates(cursor) => {
+                let params =
+                    PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
+                ClientRequest::ListResourceTemplatesRequest(
+                    ListResourceTemplatesRequest::with_param(params),
+                )
+            }
+            WireRequest::ReadResource(uri) => ClientRequest::ReadResourceRequest(
+                ReadResourceRequest::new(ReadResourceRequestParams::new(uri.to_owned())),
+            ),
+        };
         match self.exchange_with_progress(request, &Silent).await? {
             ServerResult::ListPromptsResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            ServerResult::ListResourcesResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            ServerResult::ListResourceTemplatesResult(result) => {
+                serde_json::to_string(&result).map_err(SdkError::Json)
+            }
+            ServerResult::ReadResourceResult(result) => {
                 serde_json::to_string(&result).map_err(SdkError::Json)
             }
             other => Err(unexpected_response(&other)),
@@ -158,41 +248,25 @@ impl SdkSession {
         }
     }
 
-    pub async fn list_resources_wire(&self, cursor: Option<&str>) -> Result<String, SdkError> {
-        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
-        let request = ClientRequest::ListResourcesRequest(ListResourcesRequest::with_param(params));
-        match self.exchange_with_progress(request, &Silent).await? {
-            ServerResult::ListResourcesResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            other => Err(unexpected_response(&other)),
+    // The SDK caches each listing's output schemas and drops the ones a complete listing no longer carries
+    fn absorb_tool_listing(&self, listing: &rmcp::model::ListToolsResult) {
+        let mut schemas = self
+            .tool_output_schemas
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        for tool in &listing.tools {
+            schemas.insert(
+                tool.name.to_string(),
+                tool.output_schema.as_deref().cloned(),
+            );
         }
-    }
-
-    pub async fn list_resource_templates_wire(
-        &self,
-        cursor: Option<&str>,
-    ) -> Result<String, SdkError> {
-        let params = PaginatedRequestParams::default().with_cursor(cursor.map(str::to_owned));
-        let request = ClientRequest::ListResourceTemplatesRequest(
-            ListResourceTemplatesRequest::with_param(params),
-        );
-        match self.exchange_with_progress(request, &Silent).await? {
-            ServerResult::ListResourceTemplatesResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            other => Err(unexpected_response(&other)),
-        }
-    }
-
-    pub async fn read_resource_wire(&self, uri: &str) -> Result<String, SdkError> {
-        let params = ReadResourceRequestParams::new(uri.to_owned());
-        let request = ClientRequest::ReadResourceRequest(ReadResourceRequest::new(params));
-        match self.exchange_with_progress(request, &Silent).await? {
-            ServerResult::ReadResourceResult(result) => {
-                serde_json::to_string(&result).map_err(SdkError::Json)
-            }
-            other => Err(unexpected_response(&other)),
+        if listing.next_cursor.is_none() {
+            schemas.retain(|name, _| {
+                listing
+                    .tools
+                    .iter()
+                    .any(|tool| tool.name.as_ref() == name.as_str())
+            });
         }
     }
 }

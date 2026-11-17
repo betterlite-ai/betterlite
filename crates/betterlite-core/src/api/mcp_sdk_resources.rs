@@ -1,5 +1,6 @@
 use betterlite_mcp::client::sdk_runtime::convert::protocol_failure as sdk_protocol_failure;
 use betterlite_mcp::client::sdk_runtime::session::SdkSession;
+use betterlite_mcp::client::sdk_runtime::session::calls::WireRequest;
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::McpFailure;
 use url::Url;
@@ -30,7 +31,9 @@ impl ResourceSession for SdkSession {
     }
 
     async fn list_prompts(&mut self, cursor: Option<String>) -> Result<PromptPage, SdkError> {
-        let wire = self.list_prompts_wire(cursor.as_deref()).await?;
+        let wire = self
+            .wire_request(WireRequest::ListPrompts(cursor.as_deref()))
+            .await?;
         let page = serde_json::from_str(&wire).map_err(SdkError::Json)?;
         Ok(page)
     }
@@ -47,7 +50,9 @@ impl ResourceSession for SdkSession {
     }
 
     async fn list_resources(&mut self, cursor: Option<String>) -> Result<ResourcePage, SdkError> {
-        let wire = self.list_resources_wire(cursor.as_deref()).await?;
+        let wire = self
+            .wire_request(WireRequest::ListResources(cursor.as_deref()))
+            .await?;
         let page = serde_json::from_str(&wire).map_err(SdkError::Json)?;
         Ok(page)
     }
@@ -56,13 +61,17 @@ impl ResourceSession for SdkSession {
         &mut self,
         cursor: Option<String>,
     ) -> Result<ResourceTemplatePage, SdkError> {
-        let wire = self.list_resource_templates_wire(cursor.as_deref()).await?;
+        let wire = self
+            .wire_request(WireRequest::ListResourceTemplates(cursor.as_deref()))
+            .await?;
         let page = serde_json::from_str(&wire).map_err(SdkError::Json)?;
         Ok(page)
     }
 
     async fn read_resource(&mut self, url: Url) -> Result<ReadResourceResult, SdkError> {
-        let wire = self.read_resource_wire(url.as_str()).await?;
+        let wire = self
+            .wire_request(WireRequest::ReadResource(url.as_str()))
+            .await?;
         let result = serde_json::from_str(&wire).map_err(SdkError::Json)?;
         Ok(result)
     }

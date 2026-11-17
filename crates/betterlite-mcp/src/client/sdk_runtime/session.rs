@@ -1,13 +1,16 @@
 pub mod calls;
 mod initialize;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::pin;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use rmcp::RoleClient;
-use rmcp::model::{ClientCapabilities, ClientRequest, ProgressNotificationParam, ServerResult};
+use rmcp::model::{
+    ClientCapabilities, ClientRequest, JsonObject, ProgressNotificationParam, ServerResult,
+};
 use rmcp::service::{Peer, PeerRequestOptions, RunningService, ServiceError, serve_directly};
 use rmcp::transport::{Transport, TransportAdapterIdentity};
 
@@ -89,6 +92,7 @@ where
             protocol_version: self.protocol_version.clone(),
             progress: Arc::clone(&self.progress),
             server_capabilities: None,
+            tool_output_schemas: Mutex::new(BTreeMap::new()),
         };
         self.running = Some(running);
         Ok(session)
@@ -118,6 +122,8 @@ pub struct SdkSession {
     pub progress: Arc<ProgressRegistry>,
     // the initialize result's capabilities on the wire, for betterlite-core's typed decode
     pub server_capabilities: Option<ServerCapabilitiesWire>,
+    // every output schema the session has seen, keyed by tool name, as the SDK caches them
+    tool_output_schemas: Mutex<BTreeMap<String, Option<JsonObject>>>,
 }
 
 // A progress sink the callers that take none use, so one exchange path serves every request
