@@ -134,6 +134,26 @@ impl V2Callback {
         registry.register(&callback);
         Ok(callback)
     }
+
+    // the recorders the config flags built, for the integration target that cannot read the wrapped logger
+    #[must_use]
+    pub fn recorders(&self) -> (Option<&GenAiMetricRecorder>, Option<&GenAIEventRecorder>) {
+        (
+            self.logger.metrics.as_deref(),
+            self.logger.emitter.event_recorder.as_deref(),
+        )
+    }
+
+    // the in-flight call ids, as LiteLLM's _open_llm_calls keys read back
+    #[must_use]
+    pub fn open_call_ids(&self) -> Vec<String> {
+        self.logger
+            .open_calls()
+            .calls
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>()
+    }
 }
 
 fn resolve_tracer_provider(parts: &CallbackParts) -> Result<SdkTracerProvider, CallbackError> {
@@ -182,20 +202,17 @@ where
 }
 
 fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> {
+    let meter = parts.providers.meter_provider.clone();
+    let meter_state = parts.providers.meter_state.clone();
+    let logs = parts.providers.logger_provider.clone();
+    let logs_state = parts.providers.logger_state.clone();
     let mut meter_provider = None;
     let mut logger_provider = None;
     let metrics = resolve_recorder(
         parts.config.enable_metrics,
         parts.providers.metrics.as_ref(),
         &mut meter_provider,
-        || {
-            resolve_meter_provider(
-                &parts.raw_config,
-                &parts.build.clients,
-                parts.providers.meter_provider.clone(),
-                parts.providers.meter_state.clone(),
-            )
-        },
+        || resolve_meter_provider(&parts.raw_config, &parts.build.clients, meter, meter_state),
         |provider: &SdkMeterProvider| -> Result<GenAiMetricRecorder, CallbackError> {
             Ok(GenAiMetricRecorder::new(
                 create_instruments(&get_meter(provider, LITELLM_TRACER_NAME)),
@@ -209,14 +226,7 @@ fn resolve_recorders(parts: &CallbackParts) -> Result<Recorders, CallbackError> 
         parts.config.enable_events,
         parts.providers.events.as_ref(),
         &mut logger_provider,
-        || {
-            resolve_logger_provider(
-                &parts.raw_config,
-                &parts.build.clients,
-                parts.providers.logger_provider.clone(),
-                parts.providers.logger_state.clone(),
-            )
-        },
+        || resolve_logger_provider(&parts.raw_config, &parts.build.clients, logs, logs_state),
         |provider: &SdkLoggerProvider| -> Result<GenAIEventRecorder, CallbackError> {
             Ok(GenAIEventRecorder {
                 event_logger: get_event_logger(provider, LITELLM_TRACER_NAME),

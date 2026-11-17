@@ -68,8 +68,9 @@ fn callback_name_is_the_configured_one() {
 #[test]
 fn metrics_and_events_stay_off_until_the_config_asks() {
     let harness = harness(settings());
-    assert!(harness.callback.logger.metrics.is_none());
-    assert!(harness.callback.logger.emitter.event_recorder.is_none());
+    let (metrics, events) = harness.callback.recorders();
+    assert!(metrics.is_none());
+    assert!(events.is_none());
 }
 
 #[test]
@@ -78,8 +79,9 @@ fn enabling_metrics_and_events_builds_their_recorders() {
     config.enable_metrics = true;
     config.enable_events = true;
     let harness = harness(config);
-    assert!(harness.callback.logger.metrics.is_some());
-    assert!(harness.callback.logger.emitter.event_recorder.is_some());
+    let (metrics, events) = harness.callback.recorders();
+    assert!(metrics.is_some());
+    assert!(events.is_some());
 }
 
 #[test]
@@ -100,9 +102,8 @@ fn a_built_metric_provider_keeps_exporting() {
     let callback = V2Callback::new(parts, &registry).expect("callback");
     drop(provider);
     callback
-        .logger
-        .metrics
-        .as_ref()
+        .recorders()
+        .0
         .expect("metric recorder")
         .record_failure(
             &MetadataMap::new(),
@@ -143,15 +144,7 @@ fn pre_api_call_stores_the_open_call() {
         details: &details,
     };
     harness.callback.log_pre_api_call(&event).expect("pre call");
-    let ids: Vec<String> = harness
-        .callback
-        .logger
-        .open_calls()
-        .calls
-        .keys()
-        .cloned()
-        .collect();
-    assert_eq!(ids, vec!["call-1".to_owned()]);
+    assert_eq!(harness.callback.open_call_ids(), vec!["call-1".to_owned()]);
 }
 
 #[test]

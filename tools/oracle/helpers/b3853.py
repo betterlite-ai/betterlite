@@ -10,9 +10,11 @@ from litellm.types.services import ServiceLoggerPayload, ServiceTypes
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import INVALID_SPAN_ID, Span, StatusCode
+from pydantic import JsonValue, TypeAdapter
 
 START: float = 1_704_067_200.0
 END: float = 1_704_067_201.5
+ATTRIBUTES = TypeAdapter(dict[str, JsonValue])
 
 
 class Input(TypedDict):
@@ -97,7 +99,7 @@ def record(span: ReadableSpan, root_id: int) -> SpanRecord:
     status: Literal["unset", "ok", "error"] = (
         "error" if code == StatusCode.ERROR else "ok" if code == StatusCode.OK else "unset"
     )
-    provider_code = span.attributes.get("litellm.provider.error.code")
+    provider_code = ATTRIBUTES.validate_python(span.attributes).get("litellm.provider.error.code")
     return {
         "name": span.name,
         "parent": parent,

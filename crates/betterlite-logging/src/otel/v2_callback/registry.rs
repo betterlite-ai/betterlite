@@ -2,15 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::otel::v2_callback::callback::V2Callback;
-use crate::registry::phases::CallbackList;
+use crate::registry::phases::CallbackList::{self, Failure, Input, Service, Success};
 
 // the four proxy lists LiteLLM registers the callback in, named by the server's own callback registry
-pub const CALLBACK_LISTS: [CallbackList; 4] = [
-    CallbackList::Service,
-    CallbackList::Input,
-    CallbackList::Success,
-    CallbackList::Failure,
-];
+pub const CALLBACK_LISTS: [CallbackList; 4] = [Service, Input, Success, Failure];
 
 const OTEL_MODULE_PREFIXES: [&str; 2] = [
     "litellm.integrations.otel",

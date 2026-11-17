@@ -22,14 +22,11 @@ impl From<SdkSpan> for LiveSpan {
 impl LiveSpan {
     #[must_use]
     pub fn has_attribute(&self, key: &str) -> bool {
-        let span = self.lock();
-        match span.exported_data() {
-            Some(data) => data
-                .attributes
+        self.lock().exported_data().is_some_and(|data| {
+            data.attributes
                 .iter()
-                .any(|attribute| attribute.key.as_str() == key),
-            None => false,
-        }
+                .any(|attribute| attribute.key.as_str() == key)
+        })
     }
 
     // callers hold the guard for one read, stamp or end; a poisoned lock still answers

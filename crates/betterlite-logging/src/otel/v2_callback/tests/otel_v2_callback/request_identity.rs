@@ -2,7 +2,7 @@
 
 use opentelemetry::Context;
 use opentelemetry::baggage::BaggageExt as _;
-use opentelemetry::trace::{TraceContextExt as _, Tracer as _};
+use opentelemetry::trace::{TraceContextExt as _, Tracer as _, TracerProvider as _};
 
 use betterlite_logging::otel::model::baggage::TEAM_ID;
 use betterlite_logging::otel::model::metadata::wire::callback::RequestData;
@@ -90,7 +90,11 @@ fn the_attached_guard_carries_identity_into_a_later_span() {
     let mut trace = RequestTraceContext::default();
     let seeded = identity::seed_request_identity(&harness.callback, &seed, &mut trace);
     let _guard = seeded.attach();
-    let span = harness.callback.logger.emitter.tracer.start("after-seed");
+    let span = harness
+        .callback
+        .tracer_provider
+        .tracer("probe")
+        .start("after-seed");
     let carried = Context::current_with_span(span);
     assert_eq!(
         carried.baggage().get(TEAM_ID).map(ToString::to_string),

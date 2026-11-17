@@ -25,14 +25,7 @@ fn store_calls(harness: &Harness, count: usize) {
 }
 
 fn open_ids(harness: &Harness) -> Vec<String> {
-    harness
-        .callback
-        .logger
-        .open_calls()
-        .calls
-        .keys()
-        .cloned()
-        .collect()
+    harness.callback.open_call_ids()
 }
 
 #[test]

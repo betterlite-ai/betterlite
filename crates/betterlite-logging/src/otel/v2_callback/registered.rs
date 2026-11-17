@@ -15,10 +15,9 @@ pub fn emit_guardrail_span(
     entry: &BTreeMap<String, OtelModelValue>,
     trace: &RequestTraceContext,
 ) {
-    let Some(logger) = registry.registered_v2_logger() else {
-        return;
-    };
-    guardrail::emit_guardrail_span(&logger, entry, trace);
+    if let Some(logger) = registry.registered_v2_logger() {
+        guardrail::emit_guardrail_span(&logger, entry, trace);
+    }
 }
 
 // litellm.integrations.otel.logger.seed_request_identity

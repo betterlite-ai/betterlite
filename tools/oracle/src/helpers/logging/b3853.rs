@@ -186,8 +186,7 @@ fn record(span: &SdkSpanData, root: SpanId) -> Value {
     let code = span
         .attributes
         .iter()
-        .rev()
-        .find(|pair| pair.key.as_str() == "litellm.provider.error.code")
+        .rfind(|pair| pair.key.as_str() == "litellm.provider.error.code")
         .map(|pair| pair.value.to_string());
     json!({
         "name": span.name.as_ref(),
