@@ -4,7 +4,7 @@ mod postgres;
 mod support;
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::budget_permission_rows::JsonData;
 
@@ -12,7 +12,7 @@ use self::support::HalfJitter;
 use super::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use super::hash::{hash_token, hash_token_if_needed};
 use super::json_text::{FAILED_TO_SERIALIZE_JSON, JsonEncoder, SerdeJsonEncoder, jsonify_object};
-use super::retry::{MAX_TIME, MAX_TRIES, retry_wait};
+use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, retry_wait};
 
 #[test]
 fn hash_utf8_lower_hex() {
@@ -139,6 +139,13 @@ fn json_encode_failure_marker() {
         converted.get("metadata"),
         Some(&JsonData::String(String::from(FAILED_TO_SERIALIZE_JSON)))
     );
+}
+
+#[test]
+fn system_clock_reads_wall_time() {
+    let clock = SystemWriteClock;
+    assert!(clock.now().timestamp() > 1_600_000_000);
+    assert!(clock.instant() <= Instant::now());
 }
 
 #[test]
