@@ -1,17 +1,21 @@
 #![cfg(test)]
 
-use betterlite_oracle_runner::case::load_helper_cases;
-use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
-use std::path::Path;
+use std::path::PathBuf;
 
-#[test]
-fn replays_the_s3_v2_params_case_corpus() {
-    let folder = Path::new(ORACLE_DIR).join("cases/logging/s3-v2-params");
-    let cases = load_helper_cases(&[folder]).unwrap();
-    assert!(cases.iter().all(|helper| {
-        matches!(
-            run_case(&[crate::GROUP], helper, false).unwrap(),
-            HelperRun::Match
-        )
-    }));
+use rstest::rstest;
+
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, run_helper_cases};
+
+#[rstest]
+fn replays_the_s3_v2_params_case_corpus(
+    #[base_dir = "../../.."]
+    #[files("cases/logging/s3-v2-params/*.yaml")]
+    path: PathBuf,
+) {
+    let cases = load_helper_cases(&[path]).unwrap();
+    assert!(matches!(
+        run_helper_cases(&[crate::GROUP], &cases, false).unwrap(),
+        HelperRun::Match
+    ));
 }

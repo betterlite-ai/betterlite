@@ -1,13 +1,13 @@
 id: B9979
 milestone: R2 bug fixes
 title: Bug report frames come from where the error was created
-status: todo
+status: done
 depends_on: [B4170]
 file: tasks/B9979-bug-report-creation-site.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2269
