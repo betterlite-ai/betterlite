@@ -45,6 +45,7 @@ use crate::payload::response::object_field;
 use crate::registry::CallbackRegistry;
 
 mod behaviors;
+mod contracts;
 
 pub(super) fn time(text: &str) -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(text).unwrap()
@@ -331,7 +332,10 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
             emit_standard_logging_payload(&payload, &settings, &mut sink).unwrap();
             assert!(sink.ends_with(b"\n"));
             let printed: Json = serde_json::from_slice(&sink[..sink.len() - 1]).unwrap();
-            assert_eq!(printed, serde_json::to_value(&payload).unwrap());
+            assert_eq!(
+                serde_json::to_string(&printed).unwrap(),
+                serde_json::to_string(&payload).unwrap()
+            );
         }
         Behavior::EmitEnvValues => {
             let payload = payload_from(BASE_PAYLOAD);

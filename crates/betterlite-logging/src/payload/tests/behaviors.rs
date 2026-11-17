@@ -71,7 +71,7 @@ fn estimate_field(payload: &StandardLoggingPayload, key: &str) -> Option<Json> {
         .cloned()
 }
 
-struct FixedClock(f64);
+pub(super) struct FixedClock(pub(super) f64);
 
 impl PayloadClock for FixedClock {
     fn now_epoch_seconds(&self) -> f64 {
