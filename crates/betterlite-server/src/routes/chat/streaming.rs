@@ -16,25 +16,30 @@ use betterlite_core::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatStreamAnswer,
 };
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::StreamResponse;
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::mock_failure;
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
+use betterlite_openai::completion_chat_bridge::{
+    ChatEndpoint, answer, chat_endpoint, text_endpoint_model, text_request,
+};
 use betterlite_openai::stream::SseParser;
 use betterlite_openai::stream::chunk::Chunk;
-use betterlite_provider::operation::{ChatOperation, OperationRequest, OperationResult};
-use betterlite_provider::prepared::deployment::Deployment;
-use betterlite_provider::provider::Provider;
+use betterlite_openai::text_completion_execution::CompletionExecutor;
+use betterlite_openai::text_completion_execution::failure::CompletionFailure;
+use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
+use betterlite_openai::text_completion_stream::chat_chunk;
+use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
+use tokio::sync::OnceCell;
 
 use super::CallContext;
 use super::headers::stream_headers;
-use crate::server::chat_setup::provider_call::{
-    CallError, answer_chat, chat_error, control_options,
-};
+use crate::routes::completions::streaming::provider_stream;
+use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(super) struct ChatCalls {
@@ -106,6 +111,172 @@ impl ChatCall for ChatCalls {
             upstream_time,
         })
     }
+
+    // main.py sends a text-completion deployment's chat request through the text endpoint
+    fn endpoint(&self, deployment: &ChatDeployment) -> ChatEndpoint {
+        chat_endpoint(deployment)
+    }
+
+    async fn complete_text(
+        &self,
+        call: ChatCallInput<'_>,
+        _control: ControlOptions,
+        convert: bool,
+    ) -> Result<ChatCompletionAnswer, ChatFailure> {
+        let model = text_endpoint_model(&call.deployment).ok_or(ChatFailure::Mismatched)?;
+        let transport =
+            text_request(&call.deployment, call.request, &model).map_err(completion_failure)?;
+        let executor = text_executor(&self.executor);
+        let mut logger = TracingCompletionLog;
+        let answered = executor
+            .complete_request(
+                &call.deployment,
+                transport,
+                &self.executor.redactor,
+                &mut logger,
+            )
+            .await
+            .map_err(completion_failure)?;
+        let asked = call.request.model.as_deref();
+        let body = if convert {
+            let created = i64::try_from((self.executor.clock)()).unwrap_or(i64::MAX);
+            answer::chat_completion_body(&answered.response, created, asked)
+        } else {
+            answer::text_completion_body(&answered.response, asked)
+        }
+        .map_err(completion_failure)?;
+        Ok(ChatCompletionAnswer {
+            body,
+            // the text answer reaches the chat route without the provider headers a chat answer carries
+            upstream_headers: HeaderMap::new(),
+            upstream_time: answered.upstream_time,
+        })
+    }
+
+    async fn stream_text(
+        &self,
+        call: ChatCallInput<'_>,
+        _control: ControlOptions,
+    ) -> Result<ChatStreamAnswer, ChatFailure> {
+        let model = text_endpoint_model(&call.deployment).ok_or(ChatFailure::Mismatched)?;
+        let transport =
+            text_request(&call.deployment, call.request, &model).map_err(completion_failure)?;
+        let executor = text_executor(&self.executor);
+        let mut logger = TracingCompletionLog;
+        let answered = executor
+            .stream_request(
+                &call.deployment,
+                transport,
+                &self.executor.redactor,
+                &mut logger,
+            )
+            .await
+            .map_err(completion_failure)?;
+        let include_usage = call
+            .request
+            .stream_options
+            .as_ref()
+            .is_some_and(|options| options.include_usage);
+        let state = TextBridgeState {
+            stream: answered.stream,
+            model: call.request.model.clone().unwrap_or_default(),
+            include_usage,
+            pending: VecDeque::new(),
+            finished: false,
+        };
+        Ok(ChatStreamAnswer {
+            body: stream::unfold(state, next_text_frame).boxed(),
+            // a streamed text answer carries no provider headers onto the chat route's response
+            upstream_headers: HeaderMap::new(),
+            upstream_time: answered.upstream_time,
+        })
+    }
+}
+
+fn text_executor(executor: &Arc<ChatExecutor>) -> CompletionExecutor {
+    CompletionExecutor {
+        client: executor.client.clone(),
+        catalog: OnceCell::new(),
+    }
+}
+
+// the chat route answers with the provider's own error envelope, as LiteLLM's exception path does
+fn completion_failure(failure: CompletionFailure) -> ChatFailure {
+    let CompletionFailure {
+        status,
+        error_type,
+        param,
+        message,
+    } = failure;
+    let body = serde_json::json!({
+        "error": {"message": message, "type": error_type, "param": param}
+    });
+    match serde_json::to_vec(&body) {
+        Ok(body) => ChatFailure::Route(ChatError::Provider {
+            response: Box::new(UpstreamResponse {
+                status,
+                headers: HeaderMap::new(),
+                body,
+            }),
+        }),
+        Err(source) => ChatFailure::Route(ChatError::Encode { source }),
+    }
+}
+
+// The text provider's chunks rebuilt as chat chunks; B5366's text wrapper is the reverse direction.
+struct TextBridgeState {
+    stream: CompletionStream,
+    model: String,
+    include_usage: bool,
+    pending: VecDeque<Bytes>,
+    finished: bool,
+}
+
+async fn next_text_frame(
+    mut state: TextBridgeState,
+) -> Option<(Result<Bytes, HttpError>, TextBridgeState)> {
+    loop {
+        if let Some(frame) = state.pending.pop_front() {
+            return Some((Ok(frame), state));
+        }
+        if state.finished {
+            return None;
+        }
+        let Some(item) = state.stream.next().await else {
+            state.finished = true;
+            state
+                .pending
+                .push_back(Bytes::from_static(b"data: [DONE]\n\n"));
+            continue;
+        };
+        let chunk = match item {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                // the client reads a broken event stream as a truncated answer, the way LiteLLM's closes
+                tracing::warn!(message = %error, "the text provider stream failed");
+                state.finished = true;
+                return Some((Err(HttpError::Timeout), state));
+            }
+        };
+        match chat_chunk(&chunk, &state.model, state.include_usage) {
+            Ok(Some(value)) => match serde_json::to_string(&value) {
+                Ok(text) => state
+                    .pending
+                    .push_back(Bytes::from(format!("data: {text}\n\n"))),
+                Err(error) => {
+                    tracing::warn!(message = %error, "the text chunk could not be written");
+                    state.finished = true;
+                    return Some((Err(HttpError::Timeout), state));
+                }
+            },
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(message = %error, "the text chunk could not be written");
+                state.finished = true;
+                return Some((Err(HttpError::Timeout), state));
+            }
+        }
+    }
 }
 
 pub(super) fn render_stream(
@@ -123,38 +294,6 @@ pub(super) fn render_stream(
     );
     let stream_body = Body::from_stream(relay_bytes(answer.body, request));
     (headers, stream_body).into_response()
-}
-
-async fn provider_stream(
-    executor: &ChatExecutor,
-    deployment: &ChatDeployment,
-    request: &ChatRequest,
-    control: ControlOptions,
-) -> Result<StreamResponse, CallError<ChatError>> {
-    let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
-    let inputs = Deployment::from_chat(deployment);
-    let operation = OperationRequest::Stream(Box::new(ChatOperation {
-        model: inputs.model.clone(),
-        request: request.clone(),
-        control,
-    }));
-    let prepared = provider
-        .prepare(&operation, &inputs, &executor.catalog)
-        .map_err(chat_error)?;
-    let client = executor
-        .client
-        .deployments
-        .get(&deployment.model_id)
-        .unwrap_or(&executor.client);
-    let answer = provider
-        .execute(client, &prepared, &inputs)
-        .await
-        .map_err(chat_error)?;
-    let result = provider.decode(&prepared, answer).map_err(chat_error)?;
-    let OperationResult::Stream(stream) = result else {
-        return Err(CallError::Mismatched);
-    };
-    Ok(*stream)
 }
 
 fn mock_stream(
