@@ -70,18 +70,30 @@ fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
         &mapped,
     )
     .map_err(FamilyError::from)?;
+    // the Cohere leaf counts the input, so its tokens and token lists have no text to count
+    let input = match &leaf.request.input {
+        EmbeddingInput::Text(text) => vec![text.clone()],
+        EmbeddingInput::Texts(texts) => texts.clone(),
+        EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => {
+            return Err(FamilyError::from(CohereEmbeddingError::InputNotText));
+        }
+    };
     let decode = Decode::CohereEmbedding(Box::new(CohereEmbeddingDecode {
         model: leaf.common.model.to_owned(),
         api_key: key,
         request_data: body.clone(),
-        input: texts(&leaf.request.input)?,
+        input,
         encoding: encoding()?,
     }));
     call(leaf.common, ("cohere", &endpoint), &headers, &body, decode)
 }
 
 fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
-    let (body, variant) = voyage_body(leaf)?;
+    let variant = VoyageEmbeddingVariant::for_model(leaf.common.model);
+    let options = voyage_options(leaf.non_default, variant)?;
+    let given = serde_json::to_value(&leaf.request.input)?;
+    let body = voyage_embedding::request(leaf.common.model, given, &options, variant);
+    let body: BaseObject = serde_json::from_value(body)?;
     // LiteLLM's Voyage handler receives no caller headers, and its validate_environment clears them
     let authorization = voyage_embedding::voyage_credentials(
         leaf.common.api_key.map(ExposeSecret::expose_secret),
@@ -101,14 +113,6 @@ fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     )
 }
 
-fn voyage_body(leaf: &Leaf<'_, '_>) -> Result<(BaseObject, VoyageEmbeddingVariant), FamilyError> {
-    let variant = VoyageEmbeddingVariant::for_model(leaf.common.model);
-    let options = voyage_options(leaf.non_default, variant)?;
-    let given = serde_json::to_value(&leaf.request.input)?;
-    let body = voyage_embedding::request(leaf.common.model, given, &options, variant);
-    Ok((serde_json::from_value(body)?, variant))
-}
-
 // LiteLLM's Voyage builder keeps only the caller's parameters its variant declares
 fn voyage_options(
     non_default: &Object,
@@ -126,17 +130,6 @@ fn voyage_options(
             .get(*name)
             .map(|value| ((*name).to_owned(), value.clone()))
     })))
-}
-
-// the Cohere leaf counts the input, so its tokens and token lists have no text to count
-fn texts(input: &EmbeddingInput) -> Result<Vec<String>, FamilyError> {
-    match input {
-        EmbeddingInput::Text(text) => Ok(vec![text.clone()]),
-        EmbeddingInput::Texts(texts) => Ok(texts.clone()),
-        EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => {
-            Err(FamilyError::from(CohereEmbeddingError::InputNotText))
-        }
-    }
 }
 
 // LiteLLM counts the input with litellm.encoding when Cohere bills neither input nor image tokens

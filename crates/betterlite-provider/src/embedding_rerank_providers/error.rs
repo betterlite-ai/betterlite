@@ -80,7 +80,23 @@ impl From<FamilyError> for OperationError {
             FamilyError::Encode { source } => Self::Encode { source },
             FamilyError::Header { name, source } => Self::InvalidHeader { name, source },
             // the framework has no variant for a family's own preparation failure, so it names the stage
-            _other => Self::UnsupportedOperation {
+            FamilyError::Unsupported { .. }
+            | FamilyError::Url { .. }
+            | FamilyError::HeaderName { .. }
+            | FamilyError::Vocabulary
+            | FamilyError::VoyageDocument
+            | FamilyError::CohereV1(_)
+            | FamilyError::CohereV1Reply(_)
+            | FamilyError::CohereV2(_)
+            | FamilyError::CohereV2Reply(_)
+            | FamilyError::ChatBody(_)
+            | FamilyError::CohereEmbedding(_)
+            | FamilyError::VoyageEmbedding(_)
+            | FamilyError::JinaEmbedding(_)
+            | FamilyError::InfinityEmbedding(_)
+            | FamilyError::CohereRerank(_)
+            | FamilyError::HostRerank(_)
+            | FamilyError::VoyageRerank(_) => Self::UnsupportedOperation {
                 provider: String::from("embedding_rerank"),
                 operation: String::from("prepare"),
             },

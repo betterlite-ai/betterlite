@@ -35,14 +35,10 @@ pub(super) fn url(family: &'static str, value: &str) -> Result<Url, FamilyError>
 
 // a family leaf's header map holds JSON strings, and a value of any other shape is dropped
 pub(super) fn text_headers(headers: BaseObject) -> Headers {
-    let mut mapped = Headers::new();
-    for (name, value) in headers {
-        let Some(text) = value.as_str() else {
-            continue;
-        };
-        mapped.insert(name, text.to_owned());
-    }
-    mapped
+    headers
+        .into_iter()
+        .filter_map(|(name, value)| Some((name, value.as_str()?.to_owned())))
+        .collect()
 }
 
 // the credential header is marked sensitive, so no Debug text of a prepared call prints it

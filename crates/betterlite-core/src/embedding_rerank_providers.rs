@@ -36,17 +36,20 @@ pub enum RerankConfig {
 // The Voyage arms test the model's lower-cased text, and the context arm comes first
 #[must_use]
 pub fn embedding_config(provider: ProviderId, model: &str) -> Option<EmbeddingConfig> {
-    match provider {
-        ProviderId::Cohere | ProviderId::CohereChat => Some(EmbeddingConfig::Cohere),
-        ProviderId::Voyage => Some(match VoyageEmbeddingVariant::for_model(model) {
+    if provider == ProviderId::Voyage {
+        return Some(match VoyageEmbeddingVariant::for_model(model) {
             VoyageEmbeddingVariant::Contextual => EmbeddingConfig::VoyageContextual,
             VoyageEmbeddingVariant::Multimodal => EmbeddingConfig::VoyageMultimodal,
             VoyageEmbeddingVariant::Text => EmbeddingConfig::Voyage,
-        }),
-        ProviderId::JinaAi => Some(EmbeddingConfig::JinaAi),
-        ProviderId::Infinity => Some(EmbeddingConfig::Infinity),
-        _other => None,
+        });
     }
+    if matches!(provider, ProviderId::Cohere | ProviderId::CohereChat) {
+        return Some(EmbeddingConfig::Cohere);
+    }
+    if provider == ProviderId::JinaAi {
+        return Some(EmbeddingConfig::JinaAi);
+    }
+    (provider == ProviderId::Infinity).then_some(EmbeddingConfig::Infinity)
 }
 
 #[must_use]
@@ -55,19 +58,22 @@ pub fn rerank_config(
     api_base: Option<&str>,
     present_version_params: &[String],
 ) -> Option<RerankConfig> {
-    match provider {
-        ProviderId::Cohere | ProviderId::CohereChat => Some(
+    if matches!(provider, ProviderId::Cohere | ProviderId::CohereChat) {
+        return Some(
             if should_use_cohere_v1_client(api_base, present_version_params) {
                 RerankConfig::Cohere
             } else {
                 RerankConfig::CohereV2
             },
-        ),
-        ProviderId::Infinity => Some(RerankConfig::Infinity),
-        ProviderId::JinaAi => Some(RerankConfig::JinaAi),
-        ProviderId::Voyage => Some(RerankConfig::Voyage),
-        _other => None,
+        );
     }
+    if provider == ProviderId::Infinity {
+        return Some(RerankConfig::Infinity);
+    }
+    if provider == ProviderId::JinaAi {
+        return Some(RerankConfig::JinaAi);
+    }
+    (provider == ProviderId::Voyage).then_some(RerankConfig::Voyage)
 }
 
 // an absent or empty base takes v2; a legacy limit picks v1 unless the base says v2

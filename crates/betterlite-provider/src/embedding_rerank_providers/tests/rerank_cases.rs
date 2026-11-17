@@ -220,20 +220,24 @@ fn a_voyage_rerank_reply_is_rewritten() {
     assert_eq!(tokens.output_tokens, Some(Some(0)));
 }
 
-#[test]
-fn a_voyage_document_without_a_text_string_is_refused() {
-    let bodies = [
-        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":5}}],"usage":{"total_tokens":3}}"#,
-        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"page":3}}],"usage":{"total_tokens":3}}"#,
-        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":"doc","page":3}}],"usage":{"total_tokens":3}}"#,
-        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":[1]}],"usage":{"total_tokens":3}}"#,
-    ];
-    for body in bodies {
-        assert!(matches!(
-            rerank::decode(RerankConfig::Voyage, 200, body.as_bytes()),
-            Err(FamilyError::VoyageDocument)
-        ));
-    }
+#[rstest]
+#[case::text_is_a_number(
+    r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":5}}],"usage":{"total_tokens":3}}"#
+)]
+#[case::no_text_key(
+    r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"page":3}}],"usage":{"total_tokens":3}}"#
+)]
+#[case::text_with_another_key(
+    r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":"doc","page":3}}],"usage":{"total_tokens":3}}"#
+)]
+#[case::a_list_document(
+    r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":[1]}],"usage":{"total_tokens":3}}"#
+)]
+fn a_voyage_document_without_a_text_string_is_refused(#[case] body: &str) {
+    assert!(matches!(
+        rerank::decode(RerankConfig::Voyage, 200, body.as_bytes()),
+        Err(FamilyError::VoyageDocument)
+    ));
 }
 
 #[test]

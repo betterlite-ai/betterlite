@@ -26,9 +26,6 @@ use super::{Call, CohereChatDecode, Decode, EmbeddingRerankPrepared, EmbeddingRe
 const V1_DEFAULT_URL: &str = "https://api.cohere.ai/v1/chat";
 const V2_DEFAULT_URL: &str = "https://api.cohere.com/v2/chat";
 
-// the fields LiteLLM reads itself, so none of them is an optional provider parameter
-const REMOVED_FIELDS: [&str; 3] = ["model", "messages", "stream"];
-
 pub fn prepare(
     common: &Common<'_>,
     request: &ChatRequest,
@@ -62,25 +59,22 @@ pub fn prepare(
         .unwrap_or_default();
     cohere_streams::validate_environment(&mut headers, &key);
     let body = body(route, &model, &base, request, stream)?;
-    Ok(EmbeddingRerankPrepared(Call {
-        url: url("cohere", &base)?,
-        headers: http_headers(&headers)?,
-        body: serde_json::to_vec(&Json::Object(body))?,
-        timeout: common.timeout,
-        decode: Decode::CohereChat(Box::new(chat_decode(route, model))),
-    }))
-}
-
-// LiteLLM mints the reply's id and reads the clock, so the envelope is made before the answer arrives
-fn chat_decode(route: CohereRoute, model: String) -> CohereChatDecode {
-    CohereChatDecode {
+    // LiteLLM mints the reply's id and reads the clock, so the envelope is made before the answer arrives
+    let decode = Decode::CohereChat(Box::new(CohereChatDecode {
         version: route,
         model,
         created: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs()),
         id: format!("chatcmpl-{}", Uuid::new_v4()),
-    }
+    }));
+    Ok(EmbeddingRerankPrepared(Call {
+        url: url("cohere", &base)?,
+        headers: http_headers(&headers)?,
+        body: serde_json::to_vec(&Json::Object(body))?,
+        timeout: common.timeout,
+        decode,
+    }))
 }
 
 // the reply arrives as the version's own shape, and each one decodes into the chat answer
@@ -157,9 +151,9 @@ fn body(
 // LiteLLM's get_optional_params receives only the parameters the caller set, so a null field is absent
 fn non_default_params(request: &ChatRequest, stream: bool) -> Result<Object, FamilyError> {
     let mut fields: Object = serde_json::from_value(serde_json::to_value(request)?)?;
-    for name in REMOVED_FIELDS {
-        fields.shift_remove(name);
-    }
+    fields.shift_remove("model");
+    fields.shift_remove("messages");
+    fields.shift_remove("stream");
     fields.retain(|_, value| !matches!(value, Json::Null));
     if stream {
         fields.insert(String::from("stream"), Json::Bool(true));
