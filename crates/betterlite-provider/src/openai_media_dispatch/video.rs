@@ -37,11 +37,10 @@ fn status(call: &VideoStatusCall, base: &str, provider: Option<&str>) -> VideoRe
     let url = path_url(video_id, base, "")?;
     let video = status_response(body, provider)?;
     let reply = VideoReplyKind::Video(Box::new(video));
-    let query = VideoOptions::new();
     let request = OpenAiMediaPrepared {
         method: MediaMethod::Get,
         url,
-        query,
+        query: VideoOptions::new(),
         body: MediaPayload::Empty,
         parts: Vec::new(),
         multipart: false,
