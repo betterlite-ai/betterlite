@@ -191,6 +191,15 @@ fn a_client_usage_choice_is_kept_and_a_non_stream_sends_an_explicit_false() {
     );
     assert!(!built.optional_params.contains_key("stream_options"));
     assert_eq!(built.optional_params.get("model"), None);
+    // a non-stream request keeps a caller's stream_options the way LiteLLM's text handler forwards it
+    let buffered_options = chat(
+        r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"stream_options":{"include_usage":false}}"#,
+    );
+    let built = text_request(&deployment("gpt-4o"), &buffered_options, "gpt-4o").expect("request");
+    assert_eq!(
+        built.optional_params.get("stream_options"),
+        Some(&json!({"include_usage": false}))
+    );
 }
 
 #[test]

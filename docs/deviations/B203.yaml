@@ -21,9 +21,12 @@ deviations:
   - what: The 400 for a parameter the text config does not support writes betterlite's own message, and it ignores litellm_settings.drop_params, where LiteLLM names its exception class, quotes drop_params advice, and drops the parameter when drop_params is set.
     why: betterlite builds message text from typed fields and this bridge sees no drop_params setting.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4527-L4538
-  - what: A chat request to a text-completion-codestral or text-completion-inception deployment is checked against the OpenAI text config's parameter list, so the provider's own suffix, min_tokens and random_seed are refused and the OpenAI list is accepted.
+  - what: A chat request to a text-completion-codestral or text-completion-inception deployment is checked against the OpenAI text config's parameter list and mapped the OpenAI way, so codestral's suffix, min_tokens and random_seed are refused where the provider accepts them, a max_completion_tokens is refused where both providers accept it, and a codestral seed reaches the provider as seed rather than random_seed.
     why: one request builder serves all three text endpoints, and the provider-specific text configs are not ported into the bridge.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L40-L50
+  - what: A streamed text request whose caller set stream_options.include_usage to false reaches the provider with that false, where LiteLLM's proxy replaces the option with include_usage true and strips the usage chunk itself before the client sees it.
+    why: the bridge keeps a caller's stream_options, the same way betterlite's chat path does, and hides the usage chunk in its own stream rendering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L520-L529
 kept_bugs:
   - what: The fine-tuned completion models on the chat route answer the raw text_completion body, model renamed to the caller's, instead of a chat completion.
     why: LiteLLM's completion() sends these two models to the text endpoint without converting the answer back, and a setup that calls them through the chat route relies on reading that text body.

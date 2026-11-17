@@ -157,7 +157,6 @@ pub fn text_request(
     } else {
         // main.py sends the chat dispatch's own stream flag, so the provider reads an explicit false
         params.insert(String::from("stream"), Value::Bool(false));
-        params.remove("stream_options");
     }
     Ok(TransportRequest {
         model: Some(model.to_owned()),
