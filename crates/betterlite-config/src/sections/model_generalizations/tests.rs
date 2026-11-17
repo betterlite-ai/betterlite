@@ -2,10 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use serde_json::json;
-
 use crate::loader::ConfigLoader;
 use crate::sections::model_generalizations::Settings;
+use crate::sections::settings::JsonValue;
 
 fn settings(source: &str) -> Result<Settings, String> {
     ConfigLoader {
@@ -26,13 +25,11 @@ fn an_absent_block_reads_no_rules() {
 fn rules_keep_their_document() {
     let source = "fallback_generalizations:\n  rules:\n    - pattern: \"^acme-\"\n      model_info:\n        litellm_provider: acme\n        mode: chat\n    - 5\n";
     let resolved = settings(source).unwrap();
-    assert_eq!(
-        resolved.rules,
-        vec![
-            json!({"pattern": "^acme-", "model_info": {"litellm_provider": "acme", "mode": "chat"}}),
-            json!(5),
-        ]
-    );
+    let expected: Vec<JsonValue> = serde_json::from_str(
+        r#"[{"pattern": "^acme-", "model_info": {"litellm_provider": "acme", "mode": "chat"}}, 5]"#,
+    )
+    .unwrap();
+    assert_eq!(resolved.rules, expected);
 }
 
 #[test]

@@ -20,7 +20,7 @@ struct RawGeneralizations {
     rules: Option<JsonValue>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub rules: Vec<JsonValue>,
 }
