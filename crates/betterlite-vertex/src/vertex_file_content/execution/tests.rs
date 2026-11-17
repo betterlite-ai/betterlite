@@ -66,6 +66,7 @@ fn content_read<'read>(
         deployment,
         credentials,
         trusted,
+        disabled: false,
     }
 }
 
@@ -281,6 +282,35 @@ async fn transformed_output() {
     assert_eq!(
         header(&content.headers, "content-length"),
         content.body.len().to_string().as_str()
+    );
+    assert_eq!(
+        header(&content.headers, "content-type"),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        harness.steps().last(),
+        Some(&Step::Sent(MODEL_STORAGE_URL.to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn transformation_disabled() {
+    let harness = Harness::with_env(&[(GCS_BUCKET_ENV, BUCKET)]).responding(200, ROW.as_bytes());
+    let base = harness.base();
+    let request = content_request(MODEL_FILE_ID);
+    let deployment = deployment_of(None, None, None);
+    let trusted = trusted_record(false);
+    let mut read = content_read(&request, &deployment, None, &trusted);
+    read.disabled = true;
+    let mut state = context();
+    let content = file_content(&base, &read, &mut state)
+        .await
+        .expect("a disabled read returns the stored row");
+    assert_eq!(content.status, 200);
+    assert_eq!(content.body, ROW.as_bytes().to_vec());
+    assert_eq!(
+        header(&content.headers, "content-length"),
+        ROW.len().to_string().as_str()
     );
     assert_eq!(
         header(&content.headers, "content-type"),
