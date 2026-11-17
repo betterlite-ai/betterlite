@@ -20,6 +20,7 @@ const CAPABILITIES: &str =
 const FILL_MISSING: &str = r#"[{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["vertex_ai"]}]"#;
 const OPENAI_FILL: &str = r#"[{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["openai"]}]"#;
 const ROUTE_THEN_FILL: &str = r#"[{"pattern":"^gemini-","model_info":{"litellm_provider":"azure"}},{"pattern":"^gemini-","model_info":{"supports_pdf":true},"fill_missing_for_providers":["vertex_ai"]}]"#;
+const ROUTE_AND_CAPABILITY: &str = r#"[{"pattern":"^mystery-","model_info":{"litellm_provider":"acme"}},{"pattern":"^mystery-","model_info":{"max_tokens":200},"fill_missing_for_providers":["acme"]},{"pattern":"^mystery-","model_info":{"supports_web_search":false,"max_tokens":100}}]"#;
 const SLOW_RULE: &str =
     r#"[{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"litellm_provider":"steps"}}]"#;
 const SLOW_MODEL: &str = "abababababababababababab";
@@ -86,6 +87,24 @@ async fn a_router_without_generalizations_keeps_the_pool() {
 async fn a_routing_rule_supplies_a_missing_provider() {
     let service = installed(ROUTING);
     let filled = filled_by(&service, spec("acme-1", None, JsonObject::new())).await;
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("acme")))
+    );
+}
+
+#[tokio::test]
+async fn a_routing_rule_and_a_capability_rule_reach_a_providerless_deployment() {
+    let service = installed(ROUTE_AND_CAPABILITY);
+    let filled = filled_by(&service, spec("mystery-1", None, JsonObject::new())).await;
+    assert_eq!(
+        filled.model_info.get("supports_web_search"),
+        Some(&Json::Bool(false))
+    );
+    assert!(matches!(
+        filled.model_info.get("max_tokens"),
+        Some(Json::Number(number)) if number.as_u64() == Some(100)
+    ));
     assert_eq!(
         filled.model_info.get("litellm_provider"),
         Some(&Json::Text(String::from("acme")))
