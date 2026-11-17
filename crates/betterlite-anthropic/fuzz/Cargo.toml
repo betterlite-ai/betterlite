@@ -44,6 +44,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "anthropic_response"
+path = "fuzz_targets/anthropic_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "anthropic_response_content"
 path = "fuzz_targets/anthropic_response_content.rs"
 test = false
