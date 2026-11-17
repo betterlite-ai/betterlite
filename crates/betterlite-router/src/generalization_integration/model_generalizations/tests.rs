@@ -279,6 +279,7 @@ enum Spec {
     PatternAtLimit,
     PatternOverLimit,
     SlowPattern,
+    SlowCapabilityRules,
     LargeAndSlowPattern,
 }
 
@@ -287,6 +288,8 @@ enum Boundary {
     Outcome,
     Warnings,
     Routing(&'static str),
+    Capabilities(&'static str),
+    FillMissing(&'static str, &'static str),
 }
 
 fn padded(size: usize) -> Vec<u8> {
@@ -304,6 +307,12 @@ const fn slow_pattern_rule() -> &'static str {
     r#"{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"litellm_provider":"steps"}}"#
 }
 
+const SLOW_CAPABILITY_RULES: &str = concat!(
+    r#"[{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"supports_vision":true}},"#,
+    r#"{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"mode":"chat"},"fill_missing_for_providers":["acme"]},"#,
+    r#"{"pattern":"(?i)(a|b|ab)*(?>c)","model_info":{"mode":"embedding"},"fill_missing_for_providers":[""]}]"#,
+);
+
 fn rules(spec: Spec) -> Vec<u8> {
     match spec {
         Spec::EmptyRules => b"[]".to_vec(),
@@ -318,6 +327,7 @@ fn rules(spec: Spec) -> Vec<u8> {
         }
         Spec::PatternOverLimit => format!("[{}]", large_pattern_rule()).into_bytes(),
         Spec::SlowPattern => format!("[{}]", slow_pattern_rule()).into_bytes(),
+        Spec::SlowCapabilityRules => SLOW_CAPABILITY_RULES.as_bytes().to_vec(),
         Spec::LargeAndSlowPattern => {
             format!("[{},{}]", large_pattern_rule(), slow_pattern_rule()).into_bytes()
         }
@@ -327,6 +337,10 @@ fn rules(spec: Spec) -> Vec<u8> {
 fn large_pattern_warning() -> String {
     let pattern = "a".repeat(MAX_PATTERN_BYTES.saturating_add(1));
     format!(r#"[{{"kind":"pattern_too_large","pattern":"{pattern}"}}]"#)
+}
+
+fn slow_warning() -> String {
+    String::from(r#"{"kind":"match_limit_exceeded","pattern":"(?i)(a|b|ab)*(?>c)"}"#)
 }
 
 fn boundary_line(
@@ -358,6 +372,16 @@ fn boundary_line(
             format!("route {model} {}", found_text(&found))
         }
         (Boundary::Routing(_), Err(_)) => String::from("route not-installed"),
+        (Boundary::Capabilities(model), Ok(service)) => {
+            let found = service.capabilities(model);
+            format!("capabilities {model} {}", found_text(&found))
+        }
+        (Boundary::Capabilities(_), Err(_)) => String::from("capabilities not-installed"),
+        (Boundary::FillMissing(model, provider), Ok(service)) => {
+            let found = service.fill_missing(model, provider);
+            format!("fill {model}/{provider} {}", found_text(&found))
+        }
+        (Boundary::FillMissing(..), Err(_)) => String::from("fill not-installed"),
     }
 }
 
@@ -406,6 +430,35 @@ fn boundary_line(
     Spec::SlowPattern,
     &[Boundary::Routing(SLOW_MODEL)],
     &[&format!("route {SLOW_MODEL} null {SLOW_WARNING}")],
+)]
+#[case::capability_match_steps_over_limit(
+    Spec::SlowCapabilityRules,
+    &[
+        Boundary::Capabilities(SLOW_MODEL),
+        Boundary::Capabilities("abab"),
+        Boundary::Warnings,
+    ],
+    &[
+        &format!(
+            "capabilities {SLOW_MODEL} null [{},{},{}]",
+            slow_warning(),
+            slow_warning(),
+            slow_warning()
+        ),
+        "capabilities abab null []",
+        "warnings []",
+    ],
+)]
+#[case::fill_missing_match_steps_over_limit(
+    Spec::SlowCapabilityRules,
+    &[
+        Boundary::FillMissing(SLOW_MODEL, "acme"),
+        Boundary::FillMissing(SLOW_MODEL, ""),
+    ],
+    &[
+        &format!("fill {SLOW_MODEL}/acme null [{}]", slow_warning()),
+        &format!("fill {SLOW_MODEL}/ null []"),
+    ],
 )]
 #[case::large_and_slow_together(
     Spec::LargeAndSlowPattern,
