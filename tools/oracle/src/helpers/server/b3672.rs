@@ -4,6 +4,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::guardrails::responses_translation::stream_scan::{
     streaming_scan_key, streaming_string_so_far,
 };
+// ast-grep-ignore: no-long-names
 use betterlite_server::guardrails::responses_translation::stream_sync::{
     deliver_ended_stream_tool_call_rewrites, spread_text_rewrite_over_stream_events,
     sync_stream_events_with_rewrites,
@@ -91,12 +92,14 @@ fn sync_answer(scenario: &SyncScenario) -> Value {
             rewrite.text.clone(),
         );
     }
+    // ast-grep-ignore: no-long-names
     sync_stream_events_with_rewrites(&mut events, &rewrites);
     json!({"events": events})
 }
 
 fn spread_answer(scenario: &SpreadScenario) -> Value {
     let mut events = scenario.events.clone();
+    // ast-grep-ignore: no-long-names
     let outcome = spread_text_rewrite_over_stream_events(
         &mut events,
         &scenario.rewritten_text,
@@ -114,6 +117,7 @@ fn deliver_answer(scenario: &DeliverScenario) -> Value {
     let mut output = scenario.output.clone();
     let pre = shapes(&scenario.pre_guardrail_tool_calls);
     let post = shapes(&scenario.post_guardrail_tool_calls);
+    // ast-grep-ignore: no-long-names
     let outcome = deliver_ended_stream_tool_call_rewrites(
         &mut events,
         &mut output,

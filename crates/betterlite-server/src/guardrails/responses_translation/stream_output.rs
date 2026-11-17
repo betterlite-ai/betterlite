@@ -12,10 +12,10 @@
     )
 )]
 
+mod cases;
 pub mod error;
+mod fallback;
 mod tests;
-
-use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::response_chat_history::tool_fields::output_tool_fields;
@@ -25,14 +25,14 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::guardrail_message_scope::Object;
 use serde_json::{Map, Value};
 
-use super::input_provenance::is_tool_call_item;
 use super::output_rewrite::error::OutputRewriteError;
-use super::output_rewrite::{ExtractedOutput, apply_texts_to_output, extract_output};
-use super::stream_scan::{TERMINAL_ENVELOPE_EVENT_TYPES, integer_field, streaming_string_so_far};
-use super::stream_sync;
+use super::output_rewrite::{ExtractedOutput, extract_output};
+use super::stream_scan::TERMINAL_ENVELOPE_EVENT_TYPES;
 use super::tool_call_identity::{ToolCallShape, post_guardrail_shapes, tool_call_shapes};
 use crate::guardrails::response_context::add_response_context;
+use cases::{item_done_scan, terminal_scan};
 use error::StreamOutputError;
+use fallback::fallback_scan;
 
 struct StreamContext<'ctx> {
     guardrail_name: Option<&'ctx str>,
@@ -174,178 +174,6 @@ where
         pre,
         post,
     })
-}
-
-fn text_rewrites(
-    scanned: &[String],
-    rewritten: &[String],
-    mappings: &[(usize, usize)],
-) -> BTreeMap<(usize, usize), String> {
-    let mut rewrites = BTreeMap::new();
-    for ((scanned_text, mapping), rewritten_text) in scanned.iter().zip(mappings).zip(rewritten) {
-        if scanned_text == rewritten_text {
-            continue;
-        }
-        rewrites.insert(*mapping, rewritten_text.clone());
-    }
-    rewrites
-}
-
-fn deliver_terminal_rewrites(
-    response: &mut Value,
-    earlier: &mut [Value],
-    mappings: &[(usize, usize)],
-    scanned: &[String],
-    rewritten: &[String],
-    answer: &GuardrailAnswer,
-    guardrail_name: Option<&str>,
-) -> Result<(), StreamOutputError> {
-    let rewrites = text_rewrites(scanned, rewritten, mappings);
-    if !rewrites.is_empty() {
-        stream_sync::sync_stream_events_with_rewrites(earlier, &rewrites);
-    }
-    let mut empty: [Value; 0] = [];
-    let output = match response.get_mut("output") {
-        Some(Value::Array(items)) => items.as_mut_slice(),
-        Some(_) | None => empty.as_mut_slice(),
-    };
-    stream_sync::deliver_ended_stream_tool_call_rewrites(
-        earlier,
-        output,
-        &answer.pre,
-        &answer.post,
-        guardrail_name.unwrap_or("unknown"),
-    )
-}
-
-async fn terminal_scan<G>(
-    last: &mut Value,
-    earlier: &mut [Value],
-    guardrail: &G,
-    context: &StreamContext<'_>,
-    logging_obj: Option<&mut GuardrailLogTarget>,
-    request_data: Option<&mut Object>,
-) -> Result<bool, StreamOutputError>
-where
-    G: GuardrailContract,
-{
-    let Some(response) = last.get_mut("response") else {
-        return Ok(false);
-    };
-    if !response.is_object() {
-        return Ok(false);
-    }
-    let scan = scan_envelope(response)?;
-    if scan.extracted.texts.is_empty() && scan.extracted.tool_calls.is_empty() {
-        return Ok(false);
-    }
-    let answer = terminal_answer(&scan, guardrail, context, logging_obj, request_data).await?;
-    let texts = answer.inputs.texts.as_deref().unwrap_or_default();
-    apply_texts_to_output(response, texts, &scan.extracted.task_mappings)?;
-    if context.deliver {
-        deliver_terminal_rewrites(
-            response,
-            earlier,
-            &scan.extracted.task_mappings,
-            &scan.extracted.texts,
-            texts,
-            &answer,
-            context.guardrail_name,
-        )?;
-    }
-    Ok(true)
-}
-
-async fn item_done_scan<G>(
-    last: &Value,
-    guardrail: &G,
-    logging_obj: Option<&mut GuardrailLogTarget>,
-    request_data: Option<&mut Object>,
-) -> Result<(), StreamOutputError>
-where
-    G: GuardrailContract,
-{
-    let Some(item) = last.get("item") else {
-        return Ok(());
-    };
-    let Some(fields) = item.as_object() else {
-        return Ok(());
-    };
-    if !is_tool_call_item(item) {
-        return Ok(());
-    }
-    let index = integer_field(last, "output_index").unwrap_or_default();
-    let inputs = tool_call_inputs(fields, index)?;
-    let mut fresh = Object::new();
-    let prepared = request_data.unwrap_or(&mut fresh);
-    guardrail
-        .apply_guardrail(inputs, prepared, GuardrailInputType::Response, logging_obj)
-        .await?;
-    Ok(())
-}
-
-fn response_model(events: &[Value]) -> Option<String> {
-    events
-        .last()
-        .and_then(|last| last.get("response"))
-        .and_then(Value::as_object)
-        .and_then(|response| response.get("model"))
-        .and_then(Value::as_str)
-        .filter(|model| !model.is_empty())
-        .map(str::to_owned)
-}
-
-fn fallback_inputs(text: String, model: Option<String>) -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: Some(vec![text]),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model,
-        stream_holdback_chars: None,
-    }
-}
-
-fn changed_text<'texts>(texts: Option<&'texts [String]>, scanned: &str) -> Option<&'texts str> {
-    match texts {
-        Some([only]) if only.as_str() == scanned => None,
-        Some([first, ..]) => Some(first.as_str()),
-        Some([]) | None => None,
-    }
-}
-
-async fn fallback_scan<G>(
-    events: &mut [Value],
-    guardrail: &G,
-    context: &StreamContext<'_>,
-    logging_obj: Option<&mut GuardrailLogTarget>,
-    request_data: Option<&mut Object>,
-) -> Result<(), StreamOutputError>
-where
-    G: GuardrailContract,
-{
-    let string_so_far = streaming_string_so_far(events);
-    if string_so_far.is_empty() {
-        return Ok(());
-    }
-    let inputs = fallback_inputs(string_so_far.clone(), response_model(events));
-    let mut fresh = Object::new();
-    let prepared = request_data.unwrap_or(&mut fresh);
-    let answer = guardrail
-        .apply_guardrail(inputs, prepared, GuardrailInputType::Response, logging_obj)
-        .await?;
-    match changed_text(answer.texts.as_deref(), &string_so_far) {
-        Some(rewritten) if context.deliver => {
-            stream_sync::spread_text_rewrite_over_stream_events(
-                events,
-                rewritten,
-                context.guardrail_name.unwrap_or("unknown"),
-            )?;
-            Ok(())
-        }
-        Some(_) | None => Ok(()),
-    }
 }
 
 async fn handle_last<G>(
