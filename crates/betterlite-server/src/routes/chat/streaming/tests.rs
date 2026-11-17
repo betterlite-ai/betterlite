@@ -395,10 +395,7 @@ async fn a_text_stream_becomes_chat_chunks_with_a_done_event() {
     assert_eq!(second.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(second.choices[0].delta.role, None);
     assert_eq!(second.choices[0].delta.content, None);
-    assert_eq!(
-        frames[2].as_ref().expect("done").as_slice(),
-        b"data: [DONE]\n\n"
-    );
+    assert_eq!(&frames[2].as_ref().expect("done")[..], b"data: [DONE]\n\n");
 }
 
 #[tokio::test]
@@ -442,19 +439,20 @@ struct ConvertedTextAnswer {
     model: String,
 }
 
+const TEXT_CALL_CONFIG: &str = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n";
+
+const TEXT_CALL_REQUEST: &[u8] =
+    br#"{"model":"client","messages":[{"role":"user","content":"hi"}]}"#;
+
+const TEXT_CALL_RESPONSE: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}]}"#;
+
 // The text endpoint's answer arrives in the shape the text call asked for; a crossed shape is a dispatch bug.
 #[tokio::test]
 async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
-    let executor = executor_for(
-        "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
-    );
-    let request =
-        ChatRequest::parse(br#"{"model":"client","messages":[{"role":"user","content":"hi"}]}"#)
-            .expect("chat request");
-    let response: CompletionResponse = serde_json::from_str(
-        r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}]}"#,
-    )
-    .expect("completion response");
+    let executor = executor_for(TEXT_CALL_CONFIG);
+    let request = ChatRequest::parse(TEXT_CALL_REQUEST).expect("chat request");
+    let response: CompletionResponse =
+        serde_json::from_str(TEXT_CALL_RESPONSE).expect("completion response");
     let buffered = CompletionCallAnswer::Buffered(CompletionAnswer {
         response: Box::new(response),
         upstream_headers: HeaderMap::new(),
@@ -486,10 +484,7 @@ async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
     };
     let frames: Vec<_> = answer.body.collect().await;
     assert_eq!(frames.len(), 1);
-    assert_eq!(
-        frames[0].as_ref().expect("done").as_slice(),
-        b"data: [DONE]\n\n"
-    );
+    assert_eq!(&frames[0].as_ref().expect("done")[..], b"data: [DONE]\n\n");
 }
 
 #[derive(serde::Deserialize)]

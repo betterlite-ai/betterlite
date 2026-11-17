@@ -173,6 +173,9 @@ async fn collected(
         )
         .await
         .expect("stream");
+    let CallResult::TextStream(result) = result else {
+        panic!("a streamed call answers a stream");
+    };
     result.body.collect().await
 }
 
