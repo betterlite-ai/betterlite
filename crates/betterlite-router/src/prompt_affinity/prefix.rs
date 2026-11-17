@@ -191,21 +191,16 @@ fn block_unit(
         let unmarked = canonical_bytes(&Json::List(vec![envelope.clone(), block.clone()]));
         return (unmarked, message_run_type);
     };
-    let block_run_type = match fields.get("type").and_then(text) {
-        Some(block_type) if TOOL_RUN_BLOCK_TYPES.contains(&block_type) => run_type(block_type),
-        _ => None,
-    };
+    let block_run_type = fields.get("type").and_then(text).and_then(run_type);
     let stripped = sorted_pairs(fields, &[CACHE_CONTROL_KEY]);
     let marked = canonical_bytes(&Json::List(vec![envelope.clone(), stripped]));
     (marked, message_run_type.or(block_run_type))
 }
 
 fn run_type(block_type: &str) -> Option<&'static str> {
-    match block_type {
-        "tool_use" => Some("tool_use"),
-        "tool_result" => Some("tool_result"),
-        _ => None,
-    }
+    TOOL_RUN_BLOCK_TYPES
+        .into_iter()
+        .find(|candidate| *candidate == block_type)
 }
 
 fn text_block(content: &str) -> Json {

@@ -7,8 +7,8 @@ use serde_json::Number;
 
 use super::support::{
     FakePins, MARKED_MESSAGES, ToolBlocks, cache_key, catalog, deployment, ids,
-    image_message_source, json_messages, lookback, messages, pin, positions, request, service,
-    success, text_blocks_source, token_counter, tool_blocks_source,
+    image_message_source, json_messages, lookback, messages, pin, position_numbers, positions,
+    request, service, success, text_blocks_source, token_counter, tool_blocks_source,
 };
 use crate::prompt_affinity::service::{CountingGate, TokenGate as _};
 
@@ -30,6 +30,19 @@ pub(super) async fn run(name: &str) {
             the_lookback_window_holds_twenty_positions().await;
         }
         "a_tool_result_run_counts_as_one_position" => a_tool_result_run_counts_as_one_position(),
+        "a_tool_result_run_in_a_user_message_counts_once" => {
+            a_tool_result_run_in_a_user_message_counts_once();
+        }
+        "consecutive_tool_messages_count_once" => consecutive_tool_messages_count_once(),
+        "an_empty_content_list_hashes_like_missing_content" => {
+            an_empty_content_list_hashes_like_missing_content();
+        }
+        "an_empty_content_string_hashes_like_missing_content" => {
+            an_empty_content_string_hashes_like_missing_content();
+        }
+        "a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions" => {
+            a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions();
+        }
         "a_value_that_is_not_a_pin_is_skipped" => a_value_that_is_not_a_pin_is_skipped().await,
         "an_empty_prompt_has_no_prefix" => an_empty_prompt_has_no_prefix().await,
         "a_prompt_without_a_mark_never_pins" => a_prompt_without_a_mark_never_pins().await,
@@ -130,6 +143,52 @@ fn a_tool_result_run_counts_as_one_position() {
     assert_eq!(lookback(&run).len(), 21);
     assert_eq!(lookback(&used).len(), 21);
     assert_eq!(lookback(&blocks).len(), 20);
+}
+
+// a tool_result block carries the run type even when its message has no tool role
+fn a_tool_result_run_in_a_user_message_counts_once() {
+    let raw = json_messages(
+        r#"[{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"one"},{"type":"tool_result","tool_use_id":"call-2","content":"two"},{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    assert_eq!(position_numbers(&raw), [1, 1, 2]);
+}
+
+// the tool role alone makes the tool_result run type, with no tool_result block to read it from
+fn consecutive_tool_messages_count_once() {
+    let raw = json_messages(
+        r#"[{"role":"tool","content":"42"},{"role":"tool","content":"43"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    assert_eq!(position_numbers(&raw), [1, 1, 2]);
+}
+
+fn an_empty_content_list_hashes_like_missing_content() {
+    let empty = json_messages(
+        r#"[{"role":"user","content":[]},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    let missing = json_messages(
+        r#"[{"role":"user"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    assert_eq!(positions(&empty), positions(&missing));
+    assert_eq!(position_numbers(&empty), [1, 2]);
+}
+
+fn an_empty_content_string_hashes_like_missing_content() {
+    let empty = json_messages(
+        r#"[{"role":"user","content":""},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    let missing = json_messages(
+        r#"[{"role":"user"},{"role":"user","content":[{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    assert_eq!(positions(&empty), positions(&missing));
+    assert_eq!(position_numbers(&empty), [1, 2]);
+}
+
+// a tool_use run ends where the tool_result run begins, so the two never merge into one position
+fn a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions() {
+    let raw = json_messages(
+        r#"[{"role":"assistant","content":[{"type":"tool_use","id":"call-1","name":"lookup","input":{}},{"type":"tool_use","id":"call-2","name":"lookup","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-1","content":"one"},{"type":"tool_result","tool_use_id":"call-2","content":"two"},{"type":"text","text":"last","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    assert_eq!(position_numbers(&raw), [1, 1, 2, 2, 3]);
 }
 
 async fn a_value_that_is_not_a_pin_is_skipped() {

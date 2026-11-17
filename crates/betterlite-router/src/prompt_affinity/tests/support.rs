@@ -217,6 +217,13 @@ pub(super) fn positions(messages: &[Json]) -> Vec<PrefixPosition> {
     prefix_positions(Some(messages), None, &truncator()).unwrap()
 }
 
+pub(super) fn position_numbers(messages: &[Json]) -> Vec<i64> {
+    positions(messages)
+        .iter()
+        .map(|entry| entry.position)
+        .collect()
+}
+
 pub(super) fn lookback(messages: &[Json]) -> Vec<String> {
     lookback_keys(&positions(messages))
 }

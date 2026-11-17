@@ -4,8 +4,11 @@ mod behaviors;
 mod boundaries;
 pub(crate) mod support;
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
+
+use crate::prompt_affinity::canonical::canonical_bytes;
 
 fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
@@ -70,10 +73,32 @@ fn prompt_affinity_behaviors(#[case] name: &str) {
 )]
 #[case::the_lookback_window_holds_twenty_positions("the_lookback_window_holds_twenty_positions")]
 #[case::a_tool_result_run_counts_as_one_position("a_tool_result_run_counts_as_one_position")]
+#[case::a_tool_result_run_in_a_user_message_counts_once(
+    "a_tool_result_run_in_a_user_message_counts_once"
+)]
+#[case::consecutive_tool_messages_count_once("consecutive_tool_messages_count_once")]
+#[case::an_empty_content_list_hashes_like_missing_content(
+    "an_empty_content_list_hashes_like_missing_content"
+)]
+#[case::an_empty_content_string_hashes_like_missing_content(
+    "an_empty_content_string_hashes_like_missing_content"
+)]
+#[case::a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions(
+    "a_tool_use_run_followed_by_a_tool_result_run_counts_two_positions"
+)]
 #[case::a_value_that_is_not_a_pin_is_skipped("a_value_that_is_not_a_pin_is_skipped")]
 #[case::an_empty_prompt_has_no_prefix("an_empty_prompt_has_no_prefix")]
 #[case::a_prompt_without_a_mark_never_pins("a_prompt_without_a_mark_never_pins")]
 #[case::long_base64_payloads_hash_by_size_only("long_base64_payloads_hash_by_size_only")]
 fn prompt_affinity_boundaries(#[case] name: &str) {
     runtime().block_on(boundaries::run(name));
+}
+
+#[test]
+fn canonical_bytes_render_python_json_with_sorted_keys() {
+    let value: Json = serde_json::from_str(r#"{"b":[1,true,null],"a":{"z":"x","y":2}}"#).unwrap();
+    assert_eq!(
+        String::from_utf8(canonical_bytes(&value)).unwrap(),
+        r#"{"a":{"y":2,"z":"x"},"b":[1,true,null]}"#
+    );
 }
