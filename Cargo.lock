@@ -1645,6 +1645,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "url",
  "uuid",
  "zip",
