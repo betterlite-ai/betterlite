@@ -1,66 +1,105 @@
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use serde_json::json;
 
-use super::encoded;
+use super::{encoded, number, object, text};
 use crate::vertex_veo_operation::content::content_response;
 use crate::vertex_veo_operation::error::VeoOperationError;
 
 #[test]
 fn content_decodes_the_first_videos_bytes() {
-    let body = encoded(&json!({
-        "done": true,
-        "response": {"videos": [
-            {"bytesBase64Encoded": "QUJD", "mimeType": "video/mp4"},
-            {"bytesBase64Encoded": "REVG"},
-        ]},
-    }));
+    let body = object([
+        ("done", Json::Bool(true)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![
+                    Json::Object(object([
+                        ("bytesBase64Encoded", text("QUJD")),
+                        ("mimeType", text("video/mp4")),
+                    ])),
+                    Json::Object(object([("bytesBase64Encoded", text("REVG"))])),
+                ]),
+            )])),
+        ),
+    ]);
     assert_eq!(
-        content_response(&body).expect("the first video decodes"),
+        content_response(&encoded(&body)).expect("the first video decodes"),
         b"ABC"
     );
 }
 
 #[test]
 fn ignored_characters_decode_to_the_rest_of_the_video() {
-    let body = encoded(&json!({
-        "done": true,
-        "response": {"videos": [{"bytesBase64Encoded": "QU JD\n"}]},
-    }));
+    let body = object([
+        ("done", Json::Bool(true)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([(
+                    "bytesBase64Encoded",
+                    text("QU JD\n"),
+                )]))]),
+            )])),
+        ),
+    ]);
     assert_eq!(
-        content_response(&body).expect("spaces and newlines are ignored"),
+        content_response(&encoded(&body)).expect("spaces and newlines are ignored"),
         b"ABC"
     );
 }
 
 #[test]
 fn a_gcs_uri_is_never_downloaded() {
-    let body = encoded(&json!({
-        "done": true,
-        "response": {"videos": [{"gcsUri": "gs://bucket/video.mp4"}]},
-    }));
+    let body = object([
+        ("done", Json::Bool(true)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([(
+                    "gcsUri",
+                    text("gs://bucket/video.mp4"),
+                )]))]),
+            )])),
+        ),
+    ]);
     assert!(matches!(
-        content_response(&body),
+        content_response(&encoded(&body)),
         Err(VeoOperationError::NoBase64)
     ));
 }
 
 #[test]
 fn an_unfinished_operation_has_no_content() {
-    let body = encoded(&json!({
-        "done": false,
-        "response": {"videos": [{"bytesBase64Encoded": "QUJD"}]},
-    }));
+    let body = object([
+        ("done", Json::Bool(false)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([(
+                    "bytesBase64Encoded",
+                    text("QUJD"),
+                )]))]),
+            )])),
+        ),
+    ]);
     assert!(matches!(
-        content_response(&body),
+        content_response(&encoded(&body)),
         Err(VeoOperationError::NotComplete)
     ));
 }
 
 #[test]
 fn a_completed_operation_without_videos_has_no_content() {
-    let body = encoded(&json!({"done": true, "response": {}}));
+    let body = object([
+        ("done", Json::Bool(true)),
+        ("response", Json::Object(object([]))),
+    ]);
     assert!(matches!(
-        content_response(&body),
+        content_response(&encoded(&body)),
         Err(VeoOperationError::NoVideos)
     ));
 }
@@ -88,24 +127,42 @@ fn a_malformed_content_block_is_rejected(#[case] body: &[u8]) {
 
 #[test]
 fn malformed_base64_is_rejected() {
-    let body = encoded(&json!({
-        "done": true,
-        "response": {"videos": [{"bytesBase64Encoded": "QUJ"}]},
-    }));
+    let body = object([
+        ("done", Json::Bool(true)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([(
+                    "bytesBase64Encoded",
+                    text("QUJ"),
+                )]))]),
+            )])),
+        ),
+    ]);
     assert!(matches!(
-        content_response(&body),
+        content_response(&encoded(&body)),
         Err(VeoOperationError::VideoBase64(_))
     ));
 }
 
 #[test]
 fn a_non_string_video_field_is_rejected() {
-    let body = encoded(&json!({
-        "done": true,
-        "response": {"videos": [{"bytesBase64Encoded": 5}]},
-    }));
+    let body = object([
+        ("done", Json::Bool(true)),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([(
+                    "bytesBase64Encoded",
+                    number(5),
+                )]))]),
+            )])),
+        ),
+    ]);
     assert!(matches!(
-        content_response(&body),
+        content_response(&encoded(&body)),
         Err(VeoOperationError::Json(_))
     ));
 }

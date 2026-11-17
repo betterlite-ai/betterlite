@@ -1,21 +1,36 @@
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use serde_json::json;
 
-use super::encoded;
+use super::{encoded, number, object, text};
 use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_veo_operation::decode::decode_vertex_veo_operation;
 use crate::vertex_veo_operation::error::VeoOperationError;
 
 #[test]
 fn an_operation_reads_its_name_done_metadata_response_and_error() {
-    let operation = decode_vertex_veo_operation(&encoded(&json!({
-        "name": "projects/p/operations/1",
-        "done": true,
-        "metadata": {"createTime": "2024-12-04T21:53:12.120184Z"},
-        "response": {"videos": [{"bytesBase64Encoded": "QUJD", "gcsUri": "gs://b/v.mp4"}]},
-        "error": {"code": 13},
-    })))
-    .expect("the operation decodes");
+    let body = object([
+        ("name", text("projects/p/operations/1")),
+        ("done", Json::Bool(true)),
+        (
+            "metadata",
+            Json::Object(object([(
+                "createTime",
+                text("2024-12-04T21:53:12.120184Z"),
+            )])),
+        ),
+        (
+            "response",
+            Json::Object(object([(
+                "videos",
+                Json::List(vec![Json::Object(object([
+                    ("bytesBase64Encoded", text("QUJD")),
+                    ("gcsUri", text("gs://b/v.mp4")),
+                ]))]),
+            )])),
+        ),
+        ("error", Json::Object(object([("code", number(13))]))),
+    ]);
+    let operation = decode_vertex_veo_operation(&encoded(&body)).expect("the operation decodes");
     assert_eq!(operation.name, "projects/p/operations/1");
     assert!(operation.done);
     assert_eq!(
@@ -24,7 +39,11 @@ fn an_operation_reads_its_name_done_metadata_response_and_error() {
     );
     assert_eq!(operation.response.videos.len(), 1);
     assert_eq!(operation.response.videos[0].bytes_base64_encoded, "QUJD");
-    assert_eq!(operation.error, json!({"code": 13}).as_object().cloned());
+    assert_eq!(
+        serde_json::to_value(&operation.error).expect("the error converts"),
+        serde_json::to_value(Json::Object(object([("code", number(13))])))
+            .expect("the expected error converts")
+    );
 }
 
 #[test]

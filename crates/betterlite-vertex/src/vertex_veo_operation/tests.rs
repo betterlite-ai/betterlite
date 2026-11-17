@@ -45,6 +45,10 @@ fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
 }
 
+fn decimal(value: f64) -> Json {
+    Json::Number(Number::from_f64(value).expect("the decimal is finite"))
+}
+
 fn request_data(parameters: Object) -> Object {
     let mut data = Object::new();
     data.insert("parameters".to_owned(), Json::Object(parameters));
@@ -61,11 +65,11 @@ fn settings(default_video_duration_seconds: i64) -> VertexSettings {
     }
 }
 
-fn context<'a>(
-    provider: Option<&'a str>,
-    request_data: Option<&'a Object>,
-    settings: &'a VertexSettings,
-) -> VideoContext<'a> {
+fn context<'call>(
+    provider: Option<&'call str>,
+    request_data: Option<&'call Object>,
+    settings: &'call VertexSettings,
+) -> VideoContext<'call> {
     VideoContext {
         provider,
         request_data,
