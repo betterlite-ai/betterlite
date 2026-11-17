@@ -21,7 +21,9 @@ use crate::client::sdk_runtime::handler::{
     ElicitationRequest, ElicitationResponder, ElicitationResult, SamplingRequest, SamplingResponder,
 };
 use crate::sampling_convert::content::{McpContentBlock, SamplingRole};
-use crate::sampling_convert::response::{CreateMessageResult, SamplingResponse, StopReason};
+use crate::sampling_convert::response::{
+    CreateMessageResult, SamplingErrorData, SamplingResponse, StopReason,
+};
 
 use super::support;
 
@@ -303,6 +305,23 @@ fn sampled(request: &SamplingRequest) -> SamplingResponse {
         model: "test-model".to_owned(),
         stop_reason: StopReason::EndTurn,
     })
+}
+
+pub(crate) struct FailingSampling;
+
+impl SamplingResponder for FailingSampling {
+    fn respond<'responder>(
+        &'responder self,
+        _request: SamplingRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<SamplingResponse, ErrorData>> + Send + 'responder>>
+    {
+        Box::pin(async move {
+            Ok(SamplingResponse::Error(SamplingErrorData {
+                code: -32_099,
+                message: "no model available".to_owned(),
+            }))
+        })
+    }
 }
 
 pub(crate) struct TestElicitation;

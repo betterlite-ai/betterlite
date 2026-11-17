@@ -14,7 +14,9 @@ use crate::client::tools::listing::list_tools;
 use crate::client::tools::result::{ContentBlock, ToolCallResult};
 use crate::tools::tool_calls::CallRequest;
 
-use super::server::{INSTRUCTIONS, TestElicitation, TestSampling, TestServer, serve_http};
+use super::server::{
+    FailingSampling, INSTRUCTIONS, TestElicitation, TestSampling, TestServer, serve_http,
+};
 use super::support::{self, RecordingHost};
 
 const RAISE: CallToolOptions = CallToolOptions {
@@ -210,6 +212,16 @@ async fn sampling_goes_to_the_configured_responder() {
     let answer = answered("sample", handlers).await.unwrap();
     assert!(answer.contains("\"model\":\"test-model\""), "{answer}");
     assert!(answer.contains("1 message(s)"), "{answer}");
+}
+
+#[tokio::test]
+async fn a_sampling_error_response_keeps_its_code_and_message() {
+    let handlers = ServerRequestHandlers {
+        sampling: Some(Arc::new(FailingSampling)),
+        elicitation: None,
+    };
+    let answer = answered("sample", handlers).await.unwrap();
+    assert_eq!(answer, "error -32099: no model available");
 }
 
 #[tokio::test]
