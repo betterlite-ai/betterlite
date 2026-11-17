@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-options-nova2
+call:
+  bedrock_converse_options:
+    function: handle
+    model_cost: {}
+    environment: {}
+    model: nova-2/imported-v1:0
+    effort: high
+    optional_params: {}
+env: {}
+compare: {ignore: []}
