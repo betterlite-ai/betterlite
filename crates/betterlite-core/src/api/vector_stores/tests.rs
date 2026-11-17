@@ -41,6 +41,13 @@ const CHUNK: &str = r#"{
         {"index": 1, "delta": {"content": "b"}}
     ]
 }"#;
+const STALE_CHUNK: &str = r#"{
+    "id": "chunk",
+    "object": "chat.completion.chunk",
+    "choices": [
+        {"index": 0, "delta": {"content": "a", "provider_specific_fields": {"keep": "x", "search_results": "old", "vector_store_search_failures": "oldf"}}}
+    ]
+}"#;
 
 fn request(source: &str) -> IndexMap<String, Json> {
     serde_json::from_str(source).expect("valid request_data fixture")
@@ -363,6 +370,29 @@ fn streaming_retrieval_fields() {
     );
     assert_eq!(top_field(&chunk, SEARCH_RESULTS), None);
     assert_eq!(top_field(&chunk, "id"), Some(record("\"chunk\"")));
+}
+
+#[rstest]
+#[case::results_only(
+    RESULTS,
+    "[]",
+    r#"{"keep":"x","search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":"oldf"}"#
+)]
+#[case::failures_only(
+    "[]",
+    FAILURES,
+    r#"{"keep":"x","search_results":"old","vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}"#
+)]
+fn streaming_empty_inputs_do_not_erase_existing_fields(
+    #[case] results: &str,
+    #[case] failures: &str,
+    #[case] expected: &str,
+) {
+    let request_data = chunk_request(results, failures);
+    let mut chunk = record(STALE_CHUNK);
+    let diagnostics = decorate_chunk(&request_data, &mut chunk);
+    assert_eq!(diagnostics, Vec::<String>::new());
+    assert_eq!(member_fields(&chunk, "delta", 0), Some(record(expected)));
 }
 
 #[rstest]

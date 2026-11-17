@@ -14,8 +14,7 @@ from typing_extensions import override
 Object: TypeAlias = dict[str, JsonValue]
 Answer: TypeAlias = ModelResponse | ResponsesAPIResponse | ModelResponseStream
 
-# LiteLLM logs the hook it enters before deciding anything; that trace names a Python method, so the
-# projection keeps only what the hooks decide.
+# LiteLLM names the hook it enters in a log line; the projection keeps only what the hooks decide
 ENTRY_TRACE: Final = "VectorStorePreCallHook."
 RESPONSES_OBJECT: Final = "response"
 
@@ -47,7 +46,7 @@ LOGGING: Final = TypeAdapter(LoggingShape)
 
 
 class CallLog(dict[str, JsonValue]):
-    # a case carries LiteLLM's Logging object as the JSON it holds, and the hook reads one attribute off it
+    # a case carries LiteLLM's Logging object as JSON, and the hook reads one attribute off it
     def __init__(self, logging_object: LoggingShape) -> None:
         details = logging_object.get("model_call_details")
         if details is None:
@@ -101,7 +100,8 @@ def run_success(input_value: Call, handler: Lines) -> Object:
         answer = ResponsesAPIResponse.model_validate(response)
     else:
         answer = ModelResponse.model_validate(response)
-    return outcome(asyncio.run(call(hook_request(input_value["request_data"]), answer, None)), handler)
+    request = hook_request(input_value["request_data"])
+    return outcome(asyncio.run(call(request, answer, None)), handler)
 
 
 def run_streaming(input_value: Call, handler: Lines) -> Object:

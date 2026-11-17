@@ -39,5 +39,18 @@ calls:
         choices:
           - index: 0
             delta: {content: a, provider_specific_fields: {keep: x}}
+  - vector_stores:
+      operation: streaming
+      request_data:
+        search_results: [{object: vector_store.search_results.page, search_query: q, data: []}]
+      response:
+        id: chunk
+        created: 9
+        object: chat.completion.chunk
+        choices:
+          - index: 0
+            delta: {content: a, provider_specific_fields: {keep: x}}
+          - index: 1
+            delta: {content: b}
 env: {}
 compare: {ignore: []}
