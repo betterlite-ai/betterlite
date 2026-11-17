@@ -33,6 +33,13 @@ pub(crate) fn assert_validation(error: ContractError, expected: &str) {
     assert_eq!(message, expected);
 }
 
+pub(crate) fn decode_text(error: &ContractError) -> String {
+    match error {
+        ContractError::Decode { source } => source.to_string(),
+        ContractError::Validation { message } => panic!("a validation error: {message}"),
+    }
+}
+
 pub(crate) fn assert_decode(error: ContractError) {
     match error {
         ContractError::Decode { .. } => {}

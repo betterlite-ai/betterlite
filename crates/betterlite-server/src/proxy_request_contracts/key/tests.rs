@@ -3,7 +3,9 @@
 use rstest::rstest;
 
 use super::{KeyRequest, ResetSpendRequest};
-use crate::proxy_request_contracts::tests::{assert_decode, assert_validation, contract};
+use crate::proxy_request_contracts::tests::{
+    assert_decode, assert_validation, contract, decode_text,
+};
 
 #[rstest]
 #[case::empty("{}")]
@@ -43,6 +45,15 @@ fn accepts_a_bound_list(#[case] text: &str, #[case] dumped: &str) {
 fn rejects_a_non_list(#[case] text: &str) {
     let error = KeyRequest::from_value(&contract(text)).expect_err("a list of strings");
     assert_decode(error);
+}
+
+// The decode error names the field and the element the caller has to fix.
+#[test]
+fn names_the_field_a_decode_error_came_from() {
+    let error = KeyRequest::from_value(&contract(r#"{"keys": ["sk-1", 2]}"#))
+        .expect_err("a number in the key list");
+    let message = decode_text(&error);
+    assert!(message.starts_with("keys[1]: "), "{message}");
 }
 
 #[test]
