@@ -258,7 +258,7 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
         }
         SdkHttpCall::MessagesSyncStream(stream) => call::validate(stream, limits)?,
         SdkHttpCall::MessagesChatStream(stream) => {
-            messages_chat_stream::call::validate(stream, limits)?
+            messages_chat_stream::call::validate(stream, limits)?;
         }
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)

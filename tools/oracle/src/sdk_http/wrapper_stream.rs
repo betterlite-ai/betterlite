@@ -37,11 +37,14 @@ pub(crate) struct Prepared {
 }
 
 // The same deployment the native chat call builds, so base URLs, keys and timeouts resolve alike
-pub(crate) fn prepare<C: WireCall>(
+pub(crate) fn prepare<C>(
     call: &C,
     api_base: &str,
     env: &BTreeMap<String, String>,
-) -> Result<Prepared, SdkHttpError> {
+) -> Result<Prepared, SdkHttpError>
+where
+    C: WireCall,
+{
     let chat = OpenaiChat {
         model: call.model().to_owned(),
         messages: call.messages().to_vec(),
@@ -62,10 +65,13 @@ pub(crate) fn prepare<C: WireCall>(
 }
 
 // One POST per run, with the body the wrapper would send for the same case
-pub(crate) async fn prefetch<C: WireCall>(
+pub(crate) async fn prefetch<C>(
     prepared: &Prepared,
     call: &C,
-) -> Result<VecDeque<Vec<u8>>, SdkHttpError> {
+) -> Result<VecDeque<Vec<u8>>, SdkHttpError>
+where
+    C: WireCall + Sync,
+{
     let wire = WireChat {
         model: call.model(),
         messages: call.messages(),
