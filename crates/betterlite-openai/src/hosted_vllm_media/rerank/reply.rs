@@ -40,27 +40,10 @@ pub fn transform_response(
 ) -> Result<RerankResponse, HostedVllmRerankError> {
     let decoded: RawReply =
         serde_json::from_value(response.clone()).map_err(HostedVllmRerankError::Shape)?;
-    // LiteLLM calls response.get("usage", {}).get("total_tokens", 0), which needs an object: absent or null reads zero here, any other value is a typed error
-    let usage = response
-        .get("usage")
-        .filter(|usage| !usage.is_null())
-        .map(|usage| serde_json::from_value::<Map<String, Value>>(usage.clone()))
-        .transpose()
-        .map_err(HostedVllmRerankError::Shape)?;
-    let total_tokens = match usage.as_ref().and_then(|fields| fields.get("total_tokens")) {
-        None => Some(Some(0)),
-        Some(Value::Null) => Some(None),
-        Some(count) => serde_json::from_value::<i64>(count.clone())
-            .map(|total| Some(Some(total)))
-            .map_err(HostedVllmRerankError::Shape)?,
-    };
+    let tokens = reply_tokens(response)?;
     let billed_units = RerankBilledUnits {
         search_units: None,
-        total_tokens,
-    };
-    let tokens = RerankTokens {
-        input_tokens: total_tokens,
-        output_tokens: None,
+        total_tokens: tokens.input_tokens,
     };
     let Some(results) = decoded.results else {
         return Err(HostedVllmRerankError::NoResults {
@@ -82,6 +65,27 @@ pub fn transform_response(
             tokens: Some(Some(tokens)),
         }),
         hidden_params: BTreeMap::new(),
+    })
+}
+
+// LiteLLM calls response.get("usage", {}).get("total_tokens", 0), which needs an object: absent or null reads zero here, any other value is a typed error
+fn reply_tokens(response: &Value) -> Result<RerankTokens, HostedVllmRerankError> {
+    let usage = response
+        .get("usage")
+        .filter(|usage| !usage.is_null())
+        .map(|usage| serde_json::from_value::<Map<String, Value>>(usage.clone()))
+        .transpose()
+        .map_err(HostedVllmRerankError::Shape)?;
+    let total_tokens = match usage.as_ref().and_then(|fields| fields.get("total_tokens")) {
+        None => Some(Some(0)),
+        Some(Value::Null) => Some(None),
+        Some(count) => serde_json::from_value::<i64>(count.clone())
+            .map(|total| Some(Some(total)))
+            .map_err(HostedVllmRerankError::Shape)?,
+    };
+    Ok(RerankTokens {
+        input_tokens: total_tokens,
+        output_tokens: None,
     })
 }
 
