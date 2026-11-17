@@ -302,9 +302,7 @@ pub(super) fn logged_model(logging_obj: &StreamLoggingObject) -> String {
 }
 
 pub(super) fn logged_provider(logging_obj: &StreamLoggingObject) -> Option<String> {
-    logging_obj
-        .read(&mut |state| state.custom_llm_provider.clone())
-        .expect("the logging state is present")
+    logging_obj.read(&mut |state| state.custom_llm_provider.clone())?
 }
 
 #[derive(Clone, Debug)]
