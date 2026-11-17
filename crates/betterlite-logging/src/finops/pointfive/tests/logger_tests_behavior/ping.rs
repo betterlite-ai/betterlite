@@ -6,6 +6,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{FakeHttp, PRESIGNED, Reply, client, core, payload, target_body, wait_until};
+use crate::finops::pointfive::logger::flush::periodic_flush;
 
 const HOUR: Duration = Duration::from_secs(3600);
 
@@ -16,7 +17,7 @@ async fn the_first_cycle_pings_an_idle_queue() {
     let shutdown = CancellationToken::new();
     let token = shutdown.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move { core.periodic_flush(HOUR, token).await });
+    tasks.spawn(async move { periodic_flush(&core, HOUR, token).await });
     wait_until(|| !http.pings().is_empty()).await;
     shutdown.cancel();
     tasks
@@ -37,7 +38,7 @@ async fn the_first_cycle_uploads_a_queue_instead_of_pinging() {
     let shutdown = CancellationToken::new();
     let token = shutdown.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move { background.periodic_flush(HOUR, token).await });
+    tasks.spawn(async move { periodic_flush(&background, HOUR, token).await });
     wait_until(|| !http.uploads().is_empty()).await;
     shutdown.cancel();
     tasks
@@ -63,11 +64,7 @@ async fn a_later_cycle_flushes_what_arrived_since() {
     let shutdown = CancellationToken::new();
     let token = shutdown.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move {
-        background
-            .periodic_flush(Duration::from_millis(20), token)
-            .await
-    });
+    tasks.spawn(async move { periodic_flush(&background, Duration::from_millis(20), token).await });
     wait_until(|| http.uploads().len() == 1).await;
     core.queue.push(payload("evt-2"));
     wait_until(|| http.uploads().len() == 2).await;
@@ -87,7 +84,7 @@ async fn a_failed_ping_leaves_the_loop_waiting() {
     let shutdown = CancellationToken::new();
     let token = shutdown.clone();
     let mut tasks = JoinSet::new();
-    tasks.spawn(async move { core.periodic_flush(HOUR, token).await });
+    tasks.spawn(async move { periodic_flush(&core, HOUR, token).await });
     wait_until(|| !http.pings().is_empty()).await;
     tokio::task::yield_now().await;
     assert!(!tasks.is_empty());

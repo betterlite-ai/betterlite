@@ -9,6 +9,8 @@ use super::support::{
     FakeHttp, PRESIGNED, RecordingSleeper, Reply, client, client_with, core, core_with,
     default_params, logged, payload, target_body,
 };
+use crate::finops::pointfive::logger::flush::flush_queue;
+use crate::finops::pointfive::logger::send::send_batch;
 
 fn upload_pair(index: usize) -> [Reply; 2] {
     [
@@ -39,7 +41,7 @@ fn decompressed(body: &[u8]) -> String {
 async fn an_empty_queue_sends_nothing() {
     let http = FakeHttp::default();
     let core = core(PointFiveInitParams::default(), client(&http, 1));
-    core.send_batch().await.expect("an empty batch is fine");
+    send_batch(&core).await.expect("an empty batch is fine");
     assert!(http.requests().is_empty());
 }
 
@@ -50,7 +52,7 @@ async fn one_chunk_ships_every_record() {
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.queue.push(payload("evt-1"));
     core.queue.push(payload("evt-2"));
-    core.flush_queue(false).await;
+    flush_queue(&core, false).await;
     let uploads = http.uploads();
     assert_eq!(uploads.len(), 1);
     let text = decompressed(&uploads[0].body);
@@ -73,7 +75,7 @@ async fn a_batch_over_the_byte_limit_is_split_into_objects() {
     let core = core(params(1), client(&http, 1));
     core.queue.push(payload("evt-1"));
     core.queue.push(payload("evt-2"));
-    core.flush_queue(false).await;
+    flush_queue(&core, false).await;
     let uploads = http.uploads();
     assert_eq!(uploads.len(), 2);
     assert_eq!(decompressed(&uploads[0].body).lines().count(), 1);
@@ -88,8 +90,7 @@ async fn a_retryable_failure_raises_and_keeps_the_failed_chunk() {
     let core = core(params(1), client(&http, 1));
     core.queue.push(payload("evt-1"));
     core.queue.push(payload("evt-2"));
-    let error = core
-        .send_batch()
+    let error = send_batch(&core)
         .await
         .err()
         .expect("the retryable failure is raised");
@@ -109,7 +110,7 @@ async fn a_rejected_chunk_is_logged_and_dropped() {
     let http = FakeHttp::scripted(vec![Reply::answer(400)]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.queue.push(payload("evt-1"));
-    let ((), text) = logged(core.flush_queue(false)).await;
+    let ((), text) = logged(flush_queue(&core, false)).await;
     assert!(core.queue.is_empty());
     assert!(text.contains("dropping records"));
     assert!(text.contains("pointfive api returned 400"));
@@ -123,7 +124,7 @@ async fn a_retryable_failure_waits_a_backoff_and_then_succeeds() {
     let upload_client = client_with(&http, 2, sleeper.clone());
     let core = core_with(PointFiveInitParams::default(), upload_client, false);
     core.queue.push(payload("evt-1"));
-    core.send_batch().await.expect("the retry ships the batch");
+    flush_queue(&core, false).await;
     assert_eq!(http.uploads().len(), 1);
     let delays = sleeper
         .delays
@@ -139,8 +140,7 @@ async fn a_failure_past_the_retry_limit_raises() {
     let http = FakeHttp::scripted(vec![Reply::answer(500), Reply::answer(500)]);
     let core = core(PointFiveInitParams::default(), client(&http, 2));
     core.queue.push(payload("evt-1"));
-    let error = core
-        .send_batch()
+    let error = send_batch(&core)
         .await
         .err()
         .expect("the failure is raised");
@@ -153,8 +153,7 @@ async fn a_transport_failure_is_retryable() {
     let http = FakeHttp::scripted(vec![Reply::Transport]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.queue.push(payload("evt-1"));
-    let error = core
-        .send_batch()
+    let error = send_batch(&core)
         .await
         .err()
         .expect("the transport failure is raised");

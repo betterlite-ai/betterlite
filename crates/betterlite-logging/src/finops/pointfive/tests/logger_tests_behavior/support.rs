@@ -16,6 +16,7 @@ use betterlite_http::user_url::error::UserUrlError;
 use betterlite_models::decisions::Json;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use http::Method;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -204,6 +205,13 @@ impl UploadClientSource for MissingKeySource {
 pub(super) struct LapsingSource {
     pub(super) client: PointFiveUploadClient,
     pub(super) available: Arc<AtomicBool>,
+    pub(super) lapse: Lapse,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Lapse {
+    MissingKey,
+    Secret,
 }
 
 impl UploadClientSource for LapsingSource {
@@ -214,24 +222,10 @@ impl UploadClientSource for LapsingSource {
         if self.available.load(Ordering::SeqCst) {
             return Ok(self.client.clone());
         }
-        Err(PointFiveError::MissingApiKey)
-    }
-}
-
-pub(super) struct LapsingSecretSource {
-    pub(super) client: PointFiveUploadClient,
-    pub(super) available: Arc<AtomicBool>,
-}
-
-impl UploadClientSource for LapsingSecretSource {
-    fn upload_client(
-        &self,
-        _params: &PointFiveInitParams,
-    ) -> Result<PointFiveUploadClient, PointFiveError> {
-        if self.available.load(Ordering::SeqCst) {
-            return Ok(self.client.clone());
+        match self.lapse {
+            Lapse::MissingKey => Err(PointFiveError::MissingApiKey),
+            Lapse::Secret => Err(PointFiveError::Secret(SecretLookupError::GoogleOidcFailed)),
         }
-        Err(PointFiveError::Secret(SecretLookupError::GoogleOidcFailed))
     }
 }
 
@@ -419,32 +413,36 @@ pub(super) fn payload(id: &str) -> StandardLoggingPayload {
     payload
 }
 
+pub(super) fn fields(pairs: &[(&str, Json)]) -> IndexMap<String, Json> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), value.clone()))
+        .collect()
+}
+
 pub(super) fn payload_with_messages(id: &str) -> StandardLoggingPayload {
     let mut payload = payload(id);
-    payload.messages = Some(Json::List(vec![Json::Object(indexmap::IndexMap::from([
-        ("role".to_owned(), Json::Text("user".to_owned())),
+    let message = fields(&[
+        ("role", Json::Text("user".to_owned())),
+        ("content", Json::Text("the secret prompt".to_owned())),
+    ]);
+    let choice = fields(&[(
+        "message",
+        Json::Object(fields(&[(
+            "content",
+            Json::Text("the secret answer".to_owned()),
+        )])),
+    )]);
+    let response = fields(&[
+        ("id", Json::Text("chatcmpl-1".to_owned())),
         (
-            "content".to_owned(),
-            Json::Text("the secret prompt".to_owned()),
-        ),
-    ]))]));
-    payload.response = Some(Json::Object(indexmap::IndexMap::from([
-        ("id".to_owned(), Json::Text("chatcmpl-1".to_owned())),
-        (
-            "created".to_owned(),
+            "created",
             Json::Number(serde_json::Number::from(1_700_000_000_u64)),
         ),
-        (
-            "choices".to_owned(),
-            Json::List(vec![Json::Object(indexmap::IndexMap::from([(
-                "message".to_owned(),
-                Json::Object(indexmap::IndexMap::from([(
-                    "content".to_owned(),
-                    Json::Text("the secret answer".to_owned()),
-                )])),
-            )]))]),
-        ),
-    ])));
+        ("choices", Json::List(vec![Json::Object(choice)])),
+    ]);
+    payload.messages = Some(Json::List(vec![Json::Object(message)]));
+    payload.response = Some(Json::Object(response));
     payload
 }
 
@@ -459,18 +457,8 @@ pub(super) fn event_with(
 ) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
-        dynamic_params: Arc::new(Json::Object(
-            dynamic
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), value.clone()))
-                .collect(),
-        )),
-        litellm_metadata: Arc::new(
-            metadata
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), value.clone()))
-                .collect(),
-        ),
+        dynamic_params: Arc::new(Json::Object(fields(dynamic))),
+        litellm_metadata: Arc::new(fields(metadata)),
         stream: false,
         guardrail_snapshot: None,
     })

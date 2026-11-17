@@ -8,7 +8,6 @@ use crate::callback_logger::CallbackLogger;
 use crate::finops::pointfive::logger::client::PointFiveService;
 use crate::finops::pointfive::logger::{PointFiveDeps, PointFiveLogger};
 use crate::finops::pointfive::upload::transport::PointFiveHttp;
-use crate::finops::pointfive::upload::url_check::UploadUrlCheck;
 
 mod tests;
 
@@ -25,16 +24,15 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         .sections
         .user_url_policy
         .user_url_allowed_hosts;
-    let url_check: Arc<dyn UploadUrlCheck> = Arc::new(UrlValidator::new(
-        SystemResolver,
-        allowed_hosts,
-        &Verification::Enabled,
-    ));
     let source = PointFiveService::new(
         Arc::new(PointFiveHttp {
             client: inputs.http.clone(),
         }),
-        url_check,
+        Arc::new(UrlValidator::new(
+            SystemResolver,
+            allowed_hosts,
+            &Verification::Enabled,
+        )),
         Arc::clone(&inputs.env),
     );
     let logger = PointFiveLogger::new(

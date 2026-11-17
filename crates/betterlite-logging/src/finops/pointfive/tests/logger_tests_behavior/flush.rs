@@ -12,6 +12,7 @@ use super::support::{
     FakeHttp, FakeUrlCheck, PRESIGNED, RecordingSleeper, Reply, Seen, client, client_over, core,
     logged, payload, target_body, wait_until,
 };
+use crate::finops::pointfive::logger::flush::flush_queue;
 use crate::finops::pointfive::upload::transport::{UploadHttp, UploadRequest, UploadResponse};
 
 // a transport that records each request and holds it until the test opens the gate
@@ -58,7 +59,8 @@ impl UploadHttp for GatedHttp {
             .acquire()
             .await
             .expect("the test keeps the gate open");
-        drop(permit);
+        // a returned permit would let every later request through without another open
+        permit.forget();
         let reply = self
             .replies
             .lock()
@@ -83,7 +85,7 @@ fn upload_pair() -> [Reply; 2] {
 async fn an_empty_queue_pings_instead_of_uploading() {
     let http = FakeHttp::scripted(vec![Reply::answer(200)]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
-    core.flush_queue(true).await;
+    flush_queue(&core, true).await;
     assert_eq!(http.pings().len(), 1);
     assert!(http.uploads().is_empty());
 }
@@ -92,7 +94,7 @@ async fn an_empty_queue_pings_instead_of_uploading() {
 async fn an_empty_queue_pings_without_the_skip_flag() {
     let http = FakeHttp::scripted(vec![Reply::answer(200)]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
-    core.flush_queue(false).await;
+    flush_queue(&core, false).await;
     assert_eq!(http.pings().len(), 1);
     assert!(http.uploads().is_empty());
 }
@@ -104,7 +106,7 @@ async fn a_queued_batch_is_uploaded_and_the_flag_clears() {
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.queue.push(payload("evt-1"));
     core.queue.push(payload("evt-2"));
-    core.flush_queue(false).await;
+    flush_queue(&core, false).await;
     assert_eq!(http.uploads().len(), 1);
     assert!(http.pings().is_empty());
     assert!(core.queue.is_empty());
@@ -117,7 +119,7 @@ async fn skip_if_flushing_returns_before_sending() {
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.flushing.store(true, Ordering::SeqCst);
     core.queue.push(payload("evt-1"));
-    core.flush_queue(true).await;
+    flush_queue(&core, true).await;
     assert!(http.requests().is_empty());
     assert_eq!(core.queue.len(), 1);
 }
@@ -129,7 +131,7 @@ async fn without_the_skip_flag_the_flush_runs_while_flushing() {
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.flushing.store(true, Ordering::SeqCst);
     core.queue.push(payload("evt-1"));
-    core.flush_queue(false).await;
+    flush_queue(&core, false).await;
     assert_eq!(http.uploads().len(), 1);
     assert!(core.queue.is_empty());
 }
@@ -138,7 +140,7 @@ async fn without_the_skip_flag_the_flush_runs_while_flushing() {
 async fn a_failed_ping_does_not_stop_the_flush() {
     let http = FakeHttp::scripted(vec![Reply::answer(401)]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
-    core.flush_queue(true).await;
+    flush_queue(&core, true).await;
     assert_eq!(http.pings().len(), 1);
     assert!(!core.flushing.load(Ordering::SeqCst));
 }
@@ -148,7 +150,7 @@ async fn a_failed_upload_keeps_the_queued_records() {
     let http = FakeHttp::scripted(vec![Reply::answer(500)]);
     let core = core(PointFiveInitParams::default(), client(&http, 1));
     core.queue.push(payload("evt-1"));
-    let ((), text) = logged(core.flush_queue(false)).await;
+    let ((), text) = logged(flush_queue(&core, false)).await;
     assert_eq!(core.queue.len(), 1);
     assert!(!core.flushing.load(Ordering::SeqCst));
     assert!(text.contains("the batch send failed"));
@@ -175,12 +177,12 @@ async fn a_flush_waiting_on_the_lock_keeps_the_flag_set_while_it_sends() {
     core.queue.push(payload("evt-1"));
     let mut tasks = JoinSet::new();
     let first = Arc::clone(&core);
-    tasks.spawn(async move { first.flush_queue(false).await });
+    tasks.spawn(async move { flush_queue(&first, false).await });
     wait_until(|| http.requests() == 1).await;
 
     // the second flush queues up behind the lock the first one holds
     let second = Arc::clone(&core);
-    tasks.spawn(async move { second.flush_queue(false).await });
+    tasks.spawn(async move { flush_queue(&second, false).await });
     tokio::task::yield_now().await;
     http.open();
     wait_until(|| http.requests() == 2).await;

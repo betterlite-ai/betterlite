@@ -66,7 +66,12 @@ impl PointFiveService {
         params: &PointFiveInitParams,
     ) -> Result<Option<SecretString>, PointFiveError> {
         let configured = self
-            .resolved_secret(params.api_key.as_ref().map(|key| key.expose_secret()))?
+            .resolved_secret(
+                params
+                    .api_key
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret),
+            )?
             .filter(|key| !key.expose_secret().is_empty());
         if configured.is_some() {
             return Ok(configured);

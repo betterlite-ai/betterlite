@@ -19,6 +19,7 @@ use tokio_util::task::TaskTracker;
 use self::client::UploadClientSource;
 use self::core::PointFiveCore;
 use self::error::PointFiveError;
+use self::{flush, record};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
@@ -84,7 +85,7 @@ impl PointFiveLogger {
         let interval = Duration::from_secs(core.params.flush_interval);
         let shutdown = self.shutdown.clone();
         *task = Some(self.tasks.spawn_on(
-            async move { core.periodic_flush(interval, shutdown).await },
+            async move { flush::periodic_flush(&core, interval, shutdown).await },
             &handle,
         ));
     }
@@ -112,10 +113,10 @@ impl PointFiveLogger {
             return;
         }
         let core = Arc::clone(&self.core);
-        *task = Some(
-            self.tasks
-                .spawn_on(async move { core.flush_queue(true).await }, &handle),
-        );
+        *task = Some(self.tasks.spawn_on(
+            async move { flush::flush_queue(&core, true).await },
+            &handle,
+        ));
     }
 
     // _enqueue: buffer one record, flushing early once the batch threshold is reached
@@ -123,7 +124,7 @@ impl PointFiveLogger {
         if !self.flush_task_is_alive() {
             self.start_periodic_flush_task();
         }
-        let record = match self.core.record_for(event) {
+        let record = match record::record_for(&self.core, event) {
             Ok(record) => record,
             Err(error) => {
                 tracing::error!(%error, "pointfive: failed to queue an event");

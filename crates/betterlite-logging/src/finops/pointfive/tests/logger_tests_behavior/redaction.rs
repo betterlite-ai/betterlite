@@ -1,12 +1,13 @@
 use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 
 use crate::fields::payload::StandardLoggingPayload;
 
 use super::support::{
-    FakeHttp, client, core_with, default_params, event, event_with, payload, payload_with_messages,
+    FakeHttp, client, core_with, default_params, event, event_with, fields, payload,
+    payload_with_messages,
 };
+use crate::finops::pointfive::logger::record::record_for;
 
 const MARKER: &str = "redacted-by-litellm";
 
@@ -53,21 +54,19 @@ fn choice_content(record: &StandardLoggingPayload) -> String {
 }
 
 fn headers(pairs: &[(&str, bool)]) -> Json {
-    Json::Object(
-        pairs
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), Json::Bool(*value)))
-            .collect::<IndexMap<String, Json>>(),
-    )
+    let pairs: Vec<(&str, Json)> = pairs
+        .iter()
+        .map(|(name, value)| (*name, Json::Bool(*value)))
+        .collect();
+    Json::Object(fields(&pairs))
 }
 
 #[test]
 fn the_local_flag_redacts_messages_and_the_response() {
     let http = FakeHttp::default();
     let core = core_with(flagged(true), client(&http, 1), false);
-    let record = core
-        .record_for(&event(payload_with_messages("evt-1")))
-        .expect("the record builds");
+    let record =
+        record_for(&core, &event(payload_with_messages("evt-1"))).expect("the record builds");
     assert_eq!(message_content(&record), MARKER);
     assert_eq!(choice_content(&record), MARKER);
 }
@@ -77,9 +76,7 @@ fn a_record_is_unchanged_when_nothing_redacts() {
     let http = FakeHttp::default();
     let core = core_with(flagged(false), client(&http, 1), false);
     let original = payload_with_messages("evt-1");
-    let record = core
-        .record_for(&event(original.clone()))
-        .expect("the record builds");
+    let record = record_for(&core, &event(original.clone())).expect("the record builds");
     assert_eq!(record.messages, original.messages);
     assert_eq!(record.response, original.response);
 }
@@ -88,9 +85,8 @@ fn a_record_is_unchanged_when_nothing_redacts() {
 fn the_global_flag_redacts() {
     let http = FakeHttp::default();
     let core = core_with(flagged(false), client(&http, 1), true);
-    let record = core
-        .record_for(&event(payload_with_messages("evt-1")))
-        .expect("the record builds");
+    let record =
+        record_for(&core, &event(payload_with_messages("evt-1"))).expect("the record builds");
     assert_eq!(message_content(&record), MARKER);
     assert_eq!(choice_content(&record), MARKER);
 }
@@ -104,7 +100,7 @@ fn a_dynamic_true_enables_redaction() {
         &[],
         &[("turn_off_message_logging", Json::Bool(true))],
     );
-    let record = core.record_for(&event).expect("the record builds");
+    let record = record_for(&core, &event).expect("the record builds");
     assert_eq!(message_content(&record), MARKER);
 }
 
@@ -118,7 +114,7 @@ fn a_dynamic_false_overrides_the_global_flag() {
         &[],
         &[("turn_off_message_logging", Json::Bool(false))],
     );
-    let record = core.record_for(&event).expect("the record builds");
+    let record = record_for(&core, &event).expect("the record builds");
     assert_eq!(record.messages, original.messages);
 }
 
@@ -132,7 +128,7 @@ fn a_dynamic_string_flag_is_read_as_a_bool() {
         &[],
         &[("turn_off_message_logging", Json::Text("false".to_owned()))],
     );
-    let record = core.record_for(&event).expect("the record builds");
+    let record = record_for(&core, &event).expect("the record builds");
     assert_eq!(record.messages, original.messages);
 }
 
@@ -149,7 +145,7 @@ fn a_disable_header_overrides_the_global_flag() {
         )],
         &[],
     );
-    let record = core.record_for(&event).expect("the record builds");
+    let record = record_for(&core, &event).expect("the record builds");
     assert_eq!(record.messages, original.messages);
 }
 
@@ -165,7 +161,7 @@ fn an_enable_header_redacts_without_the_global_flag() {
         )],
         &[],
     );
-    let record = core.record_for(&event).expect("the record builds");
+    let record = record_for(&core, &event).expect("the record builds");
     assert_eq!(message_content(&record), MARKER);
 }
 
@@ -173,9 +169,8 @@ fn an_enable_header_redacts_without_the_global_flag() {
 fn a_redacted_record_keeps_the_other_fields() {
     let http = FakeHttp::default();
     let core = core_with(flagged(true), client(&http, 1), false);
-    let record = core
-        .record_for(&event(payload_with_messages("evt-1")))
-        .expect("the record builds");
+    let record =
+        record_for(&core, &event(payload_with_messages("evt-1"))).expect("the record builds");
     assert_eq!(record.id, "evt-1");
     assert_eq!(record.model, "gpt-3.5-turbo");
     assert_eq!(record.total_tokens, 30);
@@ -185,9 +180,8 @@ fn a_redacted_record_keeps_the_other_fields() {
 fn a_redacted_response_keeps_the_original_id_and_created() {
     let http = FakeHttp::default();
     let core = core_with(flagged(true), client(&http, 1), false);
-    let record = core
-        .record_for(&event(payload_with_messages("evt-1")))
-        .expect("the record builds");
+    let record =
+        record_for(&core, &event(payload_with_messages("evt-1"))).expect("the record builds");
     let Some(Json::Object(response)) = record.response.as_ref() else {
         panic!("the record has a response object");
     };
@@ -205,9 +199,7 @@ fn a_redacted_response_keeps_the_original_id_and_created() {
 fn a_record_without_messages_survives_the_local_redaction() {
     let http = FakeHttp::default();
     let core = core_with(flagged(true), client(&http, 1), false);
-    let record = core
-        .record_for(&event(payload("evt-1")))
-        .expect("the record builds");
+    let record = record_for(&core, &event(payload("evt-1"))).expect("the record builds");
     assert_eq!(record.id, "evt-1");
     assert!(record.messages.is_none());
 }

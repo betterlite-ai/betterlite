@@ -6,10 +6,9 @@ use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 use crate::exporter_options::health::HealthState;
 use crate::finops::pointfive::logger::PointFiveLogger;
 use crate::finops::pointfive::logger::core::PointFiveCore;
+use crate::finops::pointfive::logger::flush::ping;
 
-use super::support::{
-    FakeHttp, LapsingSecretSource, LapsingSource, Reply, client, deps_from, logged, logger,
-};
+use super::support::{FakeHttp, Lapse, LapsingSource, Reply, client, deps_from, logged, logger};
 
 const MISSING_KEY: &str = "pointfive logging requires an api key. Set POINTFIVE_API_KEY, or litellm_settings.pointfive_params.api_key in config.yaml";
 
@@ -20,6 +19,7 @@ async fn a_missing_key_reports_unhealthy() {
     let source = Arc::new(LapsingSource {
         client: client(&http, 1),
         available: Arc::clone(&available),
+        lapse: Lapse::MissingKey,
     });
     let logger = PointFiveLogger::new(
         PointFiveInitParams::default(),
@@ -58,9 +58,10 @@ async fn a_rejected_ping_reports_unhealthy() {
 async fn a_secret_lookup_error_reports_unhealthy() {
     let http = FakeHttp::default();
     let available = Arc::new(AtomicBool::new(true));
-    let source = Arc::new(LapsingSecretSource {
+    let source = Arc::new(LapsingSource {
         client: client(&http, 1),
         available: Arc::clone(&available),
+        lapse: Lapse::Secret,
     });
     let logger = PointFiveLogger::new(
         PointFiveInitParams::default(),
@@ -82,13 +83,14 @@ async fn a_secret_lookup_error_reports_unhealthy() {
 async fn a_client_that_cannot_be_built_is_only_warned_about() {
     let http = FakeHttp::default();
     let available = Arc::new(AtomicBool::new(true));
-    let source = Arc::new(LapsingSecretSource {
+    let source = Arc::new(LapsingSource {
         client: client(&http, 1),
         available: Arc::clone(&available),
+        lapse: Lapse::Secret,
     });
     let core = PointFiveCore::new(PointFiveInitParams::default(), None, source, false);
     available.store(false, Ordering::SeqCst);
-    let ((), text) = logged(core.ping()).await;
+    let ((), text) = logged(ping(&core)).await;
     assert!(text.contains("liveness ping skipped"));
     assert!(text.contains("the pointfive secret could not be read"));
 }
