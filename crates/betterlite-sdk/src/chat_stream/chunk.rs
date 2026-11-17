@@ -148,7 +148,7 @@ fn blocking_final<S>(
 
 // __anext__'s final chunk: hidden usage, then the deployment hook, then the MCP metadata.
 async fn async_final<S>(
-    stream: &mut ChatStream<'_, S>,
+    stream: &ChatStream<'_, S>,
     mut chunk: StreamChunk,
 ) -> Result<StreamChunk, ChatStreamCause> {
     if !stream.shaper.progress.sent_last_chunk {
