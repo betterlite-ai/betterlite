@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.proxy._types import (
@@ -14,6 +15,10 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 _JSON: Final = TypeAdapter(JsonValue)
 _OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 _NAMES: Final = TypeAdapter(list[JsonValue])
+# GenerateRequestBase's bare dict and list fields make mypy read the user classes as Any-typed, so
+# the two adapters are built from the type form, which keeps the validators and a typed result.
+_NEW_USER: Final[TypeAdapter[NewUserRequest]] = TypeAdapter(NewUserRequest)
+_UPDATE_USER: Final[TypeAdapter[UpdateUserRequest]] = TypeAdapter(UpdateUserRequest)
 
 Function: TypeAlias = Literal[
     "key",
@@ -112,13 +117,13 @@ def cost_estimate_answer(call: Call) -> JsonValue:
 
 
 def new_user_answer(call: Call) -> JsonValue:
-    request = NewUserRequest.model_validate(call["body"])
+    request = _NEW_USER.validate_python(call["body"])
     dump = object_dump(request)
     return {key: dump[key] for key in NEW_USER_KEYS}
 
 
 def update_user_answer(call: Call) -> JsonValue:
-    request = UpdateUserRequest.model_validate(call["body"])
+    request = _UPDATE_USER.validate_python(call["body"])
     dump = object_dump(request)
     view: dict[str, JsonValue] = {
         "user_id": dump["user_id"],
@@ -145,24 +150,19 @@ def redis_params_answer(call: Call) -> JsonValue:
     return view
 
 
+ANSWERS: Final[dict[Function, Callable[[Call], JsonValue]]] = {
+    "key": key_answer,
+    "reset_spend": reset_spend_answer,
+    "new_user": new_user_answer,
+    "update_user": update_user_answer,
+    "customer": customer_answer,
+    "cost_estimate": cost_estimate_answer,
+    "redis_params": redis_params_answer,
+}
+
+
 def answer(call: Call) -> JsonValue:
-    value: JsonValue = None
-    match call["function"]:
-        case "key":
-            value = key_answer(call)
-        case "reset_spend":
-            value = reset_spend_answer(call)
-        case "new_user":
-            value = new_user_answer(call)
-        case "update_user":
-            value = update_user_answer(call)
-        case "customer":
-            value = customer_answer(call)
-        case "cost_estimate":
-            value = cost_estimate_answer(call)
-        case "redis_params":
-            value = redis_params_answer(call)
-    return value
+    return ANSWERS[call["function"]](call)
 
 
 def call_outcome(call: Call) -> JsonValue:
