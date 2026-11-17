@@ -1,12 +1,12 @@
 import asyncio
 import base64
 import uuid
-from typing import Final, Literal, TypeAlias, TypedDict
+from collections.abc import Awaitable
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import litellm
 import openai
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from litellm.main import acompletion
 from litellm.responses.litellm_completion_transformation.streaming_iterator import (
     LiteLLMCompletionStreamingIterator as ResponsesIterator,
 )
@@ -21,8 +21,10 @@ from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
 
-# completion and acompletion declare both answers, and stream=True narrows it to the wrapper
-CompletionAnswer: TypeAlias = ModelResponse | CustomStreamWrapper
+# completion also declares an awaitable, and stream=True narrows both answers to the wrapper
+CompletionAnswer: TypeAlias = (
+    ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+)
 
 
 class StepOutcome(TypedDict):
@@ -54,7 +56,7 @@ class ChatResponseStreamCall(BaseModel):
     api_key: str
     timeout_seconds: int
     request_input: str
-    responses_api_request: RequestParams = Field(default_factory=RequestParams)
+    responses_api_request: dict[str, Json] = Field(default_factory=dict)
     runs: list[ChatRunSpec]
 
 
@@ -119,14 +121,14 @@ def build_iterator(call: ChatResponseStreamCall, answer: CompletionAnswer) -> Re
     match answer:
         case CustomStreamWrapper():
             wrapper = answer
-        case ModelResponse():
+        case ModelResponse() | Awaitable():
             raise TypeError("stream=True answers with a CustomStreamWrapper")
     return ResponsesIterator(
         model=call.model,
         litellm_custom_stream_wrapper=wrapper,
         request_input=call.request_input,
         # LiteLLM's request TypedDict carries `metadata: dict[str, Any] | None`
-        responses_api_request=call.responses_api_request,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
+        responses_api_request=cast("RequestParams", call.responses_api_request),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
         custom_llm_provider="openai",
     )
 
@@ -188,7 +190,7 @@ def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> 
 
 async def async_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        answer: CompletionAnswer = await acompletion(**request_options(call, api_base))
+        answer: CompletionAnswer = await litellm.acompletion(**request_options(call, api_base))
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
     iterator = build_iterator(call, answer)
