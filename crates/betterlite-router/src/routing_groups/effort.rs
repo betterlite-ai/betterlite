@@ -159,7 +159,6 @@ pub fn intersect_supported_efforts(
 pub struct GroupReasoningEfforts {
     pub(super) supported: Option<Vec<ReasoningEffort>>,
     pub(super) unknown: bool,
-    initialized: bool,
 }
 
 impl GroupReasoningEfforts {
@@ -168,12 +167,6 @@ impl GroupReasoningEfforts {
             None => {
                 self.unknown = true;
                 self.supported = None;
-            }
-            Some(levels) if !self.initialized => {
-                self.initialized = true;
-                if !self.unknown {
-                    self.supported = Some(levels);
-                }
             }
             Some(levels) if !self.unknown => {
                 self.supported =
