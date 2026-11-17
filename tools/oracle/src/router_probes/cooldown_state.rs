@@ -152,8 +152,6 @@ pub enum ScenarioError {
     Deployment { id: String },
     #[error("the step names a cooldown key the router cannot use")]
     CooldownKey,
-    #[error("the health snapshot key is not a usable routing key")]
-    HealthKey,
     #[error("the health snapshot write was refused")]
     HealthState,
     #[error("the time {millis} milliseconds cannot be represented as seconds")]

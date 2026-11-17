@@ -294,7 +294,7 @@ pub(crate) fn health(
     shared: Arc<MemoryHealth>,
     staleness_threshold: f64,
 ) -> DeploymentHealthCache {
-    DeploymentHealthCache::new(staleness_threshold, shared, clock.handle()).unwrap()
+    DeploymentHealthCache::new(staleness_threshold, shared, clock.handle())
 }
 
 pub(crate) fn deployment(model_name: &str, id: &str) -> DeploymentSpec {

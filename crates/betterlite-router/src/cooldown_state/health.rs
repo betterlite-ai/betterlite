@@ -9,9 +9,11 @@ use crate::routing_read_batch::local::{
     DEFAULT_LOCAL_TTL_SECONDS, DEFAULT_MAX_LAST_READS, DEFAULT_MAX_LOCAL_ENTRIES, LocalEntry,
     LocalTier, ReadTierSettings, TierState,
 };
-use crate::routing_value_store::{Clock, RouteKey, StoreError};
+use crate::routing_value_store::{Clock, MAX_KEY_BYTES, RouteKey};
 
 pub const CACHE_KEY: &str = "litellm:health_check:deployment_health_state";
+// the health state key is built without parse's error, so its size is proven here instead
+const _: () = assert!(CACHE_KEY.len() <= MAX_KEY_BYTES);
 // LiteLLM keeps a state until staleness_threshold * 1.5 seconds have passed, which is also the entry's TTL
 pub const STALENESS_MULTIPLIER: f64 = 1.5;
 
@@ -34,11 +36,6 @@ const fn default_is_healthy() -> bool {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HealthSnapshotError {
-    #[error("the health snapshot key is not a usable routing key")]
-    Key {
-        #[source]
-        source: StoreError,
-    },
     #[error("the health state staleness of {seconds} seconds has no whole-second expiry")]
     Expiry { seconds: f64 },
 }
@@ -53,14 +50,9 @@ pub struct DeploymentHealthCache {
 }
 
 impl DeploymentHealthCache {
-    pub fn new(
-        staleness_threshold: f64,
-        shared: Arc<dyn SharedHealth>,
-        clock: Clock,
-    ) -> Result<Self, HealthSnapshotError> {
-        Ok(Self {
-            key: RouteKey::parse(CACHE_KEY)
-                .map_err(|source| HealthSnapshotError::Key { source })?,
+    pub fn new(staleness_threshold: f64, shared: Arc<dyn SharedHealth>, clock: Clock) -> Self {
+        Self {
+            key: RouteKey(CACHE_KEY.to_owned()),
             tier: LocalTier {
                 settings: ReadTierSettings {
                     backfill_ttl_seconds: DEFAULT_LOCAL_TTL_SECONDS,
@@ -74,7 +66,7 @@ impl DeploymentHealthCache {
             shared,
             staleness_threshold,
             clock,
-        })
+        }
     }
 
     // set_deployment_health_states: merge this writer's states into the shared snapshot and prune the expired ones

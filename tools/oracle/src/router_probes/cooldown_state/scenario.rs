@@ -72,8 +72,7 @@ impl<'case> Scenario<'case> {
                 snapshot: Mutex::new(snapshot),
             }),
             clock_fn,
-        )
-        .map_err(|_error| ScenarioError::HealthKey)?;
+        );
         let deployments = input
             .deployments
             .iter()
