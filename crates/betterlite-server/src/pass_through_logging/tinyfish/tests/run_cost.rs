@@ -33,6 +33,11 @@ use super::support::{cost_text, decimal, run};
     Some("-0.032")
 )]
 #[case::another_rate(r#"{"status": "COMPLETED", "num_of_steps": 3}"#, "0.5", Some("1.5"))]
+#[case::a_rate_with_a_float_product(
+    r#"{"status": "COMPLETED", "num_of_steps": 3}"#,
+    "0.07",
+    Some("0.21")
+)]
 #[case::zero_rate(r#"{"status": "COMPLETED", "num_of_steps": 3}"#, "0", Some("0"))]
 #[case::failed_run(r#"{"status": "FAILED", "num_of_steps": 3}"#, "0.016", None)]
 #[case::cancelled_run(r#"{"status": "CANCELLED", "num_of_steps": 3}"#, "0.016", None)]

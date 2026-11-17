@@ -3,8 +3,9 @@
 use rstest::rstest;
 
 use super::{
-    TINYFISH_ENVELOPE_FIELDS, TINYFISH_RUN_AUTH_FIELDS, TINYFISH_TIMEOUT_SECONDS,
-    is_allowed_tinyfish_endpoint,
+    TINYFISH_ENVELOPE_FIELDS, TINYFISH_MAX_POLL_FAILURES, TINYFISH_MAX_POLL_SECONDS,
+    TINYFISH_POLL_SECONDS, TINYFISH_RUN_AUTH_FIELDS, TINYFISH_TERMINAL_STATUSES,
+    TINYFISH_TIMEOUT_SECONDS, is_allowed_tinyfish_endpoint,
 };
 
 #[rstest]
@@ -59,4 +60,15 @@ fn names_the_rejected_envelope_fields_exactly() {
 #[test]
 fn gives_a_blocking_run_the_upstream_timeout_headroom() {
     assert_eq!(TINYFISH_TIMEOUT_SECONDS.to_bits(), 1500.0_f64.to_bits());
+}
+
+#[test]
+fn names_the_poll_timings_and_terminal_statuses() {
+    assert_eq!(TINYFISH_POLL_SECONDS.to_bits(), 5.0_f64.to_bits());
+    assert_eq!(TINYFISH_MAX_POLL_SECONDS.to_bits(), 3600.0_f64.to_bits());
+    assert_eq!(TINYFISH_MAX_POLL_FAILURES, 12);
+    assert_eq!(
+        TINYFISH_TERMINAL_STATUSES,
+        ["COMPLETED", "FAILED", "CANCELLED"]
+    );
 }
