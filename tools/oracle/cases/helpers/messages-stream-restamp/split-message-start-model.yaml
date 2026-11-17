@@ -1,0 +1,18 @@
+kind: helper
+name: messages-stream-restamp-split-message-start-model
+call:
+  messages_stream_restamp:
+    restamp:
+      requested_model: claude-3
+      chunks:
+        - kind: bytes
+          value: ZXZlbnQ6IG1lc3NhZ2Vfc3RhcnQKZGF0YTogeyJ0eXBlIjoibWVzc2FnZV9zdGFydCIsIm1lc3NhZ2UiOnsiaWQiOiJtc2dfMSIs
+        - kind: bytes
+          value: Im1vZGVsIjoidXBzdHJlYW0tbW9kZWwifX0KCg==
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
+        - kind: text
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\nevent: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}\n\n"
+    cache_stream: null
+env: {}
+compare: {ignore: []}
