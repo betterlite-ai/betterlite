@@ -1,0 +1,6 @@
+task: B8602
+deviations:
+  - what: Chunks are JSON maps tagged with a ChunkKind instead of pydantic objects, so the restamp cannot fail to set a model and LiteLLM's "failed to override chunk.model" error log has no counterpart.
+    why: The objects that reach the generator either have a model field or accept extra fields, so the visible output is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9461-L9471
+kept_bugs: []
