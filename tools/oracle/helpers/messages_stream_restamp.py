@@ -7,13 +7,16 @@ from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
 from litellm.caching.base_cache import BaseCache
-from litellm.caching.caching import DEFAULT_CACHING_SUPPORTED_CALL_TYPES, Cache
+from litellm.caching.caching import (
+    DEFAULT_CACHING_SUPPORTED_CALL_TYPES as SUPPORTED_CALL_TYPES,
+    Cache,
+)
 from litellm.caching.caching_handler import LLMCachingHandler
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.anthropic.pass_through.messages.response_cache import (
     AnthropicMessagesStreamCacheWriter,
-    CachedAnthropicMessagesStreamIterator,
+    CachedAnthropicMessagesStreamIterator as CachedStreamIterator,
     convert_cached_anthropic_messages_result,
 )
 from litellm.proxy.anthropic_endpoints.streaming_model_restamp import (
@@ -100,7 +103,7 @@ class WarningCollector(logging.Handler):
 
 class RecordingCache(Cache):
     def __init__(self, fail: str | None) -> None:
-        self.supported_call_types = list(DEFAULT_CACHING_SUPPORTED_CALL_TYPES)
+        self.supported_call_types = list(SUPPORTED_CALL_TYPES)
         self.fail = fail
         self.writes: list[Write] = []
 
@@ -162,10 +165,6 @@ def cached_hit(logging_obj: Logging) -> bool:
     return details.cache_hit is True
 
 
-def write_view(write: Write) -> dict[str, JsonValue]:
-    return {"payload": write["payload"], "kwargs": write["kwargs"]}
-
-
 async def feed(reads: list[str]) -> AsyncIterator[bytes]:
     for read in reads:
         yield read.encode("utf-8")
@@ -205,7 +204,7 @@ async def replay_written(
         cache.writes[0]["payload"], logging_obj, {"model": REQUEST_MODEL}
     )
     match converted:
-        case CachedAnthropicMessagesStreamIterator():
+        case CachedStreamIterator():
             hit = cached_hit(logging_obj)
             replayed: list[JsonValue] = [chunk.decode("utf-8") async for chunk in converted]
             await GLOBAL_LOGGING_WORKER.stop()
@@ -225,7 +224,9 @@ async def cache_answer(input_value: CacheStreamInput) -> JsonValue:
     finally:
         logger.removeHandler(collector)
     replayed, hit = await replay_written(input_value, cache)
-    writes: list[JsonValue] = [write_view(write) for write in cache.writes]
+    writes: list[JsonValue] = [
+        {"payload": write["payload"], "kwargs": write["kwargs"]} for write in cache.writes
+    ]
     return {
         "yielded": yielded,
         "writes": writes,
