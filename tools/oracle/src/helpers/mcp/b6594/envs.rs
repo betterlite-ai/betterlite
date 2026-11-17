@@ -9,6 +9,8 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::stored_json;
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum EnvsInput {
@@ -23,7 +25,7 @@ pub(crate) enum EnvsInput {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AdminEnvInput {
     #[serde(default)]
-    pub env_vars: Option<Vec<JsonValue>>,
+    pub env_vars: Option<Vec<Value>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,7 +63,7 @@ pub(crate) struct MissingVarsInput {
 
 pub(crate) fn run(input: &EnvsInput) -> HelperResult {
     match input {
-        EnvsInput::ParseAdminEnvVars(fields) => Ok(admin_env(fields)),
+        EnvsInput::ParseAdminEnvVars(fields) => admin_env(fields),
         EnvsInput::EnvReferences(fields) => Ok(references(fields)),
         EnvsInput::Interpolate(fields) => Ok(interpolate(fields)),
         EnvsInput::SetupUrl(fields) => Ok(json!(build_env_var_setup_url(
@@ -72,13 +74,18 @@ pub(crate) fn run(input: &EnvsInput) -> HelperResult {
     }
 }
 
-fn admin_env(fields: &AdminEnvInput) -> Value {
-    let (globals, users) = parse_admin_env_vars(fields.env_vars.as_deref());
+fn admin_env(fields: &AdminEnvInput) -> HelperResult {
+    let entries: Option<Vec<JsonValue>> = fields
+        .env_vars
+        .as_ref()
+        .map(|values| values.iter().map(stored_json).collect())
+        .transpose()?;
+    let (globals, users) = parse_admin_env_vars(entries.as_deref());
     let user_values: Vec<Value> = users
         .iter()
         .map(|spec| json!({"name": &spec.name, "description": &spec.description}))
         .collect();
-    json!({"globals": globals, "users": user_values})
+    Ok(json!({"globals": globals, "users": user_values}))
 }
 
 fn references(fields: &ReferencesInput) -> Value {

@@ -10,9 +10,9 @@ use betterlite_mcp::server_utils::synthetic::build_synthetic_mcp_request;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
-use super::failure;
+use super::{failure, stored_json};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -27,7 +27,7 @@ pub(crate) enum WireInput {
 #[serde(deny_unknown_fields)]
 pub(crate) struct AllowlistInput {
     #[serde(default)]
-    pub mcp_info: Option<BTreeMap<String, JsonValue>>,
+    pub mcp_info: Option<BTreeMap<String, Value>>,
     #[serde(default)]
     pub allowed_tools: Option<Vec<String>>,
 }
@@ -35,7 +35,7 @@ pub(crate) struct AllowlistInput {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ToolResultInput {
-    pub result: JsonValue,
+    pub result: Value,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,7 +61,7 @@ pub(crate) struct SyntheticInput {
 pub(crate) fn run(input: &WireInput) -> HelperResult {
     match input {
         WireInput::Allowlist(fields) => allowlist(fields),
-        WireInput::ToolResultError(fields) => Ok(json!(tool_result_error_message(&fields.result))),
+        WireInput::ToolResultError(fields) => tool_result(fields),
         WireInput::MergeHeaders(fields) => Ok(json!(merge_mcp_headers(
             fields.extra_headers.as_ref(),
             fields.static_headers.as_ref()
@@ -74,12 +74,22 @@ fn allowlist(fields: &AllowlistInput) -> HelperResult {
     let info = fields
         .mcp_info
         .as_ref()
-        .map(|metadata| MCPInfo::try_from(metadata.clone()))
-        .transpose()
-        .map_err(|error| failure("InvalidInput", error.to_string()))?;
+        .map(|metadata| {
+            let stored: BTreeMap<String, JsonValue> = metadata
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), stored_json(value)?)))
+                .collect::<Result<_, Box<HelperError>>>()?;
+            MCPInfo::try_from(stored).map_err(|error| failure("InvalidInput", error.to_string()))
+        })
+        .transpose()?;
     let enforced = allowlist_enforced(info.as_ref());
     let applies = server_applies_tool_allowlist(info.as_ref(), fields.allowed_tools.as_deref());
     Ok(json!({"enforced": enforced, "applies": applies}))
+}
+
+fn tool_result(fields: &ToolResultInput) -> HelperResult {
+    let result = stored_json(&fields.result)?;
+    Ok(json!(tool_result_error_message(&result)))
 }
 
 fn synthetic(fields: &SyntheticInput) -> HelperResult {
