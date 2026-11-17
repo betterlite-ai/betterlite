@@ -98,7 +98,7 @@ impl ChunkState {
     fn handle(&mut self, line: &str) {
         let trimmed = line.trim();
         if let Some(event) = trimmed.strip_prefix(EVENT_PREFIX) {
-            self.current_event = event.trim().to_owned();
+            event.trim().clone_into(&mut self.current_event);
             return;
         }
         let Some(data) = trimmed.strip_prefix(DATA_PREFIX) else {

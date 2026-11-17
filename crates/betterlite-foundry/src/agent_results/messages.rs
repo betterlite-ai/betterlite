@@ -55,10 +55,10 @@ pub fn extract_content(messages: &MessagesData) -> ExtractedContent {
             let block = item.text.as_ref();
             return ExtractedContent {
                 content: block
-                    .and_then(|block| block.value.clone())
+                    .and_then(|text| text.value.clone())
                     .unwrap_or_default(),
                 annotations: transform_annotations(
-                    block.and_then(|block| block.annotations.as_deref()),
+                    block.and_then(|text| text.annotations.as_deref()),
                 ),
             };
         }

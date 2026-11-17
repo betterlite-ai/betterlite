@@ -192,7 +192,7 @@ fn test_token_count_warning() {
             messages: &messages,
             annotations: None,
         };
-        let (counted, counted_warnings) = with_warnings(build_model_response(
+        let (built, counted_warnings) = with_warnings(build_model_response(
             AgentReply::default(),
             &input,
             &counter,
@@ -217,7 +217,7 @@ fn test_token_count_warning() {
             ]
         );
         assert_eq!(
-            counted.usage,
+            built.usage,
             Some(Usage {
                 prompt_tokens: 7,
                 completion_tokens: 3,
@@ -499,7 +499,7 @@ fn test_stream_thread_payload() {
 
     let existing = PreparedAgentCall {
         thread_id: Some(String::from("thread-7")),
-        ..prepared
+        ..prepared.clone()
     };
     let existing_request = build_stream_request(
         &existing,
@@ -531,6 +531,7 @@ fn test_stream_thread_payload() {
         empty_thread_request
             .payload
             .thread
+            .as_ref()
             .map(|thread| thread.messages.len()),
         Some(3)
     );

@@ -141,25 +141,24 @@ fn an_error_body_at_the_limit_is_read_and_one_past_it_fails() {
 
 #[test]
 fn the_chunk_json_shape_is_pinned() {
-    let identity = "chatcmpl-00000000";
     assert_eq!(
         serde_json::to_string(&delta_chunk("hi")).expect("a chunk"),
-        format!(concat!(
-            r#"{{"id":"{identity}","created":1700000000,"model":"azure_ai/agents/a","#,
-            r#""object":"chat.completion.chunk","choices":[{{"index":0,"finish_reason":null,"#,
-            r#""delta":{{"content":"hi","role":"assistant","annotations":null}}}}],"#,
-            r#""thread_id":null}}"#,
-        ))
+        concat!(
+            r#"{"id":"chatcmpl-00000000","created":1700000000,"model":"azure_ai/agents/a","#,
+            r#""object":"chat.completion.chunk","choices":[{"index":0,"finish_reason":null,"#,
+            r#""delta":{"content":"hi","role":"assistant","annotations":null}}],"#,
+            r#""thread_id":null}"#,
+        )
     );
     let annotations = vec![object(r#"{"type": "file_citation", "file_id": "f1"}"#)];
     assert_eq!(
         serde_json::to_string(&terminal_chunk(Some(annotations), Some(String::from("t1"))))
             .expect("a chunk"),
-        format!(concat!(
-            r#"{{"id":"{identity}","created":1700000000,"model":"azure_ai/agents/a","#,
-            r#""object":"chat.completion.chunk","choices":[{{"index":0,"finish_reason":"stop","#,
-            r#""delta":{{"content":null,"role":null,"annotations":["#,
-            r#"{{"type":"file_citation","file_id":"f1"}}]}}}}],"thread_id":"t1"}}"#,
-        ))
+        concat!(
+            r#"{"id":"chatcmpl-00000000","created":1700000000,"model":"azure_ai/agents/a","#,
+            r#""object":"chat.completion.chunk","choices":[{"index":0,"finish_reason":"stop","#,
+            r#""delta":{"content":null,"role":null,"annotations":["#,
+            r#"{"type":"file_citation","file_id":"f1"}]}}],"thread_id":"t1"}"#,
+        )
     );
 }

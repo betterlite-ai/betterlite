@@ -37,11 +37,10 @@ pub fn decode_agent_event(bytes: &[u8]) -> Result<AgentEvent, AgentEventError> {
     match serde_json::from_slice(bytes) {
         Ok(event) => Ok(event),
         Err(source) => match serde_json::from_slice::<Json>(bytes) {
-            Ok(Json::Object(_)) => Err(AgentEventError::Json { source }),
             Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
                 Err(AgentEventError::NotObject)
             }
-            Err(_) => Err(AgentEventError::Json { source }),
+            Ok(Json::Object(_)) | Err(_) => Err(AgentEventError::Json { source }),
         },
     }
 }
