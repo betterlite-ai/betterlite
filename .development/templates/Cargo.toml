@@ -73,7 +73,4 @@ multiple_crate_versions = "allow" # cargo deny reports duplicate versions where 
 panic = "unwind" # a panic that slips through ends one request's task, not every request in flight
 
 [profile.dev]
-debug = "line-tables-only" # backtraces keep file and line; full debug info added gigabytes to every worktree
-
-[profile.dev.package."*"]
-debug = false # a dependency frame still shows its function name
+debug = false # nobody reads debug info here; dropping it cut a full CI test build by 18% (run 43735860292) and saves disk in every worktree
