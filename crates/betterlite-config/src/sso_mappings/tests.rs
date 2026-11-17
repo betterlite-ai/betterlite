@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret;
+use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{SsoMappingSources, load_mapping_sources};
 
@@ -20,65 +21,72 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-#[test]
-fn loads_mapping_sources() {
-    let absent = load_mapping_sources(&BTreeMap::<String, String>::new());
-    assert!(absent.client_secret.is_none());
-    assert!(absent.scope.is_none());
-    assert!(absent.authorization_endpoint.is_none());
-    assert!(!absent.include_client_id);
-    assert!(absent.sso_headers.is_none());
-    let configured = load_mapping_sources(&environment(&[
-        ("GENERIC_CLIENT_SECRET", "secret"),
-        ("GENERIC_SCOPE", "openid email"),
-        ("GENERIC_INCLUDE_CLIENT_ID", "TRUE"),
-        ("GENERIC_SSO_HEADERS", "X-Team=eng"),
-    ]));
-    assert_eq!(secret(&configured), Some("secret"));
-    assert_eq!(configured.scope.as_deref(), Some("openid email"));
-    assert!(configured.include_client_id);
-    assert_eq!(configured.sso_headers.as_deref(), Some("X-Team=eng"));
-}
-
-#[test]
-fn loads_the_endpoint_and_role_sources() {
-    let configured = load_mapping_sources(&environment(&[
-        (
-            "GENERIC_AUTHORIZATION_ENDPOINT",
-            "https://idp.example/authorize",
-        ),
-        ("GENERIC_TOKEN_ENDPOINT", "https://idp.example/token"),
-        ("GENERIC_USERINFO_ENDPOINT", "https://idp.example/userinfo"),
-        ("GENERIC_ROLE_MAPPINGS_ROLES", "{'proxy_admin': ['admins']}"),
-        ("GENERIC_ROLE_MAPPINGS_GROUP_CLAIM", "groups"),
-        ("GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE", "internal_user"),
-    ]));
-    let read = [
-        (
-            configured.authorization_endpoint.as_deref(),
-            "https://idp.example/authorize",
-        ),
-        (
-            configured.token_endpoint.as_deref(),
-            "https://idp.example/token",
-        ),
-        (
-            configured.userinfo_endpoint.as_deref(),
-            "https://idp.example/userinfo",
-        ),
-        (
-            configured.role_mappings_roles.as_deref(),
-            "{'proxy_admin': ['admins']}",
-        ),
-        (configured.role_mappings_group_claim.as_deref(), "groups"),
-        (
-            configured.role_mappings_default_role.as_deref(),
-            "internal_user",
-        ),
-    ];
-    for (actual, wanted) in read {
-        assert_eq!(actual, Some(wanted));
+#[rstest]
+#[case::nothing_set(&[], SsoMappingSources::default())]
+#[case::client_secret(
+    &[("GENERIC_CLIENT_SECRET", "secret")],
+    SsoMappingSources { client_secret: Some(SecretString::from("secret")), ..Default::default() }
+)]
+#[case::scope(
+    &[("GENERIC_SCOPE", "openid email")],
+    SsoMappingSources { scope: Some("openid email".to_owned()), ..Default::default() }
+)]
+#[case::authorization_endpoint(
+    &[("GENERIC_AUTHORIZATION_ENDPOINT", "https://idp.example/authorize")],
+    SsoMappingSources {
+        authorization_endpoint: Some("https://idp.example/authorize".to_owned()),
+        ..Default::default()
     }
+)]
+#[case::token_endpoint(
+    &[("GENERIC_TOKEN_ENDPOINT", "https://idp.example/token")],
+    SsoMappingSources { token_endpoint: Some("https://idp.example/token".to_owned()), ..Default::default() }
+)]
+#[case::userinfo_endpoint(
+    &[("GENERIC_USERINFO_ENDPOINT", "https://idp.example/userinfo")],
+    SsoMappingSources { userinfo_endpoint: Some("https://idp.example/userinfo".to_owned()), ..Default::default() }
+)]
+#[case::include_client_id(
+    &[("GENERIC_INCLUDE_CLIENT_ID", "TRUE")],
+    SsoMappingSources { include_client_id: true, ..Default::default() }
+)]
+#[case::role_mappings_roles(
+    &[("GENERIC_ROLE_MAPPINGS_ROLES", "{'proxy_admin': ['admins']}")],
+    SsoMappingSources { role_mappings_roles: Some("{'proxy_admin': ['admins']}".to_owned()), ..Default::default() }
+)]
+#[case::role_mappings_group_claim(
+    &[("GENERIC_ROLE_MAPPINGS_GROUP_CLAIM", "groups")],
+    SsoMappingSources { role_mappings_group_claim: Some("groups".to_owned()), ..Default::default() }
+)]
+#[case::role_mappings_default_role(
+    &[("GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE", "internal_user")],
+    SsoMappingSources { role_mappings_default_role: Some("internal_user".to_owned()), ..Default::default() }
+)]
+#[case::sso_headers(
+    &[("GENERIC_SSO_HEADERS", "X-Team=eng")],
+    SsoMappingSources { sso_headers: Some("X-Team=eng".to_owned()), ..Default::default() }
+)]
+fn loads_mapping_sources(#[case] pairs: &[(&str, &str)], #[case] expected: SsoMappingSources) {
+    let actual = load_mapping_sources(&environment(pairs));
+    assert_eq!(secret(&actual), secret(&expected));
+    assert_eq!(actual.scope, expected.scope);
+    assert_eq!(
+        actual.authorization_endpoint,
+        expected.authorization_endpoint
+    );
+    assert_eq!(actual.token_endpoint, expected.token_endpoint);
+    assert_eq!(actual.userinfo_endpoint, expected.userinfo_endpoint);
+    assert_eq!(actual.include_client_id, expected.include_client_id);
+    assert_eq!(actual.role_mappings_roles, expected.role_mappings_roles);
+    assert_eq!(
+        actual.role_mappings_group_claim,
+        expected.role_mappings_group_claim
+    );
+    assert_eq!(
+        actual.role_mappings_default_role,
+        expected.role_mappings_default_role
+    );
+    assert_eq!(actual.sso_headers, expected.sso_headers);
 }
 
 #[test]
