@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Sized
-from typing import Literal, Protocol
+from typing import Literal, NamedTuple, NoReturn, Protocol, TypedDict
 
 import httpx
 from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
@@ -11,33 +11,99 @@ from litellm.llms.anthropic.pass_through.messages.streaming_iterator import (
     aclose_if_supported,
 )
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.types.llms.anthropic import AppliedEdit, CompactionBlock, UsageIteration
 from litellm.types.utils import ModelResponseStream
-from pydantic import TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
-from messages_chat_stream_models import (
-    ChatRunSpec,
-    EmptyChunkError,
-    EventOutcome,
-    FailureOutcome,
-    FailureSpec,
-    MessagesChatStreamCall,
-    Outcome,
-    RunOutcome,
-    StepOutcome,
-    ViewOutcome,
-)
 from messages_sync_stream import (
     CHUNK,
     EVENT,
     AdapterErrors,
     Diagnostic,
+    Initial,
+    Message,
     MessagesSyncStreamCall,
     ProviderChunks,
     Wrapper,
     frames,
 )
+
+
+class EmptyChunkError(Exception):
+    pass
+
+
+class FailureSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["reported", "empty"]
+    status_code: int = 500
+    message: str = ""
+    after: int
+
+    def raise_it(self) -> NoReturn:
+        if self.kind == "reported":
+            raise BaseLLMException(status_code=self.status_code, message=self.message)
+        raise EmptyChunkError
+
+
+class ChatRunSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    initial: Initial = Field(default_factory=Initial)
+    mode: Literal["wrapper", "sse", "view"]
+    failure: FailureSpec | None = None
+    steps: list[Literal["next", "drain", "close"]]
+
+
+class MessagesChatStreamCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    messages: list[Message]
+    api_key: str
+    timeout_seconds: int
+    tool_name_mapping: dict[str, str] = Field(default_factory=dict)
+    applied_edits: list[AppliedEdit] = Field(default_factory=list)
+    compaction_block: CompactionBlock | None = None
+    iterations_usage: list[UsageIteration] | None = None
+    runs: list[ChatRunSpec]
+
+
+class FailureOutcome(TypedDict):
+    kind: str
+    status_code: int | None
+    message: str
+
+
+class EventOutcome(NamedTuple):
+    event: dict[str, Json] | None
+    failure: FailureOutcome | None
+
+
+class ViewOutcome(TypedDict):
+    model: str
+    chunks: list[str] | None
+
+
+class StepOutcome(TypedDict):
+    events: list[dict[str, Json]]
+    frames: list[str]
+    end: bool
+    failure: FailureOutcome | None
+    pulls: int
+    diagnostics: list[Diagnostic]
+    view: ViewOutcome | None
+
+
+class RunOutcome(TypedDict):
+    steps: list[StepOutcome]
+
+
+class Outcome(TypedDict):
+    messages_chat_stream: dict[Literal["value"], dict[Literal["runs"], list[RunOutcome]]]
 
 
 class AsyncEventStream(Protocol):
@@ -67,38 +133,22 @@ class AsyncProviderChunks(ProviderChunks):
         return chunk
 
 
-def settings_of(call: MessagesChatStreamCall) -> MessagesSyncStreamCall:
-    return MessagesSyncStreamCall(
-        model=call.model,
-        messages=call.messages,
-        api_key=call.api_key,
-        timeout_seconds=call.timeout_seconds,
-        tool_name_mapping=dict(call.tool_name_mapping),
-        applied_edits=list(call.applied_edits),
-        compaction_block=call.compaction_block,
-        iterations_usage=call.iterations_usage,
-        runs=[],
-    )
-
-
 async def next_event(stream: AsyncEventStream) -> EventOutcome:
     try:
         event = await stream.__anext__()
     except StopAsyncIteration:
-        return EventOutcome(event=None, failure=None)
+        return EventOutcome(None, None)
     except BaseLLMException as error:
         return EventOutcome(
-            event=None,
-            failure=FailureOutcome(
-                kind="reported", status_code=error.status_code, message=error.message
-            ),
+            None,
+            FailureOutcome(kind="reported", status_code=error.status_code, message=error.message),
         )
     except EmptyChunkError as error:
         return EventOutcome(
-            event=None,
-            failure=FailureOutcome(kind="unclassified", status_code=None, message=str(error)),
+            None,
+            FailureOutcome(kind="unclassified", status_code=None, message=str(error)),
         )
-    return EventOutcome(event=EVENT.validate_python(event), failure=None)
+    return EventOutcome(EVENT.validate_python(event), None)
 
 
 async def next_frame(stream: AsyncIterator[bytes]) -> bytes | None:
@@ -110,9 +160,9 @@ async def next_frame(stream: AsyncIterator[bytes]) -> bytes | None:
 
 
 def take_diagnostics(errors: AdapterErrors) -> list[Diagnostic]:
-    diagnostics = errors.entries
+    entries = errors.entries
     errors.entries = []
-    return diagnostics
+    return entries
 
 
 async def wrapper_step(
@@ -125,16 +175,12 @@ async def wrapper_step(
     failure: FailureOutcome | None = None
     end = False
     if step != "close":
-        outcome = await next_event(stream)
-        event = outcome["event"]
-        failure = outcome["failure"]
+        event, failure = await next_event(stream)
         while event is not None:
             events.append(event)
             if step != "drain":
                 break
-            outcome = await next_event(stream)
-            event = outcome["event"]
-            failure = outcome["failure"]
+            event, failure = await next_event(stream)
         end = event is None and failure is None
     return StepOutcome(
         events=events,
@@ -145,14 +191,6 @@ async def wrapper_step(
         diagnostics=take_diagnostics(errors),
         view=None,
     )
-
-
-def observe_view(view: AnthropicSSEStream) -> ViewOutcome:
-    seen = view.chunks
-    chunks: list[str] | None = None
-    if seen is not None:
-        chunks = [chunk.id for chunk in seen]
-    return ViewOutcome(model=view.model, chunks=chunks)
 
 
 async def frame_step(
@@ -177,6 +215,12 @@ async def frame_step(
             frame = await next_frame(stream)
             if frame is not None:
                 collected.append(frame.decode())
+    view_meta: ViewOutcome | None = None
+    if view is not None:
+        seen = view.chunks
+        view_meta = ViewOutcome(
+            model=view.model, chunks=None if seen is None else [chunk.id for chunk in seen]
+        )
     return StepOutcome(
         events=[],
         frames=collected,
@@ -184,7 +228,7 @@ async def frame_step(
         failure=None,
         pulls=source.pulls,
         diagnostics=take_diagnostics(errors),
-        view=None if view is None else observe_view(view),
+        view=view_meta,
     )
 
 
@@ -218,7 +262,18 @@ async def run_one(
     }
     response = await client.post(f"{api_base}/chat/completions", json=request)
     source = AsyncProviderChunks(frames(response.content), spec.failure)
-    wrapper = Wrapper(settings_of(call), source, spec.initial)
+    settings = MessagesSyncStreamCall(
+        model=call.model,
+        messages=call.messages,
+        api_key=call.api_key,
+        timeout_seconds=call.timeout_seconds,
+        tool_name_mapping=dict(call.tool_name_mapping),
+        applied_edits=list(call.applied_edits),
+        compaction_block=call.compaction_block,
+        iterations_usage=call.iterations_usage,
+        runs=[],
+    )
+    wrapper = Wrapper(settings, source, spec.initial)
     errors = AdapterErrors()
     logger = logging.getLogger("LiteLLM")
     logger.addHandler(errors)
