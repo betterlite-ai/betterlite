@@ -1,0 +1,26 @@
+kind: helper
+name: b9960-request-media-sync-seed
+call:
+  b9960:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          api_base: null
+          global_api_base: null
+          system_messages_first: false
+          environment: {}
+          mode: sync
+          optional_params: {}
+          refuse: false
+          urls:
+            "https://example.com/report.pdf": "data:application/pdf;base64,JVBERi0="
+          messages:
+            - role: user
+              content:
+                - {type: text, text: read the report}
+                - type: file
+                  file:
+                    file_id: https://example.com/report.pdf
+env: {}
+compare: {ignore: []}
