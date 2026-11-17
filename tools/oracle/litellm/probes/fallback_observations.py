@@ -1,6 +1,7 @@
 import asyncio
 import warnings
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from typing import Annotated, Final, Literal
 
 import litellm
@@ -180,11 +181,11 @@ class Opaque:
     pass
 
 
+# CustomLogger's constructor only sets two message-logging flags this probe never reads, so this one skips it
+@dataclass
 class RecordingLogger(CustomLogger):
-    def __init__(self, index: int, calls: list[EventCall]) -> None:
-        # CustomLogger.__init__ only records message-logging flags this probe never reads
-        self.index: int = index
-        self.calls: list[EventCall] = calls
+    index: int
+    calls: list[EventCall]
 
     def record(
         self, outcome: OutcomeKind, original_model_group: str, kwargs: dict[str, object], original_exception: Exception

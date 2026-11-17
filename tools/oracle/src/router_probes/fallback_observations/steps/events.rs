@@ -36,11 +36,9 @@ async fn event_found(case: &EventCase) -> EventFound {
         },
     )
     .await;
-    let recorded = if let Ok(guard) = recording.lock() {
-        guard.clone()
-    } else {
-        Vec::new()
-    };
+    let recorded = recording
+        .lock()
+        .map_or_else(|_poisoned| Vec::new(), |guard| guard.clone());
     EventFound { calls: recorded }
 }
 

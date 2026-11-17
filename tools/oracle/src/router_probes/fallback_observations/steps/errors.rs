@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::ErrorContext;

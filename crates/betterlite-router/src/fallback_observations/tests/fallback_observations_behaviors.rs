@@ -26,7 +26,7 @@ fn no_fallback_group_message_lists_the_lookup_and_configured_groups() {
     ];
     assert_eq!(
         no_fallback_group_message(&["gpt-4".to_owned(), "openai/gpt-4".to_owned()], &fallbacks),
-        "\n\nLiteLLM: model group 'gpt-4 -> openai/gpt-4' failed with the error above and no fallback model group was found for it, so the request was not retried on another model. Fallbacks are configured for: gpt-4, claude-3, claude-2, gpt-3.5. Add a fallbacks entry for that model group (Router fallbacks or proxy router_settings.fallbacks) to retry on another model."
+        "\n\nLiteLLM: model group 'gpt-4 -> openai/gpt-4' failed with the error above and no fallback model group was found for it, so the request was not retried on another model. Fallbacks are configured for: gpt-4, claude-3, claude-2. Add a fallbacks entry for that model group (Router fallbacks or proxy router_settings.fallbacks) to retry on another model."
     );
 }
 
@@ -205,8 +205,8 @@ fn an_absent_response_stays_absent() {
 async fn a_success_event_reaches_every_observer_in_order() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let observers: Vec<Arc<dyn FallbackObserver>> = vec![
-        Arc::new(RecordingObserver::new(0, calls.clone())),
-        Arc::new(RecordingObserver::new(1, calls.clone())),
+        Arc::new(RecordingObserver::new(0, Arc::clone(&calls))),
+        Arc::new(RecordingObserver::new(1, Arc::clone(&calls))),
     ];
     let request = request();
     let exception = plain("primary exploded");
@@ -233,7 +233,7 @@ async fn a_success_event_reaches_every_observer_in_order() {
 async fn a_failure_event_uses_the_failure_hook() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let observers: Vec<Arc<dyn FallbackObserver>> =
-        vec![Arc::new(RecordingObserver::new(7, calls.clone()))];
+        vec![Arc::new(RecordingObserver::new(7, Arc::clone(&calls)))];
     let request = request();
     let exception = plain("all targets failed");
     log_fallback_event(
@@ -260,7 +260,7 @@ async fn a_failing_observer_is_logged_and_skipped() {
         Arc::new(FailingObserver {
             message: "boom".to_owned(),
         }),
-        Arc::new(RecordingObserver::new(1, calls.clone())),
+        Arc::new(RecordingObserver::new(1, Arc::clone(&calls))),
     ];
     let request = request();
     let exception = plain("primary exploded");

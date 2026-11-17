@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
+pub(super) struct Input {
     #[serde(default)]
     pub details: Vec<DetailCase>,
     #[serde(default)]
@@ -20,7 +20,7 @@ pub struct Input {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "family", rename_all = "snake_case")]
-pub enum DetailCase {
+pub(super) enum DetailCase {
     RateLimit {
         message: String,
         #[serde(default)]
@@ -57,7 +57,7 @@ pub enum DetailCase {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExceptionClass {
+pub(super) enum ExceptionClass {
     #[default]
     Exception,
     ValueError,
@@ -65,14 +65,14 @@ pub enum ExceptionClass {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct NoFallbackCase {
+pub(super) struct NoFallbackCase {
     pub lookup_groups: Vec<String>,
     pub fallbacks: Vec<JsonObject>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OutcomeCase {
+pub(super) struct OutcomeCase {
     pub model_group: Option<String>,
     pub fallback_model_group: Option<Vec<Json>>,
     pub fallback_failure_detail: String,
@@ -80,7 +80,7 @@ pub struct OutcomeCase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ResponseKind {
+pub(super) enum ResponseKind {
     Absent,
     Object,
     Attributed,
@@ -89,7 +89,7 @@ pub enum ResponseKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeaderCase {
+pub(super) struct HeaderCase {
     pub kind: ResponseKind,
     pub attempted_fallbacks: u32,
     #[serde(default)]
@@ -100,7 +100,7 @@ pub struct HeaderCase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ObserverKind {
+pub(super) enum ObserverKind {
     Record,
     Fail,
     Silent,
@@ -108,14 +108,14 @@ pub enum ObserverKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Outcome {
+pub(super) enum Outcome {
     Success,
     Failure,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EventCase {
+pub(super) struct EventCase {
     pub observers: Vec<ObserverKind>,
     pub outcome: Outcome,
     pub original_model_group: String,
@@ -125,7 +125,7 @@ pub struct EventCase {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Output {
+pub(super) struct Output {
     pub details: Vec<DetailFound>,
     pub no_fallback: Vec<String>,
     pub outcomes: Vec<String>,
@@ -135,14 +135,14 @@ pub struct Output {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DetailFound {
+pub(super) struct DetailFound {
     pub info: FallbackErrorInfo,
     pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeaderFound {
+pub(super) struct HeaderFound {
     pub result: ResponseKind,
     pub has_hidden_params: bool,
     pub headers: JsonObject,
@@ -152,13 +152,13 @@ pub struct HeaderFound {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EventFound {
+pub(super) struct EventFound {
     pub calls: Vec<EventCall>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EventCall {
+pub(super) struct EventCall {
     pub observer: u32,
     pub outcome: Outcome,
     pub original_model_group: String,

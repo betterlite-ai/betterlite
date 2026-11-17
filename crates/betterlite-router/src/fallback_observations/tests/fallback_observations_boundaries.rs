@@ -175,5 +175,8 @@ fn absent_errors_leave_the_existing_header_alone() {
         r#"{{"_hidden_params":{{"additional_headers":{{"x-litellm-fallback-errors":{existing}}}}}}}"#
     ));
     let response = attach_fallback_headers(Response::Object(body), 1, None);
-    assert_eq!(errors_header(&response), json(existing));
+    assert_eq!(
+        header(&response, FALLBACK_ERRORS_HEADER),
+        Some(json(existing))
+    );
 }
