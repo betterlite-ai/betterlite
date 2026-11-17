@@ -141,6 +141,27 @@ async fn body_reports_invalid_json_with_fastapis_shape() {
 }
 
 #[tokio::test]
+async fn body_reads_json_whatever_the_content_type() {
+    let model = FakeModel::new().replying(answer_reply("Hi"));
+    let factory = FakeFactory::new(model.clone(), FakeSource::new());
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/usage/ai/chat")
+        .header("content-type", "text/plain")
+        .body(Body::from(
+            r#"{"messages": [{"role": "user", "content": "hi"}]}"#,
+        ))
+        .expect("the request builds");
+    let response = send(
+        state(factory, None, FakeCallerId::from_subject()),
+        with_principal(request, master_principal()),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_text(response).await, answer_body());
+}
+
+#[tokio::test]
 async fn body_reports_invalid_utf8_the_way_starlette_does() {
     let model = FakeModel::new().replying(answer_reply("Hi"));
     let factory = FakeFactory::new(model.clone(), FakeSource::new());
