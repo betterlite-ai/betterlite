@@ -38,13 +38,9 @@ pub fn prepare(
     }
     let route = get_cohere_route(common.model);
     // v2 drops every version prefix from the model it sends, and v1 keeps it
-    let model = match route {
-        CohereRoute::V1 => common.model.to_owned(),
-        CohereRoute::V2 => common.model.replace("v2/", ""),
-    };
-    let default = match route {
-        CohereRoute::V1 => V1_DEFAULT_URL,
-        CohereRoute::V2 => V2_DEFAULT_URL,
+    let (model, default) = match route {
+        CohereRoute::V1 => (common.model.to_owned(), V1_DEFAULT_URL),
+        CohereRoute::V2 => (common.model.replace("v2/", ""), V2_DEFAULT_URL),
     };
     let base = common
         .settings
