@@ -25,8 +25,15 @@ pub(super) fn voyage_response(status: u16, body: &[u8]) -> Result<RerankResponse
     for result in answer.results {
         let document = match result.document {
             None | Some(Json::Null) => None,
+            // the leaf turns a string document into the text object, and any other object would lose keys
+            Some(Json::Object(fields)) => match fields.get("text") {
+                Some(Json::Text(text)) if fields.len() == 1 => {
+                    Some(RerankResponseDocument { text: text.clone() })
+                }
+                Some(_) | None => return Err(FamilyError::VoyageDocument),
+            },
             Some(Json::Text(text)) => Some(RerankResponseDocument { text }),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
                 return Err(FamilyError::VoyageDocument);
             }
         };

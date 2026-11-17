@@ -221,12 +221,19 @@ fn a_voyage_rerank_reply_is_rewritten() {
 }
 
 #[test]
-fn a_voyage_object_document_is_refused() {
-    let body = r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":"doc"}}],"usage":{"total_tokens":3}}"#;
-    assert!(matches!(
-        rerank::decode(RerankConfig::Voyage, 200, body.as_bytes()),
-        Err(FamilyError::VoyageDocument)
-    ));
+fn a_voyage_document_without_a_text_string_is_refused() {
+    let bodies = [
+        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":5}}],"usage":{"total_tokens":3}}"#,
+        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"page":3}}],"usage":{"total_tokens":3}}"#,
+        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":{"text":"doc","page":3}}],"usage":{"total_tokens":3}}"#,
+        r#"{"id":"r-1","data":[{"index":0,"relevance_score":0.5,"document":[1]}],"usage":{"total_tokens":3}}"#,
+    ];
+    for body in bodies {
+        assert!(matches!(
+            rerank::decode(RerankConfig::Voyage, 200, body.as_bytes()),
+            Err(FamilyError::VoyageDocument)
+        ));
+    }
 }
 
 #[test]
