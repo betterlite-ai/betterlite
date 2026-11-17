@@ -11,12 +11,10 @@ use super::HostedVllmVideoError;
 // _serialize_form_value: a string is itself and every other value its JSON text
 #[must_use]
 fn serialize_form_value(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
-            value.to_string()
-        }
-    }
+    let Value::String(text) = value else {
+        return value.to_string();
+    };
+    text.clone()
 }
 
 // _maybe_json: a string that starts with { or [ is a JSON reference, and a broken one is an error rather than a literal
@@ -57,12 +55,9 @@ fn reject_unsafe_media_urls(
     };
     let parsed = maybe_json(value)?;
     match parsed.as_ref() {
-        Value::Array(items) => {
-            for item in items {
-                reject_unsafe_urls_in_item(url_key, item, allowed_hosts)?;
-            }
-            Ok(())
-        }
+        Value::Array(items) => items
+            .iter()
+            .try_for_each(|item| reject_unsafe_urls_in_item(url_key, item, allowed_hosts)),
         Value::Object(_) => reject_unsafe_urls_in_item(url_key, &parsed, allowed_hosts),
         Value::String(url) => reject_unsafe_media_url(url, allowed_hosts),
         Value::Null | Value::Bool(_) | Value::Number(_) => Ok(()),
@@ -78,10 +73,10 @@ fn reject_unsafe_urls_in_item(
     let Value::Object(fields) = item else {
         return Ok(());
     };
-    match fields.get(url_key) {
-        Some(Value::String(url)) => reject_unsafe_media_url(url, allowed_hosts),
-        _ => Ok(()),
-    }
+    fields
+        .get(url_key)
+        .and_then(Value::as_str)
+        .map_or(Ok(()), |url| reject_unsafe_media_url(url, allowed_hosts))
 }
 
 // _is_host_allowlisted: an entry is a bare host or host:port, lowercased with any trailing dot ignored, and an IPv6 host stays bracketed
@@ -124,7 +119,10 @@ fn reject_unsafe_media_url(
         .port()
         .map_err(|source| HostedVllmVideoError::UrlParse { source })?;
     // a transform resolves no DNS, so it refuses the destinations a name cannot hide: an address literal and localhost, unless the admin allowlisted the host
-    let literal = literal_address(&hostname);
+    let literal = hostname
+        .parse::<IpAddr>()
+        .ok()
+        .or_else(|| parse_ipv6(&hostname).map(IpAddr::V6));
     let local = hostname == "localhost" || hostname.ends_with(".localhost");
     let default_port = if parsed.scheme == "https" { 443 } else { 80 };
     if (literal.is_some_and(is_blocked_ip) || (literal.is_none() && local))
@@ -136,11 +134,4 @@ fn reject_unsafe_media_url(
         }));
     }
     Ok(())
-}
-
-fn literal_address(hostname: &str) -> Option<IpAddr> {
-    hostname
-        .parse::<IpAddr>()
-        .ok()
-        .or_else(|| parse_ipv6(hostname).map(IpAddr::V6))
 }

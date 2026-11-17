@@ -27,10 +27,8 @@ pub fn validate_environment(
     api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
 ) -> Headers {
-    headers.insert(
-        String::from("Authorization"),
-        format!("Bearer {}", resolved_api_key(api_key, environment)),
-    );
+    let key = resolved_api_key(api_key, environment);
+    headers.insert(String::from("Authorization"), format!("Bearer {key}"));
     headers
 }
 

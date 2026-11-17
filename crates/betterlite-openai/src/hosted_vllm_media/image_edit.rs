@@ -21,11 +21,9 @@ pub enum ImageEditConfigError {
 // get_supported_openai_params is the OpenAI list minus the three vLLM-Omni refuses, in the same order
 #[must_use]
 pub fn get_supported_openai_params() -> Vec<&'static str> {
-    family::SUPPORTED_OPENAI_PARAMS
-        .iter()
-        .copied()
-        .filter(|name| !UNSUPPORTED_PARAMS.contains(name))
-        .collect()
+    let mut supported = family::SUPPORTED_OPENAI_PARAMS.to_vec();
+    supported.retain(|name| !UNSUPPORTED_PARAMS.contains(name));
+    supported
 }
 
 // validate_environment overwrites Authorization with the resolved key, which is the vLLM placeholder when none is set
@@ -35,10 +33,8 @@ pub fn validate_environment(
     api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
 ) -> Headers {
-    headers.insert(
-        String::from("Authorization"),
-        format!("Bearer {}", resolved_api_key(api_key, environment)),
-    );
+    let key = resolved_api_key(api_key, environment);
+    headers.insert(String::from("Authorization"), format!("Bearer {key}"));
     headers
 }
 

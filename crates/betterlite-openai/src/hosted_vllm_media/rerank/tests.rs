@@ -104,7 +104,7 @@ fn truncation_params_read_the_four_keys_and_ignore_the_rest() {
 fn truncation_params_reject_a_side_litellm_does_not_declare() {
     assert!(matches!(
         validated_truncation_params(&params(value(r#"{"truncation_side": "up"}"#))),
-        Err(HostedVllmRerankError::Truncation { .. })
+        Err(HostedVllmRerankError::Truncation(..))
     ));
 }
 
@@ -192,7 +192,7 @@ fn mapped_params_refuse_a_bad_truncation_value() {
     let non_default = params(value(r#"{"truncation_side": "up"}"#));
     assert!(matches!(
         map_cohere_rerank_params(&call(&documents, &non_default)),
-        Err(HostedVllmRerankError::Truncation { .. })
+        Err(HostedVllmRerankError::Truncation(..))
     ));
 }
 

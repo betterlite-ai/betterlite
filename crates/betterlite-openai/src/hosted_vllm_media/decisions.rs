@@ -29,16 +29,13 @@ impl DecisionsProviderConfig for HostedVllmDecisionsConfig {
             instructions: Some(DecisionsJson::Text(String::from(
                 "Is the service reachable?",
             ))),
-            choices: vec![
-                ir::ChoiceOption {
-                    value: ChoiceValue::Text(String::from("yes")),
+            choices: ["yes", "no"]
+                .into_iter()
+                .map(|value| ir::ChoiceOption {
+                    value: ChoiceValue::Text(String::from(value)),
                     description: None,
-                },
-                ir::ChoiceOption {
-                    value: ChoiceValue::Text(String::from("no")),
-                    description: None,
-                },
-            ],
+                })
+                .collect(),
             extra: Extra::default(),
         })]
     }

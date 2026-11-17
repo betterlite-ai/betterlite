@@ -56,11 +56,9 @@ pub enum HostedVllmVideoError {
 // get_supported_openai_params is the OpenAI list followed by the vLLM-Omni fields, in LiteLLM's order
 #[must_use]
 pub fn get_supported_openai_params() -> Vec<&'static str> {
-    SUPPORTED_PARAMS
-        .iter()
-        .copied()
-        .chain(VLLM_OMNI_VIDEO_PARAMS)
-        .collect()
+    let mut supported = SUPPORTED_PARAMS.to_vec();
+    supported.extend(VLLM_OMNI_VIDEO_PARAMS);
+    supported
 }
 
 // map_openai_params copies every option the caller set, supported or not, and drops only the nulls

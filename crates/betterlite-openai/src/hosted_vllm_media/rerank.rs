@@ -10,7 +10,7 @@ use crate::error::{ProviderError, ProviderErrorParts};
 use crate::openai_base_config::Headers;
 use crate::together_ai_rerank::ReturnDocuments;
 
-use super::{API_KEY_ENV, PLACEHOLDER_KEY};
+use super::resolved_api_key;
 
 pub mod reply;
 mod tests;
@@ -31,11 +31,8 @@ pub enum HostedVllmRerankError {
     MissingApiBase,
     #[error("Hosted VLLM does not support max_chunks_per_doc")]
     MaxChunksPerDoc,
-    #[error("hosted_vllm rerank: {source}")]
-    Truncation {
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("hosted_vllm rerank: {0}")]
+    Truncation(#[source] serde_json::Error),
     #[error("Error parsing response: {text}, status_code={status_code}")]
     Parse { text: String, status_code: u16 },
     #[error("No results found in the response={response}")]
@@ -43,20 +40,11 @@ pub enum HostedVllmRerankError {
     #[error("Missing required fields in the result={result}")]
     MissingResultFields { result: Value },
     #[error("the rerank reply could not be decoded")]
-    Shape {
-        #[source]
-        source: serde_json::Error,
-    },
+    Shape(#[source] serde_json::Error),
     #[error("the rerank record cannot be encoded")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
+    Encode(#[source] serde_json::Error),
     #[error("score cannot be represented as an exact decimal")]
-    Score {
-        #[source]
-        source: DecimalLexemeError,
-    },
+    Score(#[source] DecimalLexemeError),
 }
 
 // LiteLLM's HostedVLLMRerankTruncationParams: the four keys are validated, every other key is ignored
@@ -109,7 +97,7 @@ pub fn validated_truncation_params(
     non_default_params: &Map<String, Value>,
 ) -> Result<TruncationParams, HostedVllmRerankError> {
     serde_json::from_value(Value::Object(non_default_params.clone()))
-        .map_err(|source| HostedVllmRerankError::Truncation { source })
+        .map_err(HostedVllmRerankError::Truncation)
 }
 
 pub fn map_cohere_rerank_params(
@@ -165,12 +153,7 @@ pub fn validate_environment(
     environment: &dyn EnvironmentLookup,
 ) -> Headers {
     let key = api_key.map_or_else(
-        || {
-            environment
-                .lookup(API_KEY_ENV)
-                .filter(|key| !key.is_empty())
-                .unwrap_or_else(|| String::from(PLACEHOLDER_KEY))
-        },
+        || resolved_api_key(None, environment),
         |key| key.expose_secret().to_owned(),
     );
     let mut merged = Headers::new();
@@ -203,10 +186,9 @@ pub fn transform_rerank_request(
         truncation_side: mapped.truncation_side,
         max_tokens_per_query: mapped.max_tokens_per_query,
     };
-    let encoded = serde_json::to_value(&request)
-        .map_err(|source| HostedVllmRerankError::Encode { source })?;
+    let encoded = serde_json::to_value(&request).map_err(HostedVllmRerankError::Encode)?;
     let mut body = serde_json::from_value::<Map<String, Value>>(encoded)
-        .map_err(|source| HostedVllmRerankError::Encode { source })?;
+        .map_err(HostedVllmRerankError::Encode)?;
     body.retain(|_, value| !value.is_null());
     Ok(body)
 }

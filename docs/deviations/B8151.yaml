@@ -1,33 +1,21 @@
 task: B8151
 deviations:
-  - what: >-
-      The rerank reply decoder keeps the reply's declared types. A body that is not a JSON object, a document that is not an object, an index, score or token count of the wrong JSON type, and a usage that is neither absent, null nor an object are typed errors instead of AttributeError, int()/float() or pydantic coercion; an absent or null usage reads as zero tokens, a document text that is null or a number reads as "" instead of "None" or its decimal text, and a body that is not UTF-8 reports its text as "<body is not UTF-8>" instead of a lossy decode.
-    why: >-
-      LiteLLM raises AttributeError (a 500) on those inputs, and its str() conversion writes text the provider never sent. No working vLLM setup relies on either, and docs/compatibility.md keeps a value at its declared type and refuses bytes that are not UTF-8.
+  - what: The rerank reply decoder keeps the reply's declared types. A body that is not a JSON object, a document that is not an object, an index, score or token count of the wrong JSON type, and a usage that is neither absent, null nor an object are typed errors instead of AttributeError, int()/float() or pydantic coercion; an absent or null usage reads as zero tokens, a document text that is null or a number reads as "" instead of "None" or its decimal text, and a body that is not UTF-8 reports its text as "<body is not UTF-8>" instead of a lossy decode.
+    why: LiteLLM raises AttributeError (a 500) on those inputs, and its str() conversion writes text the provider never sent. No working vLLM setup relies on either, and docs/compatibility.md keeps a value at its declared type and refuses bytes that are not UTF-8.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L194-L241
-  - what: >-
-      A media reference given as a plain URL string is checked for a blocked destination, while LiteLLM checks only a reference it turned into a JSON object or list.
-    why: >-
-      The plain string is what vLLM accepts in image_reference, video_reference and audio_reference, so leaving it unchecked lets a caller reach an internal service through a field that is meant to be a public URL. Fixed rather than copied.
+  - what: A media reference given as a plain URL string is checked for a blocked destination, while LiteLLM checks only a reference it turned into a JSON object or list.
+    why: The plain string is what vLLM accepts in image_reference, video_reference and audio_reference, so leaving it unchecked lets a caller reach an internal service through a field that is meant to be a public URL. Fixed rather than copied.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L105-L116
-  - what: >-
-      The media URL check resolves no DNS, so a hostname that would resolve to a private address passes it, and a localhost or *.localhost name is reported as address 127.0.0.1 where LiteLLM names the address its resolver returned. The transform takes user_url_allowed_hosts as an argument, and a listed host skips the literal and localhost refusal with _is_host_allowlisted's matching (lowercase, trailing dot ignored, bare host or host:effective-port, IPv6 bracketed).
-    why: >-
-      A transform reads no network and the adapter that holds the proxy config passes the list. The check still refuses every scheme but http, https, data and the empty one, a URL without a hostname, a blocked IPv4 or IPv6 literal, and the localhost names, unless the admin allowlisted the host.
+  - what: The media URL check resolves no DNS, so a hostname that would resolve to a private address passes it, and a localhost or *.localhost name is reported as address 127.0.0.1 where LiteLLM names the address its resolver returned. The transform takes user_url_allowed_hosts as an argument, and a listed host skips the literal and localhost refusal with _is_host_allowlisted's matching (lowercase, trailing dot ignored, bare host or host:effective-port, IPv6 bracketed).
+    why: A transform reads no network and the adapter that holds the proxy config passes the list. The check still refuses every scheme but http, https, data and the empty one, a URL without a hostname, a blocked IPv4 or IPv6 literal, and the localhost names, unless the admin allowlisted the host.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L266-L280
-  - what: >-
-      A "file" key among the caller's optional transcription params is an error, while LiteLLM's dict spread lets it replace the audio file.
-    why: >-
-      The audio file is an argument of the transcription call in betterlite's request type, so an option map cannot overwrite it.
+  - what: A "file" key among the caller's optional transcription params is an error, while LiteLLM's dict spread lets it replace the audio file.
+    why: The audio file is an argument of the transcription call in betterlite's request type, so an option map cannot overwrite it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L61
-  - what: >-
-      A media reference that looks like JSON but does not parse, and a media URL the parser refuses, are typed MediaJson and UrlParse errors, while LiteLLM lets json.loads raise JSONDecodeError and urllib raise ValueError out of its transform.
-    why: >-
-      Both exceptions come from input the caller sent, so an unhandled 500 is a bug no working setup relies on; betterlite answers with the 4xx its caller needs.
+  - what: A media reference that looks like JSON but does not parse, and a media URL the parser refuses, are typed MediaJson and UrlParse errors, while LiteLLM lets json.loads raise JSONDecodeError and urllib raise ValueError out of its transform.
+    why: Both exceptions come from input the caller sent, so an unhandled 500 is a bug no working setup relies on; betterlite answers with the 4xx its caller needs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L79-L94
 kept_bugs:
-  - what: >-
-      The transcription config's missing api_base error reads "api_base must be provided for Hosted VLLM rerank", naming rerank.
-    why: >-
-      That is LiteLLM's own text, and a caller matching on the message keeps working.
+  - what: The transcription config's missing api_base error reads "api_base must be provided for Hosted VLLM rerank", naming rerank.
+    why: That is LiteLLM's own text, and a caller matching on the message keeps working.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L48

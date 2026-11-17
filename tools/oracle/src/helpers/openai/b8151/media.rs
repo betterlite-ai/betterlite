@@ -89,17 +89,13 @@ pub(super) fn transcription_value(call: &TranscriptionCall) -> Result<Value, Box
         .map_err(|error| invalid(error.to_string()))?;
     let mut fields = Map::new();
     if let Some(model) = &data.model {
-        fields.insert(
-            String::from("model"),
-            serde_json::to_value(model).map_err(|error| invalid(error.to_string()))?,
-        );
+        let encoded = serde_json::to_value(model).map_err(|error| invalid(error.to_string()))?;
+        fields.insert(String::from("model"), encoded);
     }
     fields.insert(String::from("file"), Value::String(call.audio.clone()));
     for (name, value) in &data.options {
-        fields.insert(
-            name.clone(),
-            serde_json::to_value(value).map_err(|error| invalid(error.to_string()))?,
-        );
+        let encoded = serde_json::to_value(value).map_err(|error| invalid(error.to_string()))?;
+        fields.insert(name.clone(), encoded);
     }
     Ok(json!({
         "url": url,

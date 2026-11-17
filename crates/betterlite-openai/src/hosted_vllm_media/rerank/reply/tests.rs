@@ -120,7 +120,7 @@ fn missing_results_is_an_error(#[case] text: &str) {
 fn results_that_are_not_an_array_are_a_shape_error() {
     assert!(matches!(
         decode_error(&value(r#"{"results": 5}"#)),
-        HostedVllmRerankError::Shape { .. }
+        HostedVllmRerankError::Shape(..)
     ));
 }
 
@@ -141,7 +141,7 @@ fn a_score_the_exact_decimal_cannot_hold_is_an_error() {
     let reply = value(r#"{"results":[{"index":0,"relevance_score":1e400}]}"#);
     assert!(matches!(
         decode_error(&reply),
-        HostedVllmRerankError::Score { .. }
+        HostedVllmRerankError::Score(..)
     ));
 }
 
@@ -165,7 +165,7 @@ fn an_absent_or_null_usage_reads_as_zero_tokens(#[case] text: &str) {
 fn a_usage_that_is_not_an_object_is_a_shape_error(#[case] text: &str) {
     assert!(matches!(
         decode_error(&value(text)),
-        HostedVllmRerankError::Shape { .. }
+        HostedVllmRerankError::Shape(..)
     ));
 }
 
@@ -188,7 +188,7 @@ fn a_null_usage_count_stays_null() {
 fn a_usage_count_that_is_not_an_exact_number_is_a_shape_error(#[case] text: &str) {
     assert!(matches!(
         decode_error(&value(text)),
-        HostedVllmRerankError::Shape { .. }
+        HostedVllmRerankError::Shape(..)
     ));
 }
 

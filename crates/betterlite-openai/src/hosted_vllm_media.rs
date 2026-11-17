@@ -20,11 +20,10 @@ pub fn resolved_api_key(
     api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
 ) -> String {
-    if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
-        return key.expose_secret().to_owned();
-    }
-    environment
-        .lookup(API_KEY_ENV)
+    api_key
+        .filter(|key| !key.expose_secret().is_empty())
+        .map(|key| key.expose_secret().to_owned())
+        .or_else(|| environment.lookup(API_KEY_ENV))
         .filter(|key| !key.is_empty())
         .unwrap_or_else(|| String::from(PLACEHOLDER_KEY))
 }
@@ -38,11 +37,8 @@ pub fn resolved_api_base(
     api_base
         .filter(|base| !base.is_empty())
         .map(str::to_owned)
-        .or_else(|| {
-            environment
-                .lookup(API_BASE_ENV)
-                .filter(|base| !base.is_empty())
-        })
+        .or_else(|| environment.lookup(API_BASE_ENV))
+        .filter(|base| !base.is_empty())
 }
 
 // the responses, image edit and video endpoints append their path under /v1 unless the base already ends there

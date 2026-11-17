@@ -98,7 +98,7 @@ fn rerank_call<'call>(call: &'call ParamsCall) -> CohereRerankCall<'call> {
 
 fn rerank_failure(error: HostedVllmRerankError) -> Box<HelperError> {
     match error {
-        HostedVllmRerankError::Truncation { source } => Box::new(HelperError {
+        HostedVllmRerankError::Truncation(source) => Box::new(HelperError {
             class: String::from("UnsupportedParamsError"),
             status: Some(UNSUPPORTED_PARAMS_STATUS),
             error_type: None,
