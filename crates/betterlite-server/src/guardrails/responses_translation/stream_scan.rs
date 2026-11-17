@@ -53,8 +53,7 @@ pub(crate) fn integer_field(event: &Value, field: &str) -> Option<usize> {
         .and_then(|value| usize::try_from(value).ok())
 }
 
-// Nine readers take a buffered event through this one conversion to B3663's typed item.
-// ast-grep-ignore: no-padded-one-line-functions, no-one-line-functions
+// ast-grep-ignore: no-padded-one-line-functions, no-one-line-functions - nine readers convert a buffered event through this one conversion
 pub(crate) fn event_item(event: &Value) -> Option<StreamItem> {
     let value: GuardrailValue = serde_json::from_value(event.clone()).ok()?;
     Some(StreamItem::Json(value))
@@ -67,8 +66,7 @@ pub(crate) fn item_text<'item>(item: &'item StreamItem, field: &str) -> Option<&
     }
 }
 
-// The scan and both call id lookups ask the same question of an event's item.
-// ast-grep-ignore: no-one-line-functions
+// ast-grep-ignore: no-one-line-functions - the scan and both call id lookups ask this of an event's item
 pub(crate) fn is_tool_call_stream_item(item: &StreamItem) -> bool {
     item_text(item, "type").is_some_and(|kind| TOOL_CALL_ITEM_TYPES.contains(&kind))
 }
