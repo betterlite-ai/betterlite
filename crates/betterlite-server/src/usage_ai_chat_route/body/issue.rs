@@ -33,7 +33,7 @@ impl ValidationIssue {
     // pydantic's error table: the type, message and context each kind reports
     #[must_use]
     pub const fn of(kind: IssueKind, loc: Vec<LocPart>, input: JsonValue) -> Self {
-        let (kind, msg, ctx) = match kind {
+        let (issue_type, message, context) = match kind {
             IssueKind::Missing => ("missing", REQUIRED, None),
             IssueKind::NotObject => ("model_attributes_type", DICTIONARY, None),
             IssueKind::NotList => ("list_type", LIST, None),
@@ -45,11 +45,11 @@ impl ValidationIssue {
             ),
         };
         Self {
-            kind,
+            kind: issue_type,
             loc,
-            msg,
+            msg: message,
             input,
-            ctx,
+            ctx: context,
         }
     }
 
