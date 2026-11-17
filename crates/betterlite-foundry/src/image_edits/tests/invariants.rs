@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::foundry_credentials::Settings as FoundrySettings;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_prompts::arguments::json::Object;
 use secrecy::ExposeSecret as _;
 
 use crate::image_edits::auth::{ValidateEnvironmentRequest, validate_environment};
@@ -77,8 +75,28 @@ fn foundry_image_edit_secret_safe_failure() {
     ));
     let keyless = support::foundry_settings(Some("https://azure.test"), None);
     let configured = support::foundry_settings(Some("https://azure.test"), Some(SECRET));
-    assert_secret_safe(&validate_failure(&keyless, &client_secret));
-    assert_secret_safe(&url_failure(&configured));
+    let missing_key = validate_environment(ValidateEnvironmentRequest {
+        headers: Headers::new(),
+        model: FLUX1,
+        api_key: None,
+        params: Some(&client_secret),
+        environment: &BTreeMap::new(),
+        accessors: support::accessors(&keyless, None, None),
+        refresh_enabled: false,
+        sources: &NoSources,
+    })
+    .unwrap_err();
+    assert_secret_safe(&missing_key);
+    let missing_base = complete_url(CompleteUrlRequest {
+        model: FLUX1,
+        accessors: support::accessors(&configured, None, None),
+        api_base: None,
+        api_version: None,
+        global_api_version: None,
+        environment: &support::version_settings(None),
+    })
+    .unwrap_err();
+    assert_secret_safe(&missing_base);
     assert_secret_safe(&params_failure());
 }
 
@@ -92,32 +110,6 @@ fn assert_secret_safe(failure: &ImageEditError) {
         !rendered.contains(CLIENT_SECRET),
         "an error exposed the client secret: {rendered}"
     );
-}
-
-fn validate_failure(settings: &FoundrySettings, params: &Object) -> ImageEditError {
-    validate_environment(ValidateEnvironmentRequest {
-        headers: Headers::new(),
-        model: FLUX1,
-        api_key: None,
-        params: Some(params),
-        environment: &BTreeMap::new(),
-        accessors: support::accessors(settings, None, None),
-        refresh_enabled: false,
-        sources: &NoSources,
-    })
-    .unwrap_err()
-}
-
-fn url_failure(settings: &FoundrySettings) -> ImageEditError {
-    complete_url(&CompleteUrlRequest {
-        model: FLUX1,
-        accessors: support::accessors(settings, None, None),
-        api_base: None,
-        api_version: None,
-        global_api_version: None,
-        environment: &support::version_settings(None),
-    })
-    .unwrap_err()
 }
 
 fn params_failure() -> ImageEditError {

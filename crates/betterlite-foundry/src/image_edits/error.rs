@@ -42,9 +42,9 @@ pub enum ImageEditError {
     ReplyEncoding(#[source] serde_json::Error),
 }
 
-enum ProviderFailure<'a> {
-    Params(&'a FoundryImageError),
-    Mai(&'a MaiImageError),
+enum ProviderFailure<'error> {
+    Params(&'error FoundryImageError),
+    Mai(&'error MaiImageError),
     Status(u16),
 }
 

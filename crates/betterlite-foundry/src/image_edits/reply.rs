@@ -14,7 +14,8 @@ pub fn decode_mai_edit_reply(
     created_seconds: i64,
 ) -> Result<ImageGenerationReply, ImageEditError> {
     let response = decode_mai_image_reply(body, status_code)?;
-    project_reply(&response, created_seconds)
+    let bytes = serde_json::to_vec(&response).map_err(ImageEditError::ReplyEncoding)?;
+    Ok(decode_image_reply(&bytes, created_seconds)?)
 }
 
 pub fn transform_mai_edit_response(
@@ -32,13 +33,6 @@ pub fn transform_mai_edit_response(
         complete_input_dict: &empty,
         original_response: &response,
     });
-    project_reply(&response, created_seconds)
-}
-
-fn project_reply(
-    response: &Object,
-    created_seconds: i64,
-) -> Result<ImageGenerationReply, ImageEditError> {
-    let bytes = serde_json::to_vec(response).map_err(ImageEditError::ReplyEncoding)?;
+    let bytes = serde_json::to_vec(&response).map_err(ImageEditError::ReplyEncoding)?;
     Ok(decode_image_reply(&bytes, created_seconds)?)
 }

@@ -28,20 +28,18 @@ pub fn complete_url(request: CompleteUrlRequest<'_>) -> Result<String, ImageEdit
     let environment_version = request.environment.api_version.as_deref();
     match variant {
         ImageEditVariant::Flux1 => {
-            let version = first_version(&[
-                request.api_version,
-                request.global_api_version,
-                environment_version,
-            ])
-            .ok_or(ImageEditError::ApiVersionRequired)?;
+            let version = request
+                .api_version
+                .or(request.global_api_version)
+                .or(environment_version)
+                .ok_or(ImageEditError::ApiVersionRequired)?;
             flux1_edit_url(&base, request.model, version)
         }
         ImageEditVariant::Flux2 => {
-            let version = first_version(&[
-                request.api_version,
-                request.global_api_version,
-                environment_version,
-            ]);
+            let version = request
+                .api_version
+                .or(request.global_api_version)
+                .or(environment_version);
             Ok(flux2_image_generation_url(
                 Some(base.as_str()),
                 request.model,
@@ -49,7 +47,7 @@ pub fn complete_url(request: CompleteUrlRequest<'_>) -> Result<String, ImageEdit
             )?)
         }
         ImageEditVariant::Mai => {
-            let version = first_version(&[request.api_version, environment_version]);
+            let version = request.api_version.or(environment_version);
             Ok(mai_image_url(
                 ImageOperation::Edit,
                 Some(base.as_str()),
@@ -57,10 +55,6 @@ pub fn complete_url(request: CompleteUrlRequest<'_>) -> Result<String, ImageEdit
             )?)
         }
     }
-}
-
-fn first_version<'data>(sources: &[Option<&'data str>]) -> Option<&'data str> {
-    sources.iter().find_map(|source| *source)
 }
 
 // B668 appends /images/edits to a deployment base, and the caller's query, if any, is replaced by the api-version alone

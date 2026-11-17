@@ -40,6 +40,9 @@ impl ImageEditVariant {
 
     #[must_use]
     pub const fn uses_multipart(self) -> bool {
-        !matches!(self, Self::Flux2)
+        match self {
+            Self::Flux1 | Self::Mai => true,
+            Self::Flux2 => false,
+        }
     }
 }

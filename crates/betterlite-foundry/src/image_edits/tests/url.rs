@@ -30,7 +30,7 @@ fn url(
     global_api_version: Option<&str>,
     env: &Env,
 ) -> Result<String, ImageEditError> {
-    complete_url(&CompleteUrlRequest {
+    complete_url(CompleteUrlRequest {
         model,
         accessors: ModelInfoAccessors {
             global_api_base: None,

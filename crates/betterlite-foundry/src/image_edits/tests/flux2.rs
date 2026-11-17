@@ -5,11 +5,11 @@ use betterlite_openai::image_edits::request::ImageEditForm;
 use crate::image_edits::error::ImageEditError;
 use crate::image_edits::flux2::{
     DEFAULT_REFERENCE_LIMIT, FLEX_REFERENCE_LIMIT, Flux2EditRequest, map_edit_params,
-    supported_params, transform_request,
+    transform_request,
 };
 use crate::image_edits::image_source::ImageSource;
 use crate::image_generation::error::FoundryImageError;
-use crate::image_generation::flux::FLUX2_OPENAI_PARAMS;
+use crate::image_generation::flux::{FLUX2_OPENAI_PARAMS, supported_params};
 
 use super::support::{self, FLEX, FLUX2, JPEG, PNG};
 

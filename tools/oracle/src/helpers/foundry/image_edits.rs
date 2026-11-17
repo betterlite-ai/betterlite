@@ -1,8 +1,8 @@
 use betterlite_foundry::image_edits::error::ImageEditError;
-use betterlite_foundry::image_edits::flux2;
 use betterlite_foundry::image_edits::mai;
 use betterlite_foundry::image_edits::selection::ImageEditVariant;
 use betterlite_foundry::image_generation::error::FoundryImageError;
+use betterlite_foundry::image_generation::flux::supported_params;
 use betterlite_foundry::mai_images::error::MaiImageError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Map, Value, json};
@@ -85,7 +85,7 @@ fn model_step(model: &str) -> Value {
 // the FLUX 1 allowlist belongs to the OpenAI image edit config, so only the two owned allowlists are probed
 fn supported_step(model: &str) -> Value {
     match ImageEditVariant::select(model) {
-        Ok(ImageEditVariant::Flux2) => json!(flux2::supported_params(model)),
+        Ok(ImageEditVariant::Flux2) => json!(supported_params(model)),
         Ok(ImageEditVariant::Mai) => json!(&mai::MAI_EDIT_OPENAI_PARAMS),
         Ok(ImageEditVariant::Flux1) | Err(_) => Value::Null,
     }

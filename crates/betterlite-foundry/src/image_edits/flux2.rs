@@ -2,7 +2,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use betterlite_openai::image_edits::request::ImageEditForm;
 
-use crate::image_generation::flux::supported_params as generation_supported_params;
 use crate::image_generation::params::map_openai_params;
 
 use super::error::ImageEditError;
@@ -16,11 +15,6 @@ pub struct Flux2EditRequest<'data> {
     pub prompt: Option<&'data str>,
     pub images: Option<&'data mut [ImageSource]>,
     pub options: &'data ImageParams,
-}
-
-#[must_use]
-pub fn supported_params(model: &str) -> &'static [&'static str] {
-    generation_supported_params(model)
 }
 
 // B553's map_openai_params filters out None values, so an unsupported key sent as null is not reported

@@ -4,28 +4,31 @@ use crate::image_edits::selection::ImageEditVariant;
 use super::support::{FLUX1, FLUX2, MAI};
 
 pub(super) fn image_edit_model_selection() {
-    mai_models();
-    flux2_models();
-    flux1_models();
+    model_names();
     other_models();
     class_names_and_transports();
 }
 
-fn mai_models() {
-    for model in [MAI, "mai-image-2.5", "MAI_Image_2", "azure/mai-image-2.5"] {
+fn model_names() {
+    let cases = [
+        (MAI, ImageEditVariant::Mai),
+        ("mai-image-2.5", ImageEditVariant::Mai),
+        ("MAI_Image_2", ImageEditVariant::Mai),
+        ("azure/mai-image-2.5", ImageEditVariant::Mai),
+        (FLUX2, ImageEditVariant::Flux2),
+        ("flux.2-flex", ImageEditVariant::Flux2),
+        ("FLUX-2-kontext", ImageEditVariant::Flux2),
+        ("flux2", ImageEditVariant::Flux2),
+        (FLUX1, ImageEditVariant::Flux1),
+        ("flux", ImageEditVariant::Flux1),
+        ("FLUX-1-kontext-max", ImageEditVariant::Flux1),
+        ("", ImageEditVariant::Flux1),
+        ("-_", ImageEditVariant::Flux1),
+    ];
+    for (model, expected) in cases {
         assert_eq!(
             ImageEditVariant::select(model).unwrap(),
-            ImageEditVariant::Mai,
-            "{model}"
-        );
-    }
-}
-
-fn flux2_models() {
-    for model in [FLUX2, "flux.2-flex", "FLUX-2-kontext", "flux2"] {
-        assert_eq!(
-            ImageEditVariant::select(model).unwrap(),
-            ImageEditVariant::Flux2,
+            expected,
             "{model}"
         );
     }
@@ -34,16 +37,6 @@ fn flux2_models() {
         ImageEditVariant::select("MAI-image-flux-2").unwrap(),
         ImageEditVariant::Mai
     );
-}
-
-fn flux1_models() {
-    for model in [FLUX1, "flux", "FLUX-1-kontext-max", "", "-_"] {
-        assert_eq!(
-            ImageEditVariant::select(model).unwrap(),
-            ImageEditVariant::Flux1,
-            "{model}"
-        );
-    }
 }
 
 fn other_models() {
