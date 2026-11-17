@@ -183,9 +183,10 @@ mod llm_close {
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        PreCall, anchored, attribute, creds, empty_trace, event, event_with, failure, finished,
-        harness, inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
-        payloadless_call, pre_call, root_trace_id, success, team_payload, with_id, zero_start,
+        PreCall, anchored, attribute, close_credentialed_tenants, creds, empty_trace, event,
+        event_with, failure, finished, harness, inference, inference_failure, no_upstream,
+        owned_http, payload_end, payload_start, payloadless_call, pre_call, root_trace_id, success,
+        team_payload, with_id, zero_start,
     };
 
     #[tokio::test]
@@ -241,17 +242,7 @@ mod llm_close {
         .await;
         assert_eq!(harness.built.builds(), 1);
         // every later close routes its own tenant and releases it, so S0's provider drains to zero
-        for index in 1..=MAX_CACHED_PROVIDERS {
-            success(
-                &harness.logger,
-                event_with(
-                    with_id(inference(), &format!("later-{index}")),
-                    creds(&format!("S{index}")),
-                    IndexMap::new(),
-                ),
-            )
-            .await;
-        }
+        close_credentialed_tenants(&harness, MAX_CACHED_PROVIDERS).await;
         // the deferred close released S0's lease, so the overflow eviction shuts its provider down at once
         assert!(harness.built.sink(0).is_shutdown_called());
     }

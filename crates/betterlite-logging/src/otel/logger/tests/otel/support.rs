@@ -620,6 +620,21 @@ pub(crate) fn route_tenants(
     }
 }
 
+// one carrier-less close per index under dynamic credentials S{index}, so each close routes its own tenant and releases it
+pub(crate) async fn close_credentialed_tenants(harness: &Harness, count: usize) {
+    for index in 1..=count {
+        success(
+            &harness.logger,
+            event_with(
+                with_id(inference(), &format!("later-{index}")),
+                creds(&format!("S{index}")),
+                IndexMap::new(),
+            ),
+        )
+        .await;
+    }
+}
+
 // the logger's own provider: in memory, simple processor, so a test reads the span right after emit
 fn main_tracer(
     settings: &Settings,
