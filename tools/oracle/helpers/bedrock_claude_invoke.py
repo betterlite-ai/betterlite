@@ -1,11 +1,10 @@
 import asyncio
 import time
-from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 import litellm
-import litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation as bedrock_claude
+import litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation as claude
 from litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transformation import (
     AmazonAnthropicClaudeConfig,
 )
@@ -189,9 +188,9 @@ TRANSFORMER: Final = TypeAdapter[Transformer](Transformer, config=ARBITRARY)
 
 def call_body(transformer: Transformer, call: TransformCall) -> dict[str, JsonValue]:
     fetcher = Fetcher(call["fetch"])
-    saved_url = bedrock_claude.convert_url_to_base64
+    saved_url = claude.convert_url_to_base64
     saved_async = image_handling.async_convert_url_to_base64
-    bedrock_claude.convert_url_to_base64 = fetcher
+    claude.convert_url_to_base64 = fetcher
     image_handling.async_convert_url_to_base64 = AsyncFetcher(fetcher)
     try:
         if call["inline"]:
@@ -213,7 +212,7 @@ def call_body(transformer: Transformer, call: TransformCall) -> dict[str, JsonVa
                 dict(call["headers"]),
             )
     finally:
-        bedrock_claude.convert_url_to_base64 = saved_url
+        claude.convert_url_to_base64 = saved_url
         image_handling.async_convert_url_to_base64 = saved_async
     return {"body": body, "fetches": JSON.validate_python(fetcher.calls)}
 
