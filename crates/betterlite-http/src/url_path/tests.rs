@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::error::HttpError;
-use crate::url_path::{encode_segment, encode_segments};
+use crate::url_path::{encode_segment, encode_segments, quote_segment};
 
 #[test]
 fn url_path_tests_behavior() {
@@ -19,6 +19,19 @@ fn url_path_tests_behavior() {
         encode_segments("\u{3b1}/\u{3b2}", "path").unwrap(),
         "%CE%B1/%CE%B2"
     );
+}
+
+#[test]
+fn url_path_quote_segment_matches_python_quote() {
+    assert_eq!(quote_segment("a/b?c#d"), "a%2Fb%3Fc%23d");
+    assert_eq!(quote_segment("folder/my photo"), "folder%2Fmy%20photo");
+    assert_eq!(quote_segment("100%"), "100%25");
+    assert_eq!(quote_segment("a%20b"), "a%2520b");
+    assert_eq!(quote_segment("-._~AZaz09"), "-._~AZaz09");
+    assert_eq!(quote_segment("."), ".");
+    assert_eq!(quote_segment(".."), "..");
+    assert_eq!(quote_segment(""), "");
+    assert_eq!(quote_segment("x\u{e9}"), "x%C3%A9");
 }
 
 #[rstest::rstest]

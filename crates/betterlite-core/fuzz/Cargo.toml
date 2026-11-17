@@ -401,3 +401,10 @@ path = "fuzz_targets/azure_speech_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "assemblyai_transcript"
+path = "fuzz_targets/assemblyai_transcript.rs"
+test = false
+doc = false
+bench = false

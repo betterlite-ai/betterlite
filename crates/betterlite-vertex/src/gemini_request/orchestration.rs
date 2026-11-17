@@ -11,9 +11,10 @@ use crate::cache_create::orchestration::{
 };
 use crate::cache_lookup::target::CacheProvider;
 use crate::cache_lookup::transport::CacheTransport;
+use crate::gemini_media::gcs_metadata::GcsDeps;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
 
-use super::body::{BodyInput, Transformed, transform};
+use super::body::{BodyInput, Transformed};
 use super::error::{BodyError, RequestError, encode};
 use super::media_prepare::{FetchMode, prepare};
 
@@ -26,6 +27,7 @@ pub struct CallRequest<'request, F: RemoteMediaFetcher + Sync> {
     pub modify_params: bool,
     pub schema_template: Option<&'request CustomPromptTemplate>,
     pub capabilities: &'request (dyn ModelCapabilityLookup + Sync),
+    pub gcs: GcsDeps<'request>,
 }
 
 pub async fn transform_request_body<T, F, L, C>(
@@ -100,7 +102,8 @@ where
         modify_params: request.modify_params,
         schema_template: request.schema_template,
     };
-    transform(&input, request.capabilities, cache.fetcher)
+    input
+        .transform_with_gcs(&request.gcs, request.capabilities, cache.fetcher)
         .await
         .map_err(RequestError::from)
 }

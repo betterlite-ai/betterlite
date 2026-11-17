@@ -1,0 +1,15 @@
+kind: helper
+name: metadata-project-aliases
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://alias-bucket/photo"}}
+    litellm_params: {vertex_project: "", vertex_ai_project: "alias-project", vertex_ai_credentials: "sa.json"}
+    metadata: {status: 200, json: {contentType: "image/webp"}, body: null, connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}
