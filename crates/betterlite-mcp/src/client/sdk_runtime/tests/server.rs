@@ -5,8 +5,9 @@ use std::pin::Pin;
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
-    Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam,
-    ProtocolVersion, ServerCapabilities, ServerConfig, ServerRequest, Tool,
+    Implementation, JsonObject, ListToolsResult, LoggingLevel, LoggingMessageNotificationParam,
+    PaginatedRequestParams, ProgressNotificationParam, ProtocolVersion, ServerCapabilities,
+    ServerConfig, ServerRequest, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -166,6 +167,16 @@ impl ServerHandler for TestServer {
                 CallToolResult::success(vec![ContentBlock::text(
                     peer_answer(&context, request).await,
                 )])
+            }
+            "log" => {
+                let params =
+                    LoggingMessageNotificationParam::new(LoggingLevel::Info, json!("a log line"));
+                context
+                    .peer
+                    .notify_logging_message(params)
+                    .await
+                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                CallToolResult::success(vec![ContentBlock::text("logged")])
             }
             "custom" => {
                 let request: ServerRequest = serde_json::from_value(json!({

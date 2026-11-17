@@ -238,6 +238,14 @@ async fn a_roots_request_answers_the_sdk_default() {
 }
 
 #[tokio::test]
+async fn a_logging_notification_does_not_disturb_the_call() {
+    let answer = answered("log", ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert_eq!(answer, "logged");
+}
+
+#[tokio::test]
 async fn a_method_the_handler_does_not_know_is_method_not_found() {
     let answer = answered("custom", ServerRequestHandlers::default())
         .await
