@@ -135,3 +135,7 @@ path = "src/rubrik_moderation/tests.rs"
 [[test]]
 name = "genai_metrics"
 path = "src/otel/plumbing/metrics/tests/suite.rs"
+
+[[test]]
+name = "otel_lifecycle"
+path = "src/otel/logger/tests/suite.rs"
