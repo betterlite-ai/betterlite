@@ -15,6 +15,9 @@ deviations:
   - what: A present usageMetadata that is not an object fails with a typed UsageShape error, where LiteLLM calls .get on the value and the proxy answers HTTP 500.
     why: The declared usage type is an object, so such a reply is malformed; betterlite names the failure instead of crashing the request, and no working setup receives one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L153-L154
+  - what: An edit usage's TEXT or IMAGE detail counts whose sum leaves the signed 64-bit range fail with a typed TokenOverflow error, where LiteLLM adds unbounded Python integers.
+    why: betterlite's token counts are i64, and a reply summing past that is not one any working setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_usage_transformation.py#L25-L34
 kept_bugs:
   - what: A single empty bytes image is falsey and carries no image, while a list holding the same empty bytes carries one part with empty data; betterlite keeps that split because LiteLLM's truthiness test runs on the whole field before the records are read.
     why: A working call can hit either side, and the edit body must match LiteLLM's for the field shape the caller gave.
