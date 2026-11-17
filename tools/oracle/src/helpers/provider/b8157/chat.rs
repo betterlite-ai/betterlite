@@ -52,7 +52,6 @@ pub(super) fn run(case: &Case) -> HelperResult {
     Ok(json!({"request": {"url": url, "headers": kept}, "error": error_or_null(&outcome)}))
 }
 
-// the case's settings, environment and resolved credentials, then the arm's own entry
 fn dispatched(
     case: &Case,
     handler: &Recorder,
@@ -106,7 +105,7 @@ fn pre_resolved(case: &Case) -> Result<PreResolved, Box<HelperError>> {
     let env = environment(case);
     let base = substituted_base(case);
     let key = case.api_key.as_deref().map(SecretString::from);
-    let ollama_key = env.get(OLLAMA_API_KEY).map(SecretString::from);
+    let ollama_key = env.get(OLLAMA_API_KEY).cloned().map(SecretString::from);
     match case.provider {
         Provider::HostedVllm => {
             let provider_env = ProviderEnvironment {
@@ -171,8 +170,11 @@ fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N]) -> Optio
 fn lemonade_resolved(case: &Case) -> Result<(Option<String>, Option<String>), Box<HelperError>> {
     let env = environment(case);
     let credentials = GlobalCredentials {
+        api_key: None,
+        api_base: None,
+        xai_key: None,
+        inception_key: None,
         lemonade_key: case.globals.lemonade_key.as_deref().map(SecretString::from),
-        ..GlobalCredentials::default()
     };
     let key = case.api_key.as_deref().filter(|value| !value.is_empty());
     Ok(resolve_special(
