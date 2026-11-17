@@ -160,12 +160,11 @@ impl MessagesStreamCacheTarget for RecordingCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((payload, request_kwargs));
-        match &self.failure {
-            Some(message) => Err(CacheWriteFailure {
+        self.failure.as_ref().map_or(Ok(()), |message| {
+            Err(CacheWriteFailure {
                 message: message.clone(),
-            }),
-            None => Ok(()),
-        }
+            })
+        })
     }
 }
 
@@ -309,10 +308,10 @@ pub(super) fn cache_deps(
     tracker: &Arc<CacheWriteTracker>,
     api_limits: ApiLimits,
 ) -> MessagesStreamCacheDeps {
-    let mut target: Option<Arc<dyn MessagesStreamCacheTarget>> = None;
-    if let Some(recording) = cache {
-        target = Some(recording);
-    }
+    let target: Option<Arc<dyn MessagesStreamCacheTarget>> = cache.as_ref().map(|recording| {
+        let target: Arc<dyn MessagesStreamCacheTarget> = Arc::<RecordingCache>::clone(recording);
+        target
+    });
     MessagesStreamCacheDeps {
         cache: target,
         tracker: Arc::clone(tracker),

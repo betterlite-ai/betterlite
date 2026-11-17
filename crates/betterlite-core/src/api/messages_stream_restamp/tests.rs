@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
 use betterlite_models::decisions::Json;
@@ -498,16 +499,13 @@ where
     yielded
 }
 
-pub(super) async fn written_stream(
-    reads: Vec<Read>,
-    preset: Option<&str>,
-) -> (Vec<Vec<u8>>, Json, KeyObject) {
+async fn written_stream(reads: Vec<Read>, preset: Option<&str>) -> (Vec<Vec<u8>>, Json, KeyObject) {
     let cache = support::RecordingCache::succeeding();
     let tracker = tracker();
     let mut writer = MessagesStreamCacheWriter::new(
         ScriptedStream::new(reads),
         cache_settings(request_kwargs(), preset),
-        cache_deps(Some(cache.clone()), &tracker, limits(64)),
+        cache_deps(Some(Arc::clone(&cache)), &tracker, limits(64)),
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;
@@ -569,7 +567,7 @@ async fn cache_write_failure_warning() {
     let mut writer = MessagesStreamCacheWriter::new(
         ScriptedStream::new(vec![Read::Chunk(frames.concat().into_bytes())]),
         cache_settings(request_kwargs(), None),
-        cache_deps(Some(cache.clone()), &tracker, limits(64)),
+        cache_deps(Some(Arc::clone(&cache)), &tracker, limits(64)),
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;

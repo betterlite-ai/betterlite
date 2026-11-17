@@ -16,7 +16,6 @@ use tracing::Level;
 use crate::api::api_boundaries::ApiLimits;
 
 use super::super::CACHED_STREAM_EVENTS_KEY;
-use super::super::MessagesStreamChunk;
 use super::super::MessagesStreamRestampInput;
 use super::super::cache_stream::{
     MessagesStreamCacheError, MessagesStreamCacheSettings, MessagesStreamCacheWriter,
@@ -32,7 +31,7 @@ use super::support::{
     cache_deps, cache_hit, cache_settings, cached_events_dict, limits, request_kwargs, tracker,
 };
 use super::{bytes, cache_stream_frames, drain_writer, event, sse_event, start_frame, text};
-use crate::api::messages_sse_events::stream::MessagesProviderStream;
+use crate::api::messages_sse_events::stream::MessagesProviderStream as _;
 
 fn settings_without_support() -> MessagesStreamCacheSettings {
     MessagesStreamCacheSettings {
@@ -67,7 +66,7 @@ async fn written(
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;
-    let write_count = cache.map_or(0, |cache| cache.writes().len());
+    let write_count = cache.map_or(0, |recording| recording.writes().len());
     (yielded, write_count)
 }
 
@@ -317,7 +316,7 @@ async fn writer_logs_an_invalid_utf8_stream() {
     let mut writer = MessagesStreamCacheWriter::new(
         ScriptedStream::new(vec![Read::Chunk(payload)]),
         cache_settings(request_kwargs(), None),
-        cache_deps(Some(cache.clone()), &tracker, limits(64)),
+        cache_deps(Some(Arc::clone(&cache)), &tracker, limits(64)),
     );
     let yielded = drain_writer(&mut writer).await;
     tracker.wait_idle().await;
@@ -357,7 +356,7 @@ async fn writer_persists_once() {
     let mut writer = MessagesStreamCacheWriter::new(
         ScriptedStream::new(every_frame_as_a_read()),
         cache_settings(request_kwargs(), None),
-        cache_deps(Some(cache.clone()), &tracker, limits(64)),
+        cache_deps(Some(Arc::clone(&cache)), &tracker, limits(64)),
     );
     let yielded = drain_writer(&mut writer).await;
     assert!(
@@ -385,9 +384,9 @@ fn replay_without_the_events_key_stays_unchanged() {
         CACHED_STREAM_EVENTS_KEY.to_owned(),
         CacheValue::Text("not a list".to_owned()),
     )]);
-    let converted = convert_cached_messages_result(wrong_type, logging.clone())
+    let unchanged = convert_cached_messages_result(wrong_type, logging.clone())
         .expect("a non-list value carries no events");
-    assert!(matches!(converted, CachedMessagesResult::Unchanged(_)));
+    assert!(matches!(unchanged, CachedMessagesResult::Unchanged(_)));
     assert!(!logging.stamped());
 }
 
@@ -528,6 +527,6 @@ fn restamp_chunk_restamps_a_text_frame() {
 
 #[test]
 fn restamp_chunk_keeps_events_that_are_not_objects() {
-    let chunk: MessagesStreamChunk = event(Json::Text("claude-3".to_owned()));
+    let chunk = event(Json::Text("claude-3".to_owned()));
     assert_eq!(restamp_chunk(&chunk, REQUESTED_MODEL), chunk);
 }
