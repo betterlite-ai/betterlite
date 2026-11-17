@@ -30,7 +30,7 @@ STRATEGY = TypeAdapter(RAGChunkingStrategy)
 def transform(case: Case) -> JsonValue:
     value = case.get("chunking_strategy")
     strategy = None if value is None else STRATEGY.validate_python(value)
-    mapper: ChunkingMapper = VertexAIRAGTransformation()  # type: ignore[no-untyped-call,assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L26-L28
+    mapper: ChunkingMapper = VertexAIRAGTransformation()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L26-L28
     capture = MemoryHandler(capacity=1000, flushLevel=logging.CRITICAL)
     capture.setLevel(logging.WARNING)
     logger = logging.getLogger("LiteLLM")
