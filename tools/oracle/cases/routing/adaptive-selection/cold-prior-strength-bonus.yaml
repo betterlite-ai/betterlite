@@ -1,0 +1,21 @@
+kind: probe
+name: adaptive-selection-cold-prior-strength-bonus
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_selection:
+        check: snapshot
+        available_models: ["low", "low-boost", "mid", "high"]
+        weights: {"quality": "0.5", "cost": "0.5"}
+        preferences:
+          - {"model": "low", "quality_tier": 1, "strengths": []}
+          - {"model": "low-boost", "quality_tier": 1, "strengths": ["code_generation"]}
+          - {"model": "mid", "quality_tier": 2, "strengths": ["code_generation"]}
+          - {"model": "high", "quality_tier": 3, "strengths": ["writing"]}
+        costs:
+          - {"model": "low", "amount": "0.1"}
+          - {"model": "low-boost", "amount": "0.2"}
+          - {"model": "mid", "amount": "0.5"}
+          - {"model": "high", "amount": "1.5"}
+compare: {ignore: []}
