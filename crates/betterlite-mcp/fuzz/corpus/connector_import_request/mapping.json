@@ -1,0 +1,1 @@
+{"mcpServers":{"remote one":{"url":"https://mcp.example.test/sse","type":"sse","headers":{"Authorization":"Bearer corpus-token","X-Extra":"1"}},"stdio one":{"command":"npx","args":["-y","@example/server"],"env":{"TOKEN":"value"}},"broken":{"url":"https://mcp.example.test/http","type":"WebSocket"}}}

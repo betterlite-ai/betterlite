@@ -1,0 +1,59 @@
+kind: helper
+name: mcp-payload-validation-new-discovery-eligibility
+call:
+  b4716:
+    function: eligibility
+    auth_type: oauth2
+    oauth2_flow: authorization_code
+    delegate_auth_to_upstream: false
+calls:
+  - b4716:
+      function: eligibility
+      auth_type: oauth2
+      oauth2_flow: client_credentials
+      delegate_auth_to_upstream: false
+  - b4716:
+      function: eligibility
+      auth_type: null
+      oauth2_flow: authorization_code
+      delegate_auth_to_upstream: false
+  - b4716:
+      function: eligibility
+      auth_type: oauth2
+      oauth2_flow: authorization_code
+      delegate_auth_to_upstream: true
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: true
+        auth_type: oauth2
+        oauth2_flow: authorization_code
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: true
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: true
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: true
+        auth_type: oauth2
+        oauth2_flow: authorization_code
+        delegate_auth_to_upstream: true
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: new_request
+      payload:
+        per_server_oauth_discovery: false
+        auth_type: api_key
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

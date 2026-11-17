@@ -1,0 +1,21 @@
+kind: helper
+name: studio-images-lowercase-modality
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: gemini-2.5-flash-image
+        body:
+          usageMetadata:
+            promptTokenCount: 5
+            promptTokensDetails:
+              - {modality: text, tokenCount: 3}
+              - {modality: image, tokenCount: 2}
+            candidatesTokenCount: 6
+            candidatesTokensDetails:
+              - {modality: Image, tokenCount: 4}
+            totalTokenCount: 11
+    costs: []
+env: {}
+compare: {ignore: []}

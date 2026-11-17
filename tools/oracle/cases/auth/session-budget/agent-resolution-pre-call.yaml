@@ -1,0 +1,22 @@
+kind: helper
+name: agent-resolution-pre-call
+call:
+  b3007:
+    memory:
+      "{session_budget:s1}:spend": 2.0
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_budget_per_session: 1.0}
+      - agent_id: agent-2
+        agent_name: beta
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {other: true}
+    pre_calls:
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+      - agent_id: agent-2
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}

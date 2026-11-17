@@ -1,7 +1,7 @@
 id: B1350
 milestone: M3 providers
 title: Studio image generation usage and token-first pricing
-status: todo
+status: done
 depends_on: [B1331, B1334, B1345, B1346, B1349, B193, B997, B171]
 file: tasks/B1350-studio-image-generation.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/llms/gemini.py"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2220

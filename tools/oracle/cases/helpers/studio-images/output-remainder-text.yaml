@@ -1,0 +1,21 @@
+kind: helper
+name: studio-images-output-remainder-text
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: gemini-2.5-flash-image
+        body:
+          usageMetadata:
+            promptTokenCount: 5
+            promptTokensDetails:
+              - {modality: TEXT, tokenCount: 2}
+              - {modality: IMAGE, tokenCount: 3}
+            candidatesTokenCount: 10
+            candidatesTokensDetails:
+              - {modality: IMAGE, tokenCount: 6}
+            totalTokenCount: 15
+    costs: []
+env: {}
+compare: {ignore: []}

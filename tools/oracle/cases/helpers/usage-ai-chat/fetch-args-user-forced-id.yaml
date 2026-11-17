@@ -1,0 +1,15 @@
+kind: helper
+name: usage-ai-chat-fetch-args-user-forced-id
+call:
+  b3103:
+    function: fetch_args
+    tool: usage
+    arguments:
+      start_date: "2026-01-01"
+      end_date: "2026-01-31"
+      user_id: mallory
+    user_id: alice
+    is_admin: false
+env: {}
+compare:
+  ignore: []
