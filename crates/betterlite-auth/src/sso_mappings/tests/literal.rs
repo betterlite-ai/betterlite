@@ -85,6 +85,8 @@ fn parses_an_accepted_literal(#[case] input: &str, #[case] expected: Literal) {
 #[case::star_unpacking("[*[]]", LiteralError::NotLiteral)]
 #[case::dict_unpacking("{**{}}", LiteralError::NotLiteral)]
 #[case::binary_operator("1 + 2", LiteralError::Syntax)]
+#[case::bare_tuple("1, 2", LiteralError::Syntax)]
+#[case::complex_arithmetic("1+2j", LiteralError::Syntax)]
 #[case::missing_colon("{'a' 1}", LiteralError::Syntax)]
 #[case::missing_second_colon("{'a': 1, 'b' 2}", LiteralError::Syntax)]
 #[case::mixed_concatenation("b'a' 'b'", LiteralError::Syntax)]
