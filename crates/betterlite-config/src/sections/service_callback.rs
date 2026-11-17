@@ -98,7 +98,11 @@ impl Section for Raw {
                 self.litellm_settings.service_callback.unwrap_or_default(),
                 lookup,
             )?,
-            log_level: log_level(lookup),
+            // an empty variable counts as unset, matching how betterlite reads every environment value
+            log_level: lookup
+                .lookup(LOG_LEVEL_VARIABLE)
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_owned()),
             json_logs: json_logs(lookup),
             max_queue_size: variable(lookup, MAX_QUEUE_SIZE_VARIABLE)?
                 .unwrap_or(DEFAULT_MAX_QUEUE_SIZE),
@@ -120,17 +124,6 @@ fn resolve_names(
             resolve_string(name, &path, lookup)
         })
         .collect()
-}
-
-// an empty variable counts as unset, matching how betterlite reads every environment value
-fn log_level<L>(lookup: &L) -> String
-where
-    L: EnvironmentLookup,
-{
-    lookup
-        .lookup(LOG_LEVEL_VARIABLE)
-        .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_owned())
 }
 
 // only "true" in any case enables JSON logs; whitespace and other spellings stay false
