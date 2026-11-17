@@ -52,7 +52,8 @@ class BatchEmbeddingConfig(BedrockFilesConfig):
     def registry(self, model: str) -> JsonValue:
         schema = self._lookup_provider_specific_field(model, SCHEMA_FIELD)
         titan = self._is_titan_v2_embed_model(model)
-        return JSON.validate_json(json.dumps({"schema": schema, "titan": titan}))
+        answer: dict[str, JsonValue] = {"schema": schema, "titan": titan}
+        return JSON.validate_json(json.dumps(answer))
 
     def titan(self, model: str) -> JsonValue:
         return JSON.validate_json(json.dumps(self._is_titan_v2_embed_model(model)))
@@ -68,24 +69,28 @@ class BatchEmbeddingConfig(BedrockFilesConfig):
 
 def classify_records(config: BatchEmbeddingConfig, call: ClassifyRecords) -> JsonValue:
     kinds: list[JsonValue] = [config.classify(record) for record in call["records"]]
-    return JSON.validate_json(json.dumps({"kinds": kinds}))
+    answer: dict[str, JsonValue] = {"kinds": kinds}
+    return JSON.validate_json(json.dumps(answer))
 
 
 def registry_schema(config: BatchEmbeddingConfig, call: RegistrySchema) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     results: list[JsonValue] = [config.registry(model) for model in call["models"]]
-    return JSON.validate_json(json.dumps({"results": results}))
+    answer: dict[str, JsonValue] = {"results": results}
+    return JSON.validate_json(json.dumps(answer))
 
 
 def name_boundary(config: BatchEmbeddingConfig, call: NameBoundary) -> JsonValue:
     litellm.model_cost = {}
     results: list[JsonValue] = [config.titan(model) for model in call["models"]]
-    return JSON.validate_json(json.dumps({"results": results}))
+    answer: dict[str, JsonValue] = {"results": results}
+    return JSON.validate_json(json.dumps(answer))
 
 
 def coerce_input(config: BatchEmbeddingConfig, call: CoerceInput) -> JsonValue:
     coerced = config.coerce(call.get("input"), call["model"])
-    return JSON.validate_json(json.dumps({"coerced": coerced}))
+    answer: dict[str, JsonValue] = {"coerced": coerced}
+    return JSON.validate_json(json.dumps(answer))
 
 
 def map_embedding(config: BatchEmbeddingConfig, call: MapEmbedding) -> JsonValue:
@@ -94,7 +99,7 @@ def map_embedding(config: BatchEmbeddingConfig, call: MapEmbedding) -> JsonValue
 
 
 def run(input_value: Input) -> JsonValue:
-    config = BatchEmbeddingConfig()
+    config = BatchEmbeddingConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L392-L394
     if input_value["function"] == "classify_records":
         return classify_records(config, input_value)
     if input_value["function"] == "registry_schema":
