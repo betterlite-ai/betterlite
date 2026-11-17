@@ -1,0 +1,33 @@
+kind: helper
+name: error-type-from-error-information
+call:
+  b3869:
+    function: record_failure
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        error_information:
+          error_class: null
+          error_code: '429'
+    start_time: 10
+    end_time: 13
+calls:
+- b3869:
+    function: record_failure
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        error_information:
+          error_class: BadRequestError
+          error_code: '400'
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

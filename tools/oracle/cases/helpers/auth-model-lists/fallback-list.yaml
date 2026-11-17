@@ -1,0 +1,73 @@
+kind: helper
+name: auth-model-lists-fallback-list
+call:
+  auth_model_lists:
+    function: all_fallbacks
+    model: model-a
+    fallback_type: general
+    settings:
+      fallbacks:
+        - {model-a: [gpt-4, gemini]}
+        - {"*": [generic-fallback]}
+      context_window_fallbacks:
+        - {"*": [ctx-generic]}
+      content_policy_fallbacks:
+        - {model-a: [policy-a]}
+calls:
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-z
+      fallback_type: general
+      settings:
+        fallbacks:
+          - {model-a: [gpt-4, gemini]}
+          - {"*": [generic-fallback]}
+        context_window_fallbacks:
+          - {"*": [ctx-generic]}
+        content_policy_fallbacks:
+          - {model-a: [policy-a]}
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-z
+      fallback_type: context_window
+      settings:
+        fallbacks:
+          - {model-a: [gpt-4, gemini]}
+          - {"*": [generic-fallback]}
+        context_window_fallbacks:
+          - {"*": [ctx-generic]}
+        content_policy_fallbacks:
+          - {model-a: [policy-a]}
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-a
+      fallback_type: content_policy
+      settings:
+        fallbacks:
+          - {model-a: [gpt-4, gemini]}
+          - {"*": [generic-fallback]}
+        context_window_fallbacks:
+          - {"*": [ctx-generic]}
+        content_policy_fallbacks:
+          - {model-a: [policy-a]}
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-a
+      fallback_type: bogus
+      settings:
+        fallbacks:
+          - {model-a: [gpt-4, gemini]}
+        context_window_fallbacks: []
+        content_policy_fallbacks: []
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-a
+      fallback_type: general
+      settings: null
+  - auth_model_lists:
+      function: all_fallbacks
+      model: model-a
+      fallback_type: bogus
+      settings: null
+env: {}
+compare: {ignore: []}

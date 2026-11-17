@@ -1,0 +1,21 @@
+kind: helper
+name: fail-open-reachability
+call:
+  b3742:
+    unreachable_fallback: fail_open
+    key_alias: alias-1
+    replies:
+      - {kind: reply, status: 200, body: {access_token: obo-token-1, expires_in: 3599}, raw: null}
+      - {kind: unreachable}
+    repeat_last_reply: false
+    invocations:
+      - call_type: call_mcp_tool
+        data:
+          incoming_bearer_token: header.payload.signature
+          litellm_call_id: call-1
+          mcp_server_name: weather
+          mcp_tool_name: get_weather
+env: {}
+compare:
+  ignore:
+    - {pointer: "/value/records/0/0/guardrail_response/reason", why: "LiteLLM names the Python exception class of a reachability failure (Timeout); betterlite names its poster error"}

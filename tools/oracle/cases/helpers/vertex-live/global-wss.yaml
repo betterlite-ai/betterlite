@@ -1,0 +1,15 @@
+kind: helper
+name: global-wss
+call:
+  vertex_live:
+    calls:
+      - op: endpoint
+        session: {project: my-project, location: global, access_token: ya29.token}
+        headers: {x-request-tag: keep, Authorization: stale}
+        api_key: sk-ignored
+      - op: endpoint
+        session: {project: my-project, location: europe-west4, access_token: ya29.token}
+      - op: endpoint
+        session: {project: "", location: global, access_token: ya29.token}
+env: {}
+compare: {ignore: []}

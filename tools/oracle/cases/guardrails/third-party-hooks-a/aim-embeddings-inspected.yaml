@@ -1,0 +1,23 @@
+kind: helper
+name: aim-embeddings-inspected
+call:
+  b9451:
+    vendor: aim
+    hook: pre_call
+    api_key: aim-key
+    inspect_embeddings: true
+    call_type: aembedding
+    data:
+      litellm_call_id: call-1
+      model: text-embedding-3-small
+      input: ["first document"]
+    outputs: []
+    key_alias: alias-1
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          required_action: {action_type: monitor_action}
+          analysis_result: {analysis_time_ms: 1, policy_drill_down: {}}
+env: {}
+compare: {ignore: []}

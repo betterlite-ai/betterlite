@@ -1,0 +1,19 @@
+kind: helper
+name: lasso-api-timeout
+call:
+  b9451:
+    vendor: lasso
+    hook: pre_call
+    gate: true
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: false
+    timeout: 0.2
+    data:
+      litellm_call_id: call-1
+      messages:
+        - {role: user, content: hello}
+    outputs: []
+    answers: []
+env: {}
+compare: {ignore: [{pointer: /value/error/detail, why: "LiteLLM wraps the timeout in litellm.Timeout, so its text names the elapsed seconds, which no second run repeats; betterlite answers Lasso API timeout (see the deviation)"}]}

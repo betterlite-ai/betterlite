@@ -1,0 +1,48 @@
+kind: helper
+name: max-retries-default-two
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {max_retries: null}
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        acompletion: true
+        optional_params: {max_retries: null}
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {max_retries: true}
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {max_retries: 1.5}
+env: {}
+compare: {ignore: []}
