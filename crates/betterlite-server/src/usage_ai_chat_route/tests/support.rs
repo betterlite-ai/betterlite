@@ -167,7 +167,8 @@ impl UsageChatModel for FakeModel {
             std::convert::Infallible,
         >,
     > + Send {
-        std::future::ready(Ok(stream::empty()))
+        let items: Vec<Result<String, std::convert::Infallible>> = Vec::new();
+        std::future::ready(Ok(stream::iter(items)))
     }
 }
 
