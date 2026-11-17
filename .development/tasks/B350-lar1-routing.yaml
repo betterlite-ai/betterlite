@@ -24,6 +24,11 @@ description: 'Add the typed LAR-1 metadata parser and async deployment selector 
   B016 registers Strategy::Lar1 as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/lar1_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/strategy.rs"
+  - "crates/betterlite-router/src/router_core/tests/support.rs"
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
   - crates/betterlite-router/src/lar1_routing.rs
   - crates/betterlite-router/src/lar1_routing/**
   - crates/betterlite-router/src/strategy/lar1_routing.rs
