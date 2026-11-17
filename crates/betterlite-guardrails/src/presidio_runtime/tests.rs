@@ -63,6 +63,10 @@ enum Case {
     StreamingIteratorRelaysEvents,
     ZeroTimeoutUsesTheDefault,
     MalformedMockRedactedText,
+    EmptyBasesFallBackToTheDefault,
+    AnEmptyLanguageUsesTheDefault,
+    ReturnsWhenMessagesAreNull,
+    SkipsNonObjectContentParts,
 }
 
 #[rstest]
@@ -122,6 +126,10 @@ enum Case {
 #[case::streaming_iterator_relays_events(Case::StreamingIteratorRelaysEvents)]
 #[case::zero_timeout_uses_the_default(Case::ZeroTimeoutUsesTheDefault)]
 #[case::malformed_mock_redacted_text(Case::MalformedMockRedactedText)]
+#[case::empty_bases_fall_back_to_the_default(Case::EmptyBasesFallBackToTheDefault)]
+#[case::an_empty_language_uses_the_default(Case::AnEmptyLanguageUsesTheDefault)]
+#[case::returns_when_messages_are_null(Case::ReturnsWhenMessagesAreNull)]
+#[case::skips_non_object_content_parts(Case::SkipsNonObjectContentParts)]
 #[tokio::test]
 async fn presidio_runtime_cases(#[case] case: Case) {
     match case {
@@ -209,5 +217,11 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         Case::MalformedMockRedactedText => {
             construction::malformed_mock_redacted_text_fails_construction();
         }
+        Case::EmptyBasesFallBackToTheDefault => {
+            construction::empty_bases_fall_back_to_the_default()
+        }
+        Case::AnEmptyLanguageUsesTheDefault => construction::an_empty_language_uses_the_default(),
+        Case::ReturnsWhenMessagesAreNull => masking::returns_when_messages_are_null().await,
+        Case::SkipsNonObjectContentParts => masking::skips_non_object_content_parts().await,
     }
 }

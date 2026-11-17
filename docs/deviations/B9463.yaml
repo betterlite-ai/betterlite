@@ -8,6 +8,13 @@ deviations:
       error are the same as LiteLLM's, and the gather races on that shared dict.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1080
   - what: >-
+      A content part that is not a JSON object is skipped and the other parts are still checked.
+    why: >-
+      LiteLLM calls .get("text") on every item of a list content, so a non-object item raises AttributeError and
+      turns a malformed message into a 500. B3806 models such a part as an opaque Other, so betterlite leaves it
+      in place and masks the parts whose text it can read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1066-L1069
+  - what: >-
       A presidio_ad_hoc_recognizers file whose JSON is not a list is refused at construction with the decode error.
     why: >-
       B3804's analyze payload carries ad_hoc_recognizers as a typed list, so a JSON object or scalar has no place in

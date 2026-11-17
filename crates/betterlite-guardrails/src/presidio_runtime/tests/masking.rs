@@ -99,6 +99,34 @@ pub(super) async fn returns_when_messages_are_absent() {
     assert!(seen(&server).is_empty());
 }
 
+pub(super) async fn returns_when_messages_are_null() {
+    let server = masking();
+    let guard = guard_at(&server);
+    let mut data = request(r#"{"messages":null}"#);
+    guard
+        .pre_call(&mut data, "completion")
+        .await
+        .expect("nothing is checked");
+    assert!(seen(&server).is_empty());
+}
+
+pub(super) async fn skips_non_object_content_parts() {
+    let server = masking();
+    let guard = guard_at(&server);
+    let mut data = request(
+        r#"{"messages":[{"role":"user","content":["plain",{"type":"text","text":"call 555-0100"}]}]}"#,
+    );
+    guard
+        .pre_call(&mut data, "completion")
+        .await
+        .expect("the text part is masked");
+    let messages = messages_of(&data);
+    let blocks = content_of(&messages[0]);
+    assert_eq!(text(&blocks[0]), "plain");
+    assert_eq!(text(field(&blocks[1], "text")), "<PHONE_NUMBER>");
+    assert_eq!(analyzer_requests(&server).len(), 1);
+}
+
 pub(super) async fn fails_when_messages_are_not_a_list() {
     let server = masking();
     let guard = guard_at(&server);

@@ -421,3 +421,34 @@ pub(super) fn malformed_mock_redacted_text_fails_construction() {
         PresidioRuntimeError::MockRedactedText { .. }
     ));
 }
+
+pub(super) fn empty_bases_fall_back_to_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_analyzer_api_base = Some(String::new());
+    args.presidio_anonymizer_api_base = Some(String::new());
+    let guard = build(
+        &args,
+        super::support::defaults(&server.base, &server.base),
+        &RuntimeSettings::default(),
+        false,
+        Some(PresidioRole::Scan),
+    )
+    .expect("the guard");
+    assert_eq!(
+        guard.analyzer.settings.analyzer_api_base,
+        format!("{}/", server.base)
+    );
+    assert_eq!(
+        guard.anonymizer.settings.anonymizer_api_base,
+        format!("{}/", server.base)
+    );
+}
+
+pub(super) fn an_empty_language_uses_the_default() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.presidio_language = Some(String::new());
+    let guard = guard(&args);
+    assert_eq!(guard.analyzer.settings.language, "en");
+}
