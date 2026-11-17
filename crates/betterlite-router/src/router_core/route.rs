@@ -1,3 +1,6 @@
+use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::message_content::Message;
+
 use crate::deployment_catalog::types::Authority;
 use crate::deployment_clients::clients::{CachedClients, ClientKind};
 use crate::router_core::services::RouteServices;
@@ -15,6 +18,10 @@ pub struct RouteRequest<'request> {
     pub affinity_pinned: bool,
     pub excluded_deployment_ids: &'request [String],
     pub retry_skipped_deployment_ids: &'request [String],
+    // the prompt the prompt caching check hashes, absent on a route that carries no messages
+    pub messages: Option<&'request [Message]>,
+    // the request arguments the check reads enable_prompt_caching and its tools from
+    pub request_kwargs: Option<&'request Object>,
 }
 
 // The router settings one route applies, resolved by betterlite-config.

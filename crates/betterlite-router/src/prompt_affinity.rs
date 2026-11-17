@@ -4,4 +4,4 @@ pub mod json;
 pub mod prefix;
 pub mod service;
 
-mod tests;
+pub(crate) mod tests;
