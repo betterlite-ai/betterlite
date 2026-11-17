@@ -1,0 +1,29 @@
+kind: helper
+name: attribute-ceiling-caps-before-filter
+call:
+  b3869:
+    function: record
+    callback_settings:
+      include_list:
+      - gen_ai.system
+      - metadata.user_api_key_user_email
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: azure
+      standard_logging_object:
+        metadata:
+          user_api_key_alias: key-a
+          user_api_key_user_email: a@example.com
+        hidden_params:
+          model_id: deployment-1
+    response:
+      usage:
+        prompt_tokens: 2
+        completion_tokens: 4
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []
