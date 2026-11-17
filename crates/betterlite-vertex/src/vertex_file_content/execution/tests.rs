@@ -20,7 +20,7 @@ use self::support::{
 use super::ContentRead;
 use super::error::FileContentError;
 use super::file_content;
-use crate::vertex_gcs_access::bucket::GCS_BUCKET_ENV;
+use crate::vertex_gcs_access::bucket::{GCS_BATCH_BUCKET_ENV, GCS_BUCKET_ENV};
 
 const NOW: i64 = 1_700_000_000;
 const ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2,"trafficType":"ON_DEMAND"}}}"#;
@@ -79,7 +79,8 @@ fn header<'headers>(headers: &'headers IndexMap<String, String>, name: &str) -> 
 
 #[tokio::test]
 async fn authorize_before_get() {
-    let harness = Harness::with_env(&[(GCS_BUCKET_ENV, BUCKET)]);
+    // the batch environment names the bucket, so the read resolver is the only path to it
+    let harness = Harness::with_env(&[(GCS_BATCH_BUCKET_ENV, BUCKET)]);
     let base = harness.base();
     let request = content_request(FILE_ID);
     let deployment = deployment_of(None, None, None);
@@ -103,7 +104,7 @@ async fn authorize_before_get() {
         harness.authorization(0),
         format!("Bearer {}", token_for(None))
     );
-    let denied = Harness::with_env(&[(GCS_BUCKET_ENV, BUCKET)]);
+    let denied = Harness::with_env(&[(GCS_BATCH_BUCKET_ENV, BUCKET)]);
     denied.set_auth_failure(true);
     let denied_base = denied.base();
     let outcome = file_content(&denied_base, &read, &mut state).await;
