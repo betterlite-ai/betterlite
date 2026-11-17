@@ -5,7 +5,7 @@ use crate::fields::response::{InitResponseObject, ResponsePrivacy, ServedTexts};
 use crate::logging_state::LoggingState;
 use crate::logging_streams::overlay::overlay_served_output_texts;
 use crate::logging_streams::served_texts::SERVED_OUTPUT_TEXTS_KEY;
-use crate::payload::redaction::redact_response_text;
+use crate::spend_bodies::redaction::redact_response;
 
 // LiteLLM reads _hidden_params off a model result and keeps the dumped body, so a dict result splits the same way.
 #[must_use]
@@ -82,7 +82,7 @@ impl ResponsePrivacy for PayloadResponsePrivacy {
 
     fn redact(&self, response: Json) -> Json {
         if self.redact_messages {
-            redact_response_text(response)
+            redact_response(response)
         } else {
             response
         }

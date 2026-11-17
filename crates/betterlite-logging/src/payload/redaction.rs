@@ -1,11 +1,10 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
+use crate::exporter_options::redaction::REDACTED_TEXT;
 use crate::fields::payload::StandardLoggingPayload;
 
-pub const REDACTED_TEXT: &str = "redacted-by-litellm";
-
-pub(crate) const VERTEX_METADATA_FIELDS: [&str; 5] = [
+const VERTEX_METADATA_FIELDS: [&str; 5] = [
     "vertex_ai_grounding_metadata",
     "vertex_ai_url_context_metadata",
     "vertex_ai_safety_ratings",
@@ -40,52 +39,18 @@ pub(crate) fn redacted_messages_json() -> Json {
     ]))])
 }
 
-// _redact_standard_logging_object reads output first, then choices, and scrubs vertex metadata in both.
+// _redact_standard_logging_object reads output before choices and scrubs vertex metadata in both branches; the
+// choices branch and the placeholder are perform_redaction's result redaction, which spend bodies already builds.
 fn redact_logged_response(response: Json) -> Json {
     match response {
-        Json::Object(mut fields) if fields.contains_key("output") => {
-            redact_output(&mut fields);
-            scrub_vertex_metadata(&mut fields);
-            Json::Object(fields)
-        }
-        Json::Object(mut fields) if fields.contains_key("choices") => {
-            redact_choices(&mut fields);
-            scrub_vertex_metadata(&mut fields);
-            Json::Object(fields)
-        }
         Json::Text(_) => Json::Text(REDACTED_TEXT.to_owned()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            text_placeholder()
-        }
-    }
-}
-
-// perform_redaction's result branch reads choices before output, and only the choices branch scrubs.
-pub(crate) fn redact_response_text(response: Json) -> Json {
-    match response {
-        Json::Object(mut fields) if fields.contains_key("choices") => {
-            redact_choices(&mut fields);
+        Json::Object(mut fields) if fields.contains_key("output") => {
+            redact_output(&mut fields);
             scrub_vertex_metadata(&mut fields);
             Json::Object(fields)
         }
-        Json::Object(mut fields) if fields.contains_key("output") => {
-            redact_output(&mut fields);
-            Json::Object(fields)
-        }
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => text_placeholder(),
+        other => crate::spend_bodies::redaction::redact_response(other),
     }
-}
-
-fn text_placeholder() -> Json {
-    Json::Object(IndexMap::from([(
-        "text".to_owned(),
-        Json::Text(REDACTED_TEXT.to_owned()),
-    )]))
 }
 
 fn as_object_mut(value: &mut Json) -> Option<&mut IndexMap<String, Json>> {
@@ -128,53 +93,6 @@ fn redact_output_item(item: &mut IndexMap<String, Json>) {
     }
     if kind == "custom_tool_call" && item.contains_key("input") {
         item.insert("input".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
-    }
-}
-
-fn redact_choices(fields: &mut IndexMap<String, Json>) {
-    let Some(Json::List(choices)) = fields.get_mut("choices") else {
-        return;
-    };
-    for choice in choices {
-        if let Json::Object(choice_fields) = choice {
-            redact_choice(choice_fields);
-        }
-    }
-}
-
-fn redact_choice(choice: &mut IndexMap<String, Json>) {
-    if let Some(Json::Object(message)) = choice.get_mut("message") {
-        redact_message(message);
-        return;
-    }
-    if let Some(Json::Object(delta)) = choice.get_mut("delta") {
-        redact_message(delta);
-        return;
-    }
-    redact_present(choice, "text");
-}
-
-fn redact_message(message: &mut IndexMap<String, Json>) {
-    redact_present(message, "content");
-    redact_present(message, "reasoning_content");
-    for key in ["thinking_blocks", "audio"] {
-        if let Some(value) = message.get_mut(key) {
-            *value = Json::Null;
-        }
-    }
-    if let Some(Json::List(calls)) = message.get_mut("tool_calls") {
-        for call in calls {
-            if let Json::Object(call_fields) = call
-                && let Some(Json::Object(function)) = call_fields.get_mut("function")
-            {
-                function.insert("arguments".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
-            }
-        }
-    }
-    if let Some(Json::Object(call)) = message.get_mut("function_call")
-        && call.contains_key("arguments")
-    {
-        call.insert("arguments".to_owned(), Json::Text(REDACTED_TEXT.to_owned()));
     }
 }
 

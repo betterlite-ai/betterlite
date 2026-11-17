@@ -13,7 +13,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
+use crate::exporter_options::redaction::{REDACTED_TEXT, ResponseStamp};
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::LoggingStatus;
 use crate::logging_failure::callbacks::FailureCallbacks;
@@ -40,7 +40,7 @@ use crate::payload::emit::{
     EmitError, EmitSettings, PayloadEmitter, emit_standard_logging_payload,
 };
 use crate::payload::lifecycle::{LoggingLifecycle, LoggingLifecycleConfig};
-use crate::payload::redaction::{REDACTED_TEXT, redact_standard_payload};
+use crate::payload::redaction::redact_standard_payload;
 use crate::payload::response::object_field;
 use crate::registry::CallbackRegistry;
 

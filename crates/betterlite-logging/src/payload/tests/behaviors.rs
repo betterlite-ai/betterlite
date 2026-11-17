@@ -7,6 +7,10 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
+use super::{
+    builder, builder_with, chat_response, end, init, object_field, start, state, state_from,
+};
+use crate::exporter_options::redaction::REDACTED_TEXT;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::GuardrailStatus;
 use crate::logging_failure::{FailurePayloadInput, FailurePayloadSource};
@@ -17,11 +21,6 @@ use crate::logging_success::ports::StandardPayloadBuilder;
 use crate::payload::deps::{
     AutorouterAudit, PayloadClock, PayloadSettings, PayloadSources, SavedCacheCost, SavingsRequest,
     TagConfig,
-};
-use crate::payload::redaction::REDACTED_TEXT;
-
-use super::{
-    builder, builder_with, chat_response, end, init, object_field, start, state, state_from,
 };
 
 fn built(
