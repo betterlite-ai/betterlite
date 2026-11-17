@@ -50,7 +50,8 @@ pub struct Deployment {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     // index-aligned with model_list; None when the deployment configures none of the five keys
-    pub deployments: Vec<Option<Deployment>>,
+    // the list lives behind a box so Sections stays small, since betterlite-server holds a Config across an await
+    pub deployments: Box<[Option<Deployment>]>,
 }
 
 impl Section for Raw {
@@ -64,7 +65,9 @@ impl Section for Raw {
         for (index, deployment) in self.model_list.into_iter().enumerate() {
             deployments.push(configured(deployment.litellm_params, index, lookup)?);
         }
-        Ok(Settings { deployments })
+        Ok(Settings {
+            deployments: deployments.into_boxed_slice(),
+        })
     }
 }
 
