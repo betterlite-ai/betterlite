@@ -9,7 +9,7 @@ use super::shared::{
 use crate::presidio_streams::error::PresidioStreamError;
 
 #[tokio::test]
-async fn a_chunk_past_the_byte_ceiling_is_raised_not_flushed() {
+async fn over_budget_bytes_in_the_unmask_buffer_are_raised() {
     let harness = Harness::new();
     let mut request = tokens_request();
     let huge = "x".repeat(ApiLimits::default().max_json_bytes);
@@ -23,7 +23,7 @@ async fn a_chunk_past_the_byte_ceiling_is_raised_not_flushed() {
 }
 
 #[tokio::test]
-async fn the_chunk_count_ceiling_is_raised_not_flushed() {
+async fn over_budget_items_in_the_unmask_buffer_are_raised() {
     let harness = Harness::new();
     let mut request = tokens_request();
     let events = ok(vec![chat("a"); ApiLimits::default().max_items + 1]);

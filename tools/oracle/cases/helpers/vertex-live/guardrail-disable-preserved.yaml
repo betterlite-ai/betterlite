@@ -1,0 +1,38 @@
+kind: helper
+name: guardrail-disable-preserved
+call:
+  vertex_live:
+    calls:
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad, create_response: false}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        message:
+          type: session.update
+          session:
+            audio:
+              input:
+                turn_detection: {type: server_vad, create_response: false}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        message:
+          type: session.update
+          session:
+            modalities: [audio]
+            turn_detection: {type: server_vad, create_response: true}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad, create_response: false, silence_duration_ms: 400}
+env: {}
+compare: {ignore: []}

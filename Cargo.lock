@@ -1139,6 +1139,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-cache",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-db",
  "betterlite-error",
@@ -1202,7 +1203,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "chrono",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -1650,6 +1653,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "selfie",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -2440,6 +2444,7 @@ dependencies = [
  "jiff",
  "lru",
  "mime_guess",
+ "mutants",
  "nix",
  "num-traits",
  "percent-encoding",
@@ -2672,6 +2677,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
+ "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "secrecy",
@@ -3040,6 +3048,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-server",
  "chrono",
  "futures-util",
@@ -3917,6 +3926,7 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -4456,6 +4466,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -10125,6 +10136,15 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "selfie"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7b9062d2ec6c5a972298b4983e1025a59036a0c1af274e5ecf16f183568cdb8"
+dependencies = [
+ "stable_deref_trait",
 ]
 
 [[package]]
