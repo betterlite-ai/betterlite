@@ -107,7 +107,10 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
 #[test]
 fn databricks_completion_logs_a_failure_and_returns_the_same_error() {
     let mut fixture = Fixture::new();
-    fixture.headers = Some([("X-Request-Tag".to_owned(), "one".to_owned())].into());
+    fixture.headers = Some(BTreeMap::from([(
+        "X-Request-Tag".to_owned(),
+        "one".to_owned(),
+    )]));
     let handler = Recorder::failing(500);
     let (outcome, _calls, state) = run_arm(
         ChatConfigTag::Databricks,
