@@ -1,0 +1,33 @@
+kind: helper
+name: studio-image-edit-round-trip
+call:
+  studio_image_edit:
+    factories: [gemini-2.5-flash-image]
+    requests:
+      - model: gemini-2.5-flash-image
+        prompt: paint the sky teal
+        image:
+          kind: many
+          records:
+            - {kind: bytes, data_base64: R0lGODlh}
+            - null
+        params: {n: 1}
+        headers: {x-custom: kept}
+        api_key: null
+        api_base: null
+        env: {GEMINI_API_KEY: seed-key}
+    responses:
+      - body:
+          candidates:
+            - content: {parts: [{inlineData: {data: AAA}}]}
+          usageMetadata:
+            promptTokenCount: 4
+            promptTokensDetails: [{modality: TEXT, tokenCount: 4}]
+            candidatesTokenCount: 6
+            totalTokenCount: 10
+    costs:
+      - model: oracle-studio-edit
+        catalog: {output_cost_per_image: 0.04}
+        images: 1
+env: {}
+compare: {ignore: []}

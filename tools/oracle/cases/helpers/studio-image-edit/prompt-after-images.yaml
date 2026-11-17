@@ -1,0 +1,20 @@
+kind: helper
+name: studio-image-edit-prompt-after-images
+call:
+  studio_image_edit:
+    factories: []
+    requests:
+      - model: gemini-2.5-flash-image
+        prompt: blend these into one
+        image:
+          kind: many
+          records:
+            - {kind: bytes, data_base64: iVBORw0KGgo=}
+            - null
+            - {kind: seekable, data_base64: MDEyMzQ1Njc4OWFiY2RlZg==, position: 7}
+        params: {n: 2}
+        api_key: explicit-key
+    responses: []
+    costs: []
+env: {}
+compare: {ignore: []}
