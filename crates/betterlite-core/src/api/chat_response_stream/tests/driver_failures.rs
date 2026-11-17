@@ -34,7 +34,7 @@ fn driver_stream_failure_sets_finished_and_stops() {
     assert_eq!(seen, 5, "the text was emitted before the failure");
     assert!(matches!(
         error,
-        ChatResponseStreamError::Stream { failure: observed } if observed == failure
+        ChatResponseStreamError::Stream(observed) if observed == failure
     ));
     assert!(stream.state.progress.finished);
     let pulls_at_failure = pulls.load(Ordering::SeqCst);
@@ -70,7 +70,7 @@ async fn driver_async_stream_failure_sets_finished_and_stops() {
         }
     };
     assert_eq!(seen, 5, "the text was emitted before the failure");
-    assert!(matches!(error, ChatResponseStreamError::Stream { .. }));
+    assert!(matches!(error, ChatResponseStreamError::Stream(_)));
     assert!(stream.state.progress.finished);
     let pulls = stream.source.pulls.load(Ordering::SeqCst);
     assert!(
@@ -160,7 +160,7 @@ fn driver_error_after_the_primed_chunk_keeps_the_earlier_events() {
             }
         }
     }
-    let Some(ChatResponseStreamError::Stream { failure }) = error else {
+    let Some(ChatResponseStreamError::Stream(failure)) = error else {
         panic!("the transport failure surfaces");
     };
     assert_eq!(

@@ -7,7 +7,6 @@ use rstest::rstest;
 use crate::api::response_id_codecs::response::decode_response_id;
 
 use super::super::error::ChatResponseStreamError;
-use super::super::prime;
 use super::fixtures::{
     Reply, Scripted, drain, drain_async, driver, driver_with_source, event_json, field, json,
     kinds, sequence,
@@ -135,10 +134,12 @@ fn driver_priming_keeps_the_first_adopted_id() {
         "{}",
         &["u1"],
     );
-    prime::prime_id(&mut stream.state.progress, &mut stream.source)
+    stream
+        .prime_id()
         .expect("the first chunk primes the stream");
     stream.state.progress.response_id_primed = false;
-    prime::prime_id(&mut stream.state.progress, &mut stream.source)
+    stream
+        .prime_id()
         .expect("the second chunk primes the stream again");
     assert_eq!(
         stream.state.progress.cached_response_id.as_deref(),

@@ -8,10 +8,7 @@ use crate::api::responses_chat_output::error::ChatOutputError;
 #[derive(Debug, Error)]
 pub enum ChatResponseStreamError {
     #[error("the provider stream failed before its next chunk")]
-    Stream {
-        #[from]
-        failure: StreamFailure,
-    },
+    Stream(#[from] StreamFailure),
     #[error("the provider chunk is not a JSON object")]
     InvalidChunk,
     #[error("the provider chunk could not be read: {source}")]

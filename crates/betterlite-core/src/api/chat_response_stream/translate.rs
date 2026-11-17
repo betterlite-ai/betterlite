@@ -32,10 +32,7 @@ pub fn ensure_output_item_for_chunk<Context>(
     sources: &EventSources,
     chunk: &Json,
 ) -> Result<(), ChatResponseStreamError> {
-    if state.progress.sent_output_item_added {
-        return Ok(());
-    }
-    if chunk::first_choice(chunk).is_none() {
+    if state.progress.sent_output_item_added || chunk::first_choice(chunk).is_none() {
         return Ok(());
     }
     let sequence = next_sequence(state)?;
@@ -44,15 +41,8 @@ pub fn ensure_output_item_for_chunk<Context>(
     if starts_reasoning(chunk) {
         state.progress.reasoning_active = true;
         let item_id = reasoning_item_id(&mut state.progress, sources);
-        state
-            .progress
-            .pending_response_events
-            .push(output_item_event(
-                0,
-                reasoning_item(&item_id),
-                sequence,
-                false,
-            ));
+        let event = output_item_event(0, reasoning_item(&item_id), sequence, false);
+        state.progress.pending_response_events.push(event);
         return Ok(());
     }
     let tool_calls = delta.and_then(|fields| fields.get("tool_calls"));
@@ -131,21 +121,16 @@ pub fn transform<Context>(
             return Ok(Some(event));
         }
     }
-    if let Some(event) = annotations.pop_front() {
-        return Ok(Some(event));
-    }
-    Ok(pop_tool_event(state))
+    Ok(annotations.pop_front().or_else(|| pop_tool_event(state)))
 }
 
 fn starts_reasoning(chunk: &Json) -> bool {
     let Some(fields) = chunk::delta(chunk) else {
         return false;
     };
-    if fields.get("reasoning_content").is_some_and(has_value) {
-        return true;
-    }
-    fields.contains_key("thinking_blocks")
-        && has_signed_thinking_block(&Json::Object(fields.clone()))
+    fields.get("reasoning_content").is_some_and(has_value)
+        || (fields.contains_key("thinking_blocks")
+            && has_signed_thinking_block(&Json::Object(fields.clone())))
 }
 
 // A delta field the declared types say is text; absent, null and falsy values read as no text
@@ -190,27 +175,20 @@ fn text_delta_event<Context>(
     content: &str,
 ) -> Result<KnownResponseEvent, ChatResponseStreamError> {
     let sequence = next_sequence(state)?;
-    let mut extra = Extra::new();
-    extra.insert(
-        "sequence_number".to_owned(),
-        Json::Number(Number::from(sequence)),
-    );
+    let number = Json::Number(Number::from(sequence));
     Ok(KnownResponseEvent::OutputTextDelta(OutputTextDeltaEvent {
         item_id: item_id.to_owned(),
         output_index: state.progress.message_output_index,
         content_index: 0,
         delta: content.to_owned(),
-        extra,
+        extra: Extra::from([("sequence_number".to_owned(), number)]),
     }))
 }
 
 fn pop_tool_event<Context>(state: &mut ChatStreamState<Context>) -> Option<KnownResponseEvent> {
-    state
-        .progress
-        .pending_tool_events
-        .drain(..1)
-        .next()
-        .map(|queued| queued.event)
+    let progress = &mut state.progress;
+    let next = progress.pending_tool_events.drain(..1).next();
+    next.map(|queued| queued.event)
 }
 
 fn queue_first_annotations<Context>(
@@ -224,39 +202,32 @@ fn queue_first_annotations<Context>(
     }
     let items = match delta.and_then(|fields| fields.get("annotations")) {
         None | Some(Json::Null) => return Ok(()),
-        Some(Json::List(items)) => items,
+        Some(Json::List(items)) if !items.is_empty() => items,
         Some(value) if !has_value(value) => return Ok(()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(ChatResponseStreamError::from(
-                StreamItemsError::AnnotationsNotList,
-            ));
+            return Err(StreamItemsError::AnnotationsNotList.into());
         }
     };
-    if items.is_empty() {
-        return Ok(());
-    }
     state.progress.sent_annotation_events = true;
     let mut parsed = Vec::with_capacity(items.len());
     for item in items {
         let encoded = serde_json::to_string(item)?;
-        parsed.push(
-            serde_json::from_str::<ChatAnnotation>(&encoded)
-                .map_err(|source| StreamItemsError::Annotation { source })?,
-        );
+        let annotation = serde_json::from_str(&encoded)
+            .map_err(|source| StreamItemsError::Annotation { source })?;
+        parsed.push(annotation);
     }
     for (index, annotation) in citation_fields(Some(&parsed)).into_iter().enumerate() {
         let encoded = serde_json::to_string(&annotation)?;
         let annotation_index =
             i64::try_from(index).map_err(|_error| StreamToolsError::IndexOverflow)?;
-        queue.push_back(KnownResponseEvent::OutputTextAnnotationAdded(
-            OutputTextAnnotationAddedEvent {
-                item_id: item_id.to_owned(),
-                output_index: state.progress.message_output_index,
-                content_index: 0,
-                annotation_index,
-                annotation: serde_json::from_str(&encoded)?,
-            },
-        ));
+        let event = OutputTextAnnotationAddedEvent {
+            item_id: item_id.to_owned(),
+            output_index: state.progress.message_output_index,
+            content_index: 0,
+            annotation_index,
+            annotation: serde_json::from_str(&encoded)?,
+        };
+        queue.push_back(KnownResponseEvent::OutputTextAnnotationAdded(event));
     }
     Ok(())
 }

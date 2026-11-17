@@ -82,12 +82,12 @@ fn completed_event<Context>(
 
 // The assembled response is a chat completion object, whose hidden parameters carry the private name
 fn chat_completion(completion: &Json) -> Result<ChatCompletionResponse, ChatResponseStreamError> {
-    let encoded = serde_json::to_string(completion)?;
-    let fields: IndexMap<String, Json> = serde_json::from_str(&encoded)?;
+    let fields: IndexMap<String, Json> = serde_json::from_str(&serde_json::to_string(completion)?)?;
     let text = serde_json::to_string(&chunk::fold_hidden_params(fields))?;
     serde_json::from_str(&text).map_err(|source| ChatResponseStreamError::Completion { source })
 }
 
+// The cached id is encoded the way the created and in-progress events encode theirs
 fn encoded_identity<Context>(
     state: &ChatStreamState<Context>,
     raw_id: &str,
@@ -95,32 +95,26 @@ fn encoded_identity<Context>(
     if is_encoded_response_id(raw_id) {
         return Ok(raw_id.to_owned());
     }
-    let model_id = model_info_id(state)?;
+    let model_id = match state.litellm_metadata.get("model_info") {
+        None | Some(Json::Null) => None,
+        Some(Json::Object(fields)) => match fields.get("id") {
+            None | Some(Json::Null) => None,
+            Some(Json::Text(id)) => Some(id.as_str()),
+            Some(_) => {
+                return Err(ChatResponseStreamError::Metadata {
+                    field: "litellm_metadata.model_info.id",
+                });
+            }
+        },
+        Some(_) => {
+            return Err(ChatResponseStreamError::Metadata {
+                field: "litellm_metadata.model_info",
+            });
+        }
+    };
     Ok(build_response_id(
         state.custom_llm_provider.as_deref(),
         model_id,
         raw_id,
     ))
-}
-
-fn model_info_id<Context>(
-    state: &ChatStreamState<Context>,
-) -> Result<Option<&str>, ChatResponseStreamError> {
-    match state.litellm_metadata.get("model_info") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => match fields.get("id") {
-            None | Some(Json::Null) => Ok(None),
-            Some(Json::Text(id)) => Ok(Some(id)),
-            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                Err(ChatResponseStreamError::Metadata {
-                    field: "litellm_metadata.model_info.id",
-                })
-            }
-        },
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(ChatResponseStreamError::Metadata {
-                field: "litellm_metadata.model_info",
-            })
-        }
-    }
 }
