@@ -2,7 +2,7 @@ id: B090
 title: Attach retrieval results and failures to model responses
 description: >-
   Implement VectorStorePreCallHook's two post-call methods in core::api::vector_stores and register them
-  with B012's existing deployment-hook pipeline. They consume already collected search_results and
+  with B5367's existing deployment-hook pipeline. They consume already collected search_results and
   vector_store_search_failures; they do not call search or register vector-store routes. The success hook
   reads a logging object from request_data and its model_call_details. The streaming hook instead reads
   the two fields directly from request_data. Preserve that distinction in typed entry points.
