@@ -115,12 +115,9 @@ fn extra_fields(
     }
     let mut fields = BTreeMap::new();
     for name in names {
-        let value = match navigate(response, name)? {
-            Some(found) => found,
-            None => TypedValue {
-                json: serde_json::json!(null),
-            },
-        };
+        let value = navigate(response, name)?.unwrap_or(TypedValue {
+            json: serde_json::json!(null),
+        });
         fields.insert(name.clone(), value);
     }
     Ok(Some(fields))
