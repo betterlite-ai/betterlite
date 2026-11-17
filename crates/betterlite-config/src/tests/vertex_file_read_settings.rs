@@ -2,10 +2,12 @@ use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret;
 
+use crate::types::Config;
+
 const SERVICE_ACCOUNT_ENV: &str = "GCS_PATH_SERVICE_ACCOUNT";
 const SERVICE_ACCOUNT_PATH: &str = "/run/secrets/vertex-service-account.json";
 
-fn loaded_value(config: &crate::types::Config) -> Option<&str> {
+fn loaded_value(config: &Config) -> Option<&str> {
     config
         .environment_variables
         .get(SERVICE_ACCOUNT_ENV)
