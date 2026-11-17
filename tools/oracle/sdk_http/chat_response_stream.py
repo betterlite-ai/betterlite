@@ -21,10 +21,8 @@ from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
 
-# completion also declares an awaitable, and stream=True narrows both answers to the wrapper
-CompletionAnswer: TypeAlias = (
-    ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
-)
+# completion declares both answers, and stream=True narrows them to the wrapper
+CompletionAnswer: TypeAlias = ModelResponse | CustomStreamWrapper
 
 
 class StepOutcome(TypedDict):
@@ -118,14 +116,11 @@ def event_view(event: BaseResponse) -> dict[str, Json]:
 
 
 def build_iterator(call: ChatResponseStreamCall, answer: CompletionAnswer) -> ResponsesIterator:
-    match answer:
-        case CustomStreamWrapper():
-            wrapper = answer
-        case ModelResponse() | Awaitable():
-            raise TypeError("stream=True answers with a CustomStreamWrapper")
+    if not isinstance(answer, CustomStreamWrapper):
+        raise TypeError("stream=True answers with a CustomStreamWrapper")
     return ResponsesIterator(
         model=call.model,
-        litellm_custom_stream_wrapper=wrapper,
+        litellm_custom_stream_wrapper=answer,
         request_input=call.request_input,
         # LiteLLM's request TypedDict carries `metadata: dict[str, Any] | None`
         responses_api_request=cast("RequestParams", call.responses_api_request),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1283
@@ -152,31 +147,24 @@ def request_options(call: ChatResponseStreamCall, api_base: str) -> dict[str, Js
 
 def sync_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
     events: list[dict[str, Json]] = []
-    end = False
     while True:
         try:
             events.append(event_view(next(iterator)))
         except StopIteration:
-            end = True
-            break
+            return StepOutcome(events=events, end=True)
         if step == "next":
-            break
-    return StepOutcome(events=events, end=end)
+            return StepOutcome(events=events, end=False)
 
 
 async def async_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
     events: list[dict[str, Json]] = []
-    end = False
     while True:
         try:
-            event = await iterator.__anext__()
+            events.append(event_view(await iterator.__anext__()))
         except StopAsyncIteration:
-            end = True
-            break
-        events.append(event_view(event))
+            return StepOutcome(events=events, end=True)
         if step == "next":
-            break
-    return StepOutcome(events=events, end=end)
+            return StepOutcome(events=events, end=False)
 
 
 def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
@@ -190,7 +178,8 @@ def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> 
 
 async def async_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        answer: CompletionAnswer = await litellm.acompletion(**request_options(call, api_base))
+        held: Awaitable[CompletionAnswer] = litellm.acompletion(**request_options(call, api_base))
+        answer: CompletionAnswer = await held
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
     iterator = build_iterator(call, answer)
