@@ -142,9 +142,10 @@ fn lar1_routing_rejects_an_unknown_argument() {
     let ConfigError::Unsupported { paths } = error else {
         panic!("an unknown argument names its path");
     };
+    // serde_ignored marks the Option<RawArgs> wrapper in a path with a question mark
     assert_eq!(
         paths,
-        vec!["router_settings.routing_strategy_args.confidence_threshold_ultra".to_owned()]
+        vec!["router_settings.routing_strategy_args.?.confidence_threshold_ultra".to_owned()]
     );
 }
 

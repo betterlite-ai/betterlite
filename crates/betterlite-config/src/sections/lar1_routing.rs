@@ -98,7 +98,16 @@ fn threshold(
         }
         Some(RawThreshold::Number(RawNumber::Integer(integer))) => Ok(Some(Decimal::from(integer))),
         Some(RawThreshold::Number(RawNumber::Float(float))) => {
-            parse_money(&float.to_string(), path).map(Some)
+            let parsed = Decimal::from_str_exact(&float.to_string());
+            parsed.map_or_else(
+                |_source| {
+                    Err(ConfigError::InvalidScalar {
+                        path: path.to_owned(),
+                        value: false,
+                    })
+                },
+                |decimal| Ok(Some(decimal)),
+            )
         }
         None
         | Some(
