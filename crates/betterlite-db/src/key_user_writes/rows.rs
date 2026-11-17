@@ -25,12 +25,8 @@ pub(super) fn row_json(row: &Row) -> Result<JsonData, KeyUserWriteError> {
 }
 
 pub(super) fn row_object(row: &Row) -> Result<BTreeMap<String, JsonData>, KeyUserWriteError> {
-    match row_json(row)? {
-        JsonData::Object(fields) => Ok(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => Err(KeyUserWriteError::Row(WriteRowError::NotAnObject)),
-    }
+    let JsonData::Object(fields) = row_json(row)? else {
+        return Err(KeyUserWriteError::Row(WriteRowError::NotAnObject));
+    };
+    Ok(fields)
 }
