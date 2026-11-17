@@ -62,9 +62,8 @@ pub fn operation_from_target(target: Option<&str>) -> &str {
 }
 
 fn request_target(request_headers: &HeaderMap) -> Option<&str> {
-    request_headers
-        .get("x-amz-target")
-        .and_then(|value| value.to_str().ok())
+    let value = request_headers.get("x-amz-target")?;
+    value.to_str().ok()
 }
 
 #[must_use]

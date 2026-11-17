@@ -90,6 +90,7 @@ impl JobWorker {
             return;
         };
         dispatch(job, charged).await;
+        drop(permit);
     }
 
     async fn priced(

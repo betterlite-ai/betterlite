@@ -442,6 +442,8 @@ impl Job {
     }
 
     fn input(&self) -> ScheduleInput<'_> {
+        let log = Arc::clone(&self.log);
+        let payload_builder = Arc::clone(&self.builder);
         ScheduleInput {
             request_headers: &self.request_headers,
             request_url: &self.request_url,
@@ -453,9 +455,9 @@ impl Job {
             end_time: self.end_time,
             cache_hit: self.cache_hit,
             request_body: &self.request_body,
-            log: Arc::clone(&self.log),
+            log,
             kwargs: self.kwargs.clone(),
-            payload_builder: Arc::clone(&self.builder),
+            payload_builder,
         }
     }
 
@@ -493,6 +495,9 @@ pub(super) fn failing_fixture() -> HandlerFixture {
 
 impl HandlerFixture {
     pub(super) fn input(&self) -> TranscribeHandlerInput<'_> {
+        let response_cost = priced_cost();
+        let payload_builder = self.builder.as_ref();
+        let kwargs = self.kwargs.clone();
         TranscribeHandlerInput {
             logging_obj: &self.logging_obj,
             url_route: "/transcribe",
@@ -502,9 +507,9 @@ impl HandlerFixture {
             cache_hit: false,
             request_headers: &self.headers,
             request_body: &self.request_body,
-            response_cost: priced_cost(),
-            kwargs: self.kwargs.clone(),
-            payload_builder: self.builder.as_ref(),
+            response_cost,
+            kwargs,
+            payload_builder,
         }
     }
 }
