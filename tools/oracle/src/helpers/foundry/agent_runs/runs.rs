@@ -59,7 +59,13 @@ async fn run_answer(call: &RunCall) -> Calls {
         supplied,
     };
     let outcome = finished(&completion_call, &factory, &sleeper).await;
-    answered(&completion_call, &factory, &scripted, &sleeper, outcome)
+    Ok(answered(
+        &completion_call,
+        &factory,
+        &scripted,
+        &sleeper,
+        &outcome,
+    ))
 }
 
 async fn finished(
@@ -82,8 +88,8 @@ fn answered(
     factory: &RecordingFactory,
     scripted: &ScriptedTransport,
     sleeper: &RecordingSleeper,
-    outcome: Value,
-) -> Calls {
+    outcome: &Value,
+) -> Value {
     let supplied = completion_call.supplied.is_some();
     let client = if supplied {
         "supplied"
@@ -95,11 +101,11 @@ fn answered(
     } else {
         completion_call.ssl_verify.clone()
     };
-    Ok(json!({
+    json!({
         "client": client,
         "ssl_verify": ssl,
         "requests": scripted.requests(),
         "sleeps": sleeper.values(),
         "outcome": outcome,
-    }))
+    })
 }

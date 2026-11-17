@@ -90,12 +90,12 @@ impl AgentRunTransport for ScriptedTransport {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(recorded);
-        let step = self
+        let popped = self
             .steps
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        let Some(step) = step else {
+        let Some(step) = popped else {
             return Err(TransportError::Rejected(HttpError::Required {
                 field_name: String::from("scripted step"),
             }));
