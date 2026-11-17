@@ -1,0 +1,355 @@
+id: B9982
+title: SSE and JSON line splitters break only at CR, LF and CRLF
+description: >-
+  Fix the events lost by every SSE or JSON line splitter that copies Python's str.splitlines separators. B2412
+  (https://github.com/betterlite-ai/betterlite/pull/2305) splits a recorded Responses SSE string with
+  is_line_boundary in crates/betterlite-core/src/api/responses_sse_recovery/lines.rs. It breaks at LF, CR, VT, FF,
+  U+001C to U+001E, U+0085, U+2028 and U+2029, as splitlines does. JSON allows U+0085, U+2028 and U+2029 unescaped
+  inside a string, and serde_json and Python's json.dumps(ensure_ascii=False) write them raw. So a recorded data line
+  whose item text holds one is cut into fragments, none of them parses, and the event is dropped: an output item goes
+  missing, or the response.completed that should end recovery is skipped. LiteLLM loses the same events, since
+  _recover_output_items_from_raw_sse loops over raw_sse.splitlines() (transformation.py L843). B2412's test
+  recovery_splits_python_line_boundaries pins the loss.
+
+
+  Five more splitters on main use the same set and drop the same lines. In betterlite-core,
+  src/api/messages_stream_restamp/python_text.rs has LINE_BREAKS and splitlines_keepends, and restamp.rs cuts an
+  Anthropic frame with them before it restamps the message_start model (LiteLLM streaming_model_restamp.py L55), so a
+  message_start line holding one keeps the deployment's model name. In betterlite-guardrails,
+  src/guardrail_message_scope/stream_chunk_events.rs splits with the is_line_break closure in events_from_text
+  (LiteLLM base_llm/guardrail_translation/utils.py L25), so the stream usage scan skips such an event. In
+  betterlite-vertex, src/google_genai_guardrail/sse.rs splits with LINE_BOUNDARIES in decode_google_guardrail_sse
+  (LiteLLM gemini/google_genai/guardrail_translation/handler.py L122), so the guardrail never sees that chunk's text.
+  In betterlite-server, src/pass_through_logging/tinyfish/sse.rs has split_lines (LiteLLM
+  tinyfish_passthrough_logging_handler.py L83), so a run frame holding one loses its run_id and the request is logged
+  without cost. In betterlite-openai, src/aleph_alpha/lines.rs has LINE_BREAKS in LineDecoder, the port of httpx
+  0.28.1's LineDecoder behind iter_lines and aiter_lines. Every stream that reads lines through it loses such a line:
+  aleph_alpha and codestral_call in betterlite-openai, compatible_chat_call, langgraph_stream and
+  adapters::vertex_agent_stream in betterlite-provider, gemini_http in betterlite-vertex, anthropic_http_stream in
+  betterlite-anthropic, agent_results in betterlite-foundry, and api::interactions::streaming and google_genai in
+  betterlite-core. LiteLLM loses them through httpx too, for example in the OpenAI-compatible handler's
+  response.aiter_lines() (openai_like/chat/handler.py L68).
+
+
+  The fix: each of the six splits only at the SSE line ends, CRLF, LF and CR, as the WHATWG event-stream format
+  defines them, and leaves VT, FF, U+001C to U+001E, U+0085, U+2028 and U+2029 inside the line. JSON forbids a raw CR
+  or LF inside a string, so those two never cut a JSON value. There is no shared helper to write: std's char-array
+  pattern ['\r', '\n'] does a stateless split, and the three splitters that fold CRLF or keep line ends keep their
+  loop with the shorter set. Nothing else in these files changes, and no crate gains a dependency.
+
+
+  Site by site. lines.rs deletes is_line_boundary and its comment, and recover_recorded_output in
+  responses_sse_recovery.rs splits with text.split(['\r', '\n']); its comment stops saying splitlines. A CRLF pair
+  leaves an empty piece between \r and \n, and decode_recovery_line already returns None for an empty line, so no
+  folding is needed. python_text.rs deletes LINE_BREAKS, and splitlines_keepends becomes sse_lines_keepends, breaking
+  only at '\r', '\n' and the '\r\n' pair and still keeping each line's end; restamp.rs and tests.rs call the new
+  name. stream_chunk_events.rs deletes the is_line_break closure and splits with chunk.split(['\r', '\n']), and
+  is_blank also matches '\u{1c}'..='\u{1f}'. Python's strip removes U+001C to U+001F, and those characters now reach
+  the trim instead of being split away; the comment above events_from_text says so. google_genai_guardrail/sse.rs
+  deletes LINE_BOUNDARIES, splits joined with ['\r', '\n'], and its payload trim also matches '\u{1c}'..='\u{1f}'.
+  The line itself is still not trimmed before the data: check, as LiteLLM's line.startswith does. tinyfish/sse.rs
+  keeps split_lines with its CR arm and CRLF fold, and its other arm matches only '\n'. aleph_alpha/lines.rs keeps
+  LineDecoder's trailing_cr handling and CRLF fold, and LINE_BREAKS holds '\n' and '\r' only. Each comment that says
+  Python's splitlines or httpx's LineDecoder now says the split follows SSE line ends.
+
+
+  docs/deviations/B980.yaml lists the restamp split as a kept bug ("A restamped frame is split on Python's universal
+  line breaks ..."). Delete that kept_bugs row. docs/deviations/B9982.yaml gets the six rows listed under deviations
+  below, each with its pinned LiteLLM link.
+
+
+  Tests in betterlite-core. In src/api/responses_sse_recovery/tests.rs, recovery_splits_python_line_boundaries
+  becomes recovery_splits_only_on_sse_line_ends, an rstest over the separator and the expected output. Its
+  line_feed, carriage_return_line_feed and carriage_return cases recover both items as today. Its vertical_tab,
+  form_feed, file_separator, group_separator, record_separator, unit_separator, next_line, line_separator and
+  paragraph_separator cases leave the two events on one line that is no JSON object, so nothing is recovered, and
+  recovery_does_not_split_on_the_unit_separator folds into it. recovery_keeps_unicode_separators_in_an_item recovers
+  an output_item.done whose item id is a, U+0085, b, U+2028, c, U+2029, d, written raw inside the JSON string, with
+  that id intact. a_completed_event_with_unicode_separators_ends_recovery records a response.completed whose output
+  holds an item with that id, then an output_item.done for another item, and gets the completed output alone. Add
+  the corpus seed fuzz/corpus/responses_sse_recovery/recording-unicode-separators: the odd selector byte "1", then
+  those two data lines joined by \n. In src/api/messages_stream_restamp/tests.rs, splitlines_keeps_python_line_endings
+  becomes sse_lines_keep_their_line_ends: its source now gives "one\r\n", "two\n", "three\r" and one last line
+  holding everything from four to twelve, and its other two asserts stay.
+  a_start_line_with_unicode_separators_is_restamped runs restamp_messages_stream on a message_start frame whose
+  message id holds raw U+0085, U+2028 and U+2029 and gets the frame back with REQUESTED_MODEL as the model and the id
+  unchanged.
+
+
+  Tests in the other crates. In betterlite-guardrails' src/guardrail_message_scope/stream_chunk_events/tests.rs, the
+  unicode_line_separator, next_line_separator, file_separator and record_separator_between_events cases of
+  text_chunks_yield_their_json_objects now expect no event, and leading_file_separator and trailing_group_separator
+  still expect ["a"] through the wider trim. keeps_unicode_separators_inside_a_json_string parses one event whose text
+  field holds raw U+0085, U+2028 and U+2029 and checks the text. In betterlite-vertex's
+  src/google_genai_guardrail/records/tests.rs, python_splitlines_boundaries_end_a_data_line keeps only its lone_cr
+  case and becomes a_lone_cr_ends_a_data_line; its other eight cases move to
+  other_breaks_keep_two_frames_on_one_line, which expects no text. unicode_separators_inside_a_json_string_keep_the_text
+  decodes a chunk whose part text holds raw U+0085, U+2028 and U+2029 and gets that text back. In betterlite-server's
+  src/pass_through_logging/tinyfish/tests/sse_extraction.rs, splits_lines_like_python becomes splits_sse_lines and its
+  a_line_separator case expects the one line "a\u{2028}b". a_run_id_holding_unicode_separators_is_read gives
+  run_id_from_sse_frames a data line whose run_id holds raw U+0085, U+2028 and U+2029 and gets that run_id back. In
+  betterlite-openai's src/aleph_alpha/tests.rs, line_decoder_follows_httpx becomes line_decoder_splits_on_sse_line_ends,
+  and its unicode_separator case becomes unicode_separators_stay_in_the_line: the UTF-8 bytes of a, U+0085, b,
+  U+2028, c, U+2029, d and \n give that one line without the \n.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/responses_sse_recovery.rs
+  - crates/betterlite-core/src/api/responses_sse_recovery/lines.rs
+  - crates/betterlite-core/src/api/responses_sse_recovery/tests.rs
+  - crates/betterlite-core/fuzz/corpus/responses_sse_recovery/**
+  - crates/betterlite-core/src/api/messages_stream_restamp/python_text.rs
+  - crates/betterlite-core/src/api/messages_stream_restamp/restamp.rs
+  - crates/betterlite-core/src/api/messages_stream_restamp/tests.rs
+  - crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
+  - crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events/tests.rs
+  - crates/betterlite-vertex/src/google_genai_guardrail/sse.rs
+  - crates/betterlite-vertex/src/google_genai_guardrail/records/tests.rs
+  - crates/betterlite-server/src/pass_through_logging/tinyfish/sse.rs
+  - crates/betterlite-server/src/pass_through_logging/tinyfish/tests/sse_extraction.rs
+  - crates/betterlite-openai/src/aleph_alpha/lines.rs
+  - crates/betterlite-openai/src/aleph_alpha/tests.rs
+  - docs/deviations/B980.yaml
+  - docs/deviations/B9982.yaml
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/blob/26d334ee16/crates/betterlite-core/src/api/responses_sse_recovery/lines.rs#L6-L12
+  why: is_line_boundary on the B2412 branch, the Python separator set this task removes.
+- url: https://github.com/betterlite-ai/betterlite/blob/26d334ee16/crates/betterlite-core/src/api/responses_sse_recovery/tests.rs#L192-L216
+  why: recovery_splits_python_line_boundaries and the unit separator test that pin the old split.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L835-L846
+  why: _recover_output_items_from_raw_sse loops over raw_sse.splitlines() and drops a line that does not parse.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L54-L59
+  why: _restamped_frame cuts a frame with splitlines(keepends=True) and leaves a line it cannot parse as it was.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L13-L38
+  why: _anthropic_stream_chunk_events splits each block with splitlines and strips each line.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L119-L129
+  why: _sse_payload_texts splits with splitlines, checks the data prefix on the raw line and strips the payload.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L82-L83
+  why: run_id_from_sse_frames decodes with errors="replace" and splits with splitlines.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L68
+  why: One of the iter_lines and aiter_lines streams LineDecoder serves; httpx splits these lines with splitlines.
+- url: https://github.com/encode/httpx/blob/0.28.1/httpx/_decoders.py#L321-L351
+  why: httpx 0.28.1's LineDecoder (the version tools/oracle/litellm/uv.lock pins), whose NEWLINE_CHARS LINE_BREAKS copies.
+- url: https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream
+  why: The event-stream grammar, where end-of-line is CRLF, LF or CR and nothing else.
+- url: https://github.com/betterlite-ai/betterlite/blob/faed8c023c/docs/deviations/B980.yaml#L16-L18
+  why: The kept_bugs row for the restamp split that this task deletes.
+dod:
+- text: >-
+    A recorded Responses SSE data line whose JSON string holds raw U+0085, U+2028 or U+2029 keeps its event: the
+    output item is recovered with the string intact, and a response.completed holding one ends recovery with its
+    output. The recovery corpus has a seed with such a recording.
+  proof: [recovery-item-separators, recovery-completed-separators, recovery-corpus]
+- text: >-
+    Recovery splits a recording only at LF, CRLF and CR, so VT, FF, U+001C to U+001F, U+0085, U+2028 and U+2029
+    between two data lines leave them on one line, and B2412's other recovery tests and oracle cases still pass.
+  proof: [recovery-line-ends, changed-modules, oracle]
+- text: >-
+    The Anthropic stream restamper, the guardrail stream-event scan, the Google GenAI guardrail SSE scan and the
+    TinyFish run_id scan keep a data line holding raw U+0085, U+2028 or U+2029 whole and read its JSON, and their
+    other tests and oracle cases still pass.
+  proof: [restamp-separators, guardrail-separators, google-guardrail-separators, tinyfish-separators, changed-modules, oracle]
+- text: >-
+    LineDecoder ends a line only at LF, CRLF and CR, and the aleph_alpha, codestral and other streams that read
+    through it still pass their tests.
+  proof: [line-decoder-separators, changed-modules, decoder-callers]
+- text: >-
+    None of the six splitters keeps the Python separator set: no \u{85}, \u{2028} or \u{2029} literal and no
+    is_line_boundary in the changed recovery, guardrail, TinyFish and LineDecoder files, and no LINE_BREAKS or
+    splitlines_keepends in the restamp files.
+  proof: [python-breaks-gone]
+- text: >-
+    docs/deviations/B9982.yaml lists the six fixes with their pinned LiteLLM links, and the restamp kept_bugs row is
+    gone from docs/deviations/B980.yaml.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: recovery-item-separators
+    why: Recovery still drops an output item whose JSON string holds U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::responses_sse_recovery::tests::recovery_keeps_unicode_separators_in_an_item$/)'
+  - id: recovery-completed-separators
+    why: Recovery still skips a response.completed whose JSON string holds U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::responses_sse_recovery::tests::a_completed_event_with_unicode_separators_ends_recovery$/)'
+  - id: recovery-corpus
+    why: The recovery corpus has no recording with a separator inside a JSON string, or its replay broke.
+    run: >-
+      test -f crates/betterlite-core/fuzz/corpus/responses_sse_recovery/recording-unicode-separators
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::responses_sse_recovery::tests::replays_corpus$/)'
+  - id: recovery-line-ends
+    why: Recovery still splits at a separator other than LF, CRLF and CR, or no longer splits at one of those.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::responses_sse_recovery::tests::recovery_splits_only_on_sse_line_ends::/)'
+  - id: restamp-separators
+    why: A message_start line holding U+0085, U+2028 or U+2029 is still not restamped.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::messages_stream_restamp::tests::a_start_line_with_unicode_separators_is_restamped$/)'
+  - id: guardrail-separators
+    why: The guardrail stream-event scan still drops an event holding U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+      -E 'test(/^guardrail_message_scope::stream_chunk_events::tests::keeps_unicode_separators_inside_a_json_string$/)'
+  - id: google-guardrail-separators
+    why: The Google GenAI guardrail SSE scan still drops text holding U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-vertex --no-tests=fail
+      -E 'test(/^google_genai_guardrail::records::tests::unicode_separators_inside_a_json_string_keep_the_text$/)'
+  - id: tinyfish-separators
+    why: The TinyFish run_id scan still misses a run frame holding U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/^pass_through_logging::tinyfish::sse_extraction::a_run_id_holding_unicode_separators_is_read$/)'
+  - id: line-decoder-separators
+    why: LineDecoder still ends a line at U+0085, U+2028 or U+2029.
+    run: >-
+      cargo nextest run --locked -p betterlite-openai --no-tests=fail
+      -E 'test(/^aleph_alpha::tests::line_decoder_splits_on_sse_line_ends::.*unicode_separators_stay_in_the_line$/)'
+  - id: changed-modules
+    why: A test of a changed splitter broke, or a test that pinned the Python split was not flipped.
+    run: >-
+      cargo nextest run --locked -p betterlite-core -p betterlite-guardrails -p betterlite-vertex -p betterlite-server
+      -p betterlite-openai --no-tests=fail
+      -E 'test(/^api::responses_sse_recovery::/) | test(/^api::messages_stream_restamp::/) | test(/^guardrail_message_scope::stream_chunk_events::/) | test(/^google_genai_guardrail::/) | test(/^pass_through_logging::tinyfish::/) | test(/^aleph_alpha::/) | test(/^codestral_call::/)'
+  - id: decoder-callers
+    why: A stream that reads its lines through LineDecoder broke.
+    run: >-
+      cargo nextest run --locked -p betterlite-core -p betterlite-anthropic -p betterlite-provider -p betterlite-foundry
+      -p betterlite-vertex --no-tests=fail
+      -E 'test(/^api::interactions::streaming::/) | test(/^google_genai::/) | test(/^anthropic_http_stream::/) | test(/^compatible_chat_call::/) | test(/^langgraph_stream::/) | test(/^adapters::vertex_agent_stream::/) | test(/^agent_results::/) | test(/^gemini_http::/)'
+  - id: python-breaks-gone
+    why: A changed splitter still carries the Python separator set.
+    run: >-
+      test -f crates/betterlite-core/src/api/responses_sse_recovery.rs
+      && test -f crates/betterlite-core/src/api/responses_sse_recovery/lines.rs
+      && test -f crates/betterlite-core/src/api/messages_stream_restamp/python_text.rs
+      && test -f crates/betterlite-core/src/api/messages_stream_restamp/restamp.rs
+      && test -f crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
+      && test -f crates/betterlite-vertex/src/google_genai_guardrail/sse.rs
+      && test -f crates/betterlite-server/src/pass_through_logging/tinyfish/sse.rs
+      && test -f crates/betterlite-openai/src/aleph_alpha/lines.rs
+      && ! grep -n -E 'u\{0*(85|2028|2029)\}|is_line_boundary'
+      crates/betterlite-core/src/api/responses_sse_recovery.rs
+      crates/betterlite-core/src/api/responses_sse_recovery/lines.rs
+      crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
+      crates/betterlite-vertex/src/google_genai_guardrail/sse.rs
+      crates/betterlite-server/src/pass_through_logging/tinyfish/sse.rs
+      crates/betterlite-openai/src/aleph_alpha/lines.rs
+      && ! grep -n -E 'LINE_BREAKS|splitlines_keepends'
+      crates/betterlite-core/src/api/messages_stream_restamp/python_text.rs
+      crates/betterlite-core/src/api/messages_stream_restamp/restamp.rs
+  - id: deviation-rows
+    why: A fix is not listed as a deviation with its LiteLLM link, or B980 still lists the restamp split as a kept bug.
+    run: >-
+      grep -q -F 'transformation.py#L843' docs/deviations/B9982.yaml
+      && grep -q -F 'streaming_model_restamp.py#L55' docs/deviations/B9982.yaml
+      && grep -q -F 'guardrail_translation/utils.py#L25' docs/deviations/B9982.yaml
+      && grep -q -F 'guardrail_translation/handler.py#L122' docs/deviations/B9982.yaml
+      && grep -q -F 'tinyfish_passthrough_logging_handler.py#L83' docs/deviations/B9982.yaml
+      && grep -q -F 'openai_like/chat/handler.py#L68' docs/deviations/B9982.yaml
+      && test -f docs/deviations/B980.yaml
+      && ! grep -q -F 'universal line breaks' docs/deviations/B980.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/responses-sse-recovery/recovery-line-filter.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/indexed-item-recovery.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/text-item-recovery.yaml
+- tools/oracle/cases/helpers/responses-sse-recovery/terminal-output-precedence.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/split-message-start-model.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/ping-frame.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/cache-stream-replay.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/partial-final-frame-flush.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/cache-write-failure-warning.yaml
+- tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-parse-data-prefix.yaml
+- tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-multiline-blocks.yaml
+- tools/oracle/cases/helpers/guardrail-message-scope/anthropic-sse-skip-invalid-json.yaml
+- tools/oracle/cases/helpers/google-guardrail-text/object-before-sse.yaml
+- tools/oracle/cases/helpers/google-guardrail-text/split-sse-frame.yaml
+- tools/oracle/cases/helpers/google-guardrail-text/per-chunk-utf8-replacement.yaml
+- tools/oracle/cases/server/pass-through-logging/tinyfish/sse-frame-run-extraction.yaml
+- tools/oracle/cases/helpers/aleph-alpha/raw-stream.yaml
+deviations:
+- what: >-
+    Responses output recovery splits a recorded SSE string only at LF, CRLF and CR, so a data line whose JSON string
+    holds a raw U+0085, U+2028 or U+2029 stays whole and its output item or response.completed is kept. VT, FF and
+    U+001C to U+001E no longer end a line either.
+  why: >-
+    LiteLLM's raw_sse.splitlines() cuts such a line into fragments that fail to parse and drops the event, losing an
+    output item or the completed output. JSON allows these characters unescaped in a string, and an SSE line ends only
+    at CR, LF or CRLF.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L843
+- what: >-
+    The Anthropic stream restamper cuts a frame into lines only at LF, CRLF and CR, so a message_start line holding a
+    raw U+0085, U+2028 or U+2029 inside a JSON string is restamped with the requested model.
+  why: >-
+    LiteLLM's frame.splitlines(keepends=True) cuts that line, leaves it unrestamped and shows the client the
+    deployment's model name. This replaces B980's kept_bugs row for the same split.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L55
+- what: >-
+    The guardrail stream-event scan (anthropic_stream_chunk_events) splits text and bytes chunks only at LF, CRLF and
+    CR, so an event holding a raw U+0085, U+2028 or U+2029 inside a JSON string is read.
+  why: LiteLLM's block.splitlines() cuts that event's line and the usage scan never sees the event.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L25
+- what: >-
+    The Google GenAI guardrail splits the joined SSE text only at LF, CRLF and CR, so a chunk whose part text holds a
+    raw U+0085, U+2028 or U+2029 reaches the guardrail.
+  why: LiteLLM's sse_text.splitlines() drops that chunk's text, so the guardrail never checks it.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L122
+- what: >-
+    The TinyFish SSE run_id scan splits frames only at LF, CRLF and CR, so a run frame holding a raw U+0085, U+2028
+    or U+2029 inside a JSON string still gives its run_id.
+  why: LiteLLM's splitlines() drops that frame and logs the request without cost.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L83
+- what: >-
+    LineDecoder, the line reader behind every iter_lines and aiter_lines port, ends a line only at LF, CRLF and CR,
+    where httpx 0.28.1's LineDecoder also ends one at VT, FF, U+001C to U+001E, U+0085, U+2028 and U+2029.
+  why: >-
+    A streamed SSE or JSON line holding one of those raw inside a string is cut into fragments that fail to parse,
+    and the chunk is lost.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L68
+out_of_scope:
+- >-
+  Splitters over text that is neither SSE nor JSON lines keep Python's splitlines on purpose:
+  crates/betterlite-deepagents-harness/src/sandbox_backend/read_window.rs, crates/betterlite-harness/src/sandbox/docker/snapshot.rs,
+  crates/betterlite-logging/src/opik/config_file/scan.rs and crates/betterlite-server/src/password_policy/breach.rs.
+- >-
+  Readers that already break only at LF or CR: crates/betterlite-core/src/api/messages_sse_events/raw_bytes.rs
+  (bytes.splitlines), crates/betterlite-logging/src/passthrough_stream_logging/lines.rs,
+  crates/betterlite-vertex/src/vertex_batch_download/streaming.rs, and the B3631 and B3516 readers whose own
+  deviation rows cover them.
+- >-
+  The whitespace sets that hold U+0085, U+2028 and U+2029 for Python's strip (trim_line, is_space, the tinyfish trim,
+  auth_request_models.rs, managed_resource_ids.rs and the like) trim a line's ends and are not line splitters.
+- Moving LineDecoder out of betterlite-openai's aleph_alpha module; its callers keep importing it from there.
+- >-
+  A new oracle case for the fixed lines. LiteLLM drops them, so such a case would disagree; the deviation rows record
+  the difference.
+pitfalls:
+- >-
+  stream_chunk_events.rs is_blank and the google sse.rs payload trim must match '\u{1c}'..='\u{1f}', or
+  anthropic-sse-multiline-blocks.yaml, whose third chunk is \u001cdata: {...}\u001d, loses its output_tokens 9.
+- A CRLF pair split with ['\r', '\n'] leaves an empty piece that no site parses as JSON, so add no CRLF folding where there is none today.
+- Leave trim_line, is_space and the tinyfish trim as they are; they hold Python's strip set for a line's ends.
+- The aleph_lines seed breaks.bin and replays_aleph_lines pass unchanged, since the replay only compares a whole push with a split one; leave that corpus alone.
+- >-
+  Comments name the characters as U+0085, U+2028 and U+2029, because python-breaks-gone greps the changed files for
+  the \u{85}, \u{2028} and \u{2029} literals.
+- >-
+  New tests put the characters raw inside the JSON string, written as the Rust escape \u{2028} in a str literal,
+  never as the JSON escape \\u2028 that every splitter already survives.
+- A Rust byte string literal cannot hold \u{...}, so build those byte inputs with "...".as_bytes().
+review_level: standard
+budget:
+  max_changed_lines: 250
+  max_new_expects: 0
