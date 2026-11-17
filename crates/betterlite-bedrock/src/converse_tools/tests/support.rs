@@ -5,14 +5,28 @@ use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::{CapabilityPredicates, CapabilityRequest};
+use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
 
 pub(crate) const MODEL: &str = "anthropic.claude-sonnet-4-5-20250929-v1:0";
 pub(crate) const NOVA: &str = "amazon.nova-pro-v1:0";
 pub(crate) const LLAMA: &str = "meta.llama3-3-70b-instruct-v1:0";
 
+pub(crate) const CATALOG: &str = r#"{
+    "anthropic.claude-sonnet-4-5-20250929-v1:0": {"supports_forced_tool_use": true},
+    "amazon.nova-pro-v1:0": {"supports_forced_tool_use": false},
+    "meta.llama3-3-70b-instruct-v1:0": {"supports_forced_tool_use": true}
+}"#;
+
 pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is valid JSON")
+}
+
+pub(crate) fn object(text: &str) -> IndexMap<String, Json> {
+    let Json::Object(fields) = json(text) else {
+        panic!("the fixture is an object");
+    };
+    fields
 }
 
 pub(crate) fn runtime() -> Runtime {
