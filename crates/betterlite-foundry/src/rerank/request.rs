@@ -20,7 +20,18 @@ pub struct FoundryRerankRequest {
 pub fn transform_request(
     request: &FoundryRerankRequest,
 ) -> Result<RerankParams, FoundryRerankError> {
-    let options = RerankParams::from([
+    let options = request_options(request);
+    let mapped =
+        cohere_rerank::map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
+    Ok(cohere_rerank::transform_rerank_request(
+        RerankVersion::V1,
+        &request.model,
+        &mapped,
+    )?)
+}
+
+fn request_options(request: &FoundryRerankRequest) -> RerankParams {
+    RerankParams::from([
         ("query".to_owned(), Json::Text(request.query.clone())),
         (
             "documents".to_owned(),
@@ -54,12 +65,5 @@ pub fn transform_request(
                 .max_chunks_per_doc
                 .map_or(Json::Null, |number| Json::Number(Number::from(number))),
         ),
-    ]);
-    let mapped =
-        cohere_rerank::map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
-    Ok(cohere_rerank::transform_rerank_request(
-        RerankVersion::V1,
-        &request.model,
-        &mapped,
-    )?)
+    ])
 }
