@@ -43,7 +43,9 @@ pub(super) fn malformed_json() {
     an_unreadable_body_is_a_422();
     a_non_object_body_is_a_422();
     missing_output_members_keep_their_own_failure();
+    a_message_without_content_keeps_its_own_failure();
     missing_later_members_keep_their_own_failure();
+    a_malformed_usage_keeps_its_own_failure();
     a_non_list_content_is_not_a_block_list();
     a_reply_missing_usage_and_stop_reason_names_the_stop_reason();
     an_unreadable_body_is_logged_by_its_byte_count();
@@ -179,6 +181,29 @@ fn missing_later_members_keep_their_own_failure() {
         missing_stop_reason.failure(),
         TransformError::Reply(ReplyFieldError::Missing { path: "stopReason" })
     ));
+}
+
+fn a_message_without_content_keeps_its_own_failure() {
+    let run = super::support::run(
+        &Fixture::default(),
+        r#"{"output": {"message": {}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
+    );
+    assert_eq!(run.status(), None);
+    assert!(matches!(
+        run.failure(),
+        TransformError::Reply(ReplyFieldError::Missing {
+            path: "output.message.content"
+        })
+    ));
+}
+
+fn a_malformed_usage_keeps_its_own_failure() {
+    let run = super::support::run(
+        &Fixture::default(),
+        r#"{"output": {"message": {"content": []}}, "stopReason": "end_turn", "usage": 42}"#,
+    );
+    assert_eq!(run.status(), None);
+    assert!(matches!(run.failure(), TransformError::TokenUsage(_)));
 }
 
 // LiteLLM iterates a string content character by character and answers with empty content; a typed error names the field instead.

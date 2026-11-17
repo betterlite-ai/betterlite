@@ -92,6 +92,7 @@ pub(super) fn additional_model_fields() {
     thinking_tokens_come_from_the_additional_fields();
     tier_and_trace_are_read_when_the_members_exist();
     a_null_or_empty_service_tier_replaces_what_it_names();
+    a_non_object_service_tier_leaves_the_existing_value();
     an_empty_service_tier_type_is_kept();
     reasoning_blocks_project_content_and_thinking();
 }
@@ -173,6 +174,23 @@ fn a_null_or_empty_service_tier_replaces_what_it_names() {
         body,
     );
     assert_eq!(run.response().service_tier, Some(json(r#""priority""#)));
+}
+
+fn a_non_object_service_tier_leaves_the_existing_value() {
+    let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": "priority"}"#;
+    let run = run(
+        &Fixture {
+            supplied: with_tier(
+                supplied("chatcmpl-supplied", None),
+                r#""priority""#,
+                r#"{"guardrail": "kept"}"#,
+            ),
+            ..Fixture::default()
+        },
+        body,
+    );
+    assert_eq!(run.response().service_tier, Some(json(r#""priority""#)));
+    assert_eq!(run.response().trace, Some(json(r#"{"guardrail": "kept"}"#)));
 }
 
 fn an_empty_service_tier_type_is_kept() {
