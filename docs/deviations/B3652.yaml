@@ -9,4 +9,4 @@ deviations:
   - what: Billed durations and response costs are exact decimal values, where LiteLLM divides its tick counts into a binary float and multiplies the price in floats.
     why: Durations and money are rust_decimal values in betterlite, so a duration of 1234567 ticks is 0.1234567 exactly and a cost carries the rate's own digits instead of the float that 0.0000001 * duration rounds to.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L50-L57
-  kept_bugs: []
+kept_bugs: []
