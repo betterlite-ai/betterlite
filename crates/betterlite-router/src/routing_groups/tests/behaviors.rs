@@ -324,6 +324,29 @@ fn a_mapped_model_without_flags_is_known_empty() {
         Some(Vec::new())
     );
     assert_eq!(resolve_info(&[("key", text("openai/x"))], false), None);
+    assert_eq!(
+        resolve_info(
+            &[
+                ("key", text("openai/x")),
+                ("supports_reasoning", Json::Bool(true)),
+            ],
+            true
+        ),
+        None
+    );
+}
+
+fn a_per_level_flag_alone_proves_reasoning() {
+    assert_eq!(
+        resolve_info(&[("supports_minimal_reasoning_effort", text("yes"))], false),
+        Some(vec![
+            ReasoningEffort::None,
+            ReasoningEffort::Minimal,
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+        ])
+    );
 }
 
 fn explicit_false_empties_even_with_levels() {
@@ -839,6 +862,7 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
 #[case::flags_advertise_the_polarity_of_each_level(settled(
     flags_advertise_the_polarity_of_each_level
 ))]
+#[case::a_per_level_flag_alone_proves_reasoning(settled(a_per_level_flag_alone_proves_reasoning))]
 #[case::a_mapped_model_without_flags_is_known_empty(settled(
     a_mapped_model_without_flags_is_known_empty
 ))]
