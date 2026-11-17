@@ -57,11 +57,12 @@ deviations:
       upload module would have to rebuild LiteLLM's wording from the timeout it resolved.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
   - what: >-
-      A kwargs entry named api_key, api_base or api_version is replaced by the matching named argument. LiteLLM
-      passes both to GenericLiteLLMParams(api_key=..., **kwargs), and Python raises TypeError for the duplicate
-      keyword before the provider is chosen.
+      A kwargs entry named api_key, api_base or api_version is replaced by the matching named argument. LiteLLM's
+      signature binds those three names as parameters, so its kwargs never carries them and it has no precedence
+      to state.
     why: >-
-      The Rust request carries the named credentials as their own fields, so the call Python rejects has no
-      counterpart here, and the value the caller stated as a named argument wins.
+      The Rust request holds the named credentials as fields and the kwargs as a map, with no argument binding to
+      keep those names out of the map, so the struct needs a rule of its own; the value the caller stated as a
+      named argument wins.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1318-L1323
 kept_bugs: []
