@@ -16,8 +16,9 @@ EXPERIMENTAL_HANDLER_FLAG = "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER"
 KEPT_HEADERS = frozenset({"authorization", "content-type", "openai-organization"})
 
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-# mypy reads litellm.completion's decorated return as Any; this names its declared type.
+# mypy reads litellm.completion's decorated return as Any; these name its declared types.
 CompletionCall: TypeAlias = ModelResponse | CustomStreamWrapper
+TextCompletionCall: TypeAlias = CompletionCall | TextCompletionResponse
 
 
 class Globals(TypedDict):
@@ -156,7 +157,7 @@ def call(
         )
         return TypeAdapter(EmbeddingResponse).validate_python(embedding)
     if family == "text":
-        text: CompletionCall | Awaitable[CompletionCall] = litellm.completion(
+        text: TextCompletionCall | Awaitable[TextCompletionCall] = litellm.completion(
             model=f"text-completion-openai/{case['model']}",
             messages=case["messages"],
             api_base=case["api_base"],
