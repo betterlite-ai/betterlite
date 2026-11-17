@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::pointfive_params::{
@@ -80,7 +79,10 @@ fn every_key_is_read() {
         "litellm_settings:\n  pointfive_params:\n    api_key: sk-test\n    api_url: https://pointfive.test/ingestion\n    batch_size: 25\n    flush_interval: 60\n    max_batch_bytes: 4096\n    max_upload_retries: 7\n    turn_off_message_logging: true\n",
     );
     assert_eq!(
-        params.api_key.as_ref().map(|key| key.expose_secret()),
+        params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-test")
     );
     assert_eq!(
@@ -100,7 +102,10 @@ fn an_environment_reference_stays_a_reference() {
         "litellm_settings:\n  pointfive_params:\n    api_key: os.environ/POINTFIVE_API_KEY\n",
     );
     assert_eq!(
-        params.api_key.as_ref().map(|key| key.expose_secret()),
+        params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("os.environ/POINTFIVE_API_KEY")
     );
 }

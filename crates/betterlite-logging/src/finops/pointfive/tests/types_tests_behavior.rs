@@ -5,7 +5,6 @@ use betterlite_config::sections::pointfive_params::{
     DEFAULT_MAX_UPLOAD_RETRIES, PointFiveInitParams,
 };
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use super::types::{
     DEFAULT_API_URL, PointFiveUploadFailure, PointFiveUploadTarget, RETRYABLE_UPLOAD_STATUS_CODES,
@@ -57,7 +56,10 @@ fn configured_values_are_read() {
         }"#,
     );
     assert_eq!(
-        params.api_key.as_ref().map(|key| key.expose_secret()),
+        params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-test")
     );
     assert_eq!(

@@ -98,7 +98,7 @@ async fn a_finished_batch_flush_is_replaced() {
             .lock()
             .expect("the lock is not poisoned")
             .as_ref()
-            .is_some_and(|task| task.is_finished())
+            .is_some_and(tokio::task::JoinHandle::is_finished)
     })
     .await;
     queued(&logger, "evt-3").await;
