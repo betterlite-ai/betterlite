@@ -9,7 +9,7 @@ description: >-
   B900 sends multipart requests through both running proxies; it records provider uploads rather than
   invoking the FastAPI function. B1139/B856 supply keys and team metadata. Configure master key sk-test
   for every authenticated case. B003 supplies FastAPI-compatible required-field errors and final error
-  serialization; B004 supplies response headers; B012 supplies observable pre/success/failure hooks.
+  serialization; B004 supplies response headers; B8393/B8394/B8395 supply observable pre/success/failure hooks.
 
   purpose and file are required multipart fields. Defaults are target_model_names="", target_storage=default,
   custom_llm_provider=openai and passthrough=false. Provider resolution uses path, custom-llm-provider header,

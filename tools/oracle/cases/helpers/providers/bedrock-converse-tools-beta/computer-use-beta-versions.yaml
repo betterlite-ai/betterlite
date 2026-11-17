@@ -1,0 +1,55 @@
+kind: helper
+name: bedrock-converse-tools-beta-computer-use-beta-versions
+call:
+  bedrock_converse_tools_beta:
+    model: anthropic.claude-opus-4-5-20251101-v1:0
+    model_cost: {}
+    tools:
+      - {type: computer_20250124, name: computer, display_width_px: 1024}
+    headers: null
+    params: {}
+calls:
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools:
+        - {type: computer_20250124, name: computer, display_width_px: 1024, display_height_px: 768}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-3-5-sonnet-20241022-v2:0
+      model_cost: {}
+      tools:
+        - {type: computer_20241022, name: computer}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: amazon.nova-pro-v1:0
+      model_cost: {}
+      tools:
+        - {type: computer_20241022, name: computer}
+      headers: null
+      params: {}
+  - bedrock_converse_tools_beta:
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost: {}
+      tools:
+        - type: computer_20241022
+          function:
+            name: computer
+            parameters: {display_width_px: 1024}
+        - type: function
+          function:
+            name: weather
+            parameters: {type: object, properties: {}}
+      headers: {anthropic-beta: [beta-a]}
+      params: {tools: [old], anthropic_beta: [kept]}
+  - bedrock_converse_tools_beta:
+      model: Anthropic.Claude-Opus-4-5-20251101-v1:0
+      model_cost: {}
+      tools:
+        - {type: computer_20250124, name: computer}
+      headers: null
+      params: {}
+env: {}
+compare: {ignore: []}
