@@ -24,6 +24,9 @@ pub(crate) const FILE_ID: &str = "gs://bucket/litellm-vertex-files/input.jsonl";
 pub(crate) const SPACED_FILE_ID: &str = "gs://bucket/litellm-vertex-files/a%20b.jsonl";
 pub(crate) const MODEL_FILE_ID: &str =
     "gs://bucket/litellm-vertex-files/publishers/google/models/gemini-2.5-flash/batch.jsonl";
+pub(crate) const LEGACY_FILE_ID: &str = "gs://bucket/legacy/input.jsonl";
+pub(crate) const LEGACY_STORAGE_URL: &str =
+    "https://storage.googleapis.com/storage/v1/b/bucket/o/legacy%2Finput.jsonl?alt=media";
 pub(crate) const STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/b/bucket/o/litellm-vertex-files%2Finput.jsonl?alt=media";
 pub(crate) const SPACED_STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/b/bucket/o/litellm-vertex-files%2Fa%20b.jsonl?alt=media";
 pub(crate) const MODEL_STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/b/bucket/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl?alt=media";

@@ -14,8 +14,8 @@ use crate::vertex_file_content::settings::ReadDeployment;
 mod support;
 
 use self::support::{
-    BUCKET, FILE_ID, Harness, MODEL_FILE_ID, MODEL_STORAGE_URL, SPACED_FILE_ID, SPACED_STORAGE_URL,
-    STORAGE_URL, Step, content_request, token_for,
+    BUCKET, FILE_ID, Harness, LEGACY_FILE_ID, LEGACY_STORAGE_URL, MODEL_FILE_ID, MODEL_STORAGE_URL,
+    SPACED_FILE_ID, SPACED_STORAGE_URL, STORAGE_URL, Step, content_request, token_for,
 };
 use super::ContentRead;
 use super::error::FileContentError;
@@ -110,6 +110,36 @@ async fn authorize_before_get() {
     let outcome = file_content(&denied_base, &read, &mut state).await;
     assert!(matches!(outcome, Err(FileContentError::Gcs(_))));
     assert!(denied.requests().is_empty());
+}
+
+#[tokio::test]
+async fn legacy_authorization() {
+    let harness = Harness::with_env(&[(GCS_BUCKET_ENV, BUCKET)]);
+    let base = harness.base();
+    let request = content_request(LEGACY_FILE_ID);
+    let deployment = deployment_of(None, None, None);
+    let trusted = trusted_record(true);
+    let read = content_read(&request, &deployment, None, &trusted);
+    let mut state = context();
+    let content = file_content(&base, &read, &mut state)
+        .await
+        .expect("a deployment that allows legacy ids reads the object");
+    assert_eq!(content.status, 200);
+    assert_eq!(
+        harness.steps(),
+        vec![
+            Step::Authorized(None),
+            Step::Authorized(None),
+            Step::Sent(LEGACY_STORAGE_URL.to_owned()),
+        ]
+    );
+    let untrusted = trusted_record(false);
+    let refused = content_read(&request, &deployment, None, &untrusted);
+    let error = file_content(&base, &refused, &mut state)
+        .await
+        .expect_err("a deployment without the switch refuses the legacy object");
+    assert!(matches!(error, FileContentError::FileId(_)));
+    assert_eq!(harness.steps().len(), 3);
 }
 
 #[tokio::test]
