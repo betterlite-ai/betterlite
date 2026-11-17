@@ -6,7 +6,7 @@ use std::time::Duration;
 use futures_util::FutureExt as _;
 use rmcp::model::{
     GetPromptResult, ListPromptsResult, ListResourceTemplatesResult, ListResourcesResult,
-    ReadResourceResult,
+    ReadResourceResult, ResourceContents,
 };
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
@@ -231,22 +231,14 @@ async fn the_wire_helpers_carry_the_prompt_and_resource_results() {
 }
 
 async fn check_prompt_wire(session: &mut SdkSession) {
-    let first: ListPromptsResult = serde_json::from_str(
-        &session
-            .wire_request(WireRequest::ListPrompts(None))
+    for (cursor, expected) in [(None, "greet"), (Some("more"), "farewell")] {
+        let wire = session
+            .wire_request(WireRequest::ListPrompts(cursor))
             .await
-            .expect("the first prompt page"),
-    )
-    .expect("the first prompt page decodes");
-    assert_eq!(first.prompts[0].name, "greet");
-    let second: ListPromptsResult = serde_json::from_str(
-        &session
-            .wire_request(WireRequest::ListPrompts(Some("more")))
-            .await
-            .expect("the second prompt page"),
-    )
-    .expect("the second prompt page decodes");
-    assert_eq!(second.prompts[0].name, "farewell");
+            .expect("the prompt page");
+        let page: ListPromptsResult = serde_json::from_str(&wire).expect("the prompt page decodes");
+        assert_eq!(page.prompts[0].name, expected);
+    }
     let mut arguments = BTreeMap::new();
     arguments.insert("name".to_owned(), "ada".to_owned());
     let greeting: GetPromptResult = serde_json::from_str(
@@ -287,5 +279,9 @@ async fn check_resource_wire(session: &mut SdkSession) {
             .expect("the resource contents"),
     )
     .expect("the resource contents decode");
-    assert_eq!(contents.contents[0].uri, "file:///notes.txt");
+    let ResourceContents::TextResourceContents { uri, text, .. } = &contents.contents[0] else {
+        panic!("the notes resource answers text contents");
+    };
+    assert_eq!(uri, "file:///notes.txt");
+    assert_eq!(text, "the notes' text");
 }
