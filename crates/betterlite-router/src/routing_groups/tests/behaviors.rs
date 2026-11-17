@@ -215,6 +215,8 @@ fn model_membership_feeds_the_selector_scope() {
         Some("cheap")
     );
     assert_eq!(index.claiming_group("b"), None);
+    assert!(index.is_priority_group("tiers"));
+    assert!(!index.is_priority_group("cheap"));
 }
 
 fn dispatch_groups_carry_strategies_and_selectors() {
