@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use super::support::{Group, Single, capture_logs, dec, selected, spec, strategy_with, typed_pool};
+use super::support::{Group, Single, args, capture_logs, dec, selected, spec, typed_pool};
 use crate::lar1_routing::metadata::{Act, Evidence, Lar1Metadata, MetadataError, Mind, Time};
 use crate::lar1_routing::strategy::{Lar1Error, Lar1Strategy, sync_deployment};
 use crate::lar1_routing::thresholds::Thresholds;
@@ -283,8 +283,16 @@ async fn async_only() {
 }
 
 async fn default_args() {
-    assert_eq!(Thresholds::from_args(None).unwrap(), Thresholds::default());
-    let strategy = strategy_with("0.2", "0.5", "0.8");
+    let defaults = Thresholds::default();
+    assert_eq!(defaults.low, dec("0.3"));
+    assert_eq!(defaults.medium, dec("0.5"));
+    assert_eq!(defaults.high, dec("0.7"));
+    // a missing argument keeps its own default while the configured ones are used
+    let merged = Lar1Strategy::new(Some(&args(Some("0.2"), None, None))).unwrap();
+    assert_eq!(merged.thresholds.low, dec("0.2"));
+    assert_eq!(merged.thresholds.medium, dec("0.5"));
+    assert_eq!(merged.thresholds.high, dec("0.7"));
+    let strategy = Lar1Strategy::new(Some(&args(Some("0.2"), Some("0.5"), Some("0.8")))).unwrap();
     assert_eq!(strategy.thresholds.low, dec("0.2"));
     assert_eq!(strategy.thresholds.medium, dec("0.5"));
     assert_eq!(strategy.thresholds.high, dec("0.8"));
