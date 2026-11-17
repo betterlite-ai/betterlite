@@ -64,7 +64,7 @@ fn neutralized_orphan() -> Json {
 
 pub(super) fn orphan_tool_with_modify_params() {
     modify_params_adds_the_dummy_tools();
-    a_tools_key_skips_the_legacy_check();
+    a_tools_key_skips_the_check(&["[]", "null", "{}", r#"{"unused": true}"#], MODIFYING);
     only_tool_call_blocks_trigger_the_legacy_path();
     neutralization_wins_over_modify_params();
 }
@@ -78,10 +78,10 @@ fn modify_params_adds_the_dummy_tools() {
     }
 }
 
-fn a_tools_key_skips_the_legacy_check() {
-    for tools in ["[]", "null", "{}", r#"{"unused": true}"#] {
+fn a_tools_key_skips_the_check(tools_values: &[&str], policy: OrphanPolicy) {
+    for tools in tools_values {
         let optional = format!(r#"{{"tools": {tools}}}"#);
-        let (kept, parameters) = handle(ORPHAN, &optional, MODIFYING);
+        let (kept, parameters) = handle(ORPHAN, &optional, policy);
         assert_eq!(render(&kept), expected(ORPHAN), "{tools}");
         assert_eq!(render_params(&parameters), expected(&optional), "{tools}");
     }
@@ -111,7 +111,7 @@ fn neutralization_wins_over_modify_params() {
 
 pub(super) fn orphan_tool_error() {
     the_error_is_a_400_with_the_unsupported_message();
-    a_tools_key_skips_the_rejection();
+    a_tools_key_skips_the_check(&["null", "[]", "{}"], LEGACY);
     plain_and_neutralized_histories_pass_through();
 }
 
@@ -131,15 +131,6 @@ fn the_error_is_a_400_with_the_unsupported_message() {
         ),
         "an empty tool_calls list still rejects"
     );
-}
-
-fn a_tools_key_skips_the_rejection() {
-    for tools in ["null", "[]", "{}"] {
-        let optional = format!(r#"{{"tools": {tools}}}"#);
-        let (kept, parameters) = handle(ORPHAN, &optional, LEGACY);
-        assert_eq!(render(&kept), expected(ORPHAN), "{tools}");
-        assert_eq!(render_params(&parameters), expected(&optional), "{tools}");
-    }
 }
 
 fn plain_and_neutralized_histories_pass_through() {
