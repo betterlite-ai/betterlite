@@ -73,47 +73,36 @@ impl Helper for Op {
 fn dispatch(input: &Input, fixture: &Fixture) -> HelperResult {
     let runtime = Builder::new_current_thread().build().or_value_error()?;
     match input.function {
-        Function::AsyncRun => async_run(input, fixture, &runtime),
-        Function::SseRun => sse_run(input, fixture, &runtime),
+        Function::AsyncRun => {
+            let result = result_text(input)?;
+            polled_answer(fixture, &runtime, || {
+                fixture.billing.start_async_run_billing(AsyncRun {
+                    logging_obj: Arc::clone(&fixture.logging_obj),
+                    response_body: input.run.as_ref(),
+                    result,
+                    kwargs: PassThroughLoggingKwargs::default(),
+                    log: Arc::clone(&fixture.recorder),
+                    start_time: fixture.start_time,
+                })
+            })
+        }
+        Function::SseRun => {
+            let run_id = input
+                .run_id
+                .clone()
+                .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
+            polled_answer(fixture, &runtime, || {
+                fixture.billing.start_sse_run_billing(SseRun {
+                    run_id,
+                    logging_obj: Arc::clone(&fixture.logging_obj),
+                    log: Arc::clone(&fixture.recorder),
+                    start_time: fixture.start_time,
+                })
+            })
+        }
         Function::Blocking => blocking_run(input, fixture),
         Function::CollectedChunks => collected_chunks(input, fixture, &runtime),
     }
-}
-
-fn async_run(input: &Input, fixture: &Fixture, runtime: &Runtime) -> HelperResult {
-    let log = Arc::clone(&fixture.recorder);
-    let poll = AsyncRun {
-        logging_obj: Arc::clone(&fixture.logging_obj),
-        response_body: input.run.as_ref(),
-        result: result_text(input)?,
-        kwargs: PassThroughLoggingKwargs::default(),
-        log,
-        start_time: fixture.start_time,
-    };
-    let handle = {
-        let _entered = runtime.enter();
-        fixture.billing.start_async_run_billing(poll)
-    };
-    polled_answer(fixture, runtime, handle)
-}
-
-fn sse_run(input: &Input, fixture: &Fixture, runtime: &Runtime) -> HelperResult {
-    let run_id = input
-        .run_id
-        .clone()
-        .ok_or_else(|| failure("the sse_run function needs a run_id"))?;
-    let log = Arc::clone(&fixture.recorder);
-    let poll = SseRun {
-        run_id,
-        logging_obj: Arc::clone(&fixture.logging_obj),
-        log,
-        start_time: fixture.start_time,
-    };
-    let handle = {
-        let _entered = runtime.enter();
-        fixture.billing.start_sse_run_billing(poll)
-    };
-    polled_answer(fixture, runtime, handle)
 }
 
 fn blocking_run(input: &Input, fixture: &Fixture) -> HelperResult {
@@ -139,7 +128,7 @@ fn collected_chunks(input: &Input, fixture: &Fixture, runtime: &Runtime) -> Help
 }
 
 fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
-    let logged = view::outcome_logged(outcome)?;
+    let logged = view::outcome_logged(outcome);
     view::billing_view(
         fixture.logging_obj.as_ref(),
         &logged,
@@ -147,8 +136,15 @@ fn payload_view(fixture: &Fixture, outcome: &HandlerOutcome) -> HelperResult {
     )
 }
 
-// The poller was spawned inside the runtime above, which is what drives it to its terminal run here.
-fn polled_answer(fixture: &Fixture, runtime: &Runtime, handle: JoinHandle<()>) -> HelperResult {
+// The poller is spawned inside the runtime above, which then drives it to its terminal run here.
+fn polled_answer<Start>(fixture: &Fixture, runtime: &Runtime, start: Start) -> HelperResult
+where
+    Start: FnOnce() -> JoinHandle<()>,
+{
+    let handle = {
+        let _entered = runtime.enter();
+        start()
+    };
     runtime.block_on(handle).or_value_error()?;
     let logged = fixture.recorder.only_call()?;
     view::billing_view(
