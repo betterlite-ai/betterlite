@@ -93,12 +93,9 @@ async fn serve_capturing(
     let router = Router::new().route(
         "/inspect",
         post(move |payload: Bytes| {
+            *sink.lock().expect("capture") = payload.to_vec();
             let reply = body.clone();
-            let sink = Arc::clone(&sink);
-            async move {
-                *sink.lock().expect("capture") = payload.to_vec();
-                (status, reply)
-            }
+            async move { (status, reply) }
         }),
     );
     let mut server = JoinSet::new();
