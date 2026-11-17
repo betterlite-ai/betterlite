@@ -1,49 +1,20 @@
 use betterlite_models::decisions::Json;
-use betterlite_router::adaptive_classification::config::AdaptiveRouterPreferences;
 use betterlite_router::adaptive_classification::minimum_quality::minimum_quality_tier;
 use betterlite_router::adaptive_classification::request_type::RequestType;
 use betterlite_router::adaptive_selection::costs::normalized_cost;
 use betterlite_router::adaptive_selection::pre_routing::PreRoutingRequest;
 use betterlite_router::bandit_math::sampler::{QualitySampler, ScriptedSampler};
-use betterlite_router::bandit_math::{
-    BanditCell, Candidate, apply_delta, initial_cell, pick_best, score,
-};
+use betterlite_router::bandit_math::{BanditCell, Candidate, apply_delta, pick_best};
 use rust_decimal::Decimal;
 
 use super::wire::{
-    CellOutput, CostOutput, CostScoreOutput, Fields, Payload, RoutingOutput, ScoreOutput,
-    SnapshotCellOutput, SnapshotOutput, WeightsOutput,
+    CellOutput, CostOutput, CostScoreOutput, Fields, Payload, RoutingOutput, SnapshotCellOutput,
+    SnapshotOutput, WeightsOutput,
 };
 use super::{
-    cost_map, decimal, number, operation_error, request_types, sample_values, selection_error,
-    service, weights,
+    cost_map, decimal, number, operation_error, sample_values, selection_error, service, weights,
 };
 use crate::router_probes::error::OperationError;
-
-pub(super) fn initial_cell_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let types = request_types(payload);
-    let mut cells = Vec::new();
-    for preference in &payload.preferences {
-        let preferences = AdaptiveRouterPreferences {
-            quality_tier: preference.quality_tier,
-            strengths: preference.strengths.clone().unwrap_or_default(),
-        };
-        for request_type in &types {
-            let cell = initial_cell(&preferences, *request_type).map_err(operation_error)?;
-            cells.push(CellOutput {
-                request_type: *request_type,
-                model: preference.model.clone(),
-                alpha: format!("{:.6}", cell.alpha),
-                beta: format!("{:.6}", cell.beta),
-                samples: cell.total_samples(),
-            });
-        }
-    }
-    Ok(Fields {
-        cells: Some(cells),
-        ..Fields::default()
-    })
-}
 
 pub(super) fn apply_delta_fields(payload: &Payload) -> Result<Fields, OperationError> {
     let mut cells = Vec::with_capacity(payload.deltas.len());
@@ -111,20 +82,10 @@ pub(super) fn pick_fields(payload: &Payload) -> Result<Fields, OperationError> {
         });
     }
     let samples = sample_values(payload)?;
-    let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(samples.clone()));
+    let mut sampler = QualitySampler::Scripted(ScriptedSampler::new(samples));
     let selected = pick_best(&candidates, weights, &mut sampler).map_err(operation_error)?;
-    let mut scores = Vec::with_capacity(candidates.len());
-    for (candidate, sample) in candidates.iter().zip(&samples) {
-        let value = score(*sample, candidate.cost_score, weights).map_err(operation_error)?;
-        scores.push(ScoreOutput {
-            model: candidate.model.to_owned(),
-            quality: format!("{sample:.6}"),
-            score: format!("{value:.6}"),
-        });
-    }
     Ok(Fields {
         selected: Some(selected),
-        scores: Some(scores),
         ..Fields::default()
     })
 }

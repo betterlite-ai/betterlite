@@ -21,7 +21,6 @@ from probes.protocol import Operation, ProbeError, Strict
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 Check = Literal[
-    "initial_cells",
     "apply_delta",
     "normalized_cost",
     "pick",
@@ -74,12 +73,6 @@ class CellOutput(Strict):
     alpha: str
     beta: str
     samples: int
-
-
-class ScoreOutput(Strict):
-    model: str
-    quality: str
-    score: str
 
 
 class CostScoreOutput(Strict):
@@ -159,7 +152,6 @@ class SnapshotRaw(Strict):
 class Output(Strict):
     cells: list[CellOutput] | None = None
     selected: str | None = None
-    scores: list[ScoreOutput] | None = None
     cost_scores: list[CostScoreOutput] | None = None
     snapshot: SnapshotOutput | None = None
     routing: RoutingOutput | None = None
@@ -221,7 +213,6 @@ class AdaptiveSelection(Operation):
     check: Check
     available_models: list[str] = Field(default_factory=list)
     preferences: list[PreferenceInput] = Field(default_factory=list)
-    request_types: list[str] | None = None
     cells: list[CellInput] = Field(default_factory=list)
     deltas: list[DeltaInput] = Field(default_factory=list)
     costs: list[CostInput] = Field(default_factory=list)
@@ -238,7 +229,6 @@ class AdaptiveSelection(Operation):
     @override
     def run(self) -> Output:
         checks: dict[Check, Callable[[], Output]] = {
-            "initial_cells": self.initial_cells,
             "apply_delta": self.apply_deltas,
             "normalized_cost": self.normalized_costs,
             "pick": self.pick,
@@ -273,31 +263,8 @@ class AdaptiveSelection(Operation):
     def cost_map(self) -> dict[str, float]:
         return {raw.model: parse_float(raw.amount, "cost") for raw in self.costs}
 
-    def types(self) -> list[RequestType]:
-        if self.request_types is None:
-            return list(RequestType)
-        return [RequestType(value) for value in self.request_types]
-
     def scripted(self) -> ScriptedRandom:
         return ScriptedRandom([parse_float(text, "sample") for text in self.samples])
-
-    def initial_cells(self) -> Output:
-        preferences = self.preference_map()
-        types = self.types()
-        cells: list[CellOutput] = []
-        for raw in self.preferences:
-            for request_type in types:
-                cell = bandit.initial_cell(preferences[raw.model], request_type)
-                cells.append(
-                    CellOutput(
-                        request_type=request_type.value,
-                        model=raw.model,
-                        alpha=f"{cell.alpha:.6f}",
-                        beta=f"{cell.beta:.6f}",
-                        samples=cell.total_samples,
-                    )
-                )
-        return Output(cells=cells)
 
     def apply_deltas(self) -> Output:
         cells: list[CellOutput] = []
@@ -334,7 +301,6 @@ class AdaptiveSelection(Operation):
             for raw in self.cells
         }
         model_costs = {model: costs.get(model, 0.0) for model in cells}
-        all_costs = list(model_costs.values())
         scripted = self.scripted()
         try:
             selected = bandit.pick_best(
@@ -346,17 +312,7 @@ class AdaptiveSelection(Operation):
             )
         except ValueError as error:
             raise ProbeError("invalid_request", str(error)) from error
-        quality_weight = config.weights.quality
-        cost_weight = config.weights.cost
-        scores = [
-            ScoreOutput(
-                model=model,
-                quality=f"{sample:.6f}",
-                score=f"{bandit.score(sample, model_costs[model], all_costs, quality_weight, cost_weight):.6f}",
-            )
-            for model, sample in zip(cells, scripted.values[: len(cells)], strict=True)
-        ]
-        return Output(selected=selected, scores=scores)
+        return Output(selected=selected)
 
     def pick_one(self) -> Output:
         router = RecordingRouter(self.config(), self.preference_map(), self.cost_map())

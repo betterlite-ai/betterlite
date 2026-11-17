@@ -2,9 +2,8 @@ use betterlite_config::sections::adaptive_classification as section;
 use betterlite_router::adaptive_classification::config::{
     AdaptiveRouterConfig, AdaptiveRouterPreferences, AdaptiveRouterWeights,
 };
-use betterlite_router::adaptive_classification::request_type::RequestType;
+use betterlite_router::adaptive_selection::AdaptiveSelection;
 use betterlite_router::adaptive_selection::error::AdaptiveSelectionError;
-use betterlite_router::adaptive_selection::{AdaptiveSelection, REQUEST_TYPES};
 use betterlite_router::bandit_math::error::BanditMathError;
 use betterlite_router::bandit_math::sampler::{QualitySampler, ScriptedSampler};
 use indexmap::IndexMap;
@@ -12,8 +11,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use self::fields::{
-    apply_delta_fields, initial_cell_fields, normalized_cost_fields, pick_fields,
-    pick_model_fields, pre_routing_fields, snapshot_fields,
+    apply_delta_fields, normalized_cost_fields, pick_fields, pick_model_fields, pre_routing_fields,
+    snapshot_fields,
 };
 use self::wire::{Check, Fields, Payload};
 use crate::router_probes::ProbeOutput;
@@ -37,7 +36,6 @@ pub(crate) fn run(
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
     let fields = match payload.check {
-        Check::InitialCells => initial_cell_fields(payload)?,
         Check::ApplyDelta => apply_delta_fields(payload)?,
         Check::NormalizedCost => normalized_cost_fields(payload)?,
         Check::Pick => pick_fields(payload)?,
@@ -135,13 +133,6 @@ fn sample_values(payload: &Payload) -> Result<Vec<f64>, OperationError> {
         .iter()
         .map(|text| number(text, "sample"))
         .collect()
-}
-
-fn request_types(payload: &Payload) -> Vec<RequestType> {
-    payload
-        .request_types
-        .clone()
-        .unwrap_or_else(|| REQUEST_TYPES.to_vec())
 }
 
 fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Check {
-    InitialCells,
     ApplyDelta,
     NormalizedCost,
     Pick,
@@ -24,8 +23,6 @@ pub(super) struct Payload {
     pub(super) available_models: Vec<String>,
     #[serde(default)]
     pub(super) preferences: Vec<PreferenceInput>,
-    #[serde(default)]
-    pub(super) request_types: Option<Vec<RequestType>>,
     #[serde(default)]
     pub(super) cells: Vec<CellInput>,
     #[serde(default)]
@@ -106,7 +103,6 @@ pub(super) struct WeightsInput {
 pub(super) struct Fields {
     pub(super) cells: Option<Vec<CellOutput>>,
     pub(super) selected: Option<String>,
-    pub(super) scores: Option<Vec<ScoreOutput>>,
     pub(super) cost_scores: Option<Vec<CostScoreOutput>>,
     pub(super) snapshot: Option<SnapshotOutput>,
     pub(super) routing: Option<RoutingOutput>,
@@ -119,13 +115,6 @@ pub(super) struct CellOutput {
     pub(super) alpha: String,
     pub(super) beta: String,
     pub(super) samples: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ScoreOutput {
-    pub(super) model: String,
-    pub(super) quality: String,
-    pub(super) score: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
