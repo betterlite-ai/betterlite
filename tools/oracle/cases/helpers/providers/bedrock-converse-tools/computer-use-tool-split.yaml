@@ -18,6 +18,11 @@ calls:
         - type: function
           function: {name: weather}
   - bedrock_converse_tools:
+      function: detector
+      tools:
+        - type: custom_tool
+        - type: bash_20250124
+  - bedrock_converse_tools:
       function: separate
       tools:
         - type: computer_use_preview

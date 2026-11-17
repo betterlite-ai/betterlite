@@ -219,6 +219,13 @@ fn detector_answers(tools: &[Json]) {
         is_computer_use_tool_used(Some(&[json(r#"{"type": "custom_tool"}"#)])),
         Ok(false)
     );
+    assert_eq!(
+        is_computer_use_tool_used(Some(&[
+            json(r#"{"type": "custom_tool"}"#),
+            json(r#"{"type": "bash_20250124"}"#)
+        ])),
+        Ok(true)
+    );
 }
 
 fn partition_answers(tools: &[Json]) {
@@ -302,7 +309,9 @@ fn json_call_shapes() {
     );
     assert_eq!(
         create_json_tool_call(Some(&json("{}")), Some("")),
-        json(r#"{"type": "function", "function": {"name": "json_tool_call", "parameters": {}}}"#)
+        json(
+            r#"{"type": "function", "function": {"name": "json_tool_call", "parameters": {}, "description": ""}}"#
+        )
     );
     assert_eq!(
         create_json_tool_call(Some(&json("{}")), Some("why")),
