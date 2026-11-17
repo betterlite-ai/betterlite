@@ -9,7 +9,7 @@ deviations:
   - what: An entry of OTEL_PYTHON_FASTAPI_EXCLUDED_URLS that is not a valid regex is an error from ServerSpanPolicy::from_gate. LiteLLM lets the instrumentation raise, swallows it in instrument_fastapi_app and mounts nothing, logging at debug.
     why: A config typo must surface where the operator can see it instead of silently dropping every server span.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L126-L141
-  - what: A projection that renders nothing is a None in betterlite, so the debug line "otel v2 langfuse: could not render the root observation input or output" and its exception path do not exist; a stamped output stays when only the input renders nothing.
+  - what: 'A projection that renders nothing is a None in betterlite, so the debug line "otel v2 langfuse: could not render the root observation input or output" and its exception path do not exist; a stamped output stays when only the input renders nothing.'
     why: B3857's request_input, response_output and stream_output return Option, not Result, so there is no error to log.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L60-L76
   - what: The success and streaming hooks are plain functions, and the streaming one returns a stream that stamps at its tail; LiteLLM's are async methods, one of them an async generator.
