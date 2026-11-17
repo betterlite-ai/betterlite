@@ -126,9 +126,12 @@ impl Default for Settings {
     }
 }
 
-pub(crate) fn context(settings: &Settings) -> RowContext<'_, Mappers, NoFetch> {
+pub(crate) fn context<'ctx, Binder>(
+    settings: &'ctx Settings,
+    mappers: &'ctx Binder,
+) -> RowContext<'ctx, Binder, NoFetch> {
     RowContext {
-        mappers: &Mappers,
+        mappers,
         fetcher: &NoFetch,
         capabilities: &Support,
         options: &settings.options,
@@ -147,7 +150,8 @@ pub(crate) async fn upload(
     count: usize,
 ) -> Vec<Result<Vec<u8>, UploadError<Infallible>>> {
     let settings = Settings::default();
-    let context = context(&settings);
+    let mappers = Mappers;
+    let context = context(&settings, &mappers);
     vertex_batch_upload(file, purpose, passthrough, &context, MAX_LINE_BYTES)
         .take(count)
         .collect()

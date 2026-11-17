@@ -1,0 +1,53 @@
+task: B3651
+deviations:
+  - what: >-
+      Costs are rust_decimal::Decimal values end to end: the TypeSafe token product, the openrouter
+      usage.cost, the Comprehend Medical per-unit product and Cursor's zero cost are exact decimals
+      written as exact JSON numbers (0, 0.0014), where LiteLLM multiplies Python floats and writes
+      0.0, 0.0014 or a float artifact such as 0.30000000000000004.
+    why: >-
+      betterlite keeps money in rust_decimal (clippy's no-float-money and docs/compatibility.md), so a
+      logged cost never drifts by binary rounding; a JSON consumer reads 0 and 0.0 as the same number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L84-L89
+  - what: >-
+      TypeSafe's response record is deserialized with serde: a field of the wrong JSON type resets the
+      whole record to its zero defaults, so a token count sent as a JSON string ("100") is not ported
+      from LiteLLM's pydantic coercion and the record reads as zero tokens and no model.
+    why: >-
+      Python's duck typing is not copied (docs/compatibility.md), and LiteLLM already reads any
+      ValidationError as `_TypeSafeResponse()`, so the fallback shape is the same in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L17-L54
+  - what: >-
+      TypeSafe reads the request model only when the request body is a JSON object holding a string model;
+      a non-object body counts as no model, where LiteLLM's request_body.get("model") raises AttributeError
+      out of the handler and lets the proxy's success-handler catch-all log a traceback. A non-string model
+      is dropped in both.
+    why: >-
+      betterlite's handler seam returns an outcome instead of raising, and docs/compatibility.md keeps a
+      pass-through body's wrong types from turning into an exception; the relayed result and its log stay intact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L74-L75
+  - what: >-
+      TypeSafe's payload response is the ModelResponse envelope its handler fabricates, and the envelope's
+      `created` is the request's end time rather than the wall clock read inside the handler; its `id` is
+      still a fresh chatcmpl-<uuid4> per call, as LiteLLM's default factory builds it.
+    why: >-
+      betterlite's handlers receive both request times and no clock, so end_time keeps the logged envelope
+      deterministic; it differs from the handler's reading by the relay latency only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L107-L110
+  - what: >-
+      Cursor's agent summary and debug log read id, name and status only when the field is a JSON string; a
+      number, list or object counts as absent and the summary falls back to the relayed result, where
+      LiteLLM's f-strings stringify any truthy value ("id=7", "name=['Fixer']").
+    why: >-
+      Python's truthiness and str() text are not ported (docs/compatibility.md); a working Cursor setup
+      reads a string id, name and status from the API.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L87-L101
+kept_bugs:
+  - what: >-
+      The Cursor model recorded in the payload and kwargs repeats the provider prefix, because the model
+      name is f"cursor/{operation}" and the operation already begins with "cursor:"
+      (cursor/cursor:agent:create); the same fallback yields cursor:get: for an empty path.
+    why: >-
+      Dashboards and log filters built against LiteLLM match this exact string, so betterlite keeps it
+      rather than inventing a cleaner name a working setup would not find.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L91
