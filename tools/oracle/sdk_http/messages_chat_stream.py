@@ -30,7 +30,6 @@ from messages_sync_stream import (
     frames,
 )
 
-
 PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
