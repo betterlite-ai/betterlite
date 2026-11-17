@@ -9,7 +9,7 @@ deviations:
   - what: The deferred completion callback is not built. LiteLLM stores the assembled response on logging_obj._deferred_stream_complete_args when the proxy registered _on_deferred_stream_complete, so proxy guardrails fire after the stream.
     why: betterlite's stream logging port has no deferred-callback seam, and the proxy's guardrail end-of-stream block is outside this task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2160-L2179
-  - what: A MidStreamFallbackError's message has no "litellm.MidStreamFallbackError: " prefix, and it is the cause's text rather than str(mapped_exception).
+  - what: A MidStreamFallbackError's message has no "litellm.MidStreamFallbackError" prefix followed by a colon and a space, and it is the cause's text rather than str(mapped_exception).
     why: betterlite's error taxonomy carries a typed class per failure instead of the exception object, and no accessor returns a class's own message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2318-L2325
   - what: A truthy mcp_metadata that is not a dict makes LiteLLM's final chunk carry an empty provider_specific_fields. betterlite types mcp_metadata as a JSON object in ChatStreamConfig, so that shape arrives as a config error naming the field.
