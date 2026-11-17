@@ -1,0 +1,139 @@
+kind: helper
+name: responses-stream-errors-failure-details
+call:
+  responses_stream_errors:
+    redaction: enabled
+    steps:
+      - function: format_failure
+        failure:
+          kind: plain
+          text: mapped
+          message: mapped
+          type: old
+          code: old
+          status_code: 400
+          body: {message: upstream, code: 0, type: provider, status_code: 500}
+          original_exception: null
+calls:
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: mapped
+            message: mapped
+            type: insufficient_quota
+            code: null
+            status_code: 400
+            body: {type: provider}
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: mapped
+            message: mapped
+            type: insufficient_quota
+            code: null
+            status_code: 400
+            body: {type: ""}
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: mapped
+            message: mapped
+            type: old
+            code: old
+            status_code: 429
+            body: {message: "", type: "", code: 0}
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: text_message
+            message: mapped
+            type: insufficient_quota
+            code: null
+            status_code: 400
+            body: {message: 5, type: true, code: false}
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: text_message
+            message: 5
+            type: true
+            code: true
+            status_code: 404
+            body: null
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: text_message
+            message: mapped
+            type: null
+            code: old
+            status_code: 400
+            body: [1, 2]
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: mid_stream_fallback
+            text: outer wrapper
+            message: "litellm.MidStreamFallbackError: outer wrapper"
+            type: null
+            code: null
+            status_code: 400
+            body: null
+            original_exception:
+              kind: mid_stream_fallback
+              text: middle wrapper
+              message: "litellm.MidStreamFallbackError: middle wrapper"
+              type: null
+              code: null
+              status_code: 400
+              body: null
+              original_exception:
+                kind: plain
+                text: inner failure
+                message: inner failure
+                type: null
+                code: old_code
+                status_code: 400
+                body: {message: body message, code: body_code}
+                original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: mid_stream_fallback
+            text: doomed
+            message: "litellm.MidStreamFallbackError: doomed"
+            type: null
+            code: null
+            status_code: 503
+            body: null
+            original_exception: null
+env: {}
+compare: {ignore: []}
