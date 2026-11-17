@@ -1,14 +1,14 @@
 id: B1377
 milestone: M3 providers
 title: Vertex batch output detection and streaming file conversion
-status: todo
+status: done
 depends_on: [B1374, B1375, B1326, B002, B171]
 file: tasks/B1377-vertex-batch-download-stream.yaml
 covers:
   - "litellm/llms/vertex_ai/files/transformation.py"
 parent: B034
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2242

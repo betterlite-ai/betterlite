@@ -67,7 +67,7 @@ description: >-
   the source PASSWORD_SESSION_METADATA literal; this module compares that record's declared
   login_method value without importing or invoking password-login orchestration.
 
-  Own decode_password_change_request over bounded B003 JSON; use B770's existing server fuzz
+  Own decode_password_change_request over bounded B003 JSON; use B003's existing server fuzz
   workspace, with ui_sessions target and valid/missing/type/duplicate/truncated/limit seeds.
   Keep request byte/depth bounds inherited from B003/B009 and the repository fallback 1048576/64.
   Native password_body_limits proves the recorded bound deviation. Other request/response record

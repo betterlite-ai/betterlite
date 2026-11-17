@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-batch-download-outer-failure-whole-buffer
+call:
+  vertex_batch_download:
+    operation: buffer
+    content: 'eyJyZXF1ZXN0Ijp7fSwic3RhdHVzIjoiIiwicHJvY2Vzc2VkX3RpbWUiOiIiLCJyZXNwb25zZSI6eyJjYW5kaWRhdGVzIjpbeyJjb250ZW50Ijp7InJvbGUiOiJtb2RlbCIsInBhcnRzIjpbeyJ0ZXh0IjoiaGkifV19LCJmaW5pc2hSZWFzb24iOiJTVE9QIiwiaW5kZXgiOjB9XSwidXNhZ2VNZXRhZGF0YSI6eyJwcm9tcHRUb2tlbkNvdW50IjoxLCJjYW5kaWRhdGVzVG9rZW5Db3VudCI6MSwidG90YWxUb2tlbkNvdW50IjoyfX19Cm5vdCBqc29u'
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare: {ignore: []}

@@ -16,7 +16,7 @@ description: >-
 
   B901 service realtime_client_relay compares real upstream frames and client close behavior.
   Barriers make concurrent relay completion observable without asserting a scheduler-dependent total
-  order. B1004 owns JSON and close-code/reason conversion; B012 redacts close details. No new decoder.
+  order. B1004 owns JSON and close-code/reason conversion; B187 redacts close details. No new decoder.
   Source has 184 nonblank/non-comment lines; budget 185 implementation,155 tests,145 transcripts,
   105 service adapters and 30 wiring, 620 changed lines.
 scope:

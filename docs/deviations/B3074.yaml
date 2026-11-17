@@ -1,0 +1,12 @@
+task: B3074
+deviations:
+  - what: The flush-in-progress flag is set and cleared while the flush lock is held, so a flush waiting on the lock keeps it set for the whole of its own upload.
+    why: LiteLLM sets _flushing before its flush and clears it when that flush returns, so a second flush queued on the lock clears the flag while the first one is still uploading. _drop_overflow then trims the front of the queue under that snapshot, and the post-flush drain removes records that arrived during the upload and were never sent. No working setup relies on losing those records, so betterlite holds the flag under the lock instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L247-L257
+  - what: A key or url held in a secret manager is not found. The configured value is resolved as an os.environ/ reference through the proxy environment, and otherwise used as the literal key or url.
+    why: LiteLLM resolves it through get_secret_str, which also asks the configured secret manager. The pointfive catalog builder is given no SecretLookup (registry/catalog.rs is outside this task), so PointFiveService resolves against the environment it was handed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L32-L44
+  - what: async_health_check and the liveness ping answer unhealthy or log a warning for any failure to build the upload client. LiteLLM catches only the ValueError for a missing key there and lets any other error from the secret lookup escape.
+    why: An escaping error turns the health check into a 500 and kills the periodic flush task, where the missing key it already handles answers unhealthy. betterlite reports the same unhealthy status for every client it cannot build, so one bad lookup cannot end the flush loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L259-L277
+kept_bugs: []
