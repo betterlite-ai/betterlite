@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::api::chat_response_stream_items::error::StreamItemsError;
 use crate::api::chat_response_stream_tools::error::StreamToolsError;
 use crate::api::messages_stream_split::errors::StreamFailure;
+use crate::api::response_id_traversal::record::TraversalError;
 use crate::api::responses_chat_output::error::ChatOutputError;
 
 #[derive(Debug, Error)]
@@ -20,8 +21,6 @@ pub enum ChatResponseStreamError {
     Completion { source: serde_json::Error },
     #[error("the Responses request could not be read: {source}")]
     Request { source: serde_json::Error },
-    #[error("the {field} metadata is not a string")]
-    Metadata { field: &'static str },
     #[error("the {field} delta is not a string")]
     FieldNotText { field: &'static str },
     #[error(transparent)]
@@ -30,4 +29,6 @@ pub enum ChatResponseStreamError {
     Tools(#[from] StreamToolsError),
     #[error(transparent)]
     Output(#[from] ChatOutputError),
+    #[error(transparent)]
+    Traversal(#[from] TraversalError),
 }

@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::KnownResponseEvent;
-use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue};
+use betterlite_streaming::stream_content_assembly::wire::ThinkingBlock;
 use betterlite_streaming::stream_tool_assembly::records::{FunctionOutput, ToolOutput};
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::AssemblyError;
@@ -110,6 +111,8 @@ pub(super) enum Reply {
     None,
     Text,
     Length,
+    Signed,
+    FloatTool,
     ToolCall,
 }
 
@@ -140,6 +143,33 @@ impl StreamAssembly for FixtureAssembly {
             Reply::None => None,
             Reply::Text => Some(chat("stored", "stop", None)),
             Reply::Length => Some(chat("stored", "length", None)),
+            Reply::Signed => {
+                let mut response = chat("", "stop", None);
+                if let Response::Chat(chat) = &mut response {
+                    chat.choices[0].message.thinking_blocks = Some(vec![ThinkingBlock::Thinking {
+                        thinking: String::from("t"),
+                        signature: String::from("sig"),
+                    }]);
+                }
+                Some(response)
+            }
+            Reply::FloatTool => {
+                let mut response = chat("", "tool_calls", Some(("call_1", "lookup", r#"{"x":1}"#)));
+                if let Response::Chat(chat) = &mut response {
+                    let tool = &mut chat.choices[0]
+                        .message
+                        .tool_calls
+                        .as_mut()
+                        .expect("the fixture reply carries one tool call")[0];
+                    tool.provider_specific_fields = Some(JsonObject::from([(
+                        "score".to_owned(),
+                        JsonValue::Number(
+                            serde_json::Number::from_f64(0.5).expect("0.5 is finite"),
+                        ),
+                    )]));
+                }
+                Some(response)
+            }
             Reply::ToolCall => Some(chat(
                 "",
                 "tool_calls",
