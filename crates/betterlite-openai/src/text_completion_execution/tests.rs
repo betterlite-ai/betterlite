@@ -466,8 +466,9 @@ async fn serve(listener: &TcpListener, response: &str) -> String {
     head
 }
 
+// the provider's buffered answer, which the SDK decodes into its Completion model before the executor reads it
 fn text_completion_response() -> String {
-    let answer = "{}";
+    let answer = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}]}"#;
     format!(
         "HTTP/1.1 200 X\r\ncontent-length: {}\r\nx-upstream: kept\r\nconnection: close\r\n\r\n{answer}",
         answer.len()

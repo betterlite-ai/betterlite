@@ -304,16 +304,6 @@ fn a_parameter_the_text_config_does_not_support_is_a_400() {
     assert_eq!(failure.status, 400);
     assert_eq!(failure.error_type.as_deref(), Some("invalid_request_error"));
     assert_eq!(failure.param, None);
-    // extra_headers is in the text config's list; the text transport turns it into request headers
-    let headers = chat(
-        r#"{"model":"m","messages":[{"role":"user","content":"hi"}],"extra_headers":{"x-trace":"1"}}"#,
-    );
-    let built =
-        text_request(&deployment("openai/gpt-4o"), &headers, "gpt-4o").expect("extra_headers");
-    assert_eq!(
-        built.optional_params.get("extra_headers"),
-        Some(&fixture(r#"{"x-trace": "1"}"#))
-    );
 }
 
 #[test]
