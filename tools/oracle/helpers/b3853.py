@@ -132,7 +132,7 @@ def run_guardrail() -> Answer:
     build()
     set_request_root_span(root)
     emit_guardrail_span(
-        {
+        {  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3350
             "guardrail_name": "pii",
             "guardrail_status": "success",
             "start_time": START,
