@@ -61,7 +61,9 @@ pub(crate) struct SyntheticInput {
 pub(crate) fn run(input: &WireInput) -> HelperResult {
     match input {
         WireInput::Allowlist(fields) => allowlist(fields),
-        WireInput::ToolResultError(fields) => tool_result(fields),
+        WireInput::ToolResultError(fields) => Ok(json!(tool_result_error_message(&stored_json(
+            &fields.result
+        )?))),
         WireInput::MergeHeaders(fields) => Ok(json!(merge_mcp_headers(
             fields.extra_headers.as_ref(),
             fields.static_headers.as_ref()
@@ -85,11 +87,6 @@ fn allowlist(fields: &AllowlistInput) -> HelperResult {
     let enforced = allowlist_enforced(info.as_ref());
     let applies = server_applies_tool_allowlist(info.as_ref(), fields.allowed_tools.as_deref());
     Ok(json!({"enforced": enforced, "applies": applies}))
-}
-
-fn tool_result(fields: &ToolResultInput) -> HelperResult {
-    let result = stored_json(&fields.result)?;
-    Ok(json!(tool_result_error_message(&result)))
 }
 
 fn synthetic(fields: &SyntheticInput) -> HelperResult {
