@@ -338,14 +338,16 @@ async fn terminal_leaves_the_fallback_text_alone_when_delivery_is_off() {
 }
 
 #[rstest]
-#[case::missing(json!([{"type": "response.completed"}]))]
-#[case::not_an_object(json!([{"type": "response.failed", "response": "text"}]))]
+#[case::missing(json!([delta("m1", 0, 0, "hi"), {"type": "response.completed"}]))]
+#[case::not_an_object(json!([delta("m1", 0, 0, "hi"), {"type": "response.failed", "response": "text"}]))]
 #[tokio::test]
 async fn terminal_treats_a_response_that_is_not_an_object_as_empty(#[case] events: Value) {
     let guardrail = FakeGuardrail::echoing();
     let (result, after, _stored) = process(events.clone(), &guardrail, None, None, true).await;
     result.unwrap();
-    assert!(guardrail.calls().is_empty());
+    let calls = guardrail.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].inputs.texts, Some(strings(&["hi"])));
     assert_eq!(after, events);
 }
 

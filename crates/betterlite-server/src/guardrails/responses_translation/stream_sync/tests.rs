@@ -400,10 +400,12 @@ fn deliver_writes_only_the_name_when_the_arguments_did_not_change() {
 
 #[test]
 fn deliver_does_nothing_when_the_shapes_match() {
-    let (mut earlier, mut output) = function_call_events();
+    let mut earlier = Vec::new();
+    let mut output =
+        vec![json!({"type": "function_call", "id": "fc_1", "name": "lookup", "arguments": "{}"})];
     let original_earlier = earlier.clone();
     let original_output = output.clone();
-    let pre = [shape(Some("lookup"), "{\"q\":1}")];
+    let pre = [shape(Some("lookup"), "{}")];
     deliver_ended_stream_tool_call_rewrites(&mut earlier, &mut output, &pre, &pre, "guard")
         .unwrap();
     assert_eq!(earlier, original_earlier);
