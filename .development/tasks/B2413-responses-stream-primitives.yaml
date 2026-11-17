@@ -11,7 +11,7 @@ description: >-
   default unset/null. Inject wall time through B198. Use B7320 get_api_base, B206 header
   processing, B247 logging state and B1114 provider config. B010 supplies BaseLLMException,
   B184 public exception records and B185/B186 the exception_type dispatcher. Keep
-  background task references until completion and log failures through B012's safe sink.
+  background task references until completion and log failures through B003's safe sink.
   The JSON helpers share decode_responses_stream_value(bytes,limits), returning a typed
   JSON value even for the misleadingly named _load_json_object; callers narrow its shape.
   Fuzz that exact decoder under B1087 limits and replay new corpus inputs. B171's

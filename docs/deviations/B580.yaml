@@ -1,0 +1,49 @@
+task: B580
+deviations:
+  - what: >-
+      betterlite resolves disable_add_prefix_to_prompt per deployment from
+      model_list[].litellm_params, falling back to litellm_settings and then the
+      LITELLM_DISABLE_ADD_PREFIX_TO_PROMPT environment variable.
+    why: >-
+      LiteLLM has only the module-level litellm.disable_add_prefix_to_prompt
+      flag, which litellm_settings sets through setattr, so it accepts no
+      per-deployment input. The task asks the config loader for both forms. A
+      deployment value is a betterlite extension; when nothing is set the flag
+      keeps LiteLLM's default of false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L504
+  - what: >-
+      An upstream error's AnthropicError message renders the error payload as
+      standard JSON, a malformed body's message carries serde's parse error
+      text where LiteLLM interpolates Python's str(), and the unmapped
+      finish-reason warning renders a non-string stop_reason as JSON, so the
+      wording of that text differs between the two.
+    why: >-
+      docs/compatibility.md declares that Python's str() and repr() text is not
+      ported and that output is standard JSON. The status, headers, class, the
+      decision to raise AnthropicError and the decision to warn are the same;
+      only the rendered text of a non-string value differs, and a string
+      stop_reason warns with the same words.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2599
+kept_bugs:
+  - what: >-
+      A successful response's hidden params hold only additional_headers and
+      provider_specific_fields; the original_response the transform stores
+      first is gone.
+    why: >-
+      LiteLLM assigns model_response._hidden_params["original_response"] and
+      then replaces _hidden_params wholesale two statements later. A caller
+      that inspects _hidden_params never sees original_response, and the raw
+      reply still reaches logging through post_call, so betterlite keeps the
+      overwrite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2669-L2687
+  - what: >-
+      A pure internal JSON-tool message replaces the constructed message and
+      forces stop_reason to "stop", so that message drops the thinking blocks,
+      reasoning content and provider fields the constructed one carried; the
+      hidden provider_specific_fields still hold them.
+    why: >-
+      LiteLLM overwrites _message with the JSON-mode message after building it
+      and mutates completion_response["stop_reason"] before mapping the finish
+      reason. A working json-mode setup receives exactly that message, so
+      betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2664-L2666
