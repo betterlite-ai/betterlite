@@ -34,7 +34,7 @@ scope:
     - crates/betterlite-mcp/src/client/tools/tests/**
     - crates/betterlite-core/src/api/mcp_sdk_resources.rs
     - crates/betterlite-core/src/api/mcp_sdk_resources/**
-    - crates/betterlite-core/src/api/mcp_client_resources/tests/**
+    - crates/betterlite-core/src/api/mcp_client_resources/tests/*.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L572-L650

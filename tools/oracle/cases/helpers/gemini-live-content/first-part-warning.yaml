@@ -1,0 +1,38 @@
+kind: helper
+name: first-part-warning
+call:
+  gemini_live_content:
+    calls:
+      - op: map_event
+        key: serverContent
+        value:
+          modelTurn:
+            parts:
+              - text: one
+              - text: two
+      - op: map_event
+        key: serverContent
+        value:
+          modelTurn:
+            parts:
+              - inlineData:
+                  mimeType: audio/pcm
+                  data: AAA=
+              - text: ignored
+      - op: map_event
+        key: serverContent
+        value:
+          modelTurn:
+            parts:
+              - text: only
+      - op: map_event
+        key: serverContent
+        value:
+          modelTurn:
+            parts:
+              - text: preferred
+                inlineData:
+                  mimeType: audio/pcm
+                  data: BBB=
+env: {}
+compare: {ignore: []}

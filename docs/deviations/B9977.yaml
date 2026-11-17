@@ -1,0 +1,17 @@
+task: B9977
+deviations:
+  - what: >-
+      The Anthropic stream masking rebuilds the frames whenever masking changed any part of the assembled response,
+      tool_use input included, not only when the assistant text changed.
+    why: >-
+      LiteLLM compares only the text, so an entity in a tool_use input reaches the client unmasked. No working setup
+      relies on a PII guardrail letting PII through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1514-L1518
+  - what: >-
+      The Presidio mask, unmask and Anthropic stream buffers fail with an OverBudget error once the buffered answer
+      passes the API boundary ceilings (ApiLimits max_json_bytes and max_items), where LiteLLM buffers without a limit.
+    why: >-
+      The buffers hold untrusted provider output, so they stay inside the same limits as a reply body through the
+      shared RetentionBudget, as the Noma stream buffer does (B3781). A real answer reaches neither limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1505-L1507
+kept_bugs: []

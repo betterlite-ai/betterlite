@@ -1,0 +1,13 @@
+name: auth-model-lists-fallback-list
+config: |
+  model_list:
+    - {model_name: fallback-model, litellm_params: {model: openai/fallback-upstream}}
+    - {model_name: fallback-target, litellm_params: {model: openai/fallback-target-upstream}}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
