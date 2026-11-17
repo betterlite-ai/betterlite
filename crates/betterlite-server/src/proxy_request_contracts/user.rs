@@ -170,8 +170,8 @@ fn check_user_role(role: Option<UserRole>) -> Result<(), ContractError> {
             | UserRole::InternalUser
             | UserRole::InternalUserViewer,
         ) => Ok(()),
-        Some(role @ (UserRole::OrgAdmin | UserRole::Team | UserRole::Customer)) => Err(
-            ContractError::from(format!("user_role {role} is not allowed")),
+        Some(unsupported @ (UserRole::OrgAdmin | UserRole::Team | UserRole::Customer)) => Err(
+            ContractError::from(format!("user_role {unsupported} is not allowed")),
         ),
     }
 }
