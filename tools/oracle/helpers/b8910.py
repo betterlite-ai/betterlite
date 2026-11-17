@@ -54,22 +54,22 @@ def run(input_value: Input) -> JsonValue:
     if function == "logger_class":
         return _logger_class(config).__name__
     if function == "is_gated":
-        return JSON.validate_python([_is_gated(spec) for spec in config.exporters])
+        gated: list[bool] = [_is_gated(spec) for spec in config.exporters]
+        return JSON.validate_python(gated)
     if function == "exports_nowhere":
         return _exports_nowhere(config)
     if function == "is_credential_gated":
         return _is_credential_gated(config)
     if function == "has_operator_exporter":
         return _has_operator_exporter(config)
-    return JSON.validate_python(
-        [
-            {
-                "kind": spec.kind,
-                "endpoint": spec.endpoint,
-                "traces_endpoint": spec.traces_endpoint,
-                "headers": spec.headers,
-                "requires_headers": spec.requires_headers,
-            }
-            for spec in _only_the_gated_exporter(config).exporters
-        ]
-    )
+    gated_exporters: list[dict[str, str | None | bool]] = [
+        {
+            "kind": spec.kind,
+            "endpoint": spec.endpoint,
+            "traces_endpoint": spec.traces_endpoint,
+            "headers": spec.headers,
+            "requires_headers": spec.requires_headers,
+        }
+        for spec in _only_the_gated_exporter(config).exporters
+    ]
+    return JSON.validate_python(gated_exporters)
