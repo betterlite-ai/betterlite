@@ -60,14 +60,14 @@ fn headers(pairs: &[(&str, &str)]) -> HeaderMap {
 
 fn source(chunks: &[&[u8]]) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
     let items: Vec<Result<Vec<u8>, HttpError>> =
-        chunks.iter().map(|chunk| Ok(chunk.to_vec())).collect();
+        chunks.iter().map(|part| Ok(part.to_vec())).collect();
     stream::iter(items).boxed()
 }
 
 fn drain(mut decoder: DownloadDecoder, chunks: &[&[u8]]) -> (DownloadDecoder, Vec<u8>) {
     let mut output = Vec::new();
-    for chunk in chunks {
-        let bytes = decode_download_chunk(&mut decoder, chunk);
+    for part in chunks {
+        let bytes = decode_download_chunk(&mut decoder, part);
         output.extend_from_slice(&bytes);
     }
     let bytes = finish_download(&mut decoder);
@@ -81,10 +81,10 @@ fn lines(output: &[u8]) -> Vec<&str> {
 
 #[test]
 fn peek_limit_replay() {
-    let (decoder, output) = drain(decoder(4), &[b"ab", b"cde"]);
-    assert_eq!(decoder.mode, DownloadMode::Passthrough);
-    assert_eq!(output.as_slice(), b"abcde");
-    assert!(decoder.headers.get(CONTENT_LENGTH).is_none());
+    let (replayed, prefix) = drain(decoder(4), &[b"ab", b"cde"]);
+    assert_eq!(replayed.mode, DownloadMode::Passthrough);
+    assert_eq!(prefix.as_slice(), b"abcde");
+    assert!(replayed.headers.get(CONTENT_LENGTH).is_none());
 
     let mut at_the_limit = decoder(2);
     let output = decode_download_chunk(&mut at_the_limit, b"{}");
@@ -231,31 +231,39 @@ fn rows_are_newline_joined() {
 #[test]
 fn a_failing_row_keeps_its_bytes() {
     let labels = ROW.replace(r#""request":{}"#, r#""request":{"labels":"nope"}"#);
-    let content = format!("{ROW}\n{labels}\n");
-    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert_eq!(lines(&output)[1], labels);
+    {
+        let content = format!("{ROW}\n{labels}\n");
+        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+        assert_eq!(decoder.mode, DownloadMode::Lines);
+        assert_eq!(lines(&output)[1], labels);
+    }
 
     let response = ROW.replace(
         r#""response":{"#,
         r#""response":"not an object","broken":{"#,
     );
-    let content = format!("{ROW}\n{response}\n");
-    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert_eq!(lines(&output)[1], response);
+    {
+        let content = format!("{ROW}\n{response}\n");
+        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+        assert_eq!(decoder.mode, DownloadMode::Lines);
+        assert_eq!(lines(&output)[1], response);
+    }
 
     let version = ROW.replace(r#""candidates""#, r#""modelVersion":5,"candidates""#);
-    let content = format!("{ROW}\n{version}\n");
-    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert_eq!(lines(&output)[1], version);
+    {
+        let content = format!("{ROW}\n{version}\n");
+        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+        assert_eq!(decoder.mode, DownloadMode::Lines);
+        assert_eq!(lines(&output)[1], version);
+    }
 
     let null_version = ROW.replace(r#""candidates""#, r#""modelVersion":null,"candidates""#);
-    let content = format!("{ROW}\n{null_version}\n");
-    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-    assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert_eq!(lines(&output)[1], null_version);
+    {
+        let content = format!("{ROW}\n{null_version}\n");
+        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+        assert_eq!(decoder.mode, DownloadMode::Lines);
+        assert_eq!(lines(&output)[1], null_version);
+    }
 }
 
 #[tokio::test]
@@ -335,14 +343,14 @@ async fn cancelling_the_stream_closes_the_source() {
 
 #[tokio::test]
 async fn later_rows_stream_in_as_their_chunks_complete() {
-    let third = ROW.replace(r#""hi""#, r#""za""#);
+    let third_row = ROW.replace(r#""hi""#, r#""za""#);
     let first_chunk = format!("{ROW}\n");
     let second_chunk = format!("{OTHER_ROW}\n");
     let result = transform_file_content_stream(
         source(&[
             first_chunk.as_bytes(),
             second_chunk.as_bytes(),
-            third.as_bytes(),
+            third_row.as_bytes(),
         ]),
         URL,
         HeaderMap::new(),
@@ -421,36 +429,40 @@ async fn embedding_fallback_keeps_the_bytes_and_sets_the_length() {
 #[tokio::test]
 async fn disabled_and_passthrough_streams_keep_every_byte() {
     let content = format!("{ROW}\n");
-    let result = transform_file_content_stream(
-        source(&[content.as_bytes()]),
-        URL,
-        headers(&[(CONTENT_LENGTH.as_str(), "999")]),
-        true,
-        context(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
-    let mut stream = result.stream;
-    let chunk = stream.next().await.unwrap().unwrap();
-    assert_eq!(chunk.as_slice(), content.as_bytes());
-    assert!(stream.next().await.is_none());
+    {
+        let result = transform_file_content_stream(
+            source(&[content.as_bytes()]),
+            URL,
+            headers(&[(CONTENT_LENGTH.as_str(), "999")]),
+            true,
+            context(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
+        let mut stream = result.stream;
+        let chunk = stream.next().await.unwrap().unwrap();
+        assert_eq!(chunk.as_slice(), content.as_bytes());
+        assert!(stream.next().await.is_none());
+    }
 
-    let result = transform_file_content_stream(
-        source(&[content.as_bytes()]),
-        PASSTHROUGH_URL,
-        headers(&[(CONTENT_LENGTH.as_str(), "999")]),
-        false,
-        context(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
-    let mut stream = result.stream;
-    assert_eq!(
-        stream.next().await.unwrap().unwrap().as_slice(),
-        content.as_bytes()
-    );
+    {
+        let result = transform_file_content_stream(
+            source(&[content.as_bytes()]),
+            PASSTHROUGH_URL,
+            headers(&[(CONTENT_LENGTH.as_str(), "999")]),
+            false,
+            context(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
+        let mut stream = result.stream;
+        assert_eq!(
+            stream.next().await.unwrap().unwrap().as_slice(),
+            content.as_bytes()
+        );
+    }
 }
 
 struct Tracked {

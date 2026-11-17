@@ -56,7 +56,7 @@ pub struct DownloadDecoder {
 
 impl DownloadDecoder {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         headers: HeaderMap,
         model: Option<String>,
         peek_limit_bytes: usize,
@@ -224,7 +224,7 @@ pub fn finish_download(decoder: &mut DownloadDecoder) -> Vec<u8> {
     let output = decoder.advance(None);
     match mem::replace(&mut decoder.phase, Phase::Finished) {
         Phase::Collect { buffered } => decoder.collect(buffered),
-        _finished => output,
+        Phase::Peek { .. } | Phase::Lines { .. } | Phase::Passthrough | Phase::Finished => output,
     }
 }
 
@@ -263,11 +263,11 @@ pub async fn transform_file_content_stream(
     if stream.decoder.mode == DownloadMode::Embeddings {
         return embeddings_result(stream).await;
     }
-    let headers = stream.decoder.headers.clone();
+    let response_headers = stream.decoder.headers.clone();
     let output = try_unfold(stream, next_output).boxed();
     Ok(FileContentStreamingResult {
         stream: output,
-        headers,
+        headers: response_headers,
     })
 }
 

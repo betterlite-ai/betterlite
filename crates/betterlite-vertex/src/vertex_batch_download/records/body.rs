@@ -81,11 +81,11 @@ fn project(
 }
 
 fn choices_body(choices: &Choices) -> Result<Json, ConversionError> {
-    let Choices::Complete(choices) = choices else {
+    let Choices::Complete(complete) = choices else {
         return Err(ConversionError::StreamedChoices);
     };
-    let mut rows = Vec::with_capacity(choices.len());
-    for choice in choices {
+    let mut rows = Vec::with_capacity(complete.len());
+    for choice in complete {
         rows.push(choice_body(choice)?);
     }
     Ok(Json::List(rows))
@@ -152,15 +152,15 @@ fn usage_body(usage: &Usage, blocked: bool) -> Json {
         String::from("total_tokens"),
         Json::Number(Number::from(usage.total_tokens)),
     );
-    let completion = match &usage.completion_tokens_details {
-        Some(details) => completion_details(details),
-        None => Json::Null,
-    };
+    let completion = usage
+        .completion_tokens_details
+        .as_ref()
+        .map_or(Json::Null, completion_details);
     fields.insert(String::from("completion_tokens_details"), completion);
-    let prompt = match &usage.prompt_tokens_details {
-        Some(details) => prompt_details(details),
-        None => Json::Null,
-    };
+    let prompt = usage
+        .prompt_tokens_details
+        .as_ref()
+        .map_or(Json::Null, prompt_details);
     fields.insert(String::from("prompt_tokens_details"), prompt);
     if !blocked {
         let cached = usage

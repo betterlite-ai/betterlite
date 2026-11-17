@@ -34,11 +34,11 @@ pub fn transform_file_content_response(
     request_url: &str,
     headers: &HeaderMap,
     disabled: bool,
-    context: &mut ConversionContext,
+    state: &mut ConversionContext,
 ) -> ContentResponse {
     let mut converted_headers = headers.clone();
     if download_policy(disabled, request_url) == DownloadPolicy::Convert
-        && let Some(converted) = convert_whole(content, request_url, context)
+        && let Some(converted) = convert_whole(content, request_url, state)
         && converted != content
     {
         converted_headers.insert(CONTENT_LENGTH, HeaderValue::from(converted.len()));
@@ -56,19 +56,19 @@ pub fn transform_file_content_response(
 fn convert_whole(
     content: &[u8],
     request_url: &str,
-    context: &mut ConversionContext,
+    state: &mut ConversionContext,
 ) -> Option<Vec<u8>> {
     let lines = jsonl_lines(content)?;
     let first = lines.first()?;
     let row = decode_vertex_batch_row(first.as_bytes()).ok()?;
     if is_embeddings_output_row(&row) {
         let model = model_from_managed_gcs_url(request_url);
-        return embeddings_content(content, model.as_deref(), context);
+        return embeddings_content(content, model.as_deref(), state);
     }
     if !is_generate_output_row(&row) {
         return None;
     }
-    generate_content(&lines, context)
+    generate_content(&lines, state)
 }
 
 fn generate_content(lines: &[&str], context: &mut ConversionContext) -> Option<Vec<u8>> {
@@ -87,14 +87,14 @@ fn generate_content(lines: &[&str], context: &mut ConversionContext) -> Option<V
 pub(crate) fn embeddings_content(
     content: &[u8],
     model: Option<&str>,
-    context: &mut ConversionContext,
+    state: &mut ConversionContext,
 ) -> Option<Vec<u8>> {
     let lines = jsonl_lines(content)?;
     let mut rows = Vec::with_capacity(lines.len());
     for line in &lines {
         rows.push(decode_vertex_batch_row(line.as_bytes()).ok()?);
     }
-    let outputs = regroup_embeddings(&rows, model, context.ids.as_mut()).ok()?;
+    let outputs = regroup_embeddings(&rows, model, state.ids.as_mut()).ok()?;
     let mut output = Vec::new();
     for (index, row) in outputs.iter().enumerate() {
         if index > 0 {

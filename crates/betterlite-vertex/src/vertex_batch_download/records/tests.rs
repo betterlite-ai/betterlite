@@ -289,7 +289,7 @@ fn a_null_model_version_returns_the_whole_payload() {
 #[test]
 fn a_provider_status_becomes_a_vertex_ai_error_row() {
     let response = convert(STATUS_ROW, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
+    let body = json(&String::from_utf8(response.content.clone()).unwrap());
     assert_eq!(
         field(&body, "id"),
         &json(r#""batch_req_00000000-0000-0000-0000-000000000001""#)
@@ -306,7 +306,7 @@ fn a_provider_status_becomes_a_vertex_ai_error_row() {
 #[test]
 fn a_blocked_prompt_keeps_the_raw_counters() {
     let response = convert(BLOCKED_ROW, URL);
-    let row = json(&String::from_utf8(response.content.clone()).unwrap());
+    let row = json(&String::from_utf8(response.content).unwrap());
     let body = completion(&row);
     let Json::List(choices) = field(body, "choices") else {
         panic!("choices is not a list");
@@ -333,7 +333,7 @@ fn a_blocked_prompt_keeps_the_raw_counters() {
 #[test]
 fn a_failed_conversion_becomes_a_transformation_error_row() {
     let response = convert(NO_USAGE_ROW, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
+    let body = json(&String::from_utf8(response.content.clone()).unwrap());
     assert_eq!(
         field(&body, "id"),
         &json(r#""batch_req_00000000-0000-0000-0000-000000000002""#)
@@ -454,16 +454,20 @@ fn embedding_groups_are_newline_joined() {
 
 #[test]
 fn keys_and_labels_correlate_rows() {
-    let keyed = ROW.replace(r#""request":{}"#, r#""key":"req%23one#0/1","request":{}"#);
-    let response = convert(&keyed, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
-    assert_eq!(field(&body, "custom_id"), &json(r#""req#one#0/1""#));
+    {
+        let keyed = ROW.replace(r#""request":{}"#, r#""key":"req%23one#0/1","request":{}"#);
+        let keyed_response = convert(&keyed, URL);
+        let keyed_body = json(&String::from_utf8(keyed_response.content).unwrap());
+        assert_eq!(field(&keyed_body, "custom_id"), &json(r#""req#one#0/1""#));
+    }
 
-    let labelled = ROW.replace(
-        r#""request":{}"#,
-        r#""request":{"labels":{"litellm_custom_id":"req-1"}}"#,
-    );
-    let response = convert(&labelled, URL);
-    let body = json(&String::from_utf8(response.content).unwrap());
-    assert_eq!(field(&body, "custom_id"), &json(r#""req-1""#));
+    {
+        let labelled = ROW.replace(
+            r#""request":{}"#,
+            r#""request":{"labels":{"litellm_custom_id":"req-1"}}"#,
+        );
+        let labelled_response = convert(&labelled, URL);
+        let labelled_body = json(&String::from_utf8(labelled_response.content).unwrap());
+        assert_eq!(field(&labelled_body, "custom_id"), &json(r#""req-1""#));
+    }
 }

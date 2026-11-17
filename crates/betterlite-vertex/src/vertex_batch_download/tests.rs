@@ -60,11 +60,5 @@ fn replays_the_vertex_batch_download_corpus(
         DownloadMode::Lines => assert_eq!(lines(&output), lines(content)),
         DownloadMode::Embeddings | DownloadMode::Undecided => {}
     }
-    drop(transform_file_content_response(
-        content,
-        URL,
-        &headers,
-        false,
-        &mut context(),
-    ));
+    let _buffered = transform_file_content_response(content, URL, &headers, false, &mut context());
 }

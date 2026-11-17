@@ -75,8 +75,8 @@ pub(crate) fn run(input: &Input) -> HelperResult {
 
 fn decoded_chunks(chunks: &[String]) -> Result<Vec<Vec<u8>>, Box<HelperError>> {
     let mut parts = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        parts.push(STANDARD.decode(chunk).or_config_error()?);
+    for encoded in chunks {
+        parts.push(STANDARD.decode(encoded).or_config_error()?);
     }
     Ok(parts)
 }
@@ -96,15 +96,15 @@ fn drive(
         ));
         let result =
             transform_file_content_stream(source, url, headers, disabled, context(now)).await;
-        let result = result.or_value_error()?;
+        let streamed = result.or_value_error()?;
         let mut content = Vec::new();
-        let mut chunks = result.stream;
-        while let Some(chunk) = chunks.next().await {
+        let mut output = streamed.stream;
+        while let Some(chunk) = output.next().await {
             content.extend_from_slice(&chunk.or_value_error()?);
         }
         Ok(ContentResponse {
             content,
-            headers: result.headers,
+            headers: streamed.headers,
         })
     })
 }

@@ -115,7 +115,7 @@ fn buffer_keeps_bytes_it_cannot_read() {
 
 #[test]
 fn stream_projects_the_converted_row() {
-    let split = ROW.len() / 2;
+    let split = ROW.len().div_euclid(2);
     let value = run(json!({
         "operation": "stream",
         "chunks": [
@@ -140,7 +140,7 @@ fn stream_projects_the_converted_row() {
 
 #[test]
 fn stream_regroups_the_embedded_rows() {
-    let split = EMBEDDING_ROWS.len() / 2;
+    let split = EMBEDDING_ROWS.len().div_euclid(2);
     let value = run(json!({
         "operation": "stream",
         "chunks": [
