@@ -18,6 +18,7 @@ pub enum SdkResult {
     MessagesStreamLogging { value: StreamLoggingRun },
     MessagesNativeStream { value: Vec<StepOutcome> },
     MessagesSyncStream { value: SyncRun },
+    MessagesChatStream { value: ChatStreamRun },
     ResponsesAgenticContinuation { value: AgenticContinuationRun },
     FileAzureStorage { value: FileStorageRun },
     Failure(Failure),
@@ -107,6 +108,48 @@ pub struct SyncState {
 pub struct SyncDiagnostic {
     pub level: String,
     pub prefix: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStreamRun {
+    pub runs: Vec<ChatStreamRunOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStreamRunOutcome {
+    pub steps: Vec<ChatStreamStepOutcome>,
+}
+
+// One __anext__ of the mode under test: its events or frames, the failure it raised, and what it left behind
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStreamStepOutcome {
+    pub events: Vec<Value>,
+    pub frames: Vec<String>,
+    pub end: bool,
+    pub failure: Option<ChatStreamFailure>,
+    pub pulls: usize,
+    pub diagnostics: Vec<SyncDiagnostic>,
+    pub view: Option<ChatStreamView>,
+}
+
+// What a caller of __anext__ sees: a reported status and message, or the bare exception's text
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStreamFailure {
+    pub kind: String,
+    pub status_code: Option<u16>,
+    pub message: String,
+}
+
+// The wrapper metadata a byte view forwards, with the chunk ids so the sequence itself is compared
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatStreamView {
+    pub model: String,
+    pub chunks: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

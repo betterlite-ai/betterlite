@@ -1,18 +1,13 @@
 use std::collections::VecDeque;
 use std::mem::take;
-use std::sync::PoisonError;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_anthropic::stream_state::state::UuidV4;
 use betterlite_core::api::messages_stream_usage::state::{BlockKind, StreamSetup, StreamState};
 use betterlite_core::api::messages_sync_stream::driver::SyncDriver;
-use betterlite_models::decisions::Json;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
-use uuid::Uuid;
 
 use super::diagnostics::Diagnostics;
 use super::source::Prefetched;
@@ -22,15 +17,19 @@ use crate::sdk_http::messages_sync_stream::call::{
     MessagesSyncStreamCall, SyncInitial, SyncRunSpec, SyncStep,
 };
 use crate::sdk_http::result::{SyncRunOutcome, SyncState, SyncStepOutcome};
+use crate::sdk_http::wrapper_stream::{normalized, seed_object};
 
-const NORMALIZED_ID: &str = "msg_00000000-0000-0000-0000-000000000000";
+const SOURCE: &str = "betterlite_core::api::messages_sync_stream";
 
 pub(super) fn run(
     call: &MessagesSyncStreamCall,
     spec: &SyncRunSpec,
     payloads: VecDeque<Vec<u8>>,
 ) -> Result<SyncRunOutcome, SdkHttpError> {
-    let diagnostics = Diagnostics::default();
+    let diagnostics = Diagnostics {
+        source: SOURCE,
+        entries: Arc::default(),
+    };
     let _subscription = set_default(registry().with(diagnostics.clone()));
     let mut stream = SyncDriver {
         state: StreamState::new(
@@ -95,40 +94,6 @@ fn seeded<S>(state: &mut StreamState<S>, initial: &SyncInitial) -> Result<(), Sd
     state.holding_stop_reason_chunk = seed_object(initial.held_stop_reason.as_ref())?;
     state.queued_usage_chunk = initial.queued_usage;
     Ok(())
-}
-
-fn seed_object<T>(held: Option<&Json>) -> Result<Option<T>, SdkHttpError>
-where
-    T: DeserializeOwned,
-{
-    let Some(seed) = held else {
-        return Ok(None);
-    };
-    let text = serde_json::to_string(seed).map_err(SdkHttpError::Serialize)?;
-    let object = serde_json::from_str(&text).map_err(|source| {
-        SdkHttpError::Invalid(format!("an initial held chunk is not an object: {source}"))
-    })?;
-    Ok(Some(object))
-}
-
-// The uuid is fresh per stream, so both sides replace it with one value before comparing
-fn normalized<E>(event: &E, message_id: &str) -> Result<Value, SdkHttpError>
-where
-    E: Serialize,
-{
-    let mut value = serde_json::to_value(event).map_err(SdkHttpError::Serialize)?;
-    if let Value::Object(fields) = &mut value
-        && fields.get("type").and_then(Value::as_str) == Some("message_start")
-        && let Some(Value::Object(message)) = fields.get_mut("message")
-        && let Some(Value::String(id)) = message.get_mut("id")
-        && id.as_str() == message_id
-        && id
-            .strip_prefix("msg_")
-            .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
-    {
-        NORMALIZED_ID.clone_into(id);
-    }
-    Ok(value)
 }
 
 fn observed(state: &StreamState<Prefetched>) -> SyncState {

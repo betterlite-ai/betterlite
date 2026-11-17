@@ -1,0 +1,17 @@
+kind: helper
+name: hosted-vllm-media-transcription-request
+call:
+  b8151:
+    function: "transcription_request"
+    calls:
+      - {api_base: "http://host/v1", env: {}, model: "whisper", options: {}, audio: "clip.wav"}
+      - {api_base: "http://host/v1/audio/transcriptions", env: {}, model: "whisper", options: {language: "en", prompt: "hi"}, audio: "clip.mp3"}
+      - {api_base: "http://host", env: {}, model: "whisper", options: {model: "other", temperature: 0}, audio: "clip.wav"}
+      - {api_base: "http://host/", env: {}, model: "whisper", options: {response_format: "json"}, audio: "clip.wav"}
+calls:
+  - b8151:
+      function: "transcription_request"
+      calls:
+        - {api_base: null, env: {}, model: "whisper", options: {}, audio: "clip.wav"}
+env: {}
+compare: {ignore: []}

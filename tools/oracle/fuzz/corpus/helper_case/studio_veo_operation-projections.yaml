@@ -1,0 +1,28 @@
+kind: helper
+name: studio-veo-operation-projections
+call:
+  studio_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: create_response
+        model: veo-3.0-generate-001
+        provider: gemini
+        request_data:
+          parameters: {durationSeconds: 8, resolution: 720p, sampleCount: 1}
+        body: {name: operations/generate_1234567890}
+      - function: status_response
+        provider: gemini
+        body: {name: operations/generate_1234567890, done: true}
+      - function: status_request
+        video_id: 'video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmdlbWluaTttb2RlbF9pZDp2ZW8tMy4wLWdlbmVyYXRlLTAwMTt2aWRlb19pZDpvcGVyYXRpb25zL2dlbmVyYXRlXzEyMzQ1Njc4OTA='
+        api_base: 'https://generativelanguage.googleapis.com'
+      - function: content_target
+        body:
+          name: operations/generate_1234567890
+          done: true
+          response:
+            generateVideoResponse:
+              generatedSamples:
+                - video: {uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc:download?alt=media'}
+env: {}
+compare: {ignore: []}
