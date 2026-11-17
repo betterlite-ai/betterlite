@@ -106,20 +106,8 @@ pub(super) fn upsert_user(
     create: &UserWrite,
     update: &UserWrite,
 ) -> Result<String, KeyUserWriteError> {
-    let (columns, placeholders) = bind_values(
-        statement,
-        create
-            .0
-            .iter()
-            .map(|(column, value)| (column.name(), column.sql_type(), value)),
-    )?;
-    let (update_columns, update_placeholders) = bind_values(
-        statement,
-        update
-            .0
-            .iter()
-            .map(|(column, value)| (column.name(), column.sql_type(), value)),
-    )?;
+    let (columns, placeholders) = bind_values(statement, create.bindings())?;
+    let (update_columns, update_placeholders) = bind_values(statement, update.bindings())?;
     let sets = assignments(&update_columns, &update_placeholders);
     let conflict = if sets.is_empty() {
         String::from("\"user_id\" = EXCLUDED.\"user_id\"")
