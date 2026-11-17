@@ -55,6 +55,10 @@
     "[1]",
     json!({"detail": [{"type": "model_attributes_type", "loc": ["body"], "msg": "Input should be a valid dictionary or object to extract fields from"}]})
 )]
+#[case::body_null(
+    "null",
+    json!({"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]})
+)]
 #[case::empty(
     "",
     json!({"detail": [{"type": "missing", "loc": ["body"], "msg": "Field required"}]})

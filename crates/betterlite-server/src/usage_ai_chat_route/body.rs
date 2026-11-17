@@ -61,11 +61,14 @@ pub fn decode_body(body: &[u8]) -> Result<ChatBody, BodyError> {
 
 fn decode_value(value: &JsonValue) -> Result<ChatBody, BodyError> {
     let JsonValue::Object(fields) = value else {
+        // FastAPI reads a JSON null body as an absent required body, not a type error
+        let kind = if value.is_null() {
+            IssueKind::Missing
+        } else {
+            IssueKind::NotObject
+        };
         return Err(BodyError::Issues {
-            issues: vec![ValidationIssue::of(
-                IssueKind::NotObject,
-                vec![LocPart::Field(BODY)],
-            )],
+            issues: vec![ValidationIssue::of(kind, vec![LocPart::Field(BODY)])],
         });
     };
     let mut issues: Vec<ValidationIssue> = Vec::new();
