@@ -32,7 +32,7 @@ description: >-
 
 scope:
   paths:
-  - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
+    - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
     - crates/betterlite-mcp/src/server_payload.rs
     - crates/betterlite-mcp/src/server_payload/**
     - crates/betterlite-mcp/src/connector_import.rs
