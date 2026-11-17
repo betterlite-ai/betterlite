@@ -5,7 +5,7 @@ use betterlite_config::sections::pointfive_params::PointFiveInitParams;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{FakeHttp, Reply, client, core, payload, wait_until};
+use super::support::{FakeHttp, PRESIGNED, Reply, client, core, payload, target_body, wait_until};
 
 const HOUR: Duration = Duration::from_secs(3600);
 
@@ -46,6 +46,37 @@ async fn the_first_cycle_uploads_a_queue_instead_of_pinging() {
         .expect("the periodic flush returns")
         .expect("the flush task ends");
     assert!(http.pings().is_empty());
+    assert!(core.queue.is_empty());
+}
+
+#[tokio::test]
+async fn a_later_cycle_flushes_what_arrived_since() {
+    let http = FakeHttp::scripted(vec![
+        Reply::with_body(200, &target_body(PRESIGNED, "objects/0")),
+        Reply::answer(200),
+        Reply::with_body(200, &target_body(&format!("{PRESIGNED}/1"), "objects/1")),
+        Reply::answer(200),
+    ]);
+    let core = core(PointFiveInitParams::default(), client(&http, 3));
+    core.queue.push(payload("evt-1"));
+    let background = Arc::clone(&core);
+    let shutdown = CancellationToken::new();
+    let token = shutdown.clone();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        background
+            .periodic_flush(Duration::from_millis(20), token)
+            .await
+    });
+    wait_until(|| http.uploads().len() == 1).await;
+    core.queue.push(payload("evt-2"));
+    wait_until(|| http.uploads().len() == 2).await;
+    shutdown.cancel();
+    tasks
+        .join_next()
+        .await
+        .expect("the periodic flush returns")
+        .expect("the flush task ends");
     assert!(core.queue.is_empty());
 }
 
