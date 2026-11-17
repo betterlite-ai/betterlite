@@ -209,15 +209,16 @@ def reply_outcome(call: ReplyCall) -> JsonValue:
         return {"error": {"status": None}}
     hidden = HIDDEN.validate_python(get_hidden_params_dict(answer))
     view = REPLY.validate_json(answer.model_dump_json())
+    sent_results = view["results"]
     results: list[JsonValue] | None = None
-    if view["results"] is not None:
+    if sent_results is not None:
         results = [
             {
                 "index": entry["index"],
                 "relevance_score": str(Decimal(repr(entry["relevance_score"])).normalize()),
                 "document": entry.get("document"),
             }
-            for entry in view["results"]
+            for entry in sent_results
         ]
     return {
         "id": view["id"],
