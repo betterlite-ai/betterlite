@@ -18,7 +18,6 @@ macro_rules! insert_rows {
 }
 
 pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    install_schema(client, seed).await?;
     insert_rows!(
         client,
         &seed.users,
@@ -53,23 +52,14 @@ pub(crate) async fn seed_database(client: &Client, seed: &FixtureSeed) -> Result
     seed_extensions(client, seed).await
 }
 
-async fn install_schema(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
-    match &seed.dashboard {
-        Some(_) => dashboard::initialize(client).await?,
-        None => client
-            .batch_execute(&baseline_schema(seed))
-            .await
-            .map_err(FixtureError::Database)?,
+pub(crate) async fn schema_statements(seed: &FixtureSeed) -> Result<Vec<String>, FixtureError> {
+    if seed.dashboard.is_some() {
+        return Ok(dashboard::schema::verified_sql().await?);
     }
-    Ok(())
-}
-
-fn baseline_schema(seed: &FixtureSeed) -> String {
     if seed.daily_usage.is_some() || seed.finops.is_some() {
-        format!("{BASELINE}{}", daily_usage::SCHEMA)
-    } else {
-        BASELINE.to_owned()
+        return Ok(vec![format!("{BASELINE}{}", daily_usage::SCHEMA)]);
     }
+    Ok(vec![BASELINE.to_owned()])
 }
 
 async fn seed_extensions(client: &Client, seed: &FixtureSeed) -> Result<(), FixtureError> {
