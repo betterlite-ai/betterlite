@@ -33,8 +33,8 @@ fn environment_of(
     }
 }
 
-fn text_of(value: &str) -> Option<Json> {
-    Some(Json::Text(value.to_owned()))
+fn text_of(value: &str) -> Json {
+    Json::Text(value.to_owned())
 }
 
 fn bucket(settings: &ReadSettings) -> Option<&str> {
@@ -52,25 +52,28 @@ fn service_account(settings: &ReadSettings) -> Option<&str> {
 fn deployment_bucket() {
     let environment = environment_of(Some("batch-bucket"), Some("env-bucket"), None);
     let both_names = vertex_file_read_settings(
-        &deployment_of(text_of("bucket-a"), text_of("bucket-b"), None),
+        &deployment_of(Some(text_of("bucket-a")), Some(text_of("bucket-b")), None),
         None,
         &environment,
     );
     assert_eq!(bucket(&both_names), Some("bucket-a"));
     let alias = vertex_file_read_settings(
-        &deployment_of(None, text_of("bucket-b"), None),
+        &deployment_of(None, Some(text_of("bucket-b")), None),
         None,
         &environment,
     );
     assert_eq!(bucket(&alias), Some("bucket-b"));
     let empty_gcs_name = vertex_file_read_settings(
-        &deployment_of(text_of(""), text_of("bucket-b"), None),
+        &deployment_of(Some(text_of("")), Some(text_of("bucket-b")), None),
         None,
         &environment,
     );
     assert_eq!(bucket(&empty_gcs_name), Some("bucket-b"));
-    let empty_alias =
-        vertex_file_read_settings(&deployment_of(None, text_of(""), None), None, &environment);
+    let empty_alias = vertex_file_read_settings(
+        &deployment_of(None, Some(text_of("")), None),
+        None,
+        &environment,
+    );
     assert_eq!(bucket(&empty_alias), Some(""));
     let from_environment =
         vertex_file_read_settings(&deployment_of(None, None, None), None, &environment);
@@ -86,7 +89,7 @@ fn deployment_bucket() {
 fn nonstring_bucket_fallback(#[case] value: Json, #[case] expected: Option<&str>) {
     let environment = environment_of(Some("batch-bucket"), Some("env-bucket"), None);
     let settings = vertex_file_read_settings(
-        &deployment_of(Some(value), text_of("bucket-b"), None),
+        &deployment_of(Some(value), Some(text_of("bucket-b")), None),
         None,
         &environment,
     );
@@ -98,7 +101,7 @@ fn nonstring_bucket_falls_to_the_general_environment() {
     let environment = environment_of(None, Some("env-bucket"), None);
     let value = Json::Number(Number::from(5_i32));
     let settings = vertex_file_read_settings(
-        &deployment_of(Some(value), text_of("bucket-b"), None),
+        &deployment_of(Some(value), Some(text_of("bucket-b")), None),
         None,
         &environment,
     );
@@ -160,7 +163,7 @@ fn explicit_credentials() {
     let environment = environment_of(None, None, Some("/env/sa.json"));
     let argument = Json::Text("argument-sa".to_owned());
     let deployment_wins = vertex_file_read_settings(
-        &deployment_of(None, None, text_of("deployment-sa")),
+        &deployment_of(None, None, Some(text_of("deployment-sa"))),
         Some(&argument),
         &environment,
     );
@@ -172,7 +175,7 @@ fn explicit_credentials() {
     );
     assert_eq!(service_account(&argument_wins), Some("argument-sa"));
     let empty_deployment = vertex_file_read_settings(
-        &deployment_of(None, None, text_of("")),
+        &deployment_of(None, None, Some(text_of(""))),
         Some(&argument),
         &environment,
     );

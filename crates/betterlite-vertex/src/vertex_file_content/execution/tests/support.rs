@@ -13,6 +13,7 @@ use betterlite_logging::gcs_mock::auth::{
 };
 use betterlite_logging::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
 use betterlite_logging::gcs_mock::request::GcsRequest;
+use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileContentRequest;
 use http::HeaderMap;
 use http::header::AUTHORIZATION;
@@ -42,10 +43,20 @@ pub(crate) enum Step {
 
 #[must_use]
 pub(crate) fn token_for(credential: Option<&str>) -> String {
-    match credential {
-        Some(text) => format!("token-for-{text}"),
-        None => format!("token-for-{IAM_KEY}"),
-    }
+    credential.map_or_else(
+        || format!("token-for-{IAM_KEY}"),
+        |text| format!("token-for-{text}"),
+    )
+}
+
+#[must_use]
+pub(crate) fn dictionary_credential() -> Json {
+    let mut fields = IndexMap::new();
+    fields.insert(
+        "client_email".to_owned(),
+        Json::Text("a@example".to_owned()),
+    );
+    Json::Object(fields)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -102,7 +113,7 @@ impl VertexAuth for FakeAuth {
     }
 
     fn ensure_access_token(&self, _request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
-        panic!("the read path authorizes asynchronously");
+        Err(AuthFailure)
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, AuthFailure> {

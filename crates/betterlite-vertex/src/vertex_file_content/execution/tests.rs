@@ -6,7 +6,7 @@ use betterlite_bedrock::s3_access::{TrustedModelCredentials, TrustedValue, froze
 use betterlite_logging::gcs_client::gcs_storage_auth::SERVICE_ACCOUNT_ENV;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::FileContentRequest;
-use indexmap::IndexMap;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use crate::vertex_batch_download::records::ConversionContext;
@@ -17,7 +17,7 @@ mod support;
 use self::support::{
     BUCKET, FILE_ID, Harness, LEGACY_FILE_ID, LEGACY_STORAGE_URL, MODEL_FILE_ID, MODEL_STORAGE_URL,
     SERVICE_ACCOUNT_PATH, SPACED_FILE_ID, SPACED_STORAGE_URL, STORAGE_URL, Step, content_request,
-    token_for,
+    dictionary_credential, token_for,
 };
 use super::ContentRead;
 use super::error::FileContentError;
@@ -151,13 +151,8 @@ async fn credential_partition() {
     let request = content_request(FILE_ID);
     let trusted = trusted_record(false);
     let mut state = context();
-    let mut fields = IndexMap::new();
-    fields.insert(
-        "client_email".to_owned(),
-        Json::Text("a@example".to_owned()),
-    );
     let dictionary = r#"{"client_email": "a@example"}"#;
-    let first_deployment = deployment_of(None, None, Some(Json::Object(fields)));
+    let first_deployment = deployment_of(None, None, Some(dictionary_credential()));
     let first_read = content_read(&request, &first_deployment, None, &trusted);
     file_content(&base, &first_read, &mut state)
         .await
@@ -361,7 +356,7 @@ async fn cancel_read() {
     let trusted = trusted_record(false);
     let read = content_read(&request, &deployment, None, &trusted);
     let mut state = context();
-    let cancelled = tokio::time::timeout(
+    let cancelled = timeout(
         Duration::from_millis(50),
         file_content(&base, &read, &mut state),
     )
