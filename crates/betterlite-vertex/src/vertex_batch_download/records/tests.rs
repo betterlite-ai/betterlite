@@ -108,6 +108,15 @@ fn convert(content: &str, url: &str) -> ContentResponse {
     )
 }
 
+fn assert_custom_id(row: &str, expected: &str) {
+    let converted = convert(row, URL);
+    let body = json(&String::from_utf8(converted.content).unwrap());
+    assert_eq!(
+        field(&body, "custom_id"),
+        &Json::Text(String::from(expected))
+    );
+}
+
 #[test]
 fn download_policy_covers_the_switch_and_the_passthrough_prefix() {
     assert_eq!(download_policy(true, URL), DownloadPolicy::Original);
@@ -454,20 +463,11 @@ fn embedding_groups_are_newline_joined() {
 
 #[test]
 fn keys_and_labels_correlate_rows() {
-    {
-        let keyed = ROW.replace(r#""request":{}"#, r#""key":"req%23one#0/1","request":{}"#);
-        let response = convert(&keyed, URL);
-        let body = json(&String::from_utf8(response.content).unwrap());
-        assert_eq!(field(&body, "custom_id"), &json(r#""req#one#0/1""#));
-    }
-
-    {
-        let labelled = ROW.replace(
-            r#""request":{}"#,
-            r#""request":{"labels":{"litellm_custom_id":"req-1"}}"#,
-        );
-        let response = convert(&labelled, URL);
-        let body = json(&String::from_utf8(response.content).unwrap());
-        assert_eq!(field(&body, "custom_id"), &json(r#""req-1""#));
-    }
+    let keyed = ROW.replace(r#""request":{}"#, r#""key":"req%23one#0/1","request":{}"#);
+    assert_custom_id(&keyed, "req#one#0/1");
+    let labelled = ROW.replace(
+        r#""request":{}"#,
+        r#""request":{"labels":{"litellm_custom_id":"req-1"}}"#,
+    );
+    assert_custom_id(&labelled, "req-1");
 }

@@ -25,7 +25,6 @@ const PASSTHROUGH_URL: &str = "https://storage.googleapis.com/storage/v1/b/b/o/l
 const EMBEDDING_URL: &str = "https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-embedding-001%2Fbatch.jsonl";
 const ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}"#;
 const OTHER_ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"yo"}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":2,"totalTokenCount":4}}}"#;
-const UTF8_ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"café"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}}"#;
 const EMBEDDING_ROWS: &str = concat!(
     r#"{"key":"id%23one#1/2","request":{"content":{}},"status":"","response":{"embedding":{"values":[2]},"usageMetadata":{"promptTokenCount":2}}}"#,
     "\n",
@@ -79,6 +78,30 @@ fn lines(output: &[u8]) -> Vec<&str> {
     from_utf8(output).unwrap().split('\n').collect()
 }
 
+fn assert_raw_second_row(row: &str) {
+    let content = format!("{ROW}\n{row}\n");
+    let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
+    assert_eq!(decoder.mode, DownloadMode::Lines);
+    assert_eq!(lines(&output)[1], row);
+}
+
+async fn assert_untouched(content: &str, url: &str, disabled: bool) {
+    let result = transform_file_content_stream(
+        source(&[content.as_bytes()]),
+        url,
+        headers(&[(CONTENT_LENGTH.as_str(), "999")]),
+        disabled,
+        context(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
+    let mut stream = result.stream;
+    let chunk = stream.next().await.unwrap().unwrap();
+    assert_eq!(chunk.as_slice(), content.as_bytes());
+    assert!(stream.next().await.is_none());
+}
+
 #[test]
 fn peek_limit_replay() {
     let (replayed, prefix) = drain(decoder(4), &[b"ab", b"cde"]);
@@ -105,13 +128,14 @@ fn newline_before_limit() {
 
 #[test]
 fn split_utf8() {
-    let position = UTF8_ROW.find('é').unwrap().saturating_add(1);
-    let (head, tail) = UTF8_ROW.as_bytes().split_at(position);
+    let row = ROW.replace(r#""hi""#, "\"caf\u{e9}\"");
+    let position = row.find('\u{e9}').unwrap().saturating_add(1);
+    let (head, tail) = row.as_bytes().split_at(position);
     let mut completed = tail.to_vec();
     completed.push(b'\n');
     let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[head, completed.as_slice()]);
     assert_eq!(decoder.mode, DownloadMode::Lines);
-    assert!(from_utf8(&output).unwrap().contains("café"));
+    assert!(from_utf8(&output).unwrap().contains("caf\u{e9}"));
 }
 
 #[test]
@@ -231,39 +255,16 @@ fn rows_are_newline_joined() {
 #[test]
 fn a_failing_row_keeps_its_bytes() {
     let labels = ROW.replace(r#""request":{}"#, r#""request":{"labels":"nope"}"#);
-    {
-        let content = format!("{ROW}\n{labels}\n");
-        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-        assert_eq!(decoder.mode, DownloadMode::Lines);
-        assert_eq!(lines(&output)[1], labels);
-    }
-
+    assert_raw_second_row(&labels);
     let response = ROW.replace(
         r#""response":{"#,
         r#""response":"not an object","broken":{"#,
     );
-    {
-        let content = format!("{ROW}\n{response}\n");
-        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-        assert_eq!(decoder.mode, DownloadMode::Lines);
-        assert_eq!(lines(&output)[1], response);
-    }
-
+    assert_raw_second_row(&response);
     let version = ROW.replace(r#""candidates""#, r#""modelVersion":5,"candidates""#);
-    {
-        let content = format!("{ROW}\n{version}\n");
-        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-        assert_eq!(decoder.mode, DownloadMode::Lines);
-        assert_eq!(lines(&output)[1], version);
-    }
-
+    assert_raw_second_row(&version);
     let null_version = ROW.replace(r#""candidates""#, r#""modelVersion":null,"candidates""#);
-    {
-        let content = format!("{ROW}\n{null_version}\n");
-        let (decoder, output) = drain(decoder(PEEK_LIMIT_BYTES), &[content.as_bytes()]);
-        assert_eq!(decoder.mode, DownloadMode::Lines);
-        assert_eq!(lines(&output)[1], null_version);
-    }
+    assert_raw_second_row(&null_version);
 }
 
 #[tokio::test]
@@ -429,40 +430,8 @@ async fn embedding_fallback_keeps_the_bytes_and_sets_the_length() {
 #[tokio::test]
 async fn disabled_and_passthrough_streams_keep_every_byte() {
     let content = format!("{ROW}\n");
-    {
-        let result = transform_file_content_stream(
-            source(&[content.as_bytes()]),
-            URL,
-            headers(&[(CONTENT_LENGTH.as_str(), "999")]),
-            true,
-            context(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
-        let mut stream = result.stream;
-        let chunk = stream.next().await.unwrap().unwrap();
-        assert_eq!(chunk.as_slice(), content.as_bytes());
-        assert!(stream.next().await.is_none());
-    }
-
-    {
-        let result = transform_file_content_stream(
-            source(&[content.as_bytes()]),
-            PASSTHROUGH_URL,
-            headers(&[(CONTENT_LENGTH.as_str(), "999")]),
-            false,
-            context(),
-        )
-        .await
-        .unwrap();
-        assert_eq!(result.headers.get(CONTENT_LENGTH).unwrap(), "999");
-        let mut stream = result.stream;
-        assert_eq!(
-            stream.next().await.unwrap().unwrap().as_slice(),
-            content.as_bytes()
-        );
-    }
+    assert_untouched(&content, URL, true).await;
+    assert_untouched(&content, PASSTHROUGH_URL, false).await;
 }
 
 struct Tracked {
