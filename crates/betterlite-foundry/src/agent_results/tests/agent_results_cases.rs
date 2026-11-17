@@ -116,7 +116,7 @@ fn test_citation_index_relocation() {
     );
 }
 
-fn reply_input<'a>(messages: &'a [Object], annotations: Option<Vec<Object>>) -> ReplyInput<'a> {
+fn reply_input(messages: &[Object], annotations: Option<Vec<Object>>) -> ReplyInput<'_> {
     ReplyInput {
         model: "azure_ai/agents/a",
         content: "hello",

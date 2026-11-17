@@ -64,7 +64,11 @@ fn assert_distinct_agent_and_host(first: &StreamRequest, second: &StreamRequest)
     assert!(!second.url.contains("first.example"));
     assert!(first.payload.thread.is_none());
     assert_eq!(
-        second.payload.thread.map(|thread| thread.messages.len()),
+        second
+            .payload
+            .thread
+            .as_ref()
+            .map(|thread| thread.messages.len()),
         Some(0)
     );
 }
