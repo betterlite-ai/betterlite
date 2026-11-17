@@ -36,10 +36,10 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
 }
 
 fn connection(input: &Input) -> Result<ConnectionSetup, Failure> {
-    let provider: Option<Box<dyn RealtimeProviderConfig>> = input
+    let provider = input
         .provider
         .as_ref()
-        .map(|document| Box::new(document.clone()));
+        .map(|document| -> Box<dyn RealtimeProviderConfig> { Box::new(document.clone()) });
     Ok(ConnectionSetup {
         client: None,
         backend: None,
