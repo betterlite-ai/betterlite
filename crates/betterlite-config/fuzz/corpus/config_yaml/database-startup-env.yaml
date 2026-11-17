@@ -1,0 +1,4 @@
+general_settings:
+  disable_prisma_schema_update: os.environ/DISABLE_SCHEMA_UPDATE
+litellm_settings:
+  callbacks: ["gcs_bucket"]

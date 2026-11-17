@@ -1,0 +1,18 @@
+kind: helper
+name: databricks-upstream-500
+call:
+  b8330:
+    op: chat
+    provider: databricks
+    model: databricks-meta-llama-3-3-70b-instruct
+    messages:
+      - role: user
+        content: hi
+    api_base: "{{upstream}}/serving-endpoints"
+    api_key: oracle-databricks-key
+    answer:
+      status: 500
+      body: "server error"
+env: {}
+compare:
+  ignore: []

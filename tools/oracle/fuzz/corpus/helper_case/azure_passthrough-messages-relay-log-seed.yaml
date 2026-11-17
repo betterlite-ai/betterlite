@@ -1,0 +1,39 @@
+kind: helper
+name: azure_passthrough-messages-relay-log-seed
+call:
+  azure_passthrough:
+    function: messages_relay_log
+    relay_steps:
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        chunks:
+          - 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+          - 'data: [DONE]'
+        model_call_details: {request_data: {model: gpt-4o, messages: [{role: user, content: hi}]}}
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        chunks:
+          - 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+        model_call_details: {request_data: null}
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        chunks:
+          - 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+        model_call_details: {request_data: {messages: two}}
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        chunks:
+          - 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+        model_call_details: {request_data: {messages: [1, {role: user}]}}
+      - endpoint: openai/deployments/my-d/embeddings
+        model: gpt-4o
+        chunks:
+          - 'data: {"object":"list","data":[]}'
+        model_call_details: {request_data: {messages: [{role: user, content: hi}]}}
+      - endpoint: openai/deployments/my-d/chat/completions
+        model: gpt-4o
+        chunks:
+          - 'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":7,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+        model_call_details: null
+env: {}
+compare: {ignore: []}

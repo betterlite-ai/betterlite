@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-embed-batch-requests
+call:
+  b3639:
+    "operation": "embed_content"
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/text-embedding-004:batchEmbedContents
+    status: 200
+    body:
+      embeddings:
+        - {values: [1, 2]}
+        - {values: [3, 4]}
+    request_body:
+      requests:
+        - content:
+            parts:
+              - {text: ab}
+        - content:
+            parts:
+              - {text: c}
+              - {text: d}
+env: {}
+compare: {ignore: []}

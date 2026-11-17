@@ -1,0 +1,15 @@
+kind: helper
+name: passthrough-predict-logging-audio-truthiness
+call:
+  b3639:
+    operation: predict
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/lyria-002:predict
+    status: 200
+    body:
+      predictions:
+        - audioContent: ""
+          bytesBase64Encoded: ""
+        - audioContent: null
+    request_body: null
+env: {}
+compare: {ignore: []}

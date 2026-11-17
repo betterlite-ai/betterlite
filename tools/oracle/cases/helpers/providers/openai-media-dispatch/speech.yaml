@@ -1,0 +1,42 @@
+kind: helper
+name: speech
+call:
+  openai_media_dispatch:
+    case: speech
+    api_base: https://mock.example/v1
+    model: gpt-4o-mini-tts
+    input: hello there
+    voice: alloy
+    options:
+      response_format: mp3
+      speed: 1.25
+      instructions: speak softly
+      extra_headers:
+        x-trace: trace-1
+    status: 200
+    content_type: audio/mpeg
+    body: audio-bytes
+calls:
+  - openai_media_dispatch:
+      case: speech
+      api_base: https://mock.example/v1
+      model: tts-1
+      input: a second line
+      voice: verse
+      options: {}
+      status: 200
+      content_type: null
+      body: stream-bytes
+  - openai_media_dispatch:
+      case: speech
+      api_base: https://mock.example/v1
+      model: tts-1
+      input: a second line
+      voice: verse
+      options: {}
+      status: 429
+      content_type: null
+      body: '{"error": {"message": "rate limited", "type": "rate_limit_error", "param": null,
+        "code": "rate_limit_exceeded"}}'
+env: {}
+compare: {ignore: []}

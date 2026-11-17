@@ -1,0 +1,33 @@
+use betterlite_models::decisions::{Extra, Json};
+use serde::Serialize;
+
+use super::VertexPredictError;
+
+pub(super) const fn object_fields(value: &Json) -> Result<&Extra, VertexPredictError> {
+    match value {
+        Json::Object(fields) => Ok(fields),
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(VertexPredictError::BodyShape { found: kind(other) })
+        }
+    }
+}
+
+pub(super) fn json_of<T>(value: &T) -> Result<Json, VertexPredictError>
+where
+    T: Serialize,
+{
+    let encoded =
+        serde_json::to_value(value).map_err(|source| VertexPredictError::Encode { source })?;
+    serde_json::from_value(encoded).map_err(|source| VertexPredictError::Encode { source })
+}
+
+const fn kind(value: &Json) -> &'static str {
+    match value {
+        Json::Null => "null",
+        Json::Bool(_) => "a boolean",
+        Json::Number(_) => "a number",
+        Json::Text(_) => "a string",
+        Json::List(_) => "a list",
+        Json::Object(_) => "an object",
+    }
+}
