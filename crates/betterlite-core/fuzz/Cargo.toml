@@ -408,3 +408,10 @@ path = "fuzz_targets/assemblyai_transcript.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_stream_value"
+path = "fuzz_targets/responses_stream_value.rs"
+test = false
+doc = false
+bench = false
