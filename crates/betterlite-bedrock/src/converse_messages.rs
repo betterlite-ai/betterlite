@@ -41,6 +41,9 @@ pub fn transform_messages(
             modify_params: policy.modify_params,
         },
     )?;
-    let messages = guarded::guard_trailing_user_turns(&handled, optional_params)?;
-    Ok(TransformedMessages { messages, system })
+    let guarded = guarded::guard_trailing_user_turns(&handled, optional_params)?;
+    Ok(TransformedMessages {
+        messages: guarded,
+        system,
+    })
 }

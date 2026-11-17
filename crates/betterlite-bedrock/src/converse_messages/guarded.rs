@@ -48,9 +48,10 @@ fn guarded_message(message: &Message, index: usize) -> Result<Message, ConverseM
     let mut converted = message.clone();
     match message.content.as_ref() {
         Some(Content::Text(text)) => {
-            converted.content = Some(Content::Parts(vec![guarded_block(Json::Text(
-                text.clone(),
-            ))]));
+            converted.content = Some(Content::Parts(vec![ContentPart {
+                kind: GUARDED_TEXT.to_owned(),
+                fields: Object::from_iter([(TEXT_FIELD.to_owned(), Json::Text(text.clone()))]),
+            }]));
         }
         Some(Content::Parts(parts)) => {
             if parts.iter().any(|part| part.kind == GUARDED_TEXT) {
@@ -62,7 +63,12 @@ fn guarded_message(message: &Message, index: usize) -> Result<Message, ConverseM
                     let Some(text) = part.fields.get(TEXT_FIELD) else {
                         return Err(ConverseMessageError::TextPartWithoutText { message: index });
                     };
-                    guarded_parts.push(guarded_block(text.clone()));
+                    // Bedrock's guarded_text part holds the text alone; cache_control and any other
+                    // part field stay behind.
+                    guarded_parts.push(ContentPart {
+                        kind: GUARDED_TEXT.to_owned(),
+                        fields: Object::from_iter([(TEXT_FIELD.to_owned(), text.clone())]),
+                    });
                 } else {
                     guarded_parts.push(part.clone());
                 }
@@ -74,12 +80,4 @@ fn guarded_message(message: &Message, index: usize) -> Result<Message, ConverseM
         }
     }
     Ok(converted)
-}
-
-// Bedrock's guarded_text part holds the text alone; cache_control and any other part field stay behind.
-fn guarded_block(text: Json) -> ContentPart {
-    ContentPart {
-        kind: GUARDED_TEXT.to_owned(),
-        fields: Object::from_iter([(TEXT_FIELD.to_owned(), text)]),
-    }
 }

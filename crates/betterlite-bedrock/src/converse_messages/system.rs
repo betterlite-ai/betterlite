@@ -186,7 +186,13 @@ fn system_role_message_as_user(message: &Message) -> Option<Message> {
         return None;
     }
     let mut content = Vec::with_capacity(blocks.len().saturating_add(1));
-    content.push(note_block());
+    content.push(ContentPart {
+        kind: TEXT_PART.to_owned(),
+        fields: Object::from_iter([(
+            TEXT_FIELD.to_owned(),
+            Json::Text(CONVERTED_SYSTEM_NOTE.to_owned()),
+        )]),
+    });
     content.extend(blocks);
     Some(Message {
         role: "user".to_owned(),
@@ -231,15 +237,5 @@ fn converted_text_block(text: Json, cache_control: Option<&Json>) -> ContentPart
     ContentPart {
         kind: TEXT_PART.to_owned(),
         fields,
-    }
-}
-
-fn note_block() -> ContentPart {
-    ContentPart {
-        kind: TEXT_PART.to_owned(),
-        fields: Object::from_iter([(
-            TEXT_FIELD.to_owned(),
-            Json::Text(CONVERTED_SYSTEM_NOTE.to_owned()),
-        )]),
     }
 }
