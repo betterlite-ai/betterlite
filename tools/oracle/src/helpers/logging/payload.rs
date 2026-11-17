@@ -9,10 +9,10 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_logging::payload::compose::{
-    PayloadComposition, PayloadRequest, get_standard_logging_object_payload,
+    PayloadComposition, PayloadRequest, standard_logging_payload,
 };
 use betterlite_logging::payload::deps::{PayloadSettings, PayloadSources, TagConfig};
-use betterlite_logging::payload::redaction::redacted_standard_logging_payload;
+use betterlite_logging::payload::redaction::redact_standard_payload;
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
@@ -86,7 +86,7 @@ impl Helper for Op {
         };
         let privacy = Settings {
             turn_off_message_logging: input.settings.turn_off_message_logging,
-            ..Settings::default()
+            redact_user_api_key_info: false,
         };
         let composition = PayloadComposition {
             sources: &sources,
@@ -106,11 +106,11 @@ impl Helper for Op {
             original_exception: None,
             standard_built_in_tools_params: input.standard_built_in_tools_params.as_ref(),
         };
-        match get_standard_logging_object_payload(&request, &composition) {
+        match standard_logging_payload(&request, &composition) {
             // LiteLLM's catch-all turns any failure into no payload at all
             Err(_) => Ok(serde_json::Value::Null),
             Ok(payload) if input.redact_standard_payload => {
-                serde_json::to_value(redacted_standard_logging_payload(&payload)).map_err(invalid)
+                serde_json::to_value(redact_standard_payload(&payload)).map_err(invalid)
             }
             Ok(payload) => serde_json::to_value(payload).map_err(invalid),
         }

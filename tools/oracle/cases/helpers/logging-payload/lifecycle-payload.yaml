@@ -58,5 +58,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /model_map_information
+    - pointer: /value/model_map_information
       why: B068's model cost source fills this map, and this task only passes that source through
