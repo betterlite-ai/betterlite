@@ -432,10 +432,10 @@ fn an_empty_camel_case_breakdown_keeps_the_snake_case_one_out() {
 
 #[test]
 fn a_null_or_non_list_breakdown_falls_through_to_the_snake_case_one() {
-    let usage = usage(
+    let null_breakdown = usage(
         r#"{"candidatesTokenCount":3,"candidatesTokensDetails":null,"candidates_tokens_details":[{"modality":"TEXT","tokenCount":1}]}"#,
     );
-    assert_eq!(usage.output_tokens_details.text_tokens, 2);
+    assert_eq!(null_breakdown.output_tokens_details.text_tokens, 2);
     let scalar = usage(
         r#"{"candidatesTokenCount":3,"candidatesTokensDetails":"x","candidates_tokens_details":[{"modality":"IMAGE","tokenCount":3}]}"#,
     );

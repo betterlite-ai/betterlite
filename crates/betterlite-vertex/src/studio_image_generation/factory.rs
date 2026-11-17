@@ -10,8 +10,8 @@ pub struct GoogleImageGenerationConfig {
     pub settings: Settings,
 }
 
-// ast-grep-ignore: no-long-names
 #[must_use]
+// ast-grep-ignore: no-long-names
 pub fn get_gemini_image_generation_config(
     _model: &str,
     lookup: &dyn EnvironmentLookup,

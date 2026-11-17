@@ -48,10 +48,10 @@ fn gemini_usage(
     raw: Option<&RawValue>,
     search: Option<i64>,
 ) -> Result<Option<ImageGenerationUsage>, StudioImageError> {
-    let Some(raw) = raw else {
+    let Some(metadata) = raw else {
         return Ok(None);
     };
-    let mut usage = transform_gemini_image_usage(&decode_image_usage(raw)?)?;
+    let mut usage = transform_gemini_image_usage(&decode_image_usage(metadata)?)?;
     usage.web_search_requests = search;
     Ok(Some(usage))
 }

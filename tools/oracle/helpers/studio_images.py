@@ -43,11 +43,13 @@ class StudioImageConfig(Protocol):
         ],
         dict[str, JsonValue],
     ]
-    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
-        [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, str]],
+    # ast-grep-ignore: no-long-names
+    transform_image_generation_request: Callable[
+        [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, JsonValue]],
         dict[str, JsonValue],
     ]
-    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    transform_image_generation_response: Callable[
         [
             str,
             httpx.Response,
@@ -170,21 +172,24 @@ def request_value(case: RequestCase) -> JsonObject:
     return {"url": url, "headers": outgoing, "body": body}
 
 
-def tokens_value(tokens: TokenDetails) -> JsonObject:
-    return {"image_tokens": tokens["image_tokens"], "text_tokens": tokens["text_tokens"]}
+def detail_value(details: TokenDetails) -> JsonObject:
+    return {
+        "image_tokens": details["image_tokens"],
+        "text_tokens": details["text_tokens"],
+    }
 
 
 def usage_value(usage: UsageFields) -> JsonObject:
     return {
         "input_tokens": usage["input_tokens"],
-        "input_tokens_details": tokens_value(usage["input_tokens_details"]),
+        "input_tokens_details": detail_value(usage["input_tokens_details"]),
         "output_tokens": usage["output_tokens"],
         "total_tokens": usage["total_tokens"],
         "prompt_tokens": usage["prompt_tokens"],
-        "prompt_tokens_details": tokens_value(usage["prompt_tokens_details"]),
+        "prompt_tokens_details": detail_value(usage["prompt_tokens_details"]),
         "completion_tokens": usage["completion_tokens"],
-        "completion_tokens_details": tokens_value(usage["completion_tokens_details"]),
-        "output_tokens_details": tokens_value(usage["output_tokens_details"]),
+        "completion_tokens_details": detail_value(usage["completion_tokens_details"]),
+        "output_tokens_details": detail_value(usage["output_tokens_details"]),
         "web_search_requests": usage.get("web_search_requests"),
     }
 
@@ -235,7 +240,8 @@ def cost_value(case: CostCase) -> JsonObject:
         "litellm_provider": "gemini",
         "mode": "image_generation",
     }
-    litellm.register_model({f"gemini/{case['model']}": entry})
+    pricing: dict[str, dict[str, JsonValue]] = {f"gemini/{case['model']}": entry}
+    litellm.register_model(pricing)
     response = ImageResponse(data=[ImageObject(b64_json="AAA") for _ in range(case["images"])])
     usage = case.get("usage")
     if usage is None:

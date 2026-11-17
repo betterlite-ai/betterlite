@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 // Gemini grounding bills one default request fee per grounded prompt; no case sets a billing unit
 const SEARCH_FEE: Decimal = Decimal::from_parts(35, 0, 0, false, 3);
 
-// The case's catalog entry answers every effective lookup, standing in for litellm.model_cost.
+// A copy of image_policy's private double: its module is outside this task's scope.
 pub(super) struct CatalogPricing<'catalog> {
     pub(super) catalog: &'catalog PriceRecord,
 }

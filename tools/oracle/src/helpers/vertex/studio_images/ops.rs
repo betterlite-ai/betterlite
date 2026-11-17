@@ -12,9 +12,12 @@ use betterlite_vertex::studio_image_generation::environment::validate_environmen
 use betterlite_vertex::studio_image_generation::error::StudioImageError;
 use betterlite_vertex::studio_image_generation::factory::GOOGLE_IMAGE_GEN_CONFIG;
 use betterlite_vertex::studio_image_generation::options::map_openai_params;
+// ast-grep-ignore: no-long-names
 use betterlite_vertex::studio_image_generation::request::transform_image_generation_request;
 use betterlite_vertex::studio_image_generation::response::{
-    ImageGenerationResponse, transform_image_generation_response,
+    ImageGenerationResponse,
+    // ast-grep-ignore: no-long-names
+    transform_image_generation_response,
 };
 use betterlite_vertex::studio_image_generation::settings::{DEFAULT_API_BASE, Settings};
 use betterlite_vertex::studio_image_generation::url::complete_url;
@@ -144,6 +147,7 @@ fn request_value(case: &Request) -> Result<Value, Box<HelperError>> {
         case.image_size_support,
     )
     .or_value_error()?;
+    // ast-grep-ignore: no-long-names
     let body = transform_image_generation_request(
         &case.model,
         &case.prompt,
@@ -160,6 +164,7 @@ fn request_value(case: &Request) -> Result<Value, Box<HelperError>> {
 
 fn response_value(case: &ResponseCase) -> Result<Value, Box<HelperError>> {
     let body = serde_json::to_vec(&case.body).or_config_error()?;
+    // ast-grep-ignore: no-long-names
     let response = transform_image_generation_response(
         &case.model,
         &UpstreamResponse {
@@ -185,29 +190,24 @@ fn image_value(image: &GeneratedImage) -> Value {
     })
 }
 
+fn detail_value(tokens: &ImageInputTokens) -> Value {
+    json!({
+        "image_tokens": tokens.image_tokens,
+        "text_tokens": tokens.text_tokens,
+    })
+}
+
 fn usage_value(usage: &ImageGenerationUsage) -> Value {
     json!({
         "input_tokens": usage.input_tokens,
-        "input_tokens_details": {
-            "image_tokens": usage.input_tokens_details.image_tokens,
-            "text_tokens": usage.input_tokens_details.text_tokens,
-        },
+        "input_tokens_details": detail_value(&usage.input_tokens_details),
         "output_tokens": usage.output_tokens,
         "total_tokens": usage.total_tokens,
         "prompt_tokens": usage.prompt_tokens,
-        "prompt_tokens_details": {
-            "image_tokens": usage.prompt_tokens_details.image_tokens,
-            "text_tokens": usage.prompt_tokens_details.text_tokens,
-        },
+        "prompt_tokens_details": detail_value(&usage.prompt_tokens_details),
         "completion_tokens": usage.completion_tokens,
-        "completion_tokens_details": {
-            "image_tokens": usage.completion_tokens_details.image_tokens,
-            "text_tokens": usage.completion_tokens_details.text_tokens,
-        },
-        "output_tokens_details": {
-            "image_tokens": usage.output_tokens_details.image_tokens,
-            "text_tokens": usage.output_tokens_details.text_tokens,
-        },
+        "completion_tokens_details": detail_value(&usage.completion_tokens_details),
+        "output_tokens_details": detail_value(&usage.output_tokens_details),
         "web_search_requests": usage.web_search_requests,
     })
 }
@@ -250,20 +250,18 @@ fn cost_usage(usage: &CostUsage) -> ImageGenerationUsage {
         image_tokens: usage.output_tokens,
         text_tokens: 0,
     };
-    let mut rendered = ImageGenerationUsage {
+    ImageGenerationUsage {
         input_tokens: usage.input_tokens,
         input_tokens_details: input_details.clone(),
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
-        ..ImageGenerationUsage::default()
-    };
-    rendered.prompt_tokens = usage.input_tokens;
-    rendered.prompt_tokens_details = input_details;
-    rendered.completion_tokens = usage.output_tokens;
-    rendered.completion_tokens_details = output_details.clone();
-    rendered.output_tokens_details = output_details;
-    rendered.web_search_requests = usage.web_search_requests;
-    rendered
+        prompt_tokens: usage.input_tokens,
+        prompt_tokens_details: input_details,
+        completion_tokens: usage.output_tokens,
+        completion_tokens_details: output_details.clone(),
+        output_tokens_details: output_details,
+        web_search_requests: usage.web_search_requests,
+    }
 }
 
 fn cost_failure(error: &StudioImageError) -> Box<HelperError> {

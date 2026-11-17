@@ -14,6 +14,7 @@ use crate::vertex_image_policy::cost::ImagePricing;
 const PROVIDER: &str = "gemini";
 
 // The response the Studio cost prices: LiteLLM resolves the model first, then rejects anything that is not an ImageResponse.
+#[derive(Clone, Copy)]
 pub enum ImageCostResponse<'response> {
     Image(&'response ImageGenerationResponse),
     Other,
@@ -27,18 +28,18 @@ pub fn generation_cost(
     response: ImageCostResponse<'_>,
 ) -> Result<Decimal, StudioImageError> {
     let model_info = pricing.model_info(model, PROVIDER, supplied)?;
-    let ImageCostResponse::Image(response) = response else {
+    let ImageCostResponse::Image(image) = response else {
         return Err(StudioImageError::from(ImageCostError::NotImageResponse));
     };
     let search = pricing.web_search_cost(
         PROVIDER,
-        response
+        image
             .usage
             .as_ref()
             .and_then(|usage| usage.web_search_requests),
         &model_info,
     );
-    let base = billed_total(pricing, model, &model_info, response)?;
+    let base = billed_total(pricing, model, &model_info, image)?;
     base.checked_add(search)
         .ok_or_else(|| StudioImageError::from(ImageCostError::Overflow))
 }

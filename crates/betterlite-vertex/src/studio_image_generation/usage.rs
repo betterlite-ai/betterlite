@@ -110,14 +110,14 @@ fn remainder_text(details: &ImageInputTokens, output_tokens: i64) -> Result<i64,
         })
 }
 
-fn prompt_details(metadata: &ImageUsageMetadata) -> &[ResponseJson] {
+const fn prompt_details(metadata: &ImageUsageMetadata) -> &[ResponseJson] {
     details_list(
         metadata.prompt_tokens_details.as_ref(),
         metadata.prompt_details_snake.as_ref(),
     )
 }
 
-fn candidate_details(metadata: &ImageUsageMetadata) -> &[ResponseJson] {
+const fn candidate_details(metadata: &ImageUsageMetadata) -> &[ResponseJson] {
     details_list(
         metadata.candidates_tokens_details.as_ref(),
         metadata.candidate_details_snake.as_ref(),
@@ -125,7 +125,7 @@ fn candidate_details(metadata: &ImageUsageMetadata) -> &[ResponseJson] {
 }
 
 // _get_modality_token_details: the camel-case key answers while it holds a list, and null or a non-list falls through
-fn details_list<'json>(
+const fn details_list<'json>(
     camel: Option<&'json ResponseJson>,
     snake: Option<&'json ResponseJson>,
 ) -> &'json [ResponseJson] {
