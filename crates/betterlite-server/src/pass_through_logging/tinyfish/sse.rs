@@ -7,7 +7,7 @@ use super::records::parse_run;
 
 pub(crate) const SSE_POLLER_KEY: &str = "tinyfish_sse_poller_spawned";
 
-// LiteLLM decodes the frames with errors="replace" and splits them with Python's str.splitlines.
+// LiteLLM decodes the frames with errors="replace" and splits them at the SSE line ends.
 #[must_use]
 pub fn run_id_from_sse_frames(frames: &[u8]) -> Option<String> {
     let mut text = String::with_capacity(frames.len());
@@ -70,7 +70,7 @@ pub fn sse_poller_spawned(logging_obj: &StreamLoggingObject) -> bool {
         .unwrap_or(false)
 }
 
-// Python splits a line at every one of these separators and adds no empty line after a trailing break.
+// An SSE line ends only at CR, LF or CRLF, and a trailing break adds no empty line.
 pub(super) fn split_lines(text: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
@@ -81,8 +81,7 @@ pub(super) fn split_lines(text: &str) -> Vec<String> {
                 characters.next_if_eq(&'\n');
                 lines.push(mem::take(&mut line));
             }
-            '\n' | '\u{b}' | '\u{c}' | '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{85}' | '\u{2028}'
-            | '\u{2029}' => lines.push(mem::take(&mut line)),
+            '\n' => lines.push(mem::take(&mut line)),
             other => line.push(other),
         }
     }
