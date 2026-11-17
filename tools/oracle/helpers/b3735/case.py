@@ -125,7 +125,7 @@ class FrameData(TypedDict):
 
 @runtime_checkable
 class Hook(Protocol):
-    def async_post_call_streaming_iterator_hook(  # ast-grep-ignore: no-long-names
+    def async_post_call_streaming_iterator_hook(
         self,
         user_api_key_dict: UserAPIKeyAuth,
         response: AsyncIterator[OutputItem],
