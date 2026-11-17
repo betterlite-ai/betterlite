@@ -919,12 +919,12 @@ fn media_assistant_image_string_skipped() {
 #[test]
 fn media_assistant_image_hint_survives_a_shared_download() {
     let harness = Harness::new().with_fetch(&[(REMOTE_A, FETCHED)]);
-    let messages = r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"https://example.com/a"}},{"type":"image_url","image_url":{"url":"https://example.com/a","format":"image/jpeg"}}]},{"role":"user","content":"next"}]"#;
+    let messages = r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a","images":[{"type":"image_url","image_url":{"url":"https://example.com/a"}},{"type":"image_url","image_url":{"url":"https://example.com/a","format":"image/jpeg"}},{"type":"image_url","image_url":{"url":"https://example.com/a"}}]},{"role":"user","content":"next"}]"#;
     let input = media_input(VertexCapabilityProvider::VertexAi, messages);
     let transformed = harness.run(&input).expect("the media is downloaded");
     assert_body(
         &transformed,
-        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}},{"file_data":{"mime_type":"image/jpeg","file_uri":"https://example.com/a"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
+        r#"{"contents":[{"role":"user","parts":[{"text":"q"}]},{"role":"model","parts":[{"text":"a"},{"inline_data":{"data":"YWJj","mime_type":"image/png"}},{"file_data":{"mime_type":"image/jpeg","file_uri":"https://example.com/a"}},{"inline_data":{"data":"YWJj","mime_type":"image/png"}}]},{"role":"user","parts":[{"text":"next"}]}]}"#,
     );
     assert_fetched(&harness, false, &[REMOTE_A]);
 }
