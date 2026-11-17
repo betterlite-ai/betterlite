@@ -147,11 +147,9 @@ fn merge_history_fields(
     }
     // the Responses API allows 64 characters in user, so a longer string is shortened and others are left alone
     if let Some(Value::String(user)) = params.get("user").cloned() {
-        if user.chars().count() > 64 {
-            params.insert(
-                "user".to_owned(),
-                Value::String(user.chars().take(64).collect()),
-            );
+        let shortened: String = user.chars().take(64).collect();
+        if shortened != user {
+            params.insert("user".to_owned(), Value::String(shortened));
         }
     }
     params
