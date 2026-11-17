@@ -320,6 +320,26 @@ async fn a_failed_download_still_returns_its_bytes() {
 }
 
 #[tokio::test]
+async fn a_transport_failure_stops_the_download() {
+    let transport = Scripted::new(vec![
+        Reply::Status {
+            status: 200,
+            body: COMPLETED.to_vec(),
+        },
+        Reply::Failure,
+    ]);
+    let headers = headers();
+    let request = content_request(&lookup(&headers), &transport)
+        .await
+        .expect("the status lookup resolves");
+    let outcome = download_content(request, &transport).await;
+    assert!(matches!(
+        outcome,
+        Err(StudioVeoOperationError::Transport { .. })
+    ));
+}
+
+#[tokio::test]
 async fn cancel_closes_status() {
     let transport = Stalled::new();
     let headers = headers();
