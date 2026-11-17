@@ -1,0 +1,55 @@
+kind: helper
+name: image-variation
+call:
+  openai_media_dispatch:
+    case: image_variation
+    api_base: https://mock.example/v1
+    model: dall-e-2
+    image_filename: cat.png
+    image_content: cat-image-bytes
+    image_content_type: image/png
+    options:
+      n: '1'
+      size: 1024x1024
+    status: 200
+    reply:
+      created: 1700000000
+      background: null
+      quality: null
+      output_format: null
+      size: 1024x1024
+      data:
+        - b64_json: dmFyaWF0aW9u
+          url: null
+calls:
+  - openai_media_dispatch:
+      case: image_variation
+      api_base: https://mock.example/v1
+      model: dall-e-2
+      image_filename: null
+      image_content: raw-image-bytes
+      image_content_type: null
+      options: {}
+      status: 200
+      reply:
+        created: 1700000000
+        data:
+          - b64_json: cmF3
+            url: null
+  - openai_media_dispatch:
+      case: image_variation
+      api_base: https://mock.example/v1
+      model: dall-e-2
+      image_filename: null
+      image_content: raw-image-bytes
+      image_content_type: null
+      options: {}
+      status: 400
+      reply:
+        error:
+          message: the image is not valid
+          type: invalid_request_error
+          param: image
+          code: invalid_image
+env: {}
+compare: {ignore: []}
