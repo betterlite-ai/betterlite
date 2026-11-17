@@ -86,6 +86,16 @@ async fn driver_async_reasoning_closes_before_the_new_content() {
         Json::Text(String::from("reasoning"))
     );
     assert_eq!(
+        field(&field(&events[2], "item"), "id"),
+        Json::Text(String::from("rs_r1")),
+        "the reasoning item takes its id from the stream's id source"
+    );
+    assert_eq!(
+        field(&events[5], "item_id"),
+        Json::Text(String::from("rs_r1")),
+        "the done events keep the same reasoning item id"
+    );
+    assert_eq!(
         field(&field(&events[2], "item"), "summary"),
         Json::Null,
         "the item starts without a summary"

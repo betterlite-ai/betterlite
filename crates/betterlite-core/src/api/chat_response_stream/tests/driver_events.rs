@@ -306,6 +306,25 @@ fn driver_queued_events_come_before_the_next_chunk() {
 }
 
 #[test]
+fn driver_iterates_through_the_iterator_impl() {
+    let (mut stream, _received) = driver(
+        vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))],
+        Reply::Text,
+        "{}",
+        &["u1", "u2", "u3"],
+    );
+    let events: Vec<Json> = stream
+        .by_ref()
+        .map(|event| event_json(&event.expect("the stream does not fail")))
+        .collect();
+    assert_eq!(events.len(), 9);
+    assert_eq!(
+        kinds(&events).first().map(String::as_str),
+        Some("response.created")
+    );
+}
+
+#[test]
 fn driver_sync_rejects_a_null_chunk_after_priming() {
     let source = Scripted::new(vec![
         Ok(json(CONTENT_HI)),
