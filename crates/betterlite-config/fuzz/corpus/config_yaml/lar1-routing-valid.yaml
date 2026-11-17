@@ -1,0 +1,7 @@
+model_list: []
+router_settings:
+  routing_strategy: lar1
+  routing_strategy_args:
+    confidence_threshold_low: 0.35
+    confidence_threshold_medium: 0.45
+    confidence_threshold_high: 0.85

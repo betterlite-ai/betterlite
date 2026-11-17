@@ -1,0 +1,55 @@
+kind: probe
+name: lar1-metadata-decimal-reading
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: litellm-tier
+            model: openai/litellm-tier
+            kind: cloud-smart
+          - id: betterlite-tier
+            model: openai/betterlite-tier
+            kind: local
+        metadata: '{"confidence": 1e-30}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: litellm-tier
+            model: openai/litellm-tier
+            kind: deep
+          - id: betterlite-tier
+            model: openai/betterlite-tier
+            kind: local
+        metadata: '{"confidence": 1.0000000000000001}'
+  - clock: {unix_millis: 1700000000125, monotonic_millis: 42002}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: litellm-tier
+            model: openai/litellm-tier
+            kind: cloud-fast
+          - id: betterlite-tier
+            model: openai/betterlite-tier
+            kind: cloud-smart
+        metadata: '{"confidence": 0.29999999999999999}'
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/lar1_routing/selected
+      reference: litellm-tier
+      rust: betterlite-tier
+      why: LiteLLM reads the confidence as a binary float, so 1e-30 stays under the default 0.3 low
+        threshold and routes cloud-smart, 1.0000000000000001 rounds to 1.0 and routes deep, and
+        0.29999999999999999 rounds to the 0.3 double and routes cloud-fast. betterlite reads the exact
+        decimal, so 1e-30 is outside Decimal's 28-digit scale and 1.0000000000000001 is outside the 0..1
+        range, and both warn into the declared 0.5 default (local), while 0.29999999999999999 lands
+        below 0.3 (cloud-smart).
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L134-L153

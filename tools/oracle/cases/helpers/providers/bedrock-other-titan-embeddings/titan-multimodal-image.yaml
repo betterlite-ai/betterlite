@@ -1,0 +1,49 @@
+kind: helper
+name: titan-multimodal-image
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_multimodal_image
+    non_default:
+      dimensions: 512
+      other: ignored
+    optional_params:
+      custom: 1
+    input: "data:image/png;base64,aGVsbG8="
+    inference_params: {}
+calls:
+  - bedrock_other_titan_embeddings:
+      function: titan_multimodal_image
+      non_default: {}
+      optional_params: {}
+      input: "data:image/png;base64,not base64!!"
+      inference_params: {}
+  - bedrock_other_titan_embeddings:
+      function: titan_multimodal_image
+      non_default: {}
+      optional_params: {}
+      input: aGVsbG8=
+      inference_params: {}
+  - bedrock_other_titan_embeddings:
+      function: titan_multimodal_image
+      non_default: {}
+      optional_params: {}
+      input: https://example.test/photo.png
+      inference_params: {}
+  - bedrock_other_titan_embeddings:
+      function: titan_multimodal_image
+      non_default: {}
+      optional_params: {}
+      input: hello
+      inference_params:
+        inputText: override
+  - bedrock_other_titan_embeddings:
+      function: titan_multimodal_image
+      non_default: {}
+      optional_params: {}
+      input: "data:image/png;base64,aGVsbG8="
+      inference_params:
+        inputImage: replace
+        inputText: both
+env: {}
+compare:
+  ignore: []
