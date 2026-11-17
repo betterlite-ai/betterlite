@@ -25,6 +25,8 @@ use super::super::driver::ChatResponseStream;
 use super::super::source::{AsyncChunkStream, ChunkStream};
 
 pub(super) type Received = Arc<Mutex<Vec<Vec<IndexMap<String, Json>>>>>;
+pub(super) type SyncStream = ChatResponseStream<Scripted, FixtureAssembly>;
+pub(super) type Fixture<C> = (ChatResponseStream<C, FixtureAssembly>, Received);
 
 pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is JSON")
@@ -68,7 +70,7 @@ pub(super) struct Scripted {
 impl Scripted {
     pub(super) fn new(chunks: Vec<Result<Json, StreamFailure>>) -> Self {
         Self {
-            chunks: chunks.into(),
+            chunks: VecDeque::from(chunks),
             pulls: Arc::new(AtomicUsize::new(0)),
             released: Arc::new(AtomicBool::new(false)),
         }
@@ -95,14 +97,11 @@ impl ChunkStream for Scripted {
     }
 }
 
-pub(super) struct AsyncScripted {
-    pub(super) inner: Scripted,
-}
-
+// The same script drives both iterators, so a pull count means the same on either side
 #[async_trait]
-impl AsyncChunkStream for AsyncScripted {
+impl AsyncChunkStream for Scripted {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
-        <Scripted as ChunkStream>::next_chunk(&mut self.inner)
+        <Scripted as ChunkStream>::next_chunk(self)
     }
 }
 
@@ -192,7 +191,7 @@ fn chat(content: &str, finish: &str, tool: Option<(&str, &str, &str)>) -> Respon
     }))
 }
 
-fn build<C>(
+pub(super) fn build<C>(
     source: C,
     reply: Reply,
     request: &str,
@@ -224,24 +223,8 @@ pub(super) fn driver(
     reply: Reply,
     request: &str,
     ids: &[&str],
-) -> (ChatResponseStream<Scripted, FixtureAssembly>, Received) {
+) -> Fixture<Scripted> {
     build(Scripted::new(chunks), reply, request, ids, None)
-}
-
-pub(super) fn driver_with_metadata(
-    chunks: Vec<Result<Json, StreamFailure>>,
-    reply: Reply,
-    request: &str,
-    ids: &[&str],
-    litellm_metadata: IndexMap<String, Json>,
-) -> (ChatResponseStream<Scripted, FixtureAssembly>, Received) {
-    build(
-        Scripted::new(chunks),
-        reply,
-        request,
-        ids,
-        Some(litellm_metadata),
-    )
 }
 
 pub(super) fn driver_with_source(
@@ -249,47 +232,32 @@ pub(super) fn driver_with_source(
     reply: Reply,
     request: &str,
     ids: &[&str],
-) -> (ChatResponseStream<Scripted, FixtureAssembly>, Received) {
+) -> Fixture<Scripted> {
     build(source, reply, request, ids, None)
 }
 
-pub(super) fn async_driver(
-    chunks: Vec<Result<Json, StreamFailure>>,
-    reply: Reply,
-    request: &str,
-    ids: &[&str],
-) -> (ChatResponseStream<AsyncScripted, FixtureAssembly>, Received) {
-    build(
-        AsyncScripted {
-            inner: Scripted::new(chunks),
-        },
-        reply,
-        request,
-        ids,
-        None,
-    )
+// The length guard turns a driver that never ends into a failure instead of a hung test
+fn record(seen: &mut Vec<Json>, event: &KnownResponseEvent) {
+    seen.push(event_json(event));
+    assert!(seen.len() < 64, "the stream ends");
 }
 
-pub(super) fn drain(stream: &mut ChatResponseStream<Scripted, FixtureAssembly>) -> Vec<Json> {
+pub(super) fn drain(stream: &mut SyncStream) -> Vec<Json> {
     let mut seen = Vec::new();
     while let Some(event) = stream.next_event().expect("the stream does not fail") {
-        seen.push(event_json(&event));
-        assert!(seen.len() < 64, "the stream ends");
+        record(&mut seen, &event);
     }
     seen
 }
 
-pub(super) async fn drain_async(
-    stream: &mut ChatResponseStream<AsyncScripted, FixtureAssembly>,
-) -> Vec<Json> {
+pub(super) async fn drain_async(stream: &mut SyncStream) -> Vec<Json> {
     let mut seen = Vec::new();
     while let Some(event) = stream
         .next_event_async()
         .await
         .expect("the stream does not fail")
     {
-        seen.push(event_json(&event));
-        assert!(seen.len() < 64, "the stream ends");
+        record(&mut seen, &event);
     }
     seen
 }

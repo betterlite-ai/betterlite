@@ -2,14 +2,15 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::api::response_id_codecs::response::decode_response_id;
 
 use super::super::error::ChatResponseStreamError;
 use super::super::prime;
 use super::fixtures::{
-    Reply, Scripted, async_driver, drain, drain_async, driver, driver_with_source, event_json,
-    field, json, kinds, sequence,
+    Reply, Scripted, drain, drain_async, driver, driver_with_source, event_json, field, json,
+    kinds, sequence,
 };
 
 const CONTENT_HI: &str = r#"{"id":"chat_a","created":0,"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
@@ -93,22 +94,19 @@ fn driver_primed_identity_and_text_order() {
     assert_eq!(deltas, [Json::Text(String::from("hi"))]);
 }
 
-#[test]
-fn driver_priming_uses_the_generated_id_without_a_usable_upstream_id() {
-    for first in [
-        r#"{"id":5,"created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#,
-        r#"{"id":"","created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#,
-    ] {
-        let (mut stream, _received) = driver(
-            vec![Ok(json(first)), Ok(json(FINISH_STOP))],
-            Reply::Text,
-            "{}",
-            &["u1", "u2", "u3"],
-        );
-        let events = drain(&mut stream);
-        assert_eq!(decoded_response_id(&events[0]), "resp_u1");
-        assert_eq!(decoded_response_id(&events[8]), "resp_u1");
-    }
+#[rstest]
+#[case::numeric_id(r#"{"id":5,"created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#)]
+#[case::empty_id(r#"{"id":"","created":0,"choices":[{"index":0,"delta":{"content":"hi"}}]}"#)]
+fn driver_priming_uses_the_generated_id_without_a_usable_upstream_id(#[case] first: &str) {
+    let (mut stream, _received) = driver(
+        vec![Ok(json(first)), Ok(json(FINISH_STOP))],
+        Reply::Text,
+        "{}",
+        &["u1", "u2", "u3"],
+    );
+    let events = drain(&mut stream);
+    assert_eq!(decoded_response_id(&events[0]), "resp_u1");
+    assert_eq!(decoded_response_id(&events[8]), "resp_u1");
 }
 
 #[test]
@@ -137,10 +135,10 @@ fn driver_priming_keeps_the_first_adopted_id() {
         "{}",
         &["u1"],
     );
-    prime::prime_response_id(&mut stream.state.progress, &mut stream.source)
+    prime::prime_id(&mut stream.state.progress, &mut stream.source)
         .expect("the first chunk primes the stream");
     stream.state.progress.response_id_primed = false;
-    prime::prime_response_id(&mut stream.state.progress, &mut stream.source)
+    prime::prime_id(&mut stream.state.progress, &mut stream.source)
         .expect("the second chunk primes the stream again");
     assert_eq!(
         stream.state.progress.cached_response_id.as_deref(),
@@ -168,17 +166,34 @@ fn driver_priming_latches_eof_without_another_read() {
 
 #[tokio::test]
 async fn driver_async_priming_latches_eof_without_another_read() {
-    let (mut stream, _received) = async_driver(Vec::new(), Reply::None, "{}", &["u1"]);
+    let (mut stream, _received) = driver(Vec::new(), Reply::None, "{}", &["u1"]);
     let events = drain_async(&mut stream).await;
     assert_eq!(kinds(&events), ["response.created", "response.in_progress"]);
     assert_eq!(decoded_response_id(&events[0]), "resp_u1");
     assert_eq!(
-        stream.source.inner.pulls.load(Ordering::SeqCst),
+        stream.source.pulls.load(Ordering::SeqCst),
         1,
         "EOF is latched after one asynchronous read"
     );
     assert!(stream.state.progress.upstream_exhausted);
     assert!(stream.state.progress.finished);
+}
+
+#[tokio::test]
+async fn driver_async_priming_adopts_the_upstream_id() {
+    let (mut stream, _received) = driver(
+        vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))],
+        Reply::Text,
+        "{}",
+        &["u1", "u2", "u3"],
+    );
+    let events = drain_async(&mut stream).await;
+    assert_eq!(decoded_response_id(&events[0]), "chat_a");
+    assert_eq!(
+        decoded_response_id(events.last().expect("the stream ends with an event")),
+        "chat_a",
+        "the completed response keeps the primed identity"
+    );
 }
 
 #[test]

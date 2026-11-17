@@ -7,7 +7,7 @@ use crate::api::messages_stream_split::errors::StreamFailure;
 
 use super::super::error::ChatResponseStreamError;
 use super::fixtures::{
-    Reply, Scripted, async_driver, drain, drain_async, driver, driver_with_source, json, kinds,
+    Reply, Scripted, drain, drain_async, driver, driver_with_source, json, kinds,
 };
 
 const CONTENT_HI: &str = r#"{"id":"chat_a","created":0,"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
@@ -49,7 +49,7 @@ fn driver_stream_failure_sets_finished_and_stops() {
 
 #[tokio::test]
 async fn driver_async_stream_failure_sets_finished_and_stops() {
-    let (mut stream, _received) = async_driver(
+    let (mut stream, _received) = driver(
         vec![
             Ok(json(CONTENT_HI)),
             Err(StreamFailure::Reported {
@@ -72,7 +72,7 @@ async fn driver_async_stream_failure_sets_finished_and_stops() {
     assert_eq!(seen, 5, "the text was emitted before the failure");
     assert!(matches!(error, ChatResponseStreamError::Stream { .. }));
     assert!(stream.state.progress.finished);
-    let pulls = stream.source.inner.pulls.load(Ordering::SeqCst);
+    let pulls = stream.source.pulls.load(Ordering::SeqCst);
     assert!(
         stream
             .next_event_async()
@@ -80,12 +80,12 @@ async fn driver_async_stream_failure_sets_finished_and_stops() {
             .expect("the failed stream stops")
             .is_none()
     );
-    assert_eq!(stream.source.inner.pulls.load(Ordering::SeqCst), pulls);
+    assert_eq!(stream.source.pulls.load(Ordering::SeqCst), pulls);
 }
 
 #[tokio::test]
 async fn driver_async_skips_a_null_chunk_after_priming() {
-    let (mut stream, _received) = async_driver(
+    let (mut stream, _received) = driver(
         vec![Ok(json(CONTENT_HI)), Ok(Json::Null), Ok(json(FINISH_STOP))],
         Reply::Text,
         "{}",
@@ -101,7 +101,7 @@ async fn driver_async_skips_a_null_chunk_after_priming() {
 
 #[tokio::test]
 async fn driver_async_priming_skips_a_null_chunk() {
-    let (mut stream, _received) = async_driver(
+    let (mut stream, _received) = driver(
         vec![Ok(Json::Null), Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))],
         Reply::Text,
         "{}",

@@ -5,6 +5,18 @@ use super::super::chunk;
 use super::fixtures::{field, json};
 
 #[test]
+fn chunk_helpers_read_the_first_choice_delta() {
+    let choice_less = json(r#"{"id":"chat_a","choices":[]}"#);
+    assert!(chunk::first_choice(&choice_less).is_none());
+    assert!(chunk::delta(&choice_less).is_none());
+    let no_delta = json(r#"{"id":"chat_a","choices":[{"index":0,"finish_reason":null}]}"#);
+    assert!(chunk::first_choice(&no_delta).is_some());
+    assert!(chunk::delta(&no_delta).is_none());
+    let empty_delta = json(r#"{"id":"chat_a","choices":[{"index":0,"delta":{}}]}"#);
+    assert!(chunk::delta(&empty_delta).is_some_and(indexmap::IndexMap::is_empty));
+}
+
+#[test]
 fn chunk_view_folds_hidden_params_and_hoists_usage() {
     let raw = r#"{"id":"chat_a","created":0,"model":"gpt-4o-mini","choices":[],"usage":null,"hidden_params":{"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5},"additional_headers":{"x":"y"}}}"#;
     let parsed: StreamChunk = serde_json::from_str(raw).expect("the chunk decodes");

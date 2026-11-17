@@ -2,9 +2,7 @@ use betterlite_models::decisions::Json;
 
 use crate::api::messages_stream_split::errors::StreamFailure;
 
-use super::fixtures::{
-    Reply, async_driver, drain, drain_async, driver, field, json, kinds, sequence,
-};
+use super::fixtures::{Reply, drain, drain_async, driver, field, json, kinds, sequence};
 
 const REASONING_A: &str = r#"{"id":"chat_a","choices":[{"index":0,"delta":{"reasoning_content":"a"},"finish_reason":null}]}"#;
 const REASONING_B: &str = r#"{"id":"chat_a","choices":[{"index":0,"delta":{"reasoning_content":"b"},"finish_reason":null}]}"#;
@@ -26,7 +24,7 @@ fn reasoning_chunks() -> Vec<Result<Json, StreamFailure>> {
 
 #[tokio::test]
 async fn driver_async_reasoning_closes_before_the_new_content() {
-    let (mut stream, _received) = async_driver(
+    let (mut stream, _received) = driver(
         reasoning_chunks(),
         Reply::Text,
         "{}",

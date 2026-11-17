@@ -1,10 +1,11 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use crate::api::response_id_codecs::response::{build_response_id, decode_response_id};
 
 use super::super::error::ChatResponseStreamError;
-use super::fixtures::{Reply, drain, driver, driver_with_metadata, field, json, kinds};
+use super::fixtures::{Reply, Scripted, build, drain, driver, field, json, kinds};
 
 const CONTENT_HI: &str = r#"{"id":"chat_a","created":0,"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}"#;
 const FINISH_STOP: &str =
@@ -267,12 +268,12 @@ fn metadata_with(model_info: Json) -> IndexMap<String, Json> {
 
 #[test]
 fn driver_metadata_model_id_encodes_the_completed_identity() {
-    let (mut stream, _received) = driver_with_metadata(
-        vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))],
+    let (mut stream, _received) = build(
+        Scripted::new(vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))]),
         Reply::Text,
         "{}",
         &["u1", "u2", "u3"],
-        metadata_with(json(r#"{"id":"model-1"}"#)),
+        Some(metadata_with(json(r#"{"id":"model-1"}"#))),
     );
     let events = drain(&mut stream);
     let response = field(events.last().expect("the stream emits events"), "response");
@@ -284,41 +285,41 @@ fn driver_metadata_model_id_encodes_the_completed_identity() {
     assert_eq!(decoded.response_id.as_deref(), Some("chat_a"));
 }
 
-#[test]
-fn driver_metadata_that_turns_invalid_after_the_created_event_fails_the_completion() {
-    for (model_info, expected) in [
-        (json("5"), "litellm_metadata.model_info"),
-        (json(r#"{"id":7}"#), "litellm_metadata.model_info.id"),
-    ] {
-        let (mut stream, _received) = driver_with_metadata(
-            vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))],
-            Reply::Text,
-            "{}",
-            &["u1"],
-            metadata_with(json(r#"{"id":"model-1"}"#)),
-        );
-        stream.next_event().expect("the created event builds");
-        stream.next_event().expect("the in-progress event builds");
-        stream.state.litellm_metadata = metadata_with(model_info);
-        let mut failure = None;
-        loop {
-            match stream.next_event() {
-                Ok(Some(_event)) => {}
-                Ok(None) => break,
-                Err(error) => {
-                    failure = Some(error);
-                    break;
-                }
+#[rstest]
+#[case::model_info_not_an_object(json("5"), "litellm_metadata.model_info")]
+#[case::model_id_not_a_string(json(r#"{"id":7}"#), "litellm_metadata.model_info.id")]
+fn driver_metadata_that_turns_invalid_after_the_created_event_fails_the_completion(
+    #[case] model_info: Json,
+    #[case] expected: &str,
+) {
+    let (mut stream, _received) = build(
+        Scripted::new(vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))]),
+        Reply::Text,
+        "{}",
+        &["u1"],
+        Some(metadata_with(json(r#"{"id":"model-1"}"#))),
+    );
+    stream.next_event().expect("the created event builds");
+    stream.next_event().expect("the in-progress event builds");
+    stream.state.litellm_metadata = metadata_with(model_info);
+    let mut failure = None;
+    loop {
+        match stream.next_event() {
+            Ok(Some(_event)) => {}
+            Ok(None) => break,
+            Err(error) => {
+                failure = Some(error);
+                break;
             }
         }
-        let Some(error) = failure else {
-            panic!("the metadata shape fails the completed response");
-        };
-        assert!(matches!(
-            error,
-            ChatResponseStreamError::Metadata { field } if field == expected
-        ));
     }
+    let Some(error) = failure else {
+        panic!("the metadata shape fails the completed response");
+    };
+    assert!(matches!(
+        error,
+        ChatResponseStreamError::Metadata { field } if field == expected
+    ));
 }
 
 #[test]

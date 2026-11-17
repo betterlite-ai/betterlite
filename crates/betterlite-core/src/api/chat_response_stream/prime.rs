@@ -6,39 +6,26 @@ use crate::api::chat_response_stream_tools::state::StreamProgress;
 use super::error::ChatResponseStreamError;
 use super::source::{AsyncChunkStream, ChunkStream};
 
+type PrimeResult = Result<(), ChatResponseStreamError>;
+
 // Pull the first chunk before response.created so that event carries the chat completion id
-pub fn prime_response_id<S: ChunkStream>(
-    progress: &mut StreamProgress,
-    source: &mut S,
-) -> Result<(), ChatResponseStreamError> {
-    if progress.response_id_primed {
+pub fn prime_id<S: ChunkStream>(progress: &mut StreamProgress, source: &mut S) -> PrimeResult {
+    if std::mem::replace(&mut progress.response_id_primed, true) {
         return Ok(());
     }
-    progress.response_id_primed = true;
-    loop {
-        let chunk = source
-            .next_chunk()
-            .map_err(|failure| ChatResponseStreamError::Stream { failure })?;
-        if settle(progress, chunk) {
-            return Ok(());
-        }
-    }
+    while !settle(progress, source.next_chunk()?) {}
+    Ok(())
 }
 
-pub async fn prime_response_id_async<S: AsyncChunkStream>(
+pub async fn prime_id_async<S: AsyncChunkStream>(
     progress: &mut StreamProgress,
     source: &mut S,
-) -> Result<(), ChatResponseStreamError> {
-    if progress.response_id_primed {
+) -> PrimeResult {
+    if std::mem::replace(&mut progress.response_id_primed, true) {
         return Ok(());
     }
-    progress.response_id_primed = true;
     loop {
-        let chunk = source
-            .next_chunk()
-            .await
-            .map_err(|failure| ChatResponseStreamError::Stream { failure })?;
-        if settle(progress, chunk) {
+        if settle(progress, source.next_chunk().await?) {
             return Ok(());
         }
     }

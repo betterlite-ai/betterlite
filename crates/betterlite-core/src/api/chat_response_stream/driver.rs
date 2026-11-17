@@ -20,6 +20,9 @@ use super::prime;
 use super::source::{AsyncChunkStream, ChunkStream};
 use super::translate;
 
+// Every pull answers with the next Responses event, with no event left, or with the stream's failure
+type EventResult = Result<Option<KnownResponseEvent>, ChatResponseStreamError>;
+
 // B923's iterator: the provider chunk stream in, the Responses API events out, one event per pull
 pub struct ChatResponseStream<C, Context = LoggingState> {
     pub state: ChatStreamState<Context>,
@@ -42,7 +45,7 @@ impl<C, Context> ChatResponseStream<C, Context> {
         })
     }
 
-    fn ready_event(&mut self) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    fn ready_event(&mut self) -> EventResult {
         if let Some(event) = return_default_initial_events(&mut self.state, &self.sources)? {
             return Ok(Some(event));
         }
@@ -85,38 +88,30 @@ impl<C, Context> ChatResponseStream<C, Context> {
         Ok(())
     }
 
-    fn finish_chunk(
-        &mut self,
-        chunk: &Json,
-    ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    fn finish_chunk(&mut self, chunk: &Json) -> EventResult {
         let event =
             translate::transform(&mut self.state, &self.sources, chunk, &mut self.annotations)?;
-        if let Some(event) = event {
-            self.state.progress.pending_response_events.push(event);
-        }
-        Ok(self
-            .state
-            .progress
-            .pending_response_events
-            .drain(..1)
-            .next())
+        self.state.progress.pending_response_events.extend(event);
+        Ok(self.state.progress.pending_response_events.pop_front())
     }
 
-    fn process(
-        &mut self,
-        chunk: &Json,
-    ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    fn process(&mut self, chunk: &Json) -> EventResult {
         self.begin_chunk(chunk)?;
         self.finish_chunk(chunk)
     }
 
-    fn process_async(
-        &mut self,
-        chunk: &Json,
-    ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    fn process_async(&mut self, chunk: &Json) -> EventResult {
         self.begin_chunk(chunk)?;
         translate::close_reasoning_segment(&mut self.state, &self.sources, chunk)?;
         self.finish_chunk(chunk)
+    }
+
+    // A buffered chunk comes before the source, and an exhausted stream never reads it again
+    fn buffered_chunk(&mut self) -> Option<Result<Option<Json>, ChatResponseStreamError>> {
+        if let Some(buffered) = self.state.progress.buffered_chunk.take() {
+            return Some(Ok(Some(buffered)));
+        }
+        self.state.progress.upstream_exhausted.then_some(Ok(None))
     }
 }
 
@@ -125,7 +120,7 @@ where
     Context: StreamAssembly,
 {
     // The assembly is the iteration's last step; a null one ends the stream without a completed event
-    fn end_of_stream(&mut self) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    fn end_of_stream(&mut self) -> EventResult {
         let event = finalize::common_done_event(&mut self.state, &self.sources)?;
         if event.is_none() {
             self.state.progress.finished = true;
@@ -139,39 +134,36 @@ where
     C: ChunkStream,
     Context: StreamAssembly,
 {
-    pub fn next_event(&mut self) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    pub fn next_event(&mut self) -> EventResult {
         self.advance()
             .inspect_err(|_error| self.state.progress.finished = true)
     }
 
-    fn advance(&mut self) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
-        loop {
-            if self.state.progress.finished {
-                return Ok(None);
-            }
-            prime::prime_response_id(&mut self.state.progress, &mut self.source)?;
-            if let Some(event) = self.ready_event()? {
-                return Ok(Some(event));
-            }
-            let Some(chunk) = self.next_chunk()? else {
-                return self.end_of_stream();
-            };
-            if let Some(event) = self.process(&chunk)? {
-                return Ok(Some(event));
-            }
+    // One turn: a queued event, or the one provider chunk that yields the next event
+    fn step(&mut self) -> EventResult {
+        prime::prime_id(&mut self.state.progress, &mut self.source)?;
+        if let Some(event) = self.ready_event()? {
+            return Ok(Some(event));
         }
+        let Some(chunk) = self.next_chunk()? else {
+            return self.end_of_stream();
+        };
+        self.process(&chunk)
+    }
+
+    fn advance(&mut self) -> EventResult {
+        let mut next = None;
+        while !self.state.progress.finished && next.is_none() {
+            next = self.step()?;
+        }
+        Ok(next)
     }
 
     fn next_chunk(&mut self) -> Result<Option<Json>, ChatResponseStreamError> {
-        if let Some(buffered) = self.state.progress.buffered_chunk.take() {
-            return Ok(Some(buffered));
+        if let Some(ready) = self.buffered_chunk() {
+            return ready;
         }
-        if self.state.progress.upstream_exhausted {
-            return Ok(None);
-        }
-        self.source
-            .next_chunk()
-            .map_err(|failure| ChatResponseStreamError::Stream { failure })
+        Ok(self.source.next_chunk()?)
     }
 }
 
@@ -192,9 +184,7 @@ where
     C: AsyncChunkStream + Send,
     Context: StreamAssembly,
 {
-    pub async fn next_event_async(
-        &mut self,
-    ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    pub async fn next_event_async(&mut self) -> EventResult {
         let result = self.advance_async().await;
         if result.is_err() {
             self.state.progress.finished = true;
@@ -202,14 +192,12 @@ where
         result
     }
 
-    async fn advance_async(
-        &mut self,
-    ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
+    async fn advance_async(&mut self) -> EventResult {
         loop {
             if self.state.progress.finished {
                 return Ok(None);
             }
-            prime::prime_response_id_async(&mut self.state.progress, &mut self.source).await?;
+            prime::prime_id_async(&mut self.state.progress, &mut self.source).await?;
             if let Some(event) = self.ready_event()? {
                 return Ok(Some(event));
             }
@@ -227,15 +215,9 @@ where
     }
 
     async fn next_chunk_async(&mut self) -> Result<Option<Json>, ChatResponseStreamError> {
-        if let Some(buffered) = self.state.progress.buffered_chunk.take() {
-            return Ok(Some(buffered));
+        if let Some(ready) = self.buffered_chunk() {
+            return ready;
         }
-        if self.state.progress.upstream_exhausted {
-            return Ok(None);
-        }
-        self.source
-            .next_chunk()
-            .await
-            .map_err(|failure| ChatResponseStreamError::Stream { failure })
+        Ok(self.source.next_chunk().await?)
     }
 }

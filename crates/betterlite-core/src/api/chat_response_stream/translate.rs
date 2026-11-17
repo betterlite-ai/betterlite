@@ -16,7 +16,9 @@ use crate::api::chat_response_stream_tools::error::StreamToolsError;
 use crate::api::chat_response_stream_tools::events::output_item_event;
 use crate::api::chat_response_stream_tools::items::has_signed_thinking_block;
 use crate::api::chat_response_stream_tools::reasoning::reasoning_ended;
-use crate::api::chat_response_stream_tools::state::{ChatStreamState, next_sequence};
+use crate::api::chat_response_stream_tools::state::{
+    ChatStreamState, StreamProgress, next_sequence,
+};
 use crate::api::chat_response_stream_tools::tool_calls::queue_tool_delta_events;
 use crate::api::responses_output_details::{ChatAnnotation, citation_fields};
 use crate::api::responses_tool_namespaces::values::has_value;
@@ -41,7 +43,7 @@ pub fn ensure_output_item_for_chunk<Context>(
     let delta = chunk::delta(chunk);
     if starts_reasoning(chunk) {
         state.progress.reasoning_active = true;
-        let item_id = reasoning_item_id(state, sources);
+        let item_id = reasoning_item_id(&mut state.progress, sources);
         state
             .progress
             .pending_response_events
@@ -78,7 +80,7 @@ pub fn close_reasoning_segment<Context>(
         return Ok(());
     }
     let content = state.progress.reasoning_content_parts.concat();
-    let item_id = reasoning_item_id(state, sources);
+    let item_id = reasoning_item_id(&mut state.progress, sources);
     for kind in [
         ReasoningDone::Text,
         ReasoningDone::Part,
@@ -99,11 +101,11 @@ pub fn transform<Context>(
     chunk: &Json,
     annotations: &mut VecDeque<KnownResponseEvent>,
 ) -> Result<Option<KnownResponseEvent>, ChatResponseStreamError> {
-    let item_id = message_item_id(state, sources);
+    let item_id = generated_id(&mut state.progress.cached_item_id, "msg", sources);
     let delta = chunk::delta(chunk);
     queue_first_annotations(state, &item_id, delta, annotations)?;
     if let Some(reasoning) = delta_text(delta, "reasoning_content")? {
-        let item_id = cached_reasoning_id(state, sources);
+        let item_id = generated_id(&mut state.progress.cached_reasoning_item_id, "rs", sources);
         return Ok(Some(KnownResponseEvent::ReasoningSummaryTextDelta(
             ReasoningSummaryTextDeltaEvent {
                 item_id,
@@ -161,35 +163,16 @@ fn delta_text<'chunk>(
     }
 }
 
-fn message_item_id<Context>(
-    state: &mut ChatStreamState<Context>,
-    sources: &EventSources,
-) -> String {
-    state
-        .progress
-        .cached_item_id
-        .get_or_insert_with(|| format!("msg_{}", (sources.ids)()))
+// A generated id the stream mints on first use and keeps for the rest of its life
+fn generated_id(slot: &mut Option<String>, prefix: &str, sources: &EventSources) -> String {
+    slot.get_or_insert_with(|| format!("{prefix}_{}", (sources.ids)()))
         .clone()
 }
 
-fn reasoning_item_id<Context>(
-    state: &mut ChatStreamState<Context>,
-    sources: &EventSources,
-) -> String {
-    let item_id = cached_reasoning_id(state, sources);
-    state.progress.reasoning_item_id = Some(item_id.clone());
+fn reasoning_item_id(progress: &mut StreamProgress, sources: &EventSources) -> String {
+    let item_id = generated_id(&mut progress.cached_reasoning_item_id, "rs", sources);
+    progress.reasoning_item_id = Some(item_id.clone());
     item_id
-}
-
-fn cached_reasoning_id<Context>(
-    state: &mut ChatStreamState<Context>,
-    sources: &EventSources,
-) -> String {
-    state
-        .progress
-        .cached_reasoning_item_id
-        .get_or_insert_with(|| format!("rs_{}", (sources.ids)()))
-        .clone()
 }
 
 fn reasoning_item(item_id: &str) -> Extra {
@@ -244,7 +227,9 @@ fn queue_first_annotations<Context>(
         Some(Json::List(items)) => items,
         Some(value) if !has_value(value) => return Ok(()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(StreamItemsError::AnnotationsNotList.into());
+            return Err(ChatResponseStreamError::from(
+                StreamItemsError::AnnotationsNotList,
+            ));
         }
     };
     if items.is_empty() {
