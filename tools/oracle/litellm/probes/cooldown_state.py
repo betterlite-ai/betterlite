@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Final, Literal, final
+from typing import Final, Literal, Protocol, final
 from unittest.mock import patch
 
 from litellm.caching.dual_cache import DualCache
@@ -12,15 +12,13 @@ from litellm.router_utils.health_state_cache import (
     DeploymentHealthCache,
     DeploymentHealthStateValue,
 )
-from litellm.types.router import AllowedFailsPolicy
+from litellm.types.router import AllowedFailsPolicy, RouterRateLimitError
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, Strict
 
-# ruff: noqa: SLF001
 # pyright: strict, reportMissingTypeStubs=false
-# pyright: reportPrivateUsage=false, reportUnknownMemberType=false
 
 API_KEY = "sk-probe"
 COOLDOWN_PREFIX: Final = "deployment:"
@@ -103,6 +101,16 @@ class KeptDeployment(TypedDict):
 KEPT: Final = TypeAdapter(list[KeptDeployment])
 
 
+class RouterView(Protocol):
+    async def async_get_healthy_deployments(
+        self,
+        model: str,
+        request_kwargs: dict[str, object],
+        *,
+        health_check_probe: bool = False,
+    ) -> list[dict[str, JsonValue]] | dict[str, JsonValue]: ...
+
+
 @final
 class FakeRedisStore:
     def __init__(self, values: dict[str, object]) -> None:
@@ -163,13 +171,14 @@ def model_entry(deployment: DeploymentInput) -> dict[str, object]:
     }
 
 
-def deployment_entry(deployment: DeploymentInput) -> dict[str, JsonValue]:
-    info: dict[str, JsonValue] = {"id": deployment.id}
-    return {"model_name": deployment.model_name, "model_info": info}
+def kept_ids(deployments: list[dict[str, JsonValue]] | dict[str, JsonValue]) -> list[str]:
+    entries: list[dict[str, JsonValue]] = [deployments] if isinstance(deployments, dict) else deployments
+    return [entry["model_info"]["id"] for entry in KEPT.validate_python(entries)]
 
 
-def local_expiry(store: DualCache, key: str) -> float | None:
-    return store.in_memory_cache.ttl_dict.get(key)
+async def local_expiry(store: DualCache, key: str) -> float | None:
+    expiry = await store.in_memory_cache.async_get_ttl(key)
+    return None if expiry is None else float(expiry)
 
 
 def active_view(model_id: str, value: CooldownCacheValue) -> ActiveView:
@@ -230,7 +239,7 @@ class Scenario:
             )
             return StepOutput(
                 kind=step.kind,
-                local_expiry=local_expiry(self.cooldowns.cooldown_store, cooldown_key(step.model_id)),
+                local_expiry=await local_expiry(self.cooldowns.cooldown_store, cooldown_key(step.model_id)),
             )
         if step.kind == "read":
             active = self.cooldowns.get_active_cooldowns(step.model_ids, None)
@@ -238,7 +247,7 @@ class Scenario:
                 kind=step.kind,
                 active=[active_view(model_id, value) for model_id, value in active],
                 local_expiries=[
-                    local_expiry(self.cooldowns.cooldown_store, cooldown_key(model_id))
+                    await local_expiry(self.cooldowns.cooldown_store, cooldown_key(model_id))
                     for model_id in step.model_ids
                 ],
             )
@@ -251,7 +260,9 @@ class Scenario:
             self.router.health_state_cache.set_deployment_health_states(states)
             return StepOutput(
                 kind=step.kind,
-                local_expiry=local_expiry(self.router.health_state_cache.cache, DeploymentHealthCache.CACHE_KEY),
+                local_expiry=await local_expiry(
+                    self.router.health_state_cache.cache, DeploymentHealthCache.CACHE_KEY
+                ),
             )
         if step.kind == "health":
             return StepOutput(
@@ -261,11 +272,17 @@ class Scenario:
         return StepOutput(kind=step.kind, kept=await self.kept(step))
 
     async def kept(self, step: Step) -> list[str]:
-        entries = [deployment_entry(deployment) for deployment in self.spec.deployments]
-        filtered: list[dict[str, JsonValue]] = await self.router._async_filter_health_check_unhealthy_deployments(
-            entries, parent_otel_span=None, health_check_probe=step.health_check_probe
-        )
-        return [entry["model_info"]["id"] for entry in KEPT.validate_python(filtered)]
+        router: RouterView = self.router
+        surviving: set[str] = set()
+        for deployment in self.spec.deployments:
+            try:
+                deployments = await router.async_get_healthy_deployments(
+                    deployment.model_name, {}, health_check_probe=step.health_check_probe
+                )
+            except RouterRateLimitError:  # the public entry reports an empty pool as this error
+                continue
+            surviving.update(kept_ids(deployments))
+        return [deployment.id for deployment in self.spec.deployments if deployment.id in surviving]
 
 
 class CooldownState(Operation):
