@@ -452,9 +452,12 @@ fn definitions_and_unions() {
     );
 }
 
+// serde_json refuses a request nested past 128 levels, so 120 is inside the parsed-input bound the walk meets.
+const DEEP_LEVELS: usize = 120;
+
 fn deep_schema() {
     let mut deep = Json::Object(object(r#"{"type": "object"}"#));
-    for _ in 0_usize..2000 {
+    for _ in 0_usize..DEEP_LEVELS {
         let mut node = object(r#"{"type": "object"}"#);
         node.insert(
             "properties".to_owned(),
@@ -485,7 +488,10 @@ fn deep_schema() {
         level = child;
         depth = depth.saturating_add(1);
     }
-    assert_eq!(depth, 2000, "every level of the deep schema is patched");
+    assert_eq!(
+        depth, DEEP_LEVELS,
+        "every level of the deep schema is patched"
+    );
 }
 
 fn source_is_not_mutated() {

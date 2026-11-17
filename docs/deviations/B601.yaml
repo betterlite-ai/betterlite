@@ -1,8 +1,5 @@
 task: B601
-deviations:
-- what: A response_format JSON schema nested deeper than CPython's recursion limit is walked to the bottom, where LiteLLM stops with RecursionError before the request is built.
-  why: The recursion is LiteLLM's implementation, not a promise to the caller; a schema that deep is still valid JSON, and a crash is nothing a working setup can rely on, so the same walk runs on an explicit stack and returns the patched schema.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L922-L955
+deviations: []
 kept_bugs:
 - what: A tool counts as computer use when its type starts with computer_use_preview, computer_, bash_ or text_editor_, so an ordinary function tool whose type happens to start with one of those prefixes is split out of the tool list and transformed instead of being sent as it is.
   why: LiteLLM decides by prefix on the type string rather than by a model or family test, and a setup that ships such a tool gets exactly that treatment, so the same classifier is carried.
