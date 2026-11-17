@@ -275,6 +275,8 @@ fn case_4_json_mode_message() {
     mixed_json_text();
     tool_only_message_has_no_content();
     reverse_map_runs_before_selection();
+    two_internal_json_tools_keep_the_first();
+    reverse_map_renames_the_second_projection();
 }
 
 fn pure_json_message() {
@@ -345,6 +347,37 @@ fn reverse_map_runs_before_selection() {
     assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
 }
 
+fn reverse_map_renames_the_second_projection() {
+    let source = body(
+        r#"[{"type":"text","text":"pre"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":1}},{"type":"tool_use","id":"r","name":"sanitized","input":{}}]"#,
+        "tool_use",
+    );
+    let reverse = r#"{"_anthropic_tool_name_map": {"sanitized": "caller.tool"}}"#;
+    let envelope = Scenario::new(&source)
+        .json_mode(true)
+        .litellm_params(reverse)
+        .run()
+        .envelope();
+    let choice = &envelope.choices[0];
+    assert_eq!(choice.message.content.as_deref(), Some("pre1"));
+    let tool_calls = choice.message.tool_calls.as_ref().expect("the real tool");
+    assert_eq!(tool_calls.len(), 1);
+    assert_eq!(tool_calls[0].function.name.as_deref(), Some("caller.tool"));
+    assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
+}
+
+fn two_internal_json_tools_keep_the_first() {
+    let source = body(
+        r#"[{"type":"text","text":"ignored"},{"type":"tool_use","id":"j1","name":"json_tool_call","input":{"values":{"a":1}}},{"type":"tool_use","id":"j2","name":"json_tool_call","input":{"values":{"b":2}}}]"#,
+        "max_tokens",
+    );
+    let envelope = Scenario::new(&source).json_mode(true).run().envelope();
+    let choice = &envelope.choices[0];
+    assert_eq!(choice.message.content.as_deref(), Some(r#"{"a": 1}"#));
+    assert_eq!(choice.message.tool_calls, None);
+    assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
+}
+
 #[test]
 fn case_5_prefix_prompt() {
     assert_eq!(get_prefix_prompt(&[]).unwrap(), None);
@@ -367,6 +400,14 @@ fn case_5_prefix_prompt() {
     existing_prefix_is_not_duplicated();
     the_flag_disables_the_prefix();
     an_empty_prefix_changes_nothing();
+    a_non_assistant_prefix_is_ignored();
+}
+
+fn a_non_assistant_prefix_is_ignored() {
+    let source = body(r#"[{"type":"text","text":"world"}]"#, "end_turn");
+    let messages = r#"[{"role":"user","content":"Pre ","prefix":true}]"#;
+    let envelope = Scenario::new(&source).messages(messages).run().envelope();
+    assert_eq!(content_of(&envelope), Some("world"));
 }
 
 fn prefixed() {
