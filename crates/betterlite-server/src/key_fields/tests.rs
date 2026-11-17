@@ -3,28 +3,26 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_db::resource_repository::config::ConfigParam;
-use betterlite_db::team_rows::member::BudgetLimitEntry;
 use betterlite_logging::private_json::error::PrivateJsonError;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use serde::de::DeserializeOwned;
 
-use super::adapters::{KeyListUserRow, LegacyDumpable, env_vars_param_value};
 use super::base::{GenerateRequestBase, KeyRequestBase};
 use super::broadcast::{BROADCAST_FIELDS, KeyUpdateFields};
-use super::bulk::{BulkUpdateKeyRequest, BulkUpdateKeyResponse, BulkUpdateTeamKeysRequest};
+use super::bulk::{BulkUpdateKeyRequest, BulkUpdateKeyResponse};
 use super::decode::{TypedValue, decode_key_request, decode_key_response, to_json};
 use super::error::DecodeError;
-use super::policy::{CustomKeyPolicyRequest, PolicyRequestBody};
 use super::regenerate::RegenerateKeyRequest;
 use super::request::GenerateKeyRequest;
 use super::response::GenerateKeyResponse;
 use super::shared::{hash_token_if_needed, with_settings_updated_at};
 use super::update::UpdateKeyRequest;
-use super::values::{IndexPermission, InsensitiveContains, LimitType, LiteLLMKeyType, MatchMode};
-use super::windows::{stored_budget_limit_windows, typed_budget_limit_windows};
+use super::values::{IndexPermission, LimitType, LiteLLMKeyType};
+
+mod adapters;
+mod policy;
+mod windows;
 
 fn value(text: &str) -> TypedValue {
     decode_key_request(text.as_bytes()).expect("a JSON object document")
@@ -98,6 +96,10 @@ fn base_field_defaults() {
             "object_permission",
         ],
     );
+}
+
+#[test]
+fn base_field_explicit_nulls() {
     let explicit = GenerateRequestBase::read(&value(
         r#"{"team_id": null, "models": null, "metadata": null, "spend": null, "object_permission": null}"#,
     ))
@@ -202,7 +204,7 @@ fn key_object_permission() {
 }
 
 #[test]
-fn key_field_defaults() {
+fn key_field_absent() {
     let request = KeyRequestBase::read(&value("{}")).expect("the key defaults");
     let fields = &request.key_fields;
     assert_eq!(fields.allowed_routes, Some(Some(Vec::new())));
@@ -226,7 +228,15 @@ fn key_field_defaults() {
         fields.access_group_ids.is_some(),
     ];
     assert!(!set.iter().any(|present| *present));
-    let resolved = request.project().expect("the projection").resolved;
+}
+
+#[test]
+fn key_field_defaults() {
+    let resolved = KeyRequestBase::read(&value("{}"))
+        .expect("the key defaults")
+        .project()
+        .expect("the projection")
+        .resolved;
     assert_field(&resolved, "allowed_routes", "[]");
     assert_null(
         &resolved,
@@ -577,7 +587,6 @@ fn response_json_fields() {
         r#"[{"budget_duration": "1d", "max_budget": 2.5}]"#,
     );
     let resolved = projection.resolved;
-    assert_eq!(resolved.len(), 59);
     assert_field(&resolved, "metadata", r#"{"a": 1}"#);
     assert_field(&resolved, "aliases", "{}");
     assert_field(&resolved, "config", "{}");
@@ -590,6 +599,28 @@ fn response_json_fields() {
         "budget_limits",
         r#"[{"budget_duration": "1d", "max_budget": 2.5, "reset_at": null}]"#,
     );
+    let Err(DecodeError::InvalidDictionary { field, .. }) =
+        GenerateKeyResponse::read(&value(r#"{"key": "k", "metadata": "{bad"}"#))
+    else {
+        panic!("malformed metadata");
+    };
+    assert_eq!(field, "metadata");
+    let Err(DecodeError::InvalidDictionary { field, .. }) =
+        GenerateKeyResponse::read(&value(r#"{"key": "k", "budget_limits": "{bad"}"#))
+    else {
+        panic!("malformed budget_limits");
+    };
+    assert_eq!(field, "budget_limits");
+}
+
+#[test]
+fn response_default_fields() {
+    let resolved = GenerateKeyResponse::read(&value(r#"{"key": "k"}"#))
+        .expect("the response defaults")
+        .project()
+        .expect("the projection")
+        .resolved;
+    assert_eq!(resolved.len(), 59);
     assert_null(
         &resolved,
         &[
@@ -612,18 +643,10 @@ fn response_json_fields() {
             "user_id",
         ],
     );
-    let Err(DecodeError::InvalidDictionary { field, .. }) =
-        GenerateKeyResponse::read(&value(r#"{"key": "k", "metadata": "{bad"}"#))
-    else {
-        panic!("malformed metadata");
-    };
-    assert_eq!(field, "metadata");
-    let Err(DecodeError::InvalidDictionary { field, .. }) =
-        GenerateKeyResponse::read(&value(r#"{"key": "k", "budget_limits": "{bad"}"#))
-    else {
-        panic!("malformed budget_limits");
-    };
-    assert_eq!(field, "budget_limits");
+}
+
+#[test]
+fn response_json_nulls() {
     let nulled = GenerateKeyResponse::read(&value(
         r#"{"key": "k", "metadata": "null", "budget_limits": "null"}"#,
     ))
@@ -714,92 +737,6 @@ fn explicit_null_patch() {
 }
 
 #[test]
-fn selection_exclusive() {
-    assert!(matches!(
-        BulkUpdateTeamKeysRequest::read(&value(
-            r#"{"team_id": "t", "key_ids": ["k"], "all_keys_in_team": true, "update_fields": {"tags": []}}"#
-        )),
-        Err(DecodeError::SelectionConflict)
-    ));
-    assert!(matches!(
-        BulkUpdateTeamKeysRequest::read(&value(
-            r#"{"team_id": "t", "update_fields": {"tags": []}}"#
-        )),
-        Err(DecodeError::SelectionMissing)
-    ));
-    let request = BulkUpdateTeamKeysRequest::read(&value(
-        r#"{"team_id": "t", "key_ids": [], "all_keys_in_team": true, "update_fields": {"tags": []}}"#,
-    ))
-    .expect("all keys with an empty key list");
-    let resolved = request.resolved_object().expect("the request dump");
-    assert_eq!(resolved.len(), 4);
-    assert_field(&resolved, "all_keys_in_team", "true");
-    assert_field(&resolved, "key_ids", "[]");
-    let Some(JsonData::Object(updates)) = resolved.get("update_fields") else {
-        panic!("update_fields is an object");
-    };
-    assert_eq!(updates.len(), 17);
-    assert_field(updates, "tags", "[]");
-    let missing_team = BulkUpdateTeamKeysRequest::read(&value(
-        r#"{"key_ids": ["k"], "update_fields": {"tags": []}}"#,
-    ));
-    assert!(missing_team.is_err());
-}
-
-#[test]
-fn custom_policy_record() {
-    let generate = CustomKeyPolicyRequest::read(&value(
-        r#"{"operation": "generate", "existing_key": null, "effective_key": {}, "request": {"team_id": "t"}}"#,
-    ))
-    .expect("a generate policy record");
-    let projection = generate.project().expect("the policy projection");
-    assert_field(&projection, "operation", r#""generate""#);
-    assert_field(&projection, "request_kind", r#""GenerateKeyRequest""#);
-    assert!(matches!(generate.request, PolicyRequestBody::Generate(_)));
-    let update = CustomKeyPolicyRequest::read(&value(concat!(
-        r#"{"operation": "update", "existing_key": {"token": "k"}, "effective_key": {},"#,
-        r#" "request": {"key": "k", "temp_budget_increase": null, "temp_budget_expiry": null}}"#
-    )))
-    .expect("an update policy record");
-    assert!(matches!(update.request, PolicyRequestBody::Update(_)));
-    let rotated = CustomKeyPolicyRequest::read(&value(
-        r#"{"operation": "regenerate", "existing_key": null, "effective_key": {}, "request": {"new_key": "n"}}"#,
-    ))
-    .expect("a regenerate policy record");
-    assert!(matches!(rotated.request, PolicyRequestBody::Regenerate(_)));
-    let tied = CustomKeyPolicyRequest::read(&value(
-        r#"{"operation": "generate", "existing_key": null, "effective_key": {}, "request": {"key": "k"}}"#,
-    ))
-    .expect("a tied union");
-    assert!(matches!(tied.request, PolicyRequestBody::Generate(_)));
-}
-
-#[test]
-fn custom_policy_rejects() {
-    assert!(matches!(
-        CustomKeyPolicyRequest::read(&value(
-            r#"{"operation": "generate", "effective_key": {}, "request": {}}"#
-        )),
-        Err(DecodeError::MissingField {
-            field: "existing_key"
-        })
-    ));
-    assert!(
-        CustomKeyPolicyRequest::read(&value(
-            r#"{"operation": "rotate", "existing_key": null, "effective_key": {}, "request": {}}"#
-        ))
-        .is_err()
-    );
-    assert!(matches!(
-        CustomKeyPolicyRequest::read(&value(concat!(
-            r#"{"operation": "generate", "existing_key": null, "effective_key": {},"#,
-            r#" "request": {"default_estimated_output_tokens": 0}}"#
-        ))),
-        Err(DecodeError::RequestUnion)
-    ));
-}
-
-#[test]
 fn settings_stamp_overwrites() {
     let body = object(r#"{"a": 1, "settings_updated_at": "old"}"#);
     let now: DateTime<Utc> = "2030-01-01T00:00:00Z".parse().expect("a fixed clock");
@@ -840,108 +777,6 @@ fn bare_hash_passthrough() {
 }
 
 #[test]
-fn stored_windows_empty() {
-    assert_eq!(
-        stored_budget_limit_windows(None).expect("no stored value"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data("null"))).expect("null"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data("false"))).expect("false"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data("0"))).expect("zero"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data(r#""""#))).expect("empty text"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data("[]"))).expect("empty list"),
-        Vec::new()
-    );
-    assert_eq!(
-        stored_budget_limit_windows(Some(&json_data("{}"))).expect("empty object"),
-        Vec::new()
-    );
-}
-
-#[test]
-fn stored_windows_json() {
-    let stored = JsonData::String(r#"[{"budget_duration": "1d", "max_budget": 2.5}]"#.to_owned());
-    let windows = stored_budget_limit_windows(Some(&stored)).expect("JSON text");
-    assert_eq!(
-        windows,
-        vec![object(r#"{"budget_duration": "1d", "max_budget": 2.5}"#)]
-    );
-    let listed = json_data(r#"[{"budget_duration": "1d", "max_budget": 2.5}]"#);
-    let same = stored_budget_limit_windows(Some(&listed)).expect("a parsed list");
-    assert_eq!(same, windows);
-}
-
-#[test]
-fn stored_windows_typed() {
-    let entry: BudgetLimitEntry = decode_value(&json_data(
-        r#"{"budget_duration": "1d", "max_budget": 2.5}"#,
-    ))
-    .expect("a typed window");
-    let windows = typed_budget_limit_windows(Some(&[entry])).expect("typed entries");
-    assert_eq!(
-        windows,
-        vec![object(
-            r#"{"budget_duration": "1d", "max_budget": 2.5, "reset_at": null}"#
-        )]
-    );
-    assert_eq!(
-        typed_budget_limit_windows(Some(&[])).expect("no entries"),
-        Vec::new()
-    );
-    assert_eq!(
-        typed_budget_limit_windows(None).expect("no list"),
-        Vec::new()
-    );
-}
-
-#[test]
-fn stored_windows_invalid() {
-    let broken = JsonData::String("{bad".to_owned());
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&broken)),
-        Err(DecodeError::StoredWindowsJson(_))
-    ));
-    let not_a_list = JsonData::String("null".to_owned());
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&not_a_list)),
-        Err(DecodeError::StoredWindowsNotAList)
-    ));
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&json_data("true"))),
-        Err(DecodeError::StoredWindowsNotAList)
-    ));
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&json_data("5"))),
-        Err(DecodeError::StoredWindowsNotAList)
-    ));
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&json_data(r#"{"a": 1}"#))),
-        Err(DecodeError::StoredWindowsNotAList)
-    ));
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&json_data(r#"["x"]"#))),
-        Err(DecodeError::StoredWindowsUnsupported { index: 0 })
-    ));
-    assert!(matches!(
-        stored_budget_limit_windows(Some(&json_data(r#"[{}, "x"]"#))),
-        Err(DecodeError::StoredWindowsUnsupported { index: 1 })
-    ));
-}
-
-#[test]
 fn key_body_limits() {
     let oversized = vec![b' '; 1_048_577];
     assert!(matches!(
@@ -963,75 +798,6 @@ fn key_body_limits() {
         Err(DecodeError::NotAnObject)
     ));
     assert!(decode_key_request(b"{}").is_ok());
-}
-
-#[test]
-fn user_row_view() {
-    let row: LiteLLMUserTable = serde_json::from_str(
-        r#"{"user_id": "u", "user_alias": "al", "user_email": "e@example.com", "spend": 1.5}"#,
-    )
-    .expect("a user row");
-    assert_eq!(row.user_id(), "u");
-    assert_eq!(row.user_alias(), Some("al"));
-    assert_eq!(row.user_email(), Some("e@example.com"));
-    let dumped = row.dumped().expect("the row dump");
-    assert_field(&dumped, "user_id", r#""u""#);
-    assert_field(&dumped, "user_alias", r#""al""#);
-}
-
-#[derive(serde::Serialize)]
-struct LegacyRow {
-    id: String,
-}
-
-#[test]
-fn legacy_dump() {
-    let row = LegacyRow { id: "r".to_owned() };
-    assert_eq!(
-        row.legacy_dict().expect("the legacy dump"),
-        object(r#"{"id": "r"}"#)
-    );
-}
-
-#[test]
-fn env_vars_param() {
-    let param = ConfigParam {
-        param_name: "environment_variables".to_owned(),
-        param_value: json_data(r#"{"A": "1", "B": "2"}"#),
-    };
-    assert_eq!(
-        env_vars_param_value(&param),
-        Some(BTreeMap::from([
-            ("A".to_owned(), "1".to_owned()),
-            ("B".to_owned(), "2".to_owned()),
-        ]))
-    );
-    let not_text = ConfigParam {
-        param_name: "environment_variables".to_owned(),
-        param_value: json_data(r#"{"A": 1}"#),
-    };
-    assert_eq!(env_vars_param_value(&not_text), None);
-}
-
-#[test]
-fn insensitive_contains() {
-    let filter = decode_value::<InsensitiveContains>(&json_data(
-        r#"{"contains": "abc", "mode": "insensitive"}"#,
-    ))
-    .expect("the search filter");
-    assert_eq!(filter.contains, "abc");
-    assert_eq!(filter.mode, MatchMode::Insensitive);
-    assert!(decode_value::<InsensitiveContains>(&json_data(r#"{"contains": "abc"}"#)).is_err());
-    assert!(
-        decode_value::<InsensitiveContains>(&json_data(
-            r#"{"contains": "abc", "mode": "sensitive"}"#
-        ))
-        .is_err()
-    );
-    assert_eq!(
-        to_json(&filter).expect("the filter dump"),
-        json_data(r#"{"contains": "abc", "mode": "insensitive"}"#)
-    );
 }
 
 #[rstest]
