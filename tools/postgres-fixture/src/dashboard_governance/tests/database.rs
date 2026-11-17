@@ -6,7 +6,7 @@ use tokio_postgres::{Client, NoTls};
 use crate::connection::{PostgresFixture, RandomDatabaseName};
 use crate::dashboard_governance::DashboardGovernanceSeed;
 use crate::seed::FixtureSeed;
-use crate::tests::postgres_server;
+use crate::tests::postgres_url;
 
 use super::support::{empty_dashboard, sample_seed, seed_with};
 
@@ -295,7 +295,7 @@ async fn tool_call_count(client: &Client) -> String {
 
 #[tokio::test]
 async fn governance_schema_and_rows() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let fixture = provision(&admin_url, &sample_seed()).await;
     let (client, driver) = connect(&fixture.options.url).await;
     assert_governance_schema(&client).await;
@@ -307,7 +307,7 @@ async fn governance_schema_and_rows() {
 
 #[tokio::test]
 async fn governance_databases_are_independent() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let seed = sample_seed();
     let first = provision(&admin_url, &seed).await;
     let second = provision(&admin_url, &seed).await;
@@ -404,7 +404,7 @@ async fn assert_empty_governance(admin_url: &SecretString) {
 
 #[tokio::test]
 async fn governance_empty_and_absent() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     assert_without_governance(&admin_url).await;
     assert_empty_governance(&admin_url).await;
 }

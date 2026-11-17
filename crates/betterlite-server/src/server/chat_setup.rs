@@ -107,6 +107,7 @@ pub fn chat_executor(
         mock_chat,
         mock_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
+        bundled_catalog: catalog,
     })
 }
 
