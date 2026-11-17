@@ -195,6 +195,11 @@ async fn driver_async_priming_adopts_the_upstream_id() {
         "chat_a",
         "the completed response keeps the primed identity"
     );
+    assert_eq!(
+        stream.source.pulls.load(Ordering::SeqCst),
+        3,
+        "the asynchronous end of the stream is latched too, so the terminal events stop pulling"
+    );
 }
 
 #[test]

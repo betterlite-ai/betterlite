@@ -142,7 +142,9 @@ where
         if let Some(ready) = self.buffered_chunk() {
             return ready;
         }
-        Ok(self.source.next_chunk()?)
+        let next = self.source.next_chunk()?;
+        self.state.progress.upstream_exhausted |= next.is_none();
+        Ok(next)
     }
 
     // Pull the first chunk before response.created so that event carries the chat completion id
@@ -211,7 +213,9 @@ where
         if let Some(ready) = self.buffered_chunk() {
             return ready;
         }
-        Ok(self.source.next_chunk().await?)
+        let next = self.source.next_chunk().await?;
+        self.state.progress.upstream_exhausted |= next.is_none();
+        Ok(next)
     }
 }
 
