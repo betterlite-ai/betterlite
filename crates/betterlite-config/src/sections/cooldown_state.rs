@@ -47,7 +47,7 @@ pub struct CooldownStateSettings {
     pub read_interval_seconds: f64,
 }
 
-// boxed so the loaded Config stays small enough for futures that hold it across an await
+// one pointer in Sections: the loaded Config sits in futures that await with it, and 24 inline bytes had tipped clippy's 16384-byte limit
 pub type Settings = Box<CooldownStateSettings>;
 
 // the staleness default is LiteLLM's DEFAULT_HEALTH_CHECK_INTERVAL at import time, times its staleness multiplier
