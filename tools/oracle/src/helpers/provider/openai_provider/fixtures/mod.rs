@@ -21,16 +21,18 @@ use betterlite_provider::openai_dispatch::call::{
 use betterlite_provider::openai_dispatch::dispatch::dispatch;
 use betterlite_provider::openai_dispatch::error::OpenAiProviderError;
 use betterlite_provider::openai_dispatch::fixtures::{
-    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply, fixed_id, fixed_now,
+    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply,
 };
 use betterlite_provider::openai_dispatch::transport::Deps;
 use betterlite_provider::operation::{
     ChatCompletion, OperationError, OperationRequest, OperationResult,
 };
+use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 // The header names the Python case records beside every name the call itself supplied
 const KEPT_HEADERS: [&str; 3] = ["authorization", "content-type", "openai-organization"];
@@ -111,6 +113,19 @@ pub(super) struct Case {
 
 const fn default_status() -> u16 {
     DEFAULT_STATUS
+}
+
+// The clock a projected text reply stamps its created field with, fixed so a case can compare it
+fn fixed_now() -> StreamInstant {
+    StreamInstant {
+        seconds: 1_700_000_000,
+        timestamp: 1_700_000_000.0,
+    }
+}
+
+// The identifier a projected text reply names itself with, fixed so a case can compare it
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(1)
 }
 
 pub(super) async fn dispatch_case(case: &Case) -> HelperResult {

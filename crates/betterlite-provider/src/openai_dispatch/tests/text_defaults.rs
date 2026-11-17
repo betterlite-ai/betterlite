@@ -1,3 +1,6 @@
+use betterlite_openai::text_completion_transport::logging::{
+    CompletionLogger as _, PostCallRecord, ResponseKind, SecretHeaders,
+};
 use secrecy::ExposeSecret as _;
 
 use super::support;
@@ -108,6 +111,8 @@ pub async fn check_transport_attempt() {
     .expect("the text dispatch");
     let attempts = text.attempts();
     assert_eq!(attempts.len(), 1);
+    // the transport opens every send through the logging port, so the pre_call is recorded
+    assert_eq!(logger.pre_calls.len(), 1);
     assert_eq!(
         attempts[0].base_url.as_deref(),
         Some("https://global.test/v1")
@@ -149,4 +154,21 @@ pub async fn check_transport_attempt() {
     assert_eq!(reply.usage.total_tokens, 2);
     // a synchronous text call is not an async one, so main.py logs no post_call
     assert!(logger.calls.is_empty());
+}
+
+// The completion port the transport may post through keeps the record it is handed.
+pub fn check_completion_post_call() {
+    let mut logger = FixtureLogger::default();
+    logger.post_call(PostCallRecord {
+        api_key: None,
+        original_response: serde_json::Value::Null,
+        kind: ResponseKind::DumpedDict,
+        headers: SecretHeaders::default(),
+        api_base: Some(String::from("https://global.test/v1")),
+    });
+    assert_eq!(logger.post_calls.len(), 1);
+    assert_eq!(
+        logger.post_calls[0].api_base.as_deref(),
+        Some("https://global.test/v1")
+    );
 }

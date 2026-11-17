@@ -10,12 +10,10 @@ use betterlite_openai::text_completion_transport::sdk::{
     ClientConstructor, ClientKind, HttpClientSource, RawCompletion, SdkArguments, SdkError,
     TextCompletionSdk,
 };
-use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use futures_util::StreamExt as _;
 use http::HeaderMap;
 use secrecy::SecretString;
-use uuid::Uuid;
 
 use crate::operation::OperationError;
 use crate::prepared::{PreparedRequest, Upstream};
@@ -67,21 +65,6 @@ impl RecordedRequest {
             .find(|(header, _value)| header == name)
             .map(|(_header, value)| value.as_str())
     }
-}
-
-// The clock a projected text reply stamps its created field with, fixed so a case can compare it
-#[must_use]
-pub fn fixed_now() -> StreamInstant {
-    StreamInstant {
-        seconds: 1_700_000_000,
-        timestamp: 1_700_000_000.0,
-    }
-}
-
-// The identifier a projected text reply names itself with, fixed so a case can compare it
-#[must_use]
-pub fn fixed_id() -> Uuid {
-    Uuid::from_u128(1)
 }
 
 // The chat and embedding answer a case supplies, with every prepared request it was handed.

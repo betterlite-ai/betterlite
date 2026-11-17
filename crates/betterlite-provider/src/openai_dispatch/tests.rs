@@ -70,6 +70,7 @@ async fn openai_dispatch_cases(#[case] family: Family) {
         Family::TextDefaults => {
             text_defaults::check_plan();
             text_defaults::check_transport_attempt().await;
+            text_defaults::check_completion_post_call();
         }
         Family::TextChatProjection => {
             text_chat_projection::check_projection_predicate();

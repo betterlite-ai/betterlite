@@ -9,8 +9,10 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object, OpenAiSettings};
 use betterlite_openai::text_completion_policy::TextCompletionSettings;
+use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use crate::openai_dispatch::OpenAiRequest;
 use crate::openai_dispatch::call::Credentials;
@@ -20,7 +22,7 @@ use crate::openai_dispatch::call::{
 use crate::openai_dispatch::dispatch::dispatch;
 use crate::openai_dispatch::error::OpenAiProviderError;
 use crate::openai_dispatch::fixtures::{
-    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply, fixed_id, fixed_now,
+    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply,
 };
 use crate::openai_dispatch::logging::LoggedCall;
 use crate::openai_dispatch::transport::Deps;
@@ -136,6 +138,19 @@ pub fn object_field<'body>(
         JsonValue::Object(nested) => nested,
         _other => panic!("{name} is an object"),
     }
+}
+
+// The clock a projected text reply stamps its created field with, fixed so a test can compare it
+fn fixed_now() -> StreamInstant {
+    StreamInstant {
+        seconds: 1_700_000_000,
+        timestamp: 1_700_000_000.0,
+    }
+}
+
+// The identifier a projected text reply names itself with, fixed so a test can compare it
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(1)
 }
 
 pub async fn dispatch_chat(
