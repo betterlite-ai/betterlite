@@ -107,16 +107,18 @@ impl From<Failure> for Box<HelperError> {
 // the class is stripped before the comparison, so it only names the Python failure a reader would see
 const fn error_class(failure: &Failure) -> &'static str {
     match failure {
-        Failure::Embedding(
-            BatchEmbeddingError::MissingInput { .. }
-            | BatchEmbeddingError::MultipleInputs { .. }
-            | BatchEmbeddingError::InputNotString { .. },
-        ) => "ValueError",
-        Failure::Embedding(
-            BatchEmbeddingError::TokenizedInput { .. }
-            | BatchEmbeddingError::UnsupportedModel { .. },
-        ) => "NotImplementedError",
-        Failure::Embedding(BatchEmbeddingError::Titan(_)) => "TypeError",
+        Failure::Embedding(error) => embedding_class(error),
         Failure::Registry(_) => "ValueError",
+    }
+}
+
+const fn embedding_class(error: &BatchEmbeddingError) -> &'static str {
+    match error {
+        BatchEmbeddingError::MissingInput { .. }
+        | BatchEmbeddingError::MultipleInputs { .. }
+        | BatchEmbeddingError::InputNotString { .. } => "ValueError",
+        BatchEmbeddingError::TokenizedInput { .. }
+        | BatchEmbeddingError::UnsupportedModel { .. } => "NotImplementedError",
+        BatchEmbeddingError::Titan(_) => "TypeError",
     }
 }
