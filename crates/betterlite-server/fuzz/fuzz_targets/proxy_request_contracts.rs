@@ -1,6 +1,5 @@
 #![no_main]
 
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_server::proxy_request_contracts::budget::{
     BudgetDeleteRequest, BudgetNewRequest, BudgetRequest,
 };
@@ -20,9 +19,10 @@ use betterlite_server::proxy_request_contracts::user::{
     UpdateUserFields, UpdateUserRequest,
 };
 use libfuzzer_sys::fuzz_target;
+use serde_json::Value;
 
 fuzz_target!(|bytes: &[u8]| {
-    let Ok(value) = serde_json::from_slice::<JsonValue>(bytes) else {
+    let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
         return;
     };
     drop(KeyRequest::from_value(&value));
