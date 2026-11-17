@@ -94,8 +94,11 @@ pub fn compile_insensitive_patterns(patterns: &[String]) -> Result<Vec<Regex>, S
 #[must_use]
 pub fn append_keywords(base: &[String], custom: &[String]) -> Vec<String> {
     let mut merged = base.to_vec();
-    let base_lowered: BTreeSet<String> =
-        base.iter().map(|keyword| keyword.to_lowercase()).collect();
+    let base_lowered: BTreeSet<String> = base
+        .iter()
+        .map(String::as_str)
+        .map(str::to_lowercase)
+        .collect();
     let custom_start = merged.len();
     for keyword in custom {
         let lowered = keyword.to_lowercase();
@@ -109,7 +112,7 @@ pub fn append_keywords(base: &[String], custom: &[String]) -> Vec<String> {
         match seen {
             Some(offset) => {
                 if let Some(slot) = merged.iter_mut().skip(custom_start).nth(offset) {
-                    *slot = keyword.clone();
+                    slot.clone_from(keyword);
                 }
             }
             None => merged.push(keyword.clone()),

@@ -51,7 +51,7 @@ pub fn ratio(hits: usize, saturation: usize) -> f64 {
 
 // a score exactly on a boundary belongs to the tier above it
 #[must_use]
-pub fn tier_for(score: f64, boundaries: TierBoundaries) -> ComplexityTier {
+pub const fn tier_for(score: f64, boundaries: TierBoundaries) -> ComplexityTier {
     if score < boundaries.simple_medium {
         ComplexityTier::Simple
     } else if score < boundaries.medium_complex {

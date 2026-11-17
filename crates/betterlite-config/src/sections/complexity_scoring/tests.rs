@@ -61,9 +61,7 @@ fn a_deployment_without_the_router_config_carries_none() {
     assert_eq!(settings(source, &[]).unwrap().deployments, [None]);
 }
 
-#[test]
-fn every_baseline_key_is_read() {
-    let keys = r#"        tier_models:
+const BASELINE_KEYS: &str = r#"        tier_models:
           SIMPLE: small-model
           MEDIUM: [pool-a, pool-b]
         complexity_thresholds:
@@ -81,6 +79,9 @@ fn every_baseline_key_is_read() {
         simple_keywords: [zeta]
         default_model: fallback-model
 "#;
+
+#[test]
+fn every_baseline_key_is_read() {
     let mut tier_models = BTreeMap::new();
     tier_models.insert("SIMPLE".to_owned(), single("small-model"));
     tier_models.insert(
@@ -103,7 +104,7 @@ fn every_baseline_key_is_read() {
         simple_keywords: Some(strings(&["zeta"])),
         default_model: Some("fallback-model".to_owned()),
     };
-    assert_eq!(only(keys, &[]).unwrap(), Some(expected));
+    assert_eq!(only(BASELINE_KEYS, &[]).unwrap(), Some(expected));
 }
 
 #[test]

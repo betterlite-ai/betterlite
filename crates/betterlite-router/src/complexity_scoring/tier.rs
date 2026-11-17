@@ -53,7 +53,7 @@ impl Tier {
     pub fn name(&self) -> &str {
         match self {
             Self::BuiltIn(tier) => tier.name(),
-            Self::Named(name) => name.as_str(),
+            Self::Named(name) => name,
         }
     }
 }

@@ -44,7 +44,7 @@ impl Dimension {
             Self::SimpleIndicators => "simpleIndicators",
             Self::MultiStepPatterns => "multiStepPatterns",
             Self::QuestionComplexity => "questionComplexity",
-            Self::Custom(name) => name.as_str(),
+            Self::Custom(name) => name,
         }
     }
 }

@@ -40,9 +40,9 @@ impl TierModelValue {
     // a pool with one model has the same single answer as a bare name
     fn model(&self) -> Option<&str> {
         match self {
-            Self::Single(model) => Some(model.as_str()),
+            Self::Single(model) => Some(model),
             Self::Pool(models) => match models.as_slice() {
-                [model] => Some(model.as_str()),
+                [model] => Some(model),
                 _ => None,
             },
         }
