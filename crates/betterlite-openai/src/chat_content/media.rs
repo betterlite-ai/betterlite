@@ -80,7 +80,7 @@ impl ChatContent<'_> {
         Source: RemoteMediaFetcher + Sync,
     {
         let recorded = RecordDownloads::default();
-        let recording = Self {
+        let recording = ChatContent {
             model: self.model,
             messages: self.messages,
             optional_params: self.optional_params,
@@ -112,7 +112,7 @@ impl ChatContent<'_> {
         Source: RemoteMediaFetcher + Sync,
     {
         let media = self.fetch_media(fetcher).await?;
-        let replay = Self {
+        let replay = ChatContent {
             model: self.model,
             messages: self.messages,
             optional_params: self.optional_params,

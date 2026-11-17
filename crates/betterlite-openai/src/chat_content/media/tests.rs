@@ -4,11 +4,11 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use rstest::rstest;
-use serde_json::Value;
+use serde_json::{Number, Value};
 use tokio::runtime::{Builder, Runtime};
 
 use super::{
@@ -80,11 +80,6 @@ impl Fixture {
             optional_params: Object::new(),
             environment: BTreeMap::new(),
         }
-    }
-
-    fn with_param(mut self, name: &str, value: Value) -> Self {
-        self.optional_params.insert(name.to_owned(), value);
-        self
     }
 
     fn content<'borrow>(
@@ -198,7 +193,10 @@ fn fetches_for_every_mode(#[case] mode: Mode) {
     let source = user_content(Value::Array(vec![file_item(REPORT)]));
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
-    let fixture = Fixture::new(&source).with_param("max_retries", serde_json::json!(3));
+    let mut fixture = Fixture::new(&source);
+    fixture
+        .optional_params
+        .insert("max_retries".to_owned(), Json::Number(Number::from(3_u64)));
     let body = fixture.body(mode, &fetcher);
     assert_eq!(fetcher.calls(), [REPORT]);
     assert_eq!(content_part(&body)["file"]["file_data"], DATA_URL);
