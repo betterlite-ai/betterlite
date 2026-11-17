@@ -38,6 +38,7 @@ pub(crate) struct TestServer {
     supported: Vec<ProtocolVersion>,
     instructions: &'static str,
     schemas: bool,
+    one_page: bool,
     pub(crate) listings: Arc<AtomicUsize>,
 }
 
@@ -48,6 +49,7 @@ impl TestServer {
             supported: ProtocolVersion::KNOWN_VERSIONS.to_vec(),
             instructions: INSTRUCTIONS,
             schemas: false,
+            one_page: false,
             listings: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -58,12 +60,19 @@ impl TestServer {
             supported: vec![ProtocolVersion::V_2025_06_18],
             instructions: INSTRUCTIONS,
             schemas: false,
+            one_page: false,
             listings: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub(crate) fn with_output_schemas(mut self) -> Self {
         self.schemas = true;
+        self
+    }
+
+    // A server whose first listing is complete and whose later ones have dropped the schema tools
+    pub(crate) fn with_one_page(mut self) -> Self {
+        self.one_page = true;
         self
     }
 
@@ -100,8 +109,18 @@ impl ServerHandler for TestServer {
         if context.meta.get_progress_token().is_none() {
             return Err(ErrorData::invalid_params("missing progress token", None));
         }
-        let _previous = self.listings.fetch_add(1, Ordering::SeqCst);
+        let previous = self.listings.fetch_add(1, Ordering::SeqCst);
         let cursor = request.and_then(|params| params.cursor);
+        if self.one_page {
+            let mut tools = vec![
+                Tool::new("alpha", "the first tool", JsonObject::new()),
+                Tool::new("beta", "the second tool", JsonObject::new()),
+            ];
+            if self.schemas && previous == 0 {
+                tools.extend(schema_tools());
+            }
+            return Ok(ListToolsResult::with_all_items(tools));
+        }
         let (mut tools, next) = match cursor.as_deref() {
             None => (
                 vec![

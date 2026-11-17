@@ -469,7 +469,7 @@ async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
 }
 
 #[tokio::test]
-async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
+async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
     let server = TestServer::standard().with_output_schemas();
     let listings = Arc::clone(&server.listings);
     let server = serve_http(server).await;
@@ -498,6 +498,40 @@ async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
     .await
     .unwrap();
     assert_eq!(text_of(&result), "structured");
-    // the second page is complete, so schema-ok left the cache and the call lists the first page again
+    // the page-2 request carried a cursor, so schema-ok keeps its cached schema and the call lists nothing
+    assert_eq!(listings.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
+    let server = TestServer::standard().with_output_schemas().with_one_page();
+    let listings = Arc::clone(&server.listings);
+    let server = serve_http(server).await;
+    let mut client = support::client_on(
+        Arc::new(support::runtime()),
+        support::settings(TransportType::Http),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let result = run_with_session(
+        &mut client,
+        async |session| {
+            let first = <SdkSession as McpSession>::list_tools(session, None)
+                .await
+                .unwrap();
+            assert_eq!(first.tools.len(), 8);
+            assert!(first.next_cursor.is_none());
+            let second = <SdkSession as McpSession>::list_tools(session, None)
+                .await
+                .unwrap();
+            assert_eq!(second.tools.len(), 2);
+            <SdkSession as McpSession>::call_tool(session, call("schema-ok")).await
+        },
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(text_of(&result), "structured");
+    // the second listing is complete and no longer names schema-ok, so the call lists the tools again
     assert_eq!(listings.load(Ordering::SeqCst), 3);
 }

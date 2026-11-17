@@ -85,7 +85,7 @@ async fn validate_tool_result(
         let ServerResult::ListToolsResult(listing) = response else {
             return Err(unexpected_response(&response));
         };
-        session.absorb_tool_listing(&listing);
+        session.absorb_tool_listing(None, &listing);
     }
     let schema = session
         .tool_output_schemas
@@ -124,7 +124,7 @@ impl McpSession for SdkSession {
             .map_err(session_failure)?;
         match response {
             ServerResult::ListToolsResult(result) => {
-                self.absorb_tool_listing(&result);
+                self.absorb_tool_listing(cursor, &result);
                 tool_page(&result).map_err(session_failure)
             }
             other => Err(session_failure(unexpected_response(&other))),
@@ -248,8 +248,8 @@ impl SdkSession {
         }
     }
 
-    // The SDK caches each listing's output schemas and drops the ones a complete listing no longer carries
-    fn absorb_tool_listing(&self, listing: &rmcp::model::ListToolsResult) {
+    // The SDK caches each listing's output schemas and drops the rest only when the request carried no cursor and no page follows
+    fn absorb_tool_listing(&self, cursor: Option<&str>, listing: &rmcp::model::ListToolsResult) {
         let mut schemas = self
             .tool_output_schemas
             .lock()
@@ -260,7 +260,7 @@ impl SdkSession {
                 tool.output_schema.as_deref().cloned(),
             );
         }
-        if listing.next_cursor.is_none() {
+        if cursor.is_none() && listing.next_cursor.is_none() {
             schemas.retain(|name, _| {
                 listing
                     .tools
