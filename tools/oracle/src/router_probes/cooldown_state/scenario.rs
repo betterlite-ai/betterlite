@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
@@ -117,10 +118,8 @@ impl<'case> Scenario<'case> {
                         step.cooldown_time.map(|time| time.0),
                     )
                     .map_err(|_error| ScenarioError::CooldownKey)?;
-                output.local_expiry = self
-                    .expiries(std::slice::from_ref(&step.model_id))?
-                    .pop()
-                    .flatten();
+                let model_ids = slice::from_ref(&step.model_id);
+                output.local_expiry = self.expiries(model_ids)?.pop().flatten();
             }
             StepKind::Read => {
                 let results = self.fetched(&step.model_ids).await?;
