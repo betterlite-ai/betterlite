@@ -96,11 +96,6 @@ fn invalid(error: &dyn StdError) -> OperationError {
     }
 }
 
-fn install(input: &Input) -> Result<ModelGeneralizations, OperationError> {
-    let bytes = serde_json::to_vec(&input.rules).map_err(|error| invalid(&error))?;
-    ModelGeneralizations::install(&bytes).map_err(|error| invalid(&error))
-}
-
 fn probe_info(info: Option<ModelInfo>) -> Result<Option<Json>, OperationError> {
     let Some(info) = info else {
         return Ok(None);
@@ -178,7 +173,8 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let service = install(input)?;
+    let bytes = serde_json::to_vec(&input.rules).map_err(|error| invalid(&error))?;
+    let service = ModelGeneralizations::install(&bytes).map_err(|error| invalid(&error))?;
     let mut results = Vec::with_capacity(input.queries.len());
     for query in &input.queries {
         results.push(answer(&service, query)?);
