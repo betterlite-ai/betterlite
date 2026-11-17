@@ -20,27 +20,28 @@ use crate::semantic_router::tests::support::{
     user_text, with_limit,
 };
 
-// the smallest config the parser accepts, padded to an exact byte length with trailing whitespace
-fn padded_config(len: usize) -> String {
-    let skeleton = r#"{"routes":[]}"#;
+// the smallest config each parser accepts, padded to an exact byte length with trailing whitespace
+const INLINE_SKELETON: &str = r#"{"routes":[]}"#;
+const FILE_SKELETON: &str = r#"{"encoder_type":"openai","encoder_name":"e","routes":[]}"#;
+
+fn padded_config(skeleton: &str, len: usize) -> String {
     assert!(
         len >= skeleton.len(),
         "the skeleton is the smallest padded config"
     );
     format!(
-        "{}{}",
-        skeleton,
+        "{skeleton}{}",
         " ".repeat(len.saturating_sub(skeleton.len()))
     )
 }
 
 #[test]
 fn an_inline_config_at_the_byte_limit_parses_and_one_byte_more_is_rejected() {
-    let at_limit = padded_config(ROUTE_INDEX_MAX_BYTES);
+    let at_limit = padded_config(INLINE_SKELETON, ROUTE_INDEX_MAX_BYTES);
     assert_eq!(at_limit.len(), ROUTE_INDEX_MAX_BYTES);
     let index = parse_inline(&at_limit).expect("a config at the byte limit parses");
     assert!(index.rows.is_empty());
-    let over = padded_config(ROUTE_INDEX_MAX_BYTES + 1);
+    let over = padded_config(INLINE_SKELETON, ROUTE_INDEX_MAX_BYTES + 1);
     let Err(error) = parse_inline(&over) else {
         panic!("a config one byte past the bound is rejected");
     };
@@ -55,11 +56,19 @@ fn an_inline_config_at_the_byte_limit_parses_and_one_byte_more_is_rejected() {
 fn a_config_file_at_the_byte_limit_parses_and_one_byte_more_is_rejected() {
     let directory = temporary_directory("file-bound");
     let at_limit = directory.join("at.json");
-    fs::write(&at_limit, padded_config(ROUTE_INDEX_MAX_BYTES)).unwrap();
+    fs::write(
+        &at_limit,
+        padded_config(FILE_SKELETON, ROUTE_INDEX_MAX_BYTES),
+    )
+    .unwrap();
     let index = load_file(&at_limit).expect("a file at the byte limit parses");
     assert!(index.rows.is_empty());
     let over = directory.join("over.json");
-    fs::write(&over, padded_config(ROUTE_INDEX_MAX_BYTES + 1)).unwrap();
+    fs::write(
+        &over,
+        padded_config(FILE_SKELETON, ROUTE_INDEX_MAX_BYTES + 1),
+    )
+    .unwrap();
     let Err(error) = load_file(&over) else {
         panic!("a file one byte past the bound is rejected");
     };
