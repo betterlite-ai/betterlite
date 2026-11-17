@@ -98,7 +98,7 @@ pub async fn transform<Source: RemoteMediaFetcher + Sync>(
     capabilities: &(dyn ModelCapabilityLookup + Sync),
     fetcher: &Source,
 ) -> Result<Transformed, BodyError> {
-    // the batch converter and the oracle adapters hold no GCS transport, so this entry skips the metadata pass
+    // the oracle adapters and any caller without a GCS client convert without the metadata pass
     convert_body(input, prepare_body(input, capabilities)?, fetcher).await
 }
 
