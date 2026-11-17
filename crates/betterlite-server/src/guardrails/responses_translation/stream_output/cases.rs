@@ -29,6 +29,7 @@ fn deliver_terminal_rewrites(
             rewrites.insert(*mapping, rewritten_text.clone());
         }
     }
+    // ast-grep-ignore: no-long-names
     stream_sync::sync_stream_events_with_rewrites(earlier, &rewrites);
     let mut empty: [Value; 0] = [];
     let output = match response.get_mut("output") {
@@ -43,6 +44,7 @@ fn deliver_terminal_rewrites(
         &answer.post,
         guardrail_name.unwrap_or("unknown"),
     )
+    .map_err(StreamOutputError::from)
 }
 
 pub(super) async fn terminal_scan<G>(

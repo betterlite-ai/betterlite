@@ -29,10 +29,13 @@ use crate::guardrails::responses_translation::stream_scan::{
     is_tool_call_stream_item, item_text,
 };
 use crate::guardrails::tool_call_identity::ToolCallShape;
-// ast-grep-ignore: no-long-names
 use delivery::{
-    tool_call_call_ids, tool_call_rewrite_map, undeliverable_tool_call_rewrite,
-    write_event_rewrites, write_item_rewrites,
+    tool_call_call_ids,
+    tool_call_rewrite_map,
+    // ast-grep-ignore: no-long-names
+    undeliverable_tool_call_rewrite,
+    write_event_rewrites,
+    write_item_rewrites,
 };
 use error::StreamSyncError;
 use positions::{placeable_positions, scanned_text_positions};

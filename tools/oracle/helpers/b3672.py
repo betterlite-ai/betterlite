@@ -3,6 +3,8 @@ from typing import Final, Literal, TypedDict
 
 from litellm.llms.openai.responses.guardrail_translation.handler import (
     OpenAIResponsesHandler,
+)
+from litellm.llms.openai.responses.guardrail_translation.handler import (
     _ToolCallShape as Shape,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L108-L110
 )
 from litellm.proxy.policy_engine.pipeline_executor import UndeliverableStreamRewrite
@@ -73,25 +75,18 @@ class DeliverCall(TypedDict):
 Input = EventCall | ScanKeyCall | SyncCall | SpreadCall | DeliverCall
 
 
-def string_so_far_answer(handler: OpenAIResponsesHandler, scenario: EventScenario) -> JsonValue:
-    text = handler.get_streaming_string_so_far(scenario["events"])
-    return JSON.validate_python({"string": text})
-
-
 def scan_key_answer(handler: OpenAIResponsesHandler, scenario: EventScenario) -> JsonValue:
     key = handler.get_streaming_scan_key(scenario["events"])
     if key is None:
-        return JSON.validate_python({"scan_key": None})
-    return JSON.validate_python(
-        {
-            "scan_key": {
-                "texts": list(key.texts),
-                "tool_calls": list(key.tool_calls),
-                "stream_ended": key.stream_ended,
-                "tool_calls_in_flight": key.tool_calls_in_flight,
-            }
+        return {"scan_key": None}
+    return {
+        "scan_key": {
+            "texts": list(key.texts),
+            "tool_calls": list(key.tool_calls),
+            "stream_ended": key.stream_ended,
+            "tool_calls_in_flight": key.tool_calls_in_flight,
         }
-    )
+    }
 
 
 def sync_answer(handler: OpenAIResponsesHandler, scenario: SyncScenario) -> JsonValue:
@@ -99,9 +94,9 @@ def sync_answer(handler: OpenAIResponsesHandler, scenario: SyncScenario) -> Json
     rewrites: dict[tuple[int, int], str] = {}
     for rewrite in scenario["rewrites"]:
         rewrites[(rewrite["output_index"], rewrite["content_index"])] = rewrite["text"]
-    sync_events = handler._sync_stream_events_with_rewrites  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1111-L1145
+    sync_events = handler._sync_stream_events_with_rewrites  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1111-L1145
     sync_events(stream_events=events, rewrites_by_position=MappingProxyType(rewrites))
-    return JSON.validate_python({"events": events})
+    return {"events": events}
 
 
 def spread_answer(handler: OpenAIResponsesHandler, scenario: SpreadScenario) -> JsonValue:
@@ -116,7 +111,7 @@ def spread_answer(handler: OpenAIResponsesHandler, scenario: SpreadScenario) -> 
         )
     except UndeliverableStreamRewrite as failure:
         error = str(failure)
-    return JSON.validate_python({"events": events, "error": error})
+    return {"events": events, "error": error}
 
 
 def deliver_answer(handler: OpenAIResponsesHandler, scenario: DeliverScenario) -> JsonValue:
@@ -131,7 +126,7 @@ def deliver_answer(handler: OpenAIResponsesHandler, scenario: DeliverScenario) -
         for item in scenario["post_guardrail_tool_calls"]
     )
     deliver = handler._deliver_ended_stream_tool_call_rewrites  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1161-L1247
-    envelope: JsonValue = JSON.validate_python({"response": {"output": output}})
+    envelope: JsonValue = {"response": {"output": output}}
     error: str | None = None
     try:
         deliver(
@@ -143,12 +138,15 @@ def deliver_answer(handler: OpenAIResponsesHandler, scenario: DeliverScenario) -
         )
     except UndeliverableStreamRewrite as failure:
         error = str(failure)
-    return JSON.validate_python({"events": events, "output": output, "error": error})
+    return {"events": events, "output": output, "error": error}
 
 
 def answers(call: Input, handler: OpenAIResponsesHandler) -> list[JsonValue]:
     if call["function"] == "string_so_far":
-        return [string_so_far_answer(handler, item) for item in call["scenarios"]]
+        return [
+            {"string": handler.get_streaming_string_so_far(item["events"])}
+            for item in call["scenarios"]
+        ]
     if call["function"] == "scan_key":
         return [scan_key_answer(handler, item) for item in call["scenarios"]]
     if call["function"] == "sync":

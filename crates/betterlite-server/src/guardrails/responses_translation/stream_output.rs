@@ -29,8 +29,10 @@ use serde_json::{Map, Value};
 use super::output_rewrite::error::OutputRewriteError;
 use super::output_rewrite::{ExtractedOutput, extract_output};
 use super::stream_scan::TERMINAL_ENVELOPE_EVENT_TYPES;
-use super::tool_call_identity::{ToolCallShape, post_guardrail_shapes, tool_call_shapes};
 use crate::guardrails::response_context::add_response_context;
+use crate::guardrails::tool_call_identity::{
+    ToolCallShape, post_guardrail_shapes, tool_call_shapes,
+};
 use cases::{item_done_scan, terminal_scan};
 use error::StreamOutputError;
 use fallback::fallback_scan;

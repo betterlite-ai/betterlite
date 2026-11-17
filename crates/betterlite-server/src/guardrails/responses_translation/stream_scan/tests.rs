@@ -18,8 +18,8 @@ fn delta(item_id: &str, output_index: u32, content_index: u32, value: &str) -> V
 #[test]
 fn string_so_far_uses_the_last_done_text_and_ignores_the_part_deltas() {
     let events = [
-        delta("m1", 0, 0, "Hel"),
-        delta("m1", 0, 0, "lo"),
+        delta("m1", 0, 0, "abc"),
+        delta("m1", 0, 0, "def"),
         json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "Hello"}),
         json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "Hello again"}),
     ];
@@ -209,8 +209,8 @@ fn scan_key_completed_envelope_without_output_has_no_contents(#[case] event: Val
 #[test]
 fn scan_key_running_stream_carries_the_string_so_far_and_no_tool_calls() {
     let events = [
-        delta("m1", 0, 0, "hel"),
-        delta("m1", 0, 0, "lo"),
+        delta("m1", 0, 0, "abc"),
+        delta("m1", 0, 0, "def"),
         json!({"type": "response.output_text.done", "item_id": "m1", "output_index": 0, "content_index": 0, "text": "hello"}),
     ];
     let key = streaming_scan_key(&events).unwrap();
