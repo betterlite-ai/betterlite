@@ -1,19 +1,13 @@
+use rstest::rstest;
+
 use crate::jwt_claims::TypedValue;
 use crate::jwt_claims::handler::JwtHandler;
-use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::sso_claims::access_token::process_sso_jwt_access_token;
 use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::RoleMappings;
 use crate::user_roles::UserRole;
 
-use super::support::{document, handler, identity, mappings, segment, strings, token};
-
-fn team_handler(field: &str) -> JwtHandler {
-    handler(JwtAuthSettings {
-        team_ids_jwt_field: Some(field.to_owned()),
-        ..JwtAuthSettings::default()
-    })
-}
+use super::support::{document, identity, mappings, segment, strings, team_handler, token};
 
 fn processed(
     access_token: Option<&str>,
@@ -63,18 +57,18 @@ fn a_token_whose_header_pyjwt_refuses_adds_nothing() {
     assert!(updated.unwrap().team_ids.is_empty());
 }
 
-#[test]
-fn a_missing_or_empty_token_adds_nothing() {
-    for access_token in [None, Some("")] {
-        let (updated, payload) = processed(
-            access_token,
-            Some(&team_handler("team_ids")),
-            Some(identity()),
-            None,
-        );
-        assert!(payload.is_none());
-        assert!(updated.is_some());
-    }
+#[rstest]
+#[case(None)]
+#[case(Some(""))]
+fn a_missing_or_empty_token_adds_nothing(#[case] access_token: Option<&str>) {
+    let (updated, payload) = processed(
+        access_token,
+        Some(&team_handler("team_ids")),
+        Some(identity()),
+        None,
+    );
+    assert!(payload.is_none());
+    assert!(updated.is_some());
 }
 
 #[test]

@@ -2,12 +2,12 @@ use crate::jwt_claims::claims::ClaimError;
 use crate::jwt_claims::handler::JwtHandler;
 use crate::jwt_claims::settings::JwtAuthSettings;
 use crate::sso_claims::claims::SsoClaimsError;
-use crate::sso_claims::convert::{ConversionConfig, convert_generic_response, normalize_email};
+use crate::sso_claims::convert::{ConversionConfig, convert_generic_response};
 use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::{RoleMappings, TeamMappings};
 use crate::user_roles::UserRole;
 
-use super::support::{attributes, claims, document, handler, mappings, strings};
+use super::support::{attributes, claims, document, handler, mappings, strings, team_handler};
 
 fn config<'config>(
     jwt_handler: &'config JwtHandler,
@@ -34,13 +34,6 @@ fn convert(
 fn plain(response: &str) -> OpenIdIdentity {
     let jwt_handler = handler(JwtAuthSettings::default());
     convert(response, &config(&jwt_handler, None, None, None), &[]).unwrap()
-}
-
-fn team_handler(field: &str) -> JwtHandler {
-    handler(JwtAuthSettings {
-        team_ids_jwt_field: Some(field.to_owned()),
-        ..JwtAuthSettings::default()
-    })
 }
 
 #[test]
@@ -88,12 +81,12 @@ fn custom_attribute_bindings_are_followed() {
 
 #[test]
 fn an_email_is_lowercased_and_a_missing_one_stays_absent() {
-    assert_eq!(
-        normalize_email(Some("User@Example.COM")),
-        Some("user@example.com".to_owned())
+    let converted = plain(
+        r#"{"preferred_username":"user-1","sub":"subject-1","email":"User@Example.COM","first_name":"First","last_name":"Last","provider":"generic"}"#,
     );
-    assert_eq!(normalize_email(Some("")), Some(String::new()));
-    assert_eq!(normalize_email(None), None);
+    assert_eq!(converted.email.as_deref(), Some("user@example.com"));
+    assert_eq!(plain(r#"{"email":""}"#).email.as_deref(), Some(""));
+    assert!(plain(r#"{"preferred_username":"user-1"}"#).email.is_none());
 }
 
 #[test]

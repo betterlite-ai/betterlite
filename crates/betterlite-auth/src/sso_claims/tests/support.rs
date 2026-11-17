@@ -42,6 +42,25 @@ pub(super) fn handler(settings: JwtAuthSettings) -> JwtHandler {
     handler
 }
 
+// a handler that reads teams from one claim, with every other setting left at its default
+pub(super) fn team_handler(field: &str) -> JwtHandler {
+    handler(JwtAuthSettings {
+        team_id_jwt_field: None,
+        team_ids_jwt_field: Some(field.to_owned()),
+        team_id_default: None,
+        team_alias_jwt_field: None,
+        org_id_jwt_field: None,
+        org_alias_jwt_field: None,
+        user_id_jwt_field: None,
+        user_email_jwt_field: None,
+        user_allowed_email_domain: None,
+        user_id_upsert: false,
+        end_user_id_jwt_field: None,
+        agent_id_jwt_field: None,
+        object_id_jwt_field: None,
+    })
+}
+
 pub(super) fn attributes(pairs: &[(&str, &str)]) -> ClaimAttributes {
     let environment = pairs
         .iter()

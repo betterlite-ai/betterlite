@@ -106,7 +106,7 @@ fn an_opaque_id_token_falls_through_to_the_access_token() {
 #[test]
 fn the_access_token_adds_keys_the_earlier_sources_lack() {
     let result = merged(
-        r#"{}"#,
+        "{}",
         None,
         Some(r#"{"team_ids":["at-1"],"role":"proxy_admin"}"#),
     );
