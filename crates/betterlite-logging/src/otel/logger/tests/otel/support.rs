@@ -10,7 +10,7 @@ use betterlite_config::sections::provider_url_destination::pattern::AllowedDesti
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
-use betterlite_logging::logging_pre_post::hooks::PreCallEvent;
+use betterlite_logging::logging_pre_post::hooks::{ApiCallLogger, PreCallEvent};
 use betterlite_logging::otel::config::destination::{
     DestinationFields, OtelDestination, SpanScope,
 };
@@ -21,7 +21,6 @@ use betterlite_logging::otel::emitter::span_emission::{DedupCache, SpanEmitter};
 use betterlite_logging::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
 use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
 use betterlite_logging::otel::logger::call_context::CallContext;
-use betterlite_logging::otel::logger::pre_call::log_pre_api_call;
 use betterlite_logging::otel::logger::v2::{
     OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource,
 };
@@ -349,15 +348,13 @@ pub(crate) fn pre_call(logger: &OpenTelemetryV2, call: PreCall<'_>) {
         call.auth,
     );
     let messages = Json::List(Vec::new());
-    log_pre_api_call(
-        logger,
-        &PreCallEvent {
+    logger
+        .log_pre_api_call(&PreCallEvent {
             model: call.model,
             messages: &messages,
             details: &details,
-        },
-    )
-    .expect("pre api call");
+        })
+        .expect("pre api call");
 }
 
 pub(crate) async fn success(logger: &OpenTelemetryV2, event: Arc<LoggerEvent>) {
