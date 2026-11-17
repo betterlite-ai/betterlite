@@ -1,0 +1,22 @@
+name: completions-stream-upstream-400
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: openai/gpt-3.5-turbo-instruct, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-completion-stream-400}
+  body: {model: text-model, prompt: Once upon a time, stream: true}
+upstream:
+  - status: 400
+    headers: {content-type: application/json, x-request-id: provider-prompt}
+    body: {error: {message: Invalid prompt, type: invalid_request_error, param: prompt, code: invalid}}
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own provider failure message}

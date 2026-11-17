@@ -21,12 +21,13 @@ use rand::rngs::StdRng;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::{StreamUsage, provider_stream, render};
+use crate::routes::completions::bridge::chat_stream_answer;
 use crate::server::chat_setup::chat_executor;
 
 fn deployment() -> ChatDeployment {
@@ -211,13 +212,13 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
     let executor =
         chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
     let deployment = executor.deployments[0].clone();
-    let request = ChatRequest::parse(request.as_bytes()).expect("chat request");
+    let parsed = ChatRequest::parse(request.as_bytes()).expect("chat request");
     let mut tasks = JoinSet::new();
     tasks.spawn(captured_request(listener));
     let upstream = provider_stream(
         &executor,
         &deployment,
-        &request,
+        &parsed,
         ControlOptions::default(),
         usage,
     )
@@ -231,8 +232,8 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
         .expect("captured request")
 }
 
-async fn captured_request(listener: TcpListener) -> Json {
-    let (mut socket, _) = listener.accept().await.expect("accepted");
+// the request head and body a fake provider reads before it answers
+async fn read_request(socket: &mut TcpStream) -> Vec<u8> {
     let mut received = Vec::new();
     while !received.ends_with(b"\r\n\r\n") {
         received.push(socket.read_u8().await.expect("request head"));
@@ -246,6 +247,12 @@ async fn captured_request(listener: TcpListener) -> Json {
         .expect("numeric length");
     let mut body = vec![0; length];
     socket.read_exact(&mut body).await.expect("request body");
+    body
+}
+
+async fn captured_request(listener: TcpListener) -> Json {
+    let (mut socket, _) = listener.accept().await.expect("accepted");
+    let body = read_request(&mut socket).await;
     // an empty event stream: the provider decodes a stream and the test reads only the request
     socket
         .write_all(
@@ -254,6 +261,87 @@ async fn captured_request(listener: TcpListener) -> Json {
         .await
         .expect("response head");
     serde_json::from_slice(&body).expect("request body json")
+}
+
+// the chat provider's two events, the last one left in the parser's buffer until the stream ends
+async fn chat_events(listener: TcpListener) {
+    let (mut socket, _) = listener.accept().await.expect("accepted");
+    let _request = read_request(&mut socket).await;
+    let events = concat!(
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"up-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hello\"},\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"up-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"world\"},\"finish_reason\":null}]}\n"
+    );
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{events}",
+        events.len()
+    );
+    socket
+        .write_all(response.as_bytes())
+        .await
+        .expect("response");
+}
+
+// the chat provider's events reach the text route as the chunks the client reads, restamped with the caller's model
+#[tokio::test]
+async fn chat_stream_answer_decodes_the_chat_events() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let source = format!(
+        "model_list:\n  - {{model_name: chat-model, litellm_params: {{model: openai/gpt-4o, api_base: 'http://{address}/v1', api_key: k}}}}\n"
+    );
+    let environment = BTreeMap::new();
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor");
+    let deployment = executor.deployments[0].clone();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(chat_events(listener));
+    let parsed = ChatRequest::parse(
+        br#"{"model":"chat-model","messages":[{"role":"user","content":"hi"}],"stream":true}"#,
+    )
+    .expect("chat request");
+    let upstream = provider_stream(
+        &executor,
+        &deployment,
+        &parsed,
+        ControlOptions::default(),
+        StreamUsage::Text,
+    )
+    .await
+    .expect("provider stream");
+    let answer = chat_stream_answer(upstream, Some("client"), false, Duration::ZERO);
+    let items = timeout(Duration::from_secs(5), answer.body.collect::<Vec<_>>())
+        .await
+        .expect("the stream ends within five seconds");
+    let chunks: Vec<Json> = items.into_iter().collect::<Result<_, _>>().expect("chunks");
+    assert_eq!(chunks.len(), 2, "{chunks:?}");
+    let first = serde_json::to_value(&chunks[0]).expect("value");
+    assert_eq!(
+        first.pointer("/model").and_then(serde_json::Value::as_str),
+        Some("client")
+    );
+    assert_eq!(
+        first
+            .pointer("/choices/0/delta/content")
+            .and_then(serde_json::Value::as_str),
+        Some("hello")
+    );
+    let second = serde_json::to_value(&chunks[1]).expect("value");
+    assert_eq!(
+        second
+            .pointer("/choices/0/delta/content")
+            .and_then(serde_json::Value::as_str),
+        Some("world")
+    );
+    tasks
+        .join_next()
+        .await
+        .expect("provider task")
+        .expect("provider");
 }
 
 fn text_field<'json>(body: &'json Json, name: &str) -> Option<&'json str> {
