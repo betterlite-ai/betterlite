@@ -126,10 +126,10 @@ struct Fixture {
 impl Fixture {
     fn new(target: Option<&str>, request_body: &str) -> Self {
         let mut headers = HeaderMap::new();
-        if let Some(header) = target {
+        if let Some(target_header) = target {
             headers.insert(
                 "x-amz-target",
-                HeaderValue::from_str(header).expect("a valid header value"),
+                HeaderValue::from_str(target_header).expect("a valid header value"),
             );
         }
         Self {
