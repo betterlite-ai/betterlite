@@ -1,0 +1,105 @@
+kind: helper
+name: bedrock-converse-params-top-k
+call:
+  bedrock_converse_params:
+    function: top_k
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      anthropic.claude-opus-4-1-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock}
+      cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+    inference_params: {topK: 20, top_k: 10, maxTokens: 512}
+    global_drop: false
+    call_drop: false
+calls:
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      inference_params: {top_k: 7, temperature: 0.5}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      inference_params: {topK: 8}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-opus-4-1-v1:0
+      model_cost:
+        anthropic.claude-opus-4-1-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      inference_params: {top_k: 5}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-opus-4-1-v1:0
+      model_cost:
+        anthropic.claude-opus-4-1-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      inference_params: {top_k: 5}
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-opus-4-1-v1:0
+      model_cost:
+        anthropic.claude-opus-4-1-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      inference_params: {top_k: 5}
+      global_drop: true
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock}
+      inference_params: {top_k: 5, maxTokens: 100}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: us.amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock}
+      inference_params: {topK: 6}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: cohere.command-r-v1:0
+      model_cost:
+        cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      inference_params: {topK: 4, maxTokens: 64}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      inference_params: {topK: null, top_k: 8}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      inference_params: {top_k: null}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: top_k
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      inference_params: {}
+      global_drop: false
+      call_drop: false
+env: {}
+compare: {ignore: []}

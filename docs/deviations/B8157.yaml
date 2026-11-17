@@ -1,0 +1,42 @@
+task: B8157
+deviations:
+  - what: The hosted_vllm chat arm writes the post_call stream record with a null original_response.
+    why: LiteLLM hands post_call the ModelResponse object the provider handler built. At this seam the handler returns a reply without a JSON form, so a null keeps the hook firing, which is what a logging callback observes, without inventing a body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2579-L2589
+  - what: The chat cases compare the request URL and the headers both sides prepare, not the request body or the reply.
+    why: The request body and the reply transforms belong to the provider configs of B8150 to B8156 and to the compatible wire, and the arm only resolves the values it hands them. The resolution order, the URL shape and the Authorization header are what this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5924-L6052
+  - what: The oracle covers the triton and oobabooga chat arms through unit tests only.
+    why: LiteLLM's _complete_triton and _complete_oobabooga build their request inside a module-cached httpx client that takes no injected client, so the oracle cannot record the request without patching a private module function. The base, provider string and absent key and headers of both arms are asserted by self_hosted_dispatch::tests instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4540-L4575
+  - what: The oracle covers the five embedding arms through unit tests only.
+    why: The case files this task names compare the chat arms and the two model listings; the embedding arms' base, key and header fallbacks are asserted by self_hosted_dispatch::tests instead, since their reply transforms belong to the provider configs of B8150 to B8156 and the arm only resolves values before handing them on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6575-L6595
+  - what: A petals call with neither a passed api_base nor litellm.api_base answers 400 with the local engine message.
+    why: LiteLLM's PetalsConfig.get_complete_url raises a bare ValueError("api_base is required") when the base is missing, which surfaces as a 500 without a provider status. betterlite keeps B8153's typed petals setup error, which carries status 400 and the pip install message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L292-L310
+  - what: A triton embedding call without an api_base answers 400 with "api_base is required for triton. Please pass `api_base`".
+    why: LiteLLM raises the same ValueError at the arm, but as an uncaught ValueError it has no status and surfaces as a 500. betterlite answers the 400 a missing required parameter deserves, and the message names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6796-L6812
+  - what: An ollama embedding input that is not a string or a list of strings fails with "Invalid input for ollama embeddings. input must be a string or a list of strings".
+    why: LiteLLM raises BadRequestError with the same intent but interpolates the whole input list into the message. The status, type and param match; the text names the accepted shapes instead of echoing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6941-L6960
+  - what: 'A lemonade listing answer with a status other than 200 whose body is not UTF-8 fails with "the {status} Lemonade models answer is not UTF-8 text: ..." rather than naming the status and the decoded body.'
+    why: LiteLLM interpolates httpx's response.text, which decodes invalid bytes with replacement characters, into the status message. betterlite refuses bytes that are not UTF-8 instead of mangling them, so the error names the encoding; the status a caller reads from it is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L102-L105
+  - what: OllamaModelInfo's validate_environment and get_base_model have no betterlite equivalent; the listing prepares the bearer header itself and a model stands as its own base model.
+    why: LiteLLM's validate_environment answers an empty map whatever headers it was handed, and get_base_model returns its argument unchanged, so both overrides add no behavior. A Rust function that only restates or drops its argument would hide where the value is really used, so the header set is built where the /api/tags request is made and model info reads the model as given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L229-L249
+  - what: An empty api_base or api_key in a self-hosted arm's fallback chain counts as unset and falls through, where docs/compatibility.md would use an explicit empty string as given.
+    why: LiteLLM's arms are `api_base or litellm.api_base or get_secret_str(...)` chains, so an empty string selects the next source, and the oracle cases for these arms send empty strings and compare the resolved base and key against LiteLLM on the same input. Using the empty value as given would make every such case disagree with the source this task follows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2546-L2589
+  - what: The lemonade and ollama model listings resolve the key through betterlite's provider metadata functions, and the oracle reaches them through get_valid_models.
+    why: LiteLLM's get_valid_models catches every listing failure and returns a copy of the static models_by_provider list, which the oracle cannot set without mutating a private untyped dict. The failure and fallback paths are asserted by self_hosted_dispatch::tests, and the oracle compares the listing request and the listed names on the success path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7835-L7906
+kept_bugs:
+  - what: An explicit lemonade api_base without a lemonade key sends the default sentinel key, and the chat request carries Authorization Bearer lemonade.
+    why: LiteLLM's _get_openai_compatible_provider_info only consults the key chain when no api_base was passed or a key was given, so an explicit base pins the sentinel; OpenAIGPTConfig.validate_environment then puts the sentinel in the header because the key is not None. The key listing path omits the sentinel header, but the chat path does not, and a working Lemonade deployment already relies on that request shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L208-L222
+  - what: A HOSTED_VLLM_API_BASE or HOSTED_VLLM_API_KEY environment value beats litellm.api_base and litellm.api_key for the hosted_vllm chat and embedding arms.
+    why: get_llm_provider resolves both through HostedVLLMChatConfig before the arm runs, so the environment base lands in api_base and the key chain ends at fake-api-key, and the arm's own "api_base or litellm.api_base or HOSTED_VLLM_API_BASE" and "api_key or ..." fallbacks can never reach the globals. Deployments that set the variables depend on them winning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/chat/transformation.py#L108-L113
