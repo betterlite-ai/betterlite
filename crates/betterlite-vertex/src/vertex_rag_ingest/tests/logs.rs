@@ -30,6 +30,10 @@ impl Capture {
         self.at(Level::ERROR)
     }
 
+    pub(crate) fn debugs(&self) -> Vec<String> {
+        self.at(Level::DEBUG)
+    }
+
     fn at(&self, level: Level) -> Vec<String> {
         let events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
         events

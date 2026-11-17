@@ -201,6 +201,15 @@ async fn upload_then_import() {
         logs.infos()
             .contains(&"Import complete: 1 files imported".to_owned())
     );
+    assert!(
+        logs.infos()
+            .contains(&format!("Uploaded file to GCS: {GCS_URI}"))
+    );
+    let debugs = logs.debugs();
+    assert!(debugs.contains(&format!(
+        "Uploading file to GCS via litellm.files.acreate_file: report.txt (bucket: {BUCKET})"
+    )));
+    assert!(debugs.contains(&format!("Importing {GCS_URI} into corpus {CORPUS_ID}")));
 }
 
 #[tokio::test]
