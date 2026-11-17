@@ -250,14 +250,29 @@ export function coverage(entries: Entry[], config: Config, inventoryText: string
   return areas;
 }
 
-// merges.txt is git log --first-parent on main, one "<unix time> <subject>" per line; a task's subject ends in (#<pr>).
-export function mergeTimes(byPull: Map<number, Entry>, mergesText: string): Merge[] {
-  const merges: Merge[] = [];
+export interface PullMerge {
+  pull: number;
+  time: number;
+}
+
+// merges.txt is git log --first-parent on main, one "<unix time> <subject>" per line; a pull request's subject ends in (#<pr>).
+export function pullMerges(mergesText: string): PullMerge[] {
+  const merged: PullMerge[] = [];
   for (const line of mergesText.split("\n")) {
     const match = /^(\d+) .*\(#(\d+)\)$/.exec(line);
-    const entry = match === null ? undefined : byPull.get(Number(match[2]));
-    if (match !== null && entry !== undefined) {
-      merges.push({ time: Number(match[1]) * 1000, entry });
+    if (match !== null) {
+      merged.push({ pull: Number(match[2]), time: Number(match[1]) });
+    }
+  }
+  return merged;
+}
+
+export function mergeTimes(byPull: Map<number, Entry>, merged: PullMerge[]): Merge[] {
+  const merges: Merge[] = [];
+  for (const merge of merged) {
+    const entry = byPull.get(merge.pull);
+    if (entry !== undefined) {
+      merges.push({ time: merge.time * 1000, entry });
     }
   }
   return merges.sort((a, b) => b.time - a.time);
