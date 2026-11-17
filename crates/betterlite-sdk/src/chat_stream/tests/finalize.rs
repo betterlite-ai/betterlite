@@ -47,7 +47,8 @@ async fn finalize_logs_and_caches_once() {
 
 #[tokio::test]
 async fn finalize_returns_usage_chunk_when_asked() {
-    let world = World::with_build(complete_build());
+    let mut world = World::with_build(complete_build());
+    world.cache = Some(FakeCache::new());
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![finish_chunk()]);
     let mut stream = start(
@@ -68,6 +69,15 @@ async fn finalize_returns_usage_chunk_when_asked() {
         Some(&JsonValue::String("default".to_owned()))
     );
     assert!(stream.next().await.unwrap().is_none());
+
+    let logged = world.logging.logged.lock().unwrap();
+    assert_eq!(logged.completed.len(), 1);
+    assert_eq!(logged.successes.len(), 1);
+    drop(logged);
+    assert_eq!(
+        world.cache.as_ref().unwrap().stored.lock().unwrap().len(),
+        1
+    );
 }
 
 #[tokio::test]
