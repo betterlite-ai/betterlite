@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::api::chat_response_stream_items::error::StreamItemsError;
+use crate::api::response_id_codecs::container::decode_container_id;
 use crate::api::response_id_codecs::encrypted::{
     decode_encrypted_item_id, unwrap_encrypted_content,
 };
@@ -433,6 +434,37 @@ fn driver_null_affinity_flag_leaves_the_encrypted_item_alone() {
         Some(&Json::Text(String::from(SIGNED_BLOCK))),
         "a null flag keeps the content unwrapped"
     );
+}
+
+// The same rewrite encodes a code interpreter container from the router metadata
+#[test]
+fn driver_container_id_is_encoded_in_the_completed_response() {
+    let (mut stream, _received) = build(
+        Scripted::new(vec![Ok(json(CONTENT_HI)), Ok(json(FINISH_STOP))]),
+        Reply::CodeInterpreter,
+        "{}",
+        &["u1", "u2", "u3"],
+        Some(metadata_with(json(r#"{"id":"model-1"}"#))),
+    );
+    let events = drain(&mut stream);
+    let response = field(events.last().expect("the stream emits events"), "response");
+    let Json::List(output) = field(&response, "output") else {
+        panic!("the completed response carries output items");
+    };
+    let item = output
+        .iter()
+        .find(|item| field(item, "type") == Json::Text(String::from("code_interpreter_call")))
+        .expect("the interpreter result reaches the completed response");
+    let Json::Text(container_id) = field(item, "container_id") else {
+        panic!("the interpreter item carries its container id");
+    };
+    let decoded = decode_container_id(&container_id);
+    assert_eq!(
+        decoded.custom_llm_provider.flatten().as_deref(),
+        Some("openai")
+    );
+    assert_eq!(decoded.model_id.flatten().as_deref(), Some("model-1"));
+    assert_eq!(decoded.response_id.as_deref(), Some("ct"));
 }
 
 // The rewrite crosses JSON through B904's field tree, so a provider float must come back unchanged

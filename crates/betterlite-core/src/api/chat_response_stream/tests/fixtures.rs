@@ -113,6 +113,7 @@ pub(super) enum Reply {
     Length,
     Signed,
     FloatTool,
+    CodeInterpreter,
     ToolCall,
 }
 
@@ -166,6 +167,33 @@ impl StreamAssembly for FixtureAssembly {
                         JsonValue::Number(
                             serde_json::Number::from_f64(0.5).expect("0.5 is finite"),
                         ),
+                    )]));
+                }
+                Some(response)
+            }
+            Reply::CodeInterpreter => {
+                let mut response = chat("", "tool_calls", Some(("call_1", "lookup", r#"{"x":1}"#)));
+                if let Response::Chat(chat) = &mut response {
+                    let result = JsonObject::from([
+                        (
+                            "type".to_owned(),
+                            JsonValue::String("code_interpreter_call".to_owned()),
+                        ),
+                        ("id".to_owned(), JsonValue::String("call_1".to_owned())),
+                        (
+                            "status".to_owned(),
+                            JsonValue::String("completed".to_owned()),
+                        ),
+                        ("code".to_owned(), JsonValue::String("x".to_owned())),
+                        (
+                            "container_id".to_owned(),
+                            JsonValue::String("ct".to_owned()),
+                        ),
+                        ("outputs".to_owned(), JsonValue::Null),
+                    ]);
+                    chat.choices[0].message.provider_specific_fields = Some(JsonObject::from([(
+                        "code_interpreter_results".to_owned(),
+                        JsonValue::Array(vec![JsonValue::Object(result)]),
                     )]));
                 }
                 Some(response)
