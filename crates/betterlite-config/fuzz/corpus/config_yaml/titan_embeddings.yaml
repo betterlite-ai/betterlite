@@ -1,0 +1,10 @@
+# normalize and dimensions are AmazonTitanV2Config class settings only
+model_list:
+  - model_name: titan
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      normalize: false
+      dimensions: 512
+litellm_settings:
+  normalize: os.environ/TITAN_NORMALIZE
+  dimensions: os.environ/TITAN_DIMENSIONS
