@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-claude-chat-response-model-restored
+call:
+  vertex_claude_chat:
+    fixture:
+      model_cost:
+        claude-sonnet-4-5: {litellm_provider: vertex_ai}
+      packaged: {}
+    steps:
+      - function: transform_response
+        model: claude-sonnet-4-5
+        status: 200
+        raw_text: |
+          {"model":"claude-3-sonnet-20240229","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+        headers: {x-request-id: req-b1333}
+        messages: [{role: user, content: hi}]
+        optional_params: {}
+        litellm_params: {}
+        request_data: {}
+        json_mode: null
+env: {}
+compare: {ignore: []}
