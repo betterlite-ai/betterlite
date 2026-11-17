@@ -13,11 +13,9 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::logging::{RealtimeLogging, RealtimeSuccessQueue, SessionInput, SuccessWork};
+use super::state::{ResponseAssembly, SessionFlag, SessionSetup};
 use super::store::SessionMessage;
-use super::{
-    ConnectionSetup, RealtimeProviderConfig, RealtimeStreaming, ResponseAssembly, SessionFlag,
-    SessionSetup,
-};
+use super::{ConnectionSetup, RealtimeProviderConfig, RealtimeStreaming};
 use crate::api::realtime_contracts::events::{AudioTranscriptionUsage, DurationUsage};
 
 fn record(source: &str) -> IndexMap<String, Json> {
