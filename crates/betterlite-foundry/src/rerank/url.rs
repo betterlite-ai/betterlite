@@ -27,7 +27,7 @@ pub fn complete_url(api_base: Option<&str>) -> Result<String, FoundryRerankError
     let trimmed = path.trim_end_matches('/');
     if trimmed.ends_with(V1_RERANK) || trimmed.ends_with(V2_RERANK) {
         let mut kept = original;
-        kept.path = trimmed.to_owned();
+        trimmed.clone_into(&mut kept.path);
         return Ok(kept.href());
     }
     if trimmed.ends_with(V1_VERSION)
@@ -35,7 +35,7 @@ pub fn complete_url(api_base: Option<&str>) -> Result<String, FoundryRerankError
         || trimmed.ends_with(COHERE_V2_VERSION)
     {
         let mut versioned = original;
-        versioned.path = trimmed.to_owned();
+        trimmed.clone_into(&mut versioned.path);
         return append_path(&versioned.href(), RERANK);
     }
     append_path(base, V1_RERANK)

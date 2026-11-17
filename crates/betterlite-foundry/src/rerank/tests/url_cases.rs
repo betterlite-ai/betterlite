@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use crate::rerank::url::complete_url;
 
 const BASE: &str = "https://res.services.ai.azure.com";
@@ -53,7 +55,7 @@ pub(super) fn rerank_url_api_version() {
     assert_relative("/a\\b", "'/a\\\\b'");
     let rejected = complete_url(Some("https://res.services.ai.azure.com/\t")).unwrap_err();
     assert_eq!(rejected.to_string(), "api_base is not a valid URL");
-    assert!(std::error::Error::source(&rejected).is_some());
+    assert!(Error::source(&rejected).is_some());
     for (path, expected) in PATHS {
         let base = format!("{BASE}{path}");
         assert_eq!(

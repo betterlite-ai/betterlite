@@ -18,17 +18,17 @@ const WIRE_MODEL: &str =
 pub(super) fn model_group_normalization() {
     assert_hidden_model(
         Some(MULTILINGUAL),
-        Json::Text(String::from("azure_ai/cohere-rerank-v3-multilingual")),
+        &Json::Text(String::from("azure_ai/cohere-rerank-v3-multilingual")),
     );
     assert_hidden_model(
         Some(ENGLISH),
-        Json::Text(String::from("azure_ai/cohere-rerank-v3-english")),
+        &Json::Text(String::from("azure_ai/cohere-rerank-v3-english")),
     );
     assert_hidden_model(
         Some("offer-unknown-paygo"),
-        Json::Text(String::from("offer-unknown-paygo")),
+        &Json::Text(String::from("offer-unknown-paygo")),
     );
-    assert_hidden_model(None, Json::Null);
+    assert_hidden_model(None, &Json::Null);
 
     // the public model field of a wire body never becomes the hidden model
     let no_group = transform_reply(200, WIRE_MODEL.as_bytes(), LIMITS, hidden(None)).unwrap();
@@ -49,9 +49,9 @@ pub(super) fn model_group_normalization() {
     );
 }
 
-fn assert_hidden_model(group: Option<&str>, expected: Json) {
+fn assert_hidden_model(group: Option<&str>, expected: &Json) {
     let reply = transform_reply(200, BODY.as_bytes(), LIMITS, hidden(group)).unwrap();
-    assert_eq!(reply.hidden_params.get(HIDDEN_MODEL_PARAM), Some(&expected));
+    assert_eq!(reply.hidden_params.get(HIDDEN_MODEL_PARAM), Some(expected));
 }
 
 pub(super) fn relevance_scores() {
@@ -119,6 +119,11 @@ fn json_bodies() {
     // LiteLLM never reads the HTTP status, so a JSON body on a 500 still becomes a reply
     let server_error = transform_reply(500, BODY.as_bytes(), LIMITS, hidden(None)).unwrap();
     assert_eq!(server_error.id.as_deref(), Some("rerank-id"));
+    // the upstream meta block, the billed units included, comes back as the provider wrote it
+    assert_eq!(
+        serde_json::to_string(&server_error.meta.expect("the fixture body has meta")).unwrap(),
+        r#"{"api_version":{"version":"1"},"billed_units":{"search_units":1}}"#
+    );
 
     // an error-shaped body validates as an empty reply, which is what LiteLLM returns there too
     let error_body = transform_reply(

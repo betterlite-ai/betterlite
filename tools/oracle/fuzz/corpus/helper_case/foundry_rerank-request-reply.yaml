@@ -10,7 +10,7 @@ call:
       return_documents: false
     replies:
     - status: 200
-      body: '{"id":"rerank-id","results":[{"index":0,"relevance_score":0.5,"document":{"text":"first document"}}]}'
+      body: '{"id":"rerank-id","results":[{"index":0,"relevance_score":0.5,"document":{"text":"first document"}}],"meta":{"api_version":{"version":"1"},"billed_units":{"search_units":1}}}'
       model_group: offer-cohere-rerank-mul-paygo
     - {status: 502, body: upstream unavailable}
 env: {}

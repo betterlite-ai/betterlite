@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::rerank_contracts::records::{
-    RerankResponse, RerankResponseMeta, RerankResponseResult,
-};
+use betterlite_openai::api::rerank_contracts::records::{RerankResponseMeta, RerankResponseResult};
 use betterlite_openai::api::responses_shapes::wire::WireDecodeLimits;
 use betterlite_openai::cohere_rerank;
 
