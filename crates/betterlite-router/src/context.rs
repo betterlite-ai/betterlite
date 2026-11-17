@@ -38,29 +38,6 @@ pub enum RouteStage {
     ResponsesStreamFallback,
 }
 
-impl RouteStage {
-    #[must_use]
-    pub const fn configured(self) -> bool {
-        match self {
-            Self::CooldownState => cooldown_state::CONFIGURED,
-            Self::CooldownPolicy => cooldown_policy::CONFIGURED,
-            Self::FallbackAttempts => fallback_attempts::CONFIGURED,
-            Self::ChatStreamFallback => chat_stream_fallback::CONFIGURED,
-            Self::NativeStreamFallback => native_stream_fallback::CONFIGURED,
-            Self::GeneralizationIntegration => generalization_integration::CONFIGURED,
-            Self::ModelRateLimits => model_rate_limits::CONFIGURED,
-            Self::TagRouting => tag_routing::CONFIGURED,
-            Self::AccessWindows => access_windows::CONFIGURED,
-            Self::RoutingGroups => routing_groups::CONFIGURED,
-            Self::DeploymentAffinity => deployment_affinity::CONFIGURED,
-            Self::PromptAffinity => prompt_affinity::CONFIGURED,
-            Self::RequestScheduler => request_scheduler::CONFIGURED,
-            Self::RoutingPlugins => routing_plugins::CONFIGURED,
-            Self::ResponsesStreamFallback => responses_stream_fallback::CONFIGURED,
-        }
-    }
-}
-
 // apply: one stage narrows the pool; each arm calls only the module that owns that stage.
 pub async fn apply(
     stage: RouteStage,
@@ -96,7 +73,24 @@ pub async fn run(
     candidates: CandidateSet,
     route: &RouteContext<'_>,
 ) -> Result<CandidateSet, RoutingError> {
-    if !stage.configured() {
+    let configured = match stage {
+        RouteStage::CooldownState => cooldown_state::CONFIGURED,
+        RouteStage::CooldownPolicy => cooldown_policy::CONFIGURED,
+        RouteStage::FallbackAttempts => fallback_attempts::CONFIGURED,
+        RouteStage::ChatStreamFallback => chat_stream_fallback::CONFIGURED,
+        RouteStage::NativeStreamFallback => native_stream_fallback::CONFIGURED,
+        RouteStage::GeneralizationIntegration => generalization_integration::CONFIGURED,
+        RouteStage::ModelRateLimits => model_rate_limits::CONFIGURED,
+        RouteStage::TagRouting => tag_routing::CONFIGURED,
+        RouteStage::AccessWindows => access_windows::CONFIGURED,
+        RouteStage::RoutingGroups => routing_groups::CONFIGURED,
+        RouteStage::DeploymentAffinity => deployment_affinity::CONFIGURED,
+        RouteStage::PromptAffinity => prompt_affinity::CONFIGURED,
+        RouteStage::RequestScheduler => request_scheduler::CONFIGURED,
+        RouteStage::RoutingPlugins => routing_plugins::CONFIGURED,
+        RouteStage::ResponsesStreamFallback => responses_stream_fallback::CONFIGURED,
+    };
+    if !configured {
         return Ok(candidates);
     }
     apply(stage, candidates, route).await
