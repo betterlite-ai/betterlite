@@ -20,10 +20,11 @@ pub fn resolved_api_key(
     api_key: Option<&SecretString>,
     environment: &dyn EnvironmentLookup,
 ) -> String {
-    api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .map(|key| key.expose_secret().to_owned())
-        .or_else(|| environment.lookup(API_KEY_ENV))
+    if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
+        return key.expose_secret().to_owned();
+    }
+    environment
+        .lookup(API_KEY_ENV)
         .filter(|key| !key.is_empty())
         .unwrap_or_else(|| String::from(PLACEHOLDER_KEY))
 }
