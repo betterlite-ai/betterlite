@@ -3689,11 +3689,13 @@ name = "betterlite-oracle-vertex"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -4651,6 +4653,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-cache",
  "betterlite-config",
@@ -4665,6 +4668,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "chrono",
  "data-encoding",
  "futures-util",
  "google-cloud-auth",
