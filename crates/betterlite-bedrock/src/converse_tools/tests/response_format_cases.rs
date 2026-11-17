@@ -275,3 +275,21 @@ fn existing_tools(catalogs: &CatalogSources<'_>) {
         Some(&json(r#"{"toolSpec": {"name": "kept"}}"#))
     );
 }
+
+#[test]
+fn malformed_request_response_format_answers_400() {
+    let cost = json(CATALOG);
+    let fixture = Fixture::new(&cost);
+    let catalogs = fixture.catalogs();
+    let mut native = Predicates::with(&[NamedCapability::NativeStructuredOutput.key()]);
+    let empty_envelope = call(
+        json(r#"{"type": "json_schema", "json_schema": {}}"#),
+        MODEL,
+        false,
+        "false",
+    );
+    let error = translated(&catalogs, &empty_envelope, &mut native)
+        .expect_err("a json_schema without a schema is rejected");
+    assert!(matches!(&error, ConverseToolsError::MissingSchemaField));
+    assert_eq!(error.status_code(), Some(400));
+}
