@@ -20,11 +20,8 @@ use betterlite_router::router_core::error::RoutingError;
 use betterlite_router::router_core::no_deployment::NoDeployment;
 use betterlite_router::router_core::pipeline::{self, StrategyRoute};
 use betterlite_router::router_core::route::{RouteContext, RoutePolicy, RouteRequest};
-use betterlite_router::router_core::services::RouteServices;
-use betterlite_router::router_predicates::params::{ParamSupport, ResolvedProvider};
 use betterlite_router::static_eligibility::error::EligibilityError;
 use betterlite_router::static_eligibility::request::RequestFacts;
-use betterlite_router::static_eligibility::tokens::TokenLimits;
 use betterlite_router::strategy_dispatch::groups::{RoutingGroups, RoutingScope};
 use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
@@ -201,12 +198,6 @@ impl Probe {
         let request = route_request(route, &facts);
         let aliases = BTreeMap::new();
         let (services, limits, params) = (NoServices, NoLimits, NoParams);
-        let resolver = CatalogResolver {
-            catalog: &self.catalog,
-            model_group_alias: &aliases,
-            model_alias_map: &aliases,
-            view: &OpenView,
-        };
         let context = RouteContext {
             request: &request,
             services: &services,
@@ -215,7 +206,7 @@ impl Probe {
             policy: RoutePolicy::default(),
             clients: None,
         };
-        let routing = StrategyRoute {
+        let mut routing = StrategyRoute {
             dispatch: &mut self.dispatch,
             override_strategy: StrategyOverride::Absent,
             scope: RoutingScope {
@@ -223,7 +214,19 @@ impl Probe {
                 shadowing: &self.shadowing,
             },
         };
-        let result = pipeline::route(&resolver, &context, routing, random).await;
+        let prepared = {
+            let resolver = CatalogResolver {
+                catalog: &self.catalog,
+                model_group_alias: &aliases,
+                model_alias_map: &aliases,
+                view: &OpenView,
+            };
+            pipeline::prepare(&resolver, &context, &mut routing)
+        };
+        let result = match prepared {
+            Ok(resolved) => pipeline::route(&context, routing.dispatch, resolved, random).await,
+            Err(error) => Err(error),
+        };
         found(result, random)
     }
 }

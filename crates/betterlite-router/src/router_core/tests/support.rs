@@ -18,7 +18,9 @@ use crate::router_core::attempt::AttemptResult;
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::Response;
 use crate::router_core::no_deployment::NoDeployment;
-use crate::router_core::pipeline::{HealthyDeployments, StrategyRoute, healthy_deployments, route};
+use crate::router_core::pipeline::{
+    HealthyDeployments, StrategyRoute, healthy_deployments, prepare, resolve_catalog, route,
+};
 use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
 use crate::router_core::services::{Cancelled, RouteServices};
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
@@ -388,7 +390,7 @@ async fn drive(
     let groups = RoutingGroups::default();
     let shadowing = BTreeSet::new();
     let mut dispatch = StrategyDispatch::new(strategy, None).unwrap();
-    let routing = StrategyRoute {
+    let mut routing = StrategyRoute {
         dispatch: &mut dispatch,
         override_strategy: override_of(setup),
         scope: RoutingScope {
@@ -396,8 +398,11 @@ async fn drive(
             shadowing: &shadowing,
         },
     };
-    let resolver = fixture.resolver();
-    route(&resolver, context, routing, random).await
+    let resolved = {
+        let resolver = fixture.resolver();
+        prepare(&resolver, context, &mut routing)?
+    };
+    route(context, routing.dispatch, resolved, random).await
 }
 
 pub(super) async fn run_route(
@@ -458,8 +463,11 @@ pub(super) async fn run_healthy(
     let request = setup.request();
     let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let context = route_context(&request, &services, &limits, &params);
-    let resolver = fixture.resolver();
-    healthy_deployments(&resolver, &context).await
+    let matched = {
+        let resolver = fixture.resolver();
+        resolve_catalog(&resolver, context.request)?
+    };
+    healthy_deployments(&context, matched).await
 }
 
 // A simple-shuffle route over one window per deployment id, with the pre-call checks as asked.

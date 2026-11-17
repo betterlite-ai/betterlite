@@ -52,10 +52,9 @@ pub struct HealthyDeployments {
 }
 
 pub async fn healthy_deployments(
-    resolver: &CatalogResolver<'_>,
     context: &RouteContext<'_>,
+    matched: CatalogMatch,
 ) -> Result<HealthyDeployments, RoutingError> {
-    let matched = resolve_catalog(resolver, context.request)?;
     let all = matched.candidates.deployments().to_vec();
     if matches!(matched.candidates, Candidates::Single(_)) {
         return Ok(HealthyDeployments {
@@ -77,16 +76,18 @@ pub async fn healthy_deployments(
     })
 }
 
-// Router.async_get_available_deployment: resolve, narrow and select in one pass.
-pub async fn route<R>(
+// The catalog's answer and B395's decision, resolved in one synchronous pass so no view crosses an await.
+pub struct Resolved {
+    route: ResolvedRoute,
+    candidates: Candidates,
+}
+
+// Router._common_checks_available_deployment and the routing decision that follows it.
+pub fn prepare(
     resolver: &CatalogResolver<'_>,
     context: &RouteContext<'_>,
-    routing: StrategyRoute<'_>,
-    random: &mut R,
-) -> Result<AttemptResult, RoutingError>
-where
-    R: Rng + Send,
-{
+    routing: &mut StrategyRoute<'_>,
+) -> Result<Resolved, RoutingError> {
     let matched = resolve_catalog(resolver, context.request)?;
     // LiteLLM resolves the routing context before it looks at the deployments, and every arm keeps that decision.
     let mut bindings = RequestBindings::default();
@@ -108,14 +109,31 @@ where
         resolution,
         bindings,
     };
-    match matched.candidates {
-        Candidates::Single(deployment) => single_route(context, state, deployment),
-        Candidates::Pool(pool) => pool_route(context, routing.dispatch, state, pool, random).await,
+    Ok(Resolved {
+        route: state,
+        candidates: matched.candidates,
+    })
+}
+
+// Router.async_get_available_deployment over what prepare resolved: narrow the pool, then select.
+pub async fn route<R>(
+    context: &RouteContext<'_>,
+    dispatch: &mut StrategyDispatch,
+    resolved: Resolved,
+    random: &mut R,
+) -> Result<AttemptResult, RoutingError>
+where
+    R: Rng + Send,
+{
+    let Resolved { route, candidates } = resolved;
+    match candidates {
+        Candidates::Single(deployment) => single_route(context, route, deployment),
+        Candidates::Pool(pool) => pool_route(context, dispatch, route, pool, random).await,
     }
 }
 
 // Router._common_checks_available_deployment, whose typed answer B302 already is
-fn resolve_catalog(
+pub fn resolve_catalog(
     resolver: &CatalogResolver<'_>,
     request: &RouteRequest<'_>,
 ) -> Result<CatalogMatch, RoutingError> {
