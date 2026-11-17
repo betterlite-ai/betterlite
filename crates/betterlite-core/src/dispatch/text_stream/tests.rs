@@ -205,15 +205,15 @@ async fn the_stream_is_wrapped_as_text_chunks_with_the_client_usage_choice() {
     let first = body[0].as_ref().expect("first chunk");
     assert_eq!(
         json_field(first, "object"),
-        Some(Json::Text(String::from("text_completion")))
+        Some(&Json::Text(String::from("text_completion")))
     );
     assert_eq!(
         json_field(first, "id"),
-        Some(Json::Text(String::from("cmpl-1")))
+        Some(&Json::Text(String::from("cmpl-1")))
     );
     assert_eq!(
         json_field(first, "model"),
-        Some(Json::Text(String::from("client")))
+        Some(&Json::Text(String::from("client")))
     );
     let second = body[1].as_ref().expect("second chunk");
     let Some(Json::Object(usage)) = json_field(second, "usage") else {
@@ -271,7 +271,7 @@ async fn a_chat_deployment_streams_through_the_chat_branch() {
     let first = body[0].as_ref().expect("first chunk");
     assert_eq!(
         json_field(first, "object"),
-        Some(Json::Text(String::from("text_completion")))
+        Some(&Json::Text(String::from("text_completion")))
     );
     let Some(Json::List(choices)) = json_field(first, "choices") else {
         panic!("no choices");

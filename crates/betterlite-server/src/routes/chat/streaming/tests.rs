@@ -396,7 +396,7 @@ async fn a_text_stream_becomes_chat_chunks_with_a_done_event() {
     assert_eq!(second.choices[0].delta.role, None);
     assert_eq!(second.choices[0].delta.content, None);
     assert_eq!(
-        frames[2].as_ref().expect("done").as_ref(),
+        frames[2].as_ref().expect("done").as_slice(),
         b"data: [DONE]\n\n"
     );
 }
@@ -487,7 +487,7 @@ async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
     let frames: Vec<_> = answer.body.collect().await;
     assert_eq!(frames.len(), 1);
     assert_eq!(
-        frames[0].as_ref().expect("done").as_ref(),
+        frames[0].as_ref().expect("done").as_slice(),
         b"data: [DONE]\n\n"
     );
 }
