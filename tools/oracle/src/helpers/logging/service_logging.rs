@@ -75,8 +75,7 @@ fn level(environment: &BTreeMap<String, String>) -> HelperResult {
     }))
 }
 
-// The payload LiteLLM's async_service_success_hook and async_service_failure_hook build, in the
-// field order model_dump_json writes
+// The payload LiteLLM's two async service hooks build, in the field order model_dump_json writes
 fn payload(input: &Input) -> HelperResult {
     let built = match input {
         Input::ServiceSuccess {
