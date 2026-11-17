@@ -1,0 +1,58 @@
+kind: helper
+name: anthropic-response-json-mode-message
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"ignored"},{"type":"thinking","thinking":"plan","signature":"sig-b580"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":{"a":1}}}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":4,"output_tokens_details":{"thinking_tokens":2}}}
+    headers: {x-request-id: req-b580}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: true
+    disable_add_prefix_to_prompt: false
+calls:
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"pre:"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":"x"}},{"type":"tool_use","id":"r","name":"run","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: true
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":false}}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":2}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: true
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"kept"},{"type":"tool_use","id":"j","name":"json_tool_call","input":{"values":1}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":2}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: true
+      disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}

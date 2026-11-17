@@ -37,7 +37,7 @@ description: >-
   UTF-8 URL/path bytes and is shared by the production validators and cargo-fuzz login_return target;
   seed safe relative, wrong origin, malformed port, backslash, control bytes, percent escapes and limits.
   Inherit B009's HTTP limits; reject otherwise unbounded destination strings over 1048576 bytes with a
-  typed error, covered by return_destination_limit. No new fuzz workspace: B770 owns the server manifest.
+  typed error, covered by return_destination_limit. No new fuzz workspace: B003 owns the server manifest.
 
   Only pure path/origin predicates enter the B856 Management::users helper operation login_return.
   Python calls the pinned validators with injected settings, and Rust calls production code; compare

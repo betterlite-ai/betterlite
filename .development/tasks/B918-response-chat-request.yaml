@@ -5,7 +5,7 @@ description: >-
   metadata, tool, extra_body, reasoning, web-search and response-format methods. B917
   supplies history, B1136 tool choices, B216 custom-tool format conversion, B905 normalized
   stream options and B1138 the optional-field set. B247 supplies logging state whose
-  call_type changes to responses before dispatch; debug diagnostics use B012's sink.
+  call_type changes to responses before dispatch; debug diagnostics use tracing.
   No provider request occurs here.
 
   Load litellm_settings.reasoning_auto_summary through B002 with default false and

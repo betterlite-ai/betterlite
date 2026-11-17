@@ -23,7 +23,7 @@ description: >-
 
   Call common_processing_pre_call_logic, B8801's PreCall step (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), with route_type=_arealtime and the existing configured
   user_model/user_temperature/user_request_timeout/user_max_tokens/user_api_base values; B004 owns their
-  defaults and precedence. B014 route_request selects B1011's realtime transport. B012 supplies logging and
+  defaults and precedence. B014 route_request selects B1011's realtime transport. B247/B187 supply logging and
   redaction, B3003 owns release_or_invalidate_budget_reservation, and B2400 owns the ProxyLogging disconnect
   adapter to the limiter release that B3046 owns. B8389 owns _log_model_access_denial (log_model_access_denial), called only for the caught model denial.
   The query-template cache holds1000 model/intent pairs and returns a fresh dict to each connection;
@@ -36,7 +36,7 @@ description: >-
   do not invent budget cleanup on this branch.
 
   For upstream InvalidStatus, delegate to B1004's error-event/close mapping. Other upstream exceptions are
-  redacted by B012, sent as server_error, then closed with 1011 and B1004's 123-byte UTF-8-safe reason or
+  redacted by B187, sent as server_error, then closed with 1011 and B1004's 123-byte UTF-8-safe reason or
   "Internal server error" for an empty message. Failure to send or close is debug-logged and does not bypass
   finally. When REALTIME_SESSION_SUCCESS_LOGGED_KEY is truthy, finally releases neither resource. Otherwise
   release budget and, only if REALTIME_SESSION_FAILURE_LOGGED_KEY is false/absent, parallel capacity too.
@@ -165,12 +165,12 @@ dod:
   - case-auth-invalid
   - oracle
 - text: >-
-    upstream_internal_failure supplies a native routing exception "api_key=abcdefgh failed" with default B012
+    upstream_internal_failure supplies a native routing exception "api_key=abcdefgh failed" with default B187
     redaction enabled. Expect {type:error,error:{type:server_error,message:"REDACTED failed"}} and close
     1011,reason="REDACTED failed". An empty message uses close reason "Internal server error" but keeps the
     event message empty. Sixty-four é characters remain whole in the event; close reason contains sixty-one é
     characters (122 bytes). Failed sends and failed closes each log debug and still execute the flag-based
-    cleanup. B012 owns LITELLM_DISABLE_REDACT_SECRETS; true passes the original message unchanged.
+    cleanup. B247 owns LITELLM_DISABLE_REDACT_SECRETS; true passes the original message unchanged.
     The HTTP transcript also configures an authorized model whose resolved provider has no realtime handler;
     expect an accepted 101 handshake followed by server_error and close 1011, with no provider connection.
     Compare the error text across gateways while the native injected case pins redaction and empty-message behavior.
