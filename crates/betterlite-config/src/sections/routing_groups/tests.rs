@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::ConfigLoader;
-use crate::sections::routing_groups::{RoutingGroupSettings, Settings};
+use crate::sections::routing_groups::Settings;
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let lookup: BTreeMap<String, String> = variables
@@ -18,14 +18,9 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String
 
 #[test]
 fn absent_and_null_groups_default_to_none() {
+    assert_eq!(settings("model_list: []\n", &[]).unwrap(), None);
     assert_eq!(
-        settings("model_list: []\n", &[]).unwrap().routing_groups,
-        None
-    );
-    assert_eq!(
-        settings("router_settings:\n  routing_groups: null\n", &[])
-            .unwrap()
-            .routing_groups,
+        settings("router_settings:\n  routing_groups: null\n", &[]).unwrap(),
         None
     );
 }
@@ -35,7 +30,7 @@ fn an_explicit_empty_list_stays_as_given() {
     assert_eq!(
         settings("router_settings:\n  routing_groups: []\n", &[])
             .unwrap()
-            .routing_groups,
+            .map(|loaded| loaded.groups),
         Some(Vec::new())
     );
 }
@@ -47,7 +42,7 @@ fn a_group_reads_its_fields_in_order() {
         &[],
     )
     .unwrap();
-    let groups = loaded.routing_groups.unwrap();
+    let groups = loaded.unwrap().groups;
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].group_name, "cheap");
     assert_eq!(groups[0].models, vec![String::from("a"), String::from("b")]);
@@ -84,7 +79,8 @@ fn env_values_resolve_once_at_the_config_boundary() {
         ],
     )
     .unwrap();
-    let group = &loaded.routing_groups.unwrap()[0];
+    let loaded = loaded.unwrap();
+    let group = &loaded.groups[0];
     assert_eq!(group.group_name, "cheap");
     assert_eq!(group.models, vec![String::from("a")]);
     assert_eq!(group.routing_strategy, "priority");
@@ -143,13 +139,13 @@ fn models_must_be_a_list_of_strings() {
 // the fields the router validates are carried verbatim, so a bad value names itself there
 #[test]
 fn a_group_carries_what_the_router_validates() {
-    let mut groups: Vec<RoutingGroupSettings> = settings(
+    let mut groups = settings(
         "router_settings:\n  routing_groups:\n    - group_name: ''\n      models: [a]\n      routing_strategy: not-a-strategy\n",
         &[],
     )
     .unwrap()
-    .routing_groups
-    .unwrap();
+    .unwrap()
+    .groups;
     let group = groups.remove(0);
     assert!(group.group_name.is_empty());
     assert_eq!(group.routing_strategy, "not-a-strategy");

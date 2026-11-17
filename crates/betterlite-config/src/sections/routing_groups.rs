@@ -42,9 +42,12 @@ pub struct RoutingGroupSettings {
     pub model_priorities: Option<BTreeMap<String, u64>>,
 }
 
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Option<Box<RoutingGroupsSettings>>;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Settings {
-    pub routing_groups: Option<Vec<RoutingGroupSettings>>,
+pub struct RoutingGroupsSettings {
+    pub groups: Vec<RoutingGroupSettings>,
 }
 
 impl Section for Raw {
@@ -55,15 +58,13 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let Some(groups) = self.router_settings.routing_groups else {
-            return Ok(Settings::default());
+            return Ok(None);
         };
         let mut converted = Vec::with_capacity(groups.len());
         for (index, group) in groups.into_iter().enumerate() {
             converted.push(group_settings(index, group, lookup)?);
         }
-        Ok(Settings {
-            routing_groups: Some(converted),
-        })
+        Ok(Some(Box::new(RoutingGroupsSettings { groups: converted })))
     }
 }
 
