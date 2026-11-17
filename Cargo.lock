@@ -1408,9 +1408,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "uuid",
 ]
 
 [[package]]
@@ -2769,6 +2771,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
