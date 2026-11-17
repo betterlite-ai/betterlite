@@ -1,0 +1,36 @@
+kind: helper
+name: runway-video-lifecycle-first-artifact
+call:
+  runway_video_lifecycle:
+    operation: content
+    params:
+      - body: '{"id":"t","status":"SUCCEEDED","output":"https://cdn.test/single.mp4"}'
+        reply:
+          status: 200
+          body: single-bytes
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/first.mp4","https://cdn.test/second.mp4"]}'
+        reply:
+          status: 200
+          body: first-bytes
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/a.mp4?token=abc&x=1"]}'
+        reply:
+          status: 200
+          body: query-bytes
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/a%20b.mp4"]}'
+        reply:
+          status: 200
+          body: escaped-bytes
+      - body: '{"id":"t","status":"FAILED","output":["https://cdn.test/still.mp4"]}'
+        reply:
+          status: 200
+          body: still-bytes
+      - body: '{"id":"t","status":"SUCCEEDED","output":["","https://cdn.test/second.mp4"]}'
+        reply:
+          status: 200
+          body: unused
+      - body: '{"id":"t","status":"RUNNING","output":[]}'
+        reply:
+          status: 200
+          body: unused
+env: {}
+compare: {ignore: []}

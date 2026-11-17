@@ -1,0 +1,34 @@
+kind: helper
+name: azure-text-auth
+call:
+  azure_completion:
+    function: auth
+    cases:
+      - {api_key: sk-unit, azure_ad_token: ad-token}
+      - {api_key: null, azure_ad_token: ad-token}
+      - {api_key: "", azure_ad_token: ad-token}
+      - {api_key: null, azure_ad_token: null}
+calls:
+  - azure_completion:
+      function: completion
+      cases:
+        - model: gpt-35-turbo-instruct
+          messages:
+            - {role: user, content: Hello}
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          headers: {x-extra: "1"}
+  - azure_completion:
+      function: completion
+      cases:
+        - model: gpt-35-turbo-instruct
+          messages:
+            - {role: user, content: Hello}
+          azure_ad_token: ad-token
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+env: {}
+compare: {ignore: []}

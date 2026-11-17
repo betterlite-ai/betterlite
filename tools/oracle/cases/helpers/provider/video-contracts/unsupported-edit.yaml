@@ -1,0 +1,8 @@
+kind: helper
+name: unsupported-edit
+call:
+  b3331:
+    function: unsupported_request
+    operation: edit
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+task: B9451
+deviations:
+  - what: The legacy Lakera check merges the dynamic request body params into the messages body, as it already does for the input body.
+    why: LiteLLM passes them to json.dumps as keyword arguments on the messages path, so any extra_body for this guardrail fails the request with a TypeError (500). This follows the input path; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L208-L212
+  - what: A Conduct guardrail never builds.
+    why: LiteLLM's working class extends ConductGuard from the separate conduct-litellm-guard package, and LiteLLM doesn't ship it; without it LiteLLM's constructor raises the same message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L104-L119
+  - what: The legacy Lakera v1 call keeps the timeout of the injected HTTP client, and a guardrail timeout configured in litellm_params is not applied to it.
+    why: B3777's LegacyLakeraModeration keeps no timeout field, so the hook has none to pass. LiteLLM passes self.timeout, which is None unless the guardrail sets one and then leaves the handler's own default in place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L253
+  - what: The legacy Lakera v1 answer is read up to 1 MiB; a larger answer, a 200 or an error status, fails the hook with a 500, where LiteLLM reads and checks the whole body.
+    why: Rule bounded-inputs requires every outbound response read to carry a size limit; the v1 answer is a short list of category flags and scores, far under one MiB for any working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L257-L285
+  - what: Lasso's moderation hook runs with the shared conversation cache when the during-call dispatch reaches it.
+    why: LiteLLM's dispatch calls async_moderation_hook without the cache argument Lasso's signature requires, so every during_call request for this guardrail fails with a TypeError (500). This follows the hook's intent; the choice is the owner's to confirm.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3021-L3027
+  - what: A blocking Lasso verdict names its deputies in the sorted findings key order, not in the order the Lasso answer listed them.
+    why: The transport models findings as a BTreeMap (B3778), so the detail's detection_message joins blocking deputies alphabetically where LiteLLM iterates the decoded JSON in response order. The set of blocking deputies and the 400 status are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L896-L905
+  - what: The 400 detail's lasso_response carries only the violations_detected, deputies and findings fields, not any other key the Lasso answer held.
+    why: The transport decodes the answer into its typed LassoResponse model (B3778) and drops unknown keys, while LiteLLM echoes the whole decoded JSON object into detail["lasso_response"]. The error text and status are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L857-L864
+  - what: A Lasso request that times out fails with the text "Lasso API timeout".
+    why: LiteLLM's async handler turns the httpx timeout into litellm.Timeout before _handle_api_error sees it, so the check for httpx.TimeoutException never matches and the failure carries the generic wrapper text with the elapsed seconds. betterlite keeps the status (500) and uses the specific text the handler names, since the elapsed time is not a fixed message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py#L589-L622
+kept_bugs:
+  - what: With neither a messages list nor an input text or list, the legacy Lakera check still posts to the v1 endpoint with an empty body.
+    why: LiteLLM starts the body as an empty string and posts it unchanged, so the v1 API answers an error status and the hook fails that request. Copied because the task text and LiteLLM agree on the call being made, and a working setup may rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai.py#L142
+  - what: Akto's hook skip compares str(event_hook) with the single names pre_call and post_call, so a list or tagged mode skips neither input type and both run.
+    why: LiteLLM's HOOK_TO_INPUT holds only those two string keys, and str() of a list or a Mode never equals one, so a configured list mode silently checks the request and mirrors the response. Copied as LiteLLM behaves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L419-L421
