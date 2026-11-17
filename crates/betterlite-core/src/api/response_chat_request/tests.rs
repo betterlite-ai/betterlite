@@ -27,6 +27,7 @@ use crate::api::response_chat_history::history::HistoryMessage;
 const USER: &str = r#"[{"role": "user", "content": "hello"}]"#;
 const SYSTEM_AND_USER: &str =
     r#"[{"role": "system", "content": "rules"}, {"role": "user", "content": "hi"}]"#;
+const SYSTEM_ONLY: &str = r#"[{"role": "system", "content": "rules"}]"#;
 const EMPTY_SYSTEM_AND_USER: &str =
     r#"[{"role": "system", "content": ""}, {"role": "user", "content": "hi"}]"#;
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -365,6 +366,11 @@ fn carries_a_system_only_chat_as_input(#[case] messages: &str, #[case] text: &st
 #[rstest]
 #[case::history_wins(SYSTEM_AND_USER, r#"{"instructions": "other"}"#, json!({"instructions": "rules"}))]
 #[case::option_without_history(USER, r#"{"instructions": "other"}"#, json!({"instructions": "other"}))]
+#[case::system_only_keeps_option(
+    SYSTEM_ONLY,
+    r#"{"instructions": "other"}"#,
+    json!({"instructions": "other"})
+)]
 #[case::empty_history_keeps_option(
     EMPTY_SYSTEM_AND_USER,
     r#"{"instructions": "other"}"#,
@@ -453,6 +459,7 @@ fn carries_the_client_and_sets_the_responses_call_type() {
     let built = build("{}");
     let projection = built.outcome.expect("the request builds");
     assert_eq!(projection.client, json!("marker"));
+    assert_eq!(projection.params["model"], json!("gpt-4o"));
     assert_eq!(built.call_type, "responses");
 }
 
@@ -538,6 +545,22 @@ fn sanitizes_the_sdk_params(#[case] litellm: &str, #[case] metadata: Value) {
     assert_eq!(merged, metadata);
     assert!(projection.litellm_params.get("temperature").is_none());
     assert!(projection.litellm_params.get("metadata").is_none());
+}
+
+#[test]
+fn keeps_other_sdk_params() {
+    let built = build_with(
+        USER,
+        "{}",
+        r#"{"api_key": "k", "timeout": 30, "reasoning_effort": "low"}"#,
+        "{}",
+        false,
+    );
+    let projection = built.outcome.expect("the request builds");
+    assert_eq!(
+        projection.litellm_params,
+        json!({"api_key": "k", "timeout": 30, "reasoning_effort": "low"})
+    );
 }
 
 #[test]
