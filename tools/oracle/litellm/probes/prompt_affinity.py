@@ -8,7 +8,7 @@ from litellm.router_utils.pre_call_checks.prompt_caching_deployment_check import
 )
 from litellm.router_utils.prompt_caching_cache import PromptCachingCache
 from litellm.types.llms.openai import AllMessageValues
-from pydantic import JsonValue
+from pydantic import Field, JsonValue
 from typing_extensions import override
 
 from probes.protocol import Operation, Strict
@@ -28,8 +28,8 @@ class Write(Strict):
 
 
 class Facts(Strict):
-    providers: dict[str, str] = {}
-    supports: dict[str, bool] = {}
+    providers: dict[str, str] = Field(default_factory=dict)
+    supports: dict[str, bool] = Field(default_factory=dict)
 
 
 class Output(Strict):
