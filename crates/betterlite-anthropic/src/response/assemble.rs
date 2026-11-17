@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_logging::python_json;
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_models::decisions::Json;
@@ -20,7 +22,7 @@ pub(super) fn transform_parsed_response<Counter>(
     request: &ResponseRequest<'_>,
     reply: AnthropicReply,
     counter: &Counter,
-) -> Result<(), ResponseError>
+) -> Result<(), ResponseError<Counter::Failure>>
 where
     Counter: ReasoningTokenCounter,
 {
@@ -51,10 +53,13 @@ where
     Ok(())
 }
 
-fn body_or_error(
+fn body_or_error<CounterFailure>(
     reply: AnthropicReply,
     raw: &RawResponse<'_>,
-) -> Result<AnthropicCompletionResponse, ResponseError> {
+) -> Result<AnthropicCompletionResponse, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     match reply {
         AnthropicReply::Success(body) => Ok(body),
         AnthropicReply::Error(error) => Err(get_error_class(
@@ -88,12 +93,15 @@ fn hidden_params(
     ])
 }
 
-fn build_message(
+fn build_message<CounterFailure>(
     body: &mut AnthropicCompletionResponse,
     parsed: &AnthropicContentReply,
     request: &ResponseRequest<'_>,
     prefix: Option<&str>,
-) -> Result<ChatMessage, ResponseError> {
+) -> Result<ChatMessage, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let reverse = reverse_map_of(request.litellm_params)?;
     let mut calls = parsed.tool_calls.clone();
     if let Some(reverse) = reverse.as_ref() {
@@ -159,7 +167,12 @@ fn composed_message(
     }
 }
 
-fn finish_reason(fields: &JsonFields) -> Result<String, ResponseError> {
+fn finish_reason<CounterFailure>(
+    fields: &JsonFields,
+) -> Result<String, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let Some(value) = fields.get("stop_reason") else {
         return Err(ResponseError::MissingField("stop_reason"));
     };
@@ -187,7 +200,12 @@ fn mapped_finish_reason(raw: &str) -> String {
     mapping.reason.as_str().to_owned()
 }
 
-fn model_of(fields: &JsonFields) -> Result<Option<String>, ResponseError> {
+fn model_of<CounterFailure>(
+    fields: &JsonFields,
+) -> Result<Option<String>, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     match fields.get("model") {
         Some(Json::Text(model)) => Ok(Some(model.clone())),
         Some(Json::Null) => Ok(None),
@@ -209,7 +227,7 @@ fn usage_of<Counter>(
     completion: &Json,
     speed: Option<&str>,
     counter: &Counter,
-) -> Result<AnthropicUsage, ResponseError>
+) -> Result<AnthropicUsage, ResponseError<Counter::Failure>>
 where
     Counter: ReasoningTokenCounter,
 {
@@ -217,14 +235,11 @@ where
         .fields
         .get("usage")
         .ok_or(ResponseError::MissingField("usage"))?;
-    calculate_usage(
+    Ok(calculate_usage(
         usage,
         parsed.reasoning_content.as_deref(),
         Some(completion),
         speed,
         counter,
-    )
-    .map_err(|error| ResponseError::Usage {
-        message: error.to_string(),
-    })
+    )?)
 }

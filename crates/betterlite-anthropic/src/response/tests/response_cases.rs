@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use betterlite_models::decisions::Json;
 use http::HeaderValue;
 use indexmap::IndexMap;
@@ -380,20 +382,23 @@ fn two_internal_json_tools_keep_the_first() {
 
 #[test]
 fn case_5_prefix_prompt() {
-    assert_eq!(get_prefix_prompt(&[]).unwrap(), None);
+    assert_eq!(get_prefix_prompt::<Infallible>(&[]).unwrap(), None);
     let assistant = parsed::<Vec<Json>>(r#"[{"role":"assistant","content":"Hi","prefix":true}]"#);
     assert_eq!(
-        get_prefix_prompt(&assistant).unwrap(),
+        get_prefix_prompt::<Infallible>(&assistant).unwrap(),
         Some("Hi".to_owned())
     );
     let empty = parsed::<Vec<Json>>(r#"[{"role":"assistant","content":"","prefix":true}]"#);
-    assert_eq!(get_prefix_prompt(&empty).unwrap(), Some(String::new()));
+    assert_eq!(
+        get_prefix_prompt::<Infallible>(&empty).unwrap(),
+        Some(String::new())
+    );
     let blocks = parsed::<Vec<Json>>(
         r#"[{"role":"assistant","content":[{"type":"text","text":"Hi"}],"prefix":true}]"#,
     );
-    assert_eq!(get_prefix_prompt(&blocks).unwrap(), None);
+    assert_eq!(get_prefix_prompt::<Infallible>(&blocks).unwrap(), None);
     let disabled = parsed::<Vec<Json>>(r#"[{"role":"assistant","content":"Hi","prefix":false}]"#);
-    assert_eq!(get_prefix_prompt(&disabled).unwrap(), None);
+    assert_eq!(get_prefix_prompt::<Infallible>(&disabled).unwrap(), None);
 
     prefixed();
     earlier_messages_are_ignored();
@@ -511,7 +516,7 @@ fn invalid_utf8_body() {
 }
 
 fn error_class_is_a_pass_through() {
-    let error = get_error_class("slow down".to_owned(), 529, response_headers());
+    let error = get_error_class::<Infallible>("slow down".to_owned(), 529, response_headers());
     let ResponseError::Anthropic {
         message,
         status,

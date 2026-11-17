@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
@@ -92,7 +94,7 @@ pub fn transform_response<Counter>(
     request: &ResponseRequest<'_>,
     logging: Logging<'_>,
     counter: &Counter,
-) -> Result<(), ResponseError>
+) -> Result<(), ResponseError<Counter::Failure>>
 where
     Counter: ReasoningTokenCounter,
 {
@@ -104,8 +106,8 @@ where
     );
     match decode_anthropic_reply(raw.body) {
         Ok(reply) => transform_parsed_response(envelope, raw, request, reply, counter),
-        Err(DecodeError::MalformedJson { message }) => Err(ResponseError::Anthropic {
-            message: format!("Unable to get json response - {message}, Original Response: {text}"),
+        Err(DecodeError::MalformedJson { source }) => Err(ResponseError::Anthropic {
+            message: format!("Unable to get json response - {source}, Original Response: {text}"),
             status: raw.status,
             headers: raw.headers.clone(),
         }),
@@ -114,7 +116,12 @@ where
 }
 
 // LiteLLM reads only the last message, and only when it is an assistant message that asks for a prefix
-pub fn get_prefix_prompt(messages: &[Json]) -> Result<Option<String>, ResponseError> {
+pub fn get_prefix_prompt<CounterFailure>(
+    messages: &[Json],
+) -> Result<Option<String>, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let Some(message) = messages.last() else {
         return Ok(None);
     };
@@ -136,7 +143,12 @@ pub fn get_prefix_prompt(messages: &[Json]) -> Result<Option<String>, ResponseEr
         .map(str::to_owned))
 }
 
-fn prefix_flag(message: &Json) -> Result<Option<bool>, ResponseError> {
+fn prefix_flag<CounterFailure>(
+    message: &Json,
+) -> Result<Option<bool>, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     match get(message, "prefix") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Bool(prefix)) => Ok(Some(*prefix)),
@@ -148,7 +160,14 @@ fn prefix_flag(message: &Json) -> Result<Option<bool>, ResponseError> {
 
 // LiteLLM's get_error_class hands the message, status and headers to AnthropicError unchanged
 #[must_use]
-pub fn get_error_class(message: String, status: u16, headers: HeaderMap) -> ResponseError {
+pub fn get_error_class<CounterFailure>(
+    message: String,
+    status: u16,
+    headers: HeaderMap,
+) -> ResponseError<CounterFailure>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     ResponseError::Anthropic {
         message,
         status,

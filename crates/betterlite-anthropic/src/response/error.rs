@@ -1,14 +1,21 @@
+use std::convert::Infallible;
+use std::error::Error as StdError;
+
 use http::HeaderMap;
 use serde_json::error::Category;
 use thiserror::Error;
 
 use crate::response_content::ResponseContentError;
+use crate::usage::error::UsageError;
 
 // A json() failure and the upstream error branch both raise AnthropicError; a wrong-shaped body stays structural
 #[derive(Debug, Error)]
 pub enum DecodeError {
-    #[error("the response body is not JSON: {message}")]
-    MalformedJson { message: String },
+    #[error("the response body is not JSON: {source}")]
+    MalformedJson {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the response body is not a JSON object")]
     NotAnObject,
     #[error("the response body has no content field")]
@@ -21,16 +28,19 @@ impl DecodeError {
     #[must_use]
     pub fn from_json(error: serde_json::Error) -> Self {
         match error.classify() {
-            Category::Syntax | Category::Eof | Category::Io => Self::MalformedJson {
-                message: error.to_string(),
-            },
+            Category::Syntax | Category::Eof | Category::Io => {
+                Self::MalformedJson { source: error }
+            }
             Category::Data => Self::NotAnObject,
         }
     }
 }
 
 #[derive(Debug, Error)]
-pub enum ResponseError {
+pub enum ResponseError<CounterFailure = Infallible>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     #[error(transparent)]
     Decode(#[from] DecodeError),
     #[error("the Anthropic response field {0} is required")]
@@ -43,9 +53,11 @@ pub enum ResponseError {
     Parameter { field: &'static str },
     #[error(transparent)]
     Content(#[from] ResponseContentError),
-    // the counter's failure type belongs to the caller, so its text travels instead of a typed source
-    #[error("the Anthropic usage could not be calculated: {message}")]
-    Usage { message: String },
+    #[error("the Anthropic usage could not be calculated: {source}")]
+    Usage {
+        #[from]
+        source: UsageError<CounterFailure>,
+    },
     #[error("{message}")]
     Anthropic {
         message: String,

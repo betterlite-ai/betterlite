@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -7,9 +9,12 @@ use crate::tool_names::REVERSE_MAP_KEY;
 use super::error::ResponseError;
 
 // LiteLLM reads the reverse map only when the stored value is a dict, so any other value means no rewrites
-pub(super) fn reverse_map_of(
+pub(super) fn reverse_map_of<CounterFailure>(
     params: &IndexMap<String, Json>,
-) -> Result<Option<IndexMap<String, String>>, ResponseError> {
+) -> Result<Option<IndexMap<String, String>>, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     let fields = match params.get(REVERSE_MAP_KEY) {
         Some(Json::Object(fields)) => fields,
         None
@@ -44,7 +49,12 @@ pub(super) fn apply_reverse_map(
 }
 
 // LiteLLM passes optional_params["speed"] straight to usage, whose declared shape is a string or nothing
-pub(super) fn speed_of(params: &IndexMap<String, Json>) -> Result<Option<&str>, ResponseError> {
+pub(super) fn speed_of<CounterFailure>(
+    params: &IndexMap<String, Json>,
+) -> Result<Option<&str>, ResponseError<CounterFailure>>
+where
+    CounterFailure: StdError + Send + Sync + 'static,
+{
     match params.get("speed") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(speed)) => Ok(Some(speed.as_str())),
