@@ -1,0 +1,2 @@
+@ÿ{"key":"id%23one#1/2","request":{"content":{}},"status":"","response":{"embedding":{"values":[2]},"usageMetadata":{"promptTokenCount":2}}}
+{"key":"id%23one#0/2","request":{"content":{}},"status":"","response":{"embedding":{"values":[1]},"usageMetadata":{"promptTokenCount":1}}}
