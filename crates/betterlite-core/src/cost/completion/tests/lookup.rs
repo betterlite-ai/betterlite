@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_metadata_resolution::names::NameNormalizers;
 use betterlite_models::price_lookup::PriceLookup as _;
@@ -67,6 +70,10 @@ fn unsplit(model: &str) -> (Option<&str>, &str) {
 fn lookup() -> CatalogLookup {
     CatalogLookup::new(
         CATALOG.as_bytes(),
+        Arc::new(
+            ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Warn)
+                .expect("the fixture catalog parses"),
+        ),
         LookupSettings {
             known_model_names: BTreeSet::new(),
             custom_providers: BTreeSet::new(),

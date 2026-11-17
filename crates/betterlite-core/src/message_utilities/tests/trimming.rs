@@ -65,8 +65,8 @@ fn request<'request>(
 
 #[tokio::test]
 async fn trim_keeps_messages_under_the_limit_unchanged() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     let outcome = trimmer
@@ -83,8 +83,8 @@ async fn trim_keeps_messages_under_the_limit_unchanged() {
 
 #[tokio::test]
 async fn trim_returns_the_original_messages_for_an_unknown_model() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     let outcome = trimmer
@@ -96,8 +96,8 @@ async fn trim_returns_the_original_messages_for_an_unknown_model() {
 
 #[tokio::test]
 async fn trim_returns_the_original_messages_when_the_token_count_fails() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(
         r#"[{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.com/x.png"}}]}]"#,
@@ -133,8 +133,8 @@ async fn trim_matches_litellm_for_a_plain_conversation(
     #[case] max_tokens: i64,
     #[case] expected: &str,
 ) {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(input);
     let outcome = trimmer
@@ -156,8 +156,8 @@ async fn process_system_message_shortens_a_long_system_prompt(
     #[case] content: &str,
     #[case] remaining: i64,
 ) {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let (event, left) = process_system_message(&trimmer, LONG_SYSTEM, max_tokens, "gpt-4o")
         .await
@@ -171,8 +171,8 @@ async fn process_system_message_shortens_a_long_system_prompt(
 
 #[tokio::test]
 async fn trim_keeps_the_tool_tail_and_drops_older_messages() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(TOOL_EXCHANGE);
     let outcome = trimmer
@@ -183,8 +183,8 @@ async fn trim_keeps_the_tool_tail_and_drops_older_messages() {
 
 #[tokio::test]
 async fn trim_keeps_the_tool_tail_and_the_calling_assistant_message() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(TOOL_EXCHANGE);
     let outcome = trimmer
@@ -204,8 +204,8 @@ async fn trim_keeps_the_tool_tail_and_the_calling_assistant_message() {
 
 #[tokio::test]
 async fn trim_joins_system_messages_with_a_newline() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(
         r#"[
@@ -231,8 +231,8 @@ async fn trim_joins_system_messages_with_a_newline() {
 
 #[tokio::test]
 async fn trim_shortens_a_message_to_fit_the_limit() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(LONG_MESSAGE);
     let outcome = trimmer
@@ -243,8 +243,8 @@ async fn trim_shortens_a_message_to_fit_the_limit() {
 
 #[tokio::test]
 async fn trim_reports_the_response_tokens_after_trimming() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     let mut options = request(&messages, "gpt-4o", Some(43));
@@ -265,8 +265,8 @@ async fn trim_reports_the_response_tokens_after_trimming() {
 
 #[tokio::test]
 async fn trim_returns_no_response_tokens_on_the_early_return() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     let mut options = request(&messages, "gpt-4o", Some(44));
@@ -278,8 +278,8 @@ async fn trim_returns_no_response_tokens_on_the_early_return() {
 
 #[tokio::test]
 async fn trim_keeps_the_caller_messages_untouched() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(LONG_MESSAGE);
     let _trimmed = trimmer
@@ -311,8 +311,8 @@ async fn trim_derives_the_limit_from_the_catalog_and_the_ratio(
     #[case] trim_ratio: f64,
     #[case] expected: &str,
 ) {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     let mut options = request(&messages, model, None);
@@ -323,8 +323,8 @@ async fn trim_derives_the_limit_from_the_catalog_and_the_ratio(
 
 #[tokio::test]
 async fn token_count_matches_litellm() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(CONVERSATION);
     assert_eq!(
@@ -342,8 +342,8 @@ async fn token_count_matches_litellm() {
 
 #[tokio::test]
 async fn process_messages_builds_the_final_list_from_the_newest_message() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let messages = support::values(TOOL_EXCHANGE);
     let processed = process_messages(&trimmer, &messages, 20, "gpt-4o")
@@ -359,8 +359,8 @@ async fn process_messages_builds_the_final_list_from_the_newest_message() {
 
 #[tokio::test]
 async fn attempt_message_addition_shortens_a_message_that_does_not_fit() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let message = support::value(
         r#"{"role": "user", "content": "alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon alpha beta gamma delta epsilon "}"#,
@@ -377,8 +377,8 @@ async fn attempt_message_addition_shortens_a_message_that_does_not_fit() {
 
 #[tokio::test]
 async fn attempt_message_addition_drops_a_function_call_message_that_does_not_fit() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let message = support::value(
         r#"{"role": "assistant", "content": null, "function_call": {"name": "f", "arguments": "{}"}}"#,
@@ -395,8 +395,8 @@ async fn attempt_message_addition_drops_a_function_call_message_that_does_not_fi
 
 #[tokio::test]
 async fn can_add_message_accepts_an_exact_fit() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let system = support::value(r#"{"role": "system", "content": "You are a helpful assistant."}"#);
     let message = support::value(r#"{"role": "user", "content": "hi"}"#);
@@ -414,8 +414,8 @@ async fn can_add_message_accepts_an_exact_fit() {
 
 #[tokio::test]
 async fn shorten_reports_the_attempt_limit_error() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let mut trimmer = support::trimmer(&counter, &catalog);
     trimmer.max_attempts = 1;
     let message = support::value(
@@ -432,8 +432,8 @@ async fn shorten_reports_the_attempt_limit_error() {
 
 #[tokio::test]
 async fn shorten_leaves_gpt_messages_under_eleven_tokens_alone() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let message = support::value(r#"{"role": "user", "content": "hello world"}"#);
     let outcome = shorten_message_to_fit_limit(&trimmer, &message, 5, "gpt-4o", false)
@@ -444,8 +444,8 @@ async fn shorten_leaves_gpt_messages_under_eleven_tokens_alone() {
 
 #[tokio::test]
 async fn shorten_removes_characters_from_the_middle() {
-    let counter = support::counter();
     let catalog = support::catalog();
+    let counter = support::counter(&catalog);
     let trimmer = support::trimmer(&counter, &catalog);
     let message = support::values(LONG_MESSAGE).remove(0);
     let outcome = shorten_message_to_fit_limit(&trimmer, &message, 15, "gpt-4o", false)

@@ -1,0 +1,21 @@
+kind: helper
+name: broadcast_field_allowlist
+call:
+  key_fields:
+    calls:
+      - {function: broadcast, body: {tags: [], metadata: {}}}
+      - {function: broadcast, body: {metadata: null}}
+      - {function: broadcast, body: {max_budget: 5, budget_id: "b", budget_duration: "1d", budget_limits: [{budget_duration: "1d", max_budget: 2.5}]}}
+      - {function: broadcast, body: {model_max_budget: {}, tpm_limit: 10, rpm_limit: 5, model_tpm_limit: {}, model_rpm_limit: {}, max_parallel_requests: 2}}
+      - {function: broadcast, body: {rpm_limit_type: best_effort_throughput, tpm_limit_type: guaranteed_throughput}}
+      - {function: broadcast, body: {temp_budget_increase: 2.5, temp_budget_expiry: "2030-01-01T00:00:00", duration: "1d"}}
+      - {function: broadcast, body: {spend: 1.0}}
+      - {function: broadcast, body: {team_id: "t"}}
+      - {function: broadcast, body: {user_id: "u"}}
+      - {function: broadcast, body: {models: []}}
+      - {function: broadcast, body: {permissions: {}}}
+      - {function: broadcast, body: {}}
+      - {function: broadcast, body: {tags: ["a"], metadata: {a: 1}}}
+      - {function: broadcast, body: {max_budget: null, tpm_limit: null}}
+env: {}
+compare: {ignore: []}
