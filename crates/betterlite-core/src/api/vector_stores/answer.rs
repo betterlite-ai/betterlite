@@ -2,15 +2,14 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::api::vector_stores::fields::{RetrievalFields, attach_to_choices, from_call_details};
-use crate::api::vector_stores::{Decoration, RESPONSES_OBJECT, SEARCH_FAILURES};
+use crate::api::vector_stores::{Decoration, OBJECT, RESPONSES_OBJECT, SEARCH_FAILURES};
 
 const MESSAGE: &str = "message";
 const NO_LOGGING: &str = "No litellm_logging_obj in request_data";
 const NO_FIELDS: &str = "No search results or search failures found";
 const ERROR_PREFIX: &str = "Error adding search results to response: ";
 
-// Err is what LiteLLM returns instead of the response: it decorates nothing, or it hit an error
-// after decorating an earlier choice and left that mutation in place (vector_store_pre_call_hook.py:432-470).
+// Err is the None LiteLLM returns: it decorated nothing, or it failed after an earlier choice (vector_store_pre_call_hook.py:432-470).
 fn metadata_outcome(
     request_data: &IndexMap<String, Json>,
 ) -> Result<RetrievalFields<'_>, Decoration> {
@@ -74,8 +73,8 @@ pub fn decorate_answer(request_data: &IndexMap<String, Json>, answer: &mut Json)
 }
 
 fn is_responses_record(record: &IndexMap<String, Json>) -> bool {
-    let Some(Json::Text(object)) = record.get(RESPONSES_OBJECT) else {
+    let Some(Json::Text(marker)) = record.get(OBJECT) else {
         return false;
     };
-    object.as_str() == RESPONSES_OBJECT
+    marker.as_str() == RESPONSES_OBJECT
 }
