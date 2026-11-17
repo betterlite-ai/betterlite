@@ -1,0 +1,24 @@
+kind: helper
+name: runway-video-lifecycle-artifact-http-failure
+call:
+  runway_video_lifecycle:
+    operation: content
+    params:
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/missing.mp4"]}'
+        reply:
+          status: 404
+          body: not found
+      - body: '{"id":"t","status":"SUCCEEDED","output":"https://cdn.test/broken.mp4"}'
+        reply:
+          status: 500
+          body: boom
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/empty.mp4"]}'
+        reply:
+          status: 403
+          body: ''
+      - body: '{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/limited.mp4"]}'
+        reply:
+          status: 429
+          body: slow down
+env: {}
+compare: {ignore: []}

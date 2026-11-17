@@ -1,0 +1,29 @@
+kind: helper
+name: lasso-output-masked
+call:
+  b9451:
+    vendor: lasso
+    hook: post_call
+    gate: true
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: true
+    timeout: 5.0
+    data:
+      litellm_call_id: call-1
+      messages:
+        - {role: user, content: hello}
+    outputs: ["call me on 555-0100"]
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          violations_detected: true
+          deputies: {pattern-detection: true}
+          findings:
+            pattern-detection:
+              - {action: AUTO_MASKING, severity: HIGH}
+          messages:
+            - {role: assistant, content: "call me on [PHONE]"}
+env: {}
+compare: {ignore: []}

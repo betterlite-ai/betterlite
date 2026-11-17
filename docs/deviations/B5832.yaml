@@ -1,0 +1,12 @@
+task: B5832
+deviations:
+  - what: A developer item in the Responses input that has no content key is kept as it arrived, where LiteLLM reads item["content"] and raises KeyError.
+    why: The KeyError escapes as a 500 with no status for an input item betterlite can forward untouched; keeping the item lets the provider decide about it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L45-L48
+  - what: A Responses input item that is not iterable (a number, boolean or null) is kept as it arrived, where LiteLLM evaluates "role" not in item and raises TypeError.
+    why: LiteLLM calls the developer rename on every kept item, so a number in the input list becomes a 500 before the request is built; betterlite passes the item through, as the task describes for items whose role is not developer. A string item is iterable, so LiteLLM keeps it too and the two agree there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L45-L48
+kept_bugs:
+  - what: The deleted id is percent-decoded twice, because httpx has already decoded the request path that LiteLLM unquotes again.
+    why: A setup that sends an encoded response id gets the decoded id back in the delete result, so betterlite decodes the raw path and then the last segment the same way to return the same id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L179

@@ -1,0 +1,15 @@
+kind: helper
+name: admission-no-agent
+call:
+  b3007:
+    memory:
+      "{session_budget:s1}:spend": 1.5
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_budget_per_session: 1.0}
+    pre_calls:
+      - data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}

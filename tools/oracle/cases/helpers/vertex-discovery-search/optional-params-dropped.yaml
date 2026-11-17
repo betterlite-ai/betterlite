@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-discovery-search-optional-params-dropped
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: hello
+        api_base: https://host/v1
+        litellm_params: {}
+        optional_params:
+          max_num_results: 0
+          filters:
+            kind: x
+          ranking_options:
+            rank: y
+          rewrite_query: true
+env: {}
+compare: {ignore: []}

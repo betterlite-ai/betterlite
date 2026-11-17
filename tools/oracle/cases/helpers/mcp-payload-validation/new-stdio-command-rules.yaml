@@ -1,0 +1,61 @@
+kind: helper
+name: mcp-payload-validation-new-stdio-command-rules
+call:
+  b4716:
+    function: new_request
+    payload:
+      transport: stdio
+    stdio:
+      enabled: true
+      allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+calls:
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        command: npx
+      stdio:
+        enabled: true
+        allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        command: npx.exe
+        args: [-y]
+      stdio:
+        enabled: true
+        allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        command: /usr/bin/node
+        args: [-y]
+      stdio:
+        enabled: true
+        allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        command: custom-tool
+        args: []
+      stdio:
+        enabled: true
+        allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+  - b4716:
+      function: new_request
+      payload:
+        transport: stdio
+        command: custom-tool
+        args: [--serve]
+        env:
+          TOKEN: abc
+      stdio:
+        enabled: true
+        allowed_commands: [npx, uvx, python, python3, node, docker, deno, custom-tool]
+env:
+  LITELLM_ENABLE_MCP_STDIO: "true"
+  LITELLM_MCP_STDIO_EXTRA_COMMANDS: custom-tool
+compare: {ignore: []}

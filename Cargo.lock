@@ -1139,13 +1139,16 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "betterlite-cache",
+ "betterlite-config",
  "betterlite-context",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-paths",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-routes",
  "betterlite-secrets",
@@ -1202,7 +1205,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "chrono",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
@@ -1652,6 +1657,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "secrecy",
+ "selfie",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -1882,6 +1888,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "mutants",
  "percent-encoding",
  "rstest",
  "rust_decimal",
@@ -1938,6 +1945,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
@@ -2301,6 +2309,7 @@ dependencies = [
  "futures-util",
  "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "pem",
  "regex",
  "rmcp",
@@ -2328,6 +2337,7 @@ dependencies = [
 name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-mcp",
  "chrono",
  "libfuzzer-sys",
@@ -2441,6 +2451,7 @@ dependencies = [
  "jiff",
  "lru",
  "mime_guess",
+ "mutants",
  "nix",
  "num-traits",
  "percent-encoding",
@@ -2522,6 +2533,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-sdk",
  "betterlite-server",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
  "betterlite-websearch",
@@ -2673,6 +2685,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
+ "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "secrecy",
@@ -3034,16 +3049,21 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-server",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "indexmap 2.14.2",
@@ -3584,6 +3604,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite",
+ "betterlite-analytics",
  "betterlite-auth",
  "betterlite-backend",
  "betterlite-config",
@@ -3690,6 +3711,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-tokenizer",
  "betterlite-vertex",
+ "chrono",
  "futures-util",
  "google-cloud-speech-v2",
  "google-cloud-wkt",
@@ -3919,6 +3941,7 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -4458,6 +4481,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -10127,6 +10151,15 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "selfie"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7b9062d2ec6c5a972298b4983e1025a59036a0c1af274e5ecf16f183568cdb8"
+dependencies = [
+ "stable_deref_trait",
 ]
 
 [[package]]

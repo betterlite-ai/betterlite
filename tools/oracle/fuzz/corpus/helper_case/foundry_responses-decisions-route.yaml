@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-responses-decisions-route-seed
+call:
+  foundry_responses:
+    steps:
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_base: https://seed.services.ai.azure.com/api/projects/seed/openai/v1
+      - kind: decisions_route
+        model: Microsoft-Decision-1
+        api_key: seed-key
+env: {}
+compare: {ignore: []}

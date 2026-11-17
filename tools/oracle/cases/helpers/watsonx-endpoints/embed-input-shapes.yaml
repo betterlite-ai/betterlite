@@ -1,0 +1,26 @@
+kind: helper
+name: watsonx-embed-input-shapes
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: embed
+    env: {WATSONX_PROJECT_ID: env-project}
+    step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: null}
+calls:
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: [alpha, beta], options: {}, api_base: "https://host", reply: null}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: [], options: {}, api_base: "https://host", reply: null}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: [1, 2], options: {}, api_base: "https://host", reply: null}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: [[1, 2]], options: {}, api_base: "https://host", reply: null}

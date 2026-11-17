@@ -1,0 +1,30 @@
+kind: helper
+name: azure-image-errors
+call:
+  azure_images:
+    urls:
+      - model: dall-e-3
+    generations:
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {max_retries: "3"}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {max_retries: 3.5}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: "2025-02-01-preview"
+        optional: {max_retries: null}
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+env: {}
+compare: {ignore: []}

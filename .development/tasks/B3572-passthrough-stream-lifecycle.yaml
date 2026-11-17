@@ -52,6 +52,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-core/Cargo.toml"
     - crates/betterlite-core/src/passthrough_stream.rs
     - crates/betterlite-core/src/passthrough_stream/**
     - tools/oracle/cases/passthrough_stream/**

@@ -1,0 +1,28 @@
+kind: helper
+name: mcp-connector-import-list
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcp_servers:
+        - name: test-first
+          url: https://first.example/mcp
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          - name: ""
+            url: https://unnamed.example/mcp
+          - url: ""
+          - name: test-third
+            type: sse
+            url: https://third.example/mcp
+      stdio: {enabled: false, allowed_commands: []}
+  - b4716:
+      function: convert_connectors
+      connectors: {mcpServers: {}}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

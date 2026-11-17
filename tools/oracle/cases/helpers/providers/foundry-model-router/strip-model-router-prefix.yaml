@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-model-router-strip-model-router-prefix
+call:
+  foundry_model_router:
+    strips:
+      - {model: deployment}
+      - {model: model_router/deployment}
+      - {model: model-router/deployment}
+      - {model: azure_ai/model_router/deployment}
+      - {model: prefix/model-router/name}
+      - {model: prefix/model_router/name/model-router/rest}
+      - {model: prefix/model-router/name/model_router/rest}
+      - {model: MODEL_ROUTER/deployment}
+      - {model: model_router/}
+      - {model: model-router/}
+      - {model: ""}
+env: {}
+compare: {ignore: []}

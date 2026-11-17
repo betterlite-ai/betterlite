@@ -1,4 +1,5 @@
 use super::chat_setup::chat_executor;
+use super::connections::Background;
 use super::filter::ComponentRoutes;
 use super::{application, bind, serve};
 use axum::Extension;
@@ -13,6 +14,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio::runtime::{Builder, Runtime};
+use tokio_util::task::TaskTracker;
 
 pub struct Startup {
     pub runtime: Runtime,
@@ -77,8 +79,11 @@ pub fn serve_component(
         let listener = bind(host, port).await?;
         let shutting_down = Arc::new(AtomicBool::new(false));
         let outbound = chat.client.clone();
-        let app = application(&config, chat, Arc::clone(&shutting_down))?.layer(Extension(routes));
-        Box::pin(serve(app, shutting_down, outbound, host, listener)).await
+        let tasks = TaskTracker::new();
+        let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
+            .layer(Extension(routes));
+        let background = Background { outbound, tasks };
+        Box::pin(serve(app, shutting_down, background, host, listener)).await
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

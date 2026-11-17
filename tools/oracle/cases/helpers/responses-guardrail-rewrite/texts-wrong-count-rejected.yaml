@@ -1,0 +1,6 @@
+kind: helper
+name: responses-texts-wrong-count-rejected
+call:
+  b3671: {"function": "input", "scenarios": [{"data": {"instructions": "i", "input": "hi"}, "skip_system": false, "covers_full": false, "reply": {"texts": ["only"]}}, {"data": {"input": [{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]}, "skip_system": false, "covers_full": false, "reply": {"texts": ["A"]}}, {"data": {"input": "hi"}, "skip_system": false, "covers_full": false, "reply": {"texts": ["a", "b"]}}]}
+env: {}
+compare: {ignore: []}

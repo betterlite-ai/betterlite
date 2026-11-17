@@ -1,0 +1,25 @@
+kind: helper
+name: audit-missing-user
+call:
+  b3740:
+    function: logging_async
+    guardrail: {guardrail_name: purview, tenant_id: tenant-1, client_id: client-1, client_secret: secret-1, purview_app_name: LiteLLM, user_id_field: user_id, timeout_seconds: 5}
+    replies: []
+    identity: {user_id: null, end_user_id: null}
+    call_type: completion
+    data:
+      model: gpt-4o
+      messages:
+      - {role: user, content: Sensitive prompt}
+    result:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1
+      model: gpt-4o
+      choices:
+      - index: 0
+        message: {role: assistant, content: Sensitive data}
+        finish_reason: stop
+    chunks: []
+env: {}
+compare: {ignore: []}

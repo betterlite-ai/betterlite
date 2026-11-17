@@ -1,0 +1,25 @@
+kind: helper
+name: missing-model-messages-422
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: null
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+      - model: gpt-35-turbo-instruct
+        messages: null
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+      - model: ""
+        messages: []
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+env: {}
+compare: {ignore: []}
