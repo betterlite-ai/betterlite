@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 
 use super::{
@@ -64,8 +66,8 @@ fn gives_a_blocking_run_the_upstream_timeout_headroom() {
 
 #[test]
 fn names_the_poll_timings_and_terminal_statuses() {
-    assert_eq!(TINYFISH_POLL_SECONDS.to_bits(), 5.0_f64.to_bits());
-    assert_eq!(TINYFISH_MAX_POLL_SECONDS.to_bits(), 3600.0_f64.to_bits());
+    assert_eq!(TINYFISH_POLL_SECONDS, Duration::from_secs(5));
+    assert_eq!(TINYFISH_MAX_POLL_SECONDS, Duration::from_secs(3600));
     assert_eq!(TINYFISH_MAX_POLL_FAILURES, 12);
     assert_eq!(
         TINYFISH_TERMINAL_STATUSES,
