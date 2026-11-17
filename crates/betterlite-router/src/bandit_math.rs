@@ -128,7 +128,9 @@ pub const fn score(
             field: "score weight",
         });
     }
-    Ok(weights.quality * quality_sample + weights.economy * cost_score)
+    Ok(weights
+        .quality
+        .mul_add(quality_sample, weights.economy * cost_score))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
