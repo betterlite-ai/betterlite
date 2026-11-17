@@ -52,6 +52,9 @@ fn prompt_affinity_behaviors(#[case] name: &str) {
 
 #[rstest]
 #[case::a_prompt_at_the_minimum_reads_the_pin("a_prompt_at_the_minimum_reads_the_pin")]
+#[case::a_counting_gate_compares_the_prompt_against_the_minimum(
+    "a_counting_gate_compares_the_prompt_against_the_minimum"
+)]
 #[case::an_unknown_model_uses_the_default_minimum("an_unknown_model_uses_the_default_minimum")]
 #[case::a_deployment_without_a_model_name_uses_the_default(
     "a_deployment_without_a_model_name_uses_the_default"

@@ -1,20 +1,25 @@
 use std::sync::Arc;
 
+use betterlite_core::message_utilities::prompt_cache_checks::PromptCacheSettings;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::support::{
-    FakePins, MARKED_MESSAGES, cache_key, deployment, ids, image_message_source, json_messages,
-    lookback, messages, pin, positions, request, service, success, text_blocks_source,
-    tool_result_blocks_source,
+    FakePins, MARKED_MESSAGES, cache_key, catalog, deployment, ids, image_message_source,
+    json_messages, lookback, messages, pin, positions, request, service, success,
+    text_blocks_source, token_counter, tool_result_blocks_source,
 };
+use crate::prompt_affinity::service::{CountingGate, TokenGate};
 
 const THREE_BLOCKS: &str = r#"[{"role":"user","content":[{"type":"text","text":"a"},{"type":"text","text":"b"},{"type":"text","text":"c","cache_control":{"type":"ephemeral"}}]}]"#;
 
 pub(super) async fn run(name: &str) {
     match name {
         "a_prompt_at_the_minimum_reads_the_pin" => a_prompt_at_the_minimum_reads_the_pin().await,
+        "a_counting_gate_compares_the_prompt_against_the_minimum" => {
+            a_counting_gate_compares_the_prompt_against_the_minimum().await;
+        }
         "an_unknown_model_uses_the_default_minimum" => {
             an_unknown_model_uses_the_default_minimum().await;
         }
@@ -54,6 +59,17 @@ async fn a_prompt_at_the_minimum_reads_the_pin() {
         .await
         .unwrap();
     assert_eq!(ids(&untouched), ["dep-a", "dep-b"]);
+}
+
+async fn a_counting_gate_compares_the_prompt_against_the_minimum() {
+    let gate = CountingGate {
+        counter: Arc::new(token_counter()),
+        settings: PromptCacheSettings::default(),
+        catalog: catalog(),
+    };
+    let raw = json_messages(MARKED_MESSAGES);
+    assert!(gate.meets_minimum("gpt-4o", &raw, Some(1)).await);
+    assert!(!gate.meets_minimum("gpt-4o", &raw, Some(u64::MAX)).await);
 }
 
 async fn an_unknown_model_uses_the_default_minimum() {

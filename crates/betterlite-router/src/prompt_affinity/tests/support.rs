@@ -1,17 +1,38 @@
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::huggingface_hub::{
+    OfflineSetting, Settings as HubSettings, TransferSetting,
+};
+use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::message_utilities::prompt_cache_checks::{
     PromptCacheSettings, get_prompt_cache_min_tokens,
 };
+use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
+use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_metadata::base64::Base64Truncator;
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::CacheFacts;
 use betterlite_prompts::message_content::Message;
+use betterlite_tokenizer::count::Counter;
+use betterlite_tokenizer::count::settings::Settings as TokenizerSettings;
+use betterlite_tokenizer::engine::Engine;
+use betterlite_tokenizer::engine::error::EngineError;
+use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
+use betterlite_tokenizer::engine::hub::HubDownloader;
+use betterlite_tokenizer::engine::limits::{
+    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService, EncodeLimits,
+};
+use betterlite_tokenizer::engine::selection::Selector;
 use indexmap::IndexMap;
+use tokio::time::Instant;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::prompt_affinity::cache::PinCache;
@@ -196,6 +217,81 @@ pub(super) fn positions(messages: &[Json]) -> Vec<PrefixPosition> {
 
 pub(super) fn lookback(messages: &[Json]) -> Vec<String> {
     lookback_keys(&positions(messages))
+}
+
+struct InlineCounter;
+
+#[async_trait]
+impl BlockingCounter for InlineCounter {
+    async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
+        job()
+    }
+
+    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
+    }
+
+    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
+        job()
+    }
+}
+
+// the offline token counter the io_token_reservations tests use, so the gate counts like production
+pub(super) fn token_counter() -> Counter {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).unwrap());
+    let service = Arc::new(CountingService::new(
+        4,
+        Arc::new(InlineCounter),
+        EncodeLimits::default(),
+    ));
+    let fetcher = Arc::new(TiktokenFetcher::new(
+        Arc::clone(&client),
+        None,
+        Arc::clone(&service),
+    ));
+    let catalog = BundledCatalog::default().get();
+    let hub = HubSettings {
+        endpoint: "http://127.0.0.1:1".to_owned(),
+        offline: OfflineSetting::Online,
+        etag_timeout: 10,
+        download_timeout: 10,
+        disable_implicit_token: false,
+        env_token: None,
+        hf_home: PathBuf::from("unused"),
+        hub_cache: PathBuf::from("unused"),
+        token_path: PathBuf::from("unused-token"),
+        stored_tokens_path: PathBuf::from("unused-stored-tokens"),
+        transfer: TransferSetting::Standard,
+    };
+    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
+    let clock: Arc<dyn HubClock> = Arc::new(SystemHubClock::default());
+    let resolver = Arc::new(HubTokenResolver::new(
+        hub.clone(),
+        OidcSettings::default(),
+        Arc::clone(&client),
+        reader,
+        clock,
+    ));
+    let downloader = Arc::new(HubDownloader::new(
+        Arc::new(hub),
+        resolver,
+        Arc::new(Instant::now),
+    ));
+    let selector = Arc::new(Selector::new(
+        Arc::clone(&fetcher),
+        downloader,
+        Arc::clone(&catalog),
+        Arc::clone(&service),
+        false,
+    ));
+    Counter::new(
+        selector,
+        fetcher,
+        service,
+        catalog,
+        TokenizerSettings::default(),
+    )
 }
 
 pub(super) fn text_blocks_source(count: usize) -> String {
