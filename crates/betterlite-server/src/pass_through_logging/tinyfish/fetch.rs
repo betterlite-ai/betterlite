@@ -4,10 +4,10 @@ use std::str;
 use std::time::Duration;
 
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_http::url_path::quote_segment;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use http::header::HeaderValue;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::records::{TinyfishRun, parse_run};
@@ -21,6 +21,12 @@ pub const RUN_SCREENSHOTS_QUERY: &str = "screenshots=none";
 // A run id becomes one path segment, and these characters would leave it or end it early.
 const REJECTED_RUN_ID_CHARACTERS: [char; 4] = ['/', '\\', '#', '?'];
 const PARENT_SEGMENT: &str = "..";
+// Python's quote(safe="") leaves the unreserved characters alone and percent-encodes every other byte.
+const RUN_ID_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 pub struct RunRequest {
     pub url: String,
@@ -81,7 +87,7 @@ pub(super) fn safe_run_id(run_id: &str) -> Option<String> {
     if leaves_the_segment {
         return None;
     }
-    Some(quote_segment(run_id))
+    Some(utf8_percent_encode(run_id, RUN_ID_ENCODE_SET).to_string())
 }
 
 // A key that cannot be a header value fails the poll inside LiteLLM's blanket handler, so it warns here too.
