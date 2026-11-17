@@ -61,6 +61,20 @@ pub(super) fn thinking_budget_with_max_tokens() {
         optional,
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 1024}, "maxTokens": 5120}"#)
     );
+    for (budget, total) in [("true", 4097), ("false", 4096)] {
+        let mut optional = params(&format!(
+            r#"{{"thinking": {{"type": "enabled", "budget_tokens": {budget}}}}}"#
+        ));
+        update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 0)
+            .expect("the budget updates");
+        assert_eq!(
+            optional,
+            params(&format!(
+                r#"{{"thinking": {{"type": "enabled", "budget_tokens": {budget}}}, "maxTokens": {total}}}"#
+            )),
+            "{budget}"
+        );
+    }
     let mut optional = params(r#"{"thinking": {"type": "enabled", "budget_tokens": null}}"#);
     update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
         .expect("the budget updates");

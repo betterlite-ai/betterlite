@@ -201,6 +201,7 @@ fn parallel_config() {
         (r#"{"parallel_tool_calls": 0}"#, true),
         (r#"{"parallel_tool_calls": ""}"#, true),
         (r#"{"parallel_tool_calls": []}"#, true),
+        (r#"{"parallel_tool_calls": {}}"#, true),
         (r#"{"parallel_tool_calls": "x"}"#, false),
         (r#"{"parallel_tool_calls": null}"#, true),
     ] {
