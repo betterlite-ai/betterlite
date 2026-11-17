@@ -1,7 +1,7 @@
 from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from .support import JSON
+from .transforms import JSON
 
 
 class RecordView(BaseModel):

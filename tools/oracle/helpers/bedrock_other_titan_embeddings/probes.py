@@ -1,7 +1,7 @@
 from litellm.llms.bedrock.embed.amazon_titan_g1_transformation import AmazonTitanG1Config
 from litellm.llms.bedrock.embed.amazon_titan_v2_transformation import AmazonTitanV2Config
 
-from .support import ConfigProbe
+from .transforms import ConfigProbe
 
 
 # the probe attributes cover what get_config must drop: dunders, None, and every callable kind

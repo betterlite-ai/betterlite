@@ -1,8 +1,8 @@
 import litellm
 from pydantic import JsonValue
 
-from .inputs import Input
 from .operations import (
+    Input,
     cohere_v3_input_type,
     titan_g1_request,
     titan_multimodal_image,
