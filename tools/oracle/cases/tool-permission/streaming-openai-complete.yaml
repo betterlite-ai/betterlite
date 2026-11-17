@@ -1,0 +1,34 @@
+kind: helper
+name: streaming-openai-complete
+call:
+  b3813:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: post_call
+    default_on: true
+    mode: streaming
+    format: openai
+    data: {}
+    chunks:
+      - id: chatcmpl-5
+        object: chat.completion.chunk
+        created: 1700000000
+        model: gpt-4o
+        choices:
+          - index: 0
+            delta: {role: assistant, content: Hello}
+            finish_reason: null
+      - choices:
+          - index: 0
+            delta: {content: " world"}
+            finish_reason: null
+      - choices:
+          - index: 0
+            delta: {}
+            finish_reason: stop
+    raw_chunks: []
+env: {}
+compare: {ignore: []}

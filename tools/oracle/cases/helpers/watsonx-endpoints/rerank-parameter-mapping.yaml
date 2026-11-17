@@ -1,0 +1,55 @@
+kind: helper
+name: watsonx-rerank-parameter-mapping
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: rerank
+    env: {}
+    step:
+      model: rerank-model
+      headers: {Authorization: "Bearer caller"}
+      api_key: null
+      reply: null
+      status: null
+      options:
+        query: what
+        documents: [alpha, {text: beta}]
+        top_n: 2
+        return_documents: false
+        max_tokens_per_doc: 4
+        project_id: p1
+        space_id: s1
+        api_version: v1
+        unknown: 1
+calls:
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {query: null, top_n: null, return_documents: null, max_tokens_per_doc: null, project_id: null}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {top_n: 0, return_documents: "yes"}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {documents: [], query: ""}

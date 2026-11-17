@@ -1,0 +1,15 @@
+kind: helper
+name: openai-media-dispatch-video-seed
+call:
+  openai_media_dispatch:
+    case: video_create
+    api_base: https://mock.example/v1
+    model: sora-2
+    prompt: a seed video
+    options:
+      seconds: '4'
+    reference: null
+    provider: openai
+    reply: '{"id": "vid-seed", "object": "video", "status": "queued", "seconds": "4"}'
+env: {}
+compare: {ignore: []}
