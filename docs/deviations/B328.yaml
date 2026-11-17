@@ -31,4 +31,14 @@ deviations:
       random pick needs the injected random source that B334's pool picking owns. Refusing the
       request beats picking from an unseeded generator whose answer a test cannot state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2826-L2832
+  - what: >-
+      A context window above u32::MAX is scored as a u32::MAX window, so a request larger than
+      that clamped buffered capacity is refused even where LiteLLM's unbounded integer
+      arithmetic would hold it.
+    why: >-
+      The shared window primitive converts a window with the lossless u32-to-f64 conversion the
+      lint table allows, and a whole-number token capacity then converts to Decimal exactly. No
+      provider reports a context window anywhere near 4.29e9 tokens, so the saturation only
+      bounds a nonsensical configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1237-L1238
 kept_bugs: []
