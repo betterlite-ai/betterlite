@@ -2,16 +2,19 @@ use betterlite_openai::image_edits::environment::complete_url;
 use betterlite_openai::image_edits::family::select_image_edit_family;
 use betterlite_openai::image_edits::file::multipart_parts;
 use betterlite_openai::image_edits::request::transform_image_edit_request;
+use betterlite_openai::image_generation::call::ImageGenerationCall;
+use betterlite_openai::image_generation::error::ImageGenerationFailure;
 use betterlite_openai::image_generation::logging::ImageGenerationLogger;
 use betterlite_openai::image_generation::request::{
-    begin_image_generation, finish_image_generation, send_image_generation,
+    ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
 };
 use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 use betterlite_openai::image_variations::ImageVariationRequest;
 use betterlite_openai::image_variations::OpenAiImageVariationConfig;
+use betterlite_openai::image_variations::error::ImageVariationResult;
 use betterlite_openai::image_variations::logging::ImageVariationLogger;
 use betterlite_openai::image_variations::request::{
-    begin_image_variation, finish_image_variation, send_image_variation,
+    ImageVariationOutcome, begin_image_variation, finish_image_variation, send_image_variation,
 };
 use betterlite_openai::image_variations::transport::ImageVariationTransport;
 use betterlite_openai::speech::call::{SpeechCall, audio_speech};
@@ -53,28 +56,15 @@ where
         return Err(OpenAiMediaError::UnsupportedOperation);
     };
     let result = match operation {
-        OpenAiMediaOperation::ImageGeneration(call) => {
-            let prepared = begin_image_generation(*call, logger)?;
-            let sent = send_image_generation(&prepared, transport).await;
-            OpenAiMediaResult::ImageGeneration(Box::new(finish_image_generation(
-                &prepared, sent, logger,
-            )?))
-        }
+        OpenAiMediaOperation::ImageGeneration(call) => OpenAiMediaResult::ImageGeneration(
+            Box::new(image_generation(*call, transport, logger).await?),
+        ),
         OpenAiMediaOperation::ImageEdit(call) => {
             OpenAiMediaResult::ImageEdit(Box::new(image_edit(&call)?))
         }
-        OpenAiMediaOperation::ImageVariation(variation) => {
-            // the dispatcher selects the OpenAI variation config that LiteLLM's provider manager would install
-            let configured = ImageVariationRequest {
-                config: Some(OpenAiImageVariationConfig),
-                ..*variation
-            };
-            let prepared = begin_image_variation(configured, logger)?;
-            let sent = send_image_variation(&prepared, transport).await;
-            OpenAiMediaResult::ImageVariation(Box::new(finish_image_variation(
-                &prepared, sent, logger,
-            )?))
-        }
+        OpenAiMediaOperation::ImageVariation(variation) => OpenAiMediaResult::ImageVariation(
+            Box::new(image_variation(*variation, transport, logger).await?),
+        ),
         OpenAiMediaOperation::Speech(speech_operation) => OpenAiMediaResult::Speech(Box::new(
             speech(*speech_operation, transport, logger).await?,
         )),
@@ -91,6 +81,39 @@ where
         ),
     };
     Ok(OperationResult::OpenAiMedia(result))
+}
+
+async fn image_generation<T, L>(
+    call: ImageGenerationCall,
+    transport: &T,
+    logger: &mut L,
+) -> Result<ImageGenerationOutcome, ImageGenerationFailure>
+where
+    T: ImageGenerationTransport,
+    L: ImageGenerationLogger,
+{
+    let prepared = begin_image_generation(call, logger)?;
+    let sent = send_image_generation(&prepared, transport).await;
+    finish_image_generation(&prepared, sent, logger)
+}
+
+async fn image_variation<T, L>(
+    variation: ImageVariationRequest,
+    transport: &T,
+    logger: &mut L,
+) -> ImageVariationResult<ImageVariationOutcome>
+where
+    T: ImageVariationTransport,
+    L: ImageVariationLogger,
+{
+    // the dispatcher selects the OpenAI variation config that LiteLLM's provider manager would install
+    let configured = ImageVariationRequest {
+        config: Some(OpenAiImageVariationConfig),
+        ..variation
+    };
+    let prepared = begin_image_variation(configured, logger)?;
+    let sent = send_image_variation(&prepared, transport).await;
+    finish_image_variation(&prepared, sent, logger)
 }
 
 fn image_edit(call: &ImageEditCall) -> Result<OpenAiMediaPrepared, OpenAiMediaError> {
@@ -119,23 +142,15 @@ where
     T: SpeechTransport,
     L: SpeechLogger,
 {
-    let SpeechOperation {
-        model,
-        input,
-        voice,
-        options,
-        connection,
-        aspeech,
-    } = operation;
     let call = SpeechCall {
         request: SpeechRequest {
-            model: &model,
-            input: &input,
-            voice: &voice,
-            options: &options,
+            model: &operation.model,
+            input: &operation.input,
+            voice: &operation.voice,
+            options: &operation.options,
         },
-        connection,
-        aspeech,
+        connection: operation.connection,
+        aspeech: operation.aspeech,
     };
     Ok(audio_speech(call, logger, transport)?.await?)
 }
@@ -149,27 +164,17 @@ where
     T: TranscriptionTransport,
     L: TranscriptionLogger,
 {
-    let TranscriptionOperation {
-        input,
-        file,
-        connection,
-        boundary,
-        model,
-        family,
-        optional_params,
-        atranscription,
-    } = operation;
     let call = TranscriptionCall {
-        input,
-        file: &file,
-        connection,
-        boundary,
+        input: operation.input,
+        file: &operation.file,
+        connection: operation.connection,
+        boundary: operation.boundary,
     };
     let request = TranscriptionRequest {
-        model: &model,
-        family,
-        optional_params,
-        atranscription,
+        model: &operation.model,
+        family: operation.family,
+        optional_params: operation.optional_params,
+        atranscription: operation.atranscription,
     };
     let (outbound, pending) = audio_transcriptions(&call, &request, logger)?;
     let sent = transport.send(outbound).await;

@@ -46,7 +46,7 @@ pub enum MediaMethod {
 }
 
 // The request a leaf without a transport prepares for the route to send; the payload keeps the leaf's own data type.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiMediaPrepared {
     pub method: MediaMethod,
     pub url: String,
@@ -56,7 +56,7 @@ pub struct OpenAiMediaPrepared {
     pub multipart: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaPayload {
     Empty,
     // B512's edit form data, which the edit sends beside its files
@@ -68,7 +68,7 @@ pub enum MediaPayload {
 }
 
 // One multipart entry in the order the leaf builds it: a plain text field or an uploaded file.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaPart {
     pub field: String,
     pub filename: Option<String>,
@@ -76,7 +76,7 @@ pub struct MediaPart {
     pub body: MediaPartBody,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaPartBody {
     Bytes(Vec<u8>),
     Text(String),
