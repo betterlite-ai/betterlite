@@ -75,7 +75,7 @@ where
     }
 
     // aclose closes the byte generator; the provider stream belongs to the wrapper and is not closed here
-    pub fn aclose(&mut self) {
+    pub const fn aclose(&mut self) {
         self.closed = true;
         self.finished = true;
     }

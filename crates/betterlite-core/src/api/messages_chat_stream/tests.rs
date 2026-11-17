@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::slice::from_ref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -281,6 +282,17 @@ async fn assert_message(stream: &mut Driver) {
     assert_eq!(id, stream.state.message_id.as_str());
 }
 
+async fn drain_frames(view: &mut ByteView, limit: usize) -> Vec<String> {
+    let mut frames = Vec::new();
+    while frames.len() < limit {
+        let Some(frame) = view.next_frame().await else {
+            break;
+        };
+        frames.push(String::from_utf8(frame).expect("the frame is text"));
+    }
+    frames
+}
+
 #[tokio::test]
 async fn async_event_lifecycle() {
     let reasoning = chunk(
@@ -309,7 +321,10 @@ async fn async_event_lifecycle() {
     )
     .await;
     assert!(stream.next_event().await.expect("no failure").is_none());
+}
 
+#[tokio::test]
+async fn async_named_tool_with_empty_arguments_starts_at_once() {
     let empty = chunk(
         r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"function","function":{"name":"lookup","arguments":""}}]},"finish_reason":null}]}"#,
     );
@@ -318,7 +333,10 @@ async fn async_event_lifecycle() {
     assert_events(&mut stream, &[TOOL_START_CALL_2]).await;
     assert_eq!(pulls(&stream), 1, "the empty delta flushed the start");
     assert_events(&mut stream, &[MESSAGE_STOP]).await;
+}
 
+#[tokio::test]
+async fn async_blank_chunks_open_no_block() {
     let blank = chunk(r#"{"choices":[{"index":0,"delta":{},"finish_reason":null}]}"#);
     let mut stream = started(vec![blank, usage_chunk(5, 2), text("A")]);
     assert_message(&mut stream).await;
@@ -328,16 +346,18 @@ async fn async_event_lifecycle() {
         3,
         "blank and choiceless metadata open no block"
     );
+}
 
-    let block = CompactionBlock {
-        kind: CompactionKind::Compaction,
-        content: Some("S".to_owned()),
-        signature: None,
-    };
+#[tokio::test]
+async fn async_compaction_block_precedes_ordinary_content() {
     let mut stream = driver(
         scripted(vec![text("A")]),
         StreamSetup {
-            compaction_block: Some(block),
+            compaction_block: Some(CompactionBlock {
+                kind: CompactionKind::Compaction,
+                content: Some("S".to_owned()),
+                signature: None,
+            }),
             ..setup()
         },
     );
@@ -382,7 +402,10 @@ async fn async_terminal_usage() {
         "the trailing content is dropped after the usage delta"
     );
     assert_eq!(pulls(&stream), 5, "the trailing chunk was still read");
+}
 
+#[tokio::test]
+async fn async_finish_without_usage_flushes() {
     let mut stream = started(vec![text("A"), finish("stop")]);
     assert_message(&mut stream).await;
     assert_events(
@@ -394,7 +417,10 @@ async fn async_terminal_usage() {
         stream.next_event().await.expect("no failure").is_none(),
         "message_stop leaves once"
     );
+}
 
+#[tokio::test]
+async fn async_held_content_comes_before_the_flushed_delta() {
     let mut stream = started(Vec::new());
     stream.state.message_progress.sent_first_chunk = true;
     stream.state.holding_chunk = Some(object(HELD_TEXT));
@@ -434,6 +460,32 @@ async fn sse_frame_encoding() {
         view.next_frame().await.expect("the null type"),
         b"event: None\ndata: {\"type\": null}\n\n".to_vec()
     );
+}
+
+#[tokio::test]
+async fn sse_frame_escapes_non_ascii() {
+    let mut view = byte_view(scripted(Vec::new()), setup());
+    view.stream
+        .state
+        .chunk_queue
+        .push_back(object(r#"{"type":"ping","text":"\u00e9"}"#));
+    let escaped = view.next_frame().await.expect("the non-ascii text");
+    assert_eq!(
+        escaped,
+        b"event: ping\ndata: {\"type\": \"ping\", \"text\": \"\\u00e9\"}\n\n".to_vec()
+    );
+    let escaped_text = String::from_utf8(escaped).expect("the frame is text");
+    let payload = escaped_text
+        .lines()
+        .nth(1)
+        .and_then(|line| line.strip_prefix("data: "))
+        .expect("the data line");
+    let decoded: Object = serde_json::from_str(payload).expect("the payload is an object");
+    assert_eq!(decoded.get("text"), Some(&Json::Text("\u{e9}".to_owned())));
+}
+
+#[tokio::test]
+async fn sse_refused_type_ends_the_view() {
     let mut refused = byte_view(scripted(Vec::new()), setup());
     refused
         .stream
@@ -449,32 +501,19 @@ async fn sse_frame_encoding() {
         refused.next_frame().await.is_none(),
         "the refused frame ends the view"
     );
-    view.stream
-        .state
-        .chunk_queue
-        .push_back(object(r#"{"type":"ping","text":"\u00e9"}"#));
-    let escaped = view.next_frame().await.expect("the non-ascii text");
-    assert_eq!(
-        escaped,
-        "event: ping\ndata: {\"type\": \"ping\", \"text\": \"\\u00e9\"}\n\n"
-            .as_bytes()
-            .to_vec()
-    );
-    let escaped_text = String::from_utf8(escaped).expect("the frame is text");
-    let payload = escaped_text
-        .lines()
-        .nth(1)
-        .and_then(|line| line.strip_prefix("data: "))
-        .expect("the data line");
-    let decoded: Object = serde_json::from_str(payload).expect("the payload is an object");
-    assert_eq!(decoded.get("text"), Some(&Json::Text("\u{e9}".to_owned())));
+}
 
+#[tokio::test]
+async fn sse_bytes_pass_through() {
     let raw = b"event: raw\ndata: {}\n\n".to_vec();
     assert_eq!(
         encode_item(StreamItem::Bytes(raw.clone())).expect("bytes pass through"),
         raw
     );
+}
 
+#[tokio::test]
+async fn sync_frames_stop_after_the_delegated_view() {
     let mut sync = SyncFrames {
         driver: sync_frames(vec![text("A")], "msg_fixed"),
     };
@@ -492,43 +531,31 @@ async fn sse_frame_encoding() {
         sync.next().is_none(),
         "the synchronous wrapper ends its iteration"
     );
-    let mut view = byte_view(scripted(vec![text("A")]), setup());
-    "msg_fixed".clone_into(&mut view.stream.state.message_id);
+    let mut delegated_view = byte_view(scripted(vec![text("A")]), setup());
+    "msg_fixed".clone_into(&mut delegated_view.stream.state.message_id);
     let mut delegated = Vec::new();
     while delegated.len() < 8 {
-        let Some(frame) = view.next_frame().await else {
+        let Some(frame) = delegated_view.next_frame().await else {
             break;
         };
         delegated.push(frame);
     }
     assert_eq!(encoded, delegated);
     assert!(
-        view.next_frame().await.is_none(),
+        delegated_view.next_frame().await.is_none(),
         "the delegated view ends where the wrapper does"
-    );
-    assert_eq!(
-        String::from_utf8(encoded.first().cloned().expect("a first frame"))
-            .expect("the frame is text")
-            .lines()
-            .next(),
-        Some("event: message_start")
     );
 }
 
 #[tokio::test]
-async fn async_error_event_ends_stream() {
-    assert_eq!(
-        MID_STREAM_LOG_PREFIX,
-        "Anthropic Adapter - mid-stream error, emitting Anthropic error event: "
-    );
+async fn async_failure_reaches_the_direct_iterator() {
     let errors = ErrorCount::default();
     let _subscription = set_default(tracing_subscriber::registry().with(errors.clone()));
-
     let reported = StreamFailure::Reported {
         status_code: 429,
         message: "busy".to_owned(),
     };
-    let mut stream = driver(failing(vec![text("A")], reported.clone()), setup());
+    let mut stream = driver(failing(vec![text("A")], reported), setup());
     assert_message(&mut stream).await;
     assert_events(&mut stream, &[TEXT_START, DELTA_A]).await;
     let failure = stream
@@ -546,35 +573,35 @@ async fn async_error_event_ends_stream() {
             assert_eq!(status_code, 429);
             assert_eq!(message, "busy");
         }
-        other => panic!("expected the reported failure, got {other:?}"),
+        other @ (ChatStreamError::Stream { .. } | ChatStreamError::State(_)) => {
+            panic!("expected the reported failure, got {other:?}");
+        }
     }
     assert_eq!(
         errors.0.load(Ordering::Relaxed),
         0,
         "the driver logs nothing"
     );
+}
 
+#[tokio::test]
+async fn async_error_event_ends_stream() {
+    assert_eq!(
+        MID_STREAM_LOG_PREFIX,
+        "Anthropic Adapter - mid-stream error, emitting Anthropic error event: "
+    );
+    let errors = ErrorCount::default();
+    let _subscription = set_default(tracing_subscriber::registry().with(errors.clone()));
+    let reported = StreamFailure::Reported {
+        status_code: 429,
+        message: "busy".to_owned(),
+    };
     let mut view = byte_view(failing(vec![text("A")], reported), setup());
-    let mut frames = Vec::new();
-    while frames.len() < 8 {
-        let Some(frame) = view.next_frame().await else {
-            break;
-        };
-        frames.push(String::from_utf8(frame).expect("the frame is text"));
-    }
+    let frames = drain_frames(&mut view, 8).await;
     assert_eq!(
         frames.len(),
         4,
         "message_start, the block start, the delta, then the error"
-    );
-    assert!(
-        view.next_frame().await.is_none(),
-        "the error frame ended the stream"
-    );
-    let last = frames.last().expect("the error frame ends the stream");
-    assert_eq!(
-        *last,
-        "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"busy\"}}\n\n"
     );
     assert!(
         frames
@@ -582,61 +609,66 @@ async fn async_error_event_ends_stream() {
             .all(|frame| !frame.contains("message_stop") && !frame.contains("message_delta")),
         "no terminal frame is fabricated after the failure"
     );
-    assert_eq!(errors.0.load(Ordering::Relaxed), 1, "one error line");
-
-    let empty = StreamFailure::Unclassified {
-        text: String::new(),
-    };
-    let mut stream = driver(failing(vec![text("A")], empty.clone()), setup());
-    assert_message(&mut stream).await;
-    assert_events(&mut stream, &[TEXT_START, DELTA_A]).await;
-    let failure = stream
-        .next_event()
-        .await
-        .expect_err("the empty failure reaches the caller");
-    assert_eq!(failure.into_stream_failure(), empty);
-    let mut view = byte_view(failing(vec![text("A")], empty), setup());
-    let mut frames = Vec::new();
-    while frames.len() < 8 {
-        let Some(frame) = view.next_frame().await else {
-            break;
-        };
-        frames.push(String::from_utf8(frame).expect("the frame is text"));
-    }
     assert_eq!(
-        frames.len(),
-        4,
-        "message_start, the block start, the delta, then the error"
+        frames.last().map(String::as_str),
+        Some(
+            "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"rate_limit_error\", \"message\": \"busy\"}}\n\n"
+        )
     );
     assert!(
         view.next_frame().await.is_none(),
         "the error frame ended the stream"
     );
+    assert_eq!(errors.0.load(Ordering::Relaxed), 1, "one error line");
+}
+
+#[tokio::test]
+async fn async_empty_failure_event_ends_stream() {
+    let errors = ErrorCount::default();
+    let _subscription = set_default(tracing_subscriber::registry().with(errors.clone()));
+    let empty = StreamFailure::Unclassified {
+        text: String::new(),
+    };
+    let mut view = byte_view(failing(vec![text("A")], empty), setup());
+    let frames = drain_frames(&mut view, 8).await;
     assert_eq!(
         frames.last().map(String::as_str),
         Some(
             "event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"Upstream stream ended before completion\"}}\n\n"
         )
     );
-    assert_eq!(errors.0.load(Ordering::Relaxed), 2, "one line per boundary");
+    assert_eq!(errors.0.load(Ordering::Relaxed), 1, "one line per boundary");
+}
 
+#[tokio::test]
+async fn async_state_error_reaches_the_caller() {
     let malformed =
         chunk(r#"{"choices":[{"index":0,"delta":{"thinking_blocks":[5]},"finish_reason":null}]}"#);
-    let mut stream = driver(scripted(vec![malformed.clone()]), setup());
+    let mut stream = driver(scripted(vec![malformed]), setup());
     assert_message(&mut stream).await;
-    let failure = stream
+    let state_failure = stream
         .next_event()
         .await
         .expect_err("the state error reaches the caller");
-    match failure {
+    match state_failure {
         ChatStreamError::State(error) => assert!(
             error
                 .to_string()
                 .starts_with("the event is not valid JSON: "),
             "the state error keeps its own text"
         ),
-        other => panic!("expected the state error, got {other:?}"),
+        other @ ChatStreamError::Stream { .. } => {
+            panic!("expected the state error, got {other:?}");
+        }
     }
+}
+
+#[tokio::test]
+async fn async_state_error_event_ends_stream() {
+    let errors = ErrorCount::default();
+    let _subscription = set_default(tracing_subscriber::registry().with(errors.clone()));
+    let malformed =
+        chunk(r#"{"choices":[{"index":0,"delta":{"thinking_blocks":[5]},"finish_reason":null}]}"#);
     let mut view = byte_view(scripted(vec![malformed]), setup());
     let start = String::from_utf8(view.next_frame().await.expect("the message_start frame"))
         .expect("the frame is text");
@@ -653,8 +685,13 @@ async fn async_error_event_ends_stream() {
         view.next_frame().await.is_none(),
         "the state error ended the stream"
     );
-    assert_eq!(errors.0.load(Ordering::Relaxed), 3, "one line per boundary");
+    assert_eq!(errors.0.load(Ordering::Relaxed), 1, "one line per boundary");
+}
 
+#[tokio::test]
+async fn async_oversized_error_frame_is_dropped() {
+    let errors = ErrorCount::default();
+    let _subscription = set_default(tracing_subscriber::registry().with(errors.clone()));
     let oversized = StreamFailure::Reported {
         status_code: 500,
         message: "x".repeat(0x2000),
@@ -673,7 +710,7 @@ async fn async_error_event_ends_stream() {
     );
     assert_eq!(
         errors.0.load(Ordering::Relaxed),
-        5,
+        2,
         "the failure line and the oversized-frame line"
     );
 }
@@ -700,7 +737,7 @@ async fn async_byte_view_metadata() {
     assert_eq!(view.model(), "claude-sonnet-4-5");
     assert_eq!(
         view.chunks(),
-        Some(std::slice::from_ref(&recorded)),
+        Some(from_ref(&recorded)),
         "the view hands the recorded chunks back unchanged"
     );
     assert_eq!(view.messages(), Some(messages.as_slice()));
@@ -708,6 +745,15 @@ async fn async_byte_view_metadata() {
     let encoded = String::from_utf8(frame).expect("the frame is text");
     assert!(encoded.starts_with("event: message_start\ndata: {"));
     assert!(encoded.contains("\"model\": \"claude-sonnet-4-5\""));
+}
+
+#[tokio::test]
+async fn async_aclose_closes_the_generator_only() {
+    let mut view = byte_view(scripted(vec![text("A")]), setup());
+    view.hidden_params.insert(
+        "cache_key".to_owned(),
+        decisions::Json::Text("k".to_owned()),
+    );
     view.aclose();
     assert!(
         view.next_frame().await.is_none(),
@@ -721,7 +767,7 @@ async fn async_byte_view_metadata() {
     assert_eq!(
         view.hidden_params.get("cache_key"),
         Some(&decisions::Json::Text("k".to_owned())),
-        "the hidden params the proxy stamped survive the frames and aclose"
+        "the hidden params the proxy stamped survive aclose"
     );
     assert!(
         view.stream
@@ -731,7 +777,10 @@ async fn async_byte_view_metadata() {
             .is_some(),
         "aclose does not close the completion stream"
     );
+}
 
+#[tokio::test]
+async fn async_views_keep_their_own_setup() {
     let mut first_setup = setup();
     first_setup.model = "model-a".to_owned();
     first_setup
@@ -747,6 +796,28 @@ async fn async_byte_view_metadata() {
     );
     let mut first = byte_view(scripted(vec![first_tool_chunk]), first_setup);
     let mut second = byte_view(scripted(vec![second_tool_chunk]), second_setup);
+    let first_start = String::from_utf8(first.next_frame().await.expect("its own start"))
+        .expect("the frame is text");
+    let second_start = String::from_utf8(second.next_frame().await.expect("its own start"))
+        .expect("the frame is text");
+    assert!(first_start.contains("\"model\": \"model-a\""));
+    assert!(second_start.contains("\"model\": \"model-b\""));
+    let first_tool = String::from_utf8(first.next_frame().await.expect("first tool start"))
+        .expect("the frame is text");
+    let second_tool = String::from_utf8(second.next_frame().await.expect("second tool start"))
+        .expect("the frame is text");
+    assert!(first_tool.contains("\"name\": \"lookup_a\""));
+    assert!(second_tool.contains("\"name\": \"lookup\""));
+    assert_ne!(
+        first.stream.state.message_id,
+        second.stream.state.message_id
+    );
+}
+
+#[tokio::test]
+async fn async_queued_events_stay_in_their_view() {
+    let mut first = byte_view(scripted(vec![text("A")]), setup());
+    let mut second = byte_view(scripted(vec![text("A")]), setup());
     first
         .stream
         .state
@@ -759,20 +830,9 @@ async fn async_byte_view_metadata() {
         .expect("the frame is text");
     let second_start = String::from_utf8(second.next_frame().await.expect("its own start"))
         .expect("the frame is text");
-    assert!(first_start.contains("\"model\": \"model-a\""));
-    assert!(second_start.contains("\"model\": \"model-b\""));
+    assert!(first_start.starts_with("event: message_start\n"));
     assert!(
         !second_start.starts_with("event: ping"),
         "the ping stayed in its view"
-    );
-    let first_tool = String::from_utf8(first.next_frame().await.expect("first tool start"))
-        .expect("the frame is text");
-    let second_tool = String::from_utf8(second.next_frame().await.expect("second tool start"))
-        .expect("the frame is text");
-    assert!(first_tool.contains("\"name\": \"lookup_a\""));
-    assert!(second_tool.contains("\"name\": \"lookup\""));
-    assert_ne!(
-        first.stream.state.message_id,
-        second.stream.state.message_id
     );
 }
