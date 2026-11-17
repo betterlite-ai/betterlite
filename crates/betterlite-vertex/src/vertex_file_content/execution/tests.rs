@@ -66,7 +66,6 @@ fn content_read<'read>(
         deployment,
         credentials,
         trusted,
-        disabled: false,
     }
 }
 

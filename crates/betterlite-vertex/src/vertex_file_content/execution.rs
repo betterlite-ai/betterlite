@@ -34,13 +34,12 @@ const OCTET_STREAM: &str = "application/octet-stream";
 const BUCKET_FIELD: &str = "gcs_bucket_name";
 const SERVICE_ACCOUNT_FIELD: &str = "gcs_path_service_account";
 
-// one file content read: the request, the deployment values, the caller's credentials and the conversion switch
+// one file content read: the request, the deployment values, the caller's credentials and the trusted model record
 pub struct ContentRead<'read> {
     pub request: &'read FileContentRequest,
     pub deployment: &'read ReadDeployment,
     pub credentials: Option<&'read Json>,
     pub trusted: &'read TrustedModelCredentials,
-    pub disabled: bool,
 }
 
 fn read_environment(environment: &dyn EnvironmentSource) -> ReadEnvironment {
@@ -115,9 +114,10 @@ where
         });
     };
     let headers = object_headers(content.len());
+    // afile_content transforms with empty litellm_params, so the read always uses the default conversion policy
     let converted =
         // ast-grep-ignore: no-long-names
-        transform_file_content_response(&content, &decoded_file_id, &headers, read.disabled, state);
+        transform_file_content_response(&content, &decoded_file_id, &headers, false, state);
     Ok(BinaryContent {
         status: SUCCESS_STATUS,
         headers: flatten_headers(&converted.headers),
