@@ -1,0 +1,12 @@
+task: B350
+deviations:
+  - what: >-
+      The lar1_meta byte parser rejects inputs over 1048576 bytes before allocation and routes with the
+      declared metadata defaults, while LiteLLM validates the whole request metadata object without a
+      byte bound.
+    why: >-
+      The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite
+      limit. Existing structural field limits remain unchanged, and the defaulting path is the same one
+      LiteLLM takes for metadata it cannot validate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L24-L179
+kept_bugs: []
