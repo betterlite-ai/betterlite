@@ -7,21 +7,18 @@ use super::error::DecodeError;
 use super::request::GenerateFields;
 use super::values::Amount;
 
-// `new_master_key` is a secret, so this wire record derives no Debug.
+// The key, new_key and new_master_key fields are secrets, so this record derives no Debug, PartialEq or Eq.
 nullable_record! {
-    (Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)
+    (Clone, serde::Serialize, serde::Deserialize)
     pub struct RegenerateFields {
-        key: String,
-        new_key: String,
         duration: String,
         spend: Amount,
         metadata: Payload,
-        new_master_key: String,
         grace_period: String,
-    }
+    } secret { key, new_key, new_master_key }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct RegenerateKeyRequest {
     pub base: KeyRequestBase,
     pub generate: GenerateFields,

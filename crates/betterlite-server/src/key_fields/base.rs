@@ -45,9 +45,8 @@ nullable_record! {
 }
 
 nullable_record! {
-    (Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)
+    (Clone, serde::Serialize, serde::Deserialize)
     pub struct KeyRequestFields {
-        key: String,
         tpd_limit: i64,
         #[serde(rename = "default_estimated_output_tokens")]
         estimated_output_tokens: i64,
@@ -67,7 +66,7 @@ nullable_record! {
         tpm_limit_type: LimitType,
         router_settings: Payload,
         access_group_ids: Vec<String>,
-    }
+    } secret { key }
 }
 
 impl GenerateRequestBase {
@@ -87,7 +86,7 @@ impl GenerateRequestBase {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct KeyRequestBase {
     pub base: GenerateRequestBase,
     pub key_fields: KeyRequestFields,

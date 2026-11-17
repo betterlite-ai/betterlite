@@ -11,9 +11,8 @@ use super::error::DecodeError;
 const STORED_JSON_FIELDS: &str = "metadata aliases config permissions model_max_budget budget_fallbacks router_settings budget_limits";
 
 nullable_record! {
-    (Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)
+    (Clone, serde::Serialize, serde::Deserialize)
     pub struct ResponseFields {
-        key: String,
         key_name: String,
         key_type: String,
         expires: Timestamp,
@@ -22,15 +21,14 @@ nullable_record! {
         organization_id: String,
         project_id: String,
         litellm_budget_table: JsonData,
-        token: String,
         created_by: String,
         updated_by: String,
         created_at: Timestamp,
         updated_at: Timestamp,
-    }
+    } secret { key, token }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct GenerateKeyResponse {
     pub base: KeyRequestBase,
     pub response: ResponseFields,

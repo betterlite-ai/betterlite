@@ -6,6 +6,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_logging::private_json::error::PrivateJsonError;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 
 use super::base::{GenerateRequestBase, KeyRequestBase};
@@ -46,6 +47,13 @@ fn decode_value<T: DeserializeOwned>(value: &JsonData) -> Result<T, DecodeError>
 
 fn assert_field(fields: &BTreeMap<String, JsonData>, name: &str, text: &str) {
     assert_eq!(fields.get(name), Some(&json_data(text)), "{name}");
+}
+
+fn exposed(value: &Option<Option<SecretString>>) -> Option<&str> {
+    value
+        .as_ref()
+        .and_then(|inner| inner.as_ref())
+        .map(|secret| secret.expose_secret().as_str())
 }
 
 fn assert_null(fields: &BTreeMap<String, JsonData>, names: &[&str]) {
@@ -590,12 +598,12 @@ fn millisecond_timestamp() {
 #[test]
 fn regenerate_defaults() {
     let request = RegenerateKeyRequest::read(&value("{}")).expect("the regenerate defaults");
-    assert_eq!(request.regenerate.key, None);
-    assert_eq!(request.regenerate.new_key, None);
+    assert!(request.regenerate.key.is_none());
+    assert!(request.regenerate.new_key.is_none());
     assert_eq!(request.regenerate.duration, None);
     assert_eq!(request.regenerate.spend, None);
     assert_eq!(request.regenerate.metadata, None);
-    assert_eq!(request.regenerate.new_master_key, None);
+    assert!(request.regenerate.new_master_key.is_none());
     assert_eq!(request.regenerate.grace_period, None);
     let resolved = request.project().expect("the projection").resolved;
     assert_eq!(resolved.len(), 57);
@@ -611,11 +619,11 @@ fn regenerate_defaults() {
 fn response_token_wins() {
     let response = GenerateKeyResponse::read(&value(r#"{"key": "k", "token": "t"}"#))
         .expect("a response with a token");
-    assert_eq!(response.response.token, Some(Some("t".to_owned())));
-    assert_eq!(response.response.key, Some(Some("t".to_owned())));
+    assert_eq!(exposed(&response.response.token), Some("t"));
+    assert_eq!(exposed(&response.response.key), Some("t"));
     let emptied =
         GenerateKeyResponse::read(&value(r#"{"key": "k", "token": ""}"#)).expect("an empty token");
-    assert_eq!(emptied.response.key, Some(Some(String::new())));
+    assert_eq!(exposed(&emptied.response.key), Some(""));
     assert!(matches!(
         GenerateKeyResponse::read(&value(r#"{"token": null}"#)),
         Err(DecodeError::MissingResponseKey)
@@ -718,7 +726,7 @@ fn bulk_item_fields() {
         serde_json::from_str(r#"{"keys": [{"key": "k", "max_budget": 5.0, "extra": 1}]}"#)
             .expect("a bulk request");
     let item = &request.keys[0];
-    assert_eq!(item.key, "k");
+    assert_eq!(item.key.expose_secret(), "k");
     assert_eq!(item.budget_id, None);
     assert_eq!(item.team_id, None);
     assert_eq!(

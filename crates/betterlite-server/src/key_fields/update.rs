@@ -25,7 +25,7 @@ nullable_record! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct UpdateKeyRequest {
     pub base: KeyRequestBase,
     pub update: UpdateFields,

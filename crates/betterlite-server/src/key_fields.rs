@@ -1,5 +1,5 @@
 macro_rules! nullable_record {
-    (($($derive:path),* $(,)?) $(#[$meta:meta])* $vis:vis struct $name:ident { $($(#[$field_meta:meta])* $field:ident: $ty:ty),* $(,)? }) => {
+    (($($derive:path),* $(,)?) $(#[$meta:meta])* $vis:vis struct $name:ident { $($(#[$field_meta:meta])* $field:ident: $ty:ty),* $(,)? } $(secret { $($secret:ident),* $(,)? })?) => {
         $(#[$meta])*
         #[derive($($derive),*)]
         $vis struct $name {
@@ -12,6 +12,10 @@ macro_rules! nullable_record {
                 )]
                 pub $field: Option<Option<$ty>>,
             )*
+            $($(
+                #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "serde_with::As::<Option<Option<serde_with::FromIntoRef<crate::key_fields::values::ExposedSecret>>>>::serialize", deserialize_with = "serde_with::rust::double_option::deserialize")]
+                pub $secret: Option<Option<secrecy::SecretString>>,
+            )*)?
         }
     };
 }

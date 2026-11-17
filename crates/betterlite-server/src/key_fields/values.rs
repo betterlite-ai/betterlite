@@ -2,10 +2,22 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::decode::{resolved, to_object};
 use super::defaults::OBJECT_PERMISSION_DEFAULTS;
 use super::error::DecodeError;
+
+// Serde's library adapter creates this private, non-Debug value only during explicit serialization.
+#[derive(serde::Serialize)]
+#[serde(transparent)]
+pub(crate) struct ExposedSecret(String);
+
+impl From<&SecretString> for ExposedSecret {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Amount(

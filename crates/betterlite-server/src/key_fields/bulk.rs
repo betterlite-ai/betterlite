@@ -6,11 +6,14 @@ use betterlite_db::identity_rows::Payload;
 use super::broadcast::KeyUpdateFields;
 use super::decode::{TypedValue, decode_group, to_object};
 use super::error::DecodeError;
-use super::values::{Amount, LiteLLMObjectPermissionBase};
+use super::values::{Amount, ExposedSecret, LiteLLMObjectPermissionBase};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BulkUpdateKeyRequestItem {
-    pub key: String,
+    #[serde(
+        serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+    )]
+    pub key: secrecy::SecretString,
     #[serde(default)]
     pub budget_id: Option<String>,
     #[serde(default)]
@@ -23,26 +26,32 @@ pub struct BulkUpdateKeyRequestItem {
     pub object_permission: Option<LiteLLMObjectPermissionBase>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BulkUpdateKeyRequest {
     pub keys: Vec<BulkUpdateKeyRequestItem>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct SuccessfulKeyUpdate {
-    pub key: String,
+    #[serde(
+        serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+    )]
+    pub key: secrecy::SecretString,
     pub key_info: Payload,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct FailedKeyUpdate {
-    pub key: String,
+    #[serde(
+        serialize_with = "serde_with::As::<serde_with::FromIntoRef<ExposedSecret>>::serialize"
+    )]
+    pub key: secrecy::SecretString,
     #[serde(default)]
     pub key_info: Option<Payload>,
     pub failed_reason: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BulkUpdateKeyResponse {
     pub total_requested: i64,
     pub successful_updates: Vec<SuccessfulKeyUpdate>,

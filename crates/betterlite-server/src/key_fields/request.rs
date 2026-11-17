@@ -17,7 +17,7 @@ nullable_record! {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct GenerateKeyRequest {
     pub base: KeyRequestBase,
     pub generate: GenerateFields,
