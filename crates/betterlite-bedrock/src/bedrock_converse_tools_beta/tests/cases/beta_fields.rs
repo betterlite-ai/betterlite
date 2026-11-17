@@ -125,6 +125,21 @@ pub(super) fn effort_values(session: &mut Session<'_>) {
     assert_eq!(unrecognized.betas, list(r#"["effort-2025-11-24"]"#));
 }
 
+pub(super) fn routing_prefixed_model(session: &mut Session<'_>) {
+    let prefixed = prepare(
+        session,
+        "bedrock/anthropic.fixture-plain",
+        "[]",
+        None,
+        r#"{"output_config": {"effort": "high"}}"#,
+    );
+    assert_eq!(prefixed.betas, list(r#"["effort-2025-11-24"]"#));
+    assert_eq!(
+        prefixed.params,
+        params(r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#)
+    );
+}
+
 pub(super) fn effort_without_effect(session: &mut Session<'_>) {
     let null = prepare(
         session,
