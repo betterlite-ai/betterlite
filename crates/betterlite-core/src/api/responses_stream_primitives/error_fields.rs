@@ -107,7 +107,7 @@ pub fn status_code_for_error_field(field: &str) -> Option<u16> {
     error_code_status(field)
 }
 
-fn error_code_status(field: &str) -> Option<u16> {
+pub(super) fn error_code_status(field: &str) -> Option<u16> {
     match field {
         "server_error" => Some(500),
         "rate_limit_exceeded" | "insufficient_quota" => Some(429),

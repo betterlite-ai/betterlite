@@ -5,7 +5,8 @@ use serde_json::Number;
 
 use crate::api::responses_stream_primitives::error_fields::{
     DEFAULT_STREAM_ERROR_MESSAGE, StreamErrorAttributes, StreamErrorFields, StreamErrorObject,
-    error_event_fields, status_code_for_error_fields, stream_error_status_and_message,
+    error_code_status, error_event_fields, status_code_for_error_fields,
+    stream_error_status_and_message,
 };
 
 fn text(value: &str) -> Json {
@@ -151,6 +152,7 @@ fn the_code_is_read_before_the_type(
 #[case::below_the_range(Some("399"), 500)]
 #[case::above_the_range(Some("600"), 500)]
 #[case::not_a_number(Some("4o0"), 500)]
+#[case::a_signed_number(Some("+400"), 500)]
 fn a_decimal_field_becomes_a_status_only_inside_the_range(
     #[case] code: Option<&str>,
     #[case] expected: u16,
@@ -197,6 +199,16 @@ fn every_named_invalid_request_code_maps_to_400() {
 #[case::an_unknown_code(Some("mystery"), 500)]
 fn a_symbolic_code_maps_through_the_table(#[case] code: Option<&str>, #[case] expected: u16) {
     assert_eq!(status_code_for_error_fields(None, code), expected);
+}
+
+#[rstest]
+#[case::server_error("server_error", Some(500))]
+#[case::rate_limit_exceeded("rate_limit_exceeded", Some(429))]
+#[case::insufficient_quota("insufficient_quota", Some(429))]
+#[case::vector_store_timeout("vector_store_timeout", Some(504))]
+#[case::an_unknown_symbol("mystery", None)]
+fn the_table_answers_each_named_code(#[case] field: &str, #[case] expected: Option<u16>) {
+    assert_eq!(error_code_status(field), expected);
 }
 
 #[test]

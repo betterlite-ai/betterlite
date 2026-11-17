@@ -2,10 +2,10 @@ use indexmap::IndexMap;
 
 use crate::api::responses_stream_primitives::duration::STREAM_TIMEOUT_STATUS;
 use crate::api::responses_stream_primitives::state::{
-    BaseStreamStateInput, ResponsesStreamBaseState, base_stream_state,
+    BaseStreamStateInput, ResponsesStreamBaseState, StreamTimes, base_stream_state,
 };
 
-use super::support::{NoApiBase, snapshot, times};
+use super::support::{NoApiBase, moment, snapshot, times};
 
 fn state_with_limit(
     model: &str,
@@ -53,6 +53,34 @@ fn a_limit_over_the_elapsed_time_times_out() {
     );
     assert_eq!(timeout.model, "gpt-4o");
     assert_eq!(timeout.custom_llm_provider, "");
+}
+
+#[test]
+fn a_timeout_counts_from_the_created_timestamp() {
+    let headers = IndexMap::new();
+    let state = base_stream_state(&BaseStreamStateInput {
+        model: "gpt-4o",
+        custom_llm_provider: None,
+        litellm_metadata: None,
+        request_data: None,
+        call_type: None,
+        logging: snapshot(IndexMap::new()),
+        headers: &headers,
+        api_base: &NoApiBase,
+        times: StreamTimes {
+            now: moment(),
+            created_timestamp: 10.0,
+        },
+        max_streaming_duration_seconds: Some(2.5),
+    });
+    assert!(state.check_max_streaming_duration(12.5).is_ok());
+    let timeout = state
+        .check_max_streaming_duration(12.6)
+        .expect_err("the stream ran 2.6s past its created time");
+    assert_eq!(
+        timeout.message,
+        "litellm.Timeout: Stream exceeded max streaming duration of 2.5s (elapsed 2.6s)"
+    );
 }
 
 #[test]
