@@ -26,12 +26,16 @@ deviations:
       when the deployment declares no provider and from the fill rules for the provider it declares, the
       deployment's own keys and explicit nulls winning, and writes a missing litellm_provider from the first
       matching routing rule, where LiteLLM instead resolves a request's model through get_llm_provider and
-      get_model_info before a call.
+      get_model_info before a call. The stage runs whenever the router's RouteServices carries installed
+      rules; the server startup that builds that service from the loaded config, and its reload on a config
+      change, belong to B304's routing_state.rs and B016's router_core.rs, the route entry that calls
+      pipeline::route.
     why: >-
       betterlite selects among configured deployments, so the rule document reaches a deployment's entry at
       selection: a deployment without a provider or capability metadata gets it there, and both the filters and
       the chosen deployment see what a LiteLLM call would have resolved. A router without rules leaves every
       deployment unchanged; a deployment whose model prefix names its provider is not re-inferred at selection,
-      so a routing rule may supply a provider its records leave out.
+      so a routing rule may supply a provider its records leave out. Until B304 and B016 install and call this
+      service from the server, no proxy process runs the stage.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
 kept_bugs: []
