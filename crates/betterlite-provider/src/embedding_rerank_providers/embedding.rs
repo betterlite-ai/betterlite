@@ -92,8 +92,8 @@ fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let variant = VoyageEmbeddingVariant::for_model(leaf.common.model);
     let options = voyage_options(leaf.non_default, variant)?;
     let given = serde_json::to_value(&leaf.request.input)?;
-    let body = voyage_embedding::request(leaf.common.model, given, &options, variant);
-    let body: BaseObject = serde_json::from_value(body)?;
+    let request_body = voyage_embedding::request(leaf.common.model, given, &options, variant);
+    let body: BaseObject = serde_json::from_value(request_body)?;
     // LiteLLM's Voyage handler receives no caller headers, and its validate_environment clears them
     let authorization = voyage_embedding::voyage_credentials(
         leaf.common.api_key.map(ExposeSecret::expose_secret),
