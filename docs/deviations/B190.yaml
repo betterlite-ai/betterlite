@@ -1,0 +1,24 @@
+task: B190
+deviations:
+  - what: The payload printed under LITELLM_PRINT_STANDARD_LOGGING_PAYLOAD is the stored payload after request-level message redaction rewrote it; LiteLLM prints the payload when it is built, before the success handler redacts the stored standard_logging_object.
+    why: B190's builder returns the payload and B250's lifecycle emits the stored payload after redaction, so emitting inside the builder would print twice on the stream path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2430-L2438
+  - what: classifier_input and originating_request_masked are never in the payload; LiteLLM fills them for a classifier call that is not redacted.
+    why: B021 owns the classifier audit, so the payload carries no classifier input yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6671-L6681
+  - what: An image generation response gets no output_image_count in its usage; LiteLLM adds the count when the result is an ImageResponse instance with data.
+    why: The payload input here is plain JSON, so an image result cannot be told apart from any other response object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6516-L6520
+  - what: The expected-client-error check that decides whether a failure payload keeps its traceback receives false for the HTTPException and BaseLLMException markers, so a proxy 4xx that LiteLLM treats as expected can keep the traceback.
+    why: The failure path hands the payload ExceptionFacts, which carries no exception class hierarchy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6126-L6130
+  - what: A dict response that carries _hidden_params fills the payload's hidden_params from it; LiteLLM reads hidden params off a response object only and leaves them empty for a dict.
+    why: betterlite's response input is JSON in both cases, so a dict stamped with hidden params would otherwise lose its cache key and model id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6407-L6447
+  - what: The success handler redacts the stored payload a second time after this task's builder already redacted it, so a turn_off_message_logging payload that reaches callbacks has the users' messages replaced by the marker with no system prompt; LiteLLM's payload keeps the system prompt as its first message.
+    why: B250's success handler calls redact_stored_payload on the builder's stored payload, and that handler is outside B190's scope; the builder itself and the oracle cases keep the system prompt exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L262-L268
+kept_bugs:
+  - what: The system prompt survives turn_off_message_logging in the payload's messages; perform_redaction rewrites the messages list and leaves the system prompt in place, so the payload prepends it again as a system message.
+    why: A working setup reaches the same payload today, and changing it would make betterlite's redacted payload differ from LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L262-L268
