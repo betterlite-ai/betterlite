@@ -1,10 +1,8 @@
-use std::collections::VecDeque;
-use std::io;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use axum::body::{Body, Bytes};
+use axum::body::Body;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::mock_response::failure::MockError;
@@ -16,7 +14,6 @@ use betterlite_core::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatResult, ChatStreamAnswer,
     TextCallMode,
 };
-use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
@@ -26,21 +23,19 @@ use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_openai::completion_chat_bridge::{
     ChatEndpoint, answer, chat_endpoint, text_endpoint_model, text_request,
 };
-use betterlite_openai::stream::SseParser;
-use betterlite_openai::stream::chunk::Chunk;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{CompletionCallAnswer, CompletionExecutor};
-use betterlite_openai::text_completion_stream::chat_chunk;
-use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use futures_util::StreamExt as _;
-use futures_util::stream::{self, BoxStream};
+use futures_util::stream;
 use tokio::sync::OnceCell;
 
 use super::CallContext;
 use super::headers::stream_headers;
 use crate::routes::completions::streaming::provider_stream;
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
+
+use self::relay::{Pump, next_frame, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(super) struct ChatCalls {
@@ -270,149 +265,5 @@ fn mock_stream(
     })
 }
 
-// A source the frame pump drains: fills the queue and answers true once it has ended.
-#[async_trait]
-trait FrameSource<Error: Send + 'static>: Send {
-    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, Error>;
-}
-
-struct Pump<Source> {
-    source: Source,
-    pending: VecDeque<Bytes>,
-    finished: bool,
-}
-
-impl<Source> Pump<Source> {
-    fn new(source: Source) -> Self {
-        Self {
-            source,
-            pending: VecDeque::new(),
-            finished: false,
-        }
-    }
-}
-
-// One data event at a time, then the DONE event; the source's error closes the stream.
-async fn next_frame<Source, Error>(
-    mut state: Pump<Source>,
-) -> Option<(Result<Bytes, Error>, Pump<Source>)>
-where
-    Source: FrameSource<Error> + Send,
-{
-    loop {
-        if let Some(frame) = state.pending.pop_front() {
-            return Some((Ok(frame), state));
-        }
-        if state.finished {
-            return None;
-        }
-        match state.source.fill(&mut state.pending).await {
-            Ok(false) => {}
-            Ok(true) => state.finished = true,
-            Err(error) => {
-                state.finished = true;
-                return Some((Err(error), state));
-            }
-        }
-    }
-}
-
-// The provider's SSE bytes relayed as the chat route's events, model restamped and usage filtered.
-struct RelaySource {
-    upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    parser: SseParser,
-    model: String,
-    include_usage: bool,
-}
-
-#[async_trait]
-impl FrameSource<io::Error> for RelaySource {
-    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, io::Error> {
-        let events = match self.upstream.next().await {
-            Some(Ok(chunk)) => self.parser.push(&chunk).map_err(io::Error::other)?,
-            Some(Err(error)) => return Err(io::Error::other(error)),
-            None => {
-                pending.push_back(Bytes::from_static(b"data: [DONE]\n\n"));
-                return Ok(true);
-            }
-        };
-        let mut ended = false;
-        for event in events {
-            if event == b"[DONE]" {
-                pending.push_back(Bytes::from_static(b"data: [DONE]\n\n"));
-                ended = true;
-                break;
-            }
-            if let Some(chunk) =
-                Chunk::parse(&event, &self.model, self.include_usage).map_err(io::Error::other)?
-            {
-                let text = serde_json::to_string(&chunk).map_err(io::Error::other)?;
-                pending.push_back(Bytes::from(format!("data: {text}\n\n")));
-            }
-        }
-        Ok(ended)
-    }
-}
-
-// The text provider's chunks rebuilt as chat chunks; B5366's text wrapper is the reverse direction.
-struct TextSource {
-    stream: CompletionStream,
-    model: String,
-    include_usage: bool,
-}
-
-#[async_trait]
-impl FrameSource<HttpError> for TextSource {
-    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, HttpError> {
-        text_frame(self, pending).await
-    }
-}
-
-// One text chunk becomes at most one chat event; DONE closes the stream after the provider's last chunk.
-async fn text_frame(
-    source: &mut TextSource,
-    pending: &mut VecDeque<Bytes>,
-) -> Result<bool, HttpError> {
-    let Some(item) = source.stream.next().await else {
-        pending.push_back(Bytes::from_static(b"data: [DONE]\n\n"));
-        return Ok(true);
-    };
-    let chunk = item.map_err(|error| {
-        // the client reads a broken event stream as a truncated answer, the way LiteLLM's closes
-        tracing::warn!(message = %error, "the text provider stream failed");
-        HttpError::Timeout
-    })?;
-    match chat_chunk(&chunk, &source.model, source.include_usage) {
-        Ok(Some(value)) => {
-            let text = serde_json::to_string(&value).map_err(|error| {
-                tracing::warn!(message = %error, "the text chunk could not be written");
-                HttpError::Timeout
-            })?;
-            pending.push_back(Bytes::from(format!("data: {text}\n\n")));
-        }
-        Ok(None) => {}
-        Err(error) => {
-            tracing::warn!(message = %error, "the text chunk could not be written");
-            return Err(HttpError::Timeout);
-        }
-    }
-    Ok(false)
-}
-
-fn relay_bytes(
-    upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    request: &ChatRequest,
-) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
-    let source = RelaySource {
-        upstream,
-        parser: SseParser::default(),
-        model: request.model.clone().unwrap_or_default(),
-        include_usage: request
-            .stream_options
-            .as_ref()
-            .is_some_and(|options| options.include_usage),
-    };
-    stream::unfold(Pump::new(source), next_frame)
-}
-
+mod relay;
 mod tests;

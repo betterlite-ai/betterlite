@@ -20,7 +20,8 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use super::{Pump, RelaySource, TextSource, completion_failure, next_frame};
+use super::completion_failure;
+use super::relay::{Pump, RelaySource, TextSource, next_frame};
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 

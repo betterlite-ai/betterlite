@@ -26,6 +26,12 @@ use crate::state::ServerState;
 
 const ANSWER: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
 
+const STREAM: &str = concat!(
+    "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}]}\n\n",
+    "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-3.5-turbo-instruct\",\"choices\":[{\"text\":\" there\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n",
+    "data: [DONE]\n\n"
+);
+
 fn config(source: &str) -> Config {
     ConfigLoader {
         lookup: BTreeMap::new(),
@@ -162,7 +168,7 @@ enum Scenario {
     ParametersAndControls,
     ProviderBadRequest,
     ProviderRateLimit,
-    StreamNotBuilt,
+    StreamTrue,
     StreamFalse,
     AuthRequired,
 }
@@ -181,7 +187,7 @@ enum Scenario {
 #[case::parameters_and_controls(Scenario::ParametersAndControls)]
 #[case::provider_bad_request(Scenario::ProviderBadRequest)]
 #[case::provider_rate_limit(Scenario::ProviderRateLimit)]
-#[case::stream_not_built(Scenario::StreamNotBuilt)]
+#[case::stream_true(Scenario::StreamTrue)]
 #[case::stream_false(Scenario::StreamFalse)]
 #[case::auth_required(Scenario::AuthRequired)]
 #[tokio::test]
@@ -202,7 +208,7 @@ async fn text_completions_text_completion_tests_behavior(#[case] scenario: Scena
         Scenario::ParametersAndControls => parameters_and_controls().await,
         Scenario::ProviderBadRequest => provider_error(400, None).await,
         Scenario::ProviderRateLimit => provider_error(429, Some("throttling_error")).await,
-        Scenario::StreamNotBuilt => stream_not_built().await,
+        Scenario::StreamTrue => stream_true().await,
         Scenario::StreamFalse => stream_false().await,
         Scenario::AuthRequired => auth_required().await,
     }
@@ -452,19 +458,42 @@ async fn stream_false() {
     );
 }
 
-async fn stream_not_built() {
+async fn stream_true() {
     let body = r#"{"model":"text-model","prompt":"hi","stream":true}"#;
-    let answered = call("/v1/completions", body, 200, ANSWER).await;
-    assert_eq!(answered.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let answered = call("/v1/completions", body, 200, STREAM).await;
+    assert_eq!(answered.status, StatusCode::OK);
     assert_eq!(
         answered
-            .body
-            .error
-            .as_ref()
-            .and_then(|error| error.kind.as_deref()),
-        Some("internal_server_error")
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream; charset=utf-8")
     );
-    assert!(answered.sent.is_empty(), "no provider request");
+    assert!(
+        answered.sent.contains(r#""stream":true"#),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        answered.raw.contains(r#""object":"text_completion""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""text":" hello""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""text":" there""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.ends_with("data: [DONE]\n\n"),
+        "{:?}",
+        answered.raw
+    );
 }
 
 #[tokio::test]
