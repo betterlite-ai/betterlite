@@ -285,11 +285,8 @@ async def run_one(
 
 
 async def run_all(call: MessagesChatStreamCall, api_base: str) -> list[RunOutcome]:
-    runs: list[RunOutcome] = []
     async with httpx.AsyncClient(trust_env=False, timeout=float(call.timeout_seconds)) as client:
-        for spec in call.runs:
-            runs.append(await run_one(call, spec, api_base, client))
-    return runs
+        return [await run_one(call, spec, api_base, client) for spec in call.runs]
 
 
 def run_messages_chat_stream(call: MessagesChatStreamCall, api_base: str) -> str:
