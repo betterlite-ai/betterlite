@@ -1,0 +1,77 @@
+use std::sync::Arc;
+
+use betterlite_config::sections::service_callback::Settings as ServiceCallbackSettings;
+use betterlite_db::database_diagnostics::level::LogLevel;
+
+use crate::callback_config::{CallbackVars, FeatureFlags};
+use crate::logging_service_events::pipeline::{PipelineConfig, PipelineError, ServicePipeline};
+use crate::logging_service_events::sink::ServiceEventSink;
+use crate::logging_success::ports::{StreamAssembler, SuccessClock};
+use crate::registry::CallbackRegistry;
+use crate::registry::phases::CallbackList;
+use crate::worker::WorkerSettings;
+
+// The one place the server builds the logging dependencies: the clock, the sink, the callback
+// registry and the stream assembler enter here, and every route reads the pipeline's Arc.
+pub struct LoggingWiring {
+    pub pipeline: Arc<ServicePipeline>,
+    pub stream_assembler: Arc<dyn StreamAssembler>,
+    pub log_level: LogLevel,
+    pub json_logs: bool,
+}
+
+impl LoggingWiring {
+    pub fn start(
+        settings: &ServiceCallbackSettings,
+        clock: Arc<dyn SuccessClock>,
+        sink: Arc<dyn ServiceEventSink>,
+        mut registry: CallbackRegistry,
+        stream_assembler: Arc<dyn StreamAssembler>,
+    ) -> Result<Self, PipelineError> {
+        register_service_callbacks(&mut registry, &settings.service_callbacks);
+        let pipeline = ServicePipeline::start(PipelineConfig {
+            settings: WorkerSettings {
+                max_queue_size: settings.max_queue_size,
+                concurrency: settings.concurrency,
+                event_timeout: settings.event_timeout,
+                ..WorkerSettings::default()
+            },
+            clock,
+            sink,
+            registry: Arc::new(registry),
+        })?;
+        Ok(Self {
+            pipeline: Arc::new(pipeline),
+            stream_assembler,
+            log_level: settings.log_level,
+            json_logs: settings.json_logs,
+        })
+    }
+}
+
+// A callback only reaches the service phase once an adapter for it exists; until then the name is
+// reported as not installed rather than advertised as registered.
+fn register_service_callbacks(registry: &mut CallbackRegistry, names: &[String]) {
+    for name in names {
+        let registered = registry.register_configured(
+            name,
+            &CallbackVars::new(),
+            CallbackList::Service,
+            FeatureFlags {
+                otel_v2_enabled: false,
+            },
+        );
+        match registered {
+            Ok(registration) => tracing::debug!(
+                service_callback = %name,
+                ?registration,
+                "service callback registration"
+            ),
+            Err(error) => tracing::warn!(
+                service_callback = %name,
+                %error,
+                "service callback is not installed"
+            ),
+        }
+    }
+}
