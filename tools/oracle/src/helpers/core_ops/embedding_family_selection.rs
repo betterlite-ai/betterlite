@@ -1,6 +1,4 @@
-use betterlite_core::embedding_rerank_providers::{
-    EmbeddingConfig, RerankConfig, embedding_config, rerank_config, should_use_cohere_v1_client,
-};
+use betterlite_core::embedding_rerank_providers::{embedding_config, rerank_config};
 use betterlite_models::identity::provider_id::ProviderId;
 use serde::Deserialize;
 use serde_json::json;
@@ -35,19 +33,16 @@ impl Helper for Op {
         let mut answers = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             let embedding =
-                embedding_config(call.provider, &call.model).map(EmbeddingConfig::class_name);
+                embedding_config(call.provider, &call.model).map(|config| config.to_string());
             let rerank = rerank_config(
                 call.provider,
                 call.api_base.as_deref(),
                 &call.present_version_params,
             )
-            .map(RerankConfig::class_name);
-            let v1_client =
-                should_use_cohere_v1_client(call.api_base.as_deref(), &call.present_version_params);
+            .map(|config| config.to_string());
             answers.push(json!({
                 "embedding": embedding,
                 "rerank": rerank,
-                "v1_client": v1_client,
             }));
         }
         Ok(json!(answers))

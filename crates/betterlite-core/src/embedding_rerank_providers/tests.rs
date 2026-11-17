@@ -66,7 +66,7 @@ fn the_embedding_config_names_are_litellms_class_names(
     #[case] config: EmbeddingConfig,
     #[case] expected: &str,
 ) {
-    assert_eq!(config.class_name(), expected);
+    assert_eq!(config.to_string(), expected);
 }
 
 #[rstest]
@@ -129,5 +129,5 @@ fn the_rerank_config_names_are_litellms_class_names(
     #[case] config: RerankConfig,
     #[case] expected: &str,
 ) {
-    assert_eq!(config.class_name(), expected);
+    assert_eq!(config.to_string(), expected);
 }

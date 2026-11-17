@@ -2,51 +2,35 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::voyage_embedding::VoyageEmbeddingVariant;
 
 // LiteLLM's ProviderConfigManager.get_provider_embedding_config, this family's arms only
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum EmbeddingConfig {
+    #[strum(serialize = "CohereEmbeddingConfig")]
     Cohere,
+    #[strum(serialize = "VoyageEmbeddingConfig")]
     Voyage,
+    #[strum(serialize = "VoyageContextualEmbeddingConfig")]
     VoyageContextual,
+    #[strum(serialize = "VoyageMultimodalEmbeddingConfig")]
     VoyageMultimodal,
+    #[strum(serialize = "JinaAIEmbeddingConfig")]
     JinaAi,
+    #[strum(serialize = "InfinityEmbeddingConfig")]
     Infinity,
-}
-
-impl EmbeddingConfig {
-    #[must_use]
-    pub const fn class_name(self) -> &'static str {
-        match self {
-            Self::Cohere => "CohereEmbeddingConfig",
-            Self::Voyage => "VoyageEmbeddingConfig",
-            Self::VoyageContextual => "VoyageContextualEmbeddingConfig",
-            Self::VoyageMultimodal => "VoyageMultimodalEmbeddingConfig",
-            Self::JinaAi => "JinaAIEmbeddingConfig",
-            Self::Infinity => "InfinityEmbeddingConfig",
-        }
-    }
 }
 
 // LiteLLM's ProviderConfigManager.get_provider_rerank_config, this family's arms only
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum RerankConfig {
+    #[strum(serialize = "CohereRerankConfig")]
     Cohere,
+    #[strum(serialize = "CohereRerankV2Config")]
     CohereV2,
+    #[strum(serialize = "InfinityRerankConfig")]
     Infinity,
+    #[strum(serialize = "JinaAIRerankConfig")]
     JinaAi,
+    #[strum(serialize = "VoyageRerankConfig")]
     Voyage,
-}
-
-impl RerankConfig {
-    #[must_use]
-    pub const fn class_name(self) -> &'static str {
-        match self {
-            Self::Cohere => "CohereRerankConfig",
-            Self::CohereV2 => "CohereRerankV2Config",
-            Self::Infinity => "InfinityRerankConfig",
-            Self::JinaAi => "JinaAIRerankConfig",
-            Self::Voyage => "VoyageRerankConfig",
-        }
-    }
 }
 
 // The Voyage arms test the model's lower-cased text, and the context arm comes first
@@ -86,8 +70,7 @@ pub fn rerank_config(
     }
 }
 
-// litellm/utils.py should_use_cohere_v1_client: an absent or empty base always takes the v2 client,
-// and the legacy limit parameter picks v1 only when the base's exact suffix does not say v2
+// an absent or empty base takes v2; a legacy limit picks v1 unless the base says v2
 #[must_use]
 pub fn should_use_cohere_v1_client(
     api_base: Option<&str>,
