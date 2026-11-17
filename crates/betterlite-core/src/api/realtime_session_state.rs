@@ -16,7 +16,9 @@ use super::realtime_contracts::events::{AllDeltaType, AudioTranscriptionUsage};
 use super::realtime_contracts::transport::{
     ClientWebSocket, RealtimeBackend, RealtimeEventNormalizer,
 };
-use logging::{RealtimeLogging, RealtimeSuccessQueue};
+use error::SessionStateError;
+use logging::{RealtimeLogging, RealtimeSuccessQueue, SessionInput};
+use store::SessionMessage;
 
 pub const DEFAULT_LOGGED_EVENT_TYPES: [&str; 5] = [
     "session.created",
@@ -122,9 +124,8 @@ pub struct ConnectionSetup {
 }
 
 impl fmt::Debug for RealtimeStreaming {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RealtimeStreaming")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RealtimeStreaming")
             .field("model", &self.model)
             .field("messages", &self.messages)
             .field("input_messages", &self.input_messages)
@@ -173,5 +174,47 @@ impl RealtimeStreaming {
             force_transcription_model: connection.force_transcription_model,
             provider_config: connection.provider_config,
         }
+    }
+
+    pub fn store_message(&mut self, message: SessionMessage<'_>) -> Result<(), SessionStateError> {
+        store::store_message(self, message)
+    }
+
+    #[must_use]
+    pub fn should_store_message(&self, record: &IndexMap<String, Json>) -> bool {
+        store::should_store_message(self, record)
+    }
+
+    pub fn collect_response_tool_calls(&mut self, event: &IndexMap<String, Json>) {
+        store::collect_response_tool_calls(self, event);
+    }
+
+    pub fn collect_client_input(&mut self, message: SessionInput<'_>) {
+        collect::collect_client_input(self, message);
+    }
+
+    pub fn collect_backend_input(&mut self, event: &IndexMap<String, Json>) {
+        collect::collect_backend_input(self, event);
+    }
+
+    pub fn detect_transcription_session(&mut self, event: &IndexMap<String, Json>) {
+        collect::detect_transcription_session(self, event);
+    }
+
+    pub fn store_input(&mut self, message: SessionInput<'_>) {
+        logging::store_input(self, message);
+    }
+
+    #[must_use]
+    pub fn log_messages(&self) -> bool {
+        logging::log_messages(self)
+    }
+
+    pub fn capture_transcription_usage(&mut self, event: &IndexMap<String, Json>) {
+        usage::capture_transcription_usage(self, event);
+    }
+
+    pub fn flush_unbilled_usage(&mut self) -> Result<(), SessionStateError> {
+        usage::flush_unbilled_usage(self)
     }
 }

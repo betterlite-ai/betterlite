@@ -27,57 +27,57 @@ pub trait RealtimeSuccessQueue: Send + Sync {
     fn enqueue(&self, work: SuccessWork) -> bool;
 }
 
-impl RealtimeStreaming {
-    pub fn store_input(&mut self, message: SessionInput<'_>) {
-        self.input_message = match message {
-            SessionInput::Record(record) => record.clone(),
-            SessionInput::Text(_) => IndexMap::new(),
-        };
-        self.collect_client_input(message);
-        if let Some(logging) = self.logging.as_deref() {
-            logging.pre_call(&message, "");
-        }
+pub(crate) fn store_input(state: &mut RealtimeStreaming, message: SessionInput<'_>) {
+    state.input_message = match message {
+        SessionInput::Record(record) => record.clone(),
+        SessionInput::Text(_) => IndexMap::new(),
+    };
+    state.collect_client_input(message);
+    if let Some(logging) = state.logging.as_deref() {
+        logging.pre_call(&message, "");
     }
+}
 
-    #[must_use]
-    pub fn log_messages(&self) -> bool {
-        let Some(logging) = self.logging.as_deref() else {
-            return false;
-        };
-        if !self.input_messages.is_empty() {
-            logging.record_model_call_detail(
-                "messages",
-                Json::List(
-                    self.input_messages
-                        .iter()
-                        .cloned()
-                        .map(Json::Object)
-                        .collect(),
-                ),
-            );
-        }
-        if !self.session_tools.is_empty() || !self.tool_calls.is_empty() {
-            logging.record_model_call_detail(
-                "realtime_tools",
-                Json::List(
-                    self.session_tools
-                        .iter()
-                        .cloned()
-                        .map(Json::Object)
-                        .collect(),
-                ),
-            );
-            logging.record_model_call_detail(
-                "realtime_tool_calls",
-                Json::List(self.tool_calls.iter().cloned().map(Json::Object).collect()),
-            );
-        }
-        let work = logging.dispatch_success_handlers(&self.messages);
-        let queue = self.logging_worker.as_deref();
-        if !queue.is_some_and(|sender| sender.enqueue(work)) {
-            return false;
-        }
-        logging.record_model_call_detail(SUCCESS_LOGGED_KEY, Json::Bool(true));
-        true
+#[must_use]
+pub(crate) fn log_messages(state: &RealtimeStreaming) -> bool {
+    let Some(logging) = state.logging.as_deref() else {
+        return false;
+    };
+    if !state.input_messages.is_empty() {
+        logging.record_model_call_detail(
+            "messages",
+            Json::List(
+                state
+                    .input_messages
+                    .iter()
+                    .cloned()
+                    .map(Json::Object)
+                    .collect(),
+            ),
+        );
     }
+    if !state.session_tools.is_empty() || !state.tool_calls.is_empty() {
+        logging.record_model_call_detail(
+            "realtime_tools",
+            Json::List(
+                state
+                    .session_tools
+                    .iter()
+                    .cloned()
+                    .map(Json::Object)
+                    .collect(),
+            ),
+        );
+        logging.record_model_call_detail(
+            "realtime_tool_calls",
+            Json::List(state.tool_calls.iter().cloned().map(Json::Object).collect()),
+        );
+    }
+    let work = logging.dispatch_success_handlers(&state.messages);
+    let queue = state.logging_worker.as_deref();
+    if !queue.is_some_and(|sender| sender.enqueue(work)) {
+        return false;
+    }
+    logging.record_model_call_detail(SUCCESS_LOGGED_KEY, Json::Bool(true));
+    true
 }
