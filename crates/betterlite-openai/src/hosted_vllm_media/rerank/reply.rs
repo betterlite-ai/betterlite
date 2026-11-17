@@ -79,7 +79,7 @@ fn usage_blocks(
                 .map_err(|source| HostedVllmRerankError::Shape { source })?,
         ),
     };
-    let total_tokens = match usage.as_ref().and_then(|usage| usage.get("total_tokens")) {
+    let total_tokens = match usage.as_ref().and_then(|fields| fields.get("total_tokens")) {
         None => Some(Some(0)),
         Some(Value::Null) => Some(None),
         Some(count) => serde_json::from_value::<i64>(count.clone())

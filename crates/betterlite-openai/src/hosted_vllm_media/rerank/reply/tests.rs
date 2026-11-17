@@ -215,10 +215,11 @@ fn a_body_that_is_not_utf8_reports_the_refused_text() {
 }
 
 #[test]
-fn a_body_that_is_json_but_not_an_object_is_a_shape_error() {
+fn a_body_that_is_json_but_not_an_object_has_no_results() {
+    // serde reads an empty sequence as a struct whose defaulted fields are absent, so no results key reaches the transform
     assert!(matches!(
         transform_rerank_response(200, b"[]", &generated),
-        Err(HostedVllmRerankError::Shape { .. })
+        Err(HostedVllmRerankError::NoResults { .. })
     ));
 }
 
