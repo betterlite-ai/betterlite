@@ -290,6 +290,15 @@ fn realtime_initial_state_is_not_shared_between_connections() {
 }
 
 #[test]
+fn realtime_initial_state_debug_names_the_connection_and_its_messages() {
+    let mut state = state();
+    state.messages.push(record(r#"{"type":"response.done"}"#));
+    let rendered = format!("{state:?}");
+    assert!(rendered.starts_with("RealtimeStreaming {"), "{rendered}");
+    assert!(rendered.contains("response.done"), "{rendered}");
+}
+
+#[test]
 fn realtime_event_storage_stores_the_five_default_types() {
     let mut state = state();
     store_types(
@@ -335,6 +344,17 @@ fn realtime_event_storage_handles_wildcard_and_empty_selection() {
         selected.messages,
         vec![record(r#"{"type":"response.done"}"#)]
     );
+}
+
+#[test]
+fn realtime_event_storage_drops_an_empty_event_type() {
+    let mut state = state_with(|connection| {
+        connection.logged_real_time_event_types = LoggedEventTypes::Only(vec![String::new()]);
+    });
+    state
+        .store_message(SessionMessage::Text(r#"{"type":""}"#))
+        .expect("the frame is valid JSON");
+    assert!(state.messages.is_empty());
 }
 
 #[test]
@@ -389,6 +409,7 @@ fn realtime_event_storage_logs_a_session_event_shape_failure() {
         .filter(|message| message.contains("Error parsing message for logging:"))
         .collect();
     assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].contains("session.created"), "{failures:?}");
 }
 
 #[test]
@@ -672,6 +693,32 @@ fn realtime_usage_and_logging_writes_both_tool_keys_only_when_one_is_set() {
         ]
     );
     assert_eq!(spy.details()[0].1, Json::List(Vec::new()));
+}
+
+#[test]
+fn realtime_usage_and_logging_writes_the_tool_keys_for_session_tools_alone() {
+    let spy = Spy::default();
+    spy.accept();
+    let mut state = state_with(|connection| {
+        connection.logging = Some(Box::new(spy.clone()));
+        connection.logging_worker = Some(Box::new(spy.clone()));
+    });
+    state
+        .session_tools
+        .push(record(r#"{"type":"function","name":"lookup"}"#));
+    assert!(state.log_messages());
+    let details = spy.details();
+    let keys: Vec<String> = details.into_iter().map(|(key, _)| key).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "realtime_tools",
+            "realtime_tool_calls",
+            "realtime_session_success_logged"
+        ]
+    );
+    assert_eq!(spy.details()[1].1, Json::List(Vec::new()));
+    assert_eq!(spy.lock().dispatches.len(), 1);
 }
 
 #[test]
