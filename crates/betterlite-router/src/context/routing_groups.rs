@@ -1,0 +1,3 @@
+mod tests;
+
+crate::context::stage_stub!("routing_groups");
