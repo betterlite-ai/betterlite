@@ -36,9 +36,9 @@ class Input(TypedDict):
     calls: list[Call]
 
 
-SETUP_ROLE_MAPPINGS: Final = ui_sso._setup_role_mappings  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1345
-SETUP_ENV_VARS: Final = ui_sso._setup_generic_sso_env_vars  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1250
-PARSE_HEADERS: Final = ui_sso._parse_generic_sso_headers  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1403
+SETUP_ROLE_MAPPINGS: Final = ui_sso._setup_role_mappings  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1345
+SETUP_ENV_VARS: Final = ui_sso._setup_generic_sso_env_vars  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1250
+PARSE_HEADERS: Final = ui_sso._parse_generic_sso_headers  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1403
 
 MAPPINGS_VIEW: Final = TypeAdapter(RoleMappingsView)
 SETTINGS_VIEW: Final = TypeAdapter(SettingsOut)
@@ -54,16 +54,14 @@ def role_mappings_answer() -> Json:
 
 
 def headers_answer() -> Json:
-    headers: dict[str, Json] = {}
-    for name, value in PARSE_HEADERS().items():
-        headers[name] = value
+    headers: dict[str, Json] = {**PARSE_HEADERS()}
     return {"headers": headers}
 
 
 def env_vars_answer() -> Json:
     try:
         resolved = SETUP_ENV_VARS(CLIENT_ID, REDIRECT_URL)
-    except ProxyException as error:
+    except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         failure: dict[str, Json] = {
             "type": error.type,
             "param": error.param,
@@ -80,7 +78,8 @@ def env_vars_answer() -> Json:
         "userinfo_endpoint": userinfo,
         "include_client_id": include,
     }
-    return {"settings": SETTINGS_VIEW.validate_python(settings)}
+    view = SETTINGS_VIEW.validate_python(settings)
+    return {"settings": OBJECT_VIEW.validate_python(view)}
 
 
 def answer(call: Call) -> Json:
