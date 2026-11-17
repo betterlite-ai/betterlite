@@ -51,7 +51,10 @@ pub(crate) const fn config_with_stream<Stream>(
     }
 }
 
-pub(crate) const fn target<'a>(model: &'a str, endpoint: &'a str) -> PassthroughTarget<'a> {
+pub(crate) const fn target<'call>(
+    model: &'call str,
+    endpoint: &'call str,
+) -> PassthroughTarget<'call> {
     PassthroughTarget {
         model,
         custom_llm_provider: "azure",
