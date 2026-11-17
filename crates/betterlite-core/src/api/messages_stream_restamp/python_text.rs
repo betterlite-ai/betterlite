@@ -1,9 +1,5 @@
-const LINE_BREAKS: [char; 10] = [
-    '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
-];
-
-// CPython's str.strip whitespace, which char::is_whitespace does not match
 pub(super) const fn is_space(character: char) -> bool {
+    // CPython's str.strip whitespace, which char::is_whitespace does not match
     matches!(
         character,
         '\u{9}'..='\u{d}'
@@ -20,12 +16,13 @@ pub(super) const fn is_space(character: char) -> bool {
     )
 }
 
-pub(super) fn splitlines_keepends(text: &str) -> Vec<&str> {
+// SSE lines end only at CR, LF or CRLF, so a line's other characters stay inside it
+pub(super) fn sse_lines_keepends(text: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut characters = text.char_indices().peekable();
     while let Some((index, character)) = characters.next() {
-        if !LINE_BREAKS.contains(&character) {
+        if !matches!(character, '\r' | '\n') {
             continue;
         }
         let end = if character == '\r'

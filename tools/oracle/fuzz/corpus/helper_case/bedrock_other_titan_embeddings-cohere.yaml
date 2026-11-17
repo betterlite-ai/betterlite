@@ -1,0 +1,15 @@
+kind: helper
+name: cohere-v3-input-type
+call:
+  bedrock_other_titan_embeddings:
+    function: cohere_v3_input_type
+    model: cohere.embed-english-v3
+    input: [first text, "data:image/png;base64,aGVsbG8="]
+    non_default:
+      encoding_format: [base64]
+      dimensions: 512
+    optional_params:
+      truncate: END
+env: {}
+compare:
+  ignore: []

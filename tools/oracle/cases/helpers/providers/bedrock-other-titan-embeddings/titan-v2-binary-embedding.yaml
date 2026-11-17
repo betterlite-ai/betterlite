@@ -1,0 +1,67 @@
+kind: helper
+name: titan-v2-binary-embedding
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_v2_binary_embedding
+    model: amazon.titan-embed-text-v2:0
+    response_list:
+      - embeddingsByType:
+          float: [1.5, 2.5]
+          binary: [1, 0]
+        inputTextTokenCount: 3
+      - embedding: [0.5]
+        inputTextTokenCount: 0
+calls:
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            float: [0.25]
+          inputTextTokenCount: 12
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            binary: []
+          inputTextTokenCount: 1
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            binary: AQID
+          inputTextTokenCount: 2
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list: []
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - inputTextTokenCount: 1
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            float: [1.0]
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            binary: 5
+          inputTextTokenCount: 1
+  - bedrock_other_titan_embeddings:
+      function: titan_v2_binary_embedding
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embedding:
+            nested: 1
+          inputTextTokenCount: 1
+env: {}
+compare:
+  ignore: []
