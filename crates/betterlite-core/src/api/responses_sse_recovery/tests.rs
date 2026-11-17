@@ -40,7 +40,26 @@ fn recover(input: &str) -> Vec<Json> {
     recover_recorded_output(input.as_bytes(), &ApiLimits::default()).expect("the recording decodes")
 }
 
-fn recording(events: &[impl AsRef<str>]) -> String {
+fn item_limits(max_items: usize) -> ApiLimits {
+    ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
+        max_items,
+    }
+}
+
+fn event_limits(max_event_bytes: usize) -> ApiLimits {
+    ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes,
+        max_items: 64 * 1024,
+    }
+}
+
+fn recording<E>(events: &[E]) -> String
+where
+    E: AsRef<str>,
+{
     events
         .iter()
         .map(|event| format!("data: {}", event.as_ref()))
@@ -189,10 +208,7 @@ fn recovery_does_not_split_on_the_unit_separator() {
 
 #[test]
 fn recovery_line_filter_rejects_a_line_over_the_event_cap() {
-    let limits = ApiLimits {
-        max_event_bytes: 8,
-        ..ApiLimits::default()
-    };
+    let limits = event_limits(8);
     let error = decode_recovery_line(b"data: {\"a\": 1}", &limits).expect_err("the line is over");
     assert!(matches!(
         error,
@@ -277,10 +293,7 @@ fn indexed_item_recovery_missing_index_overwrites_a_sparse_slot() {
 
 #[test]
 fn indexed_item_recovery_rejects_more_items_than_the_cap() {
-    let limits = ApiLimits {
-        max_items: 2,
-        ..ApiLimits::default()
-    };
+    let limits = item_limits(2);
     let recorded = recording(&[item(0, "a"), item(1, "b"), item(2, "c")]);
     let error =
         recover_recorded_output(recorded.as_bytes(), &limits).expect_err("the third item is over");
@@ -477,10 +490,7 @@ fn text_item_recovery_fallback_counts_text_items() {
 
 #[test]
 fn text_item_recovery_rejects_content_over_the_item_cap() {
-    let limits = ApiLimits {
-        max_items: 8,
-        ..ApiLimits::default()
-    };
+    let limits = item_limits(8);
     let recorded = recording(&[text_at(0, 10, "x")]);
     let error =
         recover_recorded_output(recorded.as_bytes(), &limits).expect_err("the padding is bounded");
@@ -489,6 +499,21 @@ fn text_item_recovery_rejects_content_over_the_item_cap() {
         ResponsesSseRecoveryError::Limit(ApiLimitError::TooManyItems {
             observed: 9,
             limit: 8
+        })
+    ));
+}
+
+#[test]
+fn text_item_recovery_rejects_more_items_than_the_cap() {
+    let limits = item_limits(1);
+    let recorded = recording(&[text_done(0, "zero"), text_done(1, "one")]);
+    let error =
+        recover_recorded_output(recorded.as_bytes(), &limits).expect_err("the second item is over");
+    assert!(matches!(
+        error,
+        ResponsesSseRecoveryError::Limit(ApiLimitError::TooManyItems {
+            observed: 2,
+            limit: 1
         })
     ));
 }
@@ -618,10 +643,7 @@ fn terminal_output_precedence_logging(#[case] original: Option<Json>, #[case] ex
 
 #[test]
 fn terminal_output_precedence_rejects_completed_output_over_the_cap() {
-    let limits = ApiLimits {
-        max_items: 2,
-        ..ApiLimits::default()
-    };
+    let limits = item_limits(2);
     let recorded = recording(&[completed(r#"[{"id":"a"},{"id":"b"},{"id":"c"}]"#)]);
     let error =
         recover_recorded_output(recorded.as_bytes(), &limits).expect_err("the output is bounded");
@@ -636,10 +658,7 @@ fn terminal_output_precedence_rejects_completed_output_over_the_cap() {
 
 #[test]
 fn terminal_output_precedence_rejects_a_merge_over_the_cap() {
-    let limits = ApiLimits {
-        max_items: 3,
-        ..ApiLimits::default()
-    };
+    let limits = item_limits(3);
     let recorded = recording(&[
         text_done(0, "zero"),
         text_done(1, "one"),

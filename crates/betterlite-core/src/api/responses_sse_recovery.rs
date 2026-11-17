@@ -13,7 +13,6 @@ mod lines;
 pub mod records;
 mod tests;
 
-const SSE_DONE: &str = "[DONE]";
 const RESPONSE_COMPLETED: &str = "response.completed";
 const OUTPUT_ITEM_DONE: &str = "response.output_item.done";
 const OUTPUT_TEXT_DONE: &str = "response.output_text.done";
@@ -38,11 +37,8 @@ pub fn decode_recovery_line(
     let Some(stripped) = strip_sse_data_from_chunk(Some(lines::trim_line(text))) else {
         return Ok(None);
     };
-    let payload = lines::trim_line(stripped);
-    if payload.is_empty() || payload == SSE_DONE || payload.starts_with("event:") {
-        return Ok(None);
-    }
-    match serde_json::from_str::<Json>(payload) {
+    // [DONE], blanks and event: lines are no JSON document, so the strict parse refuses them
+    match serde_json::from_str::<Json>(lines::trim_line(stripped)) {
         Ok(Json::Object(fields)) => Ok(Some(fields)),
         Ok(_) | Err(_) => Ok(None),
     }
