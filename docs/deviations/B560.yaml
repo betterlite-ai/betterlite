@@ -1,0 +1,50 @@
+task: B560
+deviations:
+  - what: >-
+      An agent error response whose body is not valid UTF-8 becomes a typed upstream error that keeps the response
+      status and says the response body is not UTF-8. LiteLLM builds the message from response.text, which decodes
+      the bytes with replacement characters.
+    why: >-
+      The status is what a caller routes on, and the failure path must stay typed and secret safe. The oracle sends
+      its fixture bodies as text, so the Rust test nonexpected_status pins this outcome.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L291-L297
+  - what: >-
+      A thread or run creation response whose id is missing or is not a string is a typed decode error with no status,
+      and the run is not polled. LiteLLM indexes thread_data["id"] and run_data["id"], so it raises KeyError or builds
+      a URL out of a value of another type.
+    why: >-
+      The created object is decoded into a typed record, and docs/compatibility.md leaves provider output outside its
+      declared type to betterlite. The fuzz corpus pins the accepted and rejected shapes, and the Rust test
+      nonexpected_status pins the typed error and the one request before it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L363-L394
+  - what: >-
+      A run status or message list body that is not a JSON object of the declared shape, such as a status or
+      last_error.message of another type, is a typed decode error with no status. LiteLLM calls .get on those values
+      and re-raises json.JSONDecodeError, TypeError or AttributeError that is not an AzureAIAgentsError.
+    why: >-
+      Every polled body is decoded into a typed record, so a malformed body fails the run with a typed error instead
+      of an exception of an unrelated class. The fuzz corpus pins the accepted and rejected shapes, and the Rust test
+      nonexpected_status pins the typed status failure in a polled run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L396-L417
+kept_bugs:
+  - what: >-
+      The sixtieth unsuccessful poll still sleeps one second before the run is declared timed out, because the sleep
+      sits at the end of the loop body and the timeout is raised by the loop's else clause.
+    why: >-
+      A working setup sees a 60-second timeout plus that last second, so betterlite keeps exactly 60 polls and 60
+      sleeps. The Rust test sixty_polls_408 pins the count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L396-L413
+  - what: >-
+      Creating a thread sends no request body at all, although the flow passes an empty mapping, because the request
+      closure serializes a body only for a truthy payload.
+    why: >-
+      A working Foundry setup relies on a bodyless POST /threads being accepted. The Rust test new_thread_run_flow and
+      the oracle case of the same name pin the absent body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L330-L343
+  - what: >-
+      A system message is posted to the thread with role user, so the agent never sees a system role for it, and a
+      message without a content member is posted with an empty string.
+    why: >-
+      Working setups today run with the role rewritten, so betterlite reproduces it rather than inventing a system
+      message the Foundry thread API has no shape for. The Rust test existing_thread_message_flow pins both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L378-L381
