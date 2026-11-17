@@ -16,10 +16,10 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::Number;
-use uuid::Uuid;
 
 use crate::api::media_relay_logging::spend::decimal_json;
 
+mod envelope;
 mod tests;
 
 const OPENROUTER: &str = "openrouter";
@@ -93,7 +93,8 @@ impl TypesafePassthroughLogger {
         let response_cost = self.response_cost(&input, &response, requested_model, &usage);
         let usage_json = usage_object(&usage);
         let mut kwargs = record(&input, &model_name, &usage_json, response_cost);
-        let init_response = response_envelope(&model_name, usage_json, input.end_time.timestamp());
+        let init_response =
+            envelope::response_envelope(&model_name, usage_json, input.end_time.timestamp());
         let payload = self.build_payload(&input, &init_response);
         kwargs.entries.insert(
             STANDARD_LOGGING_OBJECT.to_owned(),
@@ -269,43 +270,6 @@ fn details(
         ("response_cost".to_owned(), decimal_json(response_cost)),
         ("combined_usage_object".to_owned(), usage_json.clone()),
     ])
-}
-
-// LiteLLM logs a ModelResponse built from the model and usage alone: the reply the provider never sent.
-fn response_envelope(model_name: &str, usage: Json, created: i64) -> Json {
-    Json::Object(IndexMap::from([
-        (
-            "id".to_owned(),
-            Json::Text(format!("chatcmpl-{}", Uuid::new_v4())),
-        ),
-        ("created".to_owned(), Json::Number(Number::from(created))),
-        ("model".to_owned(), Json::Text(model_name.to_owned())),
-        (
-            "object".to_owned(),
-            Json::Text("chat.completion".to_owned()),
-        ),
-        ("system_fingerprint".to_owned(), Json::Null),
-        ("choices".to_owned(), Json::List(vec![completion_choice()])),
-        ("usage".to_owned(), usage),
-    ]))
-}
-
-// ModelResponse fills a missing choices list with one default choice, an empty assistant message.
-fn completion_choice() -> Json {
-    Json::Object(IndexMap::from([
-        ("finish_reason".to_owned(), Json::Text("stop".to_owned())),
-        ("index".to_owned(), Json::Number(Number::from(0_i32))),
-        ("message".to_owned(), completion_message()),
-    ]))
-}
-
-fn completion_message() -> Json {
-    Json::Object(IndexMap::from([
-        ("content".to_owned(), Json::Null),
-        ("role".to_owned(), Json::Text("assistant".to_owned())),
-        ("tool_calls".to_owned(), Json::Null),
-        ("function_call".to_owned(), Json::Null),
-    ]))
 }
 
 // A payload that cannot be written as JSON stands in as Null, the way a failed build does in LiteLLM.
