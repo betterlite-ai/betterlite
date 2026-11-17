@@ -135,14 +135,14 @@ impl FakeWire {
     fn assemble_named(
         &self,
         builder: &'static str,
-        body: &Option<Assembly>,
+        body: Option<&Assembly>,
     ) -> impl Future<Output = Option<Assembly>> + Send {
         self.log
             .builders
             .lock()
             .expect("the fake log lock")
             .push(builder);
-        ready(body.clone())
+        ready(body.cloned())
     }
 }
 
@@ -158,14 +158,14 @@ impl StreamWire for FakeWire {
     }
 
     fn assemble_chat(&self, _chunks: &[Chunk]) -> impl Future<Output = Option<Assembly>> + Send {
-        self.assemble_named("chat", &self.setup.chat)
+        self.assemble_named("chat", self.setup.chat.as_ref())
     }
 
     fn assemble_anthropic(
         &self,
         _chunks: &[Chunk],
     ) -> impl Future<Output = Option<Assembly>> + Send {
-        self.assemble_named("anthropic", &self.setup.anthropic_body)
+        self.assemble_named("anthropic", self.setup.anthropic_body.as_ref())
     }
 
     fn model_text(&self, _body: &GuardrailValue) -> Result<String, FakeFailure> {

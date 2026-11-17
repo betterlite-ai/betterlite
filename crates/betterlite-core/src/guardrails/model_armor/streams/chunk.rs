@@ -9,11 +9,11 @@ pub enum Chunk {
     Bytes(Vec<u8>),
 }
 
-fn object(value: &GuardrailValue) -> Option<&BTreeMap<String, GuardrailValue>> {
-    let GuardrailValue::Object(fields) = value else {
-        return None;
-    };
-    Some(fields)
+const fn object(value: &GuardrailValue) -> Option<&BTreeMap<String, GuardrailValue>> {
+    if let GuardrailValue::Object(fields) = value {
+        return Some(fields);
+    }
+    None
 }
 
 #[must_use]
