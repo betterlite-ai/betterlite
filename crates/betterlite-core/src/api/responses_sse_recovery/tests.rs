@@ -703,6 +703,13 @@ fn replay(seed: &[u8]) {
     drop(recover_recorded_output(payload, &ApiLimits::default()));
 }
 
+// every seed takes the path its first byte selects
+fn replay_all(seeds: &[Vec<u8>]) {
+    for seed in seeds {
+        replay(seed);
+    }
+}
+
 #[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/responses_sse_recovery");
@@ -717,7 +724,5 @@ fn replays_corpus() {
         .collect();
     assert!(selectors.iter().any(|selector| selector.is_multiple_of(2)));
     assert!(selectors.iter().any(|selector| !selector.is_multiple_of(2)));
-    for seed in &seeds {
-        replay(seed);
-    }
+    replay_all(&seeds);
 }
