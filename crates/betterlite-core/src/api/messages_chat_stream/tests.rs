@@ -434,6 +434,14 @@ async fn async_held_content_comes_before_the_flushed_delta() {
 }
 
 #[tokio::test]
+async fn async_seeded_held_chunk_leaves_before_the_next_delta() {
+    let mut stream = started(vec![text("A")]);
+    assert_message(&mut stream).await;
+    stream.state.holding_chunk = Some(object(HELD_TEXT));
+    assert_events(&mut stream, &[TEXT_START, HELD_TEXT, DELTA_A]).await;
+}
+
+#[tokio::test]
 async fn sse_frame_encoding() {
     let mut view = byte_view(scripted(Vec::new()), setup());
     view.stream
