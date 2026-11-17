@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use deadpool_postgres::Client;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio_postgres::error::SqlState;
 use tracing::subscriber::set_default;
 
 use super::support::{
@@ -238,6 +239,51 @@ async fn user_organization_fk_400() {
         "Foreign Key Constraint failed. Organization ID=missing-org does not exist in LiteLLM_OrganizationTable. Create via `/organization/new`."
     );
     assert_eq!(user_rows(&client, "user-orphan").await, 0);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn user_other_fk_failures_keep_their_type() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    client
+        .execute(
+            "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"max_budget\", \"created_by\", \"updated_by\") VALUES ($1, $2, $3, $4)",
+            &[&"org-budget", &1.0_f64, &"creator", &"updater"],
+        )
+        .await
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO \"LiteLLM_OrganizationTable\" (\"organization_id\", \"organization_alias\", \"budget_id\", \"created_by\", \"updated_by\") VALUES ($1, $2, $3, $4, $5)",
+            &[&"org-1", &"acme", &"org-budget", &"creator", &"updater"],
+        )
+        .await
+        .unwrap();
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let mut fields = user_column(
+        "user-team",
+        UserColumn::OrganizationId,
+        TokenValue::Text(String::from("org-1")),
+    );
+    fields.0.insert(
+        UserColumn::TeamId,
+        TokenValue::Text(String::from("missing-team")),
+    );
+    let error = writes.insert_user(&fields).await.unwrap_err();
+    let KeyUserWriteError::Database {
+        source: DbError::SqlState {
+            code, constraint, ..
+        },
+    } = &error
+    else {
+        panic!("expected a SQLSTATE failure, got {error}");
+    };
+    assert_eq!(code, &SqlState::FOREIGN_KEY_VIOLATION);
+    assert_eq!(constraint.as_deref(), Some("B2362_UserTable_team_id_fkey"));
+    assert_eq!(error.http_status(), None);
+    assert_eq!(user_rows(&client, "user-team").await, 0);
     harness.close().await;
 }
 

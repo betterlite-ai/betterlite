@@ -26,7 +26,8 @@ use crate::tool_spend::RetryPause;
 pub(crate) const BASELINE: &str =
     include_str!("../../../../../tools/postgres-fixture/fixtures/baseline.sql");
 
-// token columns the baseline schema lacks, and the permission table a key update includes
+// token columns the baseline schema lacks, the permission table a key update includes, and a
+// second user foreign key, so a failure on another constraint proves the organization translation
 pub(crate) const SCHEMA: &str = r#"
 ALTER TABLE "LiteLLM_VerificationToken"
     ADD COLUMN IF NOT EXISTS object_permission_id TEXT,
@@ -37,6 +38,9 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_ObjectPermissionTable" (
     "mcp_servers" TEXT[] DEFAULT ARRAY[]::TEXT[],
     CONSTRAINT "LiteLLM_ObjectPermissionTable_pkey" PRIMARY KEY ("object_permission_id")
 );
+ALTER TABLE "LiteLLM_UserTable" DROP CONSTRAINT IF EXISTS "B2362_UserTable_team_id_fkey";
+ALTER TABLE "LiteLLM_UserTable" ADD CONSTRAINT "B2362_UserTable_team_id_fkey"
+    FOREIGN KEY ("team_id") REFERENCES "LiteLLM_TeamTable"("team_id") ON DELETE SET NULL;
 "#;
 
 #[derive(clap::Parser)]
