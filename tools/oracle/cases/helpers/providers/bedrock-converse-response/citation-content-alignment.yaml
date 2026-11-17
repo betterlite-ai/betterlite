@@ -1,0 +1,95 @@
+kind: helper
+name: bedrock-converse-response-citation-content-alignment
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "  "}, {"citationsContent": {"content": [{"text": "Paris is the capital."}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 5}}, "source": "https://example.test/paris", "title": "Paris"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "... "}, {"citationsContent": {"content": [{"text": "per cent"}], "citations": [{"location": {"searchResultLocation": {"start": 1, "end": 4}}, "source": null, "title": null}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "Same words"}, {"citationsContent": {"content": [{"text": "Same words"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://s.test", "title": "T"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "Real answer. "}, {"citationsContent": {"content": [{"text": "Cited sentence."}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 16}}, "source": "https://example.test/cited", "title": "Cited"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "  "}, {"citationsContent": {"content": [{"text": "Cited"}], "citations": []}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "\u001c"}, {"citationsContent": {"content": [{"text": "Cited"}], "citations": []}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "é"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/accent", "title": "Accent"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "٣"}, {"citationsContent": {"content": [{"text": "cited text"}], "citations": [{"location": {"searchResultLocation": {"start": 0, "end": 4}}, "source": "https://example.test/digit", "title": "Digit"}]}}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+env: {}
+compare: {ignore: []}

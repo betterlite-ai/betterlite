@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-converse-response-fake-stream-seed
+call:
+  bedrock_converse_response:
+    fake_stream:
+      - {model: null, stream: null, provider: null, fake_stream: null}
+      - {model: ai21.j2-mid, stream: true, provider: bedrock, fake_stream: null}
+      - {model: other-model, stream: true, provider: bedrock, fake_stream: true}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,205 @@
+kind: helper
+name: bedrock-converse-response-stop-reasons
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "stop_sequence", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "max_tokens", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "content_filtered", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "guardrail_intervened", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "malformed_model_output", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "malformed_tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "model_context_window_exceeded", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "unexpected", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"type": "function", "name": "real", "arguments": "{}"}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: ["11111111-2222-3333-4444-555555555555"]
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": null, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": true, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": 42, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": [], "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": {}, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+env: {}
+compare: {ignore: []}

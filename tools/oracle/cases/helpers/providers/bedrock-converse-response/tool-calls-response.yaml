@@ -1,0 +1,106 @@
+kind: helper
+name: bedrock-converse-response-tool-calls-response
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "Let me check."}, {"toolUse": {"toolUseId": "tooluse_abc", "name": "get_weather", "input": {"city": "Paris"}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: get_weather, inputSchema: {json: {type: object}}}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "t-1", "name": "first", "input": {}}}, {"toolUse": {"toolUseId": "t-2", "name": "second", "input": {"b": [1, 2]}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "{\"type\": \"function\", \"name\": \"real\", \"arguments\": {\"b\": 1, \"a\": 2}}"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: ["22222222-3333-4444-5555-666666666666"]
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "{\"type\": \"function\", \"name\": \"real\"}"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{function: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: ["22222222-3333-4444-5555-666666666666"]
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "{\"type\": \"function\", \"name\": \"other\", \"arguments\": \"{}\"}"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: ["22222222-3333-4444-5555-666666666666"]
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_real", "name": "real", "input": {"x": 1}}}, {"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}, {"toolUse": {"toolUseId": "tooluse_late", "name": "real", "input": {"z": 3}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: real, inputSchema: {json: {type: object}}}}]}
+        api_key: null
+        json_mode: true
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"properties": {"answer": 42}}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: true
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {json_mode: true, tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: false
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {tools: [{toolSpec: {name: real}}]}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+env: {}
+compare: {ignore: []}

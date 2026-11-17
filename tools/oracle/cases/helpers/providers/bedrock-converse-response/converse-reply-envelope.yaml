@@ -1,0 +1,51 @@
+kind: helper
+name: bedrock-converse-response-converse-reply-envelope
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{"output": {"message": {"role": "assistant", "content": [{"text": "Hello!"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        headers: [[x-amzn-requestid, req-1]]
+        model: fixture-model
+        messages: [{role: user, content: hi}]
+        data: {model: fixture-model, messages: []}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: fp-1, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: [{role: user, content: hi}]
+        data: {model: fixture-model}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 0
+      - body: '{"output": {"message": {"role": "user", "content": [{"text": "Hi"}, {"text": ", there"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}'
+        headers: [[x-amzn-requestid, req-3]]
+        model: requested-model
+        messages: [{role: user, content: hello}]
+        data: {model: requested-model, stream: true}
+        optional_params: {stream: true, temperature: 0.5}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-kept, model: stale-model, object: chat.completion, system_fingerprint: null, service_tier: priority, trace: {guardrail: kept}}
+        ids: []
+        now: 1700000001
+      - body: '{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: -5
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,155 @@
+kind: helper
+name: bedrock-converse-response-malformed-json
+call:
+  bedrock_converse_response:
+    transform:
+      - body: '{not json'
+        headers: [[x-amzn-requestid, req-1], [x-amzn-errortype, ValidationException]]
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '[]'
+        headers: [[x-amzn-requestid, req-2]]
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '42'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": []}}, "stopReason": "end_turn"}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"role": "assistant", "content": []}}, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": "just text"}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": [], "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": []}}, "stopReason": "end_turn", "usage": 42}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+      - body: '{"output": {"message": {"content": 42}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}'
+        headers: []
+        model: fixture-model
+        messages: []
+        data: {}
+        optional_params: {}
+        api_key: null
+        json_mode: null
+        supplied: {id: chatcmpl-supplied, model: previous-model, object: chat.completion, system_fingerprint: null, service_tier: null, trace: null}
+        ids: []
+        now: 1700000000
+calls:
+  - bedrock_converse_response:
+      error_class:
+        - {message: conversion failed, status: 422, headers: [[x-amzn-requestid, req-1]]}
+        - {message: throttled, status: 429, headers: [[Retry-After, "3"], [x-amzn-requestid, req-2]]}
+env: {}
+compare: {ignore: []}
