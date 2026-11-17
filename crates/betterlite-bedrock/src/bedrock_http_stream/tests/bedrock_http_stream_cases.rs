@@ -225,6 +225,22 @@ fn http_error_before_frame() {
     assert_eq!(outcome.provider_message(), Some("boom"));
     assert!(matches!(outcome.provider_body(), Some(ResponseBody::Read(text)) if text == "boom"));
 
+    // A buffered reply that is not text is named by its byte count, the choice B607 records.
+    let inputs = Inputs::new(Reply {
+        status: 500,
+        headers: Vec::new(),
+        reads: vec![Ok(b"\xff\xfe".to_vec())],
+        refused: None,
+    });
+    let mut call = invoke(BASE, DATA, &messages);
+    call.fake_stream = true;
+    let outcome = run(Call::Invoke(call), &inputs, Consume::None);
+    assert_eq!(outcome.provider_status(), Some(500));
+    assert_eq!(
+        outcome.provider_message(),
+        Some("2 bytes that are not text")
+    );
+
     let reply = Reply {
         status: 500,
         headers: Vec::new(),
