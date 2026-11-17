@@ -1,0 +1,19 @@
+kind: helper
+name: lakera-input-list
+call:
+  b9451:
+    vendor: lakera
+    hook: moderation
+    gate: true
+    api_key: lakera-key
+    moderation_check: pre_call
+    enabled_roles: null
+    add_function_to_prompt: false
+    data:
+      input: [first text, second text]
+    answers:
+      - status: 200
+        headers: {}
+        body: {results: [{flagged: false}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: aim-embeddings-skipped
+call:
+  b9451:
+    vendor: aim
+    hook: pre_call
+    api_key: aim-key
+    inspect_embeddings: false
+    call_type: aembedding
+    data:
+      litellm_call_id: call-1
+      model: text-embedding-3-small
+      input: ["first document", "second document"]
+    outputs: []
+    key_alias: null
+    answers: []
+env: {}
+compare: {ignore: []}

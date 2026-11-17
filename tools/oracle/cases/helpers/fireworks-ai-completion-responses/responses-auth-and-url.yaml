@@ -1,0 +1,64 @@
+kind: helper
+name: fireworks-ai-responses-auth-and-url
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: capability
+      - op: headers
+        headers: {X-Test: "1"}
+        api_key: "arg-key"
+        session: {}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {Content-Type: "text/plain", authorization: "Bearer caller", X-Session-Affinity: "caller-pin"}
+        api_key: "arg-key"
+        session: {litellm_session_id: "sess-ignored"}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: null
+        session: {}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: ""
+        session: {}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: null
+        session: {litellm_session_id: "sess-1"}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: null
+        session: {litellm_session_id: "sess-1", litellm_metadata: {litellm_session_id_generated: true}}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: null
+        session: {litellm_metadata: {session_id: "sess-meta"}}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: headers
+        headers: {}
+        api_key: null
+        session: {litellm_session_id: "", litellm_metadata: {session_id: ""}}
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: url
+        api_base: null
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: url
+        api_base: ""
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: url
+        api_base: "https://arg.example/v2///"
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+      - op: url
+        api_base: "https://arg.example/v2/"
+        env: {fireworks_api_key: "", fireworks_ai_api_key: "env-secondary-key", api_base: "https://env.example/v1//"}
+env:
+  FIREWORKS_API_KEY: ""
+  FIREWORKS_AI_API_KEY: "env-secondary-key"
+  FIREWORKS_API_BASE: "https://env.example/v1//"
+compare: {ignore: []}

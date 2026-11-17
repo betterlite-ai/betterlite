@@ -1,0 +1,94 @@
+kind: helper
+name: fal-video-results-missing-video-url
+call:
+  fal_video_results:
+    operation: missing_video_url
+    cases:
+      - body: '{}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": null}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": {}}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": {"url": ""}}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": {"url": 5}}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": []}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail": "no url"}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail": [{"msg": "m", "loc": "video"}]}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"error": "api says no"}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail": "", "error": "x"}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"video": {"url": ""}, "detail": "why"}'
+        status: 200
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail": "bad request"}'
+        status: 400
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: ""
+        status: 500
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"error": "rate"}'
+        status: 429
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: "plain text failure"
+        status: 400
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail":[{"loc":"a"}]}'
+        status: 400
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+      - body: '{"detail": [{"msg": "m", "loc": ["a", "b"]}]}'
+        status: 400
+        response_headers: {}
+        artifact_status: 200
+        artifact_body: "unused"
+env: {}
+compare:
+  ignore: []
