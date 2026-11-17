@@ -22,7 +22,7 @@ use betterlite_db::database_diagnostics::level::LogLevel;
 
 use crate::logging_service_events::clock::SystemClock;
 use crate::logging_service_events::pipeline::{PipelineConfig, PipelineError, ServicePipeline};
-use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
+use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink, TracingSink};
 use crate::logging_service_events::stream::{STREAM_FAILED_ERROR, ServiceEventStream, failure_for};
 use crate::logging_service_events::types::{
     CANCELLED_ERROR, ServiceEvent, ServiceEventMetadata, ServiceKind, ServiceLoggerPayload,
@@ -734,4 +734,42 @@ async fn wiring_starts_the_worker_from_the_resolved_settings() {
     assert_eq!(report.completed, 2);
     assert!(report.drained);
     assert_eq!(sink.recorded().len(), 2);
+}
+
+// the sink lives in this crate, and cargo-mutants tests only the mutated package
+#[test]
+fn tracing_sink_logs_the_service_event() {
+    let captured = Captured::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(captured.clone())
+        .finish();
+    let base = DateTime::parse_from_rfc3339(NOW).unwrap();
+    let event = ServiceEvent {
+        call_id: "call-1".to_owned(),
+        payload: ServiceLoggerPayload {
+            is_error: true,
+            error: Some("the upstream call failed".to_owned()),
+            service: ServiceType::ProxyPreCall,
+            duration: 1.5,
+            call_type: "acompletion".to_owned(),
+            caller: None,
+            event_metadata: None,
+        },
+        start_time: base,
+        end_time: base,
+    };
+    let result = with_default(subscriber, || TracingSink.emit(&event));
+    assert!(result.is_ok());
+    let logged = captured.text();
+    assert!(logged.contains("service event"), "no message: {logged}");
+    assert!(logged.contains("call-1"), "no call id: {logged}");
+    assert!(logged.contains("proxy_pre_call"), "no service: {logged}");
+    assert!(logged.contains("acompletion"), "no call type: {logged}");
+    assert!(logged.contains("is_error=true"), "no error flag: {logged}");
+    assert!(logged.contains("duration=1.5"), "no duration: {logged}");
+    assert!(
+        logged.contains("the upstream call failed"),
+        "no error text: {logged}"
+    );
 }
