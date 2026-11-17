@@ -1,0 +1,223 @@
+use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereRequestError};
+use betterlite_bedrock::sagemaker_embedding::hf::{self, HfEmbeddingRecord};
+use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
+use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
+use betterlite_http::error::HttpError;
+use betterlite_openai::cohere_embedding::TextEncoding;
+use betterlite_openai::cohere_legacy_embedding::decode::{
+    LegacyEmbeddingRecord, LegacyEmbeddingResponse,
+};
+use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
+use betterlite_openai::sagemaker_completion::error::SagemakerError;
+use betterlite_tokenizer::engine::error::EngineError;
+use serde_json::{Value, json};
+use thiserror::Error;
+
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+
+use super::input::{
+    CohereMap, CohereReply, CohereRequest, DecodeStream, Headers, HfReply, HfRequest, Input,
+    ModelConfig,
+};
+
+pub(crate) fn run(input: &Input) -> HelperResult {
+    match input {
+        Input::ModelConfig(case) => Ok(model_config(case)),
+        Input::Headers(case) => Ok(headers(case)),
+        Input::HfRequest(case) => Ok(hf_request(case)),
+        Input::HfReply(case) => hf_reply(case),
+        Input::CohereMap(case) => Ok(cohere_map(case)),
+        Input::CohereRequest(case) => cohere_request(case),
+        Input::CohereReply(case) => cohere_reply(case),
+        Input::DecodeStream(case) => decode_stream(case),
+    }
+}
+
+fn model_config(case: &ModelConfig) -> Value {
+    let config = match sagemaker_embedding::get_model_config(&case.model) {
+        EmbeddingConfig::Voyage => "voyage",
+        EmbeddingConfig::Cohere => "cohere",
+        EmbeddingConfig::HuggingFace => "hugging_face",
+    };
+    json!({
+        "config": config,
+        "supported": sagemaker_embedding::supported_openai_params(&case.model),
+    })
+}
+
+// both LiteLLM methods return only the content type, whatever headers the caller brought
+fn headers(case: &Headers) -> Value {
+    json!({
+        "kind": case.kind,
+        "headers": sagemaker_embedding::validate_environment(),
+        "given": case.headers,
+    })
+}
+
+fn hf_request(case: &HfRequest) -> Value {
+    json!({ "request": hf::transform_request(&case.input, &case.optional_params) })
+}
+
+fn hf_reply(case: &HfReply) -> HelperResult {
+    let response = hf::transform_response(
+        case.body.as_bytes(),
+        case.status,
+        &case.model,
+        &case.request,
+    )
+    .map_err(Failure::from)?;
+    Ok(json!({
+        "object": response.object,
+        "data": response.data.iter().map(hf_row).collect::<Vec<_>>(),
+        "model": response.model,
+        "usage": {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+        },
+    }))
+}
+
+fn hf_row(row: &HfEmbeddingRecord) -> Value {
+    json!({ "object": row.object, "index": row.index, "embedding": row.embedding })
+}
+
+fn cohere_map(case: &CohereMap) -> Value {
+    json!({ "mapped": cohere::map_openai_params(&case.non_default, case.optional_params.clone()) })
+}
+
+fn cohere_request(case: &CohereRequest) -> HelperResult {
+    let request = cohere::transform_request(&case.model, &case.input, &case.optional_params)
+        .map_err(Failure::from)?;
+    Ok(json!({ "request": request }))
+}
+
+fn cohere_reply(case: &CohereReply) -> HelperResult {
+    let response = cohere::transform_response(
+        case.body.as_bytes(),
+        &case.model,
+        Some(&case.input),
+        &case.request_data,
+        &Chars,
+    )
+    .map_err(Failure::from)?;
+    Ok(json!({
+        "object": response.object,
+        "data": response.data.iter().map(cohere_row).collect::<Vec<_>>(),
+        "model": response.model,
+        "usage": {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+        },
+    }))
+}
+
+// the replied rows carry a type only when the answer groups them by embedding type
+fn cohere_row(row: &LegacyEmbeddingRecord) -> Value {
+    let mut value = json!({ "object": row.object, "index": row.index, "embedding": row.embedding });
+    if let (Some(kind), Value::Object(fields)) = (&row.kind, &mut value) {
+        fields.insert(String::from("type"), json!(kind));
+    }
+    value
+}
+
+fn decode_stream(case: &DecodeStream) -> HelperResult {
+    let chunks: Vec<Result<Vec<u8>, HttpError>> = case
+        .chunks
+        .iter()
+        .map(|chunk| hex::decode(chunk).map_err(|error| Failure::Invalid(error.to_string())))
+        .collect::<Result<_, _>>()?;
+    let policy = if case.sync {
+        ErrorPolicy::Propagate
+    } else {
+        ErrorPolicy::Skip
+    };
+    let decoder = SagemakerStreamDecoder::new(&case.model, case.is_messages_api, policy);
+    let mut items = Vec::new();
+    let mut failure = Value::Null;
+    for item in decoder.events(chunks.into_iter()) {
+        match item {
+            Ok(Some(chunk)) => items.push(chunk_view(&chunk)),
+            Ok(None) => items.push(json!({ "kind": "none" })),
+            Err(_error) => {
+                failure = json!({ "status": Value::Null });
+                break;
+            }
+        }
+    }
+    Ok(json!({ "items": items, "failure": failure }))
+}
+
+fn chunk_view(chunk: &SagemakerChunk) -> Value {
+    match chunk {
+        SagemakerChunk::Chat(chat) => json!({
+            "kind": "stream",
+            "id": chat.id,
+            "created": chat.created,
+            "model": chat.model,
+            "object": chat.object,
+            "choices": chat.choices.iter().map(|choice| json!({
+                "index": choice.index,
+                "finish_reason": choice.finish_reason,
+                "content": choice.delta.content,
+                "role": choice.delta.role,
+            })).collect::<Vec<_>>(),
+        }),
+        SagemakerChunk::Token(token) => json!({
+            "kind": "generic",
+            "text": token.text,
+            "is_finished": token.is_finished,
+            "finish_reason": token.finish_reason,
+            "usage": token.usage,
+            "index": token.index,
+        }),
+    }
+}
+
+// LiteLLM's usage path encodes every input text; the helper counts characters like a tokenizer of one id each
+struct Chars;
+
+impl TextEncoding for Chars {
+    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
+        Ok(text.chars().count())
+    }
+}
+
+#[derive(Debug, Error)]
+pub(crate) enum Failure {
+    #[error(transparent)]
+    Sagemaker(#[from] SagemakerError),
+    #[error(transparent)]
+    CohereRequest(#[from] CohereRequestError),
+    #[error(transparent)]
+    CohereReply(#[from] CohereLegacyEmbeddingError),
+    #[error("{0}")]
+    Invalid(String),
+}
+
+impl From<Failure> for Box<HelperError> {
+    fn from(failure: Failure) -> Self {
+        let status = match &failure {
+            Failure::Sagemaker(error) => Some(error.status_code),
+            Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Invalid(_) => None,
+        };
+        Self::new(HelperError {
+            class: error_class(&failure).to_owned(),
+            status,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: failure.to_string(),
+        })
+    }
+}
+
+// only the status crosses the comparison, so the name just says which LiteLLM class raised
+const fn error_class(failure: &Failure) -> &'static str {
+    match failure {
+        Failure::Sagemaker(_) => "SagemakerError",
+        Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Invalid(_) => "ValueError",
+    }
+}
