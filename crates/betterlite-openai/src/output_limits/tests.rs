@@ -235,7 +235,7 @@ fn marker_error() -> String {
 }
 
 fn two_element_loc() {
-    let body = json!({"message": "{\"detail\": [{\"loc\": [\"body\", \"temperature\"]}, {\"loc\": [\"body\", \"top_p\"]}, {\"loc\": [\"body\"]}, {\"loc\": []}, {\"loc\": [\"body\", \"a\", \"b\"]}, {\"loc\": \"body\"}, {\"loc\": null}, {}]}"});
+    let body = json!({"message": "{\"detail\": [{\"loc\": [\"body\", \"temperature\"]}, {\"loc\": [\"body\", \"top_p\"]}, {\"loc\": [\"body\"]}, {\"loc\": []}, {\"loc\": [\"body\", \"seed\", \"extra\"]}, {\"loc\": \"body\"}, {\"loc\": null}, {}]}"});
     let data = fields(&[
         ("temperature", json!(1)),
         ("top_p", json!(2)),
@@ -283,6 +283,23 @@ fn malformed_detail_keeps_fields() {
     }
     let dropped = without_rejected_fields(ErrorBody::Http(b"{}"), &data).expect("no error key");
     assert_eq!(dropped, data);
+}
+
+// the truthiness the message and loc checks read; an empty value is absent even though the field is there
+#[test]
+fn present_matches_python_truthiness() {
+    assert!(!super::present(&json!(null)));
+    assert!(!super::present(&json!(false)));
+    assert!(!super::present(&json!(0)));
+    assert!(!super::present(&json!("")));
+    assert!(!super::present(&json!([])));
+    assert!(!super::present(&json!({})));
+    assert!(super::present(&json!(true)));
+    assert!(super::present(&json!(1)));
+    assert!(super::present(&json!(-1)));
+    assert!(super::present(&json!("x")));
+    assert!(super::present(&json!([0])));
+    assert!(super::present(&json!({"a": 1})));
 }
 
 fn output_limit_case_insensitive() {
