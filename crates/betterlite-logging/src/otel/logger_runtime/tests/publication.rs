@@ -158,6 +158,15 @@ fn configured_exclusions_normalize() {
 }
 
 #[test]
+fn configured_exclusions_keep_the_postgresql_spelling() {
+    let fixture = fixture_excluding(Some(vec!["postgresql".to_owned()]));
+    assert_eq!(
+        excluded_db_systems(&fixture.runtime, &settings(vec![])),
+        BTreeSet::from(["postgresql".to_owned()])
+    );
+}
+
+#[test]
 fn attach_before_publish() {
     let fixture = fixture();
     let unwired = fan_out_provider(&fixture.runtime);

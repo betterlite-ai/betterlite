@@ -228,6 +228,20 @@ fn gated_preset_without_carrier_or_operator_is_skipped() {
 }
 
 #[test]
+fn a_destination_alone_does_not_carry_credentials() {
+    let fixture = fixture();
+    fixture
+        .trace
+        .set_destinations(vec![destination("newrelic")]);
+    let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let outcome =
+        maybe_construct_otel_v2(&fixture.runtime, "newrelic", &mut in_memory).expect("no failure");
+    assert!(outcome.is_none());
+    assert!(in_memory.is_empty());
+    assert_eq!(fixture.constructor.records().len(), 0);
+}
+
+#[test]
 fn gated_preset_without_carrier_uses_an_operator_exporter() {
     let fixture = fixture_with_base(settings(vec![placeholder(), operator_exporter()]));
     let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();

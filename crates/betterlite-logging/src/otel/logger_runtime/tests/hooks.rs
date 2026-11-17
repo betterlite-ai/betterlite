@@ -3,12 +3,14 @@
 use std::sync::{Arc, Mutex};
 
 use opentelemetry::Value;
+use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 
 use crate::otel::logger_runtime::hooks::{
     RegisteredHooks, RuntimeHooks, phase_span, seed_request_identity,
 };
+use crate::otel::model::baggage::TEAM_ID;
 use crate::otel::model::metadata::wire::payload::Auth;
 use crate::otel::model::payloads::error::SpanError;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
@@ -45,12 +47,17 @@ fn absent_hooks_noop() {
 fn seed_identity_delegates_to_the_hook() {
     let registry = Arc::new(V2Registry::default());
     let sink = InMemorySpanExporter::default();
-    register_callback(&registry, settings(vec![]), "registered", &sink);
+    let mut config = settings(vec![]);
+    config.baggage_promoted_keys = vec![TEAM_ID.to_owned()];
+    register_callback(&registry, config, "registered", &sink);
     let hooks: Arc<dyn RuntimeHooks> = Arc::new(RegisteredHooks {
         registry: Arc::clone(&registry),
     });
     let fixture = fixture_with_hooks(Some(hooks));
-    let auth = Auth::default();
+    let auth = Auth {
+        team_id: Some("team-1".to_owned()),
+        ..Auth::default()
+    };
     let seed = IdentitySeed {
         auth: &auth,
         model: Some("gpt-4o"),
@@ -58,7 +65,12 @@ fn seed_identity_delegates_to_the_hook() {
         ambient_span: None,
     };
     let mut trace = RequestTraceContext::default();
-    assert!(seed_request_identity(&fixture.runtime, &seed, &mut trace).is_some());
+    let context = seed_request_identity(&fixture.runtime, &seed, &mut trace)
+        .expect("the hook seeded a request context");
+    assert_eq!(
+        context.baggage().get(TEAM_ID).map(ToString::to_string),
+        Some("team-1".to_owned())
+    );
 }
 
 #[test]
