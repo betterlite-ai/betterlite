@@ -10,6 +10,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use call_checks::validate_timeout;
+use chat_response_stream::call::ChatResponseStreamCall;
 use error::SdkHttpError;
 use file_azure_storage::FileAzureStorageCall;
 use messages_chat_stream::call::MessagesChatStreamCall;
@@ -22,6 +23,7 @@ use result::SdkResult;
 pub(crate) mod anthropic_beta_config;
 pub(crate) mod call_checks;
 pub(crate) mod capture;
+pub mod chat_response_stream;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
@@ -84,6 +86,7 @@ pub enum SdkHttpCall {
     MessagesNativeStream(MessagesNativeStreamCall),
     MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
     MessagesChatStream(Box<MessagesChatStreamCall>),
+    ChatResponseStream(Box<ChatResponseStreamCall>),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
     FileAzureStorage(FileAzureStorageCall),
 }
@@ -259,6 +262,9 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
         SdkHttpCall::MessagesSyncStream(stream) => call::validate(stream, limits)?,
         SdkHttpCall::MessagesChatStream(stream) => {
             messages_chat_stream::call::validate(stream, limits)?;
+        }
+        SdkHttpCall::ChatResponseStream(stream) => {
+            validate_timeout(stream.timeout_seconds, limits)?;
         }
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
