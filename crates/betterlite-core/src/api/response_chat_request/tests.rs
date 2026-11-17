@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        clippy::default_numeric_fallback,
+        reason = "json! fixtures state the expected request JSON literally"
+    )
+)]
 
 use std::fmt::Debug;
 use std::iter::repeat_n;
