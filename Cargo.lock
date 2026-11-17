@@ -2200,6 +2200,7 @@ dependencies = [
  "md-5",
  "minijinja",
  "minijinja-contrib",
+ "mutants",
  "nix",
  "opentelemetry",
  "opentelemetry-http",
