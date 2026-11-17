@@ -1,0 +1,39 @@
+task: B1629
+deviations:
+  - what: Additional provider headers configured on the login client are applied after the generated headers, so a configured Authorization header replaces the Basic credentials on the token POST.
+    why: The task makes trusted provider configuration win over every generated header. fastapi-sso applies the same overlay to the other headers and then hands the request to httpx.BasicAuth, which rewrites Authorization, so an explicitly configured credential could never reach the provider.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L579-L584
+  - what: The discovery document is fetched once per login and decoded into the authorization, token and userinfo endpoints. LiteLLM fetches it once for the token endpoint and again for the userinfo endpoint.
+    why: One typed fetch gives every step the same document, so a provider that rate limits its discovery endpoint sees one request instead of two.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L262-L272
+  - what: A discovery answer that is not a 2xx, is not JSON, or omits one of the three endpoints answers 503 auth_provider_unavailable. LiteLLM calls response.json() without a status check, so the same answers end in an unhandled exception and surface as a 500.
+    why: A broken discovery answer means the provider is unavailable, not that the proxy had a bug, and the typed error says so.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L31-L36
+  - what: A token answer that is not a 2xx, is not JSON, or carries no non-empty access_token answers 401 auth_error. LiteLLM ignores the token status and passes the parsed body to oauthlib, so the same answers fail later as unhandled exceptions or as a userinfo 401 after an unusable token.
+    why: A rejected authorization code is an authentication failure, and the status LiteLLM eventually shows is the 401 this path already names.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L583-L588
+  - what: A userinfo answer that is not a 2xx or is not a JSON object answers 401 auth_error. LiteLLM parses the body without a status check and passes it to the converter, so a rejected or non-object answer ends in an unhandled exception.
+    why: The userinfo call fails only when the provider refuses the access token or answers garbage, and both are authentication failures at this boundary.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L590-L601
+  - what: A Google userinfo claim of the wrong JSON type (email_verified that is not a boolean, or a profile claim that is not a string) answers 503 auth_provider_unavailable with the claim name as param. LiteLLM passes the value to pydantic, whose ValidationError is not caught and surfaces as a 500.
+    why: The provider broke the documented userinfo shape, and naming the claim tells an operator what to look at where a 500 hides it.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/google.py#L17-L29
+  - what: A callback that carries error= together with a code answers 401 auth_error. LiteLLM reaches oauthlib's raise_from_error inside the token request and the resulting OAuth2Error is not caught, so it surfaces as a 500.
+    why: The provider refused the login, and 401 says that instead of a server error.
+    link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/parameters.py#L278-L279
+  - what: A callback with a blank code= answers 400 with param code. LiteLLM only checks that the parameter is present, and oauthlib then drops the blank value in parse_qsl, so its MissingCodeError surfaces as a 500.
+    why: A blank code cannot be exchanged, and 400 is the status LiteLLM already uses for a missing code.
+    link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/parameters.py#L272-L284
+  - what: The userinfo request always carries an Authorization header with the Bearer scheme. oauthlib builds the header from the token_type of the token response and raises for an unknown one, so a provider that answered another scheme would get that scheme from LiteLLM.
+    why: Google answers Bearer, and the typed exchange keeps the access token without a scheme field. The Bearer header is the one Google accepts.
+    link: https://github.com/oauthlib/oauthlib/blob/v4.0.0/oauthlib/oauth2/rfc6749/clients/base.py#L167-L218
+  - what: An OAuth provider document over 16 MiB is refused before JSON parsing. LiteLLM parses whatever length the provider sends.
+    why: The bytes come from a provider over the network, and every other document decoder in betterlite-auth bounds its input the same way.
+    link: ""
+kept_bugs:
+  - what: A callback that supplies state but no sso_state cookie is accepted, because fastapi-sso 0.19.0 requires the cookie only when requires_state is on and GoogleSSO leaves that off.
+    why: The task pins the 0.19.0 behavior and rules out B1623's stronger PKCE cookie rule here, and a Google deployment never sends that cookie pair, so rejecting it would break existing logins.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L406-L414
+  - what: A callback whose query carries error= and no code answers 400 with the message about the missing code instead of a provider refusal, because the code check runs before anything reads error.
+    why: LiteLLM's adapter checks code first, and its status is what the task pins for a callback without a code.
+    link: https://github.com/tomasvotava/fastapi-sso/blob/c905eafe2d6d7aab5d2b929e53ba98f238fdb21d/fastapi_sso/sso/base.py#L397-L408
