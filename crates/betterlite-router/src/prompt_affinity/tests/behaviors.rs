@@ -16,13 +16,6 @@ const PLAIN_MESSAGES: &str =
     r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue"}]"#;
 
 pub(super) async fn run(name: &str) {
-    if filter_cases(name).await {
-        return;
-    }
-    prefix_cases(name).await;
-}
-
-async fn filter_cases(name: &str) -> bool {
     match name {
         "a_success_event_pins_the_deployment_the_next_request_reuses" => {
             a_success_event_pins_the_deployment_the_next_request_reuses().await;
@@ -45,32 +38,32 @@ async fn filter_cases(name: &str) -> bool {
         "a_success_event_without_messages_never_pins" => {
             a_success_event_without_messages_never_pins().await;
         }
-        _ => return false,
-    }
-    true
-}
-
-async fn prefix_cases(name: &str) {
-    if name == "default_breakpoints_are_injected_when_the_global_flag_is_on" {
-        default_breakpoints_are_injected_when_the_global_flag_is_on().await;
-    } else if name == "request_kwargs_enable_prompt_caching_injects_without_the_flag" {
-        request_kwargs_enable_prompt_caching_injects_without_the_flag().await;
-    } else if name == "tools_marks_suppress_the_default_breakpoints" {
-        tools_marks_suppress_the_default_breakpoints().await;
-    } else if name == "request_kwargs_without_the_flag_do_not_inject" {
-        request_kwargs_without_the_flag_do_not_inject().await;
-    } else if name == "a_message_level_mark_ignores_later_messages" {
-        a_message_level_mark_ignores_later_messages();
-    } else if name == "a_message_key_order_never_changes_the_digest" {
-        a_message_key_order_never_changes_the_digest();
-    } else if name == "only_the_blocks_up_to_the_last_mark_are_hashed" {
-        only_the_blocks_up_to_the_last_mark_are_hashed();
-    } else if name == "cache_control_markers_never_change_the_digest" {
-        cache_control_markers_never_change_the_digest();
-    } else if name == "tools_seed_the_prefix_digest" {
-        tools_seed_the_prefix_digest();
-    } else {
-        panic!("unknown case {name}");
+        "default_breakpoints_are_injected_when_the_global_flag_is_on" => {
+            default_breakpoints_are_injected_when_the_global_flag_is_on().await;
+        }
+        "request_kwargs_enable_prompt_caching_injects_without_the_flag" => {
+            request_kwargs_enable_prompt_caching_injects_without_the_flag().await;
+        }
+        "tools_marks_suppress_the_default_breakpoints" => {
+            tools_marks_suppress_the_default_breakpoints().await;
+        }
+        "request_kwargs_without_the_flag_do_not_inject" => {
+            request_kwargs_without_the_flag_do_not_inject().await;
+        }
+        "a_message_level_mark_ignores_later_messages" => {
+            a_message_level_mark_ignores_later_messages()
+        }
+        "a_message_key_order_never_changes_the_digest" => {
+            a_message_key_order_never_changes_the_digest();
+        }
+        "only_the_blocks_up_to_the_last_mark_are_hashed" => {
+            only_the_blocks_up_to_the_last_mark_are_hashed();
+        }
+        "cache_control_markers_never_change_the_digest" => {
+            cache_control_markers_never_change_the_digest();
+        }
+        "tools_seed_the_prefix_digest" => tools_seed_the_prefix_digest(),
+        _ => panic!("unknown case {name}"),
     }
 }
 
