@@ -46,8 +46,12 @@ class ComplexityScoring(Operation):
 
     @override
     def run(self) -> Output:
-        # the wire spells betterlite's tier_models and complexity_thresholds keys, and the aliases name them to the config
-        configured = None if self.config is None else _CONFIG.validate_json(self.config.model_dump_json(exclude_none=True))
+        # the case spells betterlite's key names; the aliases read them into LiteLLM's config fields
+        configured = (
+            None
+            if self.config is None
+            else _CONFIG.validate_json(self.config.model_dump_json(exclude_none=True))
+        )
         router = ComplexityRouter(
             model_name="probe",
             litellm_router_instance=Router(),

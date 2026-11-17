@@ -20,13 +20,14 @@ pub struct Input(Box<Payload>);
 struct Payload {
     function: Function,
     // the section's typed view, so the probe configures the scorer exactly as a config file does
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     config: Option<Json>,
     #[serde(default)]
     prompt: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     system_prompt: Option<String>,
-    #[serde(default)]
+    // the reference model declares a string with an empty default, so an absent tier stays absent on the wire
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     tier: Option<String>,
 }
 

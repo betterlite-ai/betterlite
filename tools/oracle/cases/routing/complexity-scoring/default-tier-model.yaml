@@ -48,7 +48,7 @@ probes:
           default_model: fallback-model
         tier: COMPLEX
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
-    samples: []
+    samples: [0]
     operation:
       complexity_scoring:
         function: tier_model
