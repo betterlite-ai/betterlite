@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import io
 from collections.abc import AsyncIterator
 from typing import Final, Literal, NotRequired, TypedDict
 
@@ -85,10 +87,8 @@ def blocked_of(error: GuardrailRaisedException) -> dict[str, JsonValue]:
 def function_view(function: Bag | None) -> JsonValue:
     if function is None:
         return None
-    view: dict[str, JsonValue] = {
-        "name": function.get("name"),
-        "arguments": function.get("arguments"),
-    }
+    view: dict[str, JsonValue] = {"name": function.get("name")}
+    view["arguments"] = function.get("arguments")
     return view
 
 
@@ -144,9 +144,7 @@ def block_view(block: Bag) -> JsonValue:
 def anthropic_view(response: dict[str, JsonValue]) -> JsonValue:
     typed = ANTHROPIC.validate_python(response)
     content = typed.get("content")
-    blocks: list[JsonValue] = []
-    if content is not None:
-        blocks = [block_view(block) for block in content]
+    blocks: list[JsonValue] = [] if content is None else [block_view(block) for block in content]
     view: dict[str, JsonValue] = {"content": blocks, "stop_reason": typed.get("stop_reason")}
     return view
 
@@ -161,9 +159,7 @@ def applied_guardrails(data: dict[str, JsonValue]) -> list[JsonValue] | None:
     names = bucket.get("applied_guardrails")
     if names is None:
         return None
-    view: list[JsonValue] = []
-    for name in names:
-        view.append(name)
+    view: list[JsonValue] = list(names)
     return view
 
 
@@ -179,7 +175,7 @@ def blocked_from_success(
     response: ModelResponse | dict[str, JsonValue],
 ) -> dict[str, JsonValue] | None:
     try:
-        asyncio.run(guardrail.async_post_call_success_hook(data=data, user_api_key_dict=UserAPIKeyAuth(), response=response))  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L836-L890
+        asyncio.run(guardrail.async_post_call_success_hook(data, UserAPIKeyAuth(), response))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L836-L890
     except GuardrailRaisedException as error:
         return blocked_of(error)
     return None
@@ -243,10 +239,7 @@ Streamed = ModelResponseStream | bytes | str
 
 
 async def collect_stream(stream: AsyncIterator[Streamed]) -> list[Streamed]:
-    items: list[Streamed] = []
-    async for item in stream:
-        items.append(item)
-    return items
+    return [item async for item in stream]
 
 
 def streamed_view(item: Streamed) -> JsonValue:
@@ -283,6 +276,8 @@ def streaming(input_value: Input) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    if input_value["mode"] == "success":
-        return success(input_value)
-    return streaming(input_value)
+    # LiteLLM prints its provider list to stdout, and the runner reads stdout as the answer
+    with contextlib.redirect_stdout(io.StringIO()):
+        if input_value["mode"] == "success":
+            return success(input_value)
+        return streaming(input_value)
