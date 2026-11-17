@@ -1,11 +1,11 @@
 import asyncio
 import os
 from collections.abc import Coroutine
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeAlias, runtime_checkable
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import litellm
-import litellm.llms.openai.chat.gpt_transformation as gpt_transformation
 from litellm.exceptions import BadRequestError
+from litellm.llms.openai.chat import gpt_transformation
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
@@ -68,7 +68,7 @@ class Rejection(BaseModel):
     status_code: int
 
 
-# the async base class branch answers before any subclass reaches transform_request, so only it keeps _is_base_class
+# the async base class branch answers first, so only it keeps _is_base_class
 class BaseClassConfig(OpenAIGPTConfig):
     _is_base_class = True
 
@@ -169,18 +169,16 @@ def transform(request: Request) -> JsonValue:
     return JSON.validate_python(body)
 
 
-def rejected_by(error: Exception) -> int:
-    return Rejection.model_validate(error, from_attributes=True).status_code
-
-
 def outcome(request: Request) -> JsonValue:
     try:
         return {"ok": True, "value": transform(request)}
     except REJECTION as error:
-        return {"ok": False, "status": rejected_by(error)}
+        rejection = Rejection.model_validate(error, from_attributes=True)
+        return {"ok": False, "status": rejection.status_code}
 
 
 def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     requests = parsed["transform_requests"]["requests"]
-    return JSON.validate_python([outcome(request) for request in requests])
+    outcomes: list[JsonValue] = [outcome(request) for request in requests]
+    return JSON.validate_python(outcomes)
