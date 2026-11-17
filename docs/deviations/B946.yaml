@@ -1,0 +1,22 @@
+task: B946
+deviations:
+  - what: >-
+      The response_cost of the synthesized response is summed as an exact decimal and written back
+      in its shortest decimal form. LiteLLM adds the two costs as Python floats, so 0.1 + 0.2 is
+      stored as 0.30000000000000004.
+    why: >-
+      response_cost is the billable total a cost callback reads. An exact decimal keeps the sum of
+      the two provider calls from drifting through binary rounding; a caller that reads a total
+      still gets one, and no working setup depends on the artifact digits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L371-L383
+  - what: >-
+      A search score renders with three places by rounding the exact decimal its JSON token
+      carries, half to even. LiteLLM formats the binary float it parsed, so a score token of
+      0.1245 renders 0.124 here and 0.125 there. Scores that are not an exact third-place midpoint
+      render the same in both.
+    why: >-
+      betterlite reads every number as the arbitrary-precision decimal the wire carries, so the
+      score keeps the value the vector store sent. Python's result depends on the binary
+      representation of the token, which is why the two disagree only on an exact midpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L219-L220
+kept_bugs: []
