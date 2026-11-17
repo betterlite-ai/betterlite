@@ -66,6 +66,7 @@ pub(super) fn chunk_view(chunk: InvokeChunk) -> Value {
             }),
             ChunkProjection::Converse(converse) => json!({
                 "kind": "stream",
+                "model": converse.model,
                 "content": converse.delta.content,
                 "role": converse.delta.role,
                 "finish_reason": converse.finish_reason,

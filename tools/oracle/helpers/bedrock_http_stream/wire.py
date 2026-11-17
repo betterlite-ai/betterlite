@@ -72,7 +72,7 @@ class Recorder:
 
 class PostOptions(TypedDict):
     headers: dict[str, str]
-    data: str
+    data: str | bytes
     stream: bool
     logging_obj: Recorder
 
@@ -87,10 +87,11 @@ class Fixture:
 
     def reply(self, url: str, options: PostOptions) -> httpx.Response:
         pairs = sorted([name, value] for name, value in options["headers"].items())
-        body: list[int] = list(options["data"].encode())
+        data = options["data"]
+        payload: list[int] = list(data.encode() if isinstance(data, str) else data)
         self.posts.append({
             "url": url,
-            "body": JSON.validate_python(body),
+            "body": JSON.validate_python(payload),
             "headers": JSON.validate_python(pairs),
             "stream": options["stream"],
         })

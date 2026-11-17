@@ -64,9 +64,10 @@ def open_arguments(case: Case, client: SyncClient | AsyncClient) -> OpenArgument
 async def open_sync(case: Case, client: SyncClient) -> OpenedSync:
     if case["path"] == "converse_sync":
         return CONVERSE.make_sync_call(client=client, **open_arguments(case, client))
+    signed = case["signed_json_body"]
     return INVOKE_SYNC.make_sync_call(
         client=client,
-        signed_json_body=None,
+        signed_json_body=None if signed is None else signed.encode(),
         bedrock_invoke_provider=case["provider"],
         **open_arguments(case, client),
     )

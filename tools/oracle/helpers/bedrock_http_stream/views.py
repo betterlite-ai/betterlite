@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from .wire import JSON, Case, Chunk, FakeFailure
 
+
 class DeltaView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,6 +27,7 @@ class UsageView(BaseModel):
 class ChunkView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    model: str | None = None
     choices: list[ChoiceView] | None = None
     text: str | None = None
     tool_use: JsonValue | None = None
@@ -79,6 +81,7 @@ def chunk_payload(value: Chunk) -> JsonValue:
     choice = view.choices[0]
     stream: dict[str, JsonValue] = {
         "kind": "stream",
+        "model": view.model,
         "content": choice.delta.content,
         "role": choice.delta.role,
         "finish_reason": choice.finish_reason,

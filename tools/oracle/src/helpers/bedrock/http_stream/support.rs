@@ -61,9 +61,9 @@ pub(super) fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<Hel
 
 pub(super) fn header_map(pairs: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
-    for (name, value) in pairs {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(failure)?;
-        let value = HeaderValue::from_str(value).map_err(failure)?;
+    for (raw_name, raw_value) in pairs {
+        let name = HeaderName::from_bytes(raw_name.as_bytes()).map_err(failure)?;
+        let value = HeaderValue::from_str(raw_value).map_err(failure)?;
         headers.append(name, value);
     }
     Ok(headers)
