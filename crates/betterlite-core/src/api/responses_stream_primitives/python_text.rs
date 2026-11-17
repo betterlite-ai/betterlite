@@ -1,41 +1,5 @@
-use betterlite_logging::analytics::python::repr;
+use betterlite_logging::analytics::python::{number_text, repr};
 use betterlite_models::decisions::Json;
-
-// Python's str() switches to exponent notation outside this magnitude range, and LiteLLM's error message carries that text
-const FIXED_MIN: f64 = 1e-4;
-const FIXED_MAX: f64 = 1e16;
-
-#[must_use]
-pub fn float_text(value: f64) -> String {
-    if value.is_nan() {
-        return "nan".to_owned();
-    }
-    if value.is_infinite() {
-        return if value.is_sign_positive() {
-            "inf".to_owned()
-        } else {
-            "-inf".to_owned()
-        };
-    }
-    let magnitude = value.abs();
-    if magnitude == 0.0 || (FIXED_MIN..FIXED_MAX).contains(&magnitude) {
-        let fixed = value.to_string();
-        return if fixed.contains('.') {
-            fixed
-        } else {
-            format!("{fixed}.0")
-        };
-    }
-    let scientific = format!("{value:e}");
-    let Some((mantissa, power)) = scientific.split_once('e') else {
-        return scientific;
-    };
-    // CPython writes the exponent with a sign and at least two digits
-    let (sign, digits) = power
-        .strip_prefix('-')
-        .map_or(('+', power), |digits| ('-', digits));
-    format!("{mantissa}e{sign}{digits:0>2}")
-}
 
 #[must_use]
 pub fn value_text(value: &Json) -> String {
@@ -50,15 +14,4 @@ pub fn value_text(value: &Json) -> String {
             repr(value).unwrap_or_default()
         }
     }
-}
-
-fn number_text(number: &serde_json::Number) -> String {
-    let text = number.to_string();
-    if text.contains(['.', 'e', 'E']) {
-        return number.as_f64().map_or(text, float_text);
-    }
-    if text == "-0" {
-        return "0".to_owned();
-    }
-    text
 }

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::api::responses_stream_primitives::{
     STREAM_DURATION_ENV, StreamDurationError, loads_stream_duration_settings,
 };
-use betterlite_core::api::responses_stream_primitives::python_text::float_text;
+use betterlite_logging::analytics::python::float_text;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
 use serde::Deserialize;

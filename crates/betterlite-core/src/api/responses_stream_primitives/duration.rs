@@ -1,6 +1,6 @@
+use betterlite_logging::analytics::python::float_text;
 use thiserror::Error;
 
-use super::python_text::float_text;
 use super::state::ResponsesStreamBaseState;
 
 pub const STREAM_TIMEOUT_STATUS: u16 = 408;
