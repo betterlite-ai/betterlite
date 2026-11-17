@@ -65,7 +65,6 @@ pub(super) fn real_counter() -> Result<Arc<Counter>, Box<HelperError>> {
     ));
     Ok(Arc::new(Counter::new(
         selector,
-        fetcher,
         service,
         catalog,
         Settings::default(),

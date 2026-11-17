@@ -3,7 +3,6 @@ use std::str::FromStr as _;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
-use testcontainers::{ContainerAsync, GenericImage};
 use tokio::runtime::Builder;
 use tokio::task::JoinSet;
 use tokio_postgres::{Config, config::SslMode};
@@ -19,8 +18,10 @@ pub mod resource;
 use resource::{Ownership, Resource};
 pub mod provision;
 use provision::ProvisionTask;
+mod template;
 pub mod tls;
-use cleanup::{cleanup_resource, combine_errors};
+use cleanup::{combine_errors, drain_drivers, timed};
+use operations::connect;
 
 use tls::{TlsMode, query_value, tls_mode};
 
@@ -85,35 +86,20 @@ impl ConnectionOptions {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum FixtureSource {
-    Configured(Box<ConnectionOptions>),
-    Testcontainers,
-}
-
-pub fn select_source(configured_url: Option<&SecretString>) -> Result<FixtureSource, FixtureError> {
+pub fn configured_options(
+    configured_url: Option<&SecretString>,
+) -> Result<ConnectionOptions, FixtureError> {
     match configured_url {
         Some(url) if url.expose_secret().is_empty() => Err(FixtureError::EmptyConfiguredUrl),
-        Some(url) => Ok(FixtureSource::Configured(Box::new(
-            ConnectionOptions::from_url(url.expose_secret())?,
-        ))),
-        None => Ok(FixtureSource::Testcontainers),
+        Some(url) => ConnectionOptions::from_url(url.expose_secret()),
+        None => Err(FixtureError::MissingConfiguredUrl),
     }
 }
 
+#[derive(Debug)]
 pub struct PostgresFixture {
     pub options: ConnectionOptions,
     pub ownership: Ownership,
-    pub container: Option<ContainerAsync<GenericImage>>,
-}
-
-impl fmt::Debug for PostgresFixture {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PostgresFixture")
-            .field("options", &self.options)
-            .field("ownership", &self.ownership)
-            .finish_non_exhaustive()
-    }
 }
 
 impl PostgresFixture {
@@ -172,12 +158,14 @@ impl PostgresFixture {
     }
 
     pub async fn close_async(self) -> Result<(), FixtureError> {
-        let cleanup = cleanup_resource(&self.ownership.admin, &self.ownership.resource).await;
-        let container_cleanup = match self.container {
-            Some(container) => container.rm().await.map_err(FixtureError::Container),
-            None => Ok(()),
-        };
-        combine_errors(cleanup, container_cleanup)
+        let mut drivers = JoinSet::new();
+        let client = connect(&self.ownership.admin, &mut drivers).await?;
+        let statement = self.ownership.resource.drop_statement();
+        let dropped = timed("drop resource", client.batch_execute(&statement))
+            .await
+            .and_then(|result| result.map_err(FixtureError::Database));
+        drop(client);
+        combine_errors(dropped, drain_drivers(&mut drivers).await)
     }
 }
 

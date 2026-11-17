@@ -10,7 +10,7 @@ const MANIFEST_DIGEST: &str = "c2a1e005f73eda0bb5f5496f90299688872f1e56e71f749b5
 const FIXTURES: &str = "../../crates/betterlite-db/src/schema_contract/fixtures";
 
 // every file is checked before the first statement runs, so a changed schema never half-applies
-pub(super) async fn verified_sql() -> Result<Vec<String>, DashboardFixtureError> {
+pub(crate) async fn verified_sql() -> Result<Vec<String>, DashboardFixtureError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURES);
     let manifest_path = root.join("sql.sha256");
     let manifest = match fs::read(&manifest_path).await {

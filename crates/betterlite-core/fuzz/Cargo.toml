@@ -408,3 +408,10 @@ path = "fuzz_targets/assemblyai_transcript.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_sse_recovery"
+path = "fuzz_targets/responses_sse_recovery.rs"
+test = false
+doc = false
+bench = false

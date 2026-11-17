@@ -62,7 +62,7 @@ fn hub_settings() -> HubSettings {
     }
 }
 
-pub(crate) fn counter() -> Counter {
+pub(crate) fn counter(catalog: &Arc<ModelCatalog>) -> Counter {
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = Arc::new(ProxiedClient::outbound(&policy).unwrap());
     let settings = Settings::default();
@@ -76,7 +76,6 @@ pub(crate) fn counter() -> Counter {
         None,
         Arc::clone(&service),
     ));
-    let catalog = BundledCatalog::default().get();
     let hub = hub_settings();
     let clock = Arc::new(SystemHubClock::default());
     let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
@@ -93,13 +92,13 @@ pub(crate) fn counter() -> Counter {
         Arc::new(Instant::now),
     ));
     let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
+        fetcher,
         downloader,
-        Arc::clone(&catalog),
+        Arc::clone(catalog),
         Arc::clone(&service),
         true,
     ));
-    Counter::new(selector, fetcher, service, catalog, settings)
+    Counter::new(selector, service, Arc::clone(catalog), settings)
 }
 
 pub(crate) fn catalog() -> Arc<ModelCatalog> {
