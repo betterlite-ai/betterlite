@@ -73,27 +73,43 @@ pub(super) fn prepared(
 
 pub(super) const NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
 
-pub(super) fn dispatch_call<'data>(
-    api_base: &'data str,
-    optional_params: &'data Object,
-    litellm_params: &'data Object,
-    headers: &'data Headers,
-    api_key: Option<&'data SecretString>,
-    acompletion: bool,
-    stream: bool,
-) -> DispatchCall<'data> {
-    DispatchCall {
-        model: MODEL,
-        messages: &[],
-        optional_params,
-        litellm_params,
-        headers,
-        environment: &NO_ENVIRONMENT,
-        api_base: Some(api_base),
-        api_key,
-        reply: AgentReply::default(),
-        acompletion,
-        stream,
+pub(super) struct CallFixture {
+    pub(super) api_base: &'static str,
+    pub(super) optional_params: Object,
+    pub(super) litellm_params: Object,
+    pub(super) headers: Headers,
+    pub(super) api_key: Option<SecretString>,
+    pub(super) acompletion: bool,
+    pub(super) stream: bool,
+}
+
+impl CallFixture {
+    pub(super) fn new(api_base: &'static str) -> Self {
+        Self {
+            api_base,
+            optional_params: Object::new(),
+            litellm_params: Object::new(),
+            headers: Headers::new(),
+            api_key: None,
+            acompletion: false,
+            stream: false,
+        }
+    }
+
+    pub(super) fn call(&self) -> DispatchCall<'_> {
+        DispatchCall {
+            model: MODEL,
+            messages: &[],
+            optional_params: &self.optional_params,
+            litellm_params: &self.litellm_params,
+            headers: &self.headers,
+            environment: &NO_ENVIRONMENT,
+            api_base: Some(self.api_base),
+            api_key: self.api_key.as_ref(),
+            reply: AgentReply::default(),
+            acompletion: self.acompletion,
+            stream: self.stream,
+        }
     }
 }
 

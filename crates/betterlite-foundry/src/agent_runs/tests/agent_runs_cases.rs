@@ -4,7 +4,6 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use crate::agent_requests::prepare::Headers;
 use crate::agent_results::reply::{AgentReply, Usage};
 use crate::agent_runs::decode::{RUN_CANCELLED, RUN_EXPIRED, RUN_FAILED};
 use crate::agent_runs::dispatch::{Route, dispatch};
@@ -13,10 +12,9 @@ use crate::agent_runs::flow::{CompletionCall, MAX_POLL_ATTEMPTS, POLL_INTERVAL, 
 use crate::agent_runs::transport::{AgentRunMethod, AgentRunMode, AgentRunTransport};
 
 use super::support::{
-    BASE, FactoryCall, FailingResolver, FixedCounter, MODEL, Outcome, RecordedRequest,
-    RecordingResolver, RecordingSleeper, Run, SECRET, Step, UnusedFactory, block_on, dispatch_call,
-    execute, failed_step, finish, messages, object, prepared, repeated, shown, status_step, step,
-    transport,
+    BASE, CallFixture, FactoryCall, FailingResolver, FixedCounter, MODEL, Outcome, RecordedRequest,
+    RecordingResolver, RecordingSleeper, Run, SECRET, Step, UnusedFactory, block_on, execute,
+    failed_step, finish, messages, object, prepared, repeated, shown, status_step, step, transport,
 };
 
 const MISSING_TOKEN: &str = "api_key (Azure AD token) is required for Azure Foundry Agents. Either pass \
@@ -572,27 +570,20 @@ fn agent_entra_forced_scope() {
 
 fn forced_scope_resolves_token() {
     let resolver = RecordingResolver::new(Some("resolved-token"));
-    let optional_params = Object::new();
-    let litellm_params = object(
+    let mut fixture = CallFixture::new(BASE);
+    fixture.litellm_params = object(
         r#"{"tenant_id": "tenant-a", "client_id": "client-a", "client_secret": "secret-a",
             "azure_scope": "https://wrong.example/.default", "ssl_verify": false, "extra": "kept"}"#,
     );
-    let headers = Headers::new();
-    let call = dispatch_call(
-        BASE,
-        &optional_params,
-        &litellm_params,
-        &headers,
-        None,
-        false,
-        false,
-    );
-    let route = dispatch(call, &resolver).expect("a route");
+    let route = dispatch(fixture.call(), &resolver).expect("a route");
     let params = resolver.params();
     assert_eq!(params.len(), 1);
     assert_forced_scope(&params[0]);
     assert_eq!(
-        litellm_params.get("azure_scope").and_then(Json::as_str),
+        fixture
+            .litellm_params
+            .get("azure_scope")
+            .and_then(Json::as_str),
         Some("https://wrong.example/.default")
     );
     match route {
@@ -631,20 +622,10 @@ fn assert_forced_scope(params: &Object) {
 
 fn empty_key_reuses_the_token() {
     let resolver = RecordingResolver::new(Some("resolved-token"));
-    let optional_params = Object::new();
-    let litellm_params = object(r#"{"tenant_id": "tenant-a"}"#);
-    let headers = Headers::new();
-    let empty = SecretString::from(String::new());
-    let call = dispatch_call(
-        BASE,
-        &optional_params,
-        &litellm_params,
-        &headers,
-        Some(&empty),
-        false,
-        false,
-    );
-    let route = dispatch(call, &resolver).expect("a route");
+    let mut fixture = CallFixture::new(BASE);
+    fixture.litellm_params = object(r#"{"tenant_id": "tenant-a"}"#);
+    fixture.api_key = Some(SecretString::from(String::new()));
+    let route = dispatch(fixture.call(), &resolver).expect("a route");
     assert!(resolver.params().is_empty());
     match route {
         Route::Completion(completion_call) => {
@@ -657,20 +638,12 @@ fn empty_key_reuses_the_token() {
 
 fn stream_payload_carries_scope_and_ssl() {
     let resolver = RecordingResolver::new(Some("resolved-token"));
-    let optional_params = Object::new();
-    let litellm_params = object(r#"{"ssl_verify": false}"#);
-    let headers = Headers::new();
-    let key = SecretString::from("explicit-key");
-    let call = dispatch_call(
-        BASE,
-        &optional_params,
-        &litellm_params,
-        &headers,
-        Some(&key),
-        true,
-        true,
-    );
-    let route = dispatch(call, &resolver).expect("a route");
+    let mut fixture = CallFixture::new(BASE);
+    fixture.litellm_params = object(r#"{"ssl_verify": false}"#);
+    fixture.api_key = Some(SecretString::from("explicit-key"));
+    fixture.acompletion = true;
+    fixture.stream = true;
+    let route = dispatch(fixture.call(), &resolver).expect("a route");
     assert!(resolver.params().is_empty());
     let Route::Stream(stream) = route else {
         panic!("a streaming async call is a stream");
@@ -692,34 +665,16 @@ fn stream_payload_carries_scope_and_ssl() {
 }
 
 fn agent_token_missing_value_error() {
-    let optional_params = Object::new();
-    let litellm_params = Object::new();
-    let headers = Headers::new();
     let resolver = RecordingResolver::new(None);
-    let call = dispatch_call(
-        BASE,
-        &optional_params,
-        &litellm_params,
-        &headers,
-        None,
-        false,
-        false,
-    );
-    let missing_error = dispatch(call, &resolver).err().expect("a missing token");
+    let fixture = CallFixture::new(BASE);
+    let missing_error = dispatch(fixture.call(), &resolver)
+        .err()
+        .expect("a missing token");
     assert_eq!(missing_error.status(), None);
     assert_eq!(missing_error.to_string(), MISSING_TOKEN);
     assert_eq!(resolver.params().len(), 1);
 
-    let failing_call = dispatch_call(
-        BASE,
-        &optional_params,
-        &litellm_params,
-        &headers,
-        None,
-        false,
-        false,
-    );
-    let failing_error = dispatch(failing_call, &FailingResolver)
+    let failing_error = dispatch(fixture.call(), &FailingResolver)
         .err()
         .expect("a credential failure");
     assert_eq!(failing_error.status(), None);
@@ -737,30 +692,22 @@ fn dispatch_and_client_defaults() {
 
 fn route_matrix() {
     let resolver = RecordingResolver::new(Some("resolved-token"));
-    let optional_params = Object::new();
-    let headers = Headers::new();
     for (acompletion, stream) in [(false, false), (false, true), (true, false), (true, true)] {
-        let litellm_params = object(r#"{"ssl_verify": true}"#);
-        let call = dispatch_call(
-            BASE,
-            &optional_params,
-            &litellm_params,
-            &headers,
-            None,
-            acompletion,
-            stream,
-        );
-        let route = dispatch(call, &resolver).expect("a route");
-        assert_route(route, acompletion, stream);
+        let mut fixture = CallFixture::new(BASE);
+        fixture.litellm_params = object(r#"{"ssl_verify": true}"#);
+        fixture.acompletion = acompletion;
+        fixture.stream = stream;
+        let route = dispatch(fixture.call(), &resolver).expect("a route");
+        assert_route(route, &fixture);
     }
 }
 
-fn assert_route(route: Route<'_>, acompletion: bool, stream: bool) {
-    if acompletion && stream {
+fn assert_route(route: Route<'_>, fixture: &CallFixture) {
+    if fixture.acompletion && fixture.stream {
         assert!(matches!(route, Route::Stream(_)));
         return;
     }
-    let expected = if acompletion {
+    let expected = if fixture.acompletion {
         AgentRunMode::Async
     } else {
         AgentRunMode::Sync
@@ -774,23 +721,21 @@ fn assert_route(route: Route<'_>, acompletion: bool, stream: bool) {
 
 fn client_defaults() {
     let resolver = RecordingResolver::new(Some("resolved-token"));
-    let headers = Headers::new();
-    let sync_params = object(r#"{"ssl_verify": false}"#);
+    let mut sync_fixture = CallFixture::new(BASE);
+    sync_fixture.litellm_params = object(r#"{"ssl_verify": false}"#);
     assert_client_kind(
         &resolver,
-        &sync_params,
-        &headers,
-        false,
+        &sync_fixture,
         FactoryCall {
             kind: "sync",
             ssl_verify: Json::Bool(false),
         },
     );
+    let mut async_fixture = CallFixture::new(BASE);
+    async_fixture.acompletion = true;
     assert_client_kind(
         &resolver,
-        &Object::new(),
-        &headers,
-        true,
+        &async_fixture,
         FactoryCall {
             kind: "async",
             ssl_verify: Json::Null,
@@ -798,24 +743,9 @@ fn client_defaults() {
     );
 }
 
-fn assert_client_kind(
-    resolver: &RecordingResolver,
-    litellm_params: &Object,
-    headers: &Headers,
-    acompletion: bool,
-    expected: FactoryCall,
-) {
-    let optional_params = Object::new();
-    let call = dispatch_call(
-        BASE,
-        &optional_params,
-        litellm_params,
-        headers,
-        None,
-        acompletion,
-        false,
-    );
-    let Route::Completion(completion_call) = dispatch(call, resolver).expect("a route") else {
+fn assert_client_kind(resolver: &RecordingResolver, fixture: &CallFixture, expected: FactoryCall) {
+    let Route::Completion(completion_call) = dispatch(fixture.call(), resolver).expect("a route")
+    else {
         panic!("a non-streaming call is not a stream");
     };
     let outcome = finish(&completion_call, completed_steps());

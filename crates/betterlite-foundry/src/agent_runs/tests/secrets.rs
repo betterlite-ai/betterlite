@@ -9,7 +9,7 @@ use crate::agent_runs::flow::CompletionCall;
 use crate::agent_runs::transport::{AgentRunMethod, AgentRunRequest};
 
 use super::support::{
-    Outcome, RecordingResolver, Run, SECRET, Step, dispatch_call, execute, finish, messages,
+    CallFixture, Outcome, RecordingResolver, Run, SECRET, Step, execute, finish, messages,
     prepared, secret_headers, status_step, step,
 };
 
@@ -39,36 +39,22 @@ fn four_steps() -> Vec<Step> {
 
 #[test]
 fn agent_runs_credential_identity_isolation() {
-    let empty = Object::new();
-    let caller_headers = secret_headers(&[("X-Trace", "trace-1")]);
     let resolver = RecordingResolver::new(Some("resolver-token"));
-    let first_key = SecretString::from(FIRST_KEY);
-    let second_key = SecretString::from(SECOND_KEY);
-    let first = dispatch_call(
-        FIRST_BASE,
-        &empty,
-        &empty,
-        &caller_headers,
-        Some(&first_key),
-        false,
-        false,
-    );
-    let second = dispatch_call(
-        SECOND_BASE,
-        &empty,
-        &empty,
-        &caller_headers,
-        Some(&second_key),
-        true,
-        false,
-    );
-    let Route::Completion(first_call) = dispatch(first, &resolver).expect("a route") else {
+    let mut first = CallFixture::new(FIRST_BASE);
+    first.headers = secret_headers(&[("X-Trace", "trace-1")]);
+    first.api_key = Some(SecretString::from(FIRST_KEY));
+    let mut second = CallFixture::new(SECOND_BASE);
+    second.headers = secret_headers(&[("X-Trace", "trace-1")]);
+    second.api_key = Some(SecretString::from(SECOND_KEY));
+    second.acompletion = true;
+    let Route::Completion(first_call) = dispatch(first.call(), &resolver).expect("a route") else {
         panic!("a sync call is not a stream");
     };
-    let Route::Completion(second_call) = dispatch(second, &resolver).expect("a route") else {
+    let Route::Completion(second_call) = dispatch(second.call(), &resolver).expect("a route")
+    else {
         panic!("a non-streaming async call is not a stream");
     };
-    assert_isolation(&first_call, &second_call, &caller_headers, &resolver);
+    assert_isolation(&first_call, &second_call, &first.headers, &resolver);
     let first_outcome = finish(&first_call, four_steps());
     let second_outcome = finish(&second_call, four_steps());
     assert_isolated_requests(&first_outcome, &second_outcome);
