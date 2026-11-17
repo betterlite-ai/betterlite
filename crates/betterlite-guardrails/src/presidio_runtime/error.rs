@@ -66,15 +66,23 @@ impl From<PresidioActionsError> for GuardrailFailure {
                         guardrail_name,
                         message,
                     },
-            } => Self::GuardrailRaised {
-                guardrail_name: (!guardrail_name.is_empty()).then_some(guardrail_name),
-                message,
-                wrap_default_message: false,
-                status_code: 400,
-                blocked_content: false,
-            },
-            // Every remaining variant reports the same HTTP failure with its own status and text
-            other => Self::Http {
+            } => guardrail_raised(guardrail_name, message),
+            other @ (PresidioActionsError::MissingAnalyzerApiBase
+            | PresidioActionsError::MissingAnonymizerApiBase
+            | PresidioActionsError::MetadataNotObject { .. }
+            | PresidioActionsError::PiiTokensNotObject { .. }
+            | PresidioActionsError::GuardrailConfigNotObject { .. }
+            | PresidioActionsError::GuardrailConfigField { .. }
+            | PresidioActionsError::AnonymizerRequest { .. }
+            | PresidioActionsError::ResponseTooLarge { .. }
+            | PresidioActionsError::AnonymizerHttpStatus { .. }
+            | PresidioActionsError::AnonymizerContentType { .. }
+            | PresidioActionsError::AnonymizerResponseJson { .. }
+            | PresidioActionsError::MissingSpan { .. }
+            | PresidioActionsError::SpanOutOfBounds { .. }
+            | PresidioActionsError::MissingEntityType
+            | PresidioActionsError::Analysis { .. }
+            | PresidioActionsError::Serialize { .. }) => Self::Http {
                 status: other.status(),
                 detail: other.to_string(),
             },
@@ -82,15 +90,36 @@ impl From<PresidioActionsError> for GuardrailFailure {
     }
 }
 
+fn guardrail_raised(guardrail_name: String, message: String) -> GuardrailFailure {
+    GuardrailFailure::GuardrailRaised {
+        guardrail_name: (!guardrail_name.is_empty()).then_some(guardrail_name),
+        message,
+        wrap_default_message: false,
+        status_code: 400,
+        blocked_content: false,
+    }
+}
+
 impl From<PresidioRuntimeError> for GuardrailFailure {
     fn from(error: PresidioRuntimeError) -> Self {
         match error {
+            other @ (PresidioRuntimeError::FileNotFound { .. }
+            | PresidioRuntimeError::Decode { .. }
+            | PresidioRuntimeError::Read { .. }
+            | PresidioRuntimeError::Timeout { .. }
+            | PresidioRuntimeError::MockRedactedText { .. }
+            | PresidioRuntimeError::Data { .. }) => other.internal_failure(),
             PresidioRuntimeError::Actions(actions) => Self::from(actions),
             PresidioRuntimeError::Response(response) => Self::from(response),
-            other => Self::Http {
-                status: INTERNAL_STATUS,
-                detail: other.to_string(),
-            },
+        }
+    }
+}
+
+impl PresidioRuntimeError {
+    fn internal_failure(&self) -> GuardrailFailure {
+        GuardrailFailure::Http {
+            status: INTERNAL_STATUS,
+            detail: self.to_string(),
         }
     }
 }
