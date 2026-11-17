@@ -16,9 +16,9 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let response = decode_oidc_token_response(input.body.as_bytes())
-            .map_err(|error| proxy_exception(&error))?;
-        serde_json::to_value(response.claims).map_err(|error| proxy_exception(&error))
+        let response =
+            decode_oidc_token_response(input.body.as_bytes()).map_err(proxy_exception)?;
+        serde_json::to_value(response.claims).map_err(proxy_exception)
     }
 }
 
