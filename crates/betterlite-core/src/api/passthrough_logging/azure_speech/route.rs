@@ -4,7 +4,7 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum SpeechRoute {
+pub enum SpeechRoute {
     ShortAudio,
     FastTranscription,
     Batch,

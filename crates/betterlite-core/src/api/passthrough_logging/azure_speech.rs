@@ -14,8 +14,8 @@ use cost::response_cost;
 use route::classify_route;
 
 mod cost;
-mod duration;
-mod route;
+pub mod duration;
+pub mod route;
 mod tests;
 
 const PROVIDER: &str = "azure_speech";
@@ -42,7 +42,7 @@ pub struct AzureSpeechPassthroughRequest<'request> {
 }
 
 #[derive(Debug, Error)]
-enum AzureSpeechLoggingError {
+pub enum AzureSpeechLoggingError {
     #[error(
         "the Azure Speech body field {field} value {value} is outside the billed duration range"
     )]

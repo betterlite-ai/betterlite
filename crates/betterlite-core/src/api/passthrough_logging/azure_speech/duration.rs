@@ -7,7 +7,7 @@ use super::route::SpeechRoute;
 use super::{AzureSpeechLoggingError, MILLISECONDS_PER_SECOND, TICKS_PER_SECOND};
 
 // The short route bills the longer of the uploaded audio and the recognition result; a batch route bills nothing.
-pub(super) fn billed_audio_seconds(
+pub fn billed_audio_seconds(
     route: SpeechRoute,
     request_body: Option<&[u8]>,
     response_body: &[u8],
