@@ -1,0 +1,15 @@
+task: B556
+deviations:
+  - what: A relevance score keeps every digit of the provider's decimal lexeme, while LiteLLM stores each score as a Python float and returns the float's rounded value.
+    why: The typed rerank reply holds B1013's exact-decimal Score, so a wire score such as 0.1234567890123456789012 comes back unchanged instead of rounded through a binary float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L74-L77
+  - what: The hidden model comes from an llm_provider-azureml-model-group entry in the hidden params the reply conversion hands in; LiteLLM reads that entry from the response object it just built, whose hidden params are empty in its public rerank path, so its hidden model is always None.
+    why: The task requires the model group to map to the inferred base model after the response conversion, and betterlite keeps hidden params as typed reply data rather than a private attribute attached to the response object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L107-L109
+  - what: A base URL the URL parser rejects (an invalid port, a host that is not a valid IDNA name, a control character, or a path that decodes to a '?' or '#') fails with betterlite's own message and keeps the parser failure as the error's source, while LiteLLM lets httpx's InvalidURL message through unchanged.
+    why: Both refuse the request; betterlite's error enum is the typed form of that refusal and carries the parser text one level down instead of copying it into the top-level message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L32
+kept_bugs:
+  - what: A JSON error object from the provider, whatever its HTTP status, decodes as a successful reply with no results, because RerankResponse ignores unknown fields and treats results as optional.
+    why: LiteLLM's Cohere rerank conversion builds RerankResponse from any JSON body without looking at the status, and a setup whose Azure AI rerank endpoint answers errors as JSON gets that empty success today, so the rerank-error oracle case keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/rerank/transformation.py#L151
