@@ -13,9 +13,9 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_json::Number;
 use uuid::Uuid;
 
-use super::error::FamilyError;
-use super::request::text_headers;
 use crate::api::rerank_contracts::{MapCohereRerankParams, Params};
+use crate::embedding_rerank_providers::error::FamilyError;
+use crate::embedding_rerank_providers::request::text_headers;
 
 // Voyage answers with data, so LiteLLM rewrites every result and its usage into the shared shape
 pub(super) fn voyage_response(status: u16, body: &[u8]) -> Result<RerankResponse, FamilyError> {

@@ -4,6 +4,7 @@ use thiserror::Error;
 use betterlite_openai::chat_content::ChatContentError;
 use betterlite_openai::cohere_chat_v1::error::CohereV1ConfigError;
 use betterlite_openai::cohere_chat_v1::reply::ReplyError as CohereV1ReplyError;
+use betterlite_openai::cohere_chat_v2::CohereV2ConfigError;
 use betterlite_openai::cohere_chat_v2::reply::ReplyError as CohereV2ReplyError;
 use betterlite_openai::cohere_embedding::CohereEmbeddingError;
 use betterlite_openai::cohere_rerank::CohereRerankError;
@@ -21,7 +22,7 @@ pub enum FamilyError {
     Unsupported { provider: String },
     #[error("the request could not be written as JSON: {source}")]
     Encode {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
     #[error("the {family} endpoint {value:?} is not a URL: {source}")]
@@ -51,6 +52,8 @@ pub enum FamilyError {
     CohereV1(#[from] CohereV1ConfigError),
     #[error(transparent)]
     CohereV1Reply(#[from] CohereV1ReplyError),
+    #[error(transparent)]
+    CohereV2(#[from] CohereV2ConfigError),
     #[error(transparent)]
     CohereV2Reply(#[from] CohereV2ReplyError),
     #[error(transparent)]

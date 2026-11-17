@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::Common;
 use super::error::FamilyError;
-use super::request::{encode, http_headers, plain, url};
+use super::request::{http_headers, url};
 use super::{Call, CohereChatDecode, Decode, EmbeddingRerankPrepared};
 
 // main.py's two Cohere chat defaults, which differ in host as well as version
@@ -61,7 +61,7 @@ pub fn prepare(
     Ok(EmbeddingRerankPrepared(Call {
         url: url("cohere", &base)?,
         headers: http_headers(&headers)?,
-        body: encode(&Json::Object(body))?,
+        body: serde_json::to_vec(&Json::Object(body))?,
         timeout: common.timeout,
         decode: Decode::CohereChat(Box::new(chat_decode(route, model))),
     }))
@@ -121,7 +121,7 @@ fn body(
 
 // LiteLLM's get_optional_params receives only the parameters the caller set, so a null field is absent
 fn non_default_params(request: &ChatRequest, stream: bool) -> Result<Object, FamilyError> {
-    let mut fields: Object = plain(request)?;
+    let mut fields: Object = serde_json::from_value(serde_json::to_value(request)?)?;
     for name in REMOVED_FIELDS {
         fields.shift_remove(name);
     }

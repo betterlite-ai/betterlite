@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::api::rerank_contracts::Params;
 use crate::embedding_rerank_providers::error::FamilyError;
-use crate::embedding_rerank_providers::request::{encode, http_headers, url};
+use crate::embedding_rerank_providers::request::{http_headers, url};
 use crate::embedding_rerank_providers::{Call, Decode, EmbeddingRerankPrepared};
 
 mod config;
@@ -64,7 +64,7 @@ pub fn prepare(
     Ok(EmbeddingRerankPrepared(Call {
         url: url(family, &endpoint)?,
         headers: http_headers(&headers)?,
-        body: encode(body)?,
+        body: serde_json::to_vec(body)?,
         timeout,
         decode: Decode::Rerank(config),
     }))

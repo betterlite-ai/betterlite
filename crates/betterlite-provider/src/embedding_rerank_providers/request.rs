@@ -1,26 +1,40 @@
 use betterlite_openai::openai_base_config::{Headers, Object as BaseObject};
+use betterlite_prompts::arguments::json::Object;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use url::Url;
 
+use super::Common;
 use super::error::FamilyError;
+use super::{Call, Decode};
 
-// the request is serialized and read back as the family body's own JSON types
-pub(super) fn plain<T, U>(value: &T) -> Result<U, FamilyError>
-where
-    T: Serialize,
-    U: DeserializeOwned,
-{
-    let bytes = encode(value)?;
-    serde_json::from_slice(&bytes).map_err(|source| FamilyError::Encode { source })
+// every family builds one prepared call the same way; only its named target, headers and body differ
+pub(super) fn call<T: Serialize>(
+    common: &Common<'_>,
+    target: (&'static str, String),
+    headers: &Headers,
+    body: &T,
+    decode: Decode,
+) -> Result<Call, FamilyError> {
+    let (family, endpoint) = target;
+    Ok(Call {
+        url: url(family, &endpoint)?,
+        headers: http_headers(headers)?,
+        body: serde_json::to_vec(body)?,
+        timeout: common.timeout,
+        decode,
+    })
 }
 
-pub(super) fn encode<T>(body: &T) -> Result<Vec<u8>, FamilyError>
-where
-    T: Serialize,
-{
-    serde_json::to_vec(body).map_err(|source| FamilyError::Encode { source })
+// the host leaves read the caller's parameters as their own JSON object, then map the same set
+pub(super) fn host_options(
+    non_default: &Object,
+    map: fn(&BaseObject, &mut BaseObject),
+) -> Result<BaseObject, FamilyError> {
+    let supplied: BaseObject = serde_json::from_value(serde_json::to_value(non_default)?)?;
+    let mut mapped = BaseObject::new();
+    map(&supplied, &mut mapped);
+    Ok(mapped)
 }
 
 pub(super) fn url(family: &'static str, value: &str) -> Result<Url, FamilyError> {

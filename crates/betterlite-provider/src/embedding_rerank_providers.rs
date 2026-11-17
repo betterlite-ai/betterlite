@@ -38,8 +38,7 @@ mod tests;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EmbeddingRerank;
 
-// the framework's OperationRequest tests build this variant from its bare name, so it stays a unit;
-// the call's data is Common, next to the operation's own request
+// tests build this variant from its bare name; the call's data is Common
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EmbeddingRerankRequest;
 

@@ -6,11 +6,11 @@ use betterlite_openai::host_rerank::{self, HostProvider};
 use betterlite_openai::openai_base_config::Headers;
 
 use super::FamilyRerankConfig;
-use super::error::FamilyError;
 use super::voyage::{voyage_headers, voyage_params};
 use crate::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, MapCohereRerankParams, Params, ResponseTransform,
 };
+use crate::embedding_rerank_providers::error::FamilyError;
 
 // LiteLLM's supported_rerank_params names, in the order each family's config lists them
 const V1_PARAMS: &str = "query documents top_n max_chunks_per_doc rank_fields return_documents";
