@@ -10,6 +10,7 @@ use super::support::{
     map_of, messages_of, model_cost_of,
 };
 use crate::claude_invoke::request::ClaudeInvokeRequest;
+use crate::claude_invoke::tools::ToolSearchToolsError;
 use crate::claude_invoke::{
     ClaudeInvokeError, STRIPS_BILLING_METADATA, USES_ASYNC_TRANSFORM_REQUEST,
 };
@@ -255,6 +256,21 @@ pub(super) fn tool_search_tool_name() {
         .transform(&empty, &fetcher)
         .expect("the empty tools request transforms");
     assert_eq!(body_json(&prepared)["tools"], json!([]));
+    let malformed = chat_request(
+        "claude-tools",
+        prompt_message(),
+        params(&json!({"max_tokens": 64, "tools": [42]})),
+        AnthropicHeaders::default(),
+        &defaults,
+        &catalog,
+    );
+    match session.transform(&malformed, &fetcher) {
+        Ok(_prepared) => panic!("the malformed tools entry must fail the request"),
+        Err(ClaudeInvokeError::Tools(ToolSearchToolsError::NotObject { index })) => {
+            assert_eq!(index, 0);
+        }
+        Err(other) => panic!("unexpected error: {other}"),
+    }
 }
 
 pub(super) fn inline_document() {
