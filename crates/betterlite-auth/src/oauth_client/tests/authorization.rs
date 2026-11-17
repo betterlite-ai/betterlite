@@ -87,6 +87,20 @@ fn a_request_without_a_redirect_uri_is_refused() {
 }
 
 #[test]
+fn an_empty_client_redirect_uri_is_refused() {
+    let client = client(&[], Some(""), true);
+    let request = AuthorizationRequest {
+        endpoint: "https://provider.test/authorize".to_owned(),
+        state: None,
+        redirect_uri: None,
+        extra_params: Vec::new(),
+    };
+    let error = authorization_url(&client, &request).unwrap_err();
+    assert!(matches!(&error, OAuthClientError::MissingRedirectUri));
+    assert_eq!(error.response().status, 500);
+}
+
+#[test]
 fn an_insecure_authorization_endpoint_needs_the_opt_in() {
     let request = AuthorizationRequest {
         endpoint: "http://provider.test/authorize".to_owned(),

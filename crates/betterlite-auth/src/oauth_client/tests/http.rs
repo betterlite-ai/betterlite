@@ -247,6 +247,48 @@ async fn the_client_redirect_uri_reaches_the_token_body() {
 }
 
 #[tokio::test]
+async fn an_empty_request_redirect_uri_falls_back_to_the_client_one() {
+    let provider = provider().await;
+    let mut client = client();
+    client.redirect_uri = Some("https://proxy.test/configured/callback".to_owned());
+    let discovery = discovery(&client, &provider).await;
+    let request = ExchangeRequest {
+        callback: callback("https://proxy.test/sso/callback?code=abc"),
+        redirect_uri: Some(""),
+        include_client_id: true,
+    };
+    exchange(&client, &transport(), &discovery, &request)
+        .await
+        .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(
+        form_value(&seen[1].body, "redirect_uri"),
+        "https://proxy.test/configured/callback"
+    );
+}
+
+#[tokio::test]
+async fn an_empty_client_redirect_uri_falls_back_to_the_callback_url() {
+    let provider = provider().await;
+    let mut client = client();
+    client.redirect_uri = Some(String::new());
+    let discovery = discovery(&client, &provider).await;
+    exchange(
+        &client,
+        &transport(),
+        &discovery,
+        &exchange_request("https://proxy.test/sso/callback?code=abc", true),
+    )
+    .await
+    .unwrap();
+    let seen = provider.seen.lock().unwrap().clone();
+    assert_eq!(
+        form_value(&seen[1].body, "redirect_uri"),
+        "https://proxy.test/sso/callback"
+    );
+}
+
+#[tokio::test]
 async fn the_callback_url_is_the_redirect_uri_fallback() {
     let provider = provider().await;
     let mut client = client();
