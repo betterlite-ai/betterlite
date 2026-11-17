@@ -10,10 +10,12 @@ use super::HostedVllmVideoError;
 
 // _serialize_form_value: a string is itself and every other value its JSON text
 #[must_use]
-pub fn serialize_form_value(value: &Value) -> String {
+fn serialize_form_value(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
-        _ => value.to_string(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+            value.to_string()
+        }
     }
 }
 
@@ -32,7 +34,7 @@ fn maybe_json(value: &Value) -> Result<Cow<'_, Value>, HostedVllmVideoError> {
 }
 
 // _form_value: the reference fields are checked for an unsafe media URL before they are written
-pub fn form_value(key: &str, value: &Value) -> Result<String, HostedVllmVideoError> {
+pub(super) fn form_value(key: &str, value: &Value) -> Result<String, HostedVllmVideoError> {
     reject_unsafe_media_urls(key, value)?;
     Ok(serialize_form_value(value))
 }

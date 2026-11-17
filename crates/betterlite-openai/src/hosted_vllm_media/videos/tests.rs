@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_http::user_url::error::SsrfError;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     HostedVllmVideoError, VLLM_OMNI_VIDEO_PARAMS, get_complete_url, get_supported_openai_params,
@@ -20,6 +20,10 @@ use crate::videos::create::VideoCreate;
 type Environment = BTreeMap<String, String>;
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+fn value(text: &str) -> Value {
+    serde_json::from_str(text).expect("the case is JSON")
+}
 
 fn environment(entries: &[(&str, &str)]) -> Environment {
     entries
@@ -51,18 +55,18 @@ fn create(value: Value) -> VideoCreate {
 }
 
 fn form(params: Value) -> Value {
-    let params = options(params);
-    let form =
-        transform_video_create_request("model", "prompt", "http://host/v1/videos", &params, None)
+    let fields = options(params);
+    let written =
+        transform_video_create_request("model", "prompt", "http://host/v1/videos", &fields, None)
             .expect("the form builds");
-    Value::Object(form.fields)
+    Value::Object(written.fields)
 }
 
 fn form_error(params: Value) -> HostedVllmVideoError {
-    let params = options(params);
-    let built =
-        transform_video_create_request("model", "prompt", "http://host/v1/videos", &params, None);
-    match built {
+    let fields = options(params);
+    let written =
+        transform_video_create_request("model", "prompt", "http://host/v1/videos", &fields, None);
+    match written {
         Ok(_) => panic!("the form must not build"),
         Err(error) => error,
     }
@@ -78,23 +82,27 @@ fn supported_params_are_the_openai_eight_then_the_vllm_omni_fields() {
 
 #[test]
 fn mapped_params_keep_every_set_option_and_drop_the_nulls() {
-    let mapped = map_openai_params(&create(json!({
-        "seconds": "8",
-        "size": "720x1280",
-        "user": "someone",
-        "characters": [{"name": "Ada"}],
-        "custom": 1,
-        "nulled": null,
-    })));
-    assert_eq!(
-        Value::Object(mapped),
-        json!({
+    let mapped = map_openai_params(&create(value(
+        r#"{
             "seconds": "8",
             "size": "720x1280",
             "user": "someone",
             "characters": [{"name": "Ada"}],
             "custom": 1,
-        })
+            "nulled": null
+        }"#,
+    )));
+    assert_eq!(
+        Value::Object(mapped),
+        value(
+            r#"{
+                "seconds": "8",
+                "size": "720x1280",
+                "user": "someone",
+                "characters": [{"name": "Ada"}],
+                "custom": 1
+            }"#,
+        )
     );
 }
 
@@ -167,52 +175,60 @@ fn complete_url_requires_a_base() {
 #[test]
 fn the_form_writes_model_and_prompt_then_every_remaining_option() {
     assert_eq!(
-        form(json!({
-            "width": 8,
-            "generate_sound": true,
-            "aspect_ratio": "16:9",
-            "extra_headers": {"x": "1"},
-            "extra_query": {"y": "2"},
-            "extra_body": {"z": 3},
-            "timeout": 30,
-            "custom_llm_provider": "hosted_vllm",
-            "input_reference": "http://10.0.0.1/x.png",
-            "characters": [{"name": "Ada"}],
-            "model": "other",
-            "prompt": "other",
-            "skipped": null,
-        })),
-        json!({
-            "model": "model",
-            "prompt": "prompt",
-            "width": "8",
-            "generate_sound": "true",
-            "aspect_ratio": "16:9",
-        })
+        form(value(
+            r#"{
+                "width": 8,
+                "generate_sound": true,
+                "aspect_ratio": "16:9",
+                "extra_headers": {"x": "1"},
+                "extra_query": {"y": "2"},
+                "extra_body": {"z": 3},
+                "timeout": 30,
+                "custom_llm_provider": "hosted_vllm",
+                "input_reference": "http://10.0.0.1/x.png",
+                "characters": [{"name": "Ada"}],
+                "model": "other",
+                "prompt": "other",
+                "skipped": null
+            }"#,
+        )),
+        value(
+            r#"{
+                "model": "model",
+                "prompt": "prompt",
+                "width": "8",
+                "generate_sound": "true",
+                "aspect_ratio": "16:9"
+            }"#,
+        )
     );
 }
 
 #[test]
 fn the_form_renders_bools_and_containers_as_json_text() {
     assert_eq!(
-        form(json!({
-            "enable_frame_interpolation": false,
-            "extra_params": {"a": 1},
-            "lora": ["first", "second"],
-        })),
-        json!({
-            "model": "model",
-            "prompt": "prompt",
-            "enable_frame_interpolation": "false",
-            "extra_params": "{\"a\":1}",
-            "lora": "[\"first\",\"second\"]",
-        })
+        form(value(
+            r#"{
+                "enable_frame_interpolation": false,
+                "extra_params": {"a": 1},
+                "lora": ["first", "second"]
+            }"#,
+        )),
+        value(
+            r#"{
+                "model": "model",
+                "prompt": "prompt",
+                "enable_frame_interpolation": "false",
+                "extra_params": "{\"a\":1}",
+                "lora": "[\"first\",\"second\"]"
+            }"#,
+        )
     );
 }
 
 #[test]
 fn the_form_echoes_the_api_base_and_adds_the_reference_file() {
-    let params = options(json!({}));
+    let params = options(value("{}"));
     let form = transform_video_create_request(
         "model",
         "prompt",
@@ -230,16 +246,16 @@ fn the_form_echoes_the_api_base_and_adds_the_reference_file() {
 }
 
 #[rstest]
-#[case(json!({"image_reference": {"image_url": "http://169.254.169.254/latest"}}))]
-#[case(json!({"video_reference": {"video_url": "http://10.0.0.1/clip.mp4"}}))]
-#[case(json!({"audio_reference": {"audio_url": "http://127.0.0.1/clip.wav"}}))]
-#[case(json!({"image_reference": [{"image_url": "http://192.168.0.1/x.png"}]}))]
-#[case(json!({"image_reference": "http://169.254.169.254/latest"}))]
-#[case(json!({"image_reference": {"image_url": "http://localhost:8000/x.png"}}))]
-#[case(json!({"image_reference": {"image_url": "http://vllm.localhost/x.png"}}))]
-fn a_media_reference_to_an_internal_destination_is_refused(#[case] params: Value) {
+#[case(r#"{"image_reference": {"image_url": "http://169.254.169.254/latest"}}"#)]
+#[case(r#"{"video_reference": {"video_url": "http://10.0.0.1/clip.mp4"}}"#)]
+#[case(r#"{"audio_reference": {"audio_url": "http://127.0.0.1/clip.wav"}}"#)]
+#[case(r#"{"image_reference": [{"image_url": "http://192.168.0.1/x.png"}]}"#)]
+#[case(r#"{"image_reference": "http://169.254.169.254/latest"}"#)]
+#[case(r#"{"image_reference": {"image_url": "http://localhost:8000/x.png"}}"#)]
+#[case(r#"{"image_reference": {"image_url": "http://vllm.localhost/x.png"}}"#)]
+fn a_media_reference_to_an_internal_destination_is_refused(#[case] text: &str) {
     assert!(matches!(
-        form_error(params),
+        form_error(value(text)),
         HostedVllmVideoError::UnsafeUrl(SsrfError::BlockedAddress { .. })
     ));
 }
@@ -247,7 +263,9 @@ fn a_media_reference_to_an_internal_destination_is_refused(#[case] params: Value
 #[test]
 fn an_ipv6_loopback_reference_is_refused() {
     assert!(matches!(
-        form_error(json!({"image_reference": {"image_url": "http://[::1]/x.png"}})),
+        form_error(value(
+            r#"{"image_reference": {"image_url": "http://[::1]/x.png"}}"#
+        )),
         HostedVllmVideoError::UnsafeUrl(SsrfError::BlockedAddress { .. })
     ));
 }
@@ -256,65 +274,70 @@ fn an_ipv6_loopback_reference_is_refused() {
 #[case("ftp://files/x.png")]
 #[case("file:///etc/passwd")]
 fn a_media_reference_with_another_scheme_is_refused(#[case] url: &str) {
-    let error = form_error(json!({"image_reference": {"image_url": url}}));
-    match error {
-        HostedVllmVideoError::UnsafeUrl(SsrfError::SchemeNotAllowed { scheme }) => {
-            assert_eq!(url.split(':').next(), Some(scheme.as_str()));
-        }
-        other => panic!("unexpected error {other}"),
-    }
+    let params = value(&format!(
+        r#"{{"image_reference": {{"image_url": "{url}"}}}}"#
+    ));
+    let HostedVllmVideoError::UnsafeUrl(SsrfError::SchemeNotAllowed { scheme }) =
+        form_error(params)
+    else {
+        panic!("a refused scheme must be a SchemeNotAllowed error");
+    };
+    assert_eq!(url.split(':').next(), Some(scheme.as_str()));
 }
 
 #[test]
 fn a_media_reference_without_a_hostname_is_refused() {
     assert!(matches!(
-        form_error(json!({"image_reference": {"image_url": "http://"}})),
+        form_error(value(r#"{"image_reference": {"image_url": "http://"}}"#)),
         HostedVllmVideoError::UnsafeUrl(SsrfError::NoHostname)
     ));
 }
 
 #[rstest]
-#[case(json!({"image_reference": {"image_url": "data:image/png;base64,AA"}}))]
-#[case(json!({"image_reference": {"image_url": ""}}))]
-#[case(json!({"image_reference": {"image_url": "http://8.8.8.8/x.png"}}))]
-#[case(json!({"image_reference": {"image_url": "https://8.8.8.8/x.png"}}))]
-#[case(json!({"image_reference": {"image_url": "http://media.example/x.png"}}))]
-#[case(json!({"image_reference": "data:image/png;base64,AA"}))]
-fn a_safe_media_reference_is_kept(#[case] params: Value) {
-    let written = form(params);
+#[case(r#"{"image_reference": {"image_url": "data:image/png;base64,AA"}}"#)]
+#[case(r#"{"image_reference": {"image_url": ""}}"#)]
+#[case(r#"{"image_reference": {"image_url": "http://8.8.8.8/x.png"}}"#)]
+#[case(r#"{"image_reference": {"image_url": "https://8.8.8.8/x.png"}}"#)]
+#[case(r#"{"image_reference": {"image_url": "http://media.example/x.png"}}"#)]
+#[case(r#"{"image_reference": "data:image/png;base64,AA"}"#)]
+fn a_safe_media_reference_is_kept(#[case] text: &str) {
+    let written = form(value(text));
     assert!(written.get("image_reference").is_some());
 }
 
 #[test]
 fn a_reference_item_checks_only_its_own_url_key() {
-    let written = form(json!({
-        "image_reference": [
-            {"image_url": "http://8.8.8.8/x.png"},
-            {"video_url": "http://169.254.169.254/x.mp4"},
-        ],
-    }));
+    let written = form(value(
+        r#"{
+            "image_reference": [
+                {"image_url": "http://8.8.8.8/x.png"},
+                {"video_url": "http://169.254.169.254/x.mp4"}
+            ]
+        }"#,
+    ));
     assert_eq!(
         written.get("image_reference"),
-        Some(&json!(
-            "[{\"image_url\":\"http://8.8.8.8/x.png\"},{\"video_url\":\"http://169.254.169.254/x.mp4\"}]"
-        ))
+        Some(&Value::String(String::from(
+            r#"[{"image_url":"http://8.8.8.8/x.png"},{"video_url":"http://169.254.169.254/x.mp4"}]"#
+        )))
     );
 }
 
 #[test]
 fn a_field_outside_the_three_references_is_not_checked() {
-    let written =
-        form(json!({"width": "http://169.254.169.254/x", "negative_prompt": "http://10.0.0.1"}));
+    let written = form(value(
+        r#"{"width": "http://169.254.169.254/x", "negative_prompt": "http://10.0.0.1"}"#,
+    ));
     assert_eq!(
         written.get("width"),
-        Some(&json!("http://169.254.169.254/x"))
+        Some(&Value::String(String::from("http://169.254.169.254/x")))
     );
 }
 
 #[test]
 fn a_broken_json_reference_is_refused() {
     assert!(matches!(
-        form_error(json!({"image_reference": "{\"image_url\": "})),
+        form_error(value(r#"{"image_reference": "{\"image_url\": "}"#)),
         HostedVllmVideoError::MediaJson { .. }
     ));
 }
@@ -323,8 +346,11 @@ fn a_broken_json_reference_is_refused() {
 #[case("http://8.8.8.8:bad/x.png")]
 #[case("http://[::1/x")]
 fn a_media_reference_the_url_parser_refuses_is_an_error(#[case] url: &str) {
+    let params = value(&format!(
+        r#"{{"image_reference": {{"image_url": "{url}"}}}}"#
+    ));
     assert!(matches!(
-        form_error(json!({"image_reference": {"image_url": url}})),
+        form_error(params),
         HostedVllmVideoError::UrlParse { .. }
     ));
 }
@@ -332,7 +358,9 @@ fn a_media_reference_the_url_parser_refuses_is_an_error(#[case] url: &str) {
 #[test]
 fn a_json_reference_given_as_text_is_checked() {
     assert!(matches!(
-        form_error(json!({"image_reference": "{\"image_url\": \"http://10.0.0.1/x\"}"})),
+        form_error(value(
+            r#"{"image_reference": "{\"image_url\": \"http://10.0.0.1/x\"}"}"#
+        )),
         HostedVllmVideoError::UnsafeUrl(SsrfError::BlockedAddress { .. })
     ));
 }

@@ -32,7 +32,8 @@ class RerankConfig(Protocol):
 
     def map_cohere_rerank_params(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L83-L97
         self, *, non_default_params: Object, model: str, drop_params: bool, query: str,
-        documents: list[str | Object], top_n: int | None = None, rank_fields: list[str] | None = None,
+        documents: list[str | Object], top_n: int | None = None,
+        rank_fields: list[str] | None = None,
         return_documents: bool | None = True, max_chunks_per_doc: int | None = None,
         max_tokens_per_doc: int | None = None, instruction: str | None = None,
     ) -> Object: ...
@@ -46,7 +47,8 @@ class RerankConfig(Protocol):
     ) -> Object: ...
 
     def transform_rerank_response(
-        self, *, model: str, raw_response: httpx.Response, model_response: RerankResponse, logging_obj: Logging,
+        self, *, model: str, raw_response: httpx.Response, model_response: RerankResponse,
+        logging_obj: Logging,
     ) -> RerankResponse: ...
 
 
@@ -114,7 +116,7 @@ class DecisionsConfig(Protocol):
     def resolve_api_key(self, api_key: str | None) -> str | None: ...
 
 
-# a call carries the keys its own function reads, and the whole set keeps one shape the dispatch can index
+# a call carries the keys its function reads, so one shape serves every dispatch
 class Call(TypedDict):
     api_base: str | None
     api_key: str | None
@@ -173,10 +175,14 @@ def rerank_value(function: str, call: Call) -> JsonValue:
         )
         return JSON.validate_json(reply.model_dump_json())
     answer: Object = {
-        "supported": client.get_supported_cohere_rerank_params(model=call["model"]),
+        "supported": JSON.validate_python(
+            client.get_supported_cohere_rerank_params(model=call["model"])
+        ),
         "url": client.get_complete_url(api_base=call["api_base"], model=call["model"]),
-        "headers": client.validate_environment(
-            headers=call["headers"], model=call["model"], api_key=call["api_key"]
+        "headers": JSON.validate_python(
+            client.validate_environment(
+                headers=call["headers"], model=call["model"], api_key=call["api_key"]
+            )
         ),
         "mapped": client.map_cohere_rerank_params(
             non_default_params=call["non_default_params"], model=call["model"],
@@ -214,7 +220,9 @@ def media_value(function: str, call: Call) -> JsonValue:
         )
         supported = image_client.get_supported_openai_params(model=call["model"])
         image_answer: Object = {
-            "supported": supported, "url": image_url, "headers": image_headers
+            "supported": JSON.validate_python(supported),
+            "url": image_url,
+            "headers": JSON.validate_python(image_headers),
         }
         return JSON.validate_python(image_answer)
     if function == "responses_url":
@@ -228,7 +236,9 @@ def media_value(function: str, call: Call) -> JsonValue:
         )
         websocket = responses_client.supports_native_websocket()
         responses_answer: Object = {
-            "url": responses_url, "headers": responses_headers, "websocket": websocket
+            "url": responses_url,
+            "headers": JSON.validate_python(responses_headers),
+            "websocket": websocket,
         }
         return JSON.validate_python(responses_answer)
     video_client = cast("VideoConfig", HostedVLLMVideoConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L47
@@ -247,7 +257,9 @@ def media_value(function: str, call: Call) -> JsonValue:
     )
     video_supported = video_client.get_supported_openai_params(model=call["model"])
     video_answer: Object = {
-        "supported": video_supported, "url": video_url, "headers": video_headers,
+        "supported": JSON.validate_python(video_supported),
+        "url": video_url,
+        "headers": JSON.validate_python(video_headers),
         "fields": data,
     }
     return JSON.validate_python(video_answer)

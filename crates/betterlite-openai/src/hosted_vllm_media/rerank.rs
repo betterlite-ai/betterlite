@@ -123,7 +123,7 @@ pub fn map_cohere_rerank_params(
         query: call.query.to_owned(),
         documents: call.documents.to_vec(),
         top_n: call.top_n,
-        rank_fields: call.rank_fields.map(|fields| fields.to_vec()),
+        rank_fields: call.rank_fields.map(<[String]>::to_vec),
         return_documents: match call.return_documents {
             ReturnDocuments::Default => Some(true),
             ReturnDocuments::Null => None,

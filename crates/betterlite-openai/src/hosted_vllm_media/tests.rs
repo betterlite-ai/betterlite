@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::openai::ChoiceValue;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json, ir};
+use betterlite_models::identity::provider_id::ProviderId;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -12,7 +13,7 @@ use super::{
     API_BASE_ENV, API_KEY_ENV, PLACEHOLDER_KEY, decisions::HostedVllmDecisionsConfig, image_edit,
     resolved_api_base, resolved_api_key, responses, transcription, versioned_url,
 };
-use crate::decisions::transformation::provider_config::DecisionsProviderConfig;
+use crate::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 
 fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
@@ -135,11 +136,8 @@ fn responses_headers_overwrite_authorization_and_keep_the_rest() {
 
 #[test]
 fn responses_provider_and_websocket_are_the_hosted_vllm_ones() {
-    assert_eq!(
-        responses::PROVIDER,
-        betterlite_models::identity::provider_id::ProviderId::HostedVllm
-    );
-    assert!(!responses::SUPPORTS_NATIVE_WEBSOCKET);
+    assert_eq!(responses::PROVIDER, ProviderId::HostedVllm);
+    const { assert!(!responses::SUPPORTS_NATIVE_WEBSOCKET) };
 }
 
 #[test]
@@ -243,7 +241,12 @@ fn transcription_request_defaults_to_the_model_and_refuses_a_file_option() {
     assert_eq!(data.model, Some(Json::Text(String::from("whisper"))));
     assert!(data.options.is_empty());
     let with_file = IndexMap::from([(String::from("file"), Json::Text(String::from("x")))]);
-    assert!(transcription::transform_audio_transcription_request("whisper", &with_file).is_err());
+    let refused = transcription::transform_audio_transcription_request("whisper", &with_file)
+        .expect_err("a file option is refused");
+    assert_eq!(
+        refused.to_string(),
+        "the transcription field `file` is already the audio file"
+    );
 }
 
 fn env_key(name: &str) -> String {
@@ -304,7 +307,7 @@ fn decisions_config_names_the_hosted_vllm_environment_and_needs_no_key() {
         HostedVllmDecisionsConfig::API_BASE_ENV,
         &["HOSTED_VLLM_API_BASE"]
     );
-    assert!(!HostedVllmDecisionsConfig::API_KEY_REQUIRED);
+    const { assert!(!HostedVllmDecisionsConfig::API_KEY_REQUIRED) };
 }
 
 #[test]

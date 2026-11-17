@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use super::{
     CohereRerankCall, HostedVllmRerankError, MappedRerankParams, get_complete_url, get_error_class,
@@ -18,6 +18,10 @@ use crate::openai_base_config::Headers;
 use crate::together_ai_rerank::ReturnDocuments;
 
 type Environment = BTreeMap<String, String>;
+
+fn value(text: &str) -> Value {
+    serde_json::from_str(text).expect("the case is JSON")
+}
 
 fn environment(key: Option<&str>) -> Environment {
     key.map(|value| BTreeMap::from([(String::from(super::API_KEY_ENV), String::from(value))]))
@@ -80,13 +84,15 @@ fn supported_params_are_litellms_ten_in_order() {
 
 #[test]
 fn truncation_params_read_the_four_keys_and_ignore_the_rest() {
-    let validated = validated_truncation_params(&params(json!({
-        "truncate_prompt_tokens": 4,
-        "truncation_side": "right",
-        "max_tokens_per_query": 6,
-        "max_tokens_per_doc": 8,
-        "top_n": 2,
-    })))
+    let validated = validated_truncation_params(&params(value(
+        r#"{
+            "truncate_prompt_tokens": 4,
+            "truncation_side": "right",
+            "max_tokens_per_query": 6,
+            "max_tokens_per_doc": 8,
+            "top_n": 2
+        }"#,
+    )))
     .expect("the truncation keys are well-formed");
     assert_eq!(validated.truncate_prompt_tokens, Some(4));
     assert_eq!(validated.truncation_side, Some(TruncationSide::Right));
@@ -97,7 +103,7 @@ fn truncation_params_read_the_four_keys_and_ignore_the_rest() {
 #[test]
 fn truncation_params_reject_a_side_litellm_does_not_declare() {
     assert!(matches!(
-        validated_truncation_params(&params(json!({"truncation_side": "up"}))),
+        validated_truncation_params(&params(value(r#"{"truncation_side": "up"}"#))),
         Err(HostedVllmRerankError::Truncation { .. })
     ));
 }
@@ -105,7 +111,7 @@ fn truncation_params_reject_a_side_litellm_does_not_declare() {
 #[test]
 fn mapped_params_carry_the_defaults_litellm_writes() {
     let documents = documents();
-    let non_default = params(json!({}));
+    let non_default = params(value("{}"));
     let mapped = map_cohere_rerank_params(&call(&documents, &non_default))
         .expect("the parameters are well-formed");
     assert_eq!(mapped.query, "query");
@@ -129,7 +135,7 @@ fn mapped_params_render_return_documents_each_way(
     #[case] expected: Option<bool>,
 ) {
     let documents = documents();
-    let non_default = params(json!({}));
+    let non_default = params(value("{}"));
     let mut request = call(&documents, &non_default);
     request.return_documents = given;
     assert_eq!(
@@ -143,11 +149,13 @@ fn mapped_params_render_return_documents_each_way(
 #[test]
 fn mapped_params_forward_the_instruction_and_truncation() {
     let documents = documents();
-    let non_default = params(json!({
-        "truncate_prompt_tokens": 4,
-        "truncation_side": "left",
-        "max_tokens_per_query": 6,
-    }));
+    let non_default = params(value(
+        r#"{
+            "truncate_prompt_tokens": 4,
+            "truncation_side": "left",
+            "max_tokens_per_query": 6
+        }"#,
+    ));
     let mut request = call(&documents, &non_default);
     request.instruction = Some("rank by relevance");
     let mapped = map_cohere_rerank_params(&request).expect("the parameters are well-formed");
@@ -160,7 +168,7 @@ fn mapped_params_forward_the_instruction_and_truncation() {
 #[test]
 fn mapped_params_take_max_tokens_per_doc_from_the_argument_not_the_params() {
     let documents = documents();
-    let non_default = params(json!({"max_tokens_per_doc": 99}));
+    let non_default = params(value(r#"{"max_tokens_per_doc": 99}"#));
     let mapped = map_cohere_rerank_params(&call(&documents, &non_default))
         .expect("the parameters are well-formed");
     assert_eq!(mapped.max_tokens_per_doc, Some(8));
@@ -169,7 +177,7 @@ fn mapped_params_take_max_tokens_per_doc_from_the_argument_not_the_params() {
 #[test]
 fn mapped_params_refuse_max_chunks_per_doc_before_validating_truncation() {
     let documents = documents();
-    let non_default = params(json!({"truncation_side": "up"}));
+    let non_default = params(value(r#"{"truncation_side": "up"}"#));
     let mut request = call(&documents, &non_default);
     request.max_chunks_per_doc = Some(3);
     assert!(matches!(
@@ -181,7 +189,7 @@ fn mapped_params_refuse_max_chunks_per_doc_before_validating_truncation() {
 #[test]
 fn mapped_params_refuse_a_bad_truncation_value() {
     let documents = documents();
-    let non_default = params(json!({"truncation_side": "up"}));
+    let non_default = params(value(r#"{"truncation_side": "up"}"#));
     assert!(matches!(
         map_cohere_rerank_params(&call(&documents, &non_default)),
         Err(HostedVllmRerankError::Truncation { .. })
@@ -302,49 +310,57 @@ fn headers_keep_a_differently_cased_authorization_as_a_second_entry() {
 #[test]
 fn request_body_drops_the_null_keys_and_keeps_the_lists() {
     let documents = documents();
-    let non_default = params(json!({"truncate_prompt_tokens": 4}));
+    let non_default = params(value(r#"{"truncate_prompt_tokens": 4}"#));
     let mapped = map_cohere_rerank_params(&call(&documents, &non_default))
         .expect("the parameters are well-formed");
     let body = transform_rerank_request("model", &mapped).expect("the request encodes");
     assert_eq!(
         Value::Object(body),
-        json!({
-            "model": "model",
-            "query": "query",
-            "top_n": 2,
-            "documents": ["first", {"text": "second"}],
-            "return_documents": true,
-            "max_tokens_per_doc": 8,
-            "truncate_prompt_tokens": 4,
-        })
+        value(
+            r#"{
+                "model": "model",
+                "query": "query",
+                "top_n": 2,
+                "documents": ["first", {"text": "second"}],
+                "return_documents": true,
+                "max_tokens_per_doc": 8,
+                "truncate_prompt_tokens": 4
+            }"#,
+        )
     );
 }
 
 #[test]
 fn request_body_accepts_a_mapped_dict_with_only_the_required_keys() {
-    let mapped: MappedRerankParams = serde_json::from_value(json!({
-        "query": "query",
-        "documents": ["only"],
-        "return_documents": false,
-    }))
+    let mapped: MappedRerankParams = serde_json::from_value(value(
+        r#"{
+            "query": "query",
+            "documents": ["only"],
+            "return_documents": false
+        }"#,
+    ))
     .expect("the mapped dict decodes");
     let body = transform_rerank_request("model", &mapped).expect("the request encodes");
     assert_eq!(
         Value::Object(body),
-        json!({
-            "model": "model",
-            "query": "query",
-            "documents": ["only"],
-            "return_documents": false,
-        })
+        value(
+            r#"{
+                "model": "model",
+                "query": "query",
+                "documents": ["only"],
+                "return_documents": false
+            }"#,
+        )
     );
 }
 
 #[rstest]
-#[case(json!({"documents": ["only"]}))]
-#[case(json!({"query": "query"}))]
-fn a_mapped_dict_without_query_or_documents_does_not_decode(#[case] mapped: Value) {
-    assert!(serde_json::from_value::<MappedRerankParams>(mapped).is_err());
+#[case(r#"{"documents": ["only"]}"#)]
+#[case(r#"{"query": "query"}"#)]
+fn a_mapped_dict_without_query_or_documents_does_not_decode(#[case] text: &str) {
+    let error = serde_json::from_value::<MappedRerankParams>(value(text))
+        .expect_err("a mapped dict needs query and documents");
+    assert!(error.to_string().contains("missing field"));
 }
 
 #[test]

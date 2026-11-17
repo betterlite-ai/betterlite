@@ -1,6 +1,6 @@
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_http::user_url::error::{SsrfError, UrlParseError};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -83,7 +83,7 @@ pub fn validate_environment(
     let resolved = [params_api_key, api_key]
         .into_iter()
         .flatten()
-        .map(|key| key.expose_secret())
+        .map(ExposeSecret::expose_secret)
         .find(|key| !key.is_empty())
         .map_or_else(|| resolved_api_key(None, environment), str::to_owned);
     headers.insert(String::from("Authorization"), format!("Bearer {resolved}"));
