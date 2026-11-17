@@ -34,6 +34,7 @@ async fn route_uses_the_default_model_when_the_body_has_none() {
     );
     let response = send(state(factory, None, FakeCallerId::from_subject()), request).await;
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_text(response).await, answer_body());
     assert_eq!(model.calls()[0].model, "gpt-4o-mini");
 }
 
