@@ -202,7 +202,7 @@ def chat_value(case: Case) -> JsonValue:
     recorder, client = prepared(case, PLACEHOLDER)
     error: JsonValue = None
     try:
-        completion_created(case, client, f"{case['provider']}/{case['model']}")
+        completion_created(case, client, f"{case['provider']}/{case.get('model', '')}")
     except openai.APIError as raised:
         error = {"status": Raised.model_validate(raised, from_attributes=True).status_code}
     return {"request": request_view(recorder.requests, PLACEHOLDER), "error": error}
@@ -210,7 +210,7 @@ def chat_value(case: Case) -> JsonValue:
 
 def lemonade_reply_value(case: Case) -> JsonValue:
     _recorder, client = prepared(case, PLACEHOLDER)
-    created = completion_created(case, client, f"lemonade/{case['model']}")
+    created = completion_created(case, client, f"lemonade/{case.get('model', '')}")
     reply = TypeAdapter(ModelResponse).validate_python(created)
     return {"model": reply.model}
 
