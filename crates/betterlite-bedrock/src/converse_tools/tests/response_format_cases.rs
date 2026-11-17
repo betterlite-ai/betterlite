@@ -183,12 +183,12 @@ fn output_config_blocks() {
     );
     assert_eq!(
         create_output_config(
-            Some(&json(r#"{"type": "object", "note": "café"}"#)),
+            Some(&json(r#"{"type": "object", "note": "é"}"#)),
             Some(""),
             Some("")
         ),
         json(
-            r#"{"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {"schema": "{\"type\": \"object\", \"note\": \"caf\\u00e9\", \"additionalProperties\": false}", "name": "", "description": ""}}}}"#
+            r#"{"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {"schema": "{\"type\": \"object\", \"note\": \"\\u00e9\", \"additionalProperties\": false}", "name": "", "description": ""}}}}"#
         )
     );
 }
