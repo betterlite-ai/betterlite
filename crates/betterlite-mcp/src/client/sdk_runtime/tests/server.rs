@@ -12,7 +12,7 @@ use rmcp::model::{
     ProgressNotificationParam, ProtocolVersion, ServerCapabilities, ServerConfig,
     ServerNotification, ServerRequest, Tool,
 };
-use rmcp::service::RequestContext;
+use rmcp::service::{Peer, RequestContext};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{RoleServer, ServerHandler, ServiceError};
@@ -132,7 +132,11 @@ impl ServerHandler for TestServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let outcome = tool_outcome(request.name.as_ref(), &context).await?;
+        let fixed = fixed_result(&request.name);
+        if let Some(result) = fixed {
+            return Ok(CallToolResponse::from(result));
+        }
+        let outcome = tool_outcome(&request.name, &context).await?;
         Ok(CallToolResponse::from(outcome))
     }
 }
@@ -178,14 +182,11 @@ async fn tool_outcome(
     name: &str,
     context: &RequestContext<RoleServer>,
 ) -> Result<CallToolResult, ErrorData> {
-    if let Some(result) = fixed_result(name) {
-        return Ok(result);
-    }
     match name {
         "rpc-error" => Err(ErrorData::invalid_params("bad arguments", None)),
         "progress" => progress_result(context).await,
         "slow" => Ok(slow_result().await),
-        "log" => logged_result(context).await,
+        "log" => logged_result(&context.peer).await,
         "protocol-version" => Ok(version_result(context)),
         "capabilities" => Ok(peer_capabilities(context)),
         "client-info" => Ok(peer_client_info(context)),
@@ -227,20 +228,16 @@ fn structured_result(text: &str, content: &str) -> CallToolResult {
 async fn progress_result(
     context: &RequestContext<RoleServer>,
 ) -> Result<CallToolResult, ErrorData> {
-    let token = context
-        .meta
-        .get_progress_token()
-        .ok_or_else(|| ErrorData::invalid_params("missing progress token", None))?;
-    for step in [25.0_f64, 75.0_f64] {
-        context
-            .peer
-            .notify_progress(
-                ProgressNotificationParam::new(token.clone(), step)
-                    .with_total(100.0)
-                    .with_message("working"),
-            )
-            .await
-            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    let Some(token) = context.meta.get_progress_token() else {
+        return Err(ErrorData::invalid_params("missing progress token", None));
+    };
+    for (fraction, total) in [(25.0_f64, 100.0_f64), (75.0_f64, 100.0_f64)] {
+        let update = ProgressNotificationParam::new(token.clone(), fraction)
+            .with_total(total)
+            .with_message("working");
+        if let Err(error) = context.peer.notify_progress(update).await {
+            return Err(ErrorData::internal_error(error.to_string(), None));
+        }
     }
     Ok(CallToolResult::success(vec![ContentBlock::text(
         "progressed",
@@ -252,14 +249,13 @@ async fn slow_result() -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text("too late")])
 }
 
-async fn logged_result(context: &RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+async fn logged_result(peer: &Peer<RoleServer>) -> Result<CallToolResult, ErrorData> {
     let notification: ServerNotification = serde_json::from_str(LOG_NOTIFICATION)
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-    context
-        .peer
-        .send_notification(notification)
-        .await
-        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    let sent = peer.send_notification(notification).await;
+    if let Err(error) = sent {
+        return Err(ErrorData::internal_error(error.to_string(), None));
+    }
     Ok(CallToolResult::success(vec![ContentBlock::text("logged")]))
 }
 
@@ -295,9 +291,8 @@ async fn ask_peer(
 ) -> Result<CallToolResult, ErrorData> {
     let incoming: ServerRequest = serde_json::from_str(request)
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-    Ok(CallToolResult::success(vec![ContentBlock::text(
-        peer_answer(context, incoming).await,
-    )]))
+    let answer = peer_answer(context, incoming).await;
+    Ok(CallToolResult::success(vec![ContentBlock::text(answer)]))
 }
 
 fn schema_tools() -> Vec<Tool> {

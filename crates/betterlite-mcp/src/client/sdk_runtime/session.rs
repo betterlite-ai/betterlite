@@ -197,6 +197,10 @@ where
             }
             continue;
         };
+        // Updates queued before the answer resolved still belong to the call, so they go out before it returns
+        while let Ok(param) = progress.try_recv() {
+            sink.send(param).await;
+        }
         return result;
     }
 }

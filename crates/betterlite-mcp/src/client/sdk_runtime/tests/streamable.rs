@@ -198,13 +198,13 @@ async fn called_on(
     handlers: ServerRequestHandlers,
 ) -> Result<(ToolCallResult, usize), SessionError<SdkError>> {
     let listings = Arc::clone(&server.listings);
-    let served = serve_http(server).await;
+    let endpoint = serve_http(server).await;
     let mut settings = support::settings(TransportType::Http);
     settings.handlers = handlers;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         settings,
-        &served.url,
+        &endpoint.url,
         support::CALL_TIMEOUT,
     );
     let result = Box::pin(call_tool(
@@ -468,11 +468,11 @@ async fn an_error_result_with_an_output_schema_skips_validation() {
 async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
     let server = TestServer::standard().with_output_schemas();
     let listings = Arc::clone(&server.listings);
-    let served = serve_http(server).await;
+    let endpoint = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &served.url,
+        &endpoint.url,
         support::CALL_TIMEOUT,
     );
     let result = Box::pin(run_with_session(
@@ -499,11 +499,11 @@ async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
 async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
     let server = TestServer::standard().with_output_schemas();
     let listings = Arc::clone(&server.listings);
-    let served = serve_http(server).await;
+    let endpoint = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &served.url,
+        &endpoint.url,
         support::CALL_TIMEOUT,
     );
     let result = Box::pin(run_with_session(
@@ -533,11 +533,11 @@ async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
 async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
     let server = TestServer::standard().with_output_schemas().with_one_page();
     let listings = Arc::clone(&server.listings);
-    let served = serve_http(server).await;
+    let endpoint = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &served.url,
+        &endpoint.url,
         support::CALL_TIMEOUT,
     );
     let result = Box::pin(run_with_session(

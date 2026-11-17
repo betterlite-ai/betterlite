@@ -11,7 +11,6 @@ use rmcp::model::{
 };
 use rmcp::service::{NotificationContext, RequestContext};
 use rmcp::{RoleClient, Service};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::client::sessions::negotiate::ClientCapabilities as CallbackCapabilities;
@@ -123,11 +122,11 @@ impl SdkClientHandler {
                 .sampling
                 .as_deref()
                 .ok_or_else(|| ErrorData::invalid_request(SAMPLING_UNSUPPORTED, None))?;
-            return sampling_result(
-                responder
-                    .respond(decode(&message.params, "sampling")?)
-                    .await?,
-            );
+            let encoded = serde_json::to_value(&message.params)
+                .map_err(|error| internal("sampling", &error))?;
+            let params =
+                serde_json::from_value(encoded).map_err(|error| invalid("sampling", &error))?;
+            return sampling_result(responder.respond(params).await?);
         }
         if let ServerRequest::ElicitRequest(elicitation) = &request {
             let responder = self
@@ -135,26 +134,17 @@ impl SdkClientHandler {
                 .elicitation
                 .as_deref()
                 .ok_or_else(|| ErrorData::invalid_request(ELICITATION_UNSUPPORTED, None))?;
-            return custom(
-                &responder
-                    .respond(decode(&elicitation.params, "elicitation")?)
-                    .await?,
-            );
+            let encoded = serde_json::to_value(&elicitation.params)
+                .map_err(|error| internal("elicitation", &error))?;
+            let params =
+                serde_json::from_value(encoded).map_err(|error| invalid("elicitation", &error))?;
+            return custom(&responder.respond(params).await?);
         }
         if let ServerRequest::ListRootsRequest(_) = &request {
             return Err(ErrorData::invalid_request(ROOTS_UNSUPPORTED, None));
         }
         Err(method_not_found(&request))
     }
-}
-
-fn decode<T, P>(params: &P, operation: &str) -> Result<T, ErrorData>
-where
-    T: DeserializeOwned,
-    P: Serialize + ?Sized,
-{
-    let encoded = serde_json::to_value(params).map_err(|error| internal(operation, &error))?;
-    serde_json::from_value(encoded).map_err(|error| invalid(operation, &error))
 }
 
 fn sampling_result(response: SamplingResponse) -> Result<ClientResult, ErrorData> {

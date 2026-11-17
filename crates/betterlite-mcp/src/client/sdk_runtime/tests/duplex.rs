@@ -84,7 +84,7 @@ impl HttpClientHandle for NoHttpClient {
 }
 
 pub(crate) struct DuplexRuntime {
-    streams: Mutex<Option<DuplexStreams>>,
+    servers: Mutex<JoinSet<()>>,
 }
 
 impl McpRuntime for DuplexRuntime {
@@ -94,13 +94,20 @@ impl McpRuntime for DuplexRuntime {
     type HttpClient = NoHttpClient;
     type Session = SdkSessionContext<DuplexStreams>;
 
+    // Every operation opens its own session, so each one gets a fresh server on the other end of a new duplex
     fn stdio_client(&self, _parameters: StdioServerParameters) -> DuplexContext {
-        let streams = self
-            .streams
+        let (client_half, server_half) = duplex(64 * 1024);
+        self.servers
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        DuplexContext { streams }
+            .spawn(async move {
+                let running = TestServer::standard().serve(server_half).await.unwrap();
+                drop(running.waiting().await);
+            });
+        let (read, write) = split(client_half);
+        DuplexContext {
+            streams: Some(DuplexStreams(AsyncRwTransport::new(read, write))),
+        }
     }
 
     fn sse_client(&self, _request: SseRequest) -> DuplexContext {
@@ -132,25 +139,10 @@ impl McpRuntime for DuplexRuntime {
     }
 }
 
-// The test server answers on the other half of the duplex until the test shuts the task down
-fn spawned_server(half: DuplexStream) -> JoinSet<()> {
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move {
-        let running = TestServer::standard().serve(half).await.unwrap();
-        drop(running.waiting().await);
-    });
-    tasks
-}
-
-fn duplex_runtime(streams: DuplexStreams) -> DuplexRuntime {
-    DuplexRuntime {
-        streams: Mutex::new(Some(streams)),
-    }
-}
-
-fn duplex_client(half: DuplexStream, read_timeout: Duration) -> SessionClient<DuplexRuntime> {
-    let (read, write) = split(half);
-    let runtime = duplex_runtime(DuplexStreams(AsyncRwTransport::new(read, write)));
+fn duplex_client(read_timeout: Duration) -> SessionClient<DuplexRuntime> {
+    let runtime = DuplexRuntime {
+        servers: Mutex::new(JoinSet::new()),
+    };
     support::client_on(
         Arc::new(runtime),
         support::settings(TransportType::Stdio),
@@ -161,9 +153,7 @@ fn duplex_client(half: DuplexStream, read_timeout: Duration) -> SessionClient<Du
 
 #[tokio::test]
 async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
-    let (client_half, server_half) = duplex(64 * 1024);
-    let mut tasks = spawned_server(server_half);
-    let mut client = duplex_client(client_half, support::CALL_TIMEOUT);
+    let mut client = duplex_client(support::CALL_TIMEOUT);
     let tools = list_tools(&mut client, support::CALL_TIMEOUT, true)
         .await
         .unwrap();
@@ -192,14 +182,11 @@ async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
         client.last_initialize_instructions.as_deref(),
         Some(super::server::INSTRUCTIONS)
     );
-    tasks.shutdown().await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
-    let (client_half, server_half) = duplex(64 * 1024);
-    let mut tasks = spawned_server(server_half);
-    let mut client = duplex_client(client_half, Duration::from_millis(200));
+    let mut client = duplex_client(Duration::from_millis(200));
     let request = CallRequest {
         name: "slow".to_owned(),
         arguments: None,
@@ -218,5 +205,4 @@ async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
         .expect("the call finished")
         .unwrap_err();
     assert!(matches!(error, SessionError::ReadTimeout(_)), "{error}");
-    tasks.shutdown().await;
 }
