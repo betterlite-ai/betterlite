@@ -148,6 +148,10 @@ pub(super) fn adaptive_effort_ceiling() {
         body_json(&prepared)["output_config"],
         json!({"effort": "max"})
     );
+    assert_eq!(
+        serde_json::to_value(&request.optional_params).expect("the request params serialize")["output_config"],
+        json!({"effort": "xhigh"})
+    );
 }
 
 pub(super) fn bedrock_beta_filter() {
