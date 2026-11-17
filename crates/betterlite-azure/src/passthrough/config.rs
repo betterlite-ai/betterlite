@@ -27,9 +27,7 @@ use crate::passthrough::logging::{
     NoChatStreamAssembly, OPENAI_RELAY_SHAPES, RESPONSES_SUFFIX, logged_responses_stream,
     relayed_messages,
 };
-use crate::passthrough::url::{
-    is_filled, params_api_version, request_api_version, without_api_version,
-};
+use crate::passthrough::url::{API_VERSION, is_filled, version_from, without_api_version};
 
 const CHAT_COMPLETIONS: &str = "chat/completions";
 const STREAM: &str = "stream";
@@ -181,7 +179,11 @@ where
         };
         let native_endpoint =
             strip_leading_model_segment(&routed, &[request.target.model.to_owned()]);
-        let caller_version = request_api_version(request.request_query_params)?;
+        let caller_version = version_from(
+            request
+                .request_query_params
+                .and_then(|supplied| supplied.get(API_VERSION)),
+        )?;
         let relay_base = if caller_version.is_some() {
             without_api_version(base)?
         } else {
@@ -190,7 +192,7 @@ where
         // a caller version short-circuits LiteLLM's `caller or litellm_params.get(...)`, so a badly typed deployment version is never read
         let mut version = caller_version;
         if version.is_none() {
-            version = params_api_version(request.litellm_params)?;
+            version = version_from(request.litellm_params.get(API_VERSION))?;
         }
         let complete = get_base_azure_url(
             Some(&relay_base),

@@ -1,13 +1,12 @@
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_models::decisions::Json;
-use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::PassthroughError;
 use serde::Serialize;
 
 use crate::azure_urls::AzureUrlError;
 use crate::azure_urls::url_parts::{encoded_query, query_pairs};
 
-const API_VERSION: &str = "api-version";
+pub(crate) const API_VERSION: &str = "api-version";
 
 // Python truthiness of a JSON value: bool(request_data.get("stream")) and the api-version checks read 0, "", false, [] and {} as empty
 pub(crate) fn is_filled(value: &Json) -> bool {
@@ -57,7 +56,9 @@ fn version_text(value: &Json) -> Result<String, PassthroughError> {
     }
 }
 
-fn version_from<Raw: Serialize>(raw: Option<&Raw>) -> Result<Option<String>, PassthroughError> {
+pub(crate) fn version_from<Raw: Serialize>(
+    raw: Option<&Raw>,
+) -> Result<Option<String>, PassthroughError> {
     let Some(value) = raw
         .and_then(|supplied| serde_json::to_value(supplied).ok())
         .and_then(|converted| serde_json::from_value::<Json>(converted).ok())
@@ -66,17 +67,4 @@ fn version_from<Raw: Serialize>(raw: Option<&Raw>) -> Result<Option<String>, Pas
         return Ok(None);
     };
     version_text(&value).map(Some)
-}
-
-// request_query_params.get("api-version"): an absent or empty value leaves the base untouched
-pub(crate) fn request_api_version(
-    params: Option<&Object>,
-) -> Result<Option<String>, PassthroughError> {
-    let provided = params.filter(|supplied| !supplied.is_empty());
-    version_from(provided.and_then(|supplied| supplied.get(API_VERSION)))
-}
-
-// litellm_params["api_version"] after the caller's value overrides it, read with the same emptiness rule
-pub(crate) fn params_api_version(params: &Object) -> Result<Option<String>, PassthroughError> {
-    version_from(params.get(API_VERSION))
 }
