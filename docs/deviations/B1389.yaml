@@ -1,0 +1,12 @@
+task: B1389
+deviations:
+  - what: get_complete_url without an api_base returns VertexUrlError::LocationRequired or ProjectRequired when the location or project is absent, where LiteLLM's f-string writes the literal None into the projects/locations path.
+    why: projects/None/locations/None is a URL no working Discovery Engine setup relies on; failing at construction names the missing setting instead of sending a request that cannot succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/search_api/transformation.py#L344-L352
+  - what: A document hit's positional score and a chunk's relevanceScore keep their exact decimal value, so 1/(position+1) renders as 0.3333333333333333333333333333 and the provider's number keeps every digit it sent, where LiteLLM divides Python floats and re-serializes the binary double as 0.3333333333333333.
+    why: score is a declared JSON number either way, and the exact value is the one the provider sent or the reciprocal of the position; a setup comparing scores sees the same ordering and the same value to float precision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/search_api/transformation.py#L219-L224
+  - what: A Discovery Engine response body over 16 MiB is refused with the reply's status before it is parsed, where LiteLLM parses whatever the handler received.
+    why: Every provider body carries a size bound so one oversized answer cannot exhaust a worker, and the pooled transport already caps a reply at the same 16 MiB.
+    link: ""
+kept_bugs: []
