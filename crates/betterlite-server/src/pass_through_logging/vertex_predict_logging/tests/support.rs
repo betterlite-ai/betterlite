@@ -118,7 +118,7 @@ pub(super) fn kwargs(entries: &[(&str, Json)]) -> PassThroughLoggingKwargs {
     PassThroughLoggingKwargs { entries: collected }
 }
 
-pub(super) fn predict_input<'fixture>(fixture: &'fixture Fixture) -> VertexPredictInput<'fixture> {
+pub(super) fn predict_input(fixture: &Fixture) -> VertexPredictInput<'_> {
     VertexPredictInput {
         logging_obj: &fixture.logging_obj,
         url_route: &fixture.url_route,
@@ -261,9 +261,7 @@ pub(super) fn logged_model(logging_obj: &StreamLoggingObject) -> String {
 }
 
 pub(super) fn logged_provider(logging_obj: &StreamLoggingObject) -> Option<String> {
-    logging_obj
-        .read(&mut |state| state.custom_llm_provider.clone())
-        .expect("the logging state is present")
+    logging_obj.read(&mut |state| state.custom_llm_provider.clone())?
 }
 
 pub(super) fn logged_call_type(logging_obj: &StreamLoggingObject) -> String {

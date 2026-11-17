@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_logging::passthrough_stream_logging::types::HandlerOutcome;
 use betterlite_models::decisions::Json;
 use betterlite_vertex::gemini_embedding_records::error::GeminiEmbeddingError;
 use betterlite_vertex::vertex_image_policy::error::PredictionError;
@@ -29,10 +30,7 @@ const AUDIO_BODY: &str =
     r#"{"predictions":[{"audioContent":"AAA"},{"bytesBase64Encoded":"BBB"},{"audioContent":""}]}"#;
 const TEXT_BODY: &str = r#"{"predictions":[{"embeddings":{"values":[0.5,0.25],"statistics":{"truncated":false,"token_count":2}}},{"embeddings":{"values":[1.5],"statistics":{"truncated":false,"token_count":3}}}]}"#;
 
-fn kwarg<'outcome>(
-    outcome: &'outcome betterlite_logging::passthrough_stream_logging::types::HandlerOutcome,
-    name: &str,
-) -> &'outcome Json {
+fn kwarg<'outcome>(outcome: &'outcome HandlerOutcome, name: &str) -> &'outcome Json {
     outcome
         .kwargs
         .entries
@@ -258,7 +256,9 @@ fn predict_cost_failure_is_an_error() {
         matches!(&error, VertexPredictError::Cost { model } if model == "text-embedding-004"),
         "{error}"
     );
-    assert!(details(&fixture.logging_obj).is_empty());
+    let all = details(&fixture.logging_obj);
+    assert!(!all.contains_key("response_cost"));
+    assert!(!all.contains_key("custom_llm_provider"));
     assert_eq!(logged_model(&fixture.logging_obj), "");
     assert_eq!(logged_provider(&fixture.logging_obj), None);
     assert_eq!(
@@ -390,7 +390,9 @@ fn multimodal_body_fails_in_the_shared_step() {
         "{error}"
     );
     assert!(cost.calls().is_empty());
-    assert!(details(&fixture.logging_obj).is_empty());
+    let all = details(&fixture.logging_obj);
+    assert!(!all.contains_key("response_cost"));
+    assert!(!all.contains_key("custom_llm_provider"));
 }
 
 #[test]
@@ -430,6 +432,20 @@ fn embed_single_joins_the_parts_and_prices_it() {
     assert_eq!(integer(field(usage, "prompt_tokens")), 3);
     assert_eq!(integer(field(usage, "total_tokens")), 3);
     assert_eq!(field(usage, "prompt_tokens_details"), &Json::Null);
+    assert_eq!(cost.calls().len(), 1);
+}
+
+#[test]
+fn embed_single_records_the_priced_call_and_the_logging_fields() {
+    let fixture = fixture(EMBED_ROUTE, r#"{"embedding":{"values":[0.5,0.25]}}"#);
+    let request = json(
+        r#"{"content":{"parts":[{"text":"hello"},{"inlineData":{"data":"x"}},{"text":"world"}]}}"#,
+    );
+    let cost = priced();
+    let logger = logger_for(&cost);
+    let outcome = logger
+        .handle_embed_content_response(embed_input(&fixture, Some(&request)))
+        .expect("the embedContent reply is logged");
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "text-embedding-004");
@@ -569,7 +585,9 @@ fn embed_cost_failure_is_an_error() {
         matches!(&error, VertexPredictError::Cost { model } if model == "text-embedding-004"),
         "{error}"
     );
-    assert!(details(&fixture.logging_obj).is_empty());
+    let all = details(&fixture.logging_obj);
+    assert!(!all.contains_key("response_cost"));
+    assert!(!all.contains_key("custom_llm_provider"));
 }
 
 #[test]
