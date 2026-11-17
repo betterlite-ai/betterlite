@@ -44,9 +44,9 @@ pub fn weighted_score(
 
 #[must_use]
 pub fn ratio(hits: usize, saturation: usize) -> f64 {
-    let hits = f64::from(u32::try_from(hits).unwrap_or(u32::MAX));
-    let saturation = f64::from(u32::try_from(saturation).unwrap_or(u32::MAX));
-    hits / saturation
+    let hit_count = f64::from(u32::try_from(hits).unwrap_or(u32::MAX));
+    let saturation_count = f64::from(u32::try_from(saturation).unwrap_or(u32::MAX));
+    hit_count / saturation_count
 }
 
 // a score exactly on a boundary belongs to the tier above it
@@ -65,23 +65,21 @@ pub const fn tier_for(score: f64, boundaries: TierBoundaries) -> ComplexityTier 
 
 #[must_use]
 pub fn within_boundary_margin(score: f64, boundaries: TierBoundaries, margin: f64) -> bool {
-    let boundaries = [
+    let points = [
         boundaries.simple_medium,
         boundaries.medium_complex,
         boundaries.complex_reasoning,
     ];
-    boundaries
-        .iter()
-        .any(|boundary| (score - boundary).abs() <= margin)
+    points.iter().any(|point| (score - point).abs() <= margin)
 }
 
 // Python takes int(window * buffer), truncating toward zero; a window past u32::MAX is clamped to it, so a request above its buffered capacity is refused
 #[must_use]
 pub fn window_holds(window: Option<u64>, needed: Option<u64>, buffer: f64) -> bool {
-    let (Some(window), Some(needed)) = (window, needed) else {
+    let (Some(window_tokens), Some(needed_tokens)) = (window, needed) else {
         return true;
     };
-    let window = f64::from(u32::try_from(window).unwrap_or(u32::MAX));
-    Decimal::from_f64((window * buffer).trunc())
-        .is_some_and(|capacity| Decimal::from(needed) <= capacity)
+    let capacity = f64::from(u32::try_from(window_tokens).unwrap_or(u32::MAX));
+    Decimal::from_f64((capacity * buffer).trunc())
+        .is_some_and(|budget| Decimal::from(needed_tokens) <= budget)
 }

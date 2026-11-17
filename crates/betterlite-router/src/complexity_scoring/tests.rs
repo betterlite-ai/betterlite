@@ -53,7 +53,7 @@ pub(crate) fn tiers(pairs: &[(&str, &[&str])]) -> BTreeMap<String, section::Tier
         .map(|(tier, models)| {
             let value = match models {
                 [model] => section::TierModelValue::Single((*model).to_owned()),
-                models => section::TierModelValue::Pool(strings(models)),
+                rest => section::TierModelValue::Pool(strings(rest)),
             };
             ((*tier).to_owned(), value)
         })

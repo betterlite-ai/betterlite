@@ -67,7 +67,7 @@ pub(crate) fn run(
 
 // the section's typed view, so the probe configures the scorer exactly as a config file does
 fn resolved_config(configured: Option<&Json>) -> Result<Config, OperationError> {
-    let configured = configured
+    let resolved = configured
         .map(|config| {
             serde_json::to_value(config)
                 .and_then(serde_json::from_value::<section::Config>)
@@ -77,7 +77,7 @@ fn resolved_config(configured: Option<&Json>) -> Result<Config, OperationError> 
         })
         .transpose()?
         .unwrap_or_default();
-    Config::resolve(&configured).map_err(|source| OperationError::InvalidRequest {
+    Config::resolve(&resolved).map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
     })
 }
@@ -102,11 +102,11 @@ fn classify_fields(config: Config, payload: &Payload) -> Result<Fields, Operatio
 }
 
 fn tier_model_fields(config: &Config, tier: Option<&str>) -> Result<Fields, OperationError> {
-    let tier = tier.ok_or_else(|| OperationError::InvalidRequest {
+    let tier_name = tier.ok_or_else(|| OperationError::InvalidRequest {
         message: "tier is required for tier_model".to_owned(),
     })?;
     let model = config
-        .single_model_for_tier(&Tier::from_name(tier))
+        .single_model_for_tier(&Tier::from_name(tier_name))
         .map_err(|source| OperationError::InvalidRequest {
             message: source.to_string(),
         })?;

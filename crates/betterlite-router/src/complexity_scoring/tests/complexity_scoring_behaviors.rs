@@ -638,12 +638,12 @@ fn the_savings_baseline_carries_its_deployment() {
         model: "gpt-4o",
         deployment_id: None,
     });
-    let decision = build_routing_decision(&without).unwrap();
+    let bare_decision = build_routing_decision(&without).unwrap();
     assert_eq!(
-        decision.get("savings_baseline_model"),
+        bare_decision.get("savings_baseline_model"),
         Some(&text("gpt-4o"))
     );
-    assert!(!decision.contains_key("savings_baseline_deployment_id"));
+    assert!(!bare_decision.contains_key("savings_baseline_deployment_id"));
 }
 
 #[test]

@@ -132,7 +132,7 @@ impl Config {
 // a keyword list the deployment sets replaces the default one, and an unset list keeps it
 fn keywords(configured: Option<&[String]>, default: &[String]) -> Vec<String> {
     match configured {
-        Some(configured) => configured.to_vec(),
+        Some(declared) => declared.to_vec(),
         None => default.to_vec(),
     }
 }
@@ -175,15 +175,15 @@ fn boundaries(
     default: TierBoundaries,
 ) -> Result<TierBoundaries, ScoringError> {
     let simple_medium = values
-        .and_then(|values| values.get("simple_medium"))
+        .and_then(|configured| configured.get("simple_medium"))
         .copied()
         .unwrap_or(default.simple_medium);
     let medium_complex = values
-        .and_then(|values| values.get("medium_complex"))
+        .and_then(|configured| configured.get("medium_complex"))
         .copied()
         .unwrap_or(default.medium_complex);
     let complex_reasoning = values
-        .and_then(|values| values.get("complex_reasoning"))
+        .and_then(|configured| configured.get("complex_reasoning"))
         .copied()
         .unwrap_or(default.complex_reasoning);
     Ok(TierBoundaries {

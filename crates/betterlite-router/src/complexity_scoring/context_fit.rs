@@ -25,12 +25,12 @@ impl RequestContextFit {
 // _allowed: the pool keeps its order, and without a fit filter every model is allowed
 #[must_use]
 pub fn allowed(models: &[String], fit_filter: Option<&BTreeSet<String>>) -> Vec<String> {
-    let Some(fit_filter) = fit_filter else {
+    let Some(only_fitting) = fit_filter else {
         return models.to_vec();
     };
     models
         .iter()
-        .filter(|model| fit_filter.contains(model.as_str()))
+        .filter(|model| only_fitting.contains(model.as_str()))
         .cloned()
         .collect()
 }
