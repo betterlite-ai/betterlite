@@ -54,10 +54,10 @@ fn config(global: Option<bool>, deployments: &[Option<bool>]) -> String {
 
 fn explicit_values_load() {
     let enabled = settings(&config(Some(true), &[]), &[]).unwrap();
-    assert!(enabled.global_disable_prefix);
-    assert!(enabled.deployment_disable_prefix.is_empty());
+    assert!(enabled.inner.global_disable_prefix);
+    assert!(enabled.inner.deployment_disable_prefix.is_empty());
     let disabled = settings(&config(Some(false), &[]), &[]).unwrap();
-    assert!(!disabled.global_disable_prefix);
+    assert!(!disabled.inner.global_disable_prefix);
 }
 
 fn an_absent_flag_defaults_to_false() {
@@ -68,31 +68,34 @@ fn an_absent_flag_defaults_to_false() {
         &[],
     )
     .unwrap();
-    assert!(!null.global_disable_prefix);
+    assert!(!null.inner.global_disable_prefix);
 }
 
 fn deployments_fall_back_to_the_global_flag() {
     let resolved = settings(&config(Some(true), &[None, Some(false), Some(true)]), &[]).unwrap();
-    assert!(resolved.global_disable_prefix);
-    assert_eq!(resolved.deployment_disable_prefix, [true, false, true]);
+    assert!(resolved.inner.global_disable_prefix);
+    assert_eq!(
+        resolved.inner.deployment_disable_prefix,
+        [true, false, true]
+    );
 }
 
 fn the_environment_enables_the_global_flag() {
     let enabled = settings(&config(None, &[]), &[(NAME, "yes")]).unwrap();
-    assert!(enabled.global_disable_prefix);
+    assert!(enabled.inner.global_disable_prefix);
     let deployed = settings(&config(None, &[None]), &[(NAME, "1")]).unwrap();
-    assert_eq!(deployed.deployment_disable_prefix, [true]);
+    assert_eq!(deployed.inner.deployment_disable_prefix, [true]);
 }
 
 fn an_explicit_flag_overrides_the_environment() {
     let resolved = settings(&config(Some(false), &[Some(false)]), &[(NAME, "true")]).unwrap();
-    assert!(!resolved.global_disable_prefix);
-    assert_eq!(resolved.deployment_disable_prefix, [false]);
+    assert!(!resolved.inner.global_disable_prefix);
+    assert_eq!(resolved.inner.deployment_disable_prefix, [false]);
 }
 
 fn an_empty_environment_is_unset() {
     let resolved = settings(&config(None, &[]), &[(NAME, "")]).unwrap();
-    assert!(!resolved.global_disable_prefix);
+    assert!(!resolved.inner.global_disable_prefix);
 }
 
 fn a_non_flag_environment_names_the_variable() {
@@ -131,8 +134,8 @@ fn loads_disable_add_prefix_to_prompt() {
 fn loads_the_anthropic_reply_corpus_seeds() {
     let valid = include_str!("../../../fuzz/corpus/config_yaml/anthropic_reply-valid.yaml");
     let seed = settings(valid, &[]).unwrap();
-    assert!(seed.global_disable_prefix);
-    assert_eq!(seed.deployment_disable_prefix, [false, true]);
+    assert!(seed.inner.global_disable_prefix);
+    assert_eq!(seed.inner.deployment_disable_prefix, [false, true]);
     let unrelated = include_str!("../../../fuzz/corpus/config_yaml/anthropic_reply-unrelated.yaml");
     let error = settings(unrelated, &[]).unwrap_err();
     assert!(

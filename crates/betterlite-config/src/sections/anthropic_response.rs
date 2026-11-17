@@ -29,8 +29,14 @@ struct RawLiteLlm {
     disable_add_prefix_to_prompt: Option<bool>,
 }
 
+// Boxed: Sections holds each Settings by value, and config snapshots live inside futures
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
+    pub inner: Box<Inner>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Inner {
     pub global_disable_prefix: bool,
     pub deployment_disable_prefix: Vec<bool>,
 }
@@ -60,8 +66,10 @@ impl Section for Raw {
             })
             .collect();
         Ok(Settings {
-            global_disable_prefix,
-            deployment_disable_prefix,
+            inner: Box::new(Inner {
+                global_disable_prefix,
+                deployment_disable_prefix,
+            }),
         })
     }
 }
