@@ -10,6 +10,8 @@ use super::support::{
     FIRST_ID, Fixture, instant, json, object, optional_params, rendered, run, supplied, with_tier,
 };
 use super::tools::{citation_content_alignment, tool_calls_response};
+use crate::converse_response::ReplyFieldError;
+use crate::converse_response::transform::TransformError;
 use crate::converse_response::wire::ReplyToolCall;
 
 #[rstest]
@@ -117,9 +119,35 @@ const STOP_REASONS: [(&str, &str); 10] = [
 
 fn stop_reasons() {
     mapped_stop_reasons();
+    a_non_string_stop_reason_maps_to_stop_and_a_container_is_an_error();
     json_mode_forces_stop_when_every_tool_was_synthetic();
     json_mode_keeps_the_mapped_finish_without_synthetic_tools();
     textual_recovery_restores_tool_calls();
+}
+
+// Python's map lookup answers stop for a null, boolean or number stopReason, while a list or object is unhashable.
+fn a_non_string_stop_reason_maps_to_stop_and_a_container_is_an_error() {
+    for reason in ["null", "true", "42"] {
+        let body = format!(
+            r#"{{"output": {{"message": {{"content": []}}}}, "stopReason": {reason}, "usage": {{"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}}}"#
+        );
+        let run = run(&Fixture::default(), &body);
+        assert_eq!(run.finish(), "stop", "stopReason {reason}");
+    }
+    for reason in ["[]", "{}"] {
+        let body = format!(
+            r#"{{"output": {{"message": {{"content": []}}}}, "stopReason": {reason}, "usage": {{"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}}}"#
+        );
+        let run = run(&Fixture::default(), &body);
+        assert_eq!(run.status(), None, "stopReason {reason}");
+        assert!(matches!(
+            run.failure(),
+            TransformError::Reply(ReplyFieldError::NotA {
+                path: "stopReason",
+                expected: "a string"
+            })
+        ));
+    }
 }
 
 fn json_mode_keeps_the_mapped_finish_without_synthetic_tools() {
