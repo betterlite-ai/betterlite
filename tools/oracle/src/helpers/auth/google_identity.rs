@@ -18,13 +18,13 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let identity = google_open_id(&input.userinfo).map_err(login_error)?;
+        let identity = google_open_id(&input.userinfo).map_err(|error| login_error(&error))?;
         Ok(serde_json::to_value(identity)?)
     }
 }
 
 // fastapi-sso raises its SSOLoginError for an unverified Google account, and the oracle compares that status
-fn login_error(error: GoogleIdentityError) -> Box<HelperError> {
+fn login_error(error: &GoogleIdentityError) -> Box<HelperError> {
     let response = error.response();
     Box::new(HelperError {
         class: "SSOLoginError".to_owned(),

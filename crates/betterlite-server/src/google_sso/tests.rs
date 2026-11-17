@@ -7,7 +7,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -47,9 +47,12 @@ struct Seen {
 
 #[derive(Serialize)]
 struct DiscoveryAnswer {
-    authorization_endpoint: String,
-    token_endpoint: String,
-    userinfo_endpoint: String,
+    #[serde(rename = "authorization_endpoint")]
+    authorization: String,
+    #[serde(rename = "token_endpoint")]
+    token: String,
+    #[serde(rename = "userinfo_endpoint")]
+    userinfo: String,
 }
 
 #[derive(Clone)]
@@ -75,9 +78,9 @@ impl Provider {
 
     fn document(&self) -> DiscoveryAnswer {
         DiscoveryAnswer {
-            authorization_endpoint: format!("{}/authorize", self.base),
-            token_endpoint: format!("{}/token", self.base),
-            userinfo_endpoint: format!("{}/userinfo", self.base),
+            authorization: format!("{}/authorize", self.base),
+            token: format!("{}/token", self.base),
+            userinfo: format!("{}/userinfo", self.base),
         }
     }
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::Op;
 
-fn input(userinfo: Value) -> Value {
+fn input(userinfo: &Value) -> Value {
     json!({ "userinfo": userinfo })
 }
 
@@ -53,7 +53,7 @@ fn helper_seeds_select_google_identity() {
 
 #[test]
 fn a_verified_userinfo_becomes_the_identity_fields() {
-    let output = Op::decode_and_run(&input(json!({
+    let output = Op::decode_and_run(&input(&json!({
         "sub": "10769150350006150715113082367",
         "email": "ann@example.com",
         "email_verified": true,
@@ -83,7 +83,7 @@ fn a_verified_userinfo_becomes_the_identity_fields() {
 
 #[test]
 fn an_unverified_userinfo_carries_the_sso_login_status() {
-    let error = Op::decode_and_run(&input(json!({
+    let error = Op::decode_and_run(&input(&json!({
         "email": "ann@example.com",
         "email_verified": false,
     })))
