@@ -15,7 +15,7 @@ use crate::text_completion_policy::transform_completion_request;
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest, PromptRefusal};
 use crate::text_completion_response::CompletionResponse;
 use crate::text_completion_transport::call::{
-    TextCompletionOutcome, TextCompletionRequest as TransportRequest,
+    TextCompletionOutcome, TextCompletionReply, TextCompletionRequest as TransportRequest,
 };
 use crate::text_completion_transport::logging::CompletionLogger;
 use crate::text_completion_transport::stream::CompletionStream;
@@ -54,6 +54,12 @@ pub struct CompletionAnswer {
     pub upstream_time: Duration,
 }
 
+// whichever answer shape a send was asked for
+pub enum CompletionCallAnswer {
+    Buffered(CompletionAnswer),
+    Streamed(CompletionStreamAnswer),
+}
+
 // The provider's text stream with the facts of its call, still in the transport's chunk shape.
 pub struct CompletionStreamAnswer {
     pub stream: CompletionStream,
@@ -86,97 +92,64 @@ impl CompletionExecutor {
     }
 
     // main.py's switch: a non-chat OpenAI model goes to the text-completion-openai identity
-    pub async fn complete(
+    pub async fn text_transport(
         &self,
         deployment: &ChatDeployment,
         request: &CompletionRequest,
-        redactor: &Redactor,
-        logger: &mut (dyn CompletionLogger + Send),
-    ) -> Result<CompletionAnswer, CompletionFailure> {
+        streamed: bool,
+    ) -> Result<TransportRequest, CompletionFailure> {
         let route = self.route(deployment).await;
         let CompletionRoute::Text { model } = &route else {
             return Err(CompletionFailure::route(&route));
         };
-        let built = transport_request(deployment, request, model)?;
-        self.complete_request(deployment, built, redactor, logger)
-            .await
+        let mut built = transport_request(deployment, request, model)?;
+        if streamed {
+            built
+                .optional_params
+                .insert(String::from("stream"), serde_json::Value::Bool(true));
+        }
+        Ok(built)
     }
 
-    // a request the bridge already built: the same send, with the buffered answer read
-    pub async fn complete_request(
+    // a request the bridge already built: the same send, read as the answer the mode asked for
+    pub async fn send(
         &self,
         deployment: &ChatDeployment,
         request: TransportRequest,
+        streamed: bool,
         redactor: &Redactor,
         logger: &mut (dyn CompletionLogger + Send),
-    ) -> Result<CompletionAnswer, CompletionFailure> {
-        let facts = Arc::new(Mutex::new(None));
-        let transport = self.transport(deployment, &facts);
-        let outcome = drive(&transport, request, redactor, logger).await?;
-        let TextCompletionOutcome::Buffered(reply) = outcome else {
-            return Err(CompletionFailure::new(
-                500,
-                Some(INTERNAL_ERROR),
-                String::from(NO_STREAM),
-            ));
-        };
-        let response =
-            serde_json::from_value::<CompletionResponse>(reply.response).map_err(|source| {
-                CompletionFailure::new(
-                    500,
-                    Some(INTERNAL_ERROR),
-                    format!("the provider completion could not be read: {source}"),
-                )
-            })?;
-        let captured = take_facts(&facts);
-        Ok(CompletionAnswer {
-            response: Box::new(response),
-            upstream_headers: captured.headers,
-            upstream_time: captured.elapsed,
-        })
-    }
-
-    // the same call with stream:true, answered as the transport's chunk stream
-    pub async fn stream(
-        &self,
-        deployment: &ChatDeployment,
-        request: &CompletionRequest,
-        redactor: &Redactor,
-        logger: &mut (dyn CompletionLogger + Send),
-    ) -> Result<CompletionStreamAnswer, CompletionFailure> {
-        let route = self.route(deployment).await;
-        let CompletionRoute::Text { model } = &route else {
-            return Err(CompletionFailure::route(&route));
-        };
-        let built = streaming_request(deployment, request, model)?;
-        self.stream_request(deployment, built, redactor, logger)
-            .await
-    }
-
-    // a streamed request the bridge already built, answered as the transport's chunk stream
-    pub async fn stream_request(
-        &self,
-        deployment: &ChatDeployment,
-        request: TransportRequest,
-        redactor: &Redactor,
-        logger: &mut (dyn CompletionLogger + Send),
-    ) -> Result<CompletionStreamAnswer, CompletionFailure> {
+    ) -> Result<CompletionCallAnswer, CompletionFailure> {
         let facts = Arc::new(Mutex::new(None));
         let transport = self.transport(deployment, &facts);
         let outcome = drive(&transport, request, redactor, logger).await?;
         let captured = take_facts(&facts);
-        let TextCompletionOutcome::Stream(stream) = outcome else {
-            return Err(CompletionFailure::new(
+        match outcome {
+            TextCompletionOutcome::Buffered(reply) if !streamed => {
+                Ok(CompletionCallAnswer::Buffered(CompletionAnswer {
+                    response: Box::new(read_reply(reply)?),
+                    upstream_headers: captured.headers,
+                    upstream_time: captured.elapsed,
+                }))
+            }
+            TextCompletionOutcome::Stream(stream) if streamed => {
+                Ok(CompletionCallAnswer::Streamed(CompletionStreamAnswer {
+                    stream,
+                    upstream_headers: captured.headers,
+                    upstream_time: captured.elapsed,
+                }))
+            }
+            TextCompletionOutcome::Buffered(_) => Err(CompletionFailure::new(
                 500,
                 Some(INTERNAL_ERROR),
                 String::from(NO_BUFFER),
-            ));
-        };
-        Ok(CompletionStreamAnswer {
-            stream,
-            upstream_headers: captured.headers,
-            upstream_time: captured.elapsed,
-        })
+            )),
+            TextCompletionOutcome::Stream(_) => Err(CompletionFailure::new(
+                500,
+                Some(INTERNAL_ERROR),
+                String::from(NO_STREAM),
+            )),
+        }
     }
 
     fn transport(
@@ -239,17 +212,15 @@ fn transport_request(
     })
 }
 
-// the streamed call forwards the client's optional params plus the stream flag the body dropped
-fn streaming_request(
-    deployment: &ChatDeployment,
-    request: &CompletionRequest,
-    model: &str,
-) -> Result<TransportRequest, CompletionFailure> {
-    let mut built = transport_request(deployment, request, model)?;
-    built
-        .optional_params
-        .insert(String::from("stream"), serde_json::Value::Bool(true));
-    Ok(built)
+// the provider's buffered reply read as a completion response
+fn read_reply(reply: TextCompletionReply) -> Result<CompletionResponse, CompletionFailure> {
+    serde_json::from_value::<CompletionResponse>(reply.response).map_err(|source| {
+        CompletionFailure::new(
+            500,
+            Some(INTERNAL_ERROR),
+            format!("the provider completion could not be read: {source}"),
+        )
+    })
 }
 
 async fn drive(

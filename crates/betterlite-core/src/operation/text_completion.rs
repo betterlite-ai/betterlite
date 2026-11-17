@@ -38,36 +38,61 @@ pub trait TextCompletionCall: Send + Sync {
         CompletionEndpoint::Text
     }
 
-    // the text route's chat-deployment branch: the answer converts back to a text completion
-    async fn complete_chat(
-        &self,
-        _call: TextCompletionCallInput<'_>,
-    ) -> Result<TextCompletionResult, TextCompletionFailure> {
-        Err(not_built_chat())
-    }
-
     async fn stream(
         &self,
         _call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        Err(not_built_chat())
+        Err(internal_failure("no chat bridge on this port"))
     }
 
-    // the text route's streamed chat-deployment branch: chat chunks for B5366's text wrapper
-    async fn stream_chat(
+    // the text route's chat-deployment branch, in the shape the caller asked for
+    async fn chat(
         &self,
         _call: TextCompletionCallInput<'_>,
-    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        Err(not_built_chat())
+        _mode: ChatCallMode,
+    ) -> Result<ChatCallAnswer, TextCompletionFailure> {
+        Err(internal_failure("no chat bridge on this port"))
     }
 }
 
-fn not_built_chat() -> TextCompletionFailure {
+// what the caller asked the chat endpoint for on the text route
+pub enum ChatCallMode {
+    Buffered,
+    Streamed,
+}
+
+// the chat endpoint's answer in the text route's own types
+pub enum ChatCallAnswer {
+    Buffered(TextCompletionResult),
+    Streamed(TextStreamAnswer),
+}
+
+impl ChatCallAnswer {
+    pub fn buffered(self) -> Result<TextCompletionResult, TextCompletionFailure> {
+        match self {
+            Self::Buffered(answer) => Ok(answer),
+            Self::Streamed(_) => Err(internal_failure(
+                "this completion port answered a different operation",
+            )),
+        }
+    }
+
+    pub fn streamed(self) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        match self {
+            Self::Streamed(answer) => Ok(answer),
+            Self::Buffered(_) => Err(internal_failure(
+                "this completion port answered a different operation",
+            )),
+        }
+    }
+}
+
+fn internal_failure(message: &str) -> TextCompletionFailure {
     TextCompletionFailure {
         status: 500,
         error_type: Some(String::from("internal_server_error")),
         param: None,
-        message: String::from("this completion port has no chat deployment bridge"),
+        message: message.to_owned(),
     }
 }
 

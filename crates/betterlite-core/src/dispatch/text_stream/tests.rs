@@ -16,10 +16,16 @@ use crate::dispatch::{Dispatch, NoRules};
 use crate::message_utilities::response_streams::StreamError;
 use crate::operation::Operation;
 use crate::operation::text_completion::{
-    TextCompletionCall, TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest,
-    TextCompletionResult,
+    ChatCallAnswer, ChatCallMode, TextCompletionCall, TextCompletionCallInput,
+    TextCompletionFailure, TextCompletionRequest, TextCompletionResult,
 };
 use crate::operation::text_stream::TextStreamAnswer;
+
+const FIRST_CHUNK: &str = r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"hi"}}]}"#;
+
+const LAST_CHUNK: &str = r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
+
+const ROUTED_CHUNK: &str = r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"chat"}}]}"#;
 
 struct NeverCalled;
 
@@ -48,16 +54,7 @@ impl TextCompletionCall for Streams {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        // only a string prompt reaches the text endpoint, so the port sees one message
-        assert!(call.request.prompt.messages().is_some());
-        Ok(answer(vec![
-            chunk(
-                r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"hi"}}]}"#,
-            ),
-            chunk(
-                r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#,
-            ),
-        ]))
+        streamed_request(call)
     }
 }
 
@@ -87,13 +84,14 @@ impl TextCompletionCall for Routed {
         Err(unused())
     }
 
-    async fn stream_chat(
+    async fn chat(
         &self,
         _call: TextCompletionCallInput<'_>,
-    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        Ok(answer(vec![chunk(
-            r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"client","choices":[{"index":0,"delta":{"content":"chat"}}]}"#,
-        )]))
+        _mode: ChatCallMode,
+    ) -> Result<ChatCallAnswer, TextCompletionFailure> {
+        Ok(ChatCallAnswer::Streamed(answer(vec![Ok(chunk(
+            ROUTED_CHUNK,
+        ))])))
     }
 }
 
@@ -112,18 +110,21 @@ impl TextCompletionCall for Fails {
         &self,
         _call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        let failed: Result<Json, TextCompletionFailure> = Err(unused());
-        Ok(TextStreamAnswer {
-            body: futures_util::stream::iter([failed]).boxed(),
-            upstream_headers: HeaderMap::new(),
-            upstream_time: Duration::ZERO,
-        })
+        Ok(answer(vec![Err(unused())]))
     }
 }
 
-fn answer(chunks: Vec<Json>) -> TextStreamAnswer {
+// only a string prompt reaches the text endpoint, so the port sees one message
+fn streamed_request(
+    call: TextCompletionCallInput<'_>,
+) -> Result<TextStreamAnswer, TextCompletionFailure> {
+    assert!(call.request.prompt.messages().is_some());
+    Ok(answer(vec![Ok(chunk(FIRST_CHUNK)), Ok(chunk(LAST_CHUNK))]))
+}
+
+fn answer(items: Vec<Result<Json, TextCompletionFailure>>) -> TextStreamAnswer {
     TextStreamAnswer {
-        body: futures_util::stream::iter(chunks.into_iter().map(Ok)).boxed(),
+        body: futures_util::stream::iter(items).boxed(),
         upstream_headers: HeaderMap::new(),
         upstream_time: Duration::ZERO,
     }

@@ -7,8 +7,8 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
-use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
+use betterlite_openai::text_completion_execution::{CompletionCallAnswer, CompletionExecutor};
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
@@ -111,10 +111,17 @@ async fn text_streaming_text_stream_tests_behavior() {
             .expect("completion request");
     let redactor = Redactor::new(0).expect("redactor");
     let mut logger = TracingCompletionLog;
+    let transport = executor
+        .text_transport(&deployment, &request, true)
+        .await
+        .expect("transport");
     let answer = executor
-        .stream(&deployment, &request, &redactor, &mut logger)
+        .send(&deployment, transport, true, &redactor, &mut logger)
         .await
         .expect("stream");
+    let CompletionCallAnswer::Streamed(answer) = answer else {
+        panic!("the provider answered a buffered completion");
+    };
     let mut stream = answer.stream;
 
     let first = timeout(Duration::from_secs(5), stream.next())

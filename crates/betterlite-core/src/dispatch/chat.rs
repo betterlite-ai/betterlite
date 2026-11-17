@@ -11,7 +11,9 @@ use super::error::DispatchError;
 use super::log::CallOutcome;
 use super::terminal::Terminal;
 use super::{Dispatch, Entry};
-use crate::operation::chat::{ChatCallInput, ChatRequest, ChatResult, ChatStreamAnswer};
+use crate::operation::chat::{
+    ChatCallInput, ChatRequest, ChatResult, ChatStreamAnswer, TextCallMode,
+};
 
 pub mod mock_stream;
 
@@ -75,13 +77,12 @@ where
             }
         }
         ChatEndpoint::Text { convert } => {
-            if request.request.stream {
-                let answer = request.calls.stream_text(call, control).await?;
-                Ok(ChatResult::Stream(answer))
+            let mode = if request.request.stream {
+                TextCallMode::Streamed
             } else {
-                let answer = request.calls.complete_text(call, control, convert).await?;
-                Ok(ChatResult::Completion(answer))
-            }
+                TextCallMode::Buffered { convert }
+            };
+            Ok(request.calls.text(call, mode).await?)
         }
     }
 }

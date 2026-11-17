@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -20,7 +20,7 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use super::{RelayState, TextBridgeState, completion_failure, next_sse, next_text_frame};
+use super::{Pump, RelaySource, TextSource, completion_failure, next_frame};
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 
@@ -278,17 +278,15 @@ async fn mock_calls_behavior_tests_behavior(
 #[case::oversized(Ok(vec![b'x'; 0x0010_0001]))]
 #[tokio::test]
 async fn stream_error_ends_relay(#[case] input: Result<Vec<u8>, HttpError>) {
-    let state = RelayState {
+    let source = RelaySource {
         upstream: stream::iter(vec![input, Ok(b"data: [DONE]\n\n".to_vec())]).boxed(),
         parser: SseParser::default(),
-        pending: VecDeque::new(),
-        finished: false,
         model: String::from("group"),
         include_usage: false,
     };
-    let (event, remaining) = next_sse(state).await.unwrap();
+    let (event, remaining) = next_frame(Pump::new(source)).await.unwrap();
     event.unwrap_err();
-    assert!(next_sse(remaining).await.is_none());
+    assert!(next_frame(remaining).await.is_none());
 }
 
 #[rstest]
@@ -324,17 +322,16 @@ async fn bridged(chunks: Vec<&str>, include_usage: bool) -> Vec<Result<Bytes, Ht
         .into_iter()
         .map(|body| Ok(text_chunk(body)))
         .collect();
-    let mut state = TextBridgeState {
+    let source = TextSource {
         stream: stream::iter(items).boxed(),
         model: String::from("client"),
         include_usage,
-        pending: VecDeque::new(),
-        finished: false,
     };
     let mut frames = Vec::new();
-    while let Some((frame, next)) = next_text_frame(state).await {
+    let mut pump = Pump::new(source);
+    while let Some((frame, next)) = next_frame(pump).await {
         frames.push(frame);
-        state = next;
+        pump = next;
     }
     frames
 }

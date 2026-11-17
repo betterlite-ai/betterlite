@@ -44,20 +44,11 @@ pub trait ChatCall: Send + Sync {
     }
 
     // the text endpoint's answer, converted back to chat unless the deployment is a fine-tuned model
-    async fn complete_text(
+    async fn text(
         &self,
         _call: ChatCallInput<'_>,
-        _control: ControlOptions,
-        _convert: bool,
-    ) -> Result<ChatCompletionAnswer, ChatFailure> {
-        Err(no_text_endpoint())
-    }
-
-    async fn stream_text(
-        &self,
-        _call: ChatCallInput<'_>,
-        _control: ControlOptions,
-    ) -> Result<ChatStreamAnswer, ChatFailure> {
+        _mode: TextCallMode,
+    ) -> Result<ChatResult, ChatFailure> {
         Err(no_text_endpoint())
     }
 }
@@ -89,6 +80,12 @@ pub struct ChatStreamAnswer {
 pub enum ChatResult {
     Completion(ChatCompletionAnswer),
     Stream(ChatStreamAnswer),
+}
+
+// what the caller asked the text endpoint for: a buffered answer with or without conversion, or a stream
+pub enum TextCallMode {
+    Buffered { convert: bool },
+    Streamed,
 }
 
 #[derive(Debug, Error)]

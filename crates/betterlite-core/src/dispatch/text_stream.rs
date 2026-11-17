@@ -17,7 +17,8 @@ use super::text_completion::{rejected, rules_input};
 use crate::message_utilities::response_streams::text_completion::TextCompletionStreamWrapper;
 use crate::operation::Entry;
 use crate::operation::text_completion::{
-    TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest,
+    ChatCallAnswer, ChatCallMode, TextCompletionCallInput, TextCompletionFailure,
+    TextCompletionRequest,
 };
 use crate::operation::text_stream::{TextStreamAnswer, TextStreamResult};
 
@@ -64,10 +65,14 @@ where
     };
     // a chat-catalog deployment streams from the chat endpoint, and the wrapper converts its chunks
     match endpoint {
-        CompletionEndpoint::Text => request.calls.stream(call).await,
-        CompletionEndpoint::Chat => request.calls.stream_chat(call).await,
+        CompletionEndpoint::Text => request.calls.stream(call).await.map_err(rejected),
+        CompletionEndpoint::Chat => request
+            .calls
+            .chat(call, ChatCallMode::Streamed)
+            .await
+            .and_then(ChatCallAnswer::streamed)
+            .map_err(rejected),
     }
-    .map_err(rejected)
 }
 
 // the client's own usage choice decides whether the wrapper reads it off the chunks
