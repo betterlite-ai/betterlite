@@ -1,0 +1,34 @@
+kind: helper
+name: tinyfish-endpoint-path-validation
+call:
+  b3648:
+    function: endpoint
+    method: POST
+    path: /v1/automation/run-sse
+calls:
+  - b3648:
+      function: endpoint
+      method: POST
+      path: /v1/automation/run-async
+  - b3648:
+      function: endpoint
+      method: GET
+      path: /v1/runs/run_1
+  - b3648:
+      function: endpoint
+      method: POST
+      path: /v1/runs/run_1/cancel
+  - b3648:
+      function: endpoint
+      method: GET
+      path: /v1/runs
+  - b3648:
+      function: endpoint
+      method: POST
+      path: /v1/automation/../vault
+  - b3648:
+      function: endpoint
+      method: POST
+      path: /v1/automation/run/extra
+env: {}
+compare: {ignore: []}
