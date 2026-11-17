@@ -6,11 +6,11 @@ use serde_json::value::RawValue;
 use crate::fields::messages::append_system_prompt_messages;
 use crate::fields::response::{ExtractedResponse, HiddenParams, get_final_response_obj};
 use crate::logging_state::LoggingState;
+use crate::logging_success::request_redaction::redacted_messages_json;
 use crate::payload::azure::{is_model_router_call, router_selected_model};
 use crate::payload::compose::inputs::optional_text;
 use crate::payload::compose::{PayloadComposition, PayloadRequest};
 use crate::payload::error::PayloadError;
-use crate::payload::redaction::redacted_messages_json;
 use crate::payload::response::{PayloadResponsePrivacy, response_model_name};
 
 pub(crate) fn final_response(
