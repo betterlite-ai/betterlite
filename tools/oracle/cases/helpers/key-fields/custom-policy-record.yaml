@@ -1,0 +1,20 @@
+kind: helper
+name: custom_policy_record
+call:
+  key_fields:
+    calls:
+      - {function: policy, body: {operation: generate, existing_key: null, effective_key: {}, request: {team_id: "t"}}}
+      - {function: policy, body: {operation: update, existing_key: {token: "k"}, effective_key: {token: "k"}, request: {key: "k", temp_budget_increase: null, temp_budget_expiry: null}}}
+      - {function: policy, body: {operation: regenerate, existing_key: {}, effective_key: {}, request: {new_key: "n"}}}
+      - {function: policy, body: {operation: generate, existing_key: null, effective_key: {}, request: {key: "k"}}}
+      - {function: policy, body: {operation: update, existing_key: {token: null}, effective_key: {}, request: {key: "k", temp_budget_increase: 2.5, temp_budget_expiry: "2030-01-01T00:00:00"}}}
+      - {function: policy, body: {operation: generate, effective_key: {}, request: {}}}
+      - {function: policy, body: {operation: rotate, existing_key: null, effective_key: {}, request: {}}}
+      - {function: policy, body: {operation: generate, existing_key: null, request: {}}}
+      - {function: policy, body: {operation: generate, existing_key: null, effective_key: null, request: {}}}
+      - {function: policy, body: {operation: generate, existing_key: null, effective_key: {}, request: {default_estimated_output_tokens: 0}}}
+      - {function: policy, body: {operation: generate, existing_key: {token: 5}, effective_key: {}, request: {}}}
+      - {function: policy, body: {operation: update, existing_key: null, effective_key: {}, request: {key: "k", soft_budget: 2.5, duration: "1d"}}}
+      - {function: policy, body: {operation: regenerate, existing_key: null, effective_key: {}, request: {key: "k", new_key: "n", grace_period: "24h"}}}
+env: {}
+compare: {ignore: []}

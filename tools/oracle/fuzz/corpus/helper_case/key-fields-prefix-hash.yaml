@@ -1,0 +1,9 @@
+kind: helper
+name: key-fields-prefix-hash-seed
+call:
+  key_fields:
+    calls:
+      - {function: token, token: "sk-seed"}
+      - {function: base, body: {key_alias: "seed", max_budget: ""}}
+env: {}
+compare: {ignore: []}

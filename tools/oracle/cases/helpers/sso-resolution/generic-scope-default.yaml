@@ -1,0 +1,9 @@
+kind: helper
+name: sso-resolution-generic-scope-default
+call:
+  b4141:
+    salt_key: salt-one
+    db: null
+    env: {}
+env: {}
+compare: {ignore: []}
