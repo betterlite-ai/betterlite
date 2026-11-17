@@ -54,7 +54,7 @@ const MID_MARKERS: [&str; 20] = [
     "sonnet-3.7",
     "sonnet_3.7",
     "sonnet-3-7",
-    "sonnet_3-7",
+    "sonnet_3_7",
 ];
 
 pub struct ConvertedTools {

@@ -12,13 +12,11 @@ const COMPACT_EDIT_TYPE: &str = "compact_20260112";
 
 // Converse keeps only compact edits; every other context_management shape is dropped without a warning.
 pub fn filter_context_management(params: &mut IndexMap<String, Json>, betas: &mut Vec<Json>) {
-    let management = params.get(CONTEXT_MANAGEMENT).and_then(as_object).cloned();
-    let Some(management) = management else {
+    let Some(mut kept) = params.get(CONTEXT_MANAGEMENT).and_then(as_object).cloned() else {
         params.shift_remove(CONTEXT_MANAGEMENT);
         return;
     };
-    let edits = management.get(EDITS).and_then(as_list);
-    let Some(edits) = edits else {
+    let Some(edits) = kept.get(EDITS).and_then(as_list) else {
         params.shift_remove(CONTEXT_MANAGEMENT);
         return;
     };
@@ -32,7 +30,6 @@ pub fn filter_context_management(params: &mut IndexMap<String, Json>, betas: &mu
         params.shift_remove(CONTEXT_MANAGEMENT);
         return;
     }
-    let mut kept = management.clone();
     kept.insert(EDITS.to_owned(), Json::List(retained));
     params.insert(CONTEXT_MANAGEMENT.to_owned(), Json::Object(kept));
     if !has_beta(betas, COMPACT_BETA) {
