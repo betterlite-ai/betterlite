@@ -90,6 +90,13 @@ pub(crate) fn instant(now: i64) -> Result<DateTime<FixedOffset>, Box<HelperError
     Ok(at.fixed_offset())
 }
 
+pub(crate) fn utc_offset() -> Result<FixedOffset, Box<HelperError>> {
+    let Some(offset) = FixedOffset::east_opt(0) else {
+        return Err(failure("the UTC offset is not representable"));
+    };
+    Ok(offset)
+}
+
 pub(crate) fn logging_state(
     batch_id: &str,
     now: i64,
