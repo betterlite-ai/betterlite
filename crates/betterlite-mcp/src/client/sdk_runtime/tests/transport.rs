@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
+use std::io::ErrorKind;
 use std::sync::Arc;
 
 use bytes::Bytes;
 use http::Method;
 use http::header::HeaderMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use url::Url;
 
 use crate::client::cleanup::http_client::CleanupScope;
@@ -49,7 +51,7 @@ async fn unavailable_reason(transport: TransportType) -> String {
     let SdkError::Io(inner) = source.as_ref() else {
         panic!("expected the unavailable stdio transport");
     };
-    assert_eq!(inner.kind(), std::io::ErrorKind::Unsupported);
+    assert_eq!(inner.kind(), ErrorKind::Unsupported);
     inner.to_string()
 }
 
@@ -68,14 +70,9 @@ async fn a_cleanup_scope_carries_the_body_failure_the_client_recorded() {
         capture_error_responses: true,
     };
     let client = runtime.http_client(config).unwrap();
-    let scope = || CleanupScope {
-        shield: true,
-        deadline: Instant::now() + support::CALL_TIMEOUT,
-        caller_cancelled: CancellationToken::new(),
-    };
-    client.begin_cleanup(scope());
+    client.begin_cleanup(cleanup_scope());
     assert!(client.finish_cleanup().is_empty());
-    client.begin_cleanup(scope());
+    client.begin_cleanup(cleanup_scope());
     let request = McpHttpRequest {
         method: Method::POST,
         url: Url::parse(&url).unwrap(),
@@ -97,15 +94,27 @@ async fn a_cleanup_scope_carries_the_body_failure_the_client_recorded() {
     assert!(client.finish_cleanup().is_empty());
 }
 
+fn cleanup_scope() -> CleanupScope {
+    CleanupScope {
+        shield: true,
+        deadline: Instant::now()
+            .checked_add(support::CALL_TIMEOUT)
+            .expect("the cleanup deadline fits"),
+        caller_cancelled: CancellationToken::new(),
+    }
+}
+
 // The response promises a chunked body and closes after its first chunk, so the body read fails
 async fn serve_truncated_stream() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
+    // the tracker keeps the server task running after the test's own call returns
+    let tasks = TaskTracker::new();
+    tasks.spawn(async move {
         let Ok((mut socket, _)) = listener.accept().await else {
             return;
         };
-        let mut head = [0u8; 1024];
+        let mut head = [0_u8; 1024];
         let _read = socket.read(&mut head).await;
         let _written = socket
             .write_all(

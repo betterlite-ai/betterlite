@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::{Future, pending, ready};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -35,12 +36,12 @@ impl Transport<RoleClient> for RecordingTransport {
     }
 
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
-        std::future::pending().await
+        pending().await
     }
 
-    async fn close(&mut self) -> Result<(), SdkError> {
+    fn close(&mut self) -> impl Future<Output = Result<(), SdkError>> {
         self.closed.store(true, Ordering::SeqCst);
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -97,8 +98,10 @@ fn parameters(script: String) -> StdioServerParameters {
     }
 }
 
-async fn wait_for(path: &std::path::Path) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+async fn wait_for(path: &Path) {
+    let deadline = Instant::now()
+        .checked_add(Duration::from_secs(10))
+        .expect("the wait deadline fits");
     while !path.exists() {
         assert!(
             Instant::now() < deadline,

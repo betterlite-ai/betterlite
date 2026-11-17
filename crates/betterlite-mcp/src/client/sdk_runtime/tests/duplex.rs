@@ -7,12 +7,14 @@ use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 use rmcp::transport::async_rw::AsyncRwTransport;
 use rmcp::{RoleClient, ServiceExt as _};
-use tokio::io::{DuplexStream, ReadHalf, WriteHalf, split};
+use tokio::io::{DuplexStream, ReadHalf, WriteHalf, duplex, split};
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use crate::client::cleanup::http_client::CleanupScope;
 use crate::client::sdk_runtime::session::SdkSessionContext;
 use crate::client::sdk_transport::error::SdkError;
+use crate::client::sessions::client::SessionClient;
 use crate::client::sessions::error::{ExitFailure, SessionError};
 use crate::client::sessions::factory::{HttpClientConfig, SseRequest};
 use crate::client::sessions::runtime::{HttpClientHandle, McpRuntime, SessionOptions};
@@ -60,12 +62,12 @@ impl TransportContext for DuplexContext {
     type Streams = DuplexStreams;
     type Error = SdkError;
 
-    async fn enter(&mut self) -> Result<DuplexStreams, SdkError> {
-        self.streams.take().ok_or(SdkError::AlreadyOpen)
+    fn enter(&mut self) -> impl Future<Output = Result<DuplexStreams, SdkError>> {
+        ready(self.streams.take().ok_or(SdkError::AlreadyOpen))
     }
 
-    async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
-        Ok(())
+    fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
+        ready(Ok(()))
     }
 }
 
@@ -102,11 +104,12 @@ impl McpRuntime for DuplexRuntime {
     }
 
     fn sse_client(&self, _request: SseRequest) -> DuplexContext {
-        unreachable!("the duplex runtime has no legacy SSE transport")
+        // the duplex runtime serves stdio sessions only, so the other transports arrive without streams
+        DuplexContext { streams: None }
     }
 
     fn streamable_http_client(&self, _url: String, _client: Arc<NoHttpClient>) -> DuplexContext {
-        unreachable!("the duplex runtime has no streamable HTTP transport")
+        DuplexContext { streams: None }
     }
 
     fn http_client(&self, _config: HttpClientConfig) -> Result<NoHttpClient, SdkError> {
@@ -129,24 +132,38 @@ impl McpRuntime for DuplexRuntime {
     }
 }
 
-#[tokio::test]
-async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
-    let (client_half, server_half) = tokio::io::duplex(64 * 1024);
+// The test server answers on the other half of the duplex until the test shuts the task down
+fn spawned_server(half: DuplexStream) -> JoinSet<()> {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
-        let running = TestServer::standard().serve(server_half).await.unwrap();
+        let running = TestServer::standard().serve(half).await.unwrap();
         drop(running.waiting().await);
     });
-    let (read, write) = split(client_half);
-    let runtime = DuplexRuntime {
-        streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
-    };
-    let mut client = support::client_on(
+    tasks
+}
+
+fn duplex_runtime(streams: DuplexStreams) -> DuplexRuntime {
+    DuplexRuntime {
+        streams: Mutex::new(Some(streams)),
+    }
+}
+
+fn duplex_client(half: DuplexStream, read_timeout: Duration) -> SessionClient<DuplexRuntime> {
+    let (read, write) = split(half);
+    let runtime = duplex_runtime(DuplexStreams(AsyncRwTransport::new(read, write)));
+    support::client_on(
         Arc::new(runtime),
         support::settings(TransportType::Stdio),
         "",
-        support::CALL_TIMEOUT,
-    );
+        read_timeout,
+    )
+}
+
+#[tokio::test]
+async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
+    let (client_half, server_half) = duplex(64 * 1024);
+    let mut tasks = spawned_server(server_half);
+    let mut client = duplex_client(client_half, support::CALL_TIMEOUT);
     let tools = list_tools(&mut client, support::CALL_TIMEOUT, true)
         .await
         .unwrap();
@@ -156,12 +173,12 @@ async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
         name: "echo".to_owned(),
         arguments: None,
     };
-    let result = call_tool(
+    let result = Box::pin(call_tool(
         &mut client,
         &request,
         None::<&RecordingHost>,
         CallToolOptions::default(),
-    )
+    ))
     .await
     .unwrap();
     let ToolCallResult::Complete(complete) = result else {
@@ -180,22 +197,9 @@ async fn the_session_lists_and_calls_tools_over_an_in_process_duplex() {
 
 #[tokio::test(start_paused = true)]
 async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
-    let (client_half, server_half) = tokio::io::duplex(64 * 1024);
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move {
-        let running = TestServer::standard().serve(server_half).await.unwrap();
-        drop(running.waiting().await);
-    });
-    let (read, write) = split(client_half);
-    let runtime = DuplexRuntime {
-        streams: Mutex::new(Some(DuplexStreams(AsyncRwTransport::new(read, write)))),
-    };
-    let mut client = support::client_on(
-        Arc::new(runtime),
-        support::settings(TransportType::Stdio),
-        "",
-        Duration::from_millis(200),
-    );
+    let (client_half, server_half) = duplex(64 * 1024);
+    let mut tasks = spawned_server(server_half);
+    let mut client = duplex_client(client_half, Duration::from_millis(200));
     let request = CallRequest {
         name: "slow".to_owned(),
         arguments: None,
@@ -209,7 +213,7 @@ async fn a_read_timeout_that_fires_before_the_answer_is_a_read_timeout() {
             allow_input_required: false,
         },
     );
-    let error = tokio::time::timeout(Duration::from_secs(30), run)
+    let error = Box::pin(timeout(Duration::from_secs(30), run))
         .await
         .expect("the call finished")
         .unwrap_err();

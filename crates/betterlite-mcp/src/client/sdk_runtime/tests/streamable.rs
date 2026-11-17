@@ -28,9 +28,12 @@ const RAISE: CallToolOptions = CallToolOptions {
 };
 
 fn call(name: &str) -> CallRequest {
-    let name = name.to_owned();
+    let owned = name.to_owned();
     let arguments = None;
-    CallRequest { name, arguments }
+    CallRequest {
+        name: owned,
+        arguments,
+    }
 }
 
 fn text_of(result: &ToolCallResult) -> &str {
@@ -79,9 +82,9 @@ async fn the_handshake_adopts_the_fallback_version_capabilities_and_instructions
     )
     .await
     .unwrap();
-    let capabilities = capabilities.expect("the server's capabilities were adopted");
-    assert!(capabilities.prompts.is_some());
-    assert!(capabilities.resources.is_some());
+    let adopted = capabilities.expect("the server's capabilities were adopted");
+    assert!(adopted.prompts.is_some());
+    assert!(adopted.resources.is_some());
     assert_eq!(
         client.last_initialize_instructions.as_deref(),
         Some(INSTRUCTIONS)
@@ -119,12 +122,12 @@ async fn a_tool_call_forwards_every_progress_update() {
         support::CALL_TIMEOUT,
     );
     let host = RecordingHost::default();
-    let result = call_tool(
+    let result = Box::pin(call_tool(
         &mut client,
         &call("progress"),
         Some(&host),
         CallToolOptions::default(),
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(host.seen(), vec![(25.0, Some(100.0)), (75.0, Some(100.0))]);
@@ -140,12 +143,12 @@ async fn an_is_error_result_stays_a_complete_result() {
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let result = call_tool(
+    let result = Box::pin(call_tool(
         &mut client,
         &call("fail"),
         None::<&RecordingHost>,
         CallToolOptions::default(),
-    )
+    ))
     .await
     .unwrap();
     let ToolCallResult::Complete(complete) = &result else {
@@ -164,28 +167,27 @@ async fn a_json_rpc_error_is_a_protocol_failure() {
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let error = call_tool(
+    let error = Box::pin(call_tool(
         &mut client,
         &call("rpc-error"),
         None::<&RecordingHost>,
         RAISE,
-    )
+    ))
     .await
     .unwrap_err();
-    match &error {
-        SessionError::Protocol(failure) => {
-            assert_eq!(failure.code, -32_602);
-            assert_eq!(failure.message, "bad arguments");
-        }
-        other => panic!("expected a protocol failure, got {other}"),
-    }
+    let SessionError::Protocol(failure) = &error else {
+        panic!("expected a protocol failure, got {error}");
+    };
+    assert_eq!(failure.code, -32_602_i32);
+    assert_eq!(failure.message, "bad arguments");
 }
 
 async fn answered(
     name: &str,
     handlers: ServerRequestHandlers,
 ) -> Result<String, SessionError<SdkError>> {
-    let (result, _listings) = called_on(TestServer::standard(), name, RAISE, handlers).await?;
+    let (result, _listings) =
+        Box::pin(called_on(TestServer::standard(), name, RAISE, handlers)).await?;
     Ok(text_of(&result).to_owned())
 }
 
@@ -196,23 +198,29 @@ async fn called_on(
     handlers: ServerRequestHandlers,
 ) -> Result<(ToolCallResult, usize), SessionError<SdkError>> {
     let listings = Arc::clone(&server.listings);
-    let server = serve_http(server).await;
+    let served = serve_http(server).await;
     let mut settings = support::settings(TransportType::Http);
     settings.handlers = handlers;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         settings,
-        &server.url,
+        &served.url,
         support::CALL_TIMEOUT,
     );
-    let result = call_tool(&mut client, &call(name), None::<&RecordingHost>, options).await?;
+    let result = Box::pin(call_tool(
+        &mut client,
+        &call(name),
+        None::<&RecordingHost>,
+        options,
+    ))
+    .await?;
     let count = listings.load(Ordering::SeqCst);
     Ok((result, count))
 }
 
 #[tokio::test]
 async fn sampling_without_a_responder_answers_the_sdk_default() {
-    let answer = answered("sample", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("sample", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(answer, "error -32600: Sampling not supported");
@@ -224,7 +232,7 @@ async fn sampling_goes_to_the_configured_responder() {
         sampling: Some(Arc::new(TestSampling)),
         elicitation: None,
     };
-    let answer = answered("sample", handlers).await.unwrap();
+    let answer = Box::pin(answered("sample", handlers)).await.unwrap();
     assert!(answer.contains("\"model\":\"test-model\""), "{answer}");
     assert!(answer.contains("1 message(s)"), "{answer}");
 }
@@ -235,7 +243,7 @@ async fn a_sampling_error_response_keeps_its_code_and_message() {
         sampling: Some(Arc::new(FailingSampling)),
         elicitation: None,
     };
-    let answer = answered("sample", handlers).await.unwrap();
+    let answer = Box::pin(answered("sample", handlers)).await.unwrap();
     assert_eq!(answer, "error -32099: no model available");
 }
 
@@ -245,7 +253,9 @@ async fn a_sampling_request_the_responder_cannot_decode_is_invalid_params() {
         sampling: Some(Arc::new(TestSampling)),
         elicitation: None,
     };
-    let answer = answered("sample-invalid", handlers).await.unwrap();
+    let answer = Box::pin(answered("sample-invalid", handlers))
+        .await
+        .unwrap();
     assert!(
         answer.starts_with("error -32602: invalid sampling request"),
         "{answer}"
@@ -254,7 +264,7 @@ async fn a_sampling_request_the_responder_cannot_decode_is_invalid_params() {
 
 #[tokio::test]
 async fn elicitation_without_a_responder_answers_the_sdk_default() {
-    let answer = answered("elicit", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("elicit", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(answer, "error -32600: Elicitation not supported");
@@ -266,14 +276,14 @@ async fn elicitation_goes_to_the_configured_responder() {
         sampling: None,
         elicitation: Some(Arc::new(TestElicitation)),
     };
-    let answer = answered("elicit", handlers).await.unwrap();
+    let answer = Box::pin(answered("elicit", handlers)).await.unwrap();
     assert!(answer.contains("\"action\":\"accept\""), "{answer}");
     assert!(answer.contains("who are you?"), "{answer}");
 }
 
 #[tokio::test]
 async fn a_ping_answers_an_empty_result() {
-    let answer = answered("ping", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("ping", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(answer, "{}");
@@ -281,7 +291,7 @@ async fn a_ping_answers_an_empty_result() {
 
 #[tokio::test]
 async fn a_roots_request_answers_the_sdk_default() {
-    let answer = answered("roots", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("roots", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(answer, "error -32600: List roots not supported");
@@ -293,12 +303,12 @@ async fn the_client_capabilities_name_the_configured_callbacks_only() {
         sampling: Some(Arc::new(TestSampling)),
         elicitation: Some(Arc::new(TestElicitation)),
     };
-    let default = answered("capabilities", ServerRequestHandlers::default())
+    let default = Box::pin(answered("capabilities", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert!(!default.contains("sampling"), "{default}");
     assert!(!default.contains("elicitation"), "{default}");
-    let configured = answered("capabilities", handlers).await.unwrap();
+    let configured = Box::pin(answered("capabilities", handlers)).await.unwrap();
     let capabilities: ClientCapabilities = serde_json::from_str(&configured).unwrap();
     assert!(capabilities.sampling.is_some(), "{configured}");
     let elicitation = capabilities
@@ -310,7 +320,7 @@ async fn the_client_capabilities_name_the_configured_callbacks_only() {
 
 #[tokio::test]
 async fn the_default_handshake_sends_the_sdk_client_info() {
-    let answer = answered("client-info", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("client-info", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert!(answer.contains(r#""name":"mcp""#), "{answer}");
@@ -319,15 +329,18 @@ async fn the_default_handshake_sends_the_sdk_client_info() {
 
 #[tokio::test]
 async fn a_request_after_initialize_carries_the_negotiated_protocol_version() {
-    let version = answered("protocol-version", ServerRequestHandlers::default())
-        .await
-        .unwrap();
+    let version = Box::pin(answered(
+        "protocol-version",
+        ServerRequestHandlers::default(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(version, SdkProtocolVersion::LATEST_WITH_INITIALIZE.as_str());
 }
 
 #[tokio::test]
 async fn a_logging_notification_does_not_disturb_the_call() {
-    let answer = answered("log", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("log", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(answer, "logged");
@@ -335,7 +348,7 @@ async fn a_logging_notification_does_not_disturb_the_call() {
 
 #[tokio::test]
 async fn a_method_the_handler_does_not_know_is_method_not_found() {
-    let answer = answered("custom", ServerRequestHandlers::default())
+    let answer = Box::pin(answered("custom", ServerRequestHandlers::default()))
         .await
         .unwrap();
     assert_eq!(
@@ -347,10 +360,14 @@ async fn a_method_the_handler_does_not_know_is_method_not_found() {
 #[tokio::test]
 async fn a_tool_result_that_matches_its_output_schema_is_complete() {
     let server = TestServer::standard().with_output_schemas();
-    let (result, listings) =
-        called_on(server, "schema-ok", RAISE, ServerRequestHandlers::default())
-            .await
-            .unwrap();
+    let (result, listings) = Box::pin(called_on(
+        server,
+        "schema-ok",
+        RAISE,
+        ServerRequestHandlers::default(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(text_of(&result), "structured");
     // the session had not seen the tool's schema, so it listed the tools once before validating
     assert_eq!(listings, 1);
@@ -359,9 +376,14 @@ async fn a_tool_result_that_matches_its_output_schema_is_complete() {
 #[tokio::test]
 async fn a_listed_tool_without_an_output_schema_skips_validation() {
     let server = TestServer::standard().with_output_schemas();
-    let (result, listings) = called_on(server, "plain", RAISE, ServerRequestHandlers::default())
-        .await
-        .unwrap();
+    let (result, listings) = Box::pin(called_on(
+        server,
+        "plain",
+        RAISE,
+        ServerRequestHandlers::default(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(text_of(&result), "plain");
     assert_eq!(listings, 1);
 }
@@ -369,9 +391,14 @@ async fn a_listed_tool_without_an_output_schema_skips_validation() {
 #[tokio::test]
 async fn a_tool_the_listing_does_not_name_is_called_without_validation() {
     let server = TestServer::standard().with_output_schemas();
-    let (result, listings) = called_on(server, "echo", RAISE, ServerRequestHandlers::default())
-        .await
-        .unwrap();
+    let (result, listings) = Box::pin(called_on(
+        server,
+        "echo",
+        RAISE,
+        ServerRequestHandlers::default(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(text_of(&result), "echoed");
     assert_eq!(listings, 1);
 }
@@ -379,12 +406,12 @@ async fn a_tool_the_listing_does_not_name_is_called_without_validation() {
 #[tokio::test]
 async fn a_result_missing_the_structured_content_its_schema_needs_is_a_runtime_failure() {
     let server = TestServer::standard().with_output_schemas();
-    let error = called_on(
+    let error = Box::pin(called_on(
         server,
         "schema-missing",
         RAISE,
         ServerRequestHandlers::default(),
-    )
+    ))
     .await
     .expect_err("the tool declares an output schema");
     assert!(matches!(error, SessionError::Runtime(_)), "{error}");
@@ -393,12 +420,12 @@ async fn a_result_missing_the_structured_content_its_schema_needs_is_a_runtime_f
 #[tokio::test]
 async fn structured_content_that_breaks_the_output_schema_is_a_runtime_failure() {
     let server = TestServer::standard().with_output_schemas();
-    let error = called_on(
+    let error = Box::pin(called_on(
         server,
         "schema-invalid",
         RAISE,
         ServerRequestHandlers::default(),
-    )
+    ))
     .await
     .expect_err("the structured content is not an integer");
     assert!(matches!(error, SessionError::Runtime(_)), "{error}");
@@ -407,12 +434,12 @@ async fn structured_content_that_breaks_the_output_schema_is_a_runtime_failure()
 #[tokio::test]
 async fn an_output_schema_that_does_not_compile_is_a_runtime_failure() {
     let server = TestServer::standard().with_output_schemas();
-    let error = called_on(
+    let error = Box::pin(called_on(
         server,
         "schema-broken",
         RAISE,
         ServerRequestHandlers::default(),
-    )
+    ))
     .await
     .expect_err("the declared schema is not a valid JSON Schema");
     assert!(matches!(error, SessionError::Runtime(_)), "{error}");
@@ -421,12 +448,12 @@ async fn an_output_schema_that_does_not_compile_is_a_runtime_failure() {
 #[tokio::test]
 async fn an_error_result_with_an_output_schema_skips_validation() {
     let server = TestServer::standard().with_output_schemas();
-    let (result, listings) = called_on(
+    let (result, listings) = Box::pin(called_on(
         server,
         "schema-error",
         CallToolOptions::default(),
         ServerRequestHandlers::default(),
-    )
+    ))
     .await
     .unwrap();
     let ToolCallResult::Complete(complete) = &result else {
@@ -441,14 +468,14 @@ async fn an_error_result_with_an_output_schema_skips_validation() {
 async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
     let server = TestServer::standard().with_output_schemas();
     let listings = Arc::clone(&server.listings);
-    let server = serve_http(server).await;
+    let served = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &server.url,
+        &served.url,
         support::CALL_TIMEOUT,
     );
-    let result = run_with_session(
+    let result = Box::pin(run_with_session(
         &mut client,
         async |session| {
             let first = <SdkSession as McpSession>::call_tool(session, call("schema-ok"))
@@ -461,7 +488,7 @@ async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
             Ok::<ToolCallResult, SessionError<SdkError>>(second)
         },
         false,
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(text_of(&result), "structured");
@@ -472,14 +499,14 @@ async fn a_session_lists_the_tools_once_for_its_cached_output_schemas() {
 async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
     let server = TestServer::standard().with_output_schemas();
     let listings = Arc::clone(&server.listings);
-    let server = serve_http(server).await;
+    let served = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &server.url,
+        &served.url,
         support::CALL_TIMEOUT,
     );
-    let result = run_with_session(
+    let result = Box::pin(run_with_session(
         &mut client,
         async |session| {
             let first = <SdkSession as McpSession>::list_tools(session, None)
@@ -494,7 +521,7 @@ async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
             <SdkSession as McpSession>::call_tool(session, call("schema-ok")).await
         },
         false,
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(text_of(&result), "structured");
@@ -506,14 +533,14 @@ async fn a_cursored_listing_keeps_the_output_schemas_of_other_pages() {
 async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
     let server = TestServer::standard().with_output_schemas().with_one_page();
     let listings = Arc::clone(&server.listings);
-    let server = serve_http(server).await;
+    let served = serve_http(server).await;
     let mut client = support::client_on(
         Arc::new(support::runtime()),
         support::settings(TransportType::Http),
-        &server.url,
+        &served.url,
         support::CALL_TIMEOUT,
     );
-    let result = run_with_session(
+    let result = Box::pin(run_with_session(
         &mut client,
         async |session| {
             let first = <SdkSession as McpSession>::list_tools(session, None)
@@ -528,7 +555,7 @@ async fn a_complete_listing_drops_the_output_schemas_it_no_longer_carries() {
             <SdkSession as McpSession>::call_tool(session, call("schema-ok")).await
         },
         false,
-    )
+    ))
     .await
     .unwrap();
     assert_eq!(text_of(&result), "structured");

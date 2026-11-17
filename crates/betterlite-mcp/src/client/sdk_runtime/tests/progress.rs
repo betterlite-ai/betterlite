@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use rmcp::model::{NumberOrString, ProgressNotificationParam, ProgressToken};
 use tokio::sync::mpsc::Receiver;
+use tokio::time::timeout;
 
 use crate::client::sdk_runtime::handler::progress::ProgressRegistry;
 
@@ -17,7 +18,7 @@ fn update(token: &ProgressToken, step: f64) -> ProgressNotificationParam {
 async fn next(
     receiver: &mut Receiver<ProgressNotificationParam>,
 ) -> Option<ProgressNotificationParam> {
-    tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+    timeout(Duration::from_secs(5), receiver.recv())
         .await
         .expect("the progress update arrived")
 }
@@ -43,8 +44,8 @@ async fn updates_that_arrive_before_their_subscription_are_kept_per_token() {
         "the second token's update stays queued for its own subscriber"
     );
     let (mut later, _later_subscription) = registry.subscribe(&second);
-    let received = next(&mut later).await.expect("the second token's update");
-    assert_eq!(received.progress.to_bits(), 2.0_f64.to_bits());
+    let second_update = next(&mut later).await.expect("the second token's update");
+    assert_eq!(second_update.progress.to_bits(), 2.0_f64.to_bits());
 }
 
 #[tokio::test]

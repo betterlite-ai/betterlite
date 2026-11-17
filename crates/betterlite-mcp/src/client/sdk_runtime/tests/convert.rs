@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use rmcp::ServiceError;
 use rmcp::model::{ErrorCode, ErrorData, ProtocolVersion};
-use serde_json::json;
 
 use crate::client::cleanup::failure::{ErrorContext, SDK_READ_TIMEOUT_CODE};
 use crate::client::sdk_runtime::convert::{protocol_failure, protocol_version, request_error};
@@ -25,11 +24,11 @@ fn a_read_timeout_is_the_only_failure_with_the_timeout_context() {
     let reused_code = SdkError::JsonRpc(ErrorData::new(
         ErrorCode(SDK_READ_TIMEOUT_CODE),
         "the cache is empty",
-        Some(json!("not the marker")),
+        serde_json::to_value("not the marker").ok(),
     ));
-    let failure = protocol_failure(&reused_code).expect("a server error is a JSON-RPC failure");
+    let reused = protocol_failure(&reused_code).expect("a server error is a JSON-RPC failure");
     assert!(
-        failure.context.is_none(),
+        reused.context.is_none(),
         "the code alone does not make a timeout"
     );
 
@@ -38,9 +37,9 @@ fn a_read_timeout_is_the_only_failure_with_the_timeout_context() {
         "the cache is empty",
         None,
     ));
-    let failure = protocol_failure(&without_marker).expect("a server error is a JSON-RPC failure");
+    let unmarked = protocol_failure(&without_marker).expect("a server error is a JSON-RPC failure");
     assert!(
-        failure.context.is_none(),
+        unmarked.context.is_none(),
         "a missing marker does not make a timeout"
     );
 }
@@ -49,7 +48,7 @@ fn a_read_timeout_is_the_only_failure_with_the_timeout_context() {
 fn a_closed_connection_is_the_sdk_connection_closed_failure() {
     let closed = request_error("tools/call", ServiceError::TransportClosed);
     let failure = protocol_failure(&closed).expect("a closed connection is a JSON-RPC failure");
-    assert_eq!(failure.code, -32_000);
+    assert_eq!(failure.code, -32_000_i32);
     assert_eq!(failure.message, "Connection closed");
     assert!(failure.context.is_none());
 }

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
+use std::io;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -131,17 +132,17 @@ impl RecordingHost {
 }
 
 impl ProgressHost for RecordingHost {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn report(
         &self,
         progress: f64,
         total: Option<f64>,
-    ) -> impl Future<Output = Result<(), std::io::Error>> + Send {
+    ) -> impl Future<Output = Result<(), io::Error>> + Send {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((progress, total));
-        std::future::ready(Ok(()))
+        ready(Ok(()))
     }
 }

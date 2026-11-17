@@ -10,7 +10,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use betterlite_prompts::arguments::json::{Json, Object};
 use futures_util::stream::{self, StreamExt as _};
@@ -95,19 +95,19 @@ impl LegacyServer {
         drop(replaced);
         drop(outbox);
         let opening = stream::once(async { Ok::<_, Infallible>(ENDPOINT_EVENT.to_owned()) });
-        let rest = stream::unfold(receiver, |mut receiver| async move {
-            let chunk = receiver.recv().await?;
-            Some((Ok::<_, Infallible>(chunk), receiver))
+        let rest = stream::unfold(receiver, |mut incoming| async move {
+            let chunk = incoming.recv().await?;
+            Some((Ok::<_, Infallible>(chunk), incoming))
         });
         Body::from_stream(opening.chain(rest))
     }
 
     fn push(&self, frame: String) {
         let outbox = self.outbox.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(sender) = outbox.as_ref() else {
-            return;
-        };
-        drop(sender.try_send(frame));
+        if let Some(sender) = outbox.as_ref() {
+            drop(sender.try_send(frame));
+        }
+        drop(outbox);
     }
 }
 
@@ -123,13 +123,13 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
     let Ok(request) = serde_json::from_slice::<WireRequest>(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let Some(id) = request.id.as_deref() else {
+    let Some(raw_id) = request.id.as_deref() else {
         if request.method == "notifications/initialized" {
             server.initialized.store(true, Ordering::SeqCst);
         }
         return StatusCode::ACCEPTED.into_response();
     };
-    let id = id.get().to_owned();
+    let id = raw_id.get().to_owned();
     let answer = match request.method.as_str() {
         "initialize" => Some(if server.reject_initialize.load(Ordering::SeqCst) {
             failure_reply(&id, "unsupported protocol")
@@ -140,10 +140,10 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
         "tools/call" => call_reply(&id, request.params.as_deref()).await,
         other => Some(failure_reply(&id, &format!("unknown method {other}"))),
     };
-    let frame = match answer {
-        Some(answer) => format!("data: {answer}\n\n"),
-        None => BAD_EVENT.to_owned(),
-    };
+    let frame = answer.map_or_else(
+        || BAD_EVENT.to_owned(),
+        |reply| format!("data: {reply}\n\n"),
+    );
     server.push(frame);
     StatusCode::ACCEPTED.into_response()
 }
@@ -204,11 +204,11 @@ fn echo_reply(id: &str, params: Option<&RawValue>) -> String {
         || "echoed".to_owned(),
         |raw| format!("echoed {}", raw.get()),
     );
-    let Ok(text) = serde_json::to_string(&text) else {
+    let Ok(encoded) = serde_json::to_string(&text) else {
         return failure_reply(id, "the echo text is not encodable");
     };
     format!(
-        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":{text}}}]}}}}"#
+        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":{encoded}}}]}}}}"#
     )
 }
 
@@ -251,13 +251,27 @@ async fn serve_legacy_with_version(protocol_version: &str) -> LegacySseServer {
 }
 
 fn call(name: &str) -> CallRequest {
-    let name = name.to_owned();
+    let owned = name.to_owned();
     let arguments = None;
-    CallRequest { name, arguments }
+    CallRequest {
+        name: owned,
+        arguments,
+    }
 }
 
 fn tool_names(tools: Vec<McpTool>) -> Vec<String> {
     tools.into_iter().map(|tool| tool.name).collect()
+}
+
+// The legacy echo tool reports the request line back in one text block
+fn echo_text(result: &ToolCallResult) -> &str {
+    let ToolCallResult::Complete(complete) = result else {
+        panic!("expected a complete tool result");
+    };
+    let [ContentBlock::Text(text)] = complete.content.as_slice() else {
+        panic!("unexpected content blocks");
+    };
+    &text.text
 }
 
 #[tokio::test]
@@ -282,24 +296,17 @@ async fn a_legacy_sse_session_lists_every_tool_page_and_calls_a_tool() {
         name: "echo".to_owned(),
         arguments: Some(arguments),
     };
-    let result = call_tool(
+    let result = Box::pin(call_tool(
         &mut client,
         &request,
         None::<&RecordingHost>,
         CallToolOptions::default(),
-    )
+    ))
     .await
     .unwrap();
-    let ToolCallResult::Complete(complete) = result else {
-        panic!("expected a complete tool result");
-    };
-    match complete.content.as_slice() {
-        [ContentBlock::Text(text)] => {
-            assert!(text.text.starts_with("echoed"), "{}", text.text);
-            assert!(text.text.contains(r#""city":"Paris""#), "{}", text.text);
-        }
-        other => panic!("unexpected content blocks: {other:?}"),
-    }
+    let text = echo_text(&result);
+    assert!(text.starts_with("echoed"), "{text}");
+    assert!(text.contains(r#""city":"Paris""#), "{text}");
 }
 
 #[tokio::test]
@@ -330,11 +337,10 @@ async fn a_stream_failure_in_one_session_leaves_another_sessions_error_alone() {
     let error_call = call_tool(&mut plain_client, &rpc_error, None::<&RecordingHost>, RAISE);
     let (streamed, answered) = tokio::join!(stream_call, error_call);
     assert!(matches!(streamed.unwrap_err(), SessionError::Stream(_)));
-    let failure = match answered.unwrap_err() {
-        SessionError::Protocol(failure) => failure,
-        other => panic!("expected a protocol failure, got {other}"),
+    let SessionError::Protocol(failure) = answered.unwrap_err() else {
+        panic!("expected a protocol failure");
     };
-    assert_eq!(failure.code, -32_602);
+    assert_eq!(failure.code, -32_602_i32);
     assert_eq!(failure.message, "bad arguments");
 }
 
@@ -347,20 +353,18 @@ async fn a_broken_legacy_sse_stream_fails_the_pending_call() {
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let error = call_tool(
+    let error = Box::pin(call_tool(
         &mut client,
         &call("stream-fail"),
         None::<&RecordingHost>,
         RAISE,
-    )
+    ))
     .await
     .unwrap_err();
-    match &error {
-        SessionError::Stream(failure) => {
-            assert_eq!(failure.kind(), StreamFailureKind::ValueError);
-        }
-        other => panic!("expected a stream failure, got {other}"),
-    }
+    let SessionError::Stream(failure) = &error else {
+        panic!("expected a stream failure, got {error}");
+    };
+    assert_eq!(failure.kind(), StreamFailureKind::ValueError);
 }
 
 #[tokio::test]
@@ -379,7 +383,7 @@ async fn an_initialize_error_keeps_its_json_rpc_code() {
     let SessionError::Protocol(failure) = error else {
         panic!("expected a protocol failure, got {error}");
     };
-    assert_eq!(failure.code, -32_602);
+    assert_eq!(failure.code, -32_602_i32);
     assert_eq!(failure.message, "unsupported protocol");
 }
 
@@ -443,12 +447,12 @@ async fn an_input_required_result_is_an_error_unless_the_caller_allows_it() {
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let error = call_tool(
+    let error = Box::pin(call_tool(
         &mut refused,
         &call("input-required"),
         None::<&RecordingHost>,
         RAISE,
-    )
+    ))
     .await
     .unwrap_err();
     assert!(matches!(error, SessionError::Runtime(_)), "{error}");
@@ -459,12 +463,12 @@ async fn an_input_required_result_is_an_error_unless_the_caller_allows_it() {
         &server.url,
         support::CALL_TIMEOUT,
     );
-    let result = call_tool(
+    let result = Box::pin(call_tool(
         &mut allowed,
         &call("input-required"),
         None::<&RecordingHost>,
         ALLOW_INPUT,
-    )
+    ))
     .await
     .unwrap();
     let ToolCallResult::InputRequired(required) = result else {

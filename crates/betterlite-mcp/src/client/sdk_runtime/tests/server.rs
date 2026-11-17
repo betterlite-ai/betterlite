@@ -1,20 +1,21 @@
 use std::borrow::Cow;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use http::request::Parts;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData,
-    Implementation, JsonObject, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam,
-    ProtocolVersion, ServerCapabilities, ServerConfig, ServerNotification, ServerRequest, Tool,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitationAction,
+    ErrorData, Implementation, JsonObject, ListToolsResult, PaginatedRequestParams,
+    ProgressNotificationParam, ProtocolVersion, ServerCapabilities, ServerConfig,
+    ServerNotification, ServerRequest, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{RoleServer, ServerHandler, ServiceError};
-use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
@@ -30,6 +31,15 @@ use crate::sampling_convert::response::{
 use super::support;
 
 pub(crate) const INSTRUCTIONS: &str = "the test server's instructions";
+
+const SAMPLING_REQUEST: &str = r#"{"method":"sampling/createMessage","params":{"messages":[{"role":"user","content":{"type":"text","text":"hello"}}],"maxTokens":16}}"#;
+const INVALID_SAMPLING_REQUEST: &str = r#"{"method":"sampling/createMessage","params":{"messages":[{"role":"user","content":{"type":"text","text":"hello"}}],"maxTokens":16,"metadata":42}}"#;
+const ELICITATION_REQUEST: &str = r#"{"method":"elicitation/create","params":{"mode":"form","message":"who are you?","requestedSchema":{"type":"object","properties":{}}}}"#;
+const PING_REQUEST: &str = r#"{"method":"ping"}"#;
+const ROOTS_REQUEST: &str = r#"{"method":"roots/list"}"#;
+const CUSTOM_REQUEST: &str = r#"{"method":"not/a-real-method","params":{}}"#;
+const LOG_NOTIFICATION: &str =
+    r#"{"method":"notifications/message","params":{"level":"info","data":"a log line"}}"#;
 
 // One handler drives every transport test: tools pick the behaviour, so a case reads from the tool name alone
 #[derive(Clone)]
@@ -97,47 +107,24 @@ impl ServerHandler for TestServer {
         Cow::Owned(self.supported.clone())
     }
 
-    async fn list_tools(
+    fn list_tools(
         &self,
         request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
+    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> {
         // The SDK stamps a progress token on every request, listings included, so its absence is the framing bug
         if context.meta.get_progress_token().is_none() {
-            return Err(ErrorData::invalid_params("missing progress token", None));
-        }
-        let previous = self.listings.fetch_add(1, Ordering::SeqCst);
-        let cursor = request.and_then(|params| params.cursor);
-        if self.one_page {
-            let mut tools = vec![
-                Tool::new("alpha", "the first tool", JsonObject::new()),
-                Tool::new("beta", "the second tool", JsonObject::new()),
-            ];
-            if self.schemas && previous == 0 {
-                tools.extend(schema_tools());
-            }
-            return Ok(ListToolsResult::with_all_items(tools));
-        }
-        let (mut tools, next) = match cursor.as_deref() {
-            None => (
-                vec![
-                    Tool::new("alpha", "the first tool", JsonObject::new()),
-                    Tool::new("beta", "the second tool", JsonObject::new()),
-                ],
-                Some("page-2".to_owned()),
-            ),
-            Some("page-2") => (
-                vec![Tool::new("gamma", "the third tool", JsonObject::new())],
+            return ready(Err(ErrorData::invalid_params(
+                "missing progress token",
                 None,
-            ),
-            Some(_) => (Vec::new(), None),
-        };
-        if self.schemas && cursor.is_none() {
-            tools.extend(schema_tools());
+            )));
         }
-        let mut result = ListToolsResult::with_all_items(tools);
-        result.next_cursor = next;
-        Ok(result)
+        let listing = if self.one_page {
+            one_page_listing(self)
+        } else {
+            paged_listing(self, request.as_ref())
+        };
+        ready(Ok(listing))
     }
 
     async fn call_tool(
@@ -145,161 +132,172 @@ impl ServerHandler for TestServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let outcome = match request.name.as_ref() {
-            "echo" => CallToolResult::success(vec![ContentBlock::text("echoed")]),
-            "fail" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
-            "rpc-error" => return Err(ErrorData::invalid_params("bad arguments", None)),
-            "plain" => CallToolResult::success(vec![ContentBlock::text("plain")]),
-            "schema-ok" => {
-                let mut result = CallToolResult::success(vec![ContentBlock::text("structured")]);
-                result.structured_content = Some(json!({"answer": 42}));
-                result
-            }
-            "schema-missing" => CallToolResult::success(vec![ContentBlock::text("unstructured")]),
-            "schema-invalid" => {
-                let mut result = CallToolResult::success(vec![ContentBlock::text("wrong")]);
-                result.structured_content = Some(json!({"answer": "no"}));
-                result
-            }
-            "schema-error" => CallToolResult::error(vec![ContentBlock::text("the tool failed")]),
-            "schema-broken" => {
-                let mut result = CallToolResult::success(vec![ContentBlock::text("broken")]);
-                result.structured_content = Some(json!({"answer": 42}));
-                result
-            }
-            "progress" => {
-                let token = context
-                    .meta
-                    .get_progress_token()
-                    .ok_or_else(|| ErrorData::invalid_params("missing progress token", None))?;
-                for step in [25.0_f64, 75.0_f64] {
-                    context
-                        .peer
-                        .notify_progress(
-                            ProgressNotificationParam::new(token.clone(), step)
-                                .with_total(100.0)
-                                .with_message("working"),
-                        )
-                        .await
-                        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                }
-                CallToolResult::success(vec![ContentBlock::text("progressed")])
-            }
-            "slow" => {
-                sleep(support::CALL_TIMEOUT.saturating_mul(6)).await;
-                CallToolResult::success(vec![ContentBlock::text("too late")])
-            }
-            "sample" => {
-                let request: ServerRequest = serde_json::from_value(json!({
-                    "method": "sampling/createMessage",
-                    "params": {
-                        "messages": [{"role": "user", "content": {"type": "text", "text": "hello"}}],
-                        "maxTokens": 16
-                    }
-                }))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            "sample-invalid" => {
-                let request: ServerRequest = serde_json::from_value(json!({
-                    "method": "sampling/createMessage",
-                    "params": {
-                        "messages": [{"role": "user", "content": {"type": "text", "text": "hello"}}],
-                        "maxTokens": 16,
-                        "metadata": 42
-                    }
-                }))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            "elicit" => {
-                let request: ServerRequest = serde_json::from_value(json!({
-                    "method": "elicitation/create",
-                    "params": {
-                        "mode": "form",
-                        "message": "who are you?",
-                        "requestedSchema": {"type": "object", "properties": {}}
-                    }
-                }))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            "ping" => {
-                let request: ServerRequest = serde_json::from_value(json!({"method": "ping"}))
-                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            "roots" => {
-                let request: ServerRequest =
-                    serde_json::from_value(json!({"method": "roots/list"}))
-                        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            "protocol-version" => {
-                let version = context
-                    .extensions
-                    .get::<http::request::Parts>()
-                    .and_then(|parts| parts.headers.get("mcp-protocol-version"))
-                    .and_then(|value| value.to_str().ok())
-                    .unwrap_or("missing");
-                CallToolResult::success(vec![ContentBlock::text(version)])
-            }
-            "capabilities" => {
-                let text = context.peer.peer_info().map_or_else(
-                    || "no peer info".to_owned(),
-                    |info| serde_json::to_string(&info.capabilities).unwrap_or_default(),
-                );
-                CallToolResult::success(vec![ContentBlock::text(text)])
-            }
-            "client-info" => {
-                let text = context.peer.peer_info().map_or_else(
-                    || "no peer info".to_owned(),
-                    |info| serde_json::to_string(&info.client_info).unwrap_or_default(),
-                );
-                CallToolResult::success(vec![ContentBlock::text(text)])
-            }
-            "log" => {
-                let notification: ServerNotification = serde_json::from_value(json!({
-                    "method": "notifications/message",
-                    "params": {"level": "info", "data": "a log line"}
-                }))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                context
-                    .peer
-                    .send_notification(notification)
-                    .await
-                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text("logged")])
-            }
-            "custom" => {
-                let request: ServerRequest = serde_json::from_value(json!({
-                    "method": "not/a-real-method",
-                    "params": {}
-                }))
-                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-                CallToolResult::success(vec![ContentBlock::text(
-                    peer_answer(&context, request).await,
-                )])
-            }
-            other => {
-                return Err(ErrorData::invalid_params(
-                    format!("unknown tool {other}"),
-                    None,
-                ));
-            }
-        };
+        let outcome = tool_outcome(request.name.as_ref(), &context).await?;
         Ok(CallToolResponse::from(outcome))
     }
+}
+
+fn one_page_listing(server: &TestServer) -> ListToolsResult {
+    let previous = server.listings.fetch_add(1, Ordering::SeqCst);
+    let mut tools = vec![
+        Tool::new("alpha", "the first tool", JsonObject::new()),
+        Tool::new("beta", "the second tool", JsonObject::new()),
+    ];
+    if server.schemas && previous == 0 {
+        tools.extend(schema_tools());
+    }
+    ListToolsResult::with_all_items(tools)
+}
+
+fn paged_listing(server: &TestServer, request: Option<&PaginatedRequestParams>) -> ListToolsResult {
+    server.listings.fetch_add(1, Ordering::SeqCst);
+    let cursor = request.and_then(|params| params.cursor.as_deref());
+    let (mut tools, next) = match cursor {
+        None => (
+            vec![
+                Tool::new("alpha", "the first tool", JsonObject::new()),
+                Tool::new("beta", "the second tool", JsonObject::new()),
+            ],
+            Some("page-2".to_owned()),
+        ),
+        Some("page-2") => (
+            vec![Tool::new("gamma", "the third tool", JsonObject::new())],
+            None,
+        ),
+        Some(_) => (Vec::new(), None),
+    };
+    if server.schemas && cursor.is_none() {
+        tools.extend(schema_tools());
+    }
+    let mut result = ListToolsResult::with_all_items(tools);
+    result.next_cursor = next;
+    result
+}
+
+async fn tool_outcome(
+    name: &str,
+    context: &RequestContext<RoleServer>,
+) -> Result<CallToolResult, ErrorData> {
+    if let Some(result) = fixed_result(name) {
+        return Ok(result);
+    }
+    match name {
+        "rpc-error" => Err(ErrorData::invalid_params("bad arguments", None)),
+        "progress" => progress_result(context).await,
+        "slow" => Ok(slow_result().await),
+        "log" => logged_result(context).await,
+        "protocol-version" => Ok(version_result(context)),
+        "capabilities" => Ok(peer_capabilities(context)),
+        "client-info" => Ok(peer_client_info(context)),
+        "sample" => ask_peer(SAMPLING_REQUEST, context).await,
+        "sample-invalid" => ask_peer(INVALID_SAMPLING_REQUEST, context).await,
+        "elicit" => ask_peer(ELICITATION_REQUEST, context).await,
+        "ping" => ask_peer(PING_REQUEST, context).await,
+        "roots" => ask_peer(ROOTS_REQUEST, context).await,
+        "custom" => ask_peer(CUSTOM_REQUEST, context).await,
+        other => Err(ErrorData::invalid_params(
+            format!("unknown tool {other}"),
+            None,
+        )),
+    }
+}
+
+fn fixed_result(name: &str) -> Option<CallToolResult> {
+    let result = match name {
+        "echo" => CallToolResult::success(vec![ContentBlock::text("echoed")]),
+        "fail" | "schema-error" => {
+            CallToolResult::error(vec![ContentBlock::text("the tool failed")])
+        }
+        "plain" => CallToolResult::success(vec![ContentBlock::text("plain")]),
+        "schema-missing" => CallToolResult::success(vec![ContentBlock::text("unstructured")]),
+        "schema-ok" => structured_result("structured", r#"{"answer": 42}"#),
+        "schema-invalid" => structured_result("wrong", r#"{"answer": "no"}"#),
+        "schema-broken" => structured_result("broken", r#"{"answer": 42}"#),
+        _ => return None,
+    };
+    Some(result)
+}
+
+fn structured_result(text: &str, content: &str) -> CallToolResult {
+    let mut result = CallToolResult::success(vec![ContentBlock::text(text)]);
+    result.structured_content = serde_json::from_str(content).ok();
+    result
+}
+
+async fn progress_result(
+    context: &RequestContext<RoleServer>,
+) -> Result<CallToolResult, ErrorData> {
+    let token = context
+        .meta
+        .get_progress_token()
+        .ok_or_else(|| ErrorData::invalid_params("missing progress token", None))?;
+    for step in [25.0_f64, 75.0_f64] {
+        context
+            .peer
+            .notify_progress(
+                ProgressNotificationParam::new(token.clone(), step)
+                    .with_total(100.0)
+                    .with_message("working"),
+            )
+            .await
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    }
+    Ok(CallToolResult::success(vec![ContentBlock::text(
+        "progressed",
+    )]))
+}
+
+async fn slow_result() -> CallToolResult {
+    sleep(support::CALL_TIMEOUT.saturating_mul(6)).await;
+    CallToolResult::success(vec![ContentBlock::text("too late")])
+}
+
+async fn logged_result(context: &RequestContext<RoleServer>) -> Result<CallToolResult, ErrorData> {
+    let notification: ServerNotification = serde_json::from_str(LOG_NOTIFICATION)
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    context
+        .peer
+        .send_notification(notification)
+        .await
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    Ok(CallToolResult::success(vec![ContentBlock::text("logged")]))
+}
+
+fn version_result(context: &RequestContext<RoleServer>) -> CallToolResult {
+    let version = context
+        .extensions
+        .get::<Parts>()
+        .and_then(|parts| parts.headers.get("mcp-protocol-version"))
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing");
+    CallToolResult::success(vec![ContentBlock::text(version)])
+}
+
+fn peer_capabilities(context: &RequestContext<RoleServer>) -> CallToolResult {
+    let text = context.peer.peer_info().map_or_else(
+        || "no peer info".to_owned(),
+        |info| serde_json::to_string(&info.capabilities).unwrap_or_default(),
+    );
+    CallToolResult::success(vec![ContentBlock::text(text)])
+}
+
+fn peer_client_info(context: &RequestContext<RoleServer>) -> CallToolResult {
+    let text = context.peer.peer_info().map_or_else(
+        || "no peer info".to_owned(),
+        |info| serde_json::to_string(&info.client_info).unwrap_or_default(),
+    );
+    CallToolResult::success(vec![ContentBlock::text(text)])
+}
+
+async fn ask_peer(
+    request: &str,
+    context: &RequestContext<RoleServer>,
+) -> Result<CallToolResult, ErrorData> {
+    let request: ServerRequest = serde_json::from_str(request)
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    Ok(CallToolResult::success(vec![ContentBlock::text(
+        peer_answer(context, request).await,
+    )]))
 }
 
 fn schema_tools() -> Vec<Tool> {
@@ -310,30 +308,22 @@ fn schema_tools() -> Vec<Tool> {
             "a tool without an output schema",
             JsonObject::new(),
         ),
-        Tool::new(
-            "schema-ok",
-            "a tool with a matching output schema",
-            JsonObject::new(),
-        )
-        .with_raw_output_schema(Arc::clone(&schema)),
-        Tool::new(
+        schema_tool("schema-ok", "a tool with a matching output schema", &schema),
+        schema_tool(
             "schema-missing",
             "a tool that returns no structured content",
-            JsonObject::new(),
-        )
-        .with_raw_output_schema(Arc::clone(&schema)),
-        Tool::new(
+            &schema,
+        ),
+        schema_tool(
             "schema-invalid",
             "a tool that returns the wrong structured content",
-            JsonObject::new(),
-        )
-        .with_raw_output_schema(Arc::clone(&schema)),
-        Tool::new(
+            &schema,
+        ),
+        schema_tool(
             "schema-error",
             "a tool whose error result skips validation",
-            JsonObject::new(),
-        )
-        .with_raw_output_schema(Arc::clone(&schema)),
+            &schema,
+        ),
         Tool::new(
             "schema-broken",
             "a tool whose declared output schema is invalid",
@@ -343,17 +333,19 @@ fn schema_tools() -> Vec<Tool> {
     ]
 }
 
+fn schema_tool(name: &'static str, description: &'static str, schema: &Arc<JsonObject>) -> Tool {
+    Tool::new(name, description, JsonObject::new()).with_raw_output_schema(Arc::clone(schema))
+}
+
 fn output_schema() -> JsonObject {
-    serde_json::from_value(json!({
-        "type": "object",
-        "properties": {"answer": {"type": "integer"}},
-        "required": ["answer"]
-    }))
+    serde_json::from_str(
+        r#"{"type":"object","properties":{"answer":{"type":"integer"}},"required":["answer"]}"#,
+    )
     .expect("the test output schema is an object")
 }
 
 fn broken_output_schema() -> JsonObject {
-    serde_json::from_value(json!({"type": "not-a-json-schema-type"}))
+    serde_json::from_str(r#"{"type":"not-a-json-schema-type"}"#)
         .expect("the broken test schema is an object")
 }
 
@@ -377,7 +369,7 @@ pub(crate) struct HttpServer {
 pub(crate) async fn serve_http(server: TestServer) -> HttpServer {
     let config = StreamableHttpServerConfig::default();
     let service: StreamableHttpService<TestServer, LocalSessionManager> =
-        StreamableHttpService::new(move || Ok(server.clone()), Default::default(), config);
+        StreamableHttpService::new(move || Ok(server.clone()), Arc::default(), config);
     let router = axum::Router::new().nest_service("/mcp", service);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address: SocketAddr = listener.local_addr().unwrap();
@@ -449,9 +441,12 @@ fn accepted(request: &ElicitationRequest) -> ElicitationResult {
         }
     };
     let mut content = JsonObject::new();
-    content.insert("answer".to_owned(), json!(message));
+    content.insert(
+        "answer".to_owned(),
+        serde_json::to_value(message).unwrap_or_default(),
+    );
     ElicitationResult {
-        action: rmcp::model::ElicitationAction::Accept,
+        action: ElicitationAction::Accept,
         content: Some(content),
     }
 }
