@@ -343,6 +343,12 @@ fn overrides_adds_the_computer_use_beta() {
 }
 
 #[test]
+fn overrides_restores_the_requested_model_in_the_response() {
+    let envelope = fixture::transform_response_body("claude-sonnet-4-5", fixture::RESPONSE);
+    assert_eq!(envelope.model.as_deref(), Some("claude-sonnet-4-5"));
+}
+
+#[test]
 fn overrides_maps_without_the_fallback_model_when_response_format_is_absent() {
     let mapped = map(
         "claude-haiku-4-5",

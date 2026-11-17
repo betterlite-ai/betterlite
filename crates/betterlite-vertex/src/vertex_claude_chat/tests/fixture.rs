@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
 use betterlite_anthropic::headers::AnthropicHeaders;
@@ -9,11 +11,22 @@ use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_anthropic::params::error::ParamsError;
 use betterlite_anthropic::params::{DEFAULT_MAX_TOKENS, ParamsRequest};
 use betterlite_anthropic::request::{AnthropicRequest, BillingHeader, PreparedRequest};
+use betterlite_anthropic::response::wire::ResponseEnvelope;
+use betterlite_anthropic::response::{RawResponse, ResponseRequest};
+use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::decisions::Json;
@@ -35,6 +48,9 @@ use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::{DateTime, FixedOffset};
+use http::HeaderMap;
 use indexmap::IndexMap;
 use tokio::runtime::Builder;
 
@@ -42,6 +58,7 @@ use crate::vertex_claude_chat::PROVIDER;
 use crate::vertex_claude_chat::error::ClaudeChatError;
 use crate::vertex_claude_chat::params::map_openai_params;
 use crate::vertex_claude_chat::request::prepare;
+use crate::vertex_claude_chat::response::{TransformCall, transform_response};
 
 // Every model that has to resolve only under vertex_ai carries the provider prefix, so a request that
 // failed to force the provider would fall back to the plain map and lose the capability.
@@ -388,6 +405,98 @@ pub(crate) fn map(
         &mut session.environment(),
     ))?;
     Ok(optional)
+}
+
+const LOGGING_INIT: &str = r#"{"model":"claude-sonnet-4-5","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
+const LOGGING_NOW: &str = "2026-01-01T00:00:05+00:00";
+pub(crate) const RESPONSE: &str = r#"{"model":"claude-3-sonnet-20240229","content":[{"type":"text","text":"world"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}"#;
+
+struct NoReasoningTokens;
+
+impl ReasoningTokenCounter for NoReasoningTokens {
+    type Failure = Infallible;
+
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Self::Failure> {
+        Ok(0)
+    }
+}
+
+struct Silent;
+
+impl LogSink for Silent {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    let init = serde_json::from_str::<LoggingInit>(LOGGING_INIT).expect("logging init");
+    LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("logging state")
+}
+
+fn logging_env<'env>(redactor: &'env Redactor, sink: &'env Silent) -> PrePostEnv<'env> {
+    let now = DateTime::<FixedOffset>::parse_from_rfc3339(LOGGING_NOW).expect("clock");
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now,
+    }
+}
+
+pub(crate) fn transform_response_body(model: &str, body: &str) -> ResponseEnvelope {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
+    let sink = Silent;
+    let mut state = logging_state(&redactor);
+    let env = logging_env(&redactor, &sink);
+    let messages = messages(SIMPLE);
+    let optional_params = IndexMap::new();
+    let litellm_params = IndexMap::new();
+    let request_data = IndexMap::new();
+    let request = ResponseRequest {
+        messages: &messages,
+        optional_params: &optional_params,
+        litellm_params: &litellm_params,
+        request_data: &request_data,
+        json_mode: None,
+        now: 0,
+        disable_add_prefix_to_prompt: false,
+    };
+    let headers = HeaderMap::new();
+    let raw = RawResponse {
+        status: 200,
+        headers: &headers,
+        body: body.as_bytes(),
+    };
+    let counter = NoReasoningTokens;
+    let mut envelope = ResponseEnvelope::new(ID.to_owned());
+    transform_response(TransformCall {
+        model,
+        envelope: &mut envelope,
+        raw: &raw,
+        request: &request,
+        state: &mut state,
+        env: &env,
+        counter: &counter,
+    })
+    .expect("the response transforms");
+    envelope
 }
 
 pub(crate) struct Outcome {
