@@ -26,7 +26,7 @@ pub struct ReadSettings {
     pub service_account: Option<SecretString>,
 }
 
-// LiteLLM's `or` over the untyped litellm_params skips every false JSON value, a 0, "" or empty list included
+// LiteLLM's `or` skips a false first value (a 0, "" or empty list included) and takes the second one as given
 fn has_value(value: &Json) -> bool {
     match value {
         Json::Null => false,
@@ -46,7 +46,7 @@ fn environment_text(value: Option<&String>) -> Option<String> {
     Some(text.clone())
 }
 
-// _resolve_read_gcs_config: a nonstring deployment bucket or credential falls to the environment, never to the alias
+// _resolve_read_gcs_config: a false first name passes to the second as given, and a non-string falls to the environment
 #[must_use]
 pub fn vertex_file_read_settings(
     deployment: &ReadDeployment,
@@ -57,12 +57,7 @@ pub fn vertex_file_read_settings(
         .gcs_bucket_name
         .as_ref()
         .filter(|value| has_value(value))
-        .or_else(|| {
-            deployment
-                .bucket_name
-                .as_ref()
-                .filter(|value| has_value(value))
-        });
+        .or(deployment.bucket_name.as_ref());
     let bucket_name = match bucket {
         Some(Json::Text(name)) => Some(name.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))

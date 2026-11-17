@@ -69,6 +69,9 @@ fn deployment_bucket() {
         &environment,
     );
     assert_eq!(bucket(&empty_gcs_name), Some("bucket-b"));
+    let empty_alias =
+        vertex_file_read_settings(&deployment_of(None, text_of(""), None), None, &environment);
+    assert_eq!(bucket(&empty_alias), Some(""));
     let from_environment =
         vertex_file_read_settings(&deployment_of(None, None, None), None, &environment);
     assert_eq!(bucket(&from_environment), Some("batch-bucket"));

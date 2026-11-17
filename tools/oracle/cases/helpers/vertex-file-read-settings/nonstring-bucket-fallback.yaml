@@ -30,5 +30,9 @@ calls:
       params: {gcs_bucket_name: {}, bucket_name: alias-bucket}
       argument: null
       environment: {}
+  - vertex_file_read_settings:
+      params: {bucket_name: ""}
+      argument: null
+      environment: {GCS_BATCH_BUCKET_NAME: batch-fallback, GCS_BUCKET_NAME: general-fallback}
 env: {}
 compare: {ignore: []}
