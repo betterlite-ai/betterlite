@@ -346,7 +346,7 @@ async fn bridged(chunks: Vec<&str>, include_usage: bool) -> Vec<Result<Bytes, Ht
     };
     let mut frames = Vec::new();
     let mut pump = Pump::new(source);
-    while let Some((frame, next)) = next_frame(pump).await {
+    while let Some((frame, next)) = next_frame::<TextSource, HttpError>(pump).await {
         frames.push(frame);
         pump = next;
     }
@@ -483,13 +483,13 @@ async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
         upstream_headers: HeaderMap::new(),
         upstream_time: Duration::ZERO,
     });
-    let ChatResult::Stream(answer) =
+    let ChatResult::Stream(streamed_answer) =
         answered_result(&executor, TextCallMode::Streamed, streamed, &request)
             .expect("streamed answer")
     else {
         panic!("a text stream cannot fill a buffered answer");
     };
-    let frames: Vec<_> = answer.body.collect().await;
+    let frames: Vec<_> = streamed_answer.body.collect().await;
     assert_eq!(frames.len(), 1);
     assert_eq!(&frames[0].as_ref().expect("done")[..], b"data: [DONE]\n\n");
 }

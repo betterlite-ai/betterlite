@@ -105,7 +105,9 @@ async fn done_last() {
 async fn error_truncates() {
     let answer = result(vec![Err(StreamError::MissingChunk)]);
     let response = render(answer, &deployment(), "call", Instant::now());
-    assert!(to_bytes(response.into_body(), usize::MAX).await.is_err());
+    to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap_err();
 }
 
 async fn stream_headers() {

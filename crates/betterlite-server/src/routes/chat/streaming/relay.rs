@@ -40,6 +40,7 @@ pub(super) async fn next_frame<Source, Error>(
 ) -> Option<(Result<Bytes, Error>, Pump<Source>)>
 where
     Source: FrameSource<Error> + Send,
+    Error: Send + 'static,
 {
     loop {
         if let Some(frame) = state.pending.pop_front() {
