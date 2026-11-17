@@ -7,7 +7,6 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use super::error::StudioImageEditError;
 use super::factory::{GEMINI_IMAGE_EDIT_CONFIG, get_gemini_image_edit_config};
@@ -98,7 +97,7 @@ fn the_factory_answers_the_edit_class_for_any_model(#[case] model: &str) {
             .settings
             .gemini_api_key
             .as_ref()
-            .map(|key| key.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("env-key"),
     );
 }
@@ -188,7 +187,7 @@ fn an_image_config_string_that_is_not_json_is_a_400(#[case] params: &str) {
 
 #[test]
 fn the_edit_declares_json_transport() {
-    assert!(!MULTIPART_FORM_DATA);
+    const { assert!(!MULTIPART_FORM_DATA) };
 }
 
 #[test]
@@ -421,6 +420,35 @@ fn a_string_token_count_surfaces_the_usage_shape_error() {
         StudioImageEditError::Usage(StudioImageError::Shape { path, .. }) if path == "promptTokenCount"
     ));
     assert!(error.upstream_answer().is_none());
+}
+
+#[test]
+fn edit_token_details_that_leave_the_signed_range_are_refused() {
+    let prompt = format!(
+        r#"{{"candidates":[],"usageMetadata":{{"promptTokensDetails":[{{"modality":"TEXT","tokenCount":{}}},{{"modality":"TEXT","tokenCount":{}}}]}}}}"#,
+        i64::MAX,
+        i64::MAX
+    );
+    let error = transform_image_edit_response(&reply(&prompt)).expect_err("the counts overflow");
+    assert!(matches!(
+        error,
+        StudioImageEditError::Usage(StudioImageError::TokenOverflow {
+            field: "promptTokensDetails"
+        })
+    ));
+    let candidates = format!(
+        r#"{{"candidates":[],"usageMetadata":{{"candidatesTokensDetails":[{{"modality":"IMAGE","tokenCount":{}}},{{"modality":"IMAGE","tokenCount":{}}}]}}}}"#,
+        i64::MAX,
+        i64::MAX
+    );
+    let candidate_error =
+        transform_image_edit_response(&reply(&candidates)).expect_err("the counts overflow");
+    assert!(matches!(
+        candidate_error,
+        StudioImageEditError::Usage(StudioImageError::TokenOverflow {
+            field: "candidatesTokensDetails"
+        })
+    ));
 }
 
 #[test]

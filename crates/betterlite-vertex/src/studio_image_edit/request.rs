@@ -3,7 +3,6 @@ use std::io::SeekFrom;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_openai::api::image_contracts::records::ImageFiles;
-use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::StudioImageEditError;
@@ -55,25 +54,22 @@ fn prepare_parts(
     image: Option<&mut EditImages<'_>>,
     mime_of: &dyn Fn(&[u8]) -> &'static str,
 ) -> Result<Vec<Json>, StudioImageEditError> {
+    let Some(image) = image else {
+        return Ok(Vec::new());
+    };
+    let records = match image {
+        // LiteLLM tests a single image for truthiness, so empty bytes carry no image at all
+        EditImages::One(GeminiEditFile::Bytes([])) => Vec::new(),
+        EditImages::One(record) => vec![record],
+        // only a list's None members are skipped, while an empty member still becomes a part
+        EditImages::Many(items) => items.iter_mut().flatten().collect(),
+    };
     let mut parts = Vec::new();
-    for record in records(image) {
+    for record in records {
         let content = image_bytes(record)?;
         parts.push(image_part(&content, mime_of));
     }
     Ok(parts)
-}
-
-fn records<'borrow, 'image>(
-    image: Option<&'borrow mut EditImages<'image>>,
-) -> Vec<&'borrow mut GeminiEditFile<'image>> {
-    match image {
-        None => Vec::new(),
-        // LiteLLM tests a single image for truthiness, so empty bytes carry no image at all
-        Some(EditImages::One(GeminiEditFile::Bytes(content))) if content.is_empty() => Vec::new(),
-        Some(EditImages::One(record)) => vec![record],
-        // only a list's None members are skipped, while an empty member still becomes a part
-        Some(EditImages::Many(items)) => items.iter_mut().flatten().collect(),
-    }
 }
 
 // one image part: the MIME the injected reader answers, then the bytes LiteLLM base64-encodes
