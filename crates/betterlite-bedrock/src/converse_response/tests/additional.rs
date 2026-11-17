@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use crate::converse_response::{ReplyFieldError, transform::TransformError};
 use crate::converse_usage::reasoning::ThinkingBlock;
 
-use super::support::{Fixture, json, rendered, run, supplied, with_tier};
+use super::support::{convert, fixture, json, rendered, supplied, with_tier};
 
 pub(super) fn metrics_headers() {
     metrics_and_headers_stay_out_of_the_response();
@@ -14,23 +14,21 @@ pub(super) fn metrics_headers() {
 }
 
 fn metrics_and_headers_stay_out_of_the_response() {
-    let fixture = Fixture {
-        headers: vec![
-            (String::from("x-amzn-requestid"), String::from("req-7")),
-            (
-                String::from("x-amzn-bedrock-invocation-latency"),
-                String::from("250"),
-            ),
-        ],
-        supplied: with_tier(
-            supplied("chatcmpl-supplied", Some("fp-1")),
-            r#""priority""#,
-            r#""kept""#,
+    let mut fixture = fixture();
+    fixture.headers = vec![
+        (String::from("x-amzn-requestid"), String::from("req-7")),
+        (
+            String::from("x-amzn-bedrock-invocation-latency"),
+            String::from("250"),
         ),
-        ..Fixture::default()
-    };
+    ];
+    fixture.supplied = with_tier(
+        supplied("chatcmpl-supplied", Some("fp-1")),
+        r#""priority""#,
+        r#""kept""#,
+    );
     let body = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "metrics": {"latencyMs": 250}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     let Json::Object(fields) = rendered(run.response()) else {
         panic!("the envelope is an object");
     };
@@ -49,7 +47,7 @@ fn metrics_and_headers_stay_out_of_the_response() {
 
 fn top_level_extras_stay_out_of_the_response() {
     let body = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 2, "totalTokens": 3}, "customField": {"any": ["value", 7, null]}, "requestMetadata": {"team": "a"}}"#;
-    let run = run(&Fixture::default(), body);
+    let run = convert(&fixture(), body);
     let Json::Object(fields) = rendered(run.response()) else {
         panic!("the envelope is an object");
     };
@@ -68,15 +66,13 @@ fn top_level_extras_stay_out_of_the_response() {
 }
 
 fn a_body_without_a_message_keeps_headers_off_the_failure() {
-    let fixture = Fixture {
-        headers: vec![
-            (String::from("x-amzn-requestid"), String::from("req-9")),
-            (String::from("Retry-After"), String::from("3")),
-        ],
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.headers = vec![
+        (String::from("x-amzn-requestid"), String::from("req-9")),
+        (String::from("Retry-After"), String::from("3")),
+    ];
     let body = r#"{"metrics": {"latencyMs": 12}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert!(matches!(
         run.failure(),
         TransformError::Reply(ReplyFieldError::Missing { path: "output" })
@@ -117,7 +113,7 @@ fn thinking_tokens_come_from_the_additional_fields() {
         let body = format!(
             r#"{{"output": {{"message": {{"content": [{{"text": "done"}}]}}}}, "stopReason": "end_turn", "usage": {{"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}, "additionalModelResponseFields": {fields}}}"#
         );
-        let run = run(&Fixture::default(), &body);
+        let run = convert(&fixture(), &body);
         let usage = run.response().usage.as_ref().expect("the usage");
         assert_eq!(
             usage.completion_tokens_details.reasoning_tokens,
@@ -136,7 +132,7 @@ fn thinking_tokens_come_from_the_additional_fields() {
 
 fn tier_and_trace_are_read_when_the_members_exist() {
     let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "trace": {"guardrail": {"action": "NONE"}}, "serviceTier": {"type": "priority"}}"#;
-    let run = run(&Fixture::default(), body);
+    let run = convert(&fixture(), body);
     assert_eq!(
         run.response().trace,
         Some(json(r#"{"guardrail": {"action": "NONE"}}"#))
@@ -151,57 +147,45 @@ fn a_null_or_empty_service_tier_replaces_what_it_names() {
         r#"{"guardrail": "kept"}"#,
     );
     let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "trace": null, "serviceTier": {"type": null}}"#;
-    let run = run(
-        &Fixture {
-            supplied: kept,
-            ..Fixture::default()
-        },
-        body,
-    );
+    let mut null_tier = fixture();
+    null_tier.supplied = kept;
+    let run = convert(&null_tier, body);
     assert_eq!(run.response().trace, Some(Json::Null));
     assert_eq!(run.response().service_tier, Some(Json::Null));
 
     let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": {}}"#;
-    let run = run(
-        &Fixture {
-            supplied: with_tier(
-                supplied("chatcmpl-supplied", None),
-                r#""priority""#,
-                r#"{"guardrail": "kept"}"#,
-            ),
-            ..Fixture::default()
-        },
-        body,
+    let mut empty_tier = fixture();
+    empty_tier.supplied = with_tier(
+        supplied("chatcmpl-supplied", None),
+        r#""priority""#,
+        r#"{"guardrail": "kept"}"#,
     );
+    let run = convert(&empty_tier, body);
     assert_eq!(run.response().service_tier, Some(json(r#""priority""#)));
 }
 
 fn a_non_object_service_tier_leaves_the_existing_value() {
     let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": "priority"}"#;
-    let run = run(
-        &Fixture {
-            supplied: with_tier(
-                supplied("chatcmpl-supplied", None),
-                r#""priority""#,
-                r#"{"guardrail": "kept"}"#,
-            ),
-            ..Fixture::default()
-        },
-        body,
+    let mut fixture = fixture();
+    fixture.supplied = with_tier(
+        supplied("chatcmpl-supplied", None),
+        r#""priority""#,
+        r#"{"guardrail": "kept"}"#,
     );
+    let run = convert(&fixture, body);
     assert_eq!(run.response().service_tier, Some(json(r#""priority""#)));
     assert_eq!(run.response().trace, Some(json(r#"{"guardrail": "kept"}"#)));
 }
 
 fn an_empty_service_tier_type_is_kept() {
     let body = r#"{"output": {"message": {"content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}, "serviceTier": {"type": ""}}"#;
-    let run = run(&Fixture::default(), body);
+    let run = convert(&fixture(), body);
     assert_eq!(run.response().service_tier, Some(json(r#""""#)));
 }
 
 fn reasoning_blocks_project_content_and_thinking() {
     let body = r#"{"output": {"message": {"role": "assistant", "content": [{"reasoningContent": {"reasoningText": {"text": "hello world", "signature": "sig-1"}}}, {"text": "The answer."}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
-    let run = run(&Fixture::default(), body);
+    let run = convert(&fixture(), body);
     assert_eq!(run.message().content.as_deref(), Some("The answer."));
     assert_eq!(
         run.message().reasoning_content.as_deref(),

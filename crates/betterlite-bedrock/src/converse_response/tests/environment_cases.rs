@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use crate::converse_response::ReplyFieldError;
 use crate::converse_response::environment::{
@@ -9,7 +11,7 @@ use crate::converse_response::environment::{
 use crate::converse_response::transform::TransformError;
 use crate::request_policy::{BedrockRequestPolicy, Params, RequestValue};
 
-use super::support::{Fixture, run, run_bytes};
+use super::support::{convert, convert_bytes, fixture, json};
 
 pub(super) fn fake_stream_capability() {
     let cases: [(Option<&str>, Option<bool>, Option<bool>, bool); 11] = [
@@ -54,17 +56,15 @@ pub(super) fn malformed_json() {
 }
 
 fn an_unreadable_body_is_a_422() {
-    let fixture = Fixture {
-        headers: vec![
-            (String::from("x-amzn-requestid"), String::from("req-1")),
-            (
-                String::from("x-amzn-errortype"),
-                String::from("ValidationException"),
-            ),
-        ],
-        ..Fixture::default()
-    };
-    let run = run(&fixture, "{not json");
+    let mut fixture = fixture();
+    fixture.headers = vec![
+        (String::from("x-amzn-requestid"), String::from("req-1")),
+        (
+            String::from("x-amzn-errortype"),
+            String::from("ValidationException"),
+        ),
+    ];
+    let run = convert(&fixture, "{not json");
     assert_eq!(run.status(), Some(422));
     let TransformError::Conversion { error, .. } = run.failure() else {
         panic!("an unreadable body is a conversion failure");
@@ -86,11 +86,9 @@ fn an_unreadable_body_is_a_422() {
 }
 
 fn a_non_object_body_is_a_422() {
-    let fixture = Fixture {
-        headers: vec![(String::from("x-amzn-requestid"), String::from("req-2"))],
-        ..Fixture::default()
-    };
-    let run = run(&fixture, "[]");
+    let mut fixture = fixture();
+    fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-2"))];
+    let run = convert(&fixture, "[]");
     let TransformError::Conversion { error, .. } = run.failure() else {
         panic!("a list body is a conversion failure");
     };
@@ -110,23 +108,21 @@ fn a_non_object_body_is_a_422() {
 }
 
 fn run_scalar_body() -> super::support::Run {
-    let fixture = Fixture {
-        headers: Vec::new(),
-        ..Fixture::default()
-    };
-    run(&fixture, "42")
+    let mut fixture = fixture();
+    fixture.headers = Vec::new();
+    convert(&fixture, "42")
 }
 
 fn missing_output_members_keep_their_own_failure() {
-    let fixture = Fixture::default();
-    let missing_output = super::support::run(&fixture, "{}");
+    let fixture = fixture();
+    let missing_output = convert(&fixture, "{}");
     assert_eq!(missing_output.status(), None);
     assert!(matches!(
         missing_output.failure(),
         TransformError::Reply(ReplyFieldError::Missing { path: "output" })
     ));
 
-    let missing_message = super::support::run(&fixture, r#"{"output": {}}"#);
+    let missing_message = convert(&fixture, r#"{"output": {}}"#);
     assert_eq!(missing_message.status(), None);
     assert!(matches!(
         missing_message.failure(),
@@ -135,7 +131,7 @@ fn missing_output_members_keep_their_own_failure() {
         })
     ));
 
-    let not_an_output = super::support::run(
+    let not_an_output = convert(
         &fixture,
         r#"{"output": [], "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
     );
@@ -147,7 +143,7 @@ fn missing_output_members_keep_their_own_failure() {
         })
     ));
 
-    let not_a_message = super::support::run(
+    let not_a_message = convert(
         &fixture,
         r#"{"output": {"message": "just text"}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
     );
@@ -161,8 +157,8 @@ fn missing_output_members_keep_their_own_failure() {
 }
 
 fn missing_later_members_keep_their_own_failure() {
-    let fixture = Fixture::default();
-    let missing_usage = super::support::run(
+    let fixture = fixture();
+    let missing_usage = convert(
         &fixture,
         r#"{"output": {"message": {"role": "assistant", "content": []}}, "stopReason": "end_turn"}"#,
     );
@@ -172,7 +168,7 @@ fn missing_later_members_keep_their_own_failure() {
         TransformError::Reply(ReplyFieldError::Missing { path: "usage" })
     ));
 
-    let missing_stop_reason = super::support::run(
+    let missing_stop_reason = convert(
         &fixture,
         r#"{"output": {"message": {"role": "assistant", "content": []}}, "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
     );
@@ -184,10 +180,8 @@ fn missing_later_members_keep_their_own_failure() {
 }
 
 fn a_message_without_content_keeps_its_own_failure() {
-    let run = super::support::run(
-        &Fixture::default(),
-        r#"{"output": {"message": {}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
-    );
+    let body = r#"{"output": {"message": {}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
+    let run = convert(&fixture(), body);
     assert_eq!(run.status(), None);
     assert!(matches!(
         run.failure(),
@@ -198,11 +192,13 @@ fn a_message_without_content_keeps_its_own_failure() {
 }
 
 fn a_malformed_usage_keeps_its_own_failure() {
-    let run = super::support::run(
-        &Fixture::default(),
-        r#"{"output": {"message": {"content": []}}, "stopReason": "end_turn", "usage": 42}"#,
-    );
+    let body = r#"{"output": {"message": {"content": []}}, "stopReason": "end_turn", "usage": 42}"#;
+    let run = convert(&fixture(), body);
     assert_eq!(run.status(), None);
+    assert_eq!(
+        run.detail("original_response"),
+        &Json::Text(body.to_owned())
+    );
     assert!(matches!(run.failure(), TransformError::TokenUsage(_)));
 }
 
@@ -212,7 +208,7 @@ fn a_non_list_content_is_not_a_block_list() {
         r#"{"output": {"message": {"content": "just text"}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
         r#"{"output": {"message": {"content": 42}}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#,
     ] {
-        let run = super::support::run(&Fixture::default(), body);
+        let run = convert(&fixture(), body);
         assert_eq!(run.status(), None);
         assert!(matches!(
             run.failure(),
@@ -226,10 +222,7 @@ fn a_non_list_content_is_not_a_block_list() {
 
 // The conversion reads stopReason before usage, so a reply missing both names stopReason; LiteLLM reads usage first.
 fn a_reply_missing_usage_and_stop_reason_names_the_stop_reason() {
-    let run = super::support::run(
-        &Fixture::default(),
-        r#"{"output": {"message": {"content": []}}}"#,
-    );
+    let run = convert(&fixture(), r#"{"output": {"message": {"content": []}}}"#);
     assert_eq!(run.status(), None);
     assert!(matches!(
         run.failure(),
@@ -240,21 +233,19 @@ fn a_reply_missing_usage_and_stop_reason_names_the_stop_reason() {
 // LiteLLM logs httpx's replacement-character text; betterlite names the body by its byte count.
 fn an_unreadable_body_is_logged_by_its_byte_count() {
     let body: &[u8] = b"{\"output\": \"\xff\"}";
-    let run = run_bytes(&Fixture::default(), body);
+    let run = convert_bytes(&fixture(), body);
     assert_eq!(
         run.detail("original_response"),
-        &super::support::json(&format!("\"{} bytes that are not UTF-8\"", body.len()))
+        &json(&format!("\"{} bytes that are not UTF-8\"", body.len()))
     );
     assert_eq!(run.status(), Some(422));
 }
 
 // The shared BedrockError holds error headers as ASCII, so a 422 whose headers are not ASCII fails as a header error.
 fn a_422_with_non_ascii_headers_is_a_header_error() {
-    let fixture = Fixture {
-        headers: vec![(String::from("x-amzn-requestid"), String::from("req-é"))],
-        ..Fixture::default()
-    };
-    let run = run(&fixture, "{not json");
+    let mut fixture = fixture();
+    fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-é"))];
+    let run = convert(&fixture, "{not json");
     assert!(matches!(run.failure(), TransformError::Header(_)));
 }
 
@@ -320,8 +311,8 @@ fn api_key_writes_the_bearer_header(empty: &Params) {
     let untouched = validate_environment(&base, None, None, empty).expect("the headers merge");
     assert_eq!(untouched, base);
 
-    let keyed =
-        validate_environment(&base, Some("bedrock-key"), None, empty).expect("the headers merge");
+    let keyed = validate_environment(&base, Some(&SecretString::from("bedrock-key")), None, empty)
+        .expect("the headers merge");
     assert_eq!(
         keyed,
         headers(&[
@@ -332,7 +323,7 @@ fn api_key_writes_the_bearer_header(empty: &Params) {
 
     let blank = validate_environment(
         &headers(&[("Authorization", "caller-token")]),
-        Some(""),
+        Some(&SecretString::from("")),
         None,
         empty,
     )
@@ -341,7 +332,7 @@ fn api_key_writes_the_bearer_header(empty: &Params) {
 
     let lower = validate_environment(
         &headers(&[("authorization", "caller-token")]),
-        Some("bedrock-key"),
+        Some(&SecretString::from("bedrock-key")),
         None,
         empty,
     )
@@ -430,7 +421,7 @@ fn spend_and_identity_headers_follow_their_sources() {
     )]);
     let identity_headers = validate_environment(
         &headers(&[]),
-        Some("bedrock-key"),
+        Some(&SecretString::from("bedrock-key")),
         Some(&identity),
         &litellm_params,
     )
@@ -454,9 +445,13 @@ fn spend_and_identity_headers_follow_their_sources() {
             ("spend_logs_metadata", mapping(vec![("tag", text("a b"))])),
         ]),
     )]);
-    let mixed_headers =
-        validate_environment(&headers(&[]), Some("bedrock-key"), Some(&both), &mixed)
-            .expect("the headers merge");
+    let mixed_headers = validate_environment(
+        &headers(&[]),
+        Some(&SecretString::from("bedrock-key")),
+        Some(&both),
+        &mixed,
+    )
+    .expect("the headers merge");
     assert_eq!(
         mixed_headers,
         headers(&[

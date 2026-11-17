@@ -47,21 +47,19 @@ pub(super) struct Fixture {
     pub(super) counter: i64,
 }
 
-impl Default for Fixture {
-    fn default() -> Self {
-        Self {
-            model: MODEL.to_owned(),
-            messages: json(r#"[{"role": "user", "content": "hi"}]"#),
-            data: object(r#"{"model": "fixture-model"}"#),
-            json_mode: None,
-            optional: OptionalParams::default(),
-            mappings: IndexMap::new(),
-            supplied: supplied("chatcmpl-supplied", None),
-            headers: vec![(String::from("x-amzn-requestid"), String::from("req-1"))],
-            ids: Vec::new(),
-            now: instant(1_700_000_000),
-            counter: 2,
-        }
+pub(super) fn fixture() -> Fixture {
+    Fixture {
+        model: MODEL.to_owned(),
+        messages: json(r#"[{"role": "user", "content": "hi"}]"#),
+        data: object(r#"{"model": "fixture-model"}"#),
+        json_mode: None,
+        optional: OptionalParams::default(),
+        mappings: IndexMap::new(),
+        supplied: supplied("chatcmpl-supplied", None),
+        headers: vec![(String::from("x-amzn-requestid"), String::from("req-1"))],
+        ids: Vec::new(),
+        now: instant(1_700_000_000),
+        counter: 2,
     }
 }
 
@@ -131,11 +129,11 @@ impl ReasoningTokenCounter for FixedCounter {
     }
 }
 
-pub(super) fn run(fixture: &Fixture, body: &str) -> Run {
-    run_bytes(fixture, body.as_bytes())
+pub(super) fn convert(fixture: &Fixture, body: &str) -> Run {
+    convert_bytes(fixture, body.as_bytes())
 }
 
-pub(super) fn run_bytes(fixture: &Fixture, body: &[u8]) -> Run {
+pub(super) fn convert_bytes(fixture: &Fixture, body: &[u8]) -> Run {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     let init: LoggingInit = serde_json::from_str(INIT).expect("the logging fixture is valid");
     let mut state = LoggingState::new(
@@ -208,8 +206,15 @@ pub(super) fn optional_params(source: &str) -> OptionalParams {
 
 pub(super) fn supplied(id: &str, fingerprint: Option<&str>) -> ModelResponse {
     ModelResponse {
+        id: id.to_owned(),
+        created: 0,
+        model: String::from("previous-model"),
+        object: String::from("chat.completion"),
         system_fingerprint: fingerprint.map(str::to_owned),
-        ..ModelResponse::new(id.to_owned(), String::from("previous-model"))
+        choices: Vec::new(),
+        usage: None,
+        service_tier: None,
+        trace: None,
     }
 }
 

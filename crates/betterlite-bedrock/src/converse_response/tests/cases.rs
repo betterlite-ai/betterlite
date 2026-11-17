@@ -7,7 +7,8 @@ use uuid::Uuid;
 use super::additional::{additional_model_fields, metrics_headers};
 use super::environment_cases::{auth_and_metadata_headers, fake_stream_capability, malformed_json};
 use super::support::{
-    FIRST_ID, Fixture, instant, json, object, optional_params, rendered, run, supplied, with_tier,
+    FIRST_ID, convert, fixture, instant, json, object, optional_params, rendered, supplied,
+    with_tier,
 };
 use super::tools::{citation_content_alignment, tool_calls_response};
 use crate::converse_response::ReplyFieldError;
@@ -40,22 +41,18 @@ fn converse_reply_envelope() {
 }
 
 fn a_clock_before_the_epoch_keeps_its_sign() {
-    let fixture = Fixture {
-        now: instant(-5),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.now = instant(-5);
     let body = r#"{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(run.response().created, -5);
 }
 
 fn envelope_rebuilds_the_supplied_response() {
-    let fixture = Fixture {
-        supplied: supplied("chatcmpl-supplied", Some("fp-1")),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.supplied = supplied("chatcmpl-supplied", Some("fp-1"));
     let body = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "Hello!"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(rendered(run.response()), json(ENVELOPE));
     assert_eq!(run.detail("input"), &fixture.messages);
     assert_eq!(
@@ -71,29 +68,28 @@ fn envelope_rebuilds_the_supplied_response() {
 }
 
 fn envelope_treats_a_null_message_as_empty() {
-    let fixture = Fixture {
-        headers: Vec::new(),
-        now: instant(0),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.headers = Vec::new();
+    fixture.now = instant(0);
     let body = r#"{"output": {"message": null}, "stopReason": "end_turn", "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(rendered(run.response()), json(NULL_MESSAGE));
 }
 
 fn envelope_keeps_supplied_tier_and_trace() {
-    let supplied = supplied("chatcmpl-kept", None);
-    let fixture = Fixture {
-        model: String::from("requested-model"),
-        messages: json(r#"[{"role": "user", "content": "hello"}]"#),
-        data: object(r#"{"model": "requested-model", "stream": true}"#),
-        supplied: with_tier(supplied, r#""priority""#, r#"{"guardrail": "kept"}"#),
-        headers: vec![(String::from("x-amzn-requestid"), String::from("req-3"))],
-        now: instant(1_700_000_001),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.model = String::from("requested-model");
+    fixture.messages = json(r#"[{"role": "user", "content": "hello"}]"#);
+    fixture.data = object(r#"{"model": "requested-model", "stream": true}"#);
+    fixture.supplied = with_tier(
+        supplied("chatcmpl-kept", None),
+        r#""priority""#,
+        r#"{"guardrail": "kept"}"#,
+    );
+    fixture.headers = vec![(String::from("x-amzn-requestid"), String::from("req-3"))];
+    fixture.now = instant(1_700_000_001);
     let body = r#"{"output": {"message": {"role": "user", "content": [{"text": "Hi"}, {"text": ", there"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 2, "outputTokens": 3, "totalTokens": 5}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(run.response().id, "chatcmpl-kept");
     assert_eq!(run.response().model, "requested-model");
     assert_eq!(run.response().created, 1_700_000_001);
@@ -131,14 +127,14 @@ fn a_non_string_stop_reason_maps_to_stop_and_a_container_is_an_error() {
         let body = format!(
             r#"{{"output": {{"message": {{"content": []}}}}, "stopReason": {reason}, "usage": {{"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}}}"#
         );
-        let run = run(&Fixture::default(), &body);
+        let run = convert(&fixture(), &body);
         assert_eq!(run.finish(), "stop", "stopReason {reason}");
     }
     for reason in ["[]", "{}"] {
         let body = format!(
             r#"{{"output": {{"message": {{"content": []}}}}, "stopReason": {reason}, "usage": {{"inputTokens": 1, "outputTokens": 1, "totalTokens": 2}}}}"#
         );
-        let run = run(&Fixture::default(), &body);
+        let run = convert(&fixture(), &body);
         assert_eq!(run.status(), None, "stopReason {reason}");
         assert!(matches!(
             run.failure(),
@@ -151,14 +147,11 @@ fn a_non_string_stop_reason_maps_to_stop_and_a_container_is_an_error() {
 }
 
 fn json_mode_keeps_the_mapped_finish_without_synthetic_tools() {
-    let fixture = Fixture {
-        optional: optional_params(
-            r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#,
-        ),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.optional =
+        optional_params(r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#);
     let body = r#"{"output": {"message": {"content": [{"text": "ok"}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(run.finish(), "tool_calls");
     assert_eq!(run.message().content.as_deref(), Some("ok"));
 }
@@ -168,35 +161,29 @@ fn mapped_stop_reasons() {
         let body = format!(
             r#"{{"output": {{"message": {{"content": [{{"text": "ok"}}]}}}}, "stopReason": "{reason}", "usage": {{"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}}}"#
         );
-        let run = run(&Fixture::default(), &body);
+        let run = convert(&fixture(), &body);
         assert_eq!(run.finish(), expected, "stopReason {reason}");
     }
 }
 
 fn json_mode_forces_stop_when_every_tool_was_synthetic() {
-    let fixture = Fixture {
-        optional: optional_params(
-            r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#,
-        ),
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.optional =
+        optional_params(r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#);
     let body = r#"{"output": {"message": {"content": [{"toolUse": {"toolUseId": "tooluse_json", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(run.finish(), "stop");
     assert_eq!(run.message().content.as_deref(), Some(r#"{"answer": 42}"#));
     assert!(run.message().tool_calls.is_none());
 }
 
 fn textual_recovery_restores_tool_calls() {
-    let fixture = Fixture {
-        optional: optional_params(
-            r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#,
-        ),
-        ids: vec![Uuid::parse_str(FIRST_ID).expect("the fixture id parses")],
-        ..Fixture::default()
-    };
+    let mut fixture = fixture();
+    fixture.optional =
+        optional_params(r#"{"json_mode": true, "tools": [{"toolSpec": {"name": "real"}}]}"#);
+    fixture.ids = vec![Uuid::parse_str(FIRST_ID).expect("the fixture id parses")];
     let body = r#"{"output": {"message": {"content": [{"text": "{\"type\": \"function\", \"name\": \"real\", \"arguments\": \"{}\"}"}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
-    let run = run(&fixture, body);
+    let run = convert(&fixture, body);
     assert_eq!(run.finish(), "tool_calls");
     assert!(run.message().content.is_none());
     let calls = run.message().tool_calls.as_deref().expect("a tool call");

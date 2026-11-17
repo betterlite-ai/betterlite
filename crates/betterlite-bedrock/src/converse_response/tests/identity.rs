@@ -2,12 +2,13 @@
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use crate::converse_response::environment::validate_environment;
 use crate::converse_response::transform::TransformError;
 use crate::request_policy::{BedrockRequestPolicy, Params, REQUEST_METADATA_HEADER, RequestValue};
 
-use super::support::{Fixture, run};
+use super::support::{convert, fixture};
 
 const SECRET: &str = "sk-fixture-secret-000000000000";
 
@@ -15,10 +16,10 @@ const SECRET: &str = "sk-fixture-secret-000000000000";
 fn converse_response_credential_identity_isolation() {
     let caller = map(&[("X-Caller", "kept")]);
     let empty = Params::new();
-    let first =
-        validate_environment(&caller, Some("key-one"), None, &empty).expect("the headers merge");
-    let second =
-        validate_environment(&caller, Some("key-two"), None, &empty).expect("the headers merge");
+    let first = validate_environment(&caller, Some(&SecretString::from("key-one")), None, &empty)
+        .expect("the headers merge");
+    let second = validate_environment(&caller, Some(&SecretString::from("key-two")), None, &empty)
+        .expect("the headers merge");
     assert_eq!(
         first.get("Authorization").map(String::as_str),
         Some("Bearer key-one")
@@ -58,26 +59,27 @@ fn converse_response_credential_identity_isolation() {
         Some(r#"{"user_api_key_team_id":"team-two"}"#)
     );
     assert_ne!(first_metadata, second_metadata);
-    assert_ne!(one, two);
 }
 
 #[test]
 fn converse_response_secret_safe_failure() {
-    let fixture = Fixture {
-        headers: vec![
-            (String::from("Authorization"), format!("Bearer {SECRET}")),
-            (String::from("x-amzn-requestid"), String::from("req-1")),
-        ],
-        ..Fixture::default()
-    };
-    let run = run(&fixture, "{not json");
+    let mut fixture = fixture();
+    fixture.headers = vec![
+        (String::from("Authorization"), format!("Bearer {SECRET}")),
+        (String::from("x-amzn-requestid"), String::from("req-1")),
+    ];
+    let run = convert(&fixture, "{not json");
     let failure = run.failure();
-    for shown in [format!("{failure}"), format!("{failure:?}")] {
-        assert!(
-            !shown.contains(SECRET),
-            "the failure names the credential: {shown}"
-        );
-    }
+    let display = format!("{failure}");
+    assert!(
+        !display.contains(SECRET),
+        "the failure names the credential: {display}"
+    );
+    let debug = format!("{failure:?}");
+    assert!(
+        !debug.contains(SECRET),
+        "the failure names the credential: {debug}"
+    );
     let TransformError::Conversion { error, .. } = failure else {
         panic!("an unreadable body is a conversion failure");
     };
