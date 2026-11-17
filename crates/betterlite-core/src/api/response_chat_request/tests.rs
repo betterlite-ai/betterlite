@@ -184,14 +184,36 @@ fn options(params: &Value) -> Value {
     r#"{"vendor": {"x": 1}, "functions": [], "max_tokens": 4}"#,
     json!({"max_output_tokens": 4})
 )]
-#[case::declared_keys_forwarded(
-    r#"{"include": ["reasoning.encrypted_content"], "store": false, "parallel_tool_calls": true, "prompt_cache_key": "k", "top_logprobs": 3, "context_management": [{"type": "compaction"}]}"#,
+#[case::every_declared_key_forwarded(
+    r#"{"include": ["reasoning.encrypted_content"], "instructions": "be brief", "max_output_tokens": 12, "metadata": {"k": "v"}, "parallel_tool_calls": true, "previous_response_id": "resp_a", "reasoning": {"effort": "high"}, "store": true, "background": false, "stream": true, "temperature": 0.2, "text": {"format": {"type": "text"}}, "tool_choice": "auto", "tools": [], "top_p": 0.9, "truncation": "auto", "user": "u1", "service_tier": "scale", "safety_identifier": "safe", "prompt": {"id": "p"}, "max_tool_calls": 3, "prompt_cache_key": "pc", "prompt_cache_retention": "24h", "prompt_cache_options": {"mode": "x"}, "stream_options": {"include_obfuscation": true}, "top_logprobs": 2, "partial_images": 1, "context_management": [{"type": "compaction"}]}"#,
     json!({
         "include": ["reasoning.encrypted_content"],
-        "store": false,
+        "instructions": "be brief",
+        "max_output_tokens": 12,
+        "metadata": {"k": "v"},
         "parallel_tool_calls": true,
-        "prompt_cache_key": "k",
-        "top_logprobs": 3,
+        "previous_response_id": "resp_a",
+        "reasoning": {"effort": "high"},
+        "store": true,
+        "background": false,
+        "stream": true,
+        "temperature": 0.2,
+        "text": {"format": {"type": "text"}},
+        "tool_choice": "auto",
+        "tools": [],
+        "top_p": 0.9,
+        "truncation": "auto",
+        "user": "u1",
+        "service_tier": "scale",
+        "safety_identifier": "safe",
+        "prompt": {"id": "p"},
+        "max_tool_calls": 3,
+        "prompt_cache_key": "pc",
+        "prompt_cache_retention": "24h",
+        "prompt_cache_options": {"mode": "x"},
+        "stream_options": {"include_obfuscation": true},
+        "top_logprobs": 2,
+        "partial_images": 1,
         "context_management": [{"type": "compaction"}]
     })
 )]
