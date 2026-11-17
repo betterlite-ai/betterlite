@@ -27,7 +27,7 @@ pub enum AttributeKind {
     AbcData,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum ClassAttribute {
     Special { kind: AttributeKind },
@@ -36,7 +36,7 @@ pub enum ClassAttribute {
 
 pub type ClassAttributes = IndexMap<String, ClassAttribute>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LegacyConfig {
     pub family: Family,
     pub attributes: ClassAttributes,

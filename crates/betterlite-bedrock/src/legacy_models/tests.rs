@@ -34,14 +34,20 @@ fn mapped(family: Family, non_default: &str, optional: &str, model: &str) -> Obj
     })
 }
 
-fn titan_stop(stop: &str, method_drop_params: bool, global_drop_params: bool) -> Object {
+#[derive(Clone, Copy)]
+struct StopFlags {
+    method_drop_params: bool,
+    global_drop_params: bool,
+}
+
+fn titan_stop(stop: &str, flags: StopFlags) -> Object {
     map_openai_params(MappingRequest {
         family: Family::Titan,
         non_default: &object(&format!(r#"{{"stop": {stop}}}"#)),
         optional: object(r#"{"stopSequences": "prior"}"#),
         model: "amazon.titan-text-express-v1",
-        drop_params: method_drop_params,
-        global_drop_params,
+        drop_params: flags.method_drop_params,
+        global_drop_params: flags.global_drop_params,
     })
 }
 
@@ -443,27 +449,53 @@ fn titan_stop_filter() {
 fn titan_filtered_stop_sequences() {
     let kept = titan_stop(
         r#"["|", "x", "User:", "|\n", "User:\n", "||", "", "user:", "User:\n\n", 5]"#,
-        false,
-        true,
+        StopFlags {
+            method_drop_params: false,
+            global_drop_params: true,
+        },
     );
     assert_eq!(
         kept,
         object(r#"{"stopSequences": ["|", "User:", "|\n", "User:\n", "||"]}"#)
     );
     assert_eq!(
-        titan_stop(r#""END""#, false, true),
+        titan_stop(
+            r#""END""#,
+            StopFlags {
+                method_drop_params: false,
+                global_drop_params: true,
+            },
+        ),
         object(r#"{"stopSequences": []}"#)
     );
     assert_eq!(
-        titan_stop("null", false, true),
+        titan_stop(
+            "null",
+            StopFlags {
+                method_drop_params: false,
+                global_drop_params: true,
+            },
+        ),
         object(r#"{"stopSequences": []}"#)
     );
     assert_eq!(
-        titan_stop(r#""END""#, true, false),
+        titan_stop(
+            r#""END""#,
+            StopFlags {
+                method_drop_params: true,
+                global_drop_params: false,
+            },
+        ),
         object(r#"{"stopSequences": "END"}"#)
     );
     assert_eq!(
-        titan_stop(r#"["|"]"#, true, false),
+        titan_stop(
+            r#"["|"]"#,
+            StopFlags {
+                method_drop_params: true,
+                global_drop_params: false,
+            },
+        ),
         object(r#"{"stopSequences": ["|"]}"#)
     );
 }
@@ -519,7 +551,7 @@ fn claude2_parameters() {
             "stream",
         ],
     );
-    let mapped = mapped(
+    let params = mapped(
         Family::Anthropic,
         r#"{"max_tokens": 5, "max_completion_tokens": 9, "temperature": 0.3, "stop": ["\n\nHuman:"],
             "top_p": 0.8, "unknown": 1}"#,
@@ -527,7 +559,7 @@ fn claude2_parameters() {
         "anthropic.claude-v2",
     );
     assert_eq!(
-        mapped,
+        params,
         object(
             r#"{"max_tokens_to_sample": 9, "temperature": 0.3, "stop_sequences": ["\n\nHuman:"],
                 "top_p": 0.8}"#

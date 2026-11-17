@@ -173,6 +173,7 @@ fn assert_missing_environment(key: &str, variable: &str) {
     );
 }
 
+#[derive(Clone, Copy)]
 enum Invalid {
     Integer,
     Float,

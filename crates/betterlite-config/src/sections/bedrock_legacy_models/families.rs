@@ -6,7 +6,7 @@ use serde_json::Number;
 // AI21's penalty blocks are free-form objects, kept in the class dictionary as given.
 pub type Penalty = IndexMap<String, Json>;
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Ai21Values {
     #[serde(rename = "maxTokens")]
@@ -25,7 +25,7 @@ pub struct Ai21Values {
     pub count_penalty: Option<Penalty>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CohereValues {
     pub max_tokens: Option<i64>,
@@ -33,7 +33,7 @@ pub struct CohereValues {
     pub return_likelihood: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LlamaValues {
     #[serde(rename = "maxTokenCount")]
@@ -43,7 +43,7 @@ pub struct LlamaValues {
     pub top_p: Option<Number>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MistralValues {
     pub max_tokens: Option<i64>,
@@ -53,7 +53,7 @@ pub struct MistralValues {
     pub stop: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct TitanValues {
     #[serde(rename = "maxTokenCount")]
@@ -65,7 +65,7 @@ pub struct TitanValues {
     pub top_p: Option<Number>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AnthropicValues {
     pub max_tokens_to_sample: Option<i64>,
@@ -76,7 +76,7 @@ pub struct AnthropicValues {
     pub anthropic_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Resolved {
     pub ai21: Ai21Values,
     pub cohere: CohereValues,
