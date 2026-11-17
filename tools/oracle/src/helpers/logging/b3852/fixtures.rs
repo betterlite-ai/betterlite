@@ -69,20 +69,20 @@ pub(super) fn pre_call_details(
         ("call_type".to_owned(), Json::Text("completion".to_owned())),
         ("litellm_call_id".to_owned(), Json::Text(CALL_ID.to_owned())),
     ]);
-    if let Some(credentials) = credentials {
+    if let Some(dynamic_params) = credentials {
         details.insert(
             "standard_callback_dynamic_params".to_owned(),
-            text_object(credentials),
+            text_object(dynamic_params),
         );
     }
-    if let Some(auth_metadata) = auth_metadata {
+    if let Some(identity) = auth_metadata {
         details.insert(
             "litellm_params".to_owned(),
             Json::Object(IndexMap::from([(
                 "metadata".to_owned(),
                 Json::Object(IndexMap::from([(
                     "user_api_key_auth_metadata".to_owned(),
-                    text_object(auth_metadata),
+                    text_object(identity),
                 )])),
             )])),
         );
@@ -114,17 +114,11 @@ pub(super) fn payload_metadata(
     tool_name: Option<&str>,
 ) -> Value {
     let mut metadata = serde_json::Map::new();
-    if let Some(tool_name) = tool_name {
-        metadata.insert(
-            "mcp_tool_call_metadata".to_owned(),
-            json!({"name": tool_name}),
-        );
+    if let Some(name) = tool_name {
+        metadata.insert("mcp_tool_call_metadata".to_owned(), json!({"name": name}));
     }
-    if let Some(auth_metadata) = auth_metadata {
-        metadata.insert(
-            "user_api_key_auth_metadata".to_owned(),
-            json!(auth_metadata),
-        );
+    if let Some(identity) = auth_metadata {
+        metadata.insert("user_api_key_auth_metadata".to_owned(), json!(identity));
     }
     Value::Object(metadata)
 }

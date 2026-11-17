@@ -7,6 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::json;
+use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::Input;
@@ -93,11 +94,10 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
     let event = fixtures::event(payload, Json::Null);
     let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let outcome: Result<(), Box<HelperError>> =
-        tracing::subscriber::with_default(subscriber, || {
-            fixtures::deliver(&harness.logger, Arc::clone(&event), false)?;
-            fixtures::deliver(&harness.logger, event, false)
-        });
+    let outcome: Result<(), Box<HelperError>> = with_default(subscriber, || {
+        fixtures::deliver(&harness.logger, Arc::clone(&event), false)?;
+        fixtures::deliver(&harness.logger, event, false)
+    });
     outcome?;
     drop(meter_provider);
     let error_logs = captured.0.load(Ordering::Relaxed);
@@ -136,7 +136,7 @@ pub(super) fn cache_eviction(input: &Input) -> HelperResult {
             .route_for(&cache.default, Some(&params), None, &[])
             .or_config_error()?;
         if index == 0 {
-            held = route.provider.clone();
+            held.clone_from(&route.provider);
         } else {
             cache.cache.release(route.provider.as_ref());
         }
