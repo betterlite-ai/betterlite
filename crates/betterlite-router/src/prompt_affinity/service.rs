@@ -248,6 +248,10 @@ fn tools_of(request_kwargs: Option<&Object>) -> Option<&[PromptJson]> {
 }
 
 fn enable_flag(request_kwargs: Option<&Object>) -> Option<bool> {
-    request_kwargs
-        .map(|kwargs| matches!(kwargs.get("enable_prompt_caching"), Some(PromptJson::Bool(true))))
+    request_kwargs.map(|kwargs| {
+        matches!(
+            kwargs.get("enable_prompt_caching"),
+            Some(PromptJson::Bool(true))
+        )
+    })
 }

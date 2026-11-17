@@ -98,7 +98,8 @@ fn last_ephemeral_mark(messages: &[Json]) -> Option<(usize, Option<usize>)> {
             continue;
         };
         for (block_index, block) in blocks.iter().enumerate() {
-            let marked = object(block).is_some_and(|part| is_ephemeral(part.get(CACHE_CONTROL_KEY)));
+            let marked =
+                object(block).is_some_and(|part| is_ephemeral(part.get(CACHE_CONTROL_KEY)));
             if marked {
                 last = Some((message_index, Some(block_index)));
             }

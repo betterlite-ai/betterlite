@@ -55,13 +55,9 @@ pub(super) fn deployment(id: &str, model: &str) -> DeploymentSpec {
     params.insert("model".to_owned(), Json::Text(model.to_owned()));
     let mut info = IndexMap::new();
     info.insert("id".to_owned(), Json::Text(id.to_owned()));
-    DeploymentSpec::new(
-        "group".to_owned(),
-        params,
-        info,
-        IndexMap::new(),
-        || "generated".to_owned(),
-    )
+    DeploymentSpec::new("group".to_owned(), params, info, IndexMap::new(), || {
+        "generated".to_owned()
+    })
     .unwrap()
 }
 
@@ -135,11 +131,7 @@ impl CacheFacts for ClaudeFacts {
     }
 }
 
-pub(super) fn service(
-    pins: Arc<FakePins>,
-    counted: u64,
-    global_enabled: bool,
-) -> PromptAffinity {
+pub(super) fn service(pins: Arc<FakePins>, counted: u64, global_enabled: bool) -> PromptAffinity {
     let catalog = catalog();
     PromptAffinity::new(PromptAffinityDependencies {
         pins,

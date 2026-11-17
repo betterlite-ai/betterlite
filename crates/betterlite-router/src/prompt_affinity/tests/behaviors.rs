@@ -12,9 +12,17 @@ use super::support::{
 };
 use crate::prompt_affinity::json::messages_json;
 
-const PLAIN_MESSAGES: &str = r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue"}]"#;
+const PLAIN_MESSAGES: &str =
+    r#"[{"role":"system","content":"be brief"},{"role":"user","content":"why is the sky blue"}]"#;
 
 pub(super) async fn run(name: &str) {
+    if filter_cases(name).await {
+        return;
+    }
+    prefix_cases(name).await;
+}
+
+async fn filter_cases(name: &str) -> bool {
     match name {
         "a_success_event_pins_the_deployment_the_next_request_reuses" => {
             a_success_event_pins_the_deployment_the_next_request_reuses().await;
@@ -25,7 +33,9 @@ pub(super) async fn run(name: &str) {
         "a_prompt_below_the_minimum_never_reads_the_pin" => {
             a_prompt_below_the_minimum_never_reads_the_pin().await;
         }
-        "a_priority_group_keeps_every_deployment" => a_priority_group_keeps_every_deployment().await,
+        "a_priority_group_keeps_every_deployment" => {
+            a_priority_group_keeps_every_deployment().await;
+        }
         "a_target_order_keeps_every_deployment" => a_target_order_keeps_every_deployment().await,
         "without_messages_the_pool_is_untouched" => without_messages_the_pool_is_untouched().await,
         "another_call_type_never_pins" => another_call_type_never_pins().await,
@@ -35,6 +45,13 @@ pub(super) async fn run(name: &str) {
         "a_success_event_without_messages_never_pins" => {
             a_success_event_without_messages_never_pins().await;
         }
+        _ => return false,
+    }
+    true
+}
+
+async fn prefix_cases(name: &str) {
+    match name {
         "default_breakpoints_are_injected_when_the_global_flag_is_on" => {
             default_breakpoints_are_injected_when_the_global_flag_is_on().await;
         }
@@ -106,7 +123,10 @@ async fn a_pin_outside_the_pool_keeps_every_deployment() {
 async fn a_prompt_below_the_minimum_never_reads_the_pin() {
     let pins = Arc::new(FakePins::default());
     let raw = json_messages(MARKED_MESSAGES);
-    pins.seed(&cache_key(&raw, None).unwrap(), super::support::pin("dep-a"));
+    pins.seed(
+        &cache_key(&raw, None).unwrap(),
+        super::support::pin("dep-a"),
+    );
     let pool = [
         deployment("dep-a", "claude-min"),
         deployment("dep-b", "claude-min"),
@@ -124,7 +144,10 @@ async fn a_priority_group_keeps_every_deployment() {
     let pins = Arc::new(FakePins::default());
     let affinity = service(Arc::clone(&pins), 2000, false);
     let raw = json_messages(MARKED_MESSAGES);
-    pins.seed(&cache_key(&raw, None).unwrap(), super::support::pin("dep-a"));
+    pins.seed(
+        &cache_key(&raw, None).unwrap(),
+        super::support::pin("dep-a"),
+    );
     let pool = [
         deployment("dep-a", "claude-min"),
         deployment("dep-b", "claude-min"),
@@ -140,7 +163,10 @@ async fn a_target_order_keeps_every_deployment() {
     let pins = Arc::new(FakePins::default());
     let affinity = service(Arc::clone(&pins), 2000, false);
     let raw = json_messages(MARKED_MESSAGES);
-    pins.seed(&cache_key(&raw, None).unwrap(), super::support::pin("dep-a"));
+    pins.seed(
+        &cache_key(&raw, None).unwrap(),
+        super::support::pin("dep-a"),
+    );
     let pool = [
         deployment("dep-a", "claude-min"),
         deployment("dep-b", "claude-min"),
@@ -249,8 +275,10 @@ fn a_message_level_mark_ignores_later_messages() {
     let marked = json_messages(
         r#"[{"role":"user","content":"one","cache_control":{"type":"ephemeral"}},{"role":"assistant","content":"later"}]"#,
     );
-    let alone = json_messages(r#"[{"role":"user","content":"one","cache_control":{"type":"ephemeral"}}]"#);
-    let other = json_messages(r#"[{"role":"user","content":"two","cache_control":{"type":"ephemeral"}}]"#);
+    let alone =
+        json_messages(r#"[{"role":"user","content":"one","cache_control":{"type":"ephemeral"}}]"#);
+    let other =
+        json_messages(r#"[{"role":"user","content":"two","cache_control":{"type":"ephemeral"}}]"#);
     assert_eq!(cache_key(&marked, None), cache_key(&alone, None));
     assert_ne!(cache_key(&marked, None), cache_key(&other, None));
 }
@@ -258,9 +286,8 @@ fn a_message_level_mark_ignores_later_messages() {
 fn a_message_key_order_never_changes_the_digest() {
     let ordered =
         json_messages(r#"[{"role":"user","content":"one","cache_control":{"type":"ephemeral"}}]"#);
-    let reordered = json_messages(
-        r#"[{"cache_control":{"type":"ephemeral"},"content":"one","role":"user"}]"#,
-    );
+    let reordered =
+        json_messages(r#"[{"cache_control":{"type":"ephemeral"},"content":"one","role":"user"}]"#);
     assert_eq!(cache_key(&ordered, None), cache_key(&reordered, None));
     assert!(cache_key(&ordered, None).is_some());
 }
@@ -295,7 +322,10 @@ fn tools_seed_the_prefix_digest() {
     let tools = json_messages(r#"[{"type":"function","function":{"name":"lookup"}}]"#);
     let no_tools = json_messages("[]");
     assert_ne!(cache_key(&raw, None), cache_key(&raw, Some(&tools)));
-    assert_ne!(cache_key(&raw, Some(&tools)), cache_key(&raw, Some(&no_tools)));
+    assert_ne!(
+        cache_key(&raw, Some(&tools)),
+        cache_key(&raw, Some(&no_tools))
+    );
     assert_ne!(cache_key(&raw, None), cache_key(&raw, Some(&no_tools)));
 }
 

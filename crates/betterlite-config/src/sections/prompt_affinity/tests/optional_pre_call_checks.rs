@@ -42,7 +42,10 @@ fn settings_with(variables: &[(&str, &str)], source: &str) -> Settings {
     false
 )]
 #[case::an_empty_list("router_settings:\n  optional_pre_call_checks: []\n", false)]
-#[case::a_different_spelling("router_settings:\n  optional_pre_call_checks:\n    - Prompt_Caching\n", false)]
+#[case::a_different_spelling(
+    "router_settings:\n  optional_pre_call_checks:\n    - Prompt_Caching\n",
+    false
+)]
 #[case::the_key_absent("", false)]
 fn the_configured_list_selects_the_check(#[case] source: &str, #[case] expected: bool) {
     assert_eq!(settings(source).prompt_caching, expected);
@@ -50,10 +53,7 @@ fn the_configured_list_selects_the_check(#[case] source: &str, #[case] expected:
 
 #[test]
 fn the_base64_limit_comes_from_the_injected_environment() {
-    let configured = settings_with(
-        &[("MAX_BASE64_LENGTH_FOR_LOGGING", "128")],
-        "",
-    );
+    let configured = settings_with(&[("MAX_BASE64_LENGTH_FOR_LOGGING", "128")], "");
     assert_eq!(configured.maximum_base64_length.as_deref(), Some("128"));
 }
 
