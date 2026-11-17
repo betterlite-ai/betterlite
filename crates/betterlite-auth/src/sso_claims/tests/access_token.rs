@@ -6,7 +6,7 @@ use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::RoleMappings;
 use crate::user_roles::UserRole;
 
-use super::support::{document, handler, identity, mappings, strings, token};
+use super::support::{document, handler, identity, mappings, segment, strings, token};
 
 fn team_handler(field: &str) -> JwtHandler {
     handler(JwtAuthSettings {
@@ -43,6 +43,24 @@ fn an_opaque_token_adds_nothing() {
     let updated = updated.unwrap();
     assert!(updated.team_ids.is_empty());
     assert!(updated.user_role.is_none());
+}
+
+#[test]
+fn a_token_whose_header_pyjwt_refuses_adds_nothing() {
+    let access_token = format!(
+        "{}.{}.{}",
+        segment(r#"{"alg":"HS256","kid":7}"#),
+        segment("{}"),
+        segment("signature")
+    );
+    let (updated, payload) = processed(
+        Some(&access_token),
+        Some(&team_handler("team_ids")),
+        Some(identity()),
+        None,
+    );
+    assert!(payload.is_none());
+    assert!(updated.unwrap().team_ids.is_empty());
 }
 
 #[test]
