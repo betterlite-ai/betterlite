@@ -8,6 +8,9 @@ call:
     body:
       predictions:
         - textEmbedding: [1, 2]
+          embeddings:
+            values: [1, 2, 3]
+            statistics: {token_count: 2, truncated: false}
     request_body: null
 env: {}
 compare: {ignore: []}
