@@ -178,10 +178,16 @@ fn metadata_model_id(request_metadata: Option<&JsonObject>) -> Option<&str> {
     };
     match info.get("id") {
         Some(Json::Text(id)) if !id.is_empty() => Some(id.as_str()),
+        // an empty id names no deployment, and the guarded arm above never covers it
         None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            None
-        }
+        | Some(
+            Json::Text(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::List(_)
+            | Json::Object(_),
+        ) => None,
     }
 }
 

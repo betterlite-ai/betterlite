@@ -4,9 +4,10 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Cancelling, Checked, Cooldown, Fixture, NarrowProviders, RequestSetup, Windows, body,
-    deployment, group_and_ids, hidden, hidden_with, metadata, number, object, picked, run_checked,
-    run_healthy, run_route, run_simple, seeded, text, weighted, with_info,
+    Cancelling, Checked, Cooldown, Fixture, Providers, RequestSetup, Windows, body, deployment,
+    error_of, group_and_ids, hidden, hidden_with, metadata, no_deployment_of, number, object,
+    paused, picked, run_checked, run_healthy, run_route, run_simple, run_windowed, seeded, text,
+    weighted, with_info,
 };
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
@@ -17,10 +18,10 @@ use crate::router_core::headers::{
     Response, apply_response_model_id, ensure_additional_headers, ensure_additional_headers_dict,
     prepare_response, response_has_hidden_params, response_total_token_count, write_hidden_params,
 };
-use crate::router_core::no_deployment::NoDeploymentType;
+use crate::router_core::no_deployment::{NoDeployment, NoDeploymentType};
 use crate::router_core::services::RouteServices as _;
 use crate::router_core::tests::support::{
-    NoLimits, NoParams, NoServices, route_context, route_request, strategy_context,
+    NoLimits, NoServices, route_context, route_request, strategy_context,
 };
 use crate::simple_shuffle::Candidate;
 use crate::simple_shuffle::error::ShuffleError;
@@ -125,7 +126,7 @@ fn stage_name(stage: RouteStage) -> &'static str {
 async fn stage_skips(stage: RouteStage) {
     let setup = RequestSetup::new("gpt-4o");
     let request = setup.request();
-    let (services, limits, params) = (NoServices, NoLimits, NoParams);
+    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let context = route_context(&request, &services, &limits, &params);
     let set = CandidateSet {
         deployments: vec![deployment("gpt-4o", "a", &[])],
@@ -162,7 +163,7 @@ async fn no_deployment_rate_limit() {
     assert_eq!(no_deployment.error_type, NoDeploymentType::RateLimit);
     assert_eq!(no_deployment.error_type.wire_name(), "rate_limit_error");
     assert_eq!(no_deployment.model, "gpt-4o");
-    assert_eq!(no_deployment.cooldown_time.to_bits(), 5.0f64.to_bits());
+    assert_eq!(no_deployment.cooldown_time.to_bits(), 5.0_f64.to_bits());
     assert!(!no_deployment.enable_pre_call_checks);
     assert!(no_deployment.cooldown_list.is_empty());
     assert_eq!(
@@ -201,7 +202,7 @@ async fn no_deployment_all_in_cooldown() {
         no_deployment.error_type.wire_name(),
         "all_deployments_in_cooldown"
     );
-    assert_eq!(no_deployment.cooldown_time.to_bits(), 2.5f64.to_bits());
+    assert_eq!(no_deployment.cooldown_time.to_bits(), 2.5_f64.to_bits());
     assert_eq!(
         no_deployment.cooldown_list,
         vec![String::from("a"), String::from("b")]
@@ -216,7 +217,7 @@ async fn no_deployment_all_in_cooldown() {
 fn default_min_cooldown() {
     assert_eq!(
         NoServices.min_cooldown(&[String::from("a")]).to_bits(),
-        5.0f64.to_bits()
+        5.0_f64.to_bits()
     );
 }
 
@@ -238,8 +239,7 @@ async fn cancelled_callback() {
 
 async fn empty_group() {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
-    let setup = RequestSetup::new("missing");
-    let error = run_simple(&fixture, &setup).await.unwrap_err();
+    let error = error_of(&fixture, &RequestSetup::new("missing")).await;
     let RoutingError::Catalog(CatalogLookupError::NoHealthyDeployments { model }) = error else {
         panic!("a group with no deployment is a catalog error");
     };
@@ -247,10 +247,8 @@ async fn empty_group() {
 }
 
 async fn blocked_deployment() {
-    let blocked = with_info("gpt-4o", "a", &[], &[("blocked", Json::Bool(true))]);
-    let fixture = Fixture::plain(vec![blocked]);
-    let setup = RequestSetup::new("a");
-    let error = run_simple(&fixture, &setup).await.unwrap_err();
+    let fixture = Fixture::plain(vec![paused("gpt-4o", "a", &[])]);
+    let error = error_of(&fixture, &RequestSetup::new("a")).await;
     let RoutingError::Eligibility(EligibilityError::Blocked { model }) = error else {
         panic!("a paused deployment cannot serve a request");
     };
@@ -259,13 +257,10 @@ async fn blocked_deployment() {
 
 // a paused deployment in a pool never serves the request, whatever its weight says
 async fn blocked_pool() {
-    let paused = with_info(
-        "gpt-4o",
-        "paused",
-        &[("weight", number(5))],
-        &[("blocked", Json::Bool(true))],
-    );
-    let fixture = Fixture::plain(vec![paused, deployment("gpt-4o", "live", &[])]);
+    let fixture = Fixture::plain(vec![
+        paused("gpt-4o", "paused", &[("weight", number(5))]),
+        deployment("gpt-4o", "live", &[]),
+    ]);
     let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
         .await
         .unwrap();
@@ -273,22 +268,15 @@ async fn blocked_pool() {
 }
 
 async fn blocked_pool_empty() {
-    let paused = with_info("gpt-4o", "paused", &[], &[("blocked", Json::Bool(true))]);
-    let fixture = Fixture::plain(vec![paused]);
-    let error = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
-        .await
-        .unwrap_err();
-    let RoutingError::NoDeployment(no_deployment) = error else {
-        panic!("a pool of paused deployments leaves nothing to select");
-    };
+    let fixture = Fixture::plain(vec![paused("gpt-4o", "paused", &[])]);
+    let no_deployment = no_deployment_of(&fixture, &RequestSetup::new("gpt-4o")).await;
     assert_eq!(no_deployment.model, "gpt-4o");
     assert_eq!(no_deployment.model_ids, vec![String::from("paused")]);
 }
 
 // a cooldown the float cannot narrow is reported as itself, never as a zero-second retry
 async fn no_deployment_infinite_cooldown() {
-    let paused = with_info("gpt-4o", "paused", &[], &[("blocked", Json::Bool(true))]);
-    let fixture = Fixture::plain(vec![paused]);
+    let fixture = Fixture::plain(vec![paused("gpt-4o", "paused", &[])]);
     let services = Cooldown {
         ids: Vec::new(),
         seconds: f64::INFINITY,
@@ -315,12 +303,7 @@ async fn no_deployment_infinite_cooldown() {
 
 // the context window runs after the paused filter: a paused deployment that fits cannot hide the live one that does not
 async fn context_window_after_blocked() {
-    let fitting = with_info(
-        "gpt-4o",
-        "a",
-        &[("order", number(1))],
-        &[("blocked", Json::Bool(true))],
-    );
+    let fitting = paused("gpt-4o", "a", &[("order", number(1))]);
     let small = deployment("gpt-4o", "b", &[("order", number(2))]);
     let fixture = Fixture::plain(vec![fitting, small]);
     let mut setup = RequestSetup::new("gpt-4o");
@@ -331,7 +314,7 @@ async fn context_window_after_blocked() {
     };
     let checks = Checked {
         limits: &windows,
-        params: &NoParams,
+        params: &Providers::Unknown,
         pre_call: true,
     };
     let error = run_checked(&fixture, &setup, &NoServices, &checks)
@@ -348,8 +331,8 @@ async fn context_window_after_blocked() {
     assert!(exceeded.causes.contains("Got=50"), "{}", exceeded.causes);
 }
 
-// the pre-call checks are the router's opt-in: with them off the window never drops a deployment
-async fn pre_call_disabled_keeps_over_window() {
+// An over-window request against the one deployment whose ten-token window cannot hold its fifty tokens.
+fn tight_window() -> (Fixture, RequestSetup, Windows) {
     let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
     let mut setup = RequestSetup::new("gpt-4o");
     setup.facts.messages = Some(Vec::new());
@@ -357,12 +340,13 @@ async fn pre_call_disabled_keeps_over_window() {
     let windows = Windows {
         by_id: BTreeMap::from([(String::from("a"), 10)]),
     };
-    let checks = Checked {
-        limits: &windows,
-        params: &NoParams,
-        pre_call: false,
-    };
-    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+    (fixture, setup, windows)
+}
+
+// the pre-call checks are the router's opt-in: with them off the window never drops a deployment
+async fn pre_call_disabled_keeps_over_window() {
+    let (fixture, setup, windows) = tight_window();
+    let result = run_windowed(&fixture, &setup, &windows, false)
         .await
         .unwrap();
     assert_eq!(picked(&result), "a");
@@ -370,20 +354,9 @@ async fn pre_call_disabled_keeps_over_window() {
 
 // a request under compaction skips the window count, so the too-small deployment still serves
 async fn compaction_keeps_over_window() {
-    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
-    let mut setup = RequestSetup::new("gpt-4o");
-    setup.facts.messages = Some(Vec::new());
-    setup.facts.input_token_count = Some(50);
+    let (fixture, mut setup, windows) = tight_window();
     setup.facts.compaction_pending = true;
-    let windows = Windows {
-        by_id: BTreeMap::from([(String::from("a"), 10)]),
-    };
-    let checks = Checked {
-        limits: &windows,
-        params: &NoParams,
-        pre_call: true,
-    };
-    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+    let result = run_windowed(&fixture, &setup, &windows, true)
         .await
         .unwrap();
     assert_eq!(picked(&result), "a");
@@ -397,12 +370,7 @@ async fn pre_call_uncountable_skips() {
     let windows = Windows {
         by_id: BTreeMap::from([(String::from("a"), 10)]),
     };
-    let checks = Checked {
-        limits: &windows,
-        params: &NoParams,
-        pre_call: true,
-    };
-    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+    let result = run_windowed(&fixture, &setup, &windows, true)
         .await
         .unwrap();
     assert_eq!(picked(&result), "a");
@@ -419,7 +387,7 @@ async fn response_format_empties_pool() {
     setup.facts.response_format = true;
     let checks = Checked {
         limits: &NoLimits,
-        params: &NarrowProviders,
+        params: &Providers::OpenAi,
         pre_call: true,
     };
     let error = run_checked(&fixture, &setup, &NoServices, &checks)
@@ -442,7 +410,7 @@ async fn window_keeps_fitting_beside_rejected() {
     };
     let checks = Checked {
         limits: &windows,
-        params: &NoParams,
+        params: &Providers::Unknown,
         pre_call: true,
     };
     let result = run_checked(&fixture, &setup, &NoServices, &checks)
@@ -474,26 +442,22 @@ fn in_production(id: &str) -> DeploymentSpec {
     )
 }
 
-async fn environment_filtered_single() {
+// The no-deployment error a production-only deployment answers a development request with.
+async fn environment_filtered(name: &str) -> NoDeployment {
     let fixture = Fixture::plain(vec![in_production("a")]);
-    let mut setup = RequestSetup::new("a");
+    let mut setup = RequestSetup::new(name);
     setup.environment = Some(String::from("development"));
-    let error = run_simple(&fixture, &setup).await.unwrap_err();
-    let RoutingError::NoDeployment(no_deployment) = error else {
-        panic!("a deployment outside the environment leaves nothing to select");
-    };
+    no_deployment_of(&fixture, &setup).await
+}
+
+async fn environment_filtered_single() {
+    let no_deployment = environment_filtered("a").await;
     assert_eq!(no_deployment.model, "openai/a");
     assert_eq!(no_deployment.model_ids, vec![String::from("a")]);
 }
 
 async fn environment_filtered_pool() {
-    let fixture = Fixture::plain(vec![in_production("a")]);
-    let mut setup = RequestSetup::new("gpt-4o");
-    setup.environment = Some(String::from("development"));
-    let error = run_simple(&fixture, &setup).await.unwrap_err();
-    let RoutingError::NoDeployment(no_deployment) = error else {
-        panic!("a pool outside the environment leaves nothing to select");
-    };
+    let no_deployment = environment_filtered("gpt-4o").await;
     assert_eq!(no_deployment.model, "gpt-4o");
     assert_eq!(no_deployment.model_ids, vec![String::from("a")]);
 }
@@ -552,7 +516,7 @@ async fn provider_budget_has_no_selection() {
 async fn simple_shuffle_empty() {
     let facts = RequestFacts::default();
     let request = route_request("gpt-4o", &facts);
-    let (services, limits, params) = (NoServices, NoLimits, NoParams);
+    let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
     let route = route_context(&request, &services, &limits, &params);
     let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
     let resolution = Resolution {
@@ -643,12 +607,17 @@ fn headers_opaque() {
     assert_eq!(write_hidden_params(prepared), Response::Opaque);
 }
 
-fn headers_empty_model_id() {
-    let mut prepared = prepare_response(body(&[hidden(&[("model_id", text(""))])])).unwrap();
+// The response a request's model id is applied to: a body already carrying one stored model id and the probe header.
+fn applied_response(stored: Json) -> Response {
+    let mut prepared = prepare_response(body(&[hidden(&[("model_id", stored)])])).unwrap();
     ensure_additional_headers(&mut prepared).insert(String::from("x-probe"), text("1"));
     apply_response_model_id(&mut prepared, Some(&metadata("a")));
+    write_hidden_params(prepared)
+}
+
+fn headers_empty_model_id() {
     assert_eq!(
-        write_hidden_params(prepared),
+        applied_response(text("")),
         Response::Object(hidden_with(text("a")))
     );
 }
@@ -673,12 +642,10 @@ fn header_empty_metadata_id() {
     );
 }
 
+// a stored model id that is not text is replaced by the request's id too
 fn headers_non_text_model_id() {
-    let mut prepared = prepare_response(body(&[hidden(&[("model_id", number(5))])])).unwrap();
-    ensure_additional_headers(&mut prepared).insert(String::from("x-probe"), text("1"));
-    apply_response_model_id(&mut prepared, Some(&metadata("a")));
     assert_eq!(
-        write_hidden_params(prepared),
+        applied_response(number(5)),
         Response::Object(hidden_with(text("a")))
     );
 }

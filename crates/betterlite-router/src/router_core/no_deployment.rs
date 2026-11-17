@@ -22,7 +22,7 @@ impl NoDeploymentType {
 #[derive(Clone, Debug, Error, PartialEq)]
 #[error("{message}")]
 pub struct NoDeployment {
-    message: String,
+    pub message: String,
     pub error_type: NoDeploymentType,
     pub model: String,
     pub cooldown_time: f64,
