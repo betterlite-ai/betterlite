@@ -53,8 +53,10 @@ pub(super) fn mapped(
 
 // A failure that never reaches handle_stream_fallback_error, such as the blocking duration check.
 pub(super) fn direct<S>(cause: ChatStreamCause, stream: &ChatStream<'_, S>) -> ChatStreamError {
-    let class = mapped(&cause, &stream.config, stream.ports.redactor);
-    ChatStreamError { class, cause }
+    ChatStreamError {
+        class: mapped(&cause, &stream.config, stream.ports.redactor),
+        cause,
+    }
 }
 
 // handle_stream_fallback_error: a non-429 4xx raises as mapped, everything else becomes a fallback.
