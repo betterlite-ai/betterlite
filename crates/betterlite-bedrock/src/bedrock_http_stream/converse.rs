@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use http::HeaderMap;
 
 use crate::agentcore_stream::adapter::header_pairs;
-use crate::agentcore_stream::transport::StreamHandler;
+use crate::agentcore_stream::transport::{StreamHandler, StreamHead};
 use crate::bedrock_http_stream::error::{HttpStreamError, status_error, transform_failure};
 use crate::bedrock_http_stream::fake::{FakeCall, buffered};
 use crate::bedrock_http_stream::stream::{ChunkStream, FramedCall, OpenedStream, framed};
@@ -26,8 +26,7 @@ pub struct ConverseCall<'call> {
     pub fake_stream: bool,
 }
 
-// make_sync_call has no catch: a status failure carries the bytes repr of the read body, and a transport, url or
-// conversion failure passes through as itself.
+// No catch: a status failure carries the bytes repr of the read body, and other failures pass through as themselves.
 pub async fn make_sync_call<'deps>(
     call: ConverseCall<'_>,
     deps: &StreamDeps<'deps>,
@@ -48,54 +47,84 @@ pub async fn make_sync_call<'deps>(
         deps.timeout,
     )
     .await
-    .map_err(|failure| match failure {
-        SendFailure::Url(source) => HttpStreamError::Url(source),
-        SendFailure::Transport(source) => HttpStreamError::Transport(source),
-    })?;
+    .map_err(opening_failure)?;
     if head.status != 200 {
-        let body = read_body(&mut head.chunks)
-            .await
-            .map_err(HttpStreamError::Body)?;
-        let error = status_error(
-            head.status,
-            bytes_text(&body),
-            &head.headers,
-            call.api_base,
-            ResponseBody::Read(body_text(&body)),
-        )?;
-        return Err(HttpStreamError::Provider {
-            status: head.status,
-            error: Box::new(error),
-        });
+        return Err(bad_status(&call, &mut head).await?);
     }
     if call.fake_stream {
-        let body = read_body(&mut head.chunks)
-            .await
-            .map_err(HttpStreamError::Body)?;
-        let headers = header_pairs(&head.headers);
-        let stream = buffered(
-            FakeCall {
-                model: call.model,
-                messages: call.messages,
-                data: call.data,
-                json_mode: call.json_mode,
-                now: deps.now,
-            },
-            &RawReply {
-                headers: &headers,
-                body: &body,
-            },
-            log,
-            deps.ids.as_ref(),
-        )
-        .map_err(transform_failure)?;
-        log_open(log.state, log.env, call.messages, call.data);
-        return Ok(OpenedStream {
-            chunks: ChunkStream::Fake(stream),
-            headers: head.headers,
-        });
+        return fake_opened(call, deps, head, log).await;
     }
-    let opened = framed(
+    let opened = framed_opened(&call, deps, head);
+    log_open(log.state, log.env, call.messages, call.data);
+    Ok(opened)
+}
+
+fn opening_failure(failure: SendFailure) -> HttpStreamError<Infallible> {
+    match failure {
+        SendFailure::Url(source) => HttpStreamError::Url(source),
+        SendFailure::Transport(source) => HttpStreamError::Transport(source),
+    }
+}
+
+async fn bad_status(
+    call: &ConverseCall<'_>,
+    head: &mut StreamHead,
+) -> Result<HttpStreamError<Infallible>, HttpStreamError<Infallible>> {
+    let body = read_body(&mut head.chunks)
+        .await
+        .map_err(HttpStreamError::Body)?;
+    let error = status_error(
+        head.status,
+        bytes_text(&body),
+        &head.headers,
+        call.api_base,
+        ResponseBody::Read(body_text(&body)),
+    )?;
+    Ok(HttpStreamError::Provider {
+        status: head.status,
+        error: Box::new(error),
+    })
+}
+
+async fn fake_opened<'deps>(
+    call: ConverseCall<'_>,
+    deps: &StreamDeps<'deps>,
+    mut head: StreamHead,
+    log: &mut LogContext<'_, '_>,
+) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+    let body = read_body(&mut head.chunks)
+        .await
+        .map_err(HttpStreamError::Body)?;
+    let headers = header_pairs(&head.headers);
+    let stream = buffered(
+        FakeCall {
+            model: call.model,
+            messages: call.messages,
+            data: call.data,
+            json_mode: call.json_mode,
+            now: deps.now,
+        },
+        &RawReply {
+            headers: &headers,
+            body: &body,
+        },
+        log,
+        deps.ids.as_ref(),
+    )
+    .map_err(transform_failure)?;
+    log_open(log.state, log.env, call.messages, call.data);
+    Ok(OpenedStream {
+        chunks: ChunkStream::Fake(stream),
+        headers: head.headers,
+    })
+}
+
+fn framed_opened<'deps>(
+    call: &ConverseCall<'_>,
+    deps: &StreamDeps<'deps>,
+    head: StreamHead,
+) -> OpenedStream<'deps> {
+    framed(
         FramedCall {
             model: call.model,
             json_mode: call.json_mode,
@@ -104,9 +133,7 @@ pub async fn make_sync_call<'deps>(
         },
         deps,
         head,
-    );
-    log_open(log.state, log.env, call.messages, call.data);
-    Ok(opened)
+    )
 }
 
 // message=str(response.read()): Python shows the bytes as a b'...' literal and escapes quote, controls and non-ASCII.

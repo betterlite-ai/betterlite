@@ -32,18 +32,18 @@ async fn bedrock_http_stream_body_lifetime() {
     let mut body = format!("{:x}\r\n", frame.len()).into_bytes();
     body.extend_from_slice(&frame);
     body.extend_from_slice(b"\r\n0\r\n\r\n");
-    let mut phase = Phase::start(
+    let mut eof_phase = Phase::start(
         format!("{HEAD}transfer-encoding: chunked\r\n\r\n"),
         body,
         false,
     )
     .await;
-    let outcome = phase.run(&messages, Consume::All).await;
-    assert!(outcome.error.is_none());
-    assert!(outcome.failures.is_empty());
-    assert_eq!(outcome.chunks.len(), 1);
+    let eof_outcome = eof_phase.run(&messages, Consume::All).await;
+    assert!(eof_outcome.error.is_none());
+    assert!(eof_outcome.failures.is_empty());
+    assert_eq!(eof_outcome.chunks.len(), 1);
     assert_eq!(
-        outcome
+        eof_outcome
             .headers
             .as_ref()
             .unwrap()
@@ -51,34 +51,39 @@ async fn bedrock_http_stream_body_lifetime() {
             .unwrap(),
         "application/vnd.amazon.eventstream"
     );
-    phase.release().await;
-    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
+    eof_phase.release().await;
+    assert_eq!(eof_phase.posts.load(Ordering::Relaxed), 1);
 
     // A consumer that stops before the body ends drops the response mid-frame, and the server sees the close.
-    let mut body = frame.clone();
-    body.extend_from_slice(&frame[..20]);
-    let mut phase = Phase::start(format!("{HEAD}content-length: 4096\r\n\r\n"), body, false).await;
-    let outcome = phase.run(&messages, Consume::First).await;
-    assert!(outcome.error.is_none());
-    assert_eq!(outcome.chunks.len(), 1);
-    phase.release().await;
-    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
+    let mut partial_body = frame.clone();
+    partial_body.extend_from_slice(&frame[..20]);
+    let mut dropped_phase = Phase::start(
+        format!("{HEAD}content-length: 4096\r\n\r\n"),
+        partial_body,
+        false,
+    )
+    .await;
+    let dropped_outcome = dropped_phase.run(&messages, Consume::First).await;
+    assert!(dropped_outcome.error.is_none());
+    assert_eq!(dropped_outcome.chunks.len(), 1);
+    dropped_phase.release().await;
+    assert_eq!(dropped_phase.posts.load(Ordering::Relaxed), 1);
 
     // A body that ends early is a read failure, and the stream neither retries it nor reports a frame.
-    let mut phase = Phase::start(
+    let mut short_phase = Phase::start(
         format!("{HEAD}content-length: 4096\r\n\r\n"),
         frame[..20].to_vec(),
         true,
     )
     .await;
-    let outcome = phase.run(&messages, Consume::All).await;
-    assert!(outcome.error.is_none());
-    assert!(outcome.chunks.is_empty());
-    assert_eq!(outcome.failures.len(), 1);
-    assert!(matches!(&outcome.failures[0], StreamFailure::Read(_)));
-    assert_eq!(outcome.failure_statuses(), vec![None]);
-    phase.release().await;
-    assert_eq!(phase.posts.load(Ordering::Relaxed), 1);
+    let short_outcome = short_phase.run(&messages, Consume::All).await;
+    assert!(short_outcome.error.is_none());
+    assert!(short_outcome.chunks.is_empty());
+    assert_eq!(short_outcome.failures.len(), 1);
+    assert!(matches!(&short_outcome.failures[0], StreamFailure::Read(_)));
+    assert_eq!(short_outcome.failure_statuses(), vec![None]);
+    short_phase.release().await;
+    assert_eq!(short_phase.posts.load(Ordering::Relaxed), 1);
 }
 
 struct Phase {

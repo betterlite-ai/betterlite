@@ -61,34 +61,50 @@ pub async fn make_call<'deps>(
         return Err(bad_status(&call, &mut head).await);
     }
     if call.fake_stream {
-        let body = match read_body(&mut head.chunks).await {
-            Ok(body) => body,
-            Err(error) => return Err(read_failure(error)),
-        };
-        let headers = header_pairs(&head.headers);
-        let stream = buffered(
-            FakeCall {
-                model: call.model,
-                messages: call.messages,
-                data: call.data,
-                json_mode: call.json_mode,
-                now: deps.now,
-            },
-            &RawReply {
-                headers: &headers,
-                body: &body,
-            },
-            log,
-            deps.ids.as_ref(),
-        )
-        .map_err(projection_failure)?;
-        log_open(log.state, log.env, call.messages, call.data);
-        return Ok(OpenedStream {
-            chunks: ChunkStream::Fake(stream),
-            headers: head.headers,
-        });
+        return fake_opened(call, deps, head, log).await;
     }
-    let opened = framed(
+    let opened = framed_opened(&call, deps, head);
+    log_open(log.state, log.env, call.messages, call.data);
+    Ok(opened)
+}
+
+async fn fake_opened<'deps>(
+    call: InvokeCall<'_>,
+    deps: &StreamDeps<'deps>,
+    mut head: StreamHead,
+    log: &mut LogContext<'_, '_>,
+) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+    let body = read_body(&mut head.chunks).await.map_err(read_failure)?;
+    let headers = header_pairs(&head.headers);
+    let stream = buffered(
+        FakeCall {
+            model: call.model,
+            messages: call.messages,
+            data: call.data,
+            json_mode: call.json_mode,
+            now: deps.now,
+        },
+        &RawReply {
+            headers: &headers,
+            body: &body,
+        },
+        log,
+        deps.ids.as_ref(),
+    )
+    .map_err(projection_failure)?;
+    log_open(log.state, log.env, call.messages, call.data);
+    Ok(OpenedStream {
+        chunks: ChunkStream::Fake(stream),
+        headers: head.headers,
+    })
+}
+
+fn framed_opened<'deps>(
+    call: &InvokeCall<'_>,
+    deps: &StreamDeps<'deps>,
+    head: StreamHead,
+) -> OpenedStream<'deps> {
+    framed(
         FramedCall {
             model: call.model,
             json_mode: call.json_mode,
@@ -97,9 +113,7 @@ pub async fn make_call<'deps>(
         },
         deps,
         head,
-    );
-    log_open(log.state, log.env, call.messages, call.data);
-    Ok(opened)
+    )
 }
 
 // make_sync_call sends the signed body whenever it has one, even empty bytes; make_call always sends data.

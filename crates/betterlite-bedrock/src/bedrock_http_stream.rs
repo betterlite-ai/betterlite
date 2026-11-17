@@ -13,6 +13,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use futures_util::StreamExt as _;
 use http::HeaderMap;
+use indexmap::IndexMap;
 use thiserror::Error;
 use url::Url;
 
@@ -111,8 +112,12 @@ pub(crate) fn log_open(
             original_response: Json::Text(FIRST_RESPONSE.to_owned()),
             input: messages.clone(),
             additional_args: AdditionalArgs {
+                api_base: None,
+                headers: None,
                 complete_input_dict: Some(RawBody::Text(data.to_owned())),
-                ..AdditionalArgs::default()
+                request_str: None,
+                openai_sdk: None,
+                passthrough: IndexMap::new(),
             },
         },
         env,

@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
@@ -140,15 +140,6 @@ impl Reply {
             reads,
             refused: None,
         }
-    }
-
-    pub(super) fn streaming(reads: &[&str]) -> Self {
-        Self::event_stream(
-            reads
-                .iter()
-                .map(|read| Ok(read.as_bytes().to_vec()))
-                .collect(),
-        )
     }
 
     pub(super) fn frames(reads: &[&str]) -> Self {
@@ -394,6 +385,16 @@ pub(super) fn messages() -> Json {
     serde_json::from_str(r#"[{"role":"user","content":"hi"}]"#).unwrap()
 }
 
+// The member a log entry names; every entry these tests read carries it.
+pub(super) fn member<'json>(value: &'json Json, name: &str) -> &'json Json {
+    match value {
+        Json::Object(object) => object.get(name).expect("a present member"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("an object")
+        }
+    }
+}
+
 pub(super) fn invoke<'call>(
     api_base: &'call str,
     data: &'call str,
@@ -413,16 +414,13 @@ pub(super) fn invoke<'call>(
     }
 }
 
-pub(super) fn converse<'call>(
-    api_base: &'call str,
-    data: &'call str,
-    messages: &'call Json,
-) -> ConverseCall<'call> {
+// Every converse case posts the shared fixture body to BASE; the one that varies its URL overrides api_base.
+pub(super) fn converse<'call>(messages: &'call Json) -> ConverseCall<'call> {
     ConverseCall {
         model: "bedrock/anthropic.claude-3",
-        api_base,
+        api_base: BASE,
         headers: header_map(&[("content-type", "application/json")]),
-        data,
+        data: DATA,
         messages,
         json_mode: None,
         fake_stream: false,
@@ -447,9 +445,14 @@ pub(super) fn run_supplied(
     default: &Inputs,
     consume: Consume,
 ) -> Outcome {
-    let supplied: Arc<dyn StreamHandler> = Arc::clone(&supplied.handler);
-    let default: Arc<dyn StreamHandler> = Arc::clone(&default.handler);
-    block_on(open_with(call, Some(supplied), default, consume))
+    let supplied_handler: Arc<dyn StreamHandler> = Arc::clone(&supplied.handler);
+    let default_handler: Arc<dyn StreamHandler> = Arc::clone(&default.handler);
+    block_on(open_with(
+        call,
+        Some(supplied_handler),
+        default_handler,
+        consume,
+    ))
 }
 
 pub(super) async fn open(
@@ -477,32 +480,8 @@ async fn open_with(
             .push(details.clone());
         Ok(())
     };
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: Some(&logger),
-        now: env_time(),
-    };
-    let deps = StreamDeps {
-        supplied,
-        default: handler,
-        ids: Arc::new(Counter::new()),
-        clock: DecoderClock {
-            next_id: fixed_id,
-            now: fixed_seconds,
-        },
-        redactor: &redactor,
-        timeout: Duration::from_secs(600),
-        now: now(),
-    };
+    let env = log_env(&redactor, &sink, &logger);
+    let deps = deps_for(supplied, handler, &redactor);
     let mut log = LogContext {
         state: &mut state,
         env: &env,
@@ -524,6 +503,46 @@ async fn open_with(
     drop(logger);
     outcome.logs = logged.into_inner().unwrap_or_else(PoisonError::into_inner);
     outcome
+}
+
+fn log_env<'env>(
+    redactor: &'env Redactor,
+    sink: &'env Quiet,
+    logger: LoggerFn<'env>,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: Some(logger),
+        now: env_time(),
+    }
+}
+
+fn deps_for<'deps>(
+    supplied: Option<Arc<dyn StreamHandler>>,
+    handler: Arc<dyn StreamHandler>,
+    redactor: &'deps Redactor,
+) -> StreamDeps<'deps> {
+    StreamDeps {
+        supplied,
+        default: handler,
+        ids: Arc::new(Counter::new()),
+        clock: DecoderClock {
+            next_id: fixed_id,
+            now: fixed_seconds,
+        },
+        redactor,
+        timeout: Duration::from_secs(600),
+        now: now(),
+    }
 }
 
 async fn drain(

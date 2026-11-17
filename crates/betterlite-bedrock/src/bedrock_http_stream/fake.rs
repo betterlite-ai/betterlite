@@ -41,17 +41,7 @@ pub fn buffered(
         optional: &optional,
         tool_name_mappings: &mappings,
     };
-    let response = ModelResponse {
-        id: format!("chatcmpl-{}", ids.next_id()),
-        created: 0,
-        model: String::new(),
-        object: "chat.completion".to_owned(),
-        system_fingerprint: None,
-        choices: Vec::new(),
-        usage: None,
-        service_tier: None,
-        trace: None,
-    };
+    let response = fresh_response(ids);
     let context = LogContext {
         state: &mut *log.state,
         env: log.env,
@@ -72,6 +62,21 @@ pub fn buffered(
         json_mode: call.json_mode,
         is_done: false,
     })
+}
+
+// The ModelResponse a buffered conversion starts from: no choices and no usage, filled in by the converter.
+fn fresh_response(ids: &dyn IdSource) -> ModelResponse {
+    ModelResponse {
+        id: format!("chatcmpl-{}", ids.next_id()),
+        created: 0,
+        model: String::new(),
+        object: "chat.completion".to_owned(),
+        system_fingerprint: None,
+        choices: Vec::new(),
+        usage: None,
+        service_tier: None,
+        trace: None,
+    }
 }
 
 // The buffered converter never asks for an estimate, because a Converse reply without reasoning content has nothing to count.

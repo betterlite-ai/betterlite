@@ -4,6 +4,7 @@ use std::task::{Context, Poll};
 
 use betterlite_http::error::HttpError;
 use betterlite_redact::secret::Redactor;
+use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use bytes::BytesMut;
 use futures_util::Stream;
 use http::HeaderMap;
@@ -59,16 +60,16 @@ impl Stream for ChunkStream<'_> {
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.get_mut() {
             Self::Framed(stream) => Pin::new(stream.as_mut()).poll_next(context),
-            // MockResponseIterator is immediate: one chunk or one failure, then it is done.
-            Self::Fake(stream) => match stream.next() {
-                Some(Ok(chunk)) => {
-                    let projected = ChunkProjection::Generic(chunk);
-                    Poll::Ready(Some(Ok(InvokeChunk::Base(Box::new(projected)))))
-                }
-                Some(Err(source)) => Poll::Ready(Some(Err(StreamFailure::Decode(source)))),
-                None => Poll::Ready(None),
-            },
+            Self::Fake(stream) => Poll::Ready(stream.next().map(fake_item)),
         }
+    }
+}
+
+// MockResponseIterator is immediate: one chunk or one failure, then it is done.
+fn fake_item(item: Result<GenericChunk, InvokeStreamError>) -> Result<InvokeChunk, StreamFailure> {
+    match item {
+        Ok(chunk) => Ok(InvokeChunk::Base(Box::new(ChunkProjection::Generic(chunk)))),
+        Err(source) => Err(StreamFailure::Decode(source)),
     }
 }
 
@@ -81,38 +82,46 @@ pub struct FramedStream<'deps> {
     read_failure: Option<HttpError>,
 }
 
+impl FramedStream<'_> {
+    fn read_next(
+        &mut self,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<InvokeChunk, StreamFailure>>> {
+        loop {
+            if let Some(item) = self.pending.pop_front() {
+                return Poll::Ready(Some(item.map_err(StreamFailure::Decode)));
+            }
+            if let Some(failure) = self.read_failure.take() {
+                return Poll::Ready(Some(Err(StreamFailure::Read(failure))));
+            }
+            if self.framing.done {
+                return Poll::Ready(None);
+            }
+            match Pin::new(&mut self.chunks).poll_next(context) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(Ok(chunk))) => {
+                    self.framing
+                        .absorb(&mut self.decoder, &mut self.pending, &chunk);
+                }
+                // LiteLLM's loop over the response ends at the exception, so the tally never reports and nothing retries.
+                Poll::Ready(Some(Err(failure))) => {
+                    self.framing.done = true;
+                    self.read_failure = Some(failure);
+                }
+                Poll::Ready(None) => {
+                    self.framing
+                        .finish(&mut self.decoder, &mut self.pending, self.redactor);
+                }
+            }
+        }
+    }
+}
+
 impl Stream for FramedStream<'_> {
     type Item = Result<InvokeChunk, StreamFailure>;
 
     fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        loop {
-            if let Some(item) = this.pending.pop_front() {
-                return Poll::Ready(Some(item.map_err(StreamFailure::Decode)));
-            }
-            if let Some(failure) = this.read_failure.take() {
-                return Poll::Ready(Some(Err(StreamFailure::Read(failure))));
-            }
-            if this.framing.done {
-                return Poll::Ready(None);
-            }
-            match Pin::new(&mut this.chunks).poll_next(context) {
-                Poll::Pending => return Poll::Pending,
-                Poll::Ready(Some(Ok(chunk))) => {
-                    this.framing
-                        .absorb(&mut this.decoder, &mut this.pending, &chunk);
-                }
-                // LiteLLM's loop over the response ends at the exception, so the tally never reports and nothing retries.
-                Poll::Ready(Some(Err(failure))) => {
-                    this.framing.done = true;
-                    this.read_failure = Some(failure);
-                }
-                Poll::Ready(None) => {
-                    this.framing
-                        .finish(&mut this.decoder, &mut this.pending, this.redactor);
-                }
-            }
-        }
+        self.get_mut().read_next(context)
     }
 }
 

@@ -1,5 +1,4 @@
 use http::HeaderMap;
-use serde_json::to_value;
 
 use super::support::{
     BASE, Call, Consume, DATA, Inputs, Refusal, Reply, converse, header_map, invoke, messages, run,
@@ -29,7 +28,7 @@ fn bedrock_http_stream_secret_safe_failure() {
     let mut shown = Vec::new();
 
     // A status failure: the response headers echo the credential, and no failure path prints them.
-    let mut reply = Reply::streaming(&[]);
+    let mut reply = Reply::frames(&[]);
     reply.status = 403;
     reply.headers = echoed_headers();
     let inputs = Inputs::new(reply);
@@ -42,52 +41,59 @@ fn bedrock_http_stream_secret_safe_failure() {
     shown.push(format!("{error}"));
 
     // A transport failure before any response.
-    let inputs = Inputs::new(Reply::refusing(Refusal::Closed));
-    let mut call = invoke(BASE, DATA, &messages);
-    call.headers = request_headers();
-    let outcome = run(Call::Invoke(call), &inputs, Consume::None);
-    shown.push(format!("{:?}", outcome.error.unwrap()));
+    let transport_inputs = Inputs::new(Reply::refusing(Refusal::Closed));
+    let mut transport_call = invoke(BASE, DATA, &messages);
+    transport_call.headers = request_headers();
+    let transport_outcome = run(
+        Call::Invoke(transport_call),
+        &transport_inputs,
+        Consume::None,
+    );
+    shown.push(format!("{:?}", transport_outcome.error.unwrap()));
 
     // A stream that decoded no events, and the log entry written when it opened.
-    let mut reply = Reply::streaming(&[]);
-    reply.headers = echoed_headers();
-    let inputs = Inputs::new(reply);
-    let mut call = invoke(BASE, DATA, &messages);
-    call.headers = request_headers();
-    let outcome = run(Call::Invoke(call), &inputs, Consume::All);
-    assert_eq!(outcome.failure_statuses(), vec![Some(502)]);
-    shown.push(format!("{:?}", outcome.failures));
-    shown.push(format!("{:?}", outcome.failures[0]));
-    shown.push(to_value(&outcome.logs).unwrap().to_string());
+    let mut empty_reply = Reply::frames(&[]);
+    empty_reply.headers = echoed_headers();
+    let empty_inputs = Inputs::new(empty_reply);
+    let mut empty_call = invoke(BASE, DATA, &messages);
+    empty_call.headers = request_headers();
+    let empty_outcome = run(Call::Invoke(empty_call), &empty_inputs, Consume::All);
+    assert_eq!(empty_outcome.failure_statuses(), vec![Some(502)]);
+    shown.push(format!("{:?}", empty_outcome.failures));
+    shown.push(format!("{:?}", empty_outcome.failures[0]));
+    shown.push(serde_json::to_string(&empty_outcome.logs).unwrap());
 
     // Converse hands its failures through unwrapped.
-    let mut reply = Reply::buffered("denied");
-    reply.status = 400;
-    reply.headers = echoed_headers();
-    let inputs = Inputs::new(reply);
-    let mut call = converse(BASE, DATA, &messages);
-    call.headers = request_headers();
-    let outcome = run(Call::Converse(call), &inputs, Consume::None);
-    assert_eq!(outcome.provider_message(), Some("b'denied'"));
-    shown.push(format!("{:?}", outcome.error.unwrap()));
+    let mut converse_reply = Reply::buffered("denied");
+    converse_reply.status = 400;
+    converse_reply.headers = echoed_headers();
+    let converse_inputs = Inputs::new(converse_reply);
+    let mut converse_call = converse(&messages);
+    converse_call.headers = request_headers();
+    let converse_outcome = run(
+        Call::Converse(converse_call),
+        &converse_inputs,
+        Consume::None,
+    );
+    assert_eq!(converse_outcome.provider_message(), Some("b'denied'"));
+    shown.push(format!("{:?}", converse_outcome.error.unwrap()));
 
     // A reply the converter rejects carries the converter's own text, not the request.
-    let inputs = Inputs::new(Reply::buffered("[]"));
-    let mut call = converse(BASE, DATA, &messages);
-    call.fake_stream = true;
-    call.headers = request_headers();
-    let outcome = run(Call::Converse(call), &inputs, Consume::None);
-    assert_eq!(outcome.provider_status(), Some(422));
-    shown.push(format!("{:?}", outcome.error.unwrap()));
+    let bad_inputs = Inputs::new(Reply::buffered("[]"));
+    let mut bad_call = converse(&messages);
+    bad_call.fake_stream = true;
+    bad_call.headers = request_headers();
+    let bad_outcome = run(Call::Converse(bad_call), &bad_inputs, Consume::None);
+    assert_eq!(bad_outcome.provider_status(), Some(422));
+    shown.push(format!("{:?}", bad_outcome.error.unwrap()));
 
-    for text in &shown {
-        assert!(
-            !text.contains(SECRET),
-            "a failure path leaks the credential: {text}"
-        );
-        assert!(
-            !text.contains(TOKEN),
-            "a failure path leaks the session token: {text}"
-        );
-    }
+    let printed = shown.concat();
+    assert!(
+        !printed.contains(SECRET),
+        "a failure path leaks the credential"
+    );
+    assert!(
+        !printed.contains(TOKEN),
+        "a failure path leaks the session token"
+    );
 }
