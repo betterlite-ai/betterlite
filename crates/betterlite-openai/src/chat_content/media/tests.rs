@@ -17,11 +17,21 @@ use super::{
 };
 use crate::chat::ChatMessage;
 
+const CONVERT_URLS: &str = "<convert_urls>";
 const DATA_URL: &str = "data:application/pdf;base64,JVBERi0=";
 const REPORT: &str = "https://example.com/report.pdf";
 
 fn runtime() -> Runtime {
     Builder::new_current_thread().build().unwrap()
+}
+
+fn object(pairs: Vec<(&str, Value)>) -> Value {
+    Value::Object(
+        pairs
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+    )
 }
 
 struct MapFetcher<'urls> {
@@ -37,8 +47,12 @@ impl<'urls> MapFetcher<'urls> {
         }
     }
 
-    fn answer(&self, url: &str) -> Result<String, ImageFetchError> {
+    fn record(&self, url: &str) {
         self.calls.lock().unwrap().push(url.to_owned());
+    }
+
+    fn answer(&self, url: &str) -> Result<String, ImageFetchError> {
+        self.record(url);
         self.urls
             .get(url)
             .cloned()
@@ -57,11 +71,16 @@ impl RemoteMediaFetcher for MapFetcher<'_> {
         ready(self.answer(url))
     }
 
+    // LiteLLM awaits one conversion per content item, so a batch call is a regression every test must fail on
     fn convert_urls(
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(urls.iter().map(|url| self.answer(url)).collect())
+        self.record(CONVERT_URLS);
+        ready(urls.first().map_or_else(
+            || Ok(Vec::new()),
+            |url| Err(ImageFetchError::Attempts { url: url.clone() }),
+        ))
     }
 }
 
@@ -126,12 +145,44 @@ impl Fixture {
     }
 }
 
-fn user_content(items: Value) -> Value {
-    serde_json::json!([{"role": "user", "content": items}])
+fn user_content(items: &Value) -> Value {
+    Value::Array(vec![object(vec![
+        ("role", Value::from("user")),
+        ("content", items.clone()),
+    ])])
 }
 
 fn file_item(file_id: &str) -> Value {
-    serde_json::json!({"type": "file", "file": {"file_id": file_id}})
+    object(vec![
+        ("type", Value::from("file")),
+        ("file", object(vec![("file_id", Value::from(file_id))])),
+    ])
+}
+
+fn image_url_part(url: &str) -> Value {
+    object(vec![
+        ("type", Value::from("image_url")),
+        ("image_url", Value::from(url)),
+    ])
+}
+
+fn image_url_descriptor(url: &str, detail: &str) -> Value {
+    let descriptor = object(vec![
+        ("url", Value::from(url)),
+        ("format", Value::from("png")),
+        ("detail", Value::from(detail)),
+    ]);
+    object(vec![
+        ("type", Value::from("image_url")),
+        ("image_url", descriptor),
+    ])
+}
+
+fn file_with_data(data: &str) -> Value {
+    object(vec![
+        ("type", Value::from("file")),
+        ("file", object(vec![("file_data", Value::from(data))])),
+    ])
 }
 
 fn url_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -147,7 +198,7 @@ fn content_part(body: &Value) -> Value {
 
 #[test]
 fn fetches_pdf_url_for_user_file_part() {
-    let source = user_content(Value::Array(vec![file_item(REPORT)]));
+    let source = user_content(&Value::Array(vec![file_item(REPORT)]));
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
     let fixture = Fixture::new(&source);
@@ -155,7 +206,16 @@ fn fetches_pdf_url_for_user_file_part() {
     assert_eq!(fetcher.calls(), [REPORT]);
     assert_eq!(
         content_part(&body),
-        serde_json::json!({"type": "file", "file": {"file_data": DATA_URL, "filename": "my_file.pdf"}})
+        object(vec![
+            ("type", Value::from("file")),
+            (
+                "file",
+                object(vec![
+                    ("file_data", Value::from(DATA_URL)),
+                    ("filename", Value::from("my_file.pdf")),
+                ]),
+            ),
+        ])
     );
     assert_eq!(serde_json::to_value(&fixture.messages).unwrap(), source);
 }
@@ -165,7 +225,7 @@ fn fetches_in_content_item_order() {
     let first = "https://example.com/z.pdf";
     let second = "https://example.com/a.pdf";
     let second_data = "data:application/pdf;base64,QQ==";
-    let source = user_content(Value::Array(vec![file_item(first), file_item(second)]));
+    let source = user_content(&Value::Array(vec![file_item(first), file_item(second)]));
     let urls = url_map(&[(first, DATA_URL), (second, second_data)]);
     let fetcher = MapFetcher::new(&urls);
     let body = Fixture::new(&source).body(Mode::Sync, &fetcher);
@@ -173,6 +233,21 @@ fn fetches_in_content_item_order() {
     let content = body["messages"][0]["content"].clone();
     assert_eq!(content[0]["file"]["file_data"], DATA_URL);
     assert_eq!(content[1]["file"]["file_data"], second_data);
+}
+
+#[test]
+fn stops_at_the_first_failing_url() {
+    let first = "https://example.com/z.pdf";
+    let second = "https://example.com/a.pdf";
+    let source = user_content(&Value::Array(vec![file_item(first), file_item(second)]));
+    let urls = url_map(&[(second, DATA_URL)]);
+    let fetcher = MapFetcher::new(&urls);
+    let error = Fixture::new(&source)
+        .transform_with_media(Mode::Sync, &fetcher)
+        .unwrap_err();
+    assert_eq!(fetcher.calls(), [first]);
+    assert_eq!(error.status_code(), 400);
+    assert!(error.to_string().contains("after 3 attempts"));
 }
 
 #[test]
@@ -192,7 +267,7 @@ fn fetches_for_http_and_www_prefixes() {
 }
 
 fn fetched_file(file_id: &str) -> Value {
-    let source = user_content(Value::Array(vec![file_item(file_id)]));
+    let source = user_content(&Value::Array(vec![file_item(file_id)]));
     let urls = url_map(&[(file_id, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
     let body = Fixture::new(&source).body(Mode::Sync, &fetcher);
@@ -205,7 +280,7 @@ fn fetched_file(file_id: &str) -> Value {
 #[case::async_base_class(Mode::AsyncBaseClass)]
 #[case::async_subclass(Mode::AsyncSubclass)]
 fn fetches_for_every_mode(#[case] mode: Mode) {
-    let source = user_content(Value::Array(vec![file_item(REPORT)]));
+    let source = user_content(&Value::Array(vec![file_item(REPORT)]));
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
     let mut fixture = Fixture::new(&source);
@@ -223,7 +298,7 @@ fn fetches_for_every_mode(#[case] mode: Mode) {
 
 #[test]
 fn refusing_fetcher_returns_the_disabled_error() {
-    let source = user_content(Value::Array(vec![file_item(REPORT)]));
+    let source = user_content(&Value::Array(vec![file_item(REPORT)]));
     let fixture = Fixture::new(&source);
     let error = runtime()
         .block_on(
@@ -242,7 +317,7 @@ fn refusing_fetcher_returns_the_disabled_error() {
 
 #[test]
 fn missing_url_returns_the_fetch_error() {
-    let source = user_content(Value::Array(vec![file_item(REPORT)]));
+    let source = user_content(&Value::Array(vec![file_item(REPORT)]));
     let urls = BTreeMap::new();
     let fetcher = MapFetcher::new(&urls);
     let error = Fixture::new(&source)
@@ -253,15 +328,22 @@ fn missing_url_returns_the_fetch_error() {
     assert!(error.to_string().contains("after 3 attempts"));
 }
 
+fn untouched_parts() -> Vec<Value> {
+    vec![
+        image_url_part("https://example.com/cat.png"),
+        image_url_descriptor("https://example.com/dog.png", "high"),
+        file_item("data:application/pdf;base64,JVBERi0="),
+        file_with_data("data:text/plain;base64,aGk="),
+        object(vec![
+            ("type", Value::from("file")),
+            ("file", object(Vec::new())),
+        ]),
+    ]
+}
+
 #[test]
 fn non_pdf_parts_never_fetch() {
-    let source = user_content(serde_json::json!([
-        {"type": "image_url", "image_url": "https://example.com/cat.png"},
-        {"type": "image_url", "image_url": {"url": "https://example.com/dog.png", "format": "png", "detail": "high"}},
-        {"type": "file", "file": {"file_id": "data:application/pdf;base64,JVBERi0="}},
-        {"type": "file", "file": {"file_data": "data:text/plain;base64,aGk="}},
-        {"type": "file", "file": {}}
-    ]));
+    let source = user_content(&Value::Array(untouched_parts()));
     let urls = BTreeMap::new();
     let fetcher = MapFetcher::new(&urls);
     let body = Fixture::new(&source).body(Mode::Sync, &fetcher);
@@ -273,7 +355,10 @@ fn non_pdf_parts_never_fetch() {
     );
     assert_eq!(
         content[1]["image_url"],
-        serde_json::json!({"url": "https://example.com/dog.png", "detail": "high"})
+        object(vec![
+            ("url", Value::from("https://example.com/dog.png")),
+            ("detail", Value::from("high")),
+        ])
     );
     assert_eq!(
         content[2]["file"]["file_id"],
@@ -281,16 +366,34 @@ fn non_pdf_parts_never_fetch() {
     );
     assert_eq!(
         content[3]["file"],
-        serde_json::json!({"file_data": "data:text/plain;base64,aGk=", "filename": "my_file.pdf"})
+        object(vec![
+            ("file_data", Value::from("data:text/plain;base64,aGk=")),
+            ("filename", Value::from("my_file.pdf")),
+        ])
     );
-    assert_eq!(content[4]["file"], serde_json::json!({}));
+    assert_eq!(content[4]["file"], object(Vec::new()));
 }
 
 #[test]
 fn other_roles_never_fetch() {
-    let source = serde_json::json!([
-        {"role": "system", "content": [{"type": "file", "file": {"file_id": REPORT}}]},
-        {"role": "assistant", "content": [{"type": "text", "text": "ok"}, {"type": "file", "file": {"file_id": "http://example.com/report.pdf"}}]}
+    let source = Value::Array(vec![
+        object(vec![
+            ("role", Value::from("system")),
+            ("content", Value::Array(vec![file_item(REPORT)])),
+        ]),
+        object(vec![
+            ("role", Value::from("assistant")),
+            (
+                "content",
+                Value::Array(vec![
+                    object(vec![
+                        ("type", Value::from("text")),
+                        ("text", Value::from("ok")),
+                    ]),
+                    file_item("http://example.com/report.pdf"),
+                ]),
+            ),
+        ]),
     ]);
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
@@ -305,9 +408,9 @@ fn other_roles_never_fetch() {
 
 #[test]
 fn missing_file_after_url_fetches_first() {
-    let source = user_content(serde_json::json!([
-        {"type": "file", "file": {"file_id": REPORT}},
-        {"type": "file"}
+    let source = user_content(&Value::Array(vec![
+        file_item(REPORT),
+        object(vec![("type", Value::from("file"))]),
     ]));
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
@@ -326,17 +429,20 @@ fn missing_file_after_url_fetches_first() {
 
 #[test]
 fn fetched_media_serves_the_plain_transform() {
-    let source = user_content(serde_json::json!([
-        {"type": "file", "file": {"file_id": REPORT}},
-        {"type": "text", "text": "look"}
+    let source = user_content(&Value::Array(vec![
+        file_item(REPORT),
+        object(vec![
+            ("type", Value::from("text")),
+            ("text", Value::from("look")),
+        ]),
     ]));
     let urls = url_map(&[(REPORT, DATA_URL)]);
     let fetcher = MapFetcher::new(&urls);
     let fixture = Fixture::new(&source);
     let media = fixture.fetch_media(&fetcher).unwrap();
-    let fetched = fixture.body(Mode::Sync, &fetcher);
+    let direct = fixture.body(Mode::Sync, &fetcher);
     let replayed = fixture.plain_body(Mode::Sync, &media);
-    assert_eq!(replayed, fetched);
+    assert_eq!(replayed, direct);
     assert_eq!(content_part(&replayed)["file"]["file_data"], DATA_URL);
     assert!(matches!(
         media.download("https://other.example/report.pdf"),

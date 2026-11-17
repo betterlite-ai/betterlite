@@ -9,7 +9,6 @@ use super::{
     ChatContent, ChatContentError, Mode, RefuseDownloads, TransformedRequest, UrlDownloader,
 };
 
-#[cfg(test)]
 mod tests;
 
 // The data URLs a recording pass found; a plain transform with it sends file_data for every URL it prefetched
@@ -20,12 +19,12 @@ pub struct FetchedMedia {
 impl UrlDownloader for FetchedMedia {
     // A URL the caller never prefetched fails as LiteLLM's downloads-off answer does, never as a bare file_id
     fn download(&self, url: &str) -> Result<String, ImageFetchError> {
-        match self.data.get(url) {
-            Some(data_url) => Ok(data_url.clone()),
-            None => Err(ImageFetchError::Disabled {
+        self.data
+            .get(url)
+            .cloned()
+            .ok_or_else(|| ImageFetchError::Disabled {
                 url: url.to_owned(),
-            }),
-        }
+            })
     }
 }
 
@@ -54,11 +53,10 @@ impl RemoteMediaFetcher for RefuseDownloads {
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        let answer = match urls.first() {
-            Some(url) => Err(ImageFetchError::Disabled { url: url.clone() }),
-            None => Ok(Vec::new()),
-        };
-        ready(answer)
+        ready(urls.first().map_or_else(
+            || Ok(Vec::new()),
+            |url| Err(ImageFetchError::Disabled { url: url.clone() }),
+        ))
     }
 }
 
