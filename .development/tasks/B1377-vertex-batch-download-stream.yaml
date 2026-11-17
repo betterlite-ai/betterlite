@@ -30,6 +30,13 @@ description: >-
   implementation, 65 loader, 190 tests, 95 adapters and 100 fuzz lines, maximum 775.
 scope:
   paths:
+    - "crates/betterlite-config/tests/fixtures/unsupported/**"
+    - "crates/betterlite-config/src/types.rs"
+    - "crates/betterlite-config/src/tests.rs"
+    - "crates/betterlite-config/src/sections.rs"
+    - "crates/betterlite-config/src/sections/batch_cost_finalize.rs"
+    - "crates/betterlite-config/src/raw.rs"
+    - "crates/betterlite-config/src/loader.rs"
     - crates/betterlite-vertex/src/vertex_batch_download.rs
     - crates/betterlite-vertex/src/vertex_batch_download/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
