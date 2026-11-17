@@ -6,10 +6,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Serialize)]
-struct UpdateUserView<'a> {
-    user_id: Option<&'a String>,
-    user_email: Option<&'a String>,
-    supplied: &'a BTreeSet<String>,
+struct UpdateUserView<'request> {
+    user_id: Option<&'request String>,
+    user_email: Option<&'request String>,
+    supplied: &'request BTreeSet<String>,
 }
 
 pub(super) fn answer(body: &Value) -> Result<Value, Box<HelperError>> {

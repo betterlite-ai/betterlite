@@ -4,8 +4,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Serialize)]
-struct RedisView<'a> {
-    params: &'a CoordinationRedisParams,
+struct RedisView<'request> {
+    params: &'request CoordinationRedisParams,
     has_connection_target: bool,
 }
 

@@ -9,22 +9,22 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Serialize)]
-struct CustomerView<'a> {
-    user_id: &'a String,
-    alias: Option<&'a String>,
+struct CustomerView<'request> {
+    user_id: &'request String,
+    alias: Option<&'request String>,
     blocked: bool,
-    budget_id: Option<&'a String>,
-    spend: Option<&'a Amount>,
+    budget_id: Option<&'request String>,
+    spend: Option<&'request Amount>,
     allowed_model_region: Option<AllowedModelRegion>,
-    default_model: Option<&'a String>,
-    max_budget: Option<&'a Amount>,
-    soft_budget: Option<&'a Amount>,
+    default_model: Option<&'request String>,
+    max_budget: Option<&'request Amount>,
+    soft_budget: Option<&'request Amount>,
     max_parallel_requests: Option<i64>,
     tpm_limit: Option<i64>,
     rpm_limit: Option<i64>,
     tpd_limit: Option<i64>,
-    budget_duration: Option<&'a String>,
-    supplied: &'a BTreeSet<String>,
+    budget_duration: Option<&'request String>,
+    supplied: &'request BTreeSet<String>,
 }
 
 pub(super) fn answer(body: &Value) -> Result<Value, Box<HelperError>> {

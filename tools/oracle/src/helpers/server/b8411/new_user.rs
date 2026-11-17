@@ -6,16 +6,16 @@ use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Serialize)]
-struct NewUserView<'a> {
-    user_email: Option<&'a String>,
-    user_alias: Option<&'a String>,
+struct NewUserView<'request> {
+    user_email: Option<&'request String>,
+    user_alias: Option<&'request String>,
     user_role: Option<UserRole>,
-    max_budget: Option<&'a Amount>,
-    teams: Option<&'a NewUserTeams>,
+    max_budget: Option<&'request Amount>,
+    teams: Option<&'request NewUserTeams>,
     auto_create_key: bool,
     send_invite_email: Option<bool>,
-    sso_user_id: Option<&'a String>,
-    organizations: Option<&'a Vec<String>>,
+    sso_user_id: Option<&'request String>,
+    organizations: Option<&'request Vec<String>>,
 }
 
 pub(super) fn answer(body: &Value) -> Result<Value, Box<HelperError>> {
