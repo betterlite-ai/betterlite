@@ -61,10 +61,11 @@ use crate::vertex_claude_chat::request::prepare;
 use crate::vertex_claude_chat::response::{TransformCall, transform_response};
 
 // Models that resolve only under vertex_ai carry the prefix, so a missed provider override loses the capability.
+// supports_output_config is only read from the raw catalog, which looks the bare name up.
 pub(crate) const MODELS: &str = r#"{
     "claude-haiku-4-5": {"litellm_provider": "vertex_ai", "supports_speed": true},
     "claude-3-sonnet-20240229": {"litellm_provider": "vertex_ai", "supports_forced_tool_use": false},
-    "vertex_ai/claude-opus-4-5": {"litellm_provider": "vertex_ai", "supports_output_config": true},
+    "claude-opus-4-5": {"litellm_provider": "vertex_ai", "supports_output_config": true},
     "vertex_ai/claude-sonnet-4-5": {"litellm_provider": "vertex_ai", "supports_adaptive_thinking": true},
     "vertex_ai/claude-sonnet-4-6": {"litellm_provider": "vertex_ai", "supports_native_structured_output": true, "supports_adaptive_thinking": true}
 }"#;
@@ -300,6 +301,14 @@ pub(crate) struct Scenario {
     billing_header: BillingHeader,
 }
 
+fn block_on<T>(future: impl Future<Output = T>) -> T {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    runtime.block_on(future)
+}
+
 impl Scenario {
     pub(crate) fn new(model: &str, source: &str) -> Self {
         Self {
@@ -328,11 +337,7 @@ impl Scenario {
     {
         let fixture = Fixture::new(MODELS);
         let mut session = Session::new(&fixture);
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
-        let result = runtime.block_on(self.prepare(&mut session, &fixture, fetcher));
+        let result = block_on(self.prepare(&mut session, &fixture, fetcher));
         Outcome::new(result)
     }
 
@@ -408,11 +413,7 @@ pub(crate) fn map_with_packaged(
     };
     let non_default = fields(requested);
     let mut optional = fields(initial);
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("runtime");
-    runtime.block_on(map_openai_params(
+    block_on(map_openai_params(
         &request,
         &non_default,
         &mut optional,

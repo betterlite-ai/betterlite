@@ -16,6 +16,8 @@ use betterlite_prompts::media::inline::{RemoteMediaFetcher, async_inline_remote_
 use betterlite_prompts::media::parts::INLINE_REMOTE_IMAGE_URLS;
 use betterlite_prompts::message_content::Message;
 use indexmap::IndexMap;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use super::PROVIDER;
 use super::beta::compose;
@@ -76,8 +78,8 @@ fn convert_each<Source, Target, FileFailure>(
     items: &[Source],
 ) -> Result<Vec<Target>, RequestError<FileFailure>>
 where
-    Source: serde::Serialize,
-    Target: serde::de::DeserializeOwned,
+    Source: Serialize,
+    Target: DeserializeOwned,
     FileFailure: StdError + Send + Sync + 'static,
 {
     let mut converted = Vec::with_capacity(items.len());

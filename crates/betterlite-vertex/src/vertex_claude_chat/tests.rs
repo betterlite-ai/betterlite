@@ -238,11 +238,11 @@ fn remote_image_fetch() {
     expect_field(&outcome, "messages", INLINED_IMAGES);
 
     let inline = InliningFetcher::default();
-    let outcome = Scenario::new("claude-haiku-4-5", INLINE_IMAGE)
+    let inline_outcome = Scenario::new("claude-haiku-4-5", INLINE_IMAGE)
         .run_with(&inline)
         .ok();
     assert!(inline.urls().is_empty());
-    expect_field(&outcome, "messages", INLINED_IMAGE);
+    expect_field(&inline_outcome, "messages", INLINED_IMAGE);
 
     let refusing = RefusingFetcher::default();
     let (status, message) = Scenario::new("claude-haiku-4-5", REMOTE_IMAGES)
