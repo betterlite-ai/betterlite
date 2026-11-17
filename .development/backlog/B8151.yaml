@@ -1,7 +1,7 @@
 id: B8151
 milestone: M3 providers
 title: hosted_vllm rerank, responses, image edit, transcription, video and decisions configs
-status: done
+status: todo
 depends_on: [B2202, B1013, B3510, B506, B512, B515, B525, B3331]
 file: tasks/B8151-hosted-vllm-media.yaml
 covers:
@@ -15,7 +15,7 @@ covers:
   - "litellm/llms/hosted_vllm/videos/transformation.py"
 parent: B040
 split_from: B040
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2233
+pr: null
