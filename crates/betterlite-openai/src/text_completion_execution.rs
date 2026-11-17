@@ -73,6 +73,15 @@ pub struct CompletionExecutor {
     pub catalog: OnceCell<CompletionCatalog>,
 }
 
+// one send: the request the bridge built, the shape the route answers, and the call's own redaction and logging
+pub struct CompletionSend<'call> {
+    pub deployment: &'call ChatDeployment,
+    pub request: TransportRequest,
+    pub streamed: bool,
+    pub redactor: &'call Redactor,
+    pub logger: &'call mut (dyn CompletionLogger + Send),
+}
+
 impl CompletionExecutor {
     // where the completion route sends this deployment: the text endpoint, or the chat endpoint
     pub async fn endpoint(&self, deployment: &ChatDeployment) -> CompletionEndpoint {
@@ -114,29 +123,25 @@ impl CompletionExecutor {
     // a request the bridge already built: the same send, read as the answer the mode asked for
     pub async fn send(
         &self,
-        deployment: &ChatDeployment,
-        request: TransportRequest,
-        streamed: bool,
-        redactor: &Redactor,
-        logger: &mut (dyn CompletionLogger + Send),
+        call: CompletionSend<'_>,
     ) -> Result<CompletionCallAnswer, CompletionFailure> {
         let facts = Arc::new(Mutex::new(None));
-        let transport = self.transport(deployment, &facts);
-        let outcome = drive(&transport, request, redactor, logger).await?;
+        let transport = self.transport(call.deployment, &facts);
+        let outcome = drive(&transport, call.request, call.redactor, call.logger).await?;
         let captured = facts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
             .unwrap_or_default();
         match outcome {
-            TextCompletionOutcome::Buffered(reply) if !streamed => {
+            TextCompletionOutcome::Buffered(reply) if !call.streamed => {
                 Ok(CompletionCallAnswer::Buffered(CompletionAnswer {
                     response: Box::new(read_reply(reply)?),
                     upstream_headers: captured.headers,
                     upstream_time: captured.elapsed,
                 }))
             }
-            TextCompletionOutcome::Stream(stream) if streamed => {
+            TextCompletionOutcome::Stream(stream) if call.streamed => {
                 Ok(CompletionCallAnswer::Streamed(CompletionStreamAnswer {
                     stream,
                     upstream_headers: captured.headers,

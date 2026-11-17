@@ -26,7 +26,7 @@ use super::failure::{CompletionFailure, wrapped_failure};
 use super::http::{HttpCompletionConstructor, HttpCompletionSdk};
 use super::log::TracingCompletionLog;
 use super::transport_request;
-use super::{CompletionCallAnswer, CompletionExecutor};
+use super::{CompletionCallAnswer, CompletionExecutor, CompletionSend};
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
@@ -422,8 +422,8 @@ async fn the_http_sdk_sends_the_credential_and_never_an_organization() {
     data.insert(String::from("model"), Value::from("gpt-3.5-turbo-instruct"));
     data.insert(String::from("prompt"), Value::from("hi"));
     let (answer, head) = tokio::join!(sdk.create(&data), serve_text_completion(listener));
-    let answer = answer.expect("completion answer");
-    assert!(matches!(answer, RawCompletion::Buffered { .. }));
+    let created = answer.expect("completion answer");
+    assert!(matches!(created, RawCompletion::Buffered { .. }));
     let sent = head.to_ascii_lowercase();
     assert!(sent.starts_with("post /v1/completions "), "{head}");
     assert!(
@@ -448,13 +448,13 @@ async fn serve_text_stream(listener: TcpListener, released: oneshot::Receiver<()
     let _filled = stream.read_exact(&mut body).await;
     let opening = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
     let first = "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"finish_reason\":null}]}\n\n";
-    let _written = stream.write_all(opening.as_bytes()).await;
-    let _written = stream.write_all(first.as_bytes()).await;
-    let _flushed = stream.flush().await;
+    let _opening_written = stream.write_all(opening.as_bytes()).await;
+    let _first_written = stream.write_all(first.as_bytes()).await;
+    let _first_flushed = stream.flush().await;
     let _released = timeout(Duration::from_secs(5), released).await;
     let last = "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"choices\":[{\"text\":\" there\",\"index\":0,\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
-    let _written = stream.write_all(last.as_bytes()).await;
-    let _flushed = stream.flush().await;
+    let _last_written = stream.write_all(last.as_bytes()).await;
+    let _last_flushed = stream.flush().await;
 }
 
 #[tokio::test]
@@ -541,15 +541,22 @@ async fn read_streamed_completion(
     while let Some(chunk) = body.next().await {
         rest.extend_from_slice(&chunk.expect("no body error"));
     }
-    let rest = String::from_utf8(rest).expect("utf8");
-    assert!(rest.contains("\"text\":\" there\""), "{rest}");
-    assert!(rest.ends_with("data: [DONE]\n\n"), "{rest}");
+    let rest_text = String::from_utf8(rest).expect("utf8");
+    assert!(rest_text.contains("\"text\":\" there\""), "{rest_text}");
+    assert!(rest_text.ends_with("data: [DONE]\n\n"), "{rest_text}");
+}
+
+// The answer shape a transport or an executor was built for.
+#[derive(Clone, Copy)]
+enum Shape {
+    Buffered,
+    Streamed,
 }
 
 // a send whose transport was built for one shape and whose executor was asked for the other
 async fn crossed_send(
-    transport_streamed: bool,
-    send_streamed: bool,
+    transport_shape: Shape,
+    send_shape: Shape,
 ) -> Result<CompletionCallAnswer, CompletionFailure> {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -562,6 +569,7 @@ async fn crossed_send(
     let mut deployment = deployment("openai/gpt-3.5-turbo-instruct");
     deployment.api_base = format!("http://{address}/v1");
     let request = completion(r#""hi""#);
+    let transport_streamed = matches!(transport_shape, Shape::Streamed);
     let transport = executor
         .text_transport(&deployment, &request, transport_streamed)
         .await
@@ -569,13 +577,13 @@ async fn crossed_send(
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor");
     let mut logger = TracingCompletionLog;
     let (answer, _head) = tokio::join!(
-        executor.send(
-            &deployment,
-            transport,
-            send_streamed,
-            &redactor,
-            &mut logger
-        ),
+        executor.send(CompletionSend {
+            deployment: &deployment,
+            request: transport,
+            streamed: matches!(send_shape, Shape::Streamed),
+            redactor: &redactor,
+            logger: &mut logger,
+        }),
         serve_text_completion(listener)
     );
     answer
@@ -583,12 +591,14 @@ async fn crossed_send(
 
 #[tokio::test]
 async fn a_buffered_completion_keeps_the_provider_headers() {
-    let answer = crossed_send(false, false).await.expect("completion answer");
-    let CompletionCallAnswer::Buffered(answer) = answer else {
+    let answer = crossed_send(Shape::Buffered, Shape::Buffered)
+        .await
+        .expect("completion answer");
+    let CompletionCallAnswer::Buffered(buffered) = answer else {
         panic!("a buffered request never streams");
     };
     assert_eq!(
-        answer
+        buffered
             .upstream_headers
             .get("x-upstream")
             .and_then(|value| value.to_str().ok()),
@@ -598,7 +608,7 @@ async fn a_buffered_completion_keeps_the_provider_headers() {
 
 #[tokio::test]
 async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
-    let Err(stream_sent) = crossed_send(false, true).await else {
+    let Err(stream_sent) = crossed_send(Shape::Buffered, Shape::Streamed).await else {
         panic!("a buffered answer cannot fill a stream");
     };
     assert_eq!(stream_sent.status, 500);
@@ -611,7 +621,7 @@ async fn a_send_never_takes_the_provider_shape_it_did_not_ask_for() {
         "{}",
         stream_sent.message
     );
-    let Err(buffer_sent) = crossed_send(true, false).await else {
+    let Err(buffer_sent) = crossed_send(Shape::Streamed, Shape::Buffered).await else {
         panic!("a stream cannot fill a buffered answer");
     };
     assert_eq!(buffer_sent.status, 500);

@@ -9,7 +9,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
-    CompletionCallAnswer, CompletionExecutor, CompletionStreamAnswer,
+    CompletionCallAnswer, CompletionExecutor, CompletionSend, CompletionStreamAnswer,
 };
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_redact::secret::Redactor;
@@ -113,11 +113,17 @@ async fn text_stream(
         .text_transport(deployment, request, true)
         .await
         .expect("transport");
-    let answer = executor
-        .send(deployment, transport, true, &redactor, &mut logger)
+    let answered = executor
+        .send(CompletionSend {
+            deployment,
+            request: transport,
+            streamed: true,
+            redactor: &redactor,
+            logger: &mut logger,
+        })
         .await
         .expect("stream");
-    let CompletionCallAnswer::Streamed(answer) = answer else {
+    let CompletionCallAnswer::Streamed(answer) = answered else {
         panic!("the provider answered a buffered completion");
     };
     answer

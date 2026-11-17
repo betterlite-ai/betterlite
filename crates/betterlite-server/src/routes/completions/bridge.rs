@@ -18,7 +18,7 @@ use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
-    CompletionAnswer, CompletionCallAnswer, CompletionStreamAnswer,
+    CompletionAnswer, CompletionCallAnswer, CompletionSend, CompletionStreamAnswer,
 };
 use betterlite_openai::text_completion_stream::{decode_chat_events, shaped_chunk};
 use betterlite_provider::operation::ChatCompletion;
@@ -81,13 +81,13 @@ async fn text_send(
         .map_err(bridge_failure)?;
     calls
         .execution
-        .send(
-            &call.deployment,
-            built,
+        .send(CompletionSend {
+            deployment: &call.deployment,
+            request: built,
             streamed,
-            &calls.state.executor.redactor,
-            &mut logger,
-        )
+            redactor: &calls.state.executor.redactor,
+            logger: &mut logger,
+        })
         .await
         .map_err(bridge_failure)
 }
@@ -103,11 +103,11 @@ pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
 
 // The text endpoint's chunks as the dispatch pipeline's stream answer, model restamped.
 fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStreamAnswer {
-    let model = model.unwrap_or_default().to_owned();
+    let named = model.unwrap_or_default().to_owned();
     let body = answer
         .stream
         .map(move |item| match item {
-            Ok(chunk) => shaped_chunk(chunk, &model)
+            Ok(chunk) => shaped_chunk(chunk, &named)
                 .map_err(|source| stream_failure(&source))
                 .and_then(|value| {
                     serde_json::from_value::<Json>(value).map_err(|source| stream_failure(&source))

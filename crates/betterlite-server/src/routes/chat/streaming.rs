@@ -27,7 +27,8 @@ use betterlite_openai::completion_chat_bridge::{
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
-    CompletionAnswer, CompletionCallAnswer, CompletionExecutor, CompletionStreamAnswer,
+    CompletionAnswer, CompletionCallAnswer, CompletionExecutor, CompletionSend,
+    CompletionStreamAnswer,
 };
 use futures_util::StreamExt as _;
 use futures_util::stream;
@@ -38,7 +39,7 @@ use super::headers::stream_headers;
 use crate::routes::completions::streaming::provider_stream;
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 
-use self::relay::{Pump, next_frame, relay_bytes};
+use self::relay::{Pump, TextSource, next_frame, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(super) struct ChatCalls {
@@ -205,13 +206,13 @@ async fn bridged_send(
         catalog: OnceCell::new(),
     };
     executor
-        .send(
-            &call.deployment,
-            transport,
+        .send(CompletionSend {
+            deployment: &call.deployment,
+            request: transport,
             streamed,
-            &calls.executor.redactor,
-            &mut logger,
-        )
+            redactor: &calls.executor.redactor,
+            logger: &mut logger,
+        })
         .await
         .map_err(completion_failure)
 }
