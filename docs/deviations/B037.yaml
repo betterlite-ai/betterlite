@@ -12,4 +12,7 @@ deviations:
   - what: A Voyage rerank result whose document is not a string is refused as a decode failure, where LiteLLM copies the document object into the result unchanged.
     why: The shared RerankResponseDocument holds a text string only, so an object document has nowhere to go; the alternative was writing the object into a text field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/rerank/transformation.py#L118-L121
+  - what: A rerank call for a provider with no rerank config of its own selects no family here, where LiteLLM's factory falls back to the Cohere rerank client for every provider it does not match.
+    why: That fallback would send the other provider's request and API key to api.cohere.ai, so this returns no config and leaves the refusal to B1014's dispatch; the openai case in crates/betterlite-core/src/embedding_rerank_providers/tests.rs holds it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8908
 kept_bugs: []
