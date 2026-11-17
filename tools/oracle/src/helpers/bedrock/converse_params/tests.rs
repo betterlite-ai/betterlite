@@ -30,13 +30,12 @@ fn helper_seeds_select_bedrock_converse_params() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no {SEED_PREFIX} seed exists");
-    for (path, source) in &seeds {
+    assert!(seeds.iter().all(|(path, source)| {
         let case: HelperCase = serde_saphyr::from_str(source).expect("a seed parses");
-        validate_helper(path, &case).expect("a seed validates");
-        assert_eq!(case.call.operation, OPERATION);
-        serde_json::from_value::<Input>(case.call.input)
-            .expect("a seed names a converse params function");
-    }
+        validate_helper(path, &case).is_ok()
+            && case.call.operation == OPERATION
+            && serde_json::from_value::<Input>(case.call.input).is_ok()
+    }));
 }
 
 #[test]

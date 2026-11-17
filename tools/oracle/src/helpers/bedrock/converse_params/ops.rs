@@ -10,7 +10,7 @@ use betterlite_bedrock::converse_params::inference::{
     handle_top_k_value, transform_inference_params,
 };
 use betterlite_bedrock::converse_params::merge::{
-    drop_tool_choice_type_conflicting_with_tool_config, merge_parallel_tool_use_config,
+    drop_tool_choice_type, merge_parallel_tool_use_config,
 };
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
@@ -19,8 +19,7 @@ use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
-use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{CaseLookup, Fixture};
@@ -41,10 +40,6 @@ where
         code: None,
         message: error.to_string(),
     })
-}
-
-fn encode<T: Serialize>(value: &T) -> Result<Value, Box<HelperError>> {
-    serde_json::to_value(value).map_err(|error| helper_error(error, None))
 }
 
 fn budgets(environment: &BTreeMap<String, String>) -> Result<Settings, Box<HelperError>> {
@@ -92,7 +87,7 @@ fn map_params(call: &MapParamsInput) -> HelperResult {
             map_openai_params(&request, &mut optional_params, &mut capability, &mut names).await
         })
         .map_err(|error| helper_error(&error, error.status_code()))?;
-    Ok(json!({ "params": encode(&optional_params)? }))
+    Ok(json!({ "params": optional_params }))
 }
 
 fn cache_point(call: &CachePointInput) -> HelperResult {
@@ -101,12 +96,7 @@ fn cache_point(call: &CachePointInput) -> HelperResult {
         .map_err(|error| helper_error(&error, error.status_code()))?;
     let built = build_cache_point_block(call.control.as_ref(), model, &call.model_cost)
         .map_err(|error| helper_error(&error, error.status_code()))?;
-    let encoded = encode(&block)?;
-    Ok(json!({
-        "block": encoded,
-        "content": encoded,
-        "built": encode(&built)?,
-    }))
+    Ok(json!({ "block": block.clone(), "content": block, "built": built }))
 }
 
 fn top_k(call: &TopKInput) -> HelperResult {
@@ -121,9 +111,9 @@ fn top_k(call: &TopKInput) -> HelperResult {
         .map_err(|error| helper_error(&error, error.status_code()))?;
     let transformed = transform_inference_params(call.inference_params.clone());
     Ok(json!({
-        "mapped": encode(&mapped)?,
-        "remaining": encode(&remaining)?,
-        "transformed": encode(&transformed)?,
+        "mapped": mapped,
+        "remaining": remaining,
+        "transformed": transformed,
     }))
 }
 
@@ -133,10 +123,10 @@ fn parallel_config(call: &ParallelConfigInput) -> HelperResult {
         &call.parallel_tool_use_config,
     );
     let mut dropped = merged.clone();
-    drop_tool_choice_type_conflicting_with_tool_config(&mut dropped);
+    drop_tool_choice_type(&mut dropped);
     Ok(json!({
-        "merged": encode(&merged)?,
-        "dropped": encode(&dropped)?,
+        "merged": merged,
+        "dropped": dropped,
     }))
 }
 
