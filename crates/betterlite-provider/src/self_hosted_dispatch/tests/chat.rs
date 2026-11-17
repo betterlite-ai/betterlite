@@ -489,6 +489,49 @@ fn ollama_chat_key_falls_through_ollama_key_the_environment_and_litellm() {
     }
 }
 
+fn ollama_chat_base(passed: Option<&str>, section: SectionFixture) -> String {
+    let mut fixture = Fixture::new();
+    fixture.provider = String::from("ollama_chat");
+    fixture.api_base = passed.map(str::to_owned);
+    fixture.configure(section);
+    let handler = Recorder::succeeding();
+    let (outcome, _state) = run(ChatConfigTag::OllamaChat, &fixture, &handler);
+    succeeded(outcome);
+    only_call(&handler)
+        .api_base
+        .expect("the ollama_chat arm always resolves a base")
+}
+
+#[test]
+fn ollama_chat_reads_the_ollama_base_chain() {
+    assert_eq!(
+        ollama_chat_base(
+            Some("http://passed"),
+            SectionFixture {
+                ollama_api_base: Some(String::from("http://env")),
+                api_base: Some(String::from("http://litellm")),
+                ..SectionFixture::default()
+            }
+        ),
+        "http://litellm"
+    );
+    assert_eq!(
+        ollama_chat_base(
+            None,
+            SectionFixture {
+                ollama_api_base: Some(String::from("http://env")),
+                ..SectionFixture::default()
+            }
+        ),
+        "http://env",
+        "the environment base reaches ollama_chat too"
+    );
+    assert_eq!(
+        ollama_chat_base(None, SectionFixture::default()),
+        "http://localhost:11434"
+    );
+}
+
 #[test]
 fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
     let mut fixture = Fixture::new();
