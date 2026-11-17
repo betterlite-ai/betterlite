@@ -57,25 +57,24 @@ impl Section for Raw {
 }
 
 // litellm_settings.enable_preview_features is a module-level flag: litellm_settings only, no environment
-fn preview<L>(value: JsonValue, lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn preview(value: JsonValue, lookup: &dyn EnvironmentLookup) -> Result<bool, ConfigError> {
     match value {
         JsonValue::Null => Ok(false),
         JsonValue::Bool(flag) => Ok(flag),
         JsonValue::String(text) => {
             let resolved = resolve_string(text, ENABLE_PREVIEW_FEATURES_PATH, lookup)?;
-            text_to_bool(&resolved).ok_or(ConfigError::InvalidScalar {
-                path: ENABLE_PREVIEW_FEATURES_PATH.to_owned(),
-                value: false,
-            })
+            text_to_bool(&resolved).ok_or_else(invalid_preview_value)
         }
         JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ConfigError::InvalidScalar {
-                path: ENABLE_PREVIEW_FEATURES_PATH.to_owned(),
-                value: false,
-            })
+            Err(invalid_preview_value())
         }
+    }
+}
+
+// A value of the wrong type is a field error naming the setting, not a silent false
+fn invalid_preview_value() -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: ENABLE_PREVIEW_FEATURES_PATH.to_owned(),
+        value: false,
     }
 }
