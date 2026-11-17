@@ -62,6 +62,7 @@ enum Case {
     AsyncLoggingHookMasksRequest,
     StreamingIteratorRelaysEvents,
     ZeroTimeoutUsesTheDefault,
+    MalformedMockRedactedText,
 }
 
 #[rstest]
@@ -120,6 +121,7 @@ enum Case {
 #[case::async_logging_hook_masks_the_request(Case::AsyncLoggingHookMasksRequest)]
 #[case::streaming_iterator_relays_events(Case::StreamingIteratorRelaysEvents)]
 #[case::zero_timeout_uses_the_default(Case::ZeroTimeoutUsesTheDefault)]
+#[case::malformed_mock_redacted_text(Case::MalformedMockRedactedText)]
 #[tokio::test]
 async fn presidio_runtime_cases(#[case] case: Case) {
     match case {
@@ -204,5 +206,8 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         }
         Case::StreamingIteratorRelaysEvents => streaming::streaming_iterator_relays_events().await,
         Case::ZeroTimeoutUsesTheDefault => construction::zero_timeout_uses_the_default(),
+        Case::MalformedMockRedactedText => {
+            construction::malformed_mock_redacted_text_fails_construction();
+        }
     }
 }

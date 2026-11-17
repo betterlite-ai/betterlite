@@ -407,3 +407,17 @@ pub(super) fn zero_timeout_uses_the_default() {
     assert_eq!(guard.analyzer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
     assert_eq!(guard.anonymizer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
 }
+
+pub(super) fn malformed_mock_redacted_text_fails_construction() {
+    let server = quiet();
+    let mut args = guard_args(&server);
+    args.mock_redacted_text = Some(BTreeMap::from([(
+        "text".to_owned(),
+        GuardrailValue::SignedInteger(1),
+    )]));
+    let error = failing(&args);
+    assert!(matches!(
+        error,
+        PresidioRuntimeError::MockRedactedText { .. }
+    ));
+}
