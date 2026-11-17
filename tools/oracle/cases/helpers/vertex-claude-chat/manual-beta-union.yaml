@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-claude-chat-manual-beta-union
+call:
+  vertex_claude_chat:
+    fixture:
+      model_cost:
+        claude-haiku-4-5: {litellm_provider: vertex_ai}
+      packaged: {}
+    steps:
+      - {function: transform_request, model: claude-haiku-4-5, messages: [{role: user, content: hi}], optional_params: {extra_headers: {anthropic-beta: "foo, bar"}}, headers: {}, drop_params: false, global_drop_params: false}
+      - {function: transform_request, model: claude-haiku-4-5, messages: [{role: user, content: hi}], optional_params: {extra_headers: {anthropic-beta: [x, y]}}, headers: {}, drop_params: false, global_drop_params: false}
+      - function: transform_request
+        model: claude-haiku-4-5
+        messages: [{role: user, content: hi}]
+        optional_params:
+          tools: [{type: tool_search_tool_regex_20251119, name: find, input_schema: {type: object}}]
+          extra_headers: {anthropic-beta: zzz}
+        headers: {}
+        drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}

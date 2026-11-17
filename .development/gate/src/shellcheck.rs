@@ -11,7 +11,7 @@ use crate::spec::task::Task;
 use crate::yaml::read_yaml;
 
 // the gate and CI set these for every command, so shellcheck sees them as assigned
-const HEADER: &str = "declare -x GATE_ALL_TESTS GATE_BASE GATE_BUILD_SLOTS GATE_LOG_DIR GATE_ORACLE_CASES GATE_POSTGRES_SOCKET GATE_TASK GITHUB_ACTIONS\n";
+const HEADER: &str = "declare -x GATE_ALL_TESTS GATE_BASE GATE_BUILD_SLOTS GATE_LOG_DIR GATE_ORACLE_CASES GATE_TASK GITHUB_ACTIONS\n";
 
 pub(crate) struct Script {
     pub(crate) origin: String,

@@ -44,7 +44,7 @@ pub fn decode_recovery_line(
     }
 }
 
-// _recover_output_items_from_raw_sse: splitlines, one recorded line at a time, with a completed event ending recovery
+// _recover_output_items_from_raw_sse: one recorded line at a time, with a completed event ending recovery
 pub fn recover_recorded_output(
     bytes: &[u8],
     limits: &ApiLimits,
@@ -52,7 +52,7 @@ pub fn recover_recorded_output(
     let text = from_utf8(bytes)?;
     let mut output_items = records::OutputItems::new();
     let mut text_only_items = records::TextOnlyItems::new();
-    for line in text.split(lines::is_line_boundary) {
+    for line in text.split(['\r', '\n']) {
         let Some(parsed) = decode_recovery_line(line.as_bytes(), limits)? else {
             continue;
         };

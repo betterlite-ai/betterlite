@@ -3,14 +3,6 @@ use indexmap::IndexMap;
 use num_traits::ToPrimitive as _;
 use serde_json::Number;
 
-// Python's str.splitlines() breaks on every one of these, including the separators a provider never sends
-pub(crate) const fn is_line_boundary(character: char) -> bool {
-    matches!(
-        character,
-        '\n' | '\r' | '\u{b}' | '\u{c}' | '\u{1c}'..='\u{1e}' | '\u{85}' | '\u{2028}' | '\u{2029}'
-    )
-}
-
 // Python's str.strip() also strips the ASCII separators, which char::is_whitespace leaves in place
 pub(crate) fn trim_line(text: &str) -> &str {
     text.trim_matches(|character: char| {
