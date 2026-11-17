@@ -62,10 +62,10 @@ impl<Transport: TagsTransport> OllamaModels<'_, Transport> {
             };
         let request = TagsRequest {
             url: format!("{}{TAGS_PATH}", server_api_base(self.settings, api_base)),
-            headers: key.map_or_else(Vec::new, |key| {
+            headers: key.map_or_else(Vec::new, |token| {
                 vec![(
                     AUTHORIZATION,
-                    SecretString::from(format!("Bearer {}", key.expose_secret())),
+                    SecretString::from(format!("Bearer {}", token.expose_secret())),
                 )]
             }),
             timeout: TAGS_TIMEOUT,
@@ -112,8 +112,8 @@ pub fn decode_tags(body: &[u8]) -> Option<Vec<String>> {
             (_, Some(Json::Text(name))) => Some(name.as_str()),
             _ => None,
         };
-        if let Some(name) = name {
-            names.insert(prefixed(name));
+        if let Some(found) = name {
+            names.insert(prefixed(found));
         }
     }
     Some(names.into_iter().collect())

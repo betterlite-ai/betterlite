@@ -37,7 +37,7 @@ pub fn dispatch<R>(
         ChatConfigTag::OllamaChat => Some(handler.complete(&ollama(context, SelfHostedConfig::OllamaChat)).map_err(DispatchError::Handler)),
         ChatConfigTag::Petals => Some(petals(context, handler)),
         ChatConfigTag::Triton => Some(handler.complete(&triton(context)).map_err(DispatchError::Handler)),
-        ChatConfigTag::Vllm => Some(Err(DispatchError::Vllm(ENGINE_ERROR))),
+        ChatConfigTag::Vllm => Some(Err(DispatchError::Vllm(Box::new(ENGINE_ERROR)))),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
         | ChatConfigTag::AzureOpenAiO1 | ChatConfigTag::AzureOpenAiText | ChatConfigTag::Baseten | ChatConfigTag::Bedrock(_) | ChatConfigTag::BedrockMantleChat
@@ -112,7 +112,7 @@ fn oobabooga(context: &DispatchContext<'_>) -> CompletionCall {
     let mut call = resolved(context, SelfHostedConfig::Oobabooga);
     call.api_key = None;
     call.headers = None;
-    call.custom_llm_provider = OOBABOOGA_PROVIDER.to_owned();
+    OOBABOOGA_PROVIDER.clone_into(&mut call.custom_llm_provider);
     call
 }
 
@@ -132,12 +132,12 @@ fn ollama(context: &DispatchContext<'_>, config: SelfHostedConfig) -> Completion
     call.api_base = Some(ollama_api_base(context.settings, context.api_base));
     call.headers = authorized_headers(context.headers, api_key.as_ref());
     call.api_key = api_key;
-    call.custom_llm_provider = if config == SelfHostedConfig::OllamaChat {
+    let resolved_provider = if config == SelfHostedConfig::OllamaChat {
         OLLAMA_CHAT_PROVIDER
     } else {
         OLLAMA_PROVIDER
-    }
-    .to_owned();
+    };
+    resolved_provider.clone_into(&mut call.custom_llm_provider);
     call
 }
 
@@ -166,7 +166,7 @@ fn petals<R>(
     call.headers = None;
     call.stream = stream;
     call.optional_params = optional_params;
-    call.custom_llm_provider = PETALS_PROVIDER.to_owned();
+    PETALS_PROVIDER.clone_into(&mut call.custom_llm_provider);
     handler.complete(&call).map_err(DispatchError::Handler)
 }
 
@@ -215,14 +215,14 @@ fn authorized_headers(
     given: Option<&BTreeMap<String, String>>,
     key: Option<&SecretString>,
 ) -> Option<BTreeMap<String, String>> {
-    let Some(key) = key else {
+    let Some(token) = key else {
         return given.cloned();
     };
     let mut headers = given.cloned().unwrap_or_default();
     if !headers.contains_key(AUTHORIZATION) {
         headers.insert(
             AUTHORIZATION.to_owned(),
-            format!("Bearer {}", key.expose_secret()),
+            format!("Bearer {}", token.expose_secret()),
         );
     }
     Some(headers)

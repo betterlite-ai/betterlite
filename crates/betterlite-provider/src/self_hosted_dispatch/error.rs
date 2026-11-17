@@ -41,8 +41,8 @@ pub enum LemonadeError {
 
 #[derive(Debug, Error)]
 pub enum DispatchError {
-    #[error(transparent)]
-    Vllm(#[from] VllmError),
+    #[error("{0}")]
+    Vllm(Box<VllmError>),
     #[error(transparent)]
     Petals(#[from] PetalsSetupError),
     #[error(transparent)]

@@ -5,7 +5,10 @@ use crate::vllm::completion::ENGINE_ERROR;
 
 #[test]
 fn dispatch_errors_report_their_status() {
-    assert_eq!(DispatchError::Vllm(ENGINE_ERROR).status(), Some(400));
+    assert_eq!(
+        DispatchError::Vllm(Box::new(ENGINE_ERROR)).status(),
+        Some(400)
+    );
     assert_eq!(
         DispatchError::Petals(PetalsSetupError::Engine {
             status_code: ENGINE_STATUS,

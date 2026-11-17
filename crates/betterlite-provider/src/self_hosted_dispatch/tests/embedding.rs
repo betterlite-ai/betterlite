@@ -9,37 +9,20 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde_json::Number;
 
-use crate::self_hosted_dispatch::call::{EmbeddingCall, EmbeddingProvider, EmbeddingRequest};
-use crate::self_hosted_dispatch::context::{DispatchSettings, EmbeddingContext};
+use crate::self_hosted_dispatch::call::{EmbeddingProvider, EmbeddingRequest};
 use crate::self_hosted_dispatch::embedding::dispatch;
 use crate::self_hosted_dispatch::error::DispatchError;
 
 use super::section::SectionFixture;
 use super::support::{Fixture, environment, secret, secret_text};
 
-impl Fixture {
-    fn embedding_context(&self) -> EmbeddingContext<'_> {
-        EmbeddingContext {
-            settings: DispatchSettings::from(&self.settings),
-            environment: &self.environment,
-            compatible: &self.compatible,
-            globals: &self.globals,
-        }
-    }
-
-    fn embedding_call(&self) -> EmbeddingCall {
-        EmbeddingCall {
-            model: self.model.clone(),
-            input: self.input.clone(),
-            optional_params: self.optional_params.clone(),
-            litellm_params: self.litellm_params.clone(),
-            api_key: self.api_key.clone(),
-            api_base: self.api_base.clone(),
-            headers: self.headers.clone(),
-            timeout: self.timeout.unwrap_or(Duration::from_secs(600)),
-            aembedding: self.aembedding,
-        }
-    }
+struct Resolved {
+    provider: EmbeddingProvider,
+    api_base: Option<String>,
+    api_key: Option<String>,
+    input: EmbeddingInput,
+    optional_params: Object,
+    headers: Option<Vec<(String, String)>>,
 }
 
 fn request(provider: ProviderId, fixture: &Fixture) -> Result<EmbeddingRequest, DispatchError> {
@@ -48,17 +31,7 @@ fn request(provider: ProviderId, fixture: &Fixture) -> Result<EmbeddingRequest, 
     dispatch(provider, &call, &context).expect("the dispatch owns this provider")
 }
 
-fn compatible(
-    provider: ProviderId,
-    fixture: &Fixture,
-) -> (
-    EmbeddingProvider,
-    Option<String>,
-    Option<String>,
-    EmbeddingInput,
-    Object,
-    Option<Vec<(String, String)>>,
-) {
+fn compatible(provider: ProviderId, fixture: &Fixture) -> Resolved {
     let resolution = request(provider, fixture).expect("the arm answers");
     let EmbeddingRequest::Compatible {
         provider: resolved_provider,
@@ -71,15 +44,14 @@ fn compatible(
     else {
         panic!("{provider:?} resolves a compatible request");
     };
-    let headers = headers.map(|given| given.into_iter().collect());
-    (
-        resolved_provider,
+    Resolved {
+        provider: resolved_provider,
         api_base,
-        secret_text(api_key.as_ref()),
+        api_key: secret_text(api_key.as_ref()),
         input,
         optional_params,
-        headers,
-    )
+        headers: headers.map(|given| given.into_iter().collect()),
+    }
 }
 
 #[rstest]
@@ -99,7 +71,7 @@ fn hosted_vllm_base(passed: Option<&str>, section: SectionFixture) -> Option<Str
     let mut fixture = Fixture::new();
     fixture.api_base = passed.map(str::to_owned);
     fixture.configure(section);
-    compatible(ProviderId::HostedVllm, &fixture).1
+    compatible(ProviderId::HostedVllm, &fixture).api_base
 }
 
 #[test]
@@ -144,7 +116,7 @@ fn hosted_vllm_key(passed: Option<&str>, section: SectionFixture) -> Option<Stri
     let mut fixture = Fixture::new();
     fixture.api_key = passed.map(secret);
     fixture.configure(section);
-    compatible(ProviderId::HostedVllm, &fixture).2
+    compatible(ProviderId::HostedVllm, &fixture).api_key
 }
 
 #[test]
@@ -185,11 +157,17 @@ fn hosted_vllm_embedding_carries_the_input_headers_and_params() {
         String::from("X-Extra"),
         String::from("one"),
     )]));
-    fixture
-        .optional_params
-        .insert(String::from("dimensions"), Json::Number(Number::from(8)));
-    let (provider, _base, _key, input, optional_params, headers) =
-        compatible(ProviderId::HostedVllm, &fixture);
+    fixture.optional_params.insert(
+        String::from("dimensions"),
+        Json::Number(Number::from(8_i32)),
+    );
+    let Resolved {
+        provider,
+        input,
+        optional_params,
+        headers,
+        ..
+    } = compatible(ProviderId::HostedVllm, &fixture);
     assert_eq!(provider, EmbeddingProvider::HostedVllm);
     assert_eq!(
         input,
@@ -197,7 +175,7 @@ fn hosted_vllm_embedding_carries_the_input_headers_and_params() {
     );
     assert_eq!(
         optional_params.get("dimensions"),
-        Some(&Json::Number(Number::from(8)))
+        Some(&Json::Number(Number::from(8_i32)))
     );
     assert_eq!(
         headers,
@@ -214,7 +192,10 @@ fn triton_embedding_requires_the_passed_base() {
         "api_base is required for triton. Please pass `api_base`"
     );
     assert_eq!(error.status(), Some(400));
+}
 
+#[test]
+fn triton_embedding_keeps_the_passed_values_without_the_headers() {
     let mut fixture = Fixture::new();
     fixture.api_base = Some(String::from("http://passed"));
     fixture.api_key = Some(secret("sk-passed"));
@@ -222,8 +203,13 @@ fn triton_embedding_requires_the_passed_base() {
         String::from("X-Extra"),
         String::from("one"),
     )]));
-    let (provider, api_base, api_key, _input, _params, headers) =
-        compatible(ProviderId::Triton, &fixture);
+    let Resolved {
+        provider,
+        api_base,
+        api_key,
+        headers,
+        ..
+    } = compatible(ProviderId::Triton, &fixture);
     assert_eq!(provider, EmbeddingProvider::Triton);
     assert_eq!(api_base, Some(String::from("http://passed")));
     assert_eq!(api_key, Some(String::from("sk-passed")));
@@ -247,51 +233,59 @@ fn oobabooga_embedding_keeps_the_values_it_was_given() {
             .api_base(Some("http://litellm"))
             .api_key(Some("sk-litellm")),
     );
-    let (provider, api_base, api_key, _input, _params, headers) =
-        compatible(ProviderId::Oobabooga, &fixture);
+    let Resolved {
+        provider,
+        api_base,
+        api_key,
+        headers,
+        ..
+    } = compatible(ProviderId::Oobabooga, &fixture);
     assert_eq!(provider, EmbeddingProvider::Oobabooga);
     assert_eq!(api_base, Some(String::from("http://passed")));
     assert_eq!(api_key, Some(String::from("sk-passed")));
     assert!(headers.is_none());
 }
 
-fn ollama_prompts(input: EmbeddingInput) -> Result<Vec<String>, DispatchError> {
+fn ollama_request(input: EmbeddingInput) -> Result<EmbeddingRequest, DispatchError> {
     let mut fixture = Fixture::new();
     fixture.input = input;
-    let resolution = request(ProviderId::Ollama, &fixture)?;
+    request(ProviderId::Ollama, &fixture)
+}
+
+fn ollama_prompts(input: EmbeddingInput) -> Vec<String> {
+    let resolution = ollama_request(input).expect("the arm answers");
     let EmbeddingRequest::Ollama(resolved) = resolution else {
         panic!("ollama resolves its own request");
     };
-    Ok(resolved.prompts)
+    resolved.prompts
 }
 
 #[test]
 fn ollama_embedding_lists_prompts_from_text_or_texts() {
     assert_eq!(
-        ollama_prompts(EmbeddingInput::Text(String::from("hello"))).expect("one prompt"),
+        ollama_prompts(EmbeddingInput::Text(String::from("hello"))),
         vec![String::from("hello")]
     );
     assert_eq!(
         ollama_prompts(EmbeddingInput::Texts(vec![
             String::from("a"),
             String::from("b"),
-        ]))
-        .expect("two prompts"),
+        ])),
         vec![String::from("a"), String::from("b")]
     );
     assert_eq!(
-        ollama_prompts(EmbeddingInput::Texts(Vec::new())).expect("an empty prompt list"),
+        ollama_prompts(EmbeddingInput::Texts(Vec::new())),
         Vec::<String>::new()
     );
     assert_eq!(
-        ollama_prompts(EmbeddingInput::Tokens(Vec::new()))
-            .expect("an empty token list counts as no prompts"),
-        Vec::<String>::new()
+        ollama_prompts(EmbeddingInput::Tokens(Vec::new())),
+        Vec::<String>::new(),
+        "an empty token list counts as no prompts"
     );
     assert_eq!(
-        ollama_prompts(EmbeddingInput::TokenLists(Vec::new()))
-            .expect("an empty token-list list counts as no prompts"),
-        Vec::<String>::new()
+        ollama_prompts(EmbeddingInput::TokenLists(Vec::new())),
+        Vec::<String>::new(),
+        "an empty token-list list counts as no prompts"
     );
 }
 
@@ -299,7 +293,7 @@ fn ollama_embedding_lists_prompts_from_text_or_texts() {
 #[case::tokens(EmbeddingInput::Tokens(vec![1, 2]))]
 #[case::token_lists(EmbeddingInput::TokenLists(vec![vec![1, 2]]))]
 fn ollama_embedding_rejects_token_input(#[case] input: EmbeddingInput) {
-    let error = ollama_prompts(input).expect_err("tokens are not prompts");
+    let error = ollama_request(input).expect_err("tokens are not prompts");
     assert_eq!(error.status(), Some(400));
     assert!(matches!(error, DispatchError::OllamaEmbeddingInput));
 }
@@ -373,9 +367,8 @@ fn xinference(
     }
     fixture.configure(section);
     fixture.environment = environment(pairs);
-    let (_provider, api_base, api_key, _input, _params, _headers) =
-        compatible(ProviderId::Xinference, &fixture);
-    (api_base, api_key)
+    let resolved = compatible(ProviderId::Xinference, &fixture);
+    (resolved.api_base, resolved.api_key)
 }
 
 #[test]
@@ -401,6 +394,10 @@ fn xinference_embedding_reads_the_environment_then_the_stubs() {
             Some(String::from("sk-env"))
         )
     );
+}
+
+#[test]
+fn xinference_embedding_treats_an_empty_environment_as_unset() {
     assert_eq!(
         xinference(
             None,
@@ -413,6 +410,10 @@ fn xinference_embedding_reads_the_environment_then_the_stubs() {
         ),
         "an empty environment value counts as unset"
     );
+}
+
+#[test]
+fn xinference_embedding_prefers_the_passed_values_then_litellm_globals() {
     assert_eq!(
         xinference(
             Some(("http://passed", "sk-passed")),
@@ -529,7 +530,10 @@ fn shared_embedding_moves_the_headers_into_the_optional_params() {
         Some(&DecisionsJson::Text(String::from("one")))
     );
     assert!(call.headers.is_none());
+}
 
+#[test]
+fn shared_embedding_adds_nothing_for_empty_headers() {
     let mut fixture = Fixture::new();
     fixture.headers = Some(BTreeMap::new());
     let (_provider, call) = shared_call(ProviderId::Llamafile, &fixture);

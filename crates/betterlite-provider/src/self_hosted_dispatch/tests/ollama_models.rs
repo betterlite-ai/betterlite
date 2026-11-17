@@ -80,13 +80,18 @@ fn ollama_settings(api_base: Option<&str>, api_key: Option<&str>) -> OllamaSetti
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct Passed<'passed> {
+    base: Option<&'passed str>,
+    key: Option<&'passed SecretString>,
+}
+
 fn list(
     settings: &OllamaSettings,
     globals: &LiteLlmGlobals,
     catalog: &[String],
     transport: &FakeTransport,
-    api_base: Option<&str>,
-    api_key: Option<&SecretString>,
+    passed: Passed<'_>,
 ) -> Vec<String> {
     OllamaModels {
         settings,
@@ -94,7 +99,7 @@ fn list(
         catalog,
         transport,
     }
-    .get_models(api_base, api_key)
+    .get_models(passed.base, passed.key)
 }
 
 #[test]
@@ -108,8 +113,7 @@ fn listing_prefixes_sorts_and_dedupes_the_names() {
         &no_globals(),
         &[],
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(
         names,
@@ -130,8 +134,7 @@ fn listing_accepts_a_bare_list() {
         &no_globals(),
         &[],
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(names, ["ollama/a"]);
 }
@@ -145,8 +148,7 @@ fn listing_falls_back_to_the_catalog_after_a_transport_failure() {
         &no_globals(),
         &catalog,
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(names, ["ollama/m1", "ollama/m2"]);
 }
@@ -163,8 +165,7 @@ fn listing_falls_back_on_a_non_2xx_status(#[case] status: u16) {
         &no_globals(),
         &catalog,
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(names, ["ollama/m1"], "{status}");
 }
@@ -177,8 +178,7 @@ fn listing_reads_a_2xx_answer() {
         &no_globals(),
         &Vec::new(),
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(names, ["ollama/a"], "a 2xx answer is read");
 }
@@ -196,8 +196,7 @@ fn listing_returns_the_empty_list_for_bodies_without_models(#[case] body: &str) 
         &no_globals(),
         &catalog,
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert!(names.is_empty(), "{body}");
 }
@@ -211,15 +210,18 @@ fn listing_falls_back_when_the_body_is_not_json() {
         &no_globals(),
         &catalog,
         &transport,
-        None,
-        None,
+        Passed::default(),
     );
     assert_eq!(names, ["ollama/m1"]);
 }
 
-fn tags_url(passed: Option<&str>, section: OllamaSettings, globals: LiteLlmGlobals) -> String {
+fn tags_url(passed: Option<&str>, section: &OllamaSettings, globals: &LiteLlmGlobals) -> String {
     let transport = FakeTransport::answering(200, "{}");
-    list(&section, &globals, &[], &transport, passed, None);
+    let request = Passed {
+        base: passed,
+        key: None,
+    };
+    list(section, globals, &[], &transport, request);
     transport.requests().remove(0).url
 }
 
@@ -234,8 +236,8 @@ fn tags_request_strips_a_known_server_suffix(#[case] suffix: &str) {
     assert_eq!(
         tags_url(
             Some(format!("http://host:11434{suffix}").as_str()),
-            ollama_settings(None, None),
-            no_globals()
+            &ollama_settings(None, None),
+            &no_globals()
         ),
         "http://host:11434/api/tags",
         "{suffix}"
@@ -247,32 +249,32 @@ fn tags_request_targets_the_server_base() {
     assert_eq!(
         tags_url(
             Some("http://host:11434"),
-            ollama_settings(None, None),
-            no_globals()
+            &ollama_settings(None, None),
+            &no_globals()
         ),
         "http://host:11434/api/tags"
     );
     assert_eq!(
         tags_url(
             Some("http://host:11434/"),
-            ollama_settings(None, None),
-            no_globals()
+            &ollama_settings(None, None),
+            &no_globals()
         ),
         "http://host:11434/api/tags"
     );
     assert_eq!(
         tags_url(
             None,
-            ollama_settings(Some("http://env"), None),
-            no_globals()
+            &ollama_settings(Some("http://env"), None),
+            &no_globals()
         ),
         "http://env/api/tags"
     );
     assert_eq!(
         tags_url(
             Some(""),
-            ollama_settings(Some("http://env"), None),
-            no_globals()
+            &ollama_settings(Some("http://env"), None),
+            &no_globals()
         ),
         "http://env/api/tags",
         "an empty passed base falls through"
@@ -280,13 +282,17 @@ fn tags_request_targets_the_server_base() {
     assert_eq!(
         tags_url(
             Some("http://passed"),
-            ollama_settings(Some("http://env"), None),
-            no_globals()
+            &ollama_settings(Some("http://env"), None),
+            &no_globals()
         ),
         "http://passed/api/tags"
     );
+}
+
+#[test]
+fn tags_request_targets_the_local_server_when_no_base_is_set() {
     assert_eq!(
-        tags_url(None, ollama_settings(None, None), no_globals()),
+        tags_url(None, &ollama_settings(None, None), &no_globals()),
         "http://localhost:11434/api/tags"
     );
 }
@@ -294,121 +300,96 @@ fn tags_request_targets_the_server_base() {
 fn tags_headers(
     passed_base: Option<&str>,
     passed_key: Option<&str>,
-    section: OllamaSettings,
-    globals: LiteLlmGlobals,
-) -> Vec<(String, String)> {
+    section: &OllamaSettings,
+    globals: &LiteLlmGlobals,
+) -> Option<String> {
     let transport = FakeTransport::answering(200, "{}");
     let key = passed_key.map(secret);
-    list(
-        &section,
-        &globals,
-        &[],
-        &transport,
-        passed_base,
-        key.as_ref(),
-    );
+    let request = Passed {
+        base: passed_base,
+        key: key.as_ref(),
+    };
+    list(section, globals, &[], &transport, request);
     transport
         .requests()
         .remove(0)
         .headers
         .into_iter()
-        .map(|(name, value)| (name.to_owned(), value.expose_secret().to_owned()))
-        .collect()
+        .find(|(name, _)| *name == "Authorization")
+        .map(|(_, value)| value.expose_secret().to_owned())
 }
 
 #[test]
 fn tags_request_carries_the_first_resolved_key() {
-    let expected = |key: &str| vec![(String::from("Authorization"), format!("Bearer {key}"))];
+    let section = ollama_settings(None, Some("sk-env"));
     assert_eq!(
-        tags_headers(
-            None,
-            Some("sk-passed"),
-            ollama_settings(None, Some("sk-env")),
-            no_globals()
-        ),
-        expected("sk-passed")
+        tags_headers(None, Some("sk-passed"), &section, &no_globals()),
+        Some(String::from("Bearer sk-passed"))
     );
     assert_eq!(
-        tags_headers(
-            None,
-            Some(""),
-            ollama_settings(None, Some("sk-env")),
-            no_globals()
-        ),
-        expected("sk-env"),
+        tags_headers(None, Some(""), &section, &no_globals()),
+        Some(String::from("Bearer sk-env")),
         "an empty passed key falls through"
     );
+}
+
+#[test]
+fn tags_request_falls_through_the_litellm_globals_for_a_key() {
+    let section = ollama_settings(None, None);
+    let every_global = LiteLlmGlobals {
+        api_key: Some(secret("sk-litellm")),
+        openai_key: Some(secret("sk-openai")),
+        secret_manager_api_key: Some(secret("sk-secret")),
+    };
     assert_eq!(
-        tags_headers(
-            None,
-            None,
-            ollama_settings(None, None),
-            LiteLlmGlobals {
-                api_key: Some(secret("sk-litellm")),
-                openai_key: Some(secret("sk-openai")),
-                secret_manager_api_key: Some(secret("sk-secret")),
-            }
-        ),
-        expected("sk-litellm")
+        tags_headers(None, None, &section, &every_global),
+        Some(String::from("Bearer sk-litellm"))
     );
+    let openai_and_secret = LiteLlmGlobals {
+        openai_key: Some(secret("sk-openai")),
+        secret_manager_api_key: Some(secret("sk-secret")),
+        ..no_globals()
+    };
     assert_eq!(
-        tags_headers(
-            None,
-            None,
-            ollama_settings(None, None),
-            LiteLlmGlobals {
-                api_key: None,
-                openai_key: Some(secret("sk-openai")),
-                secret_manager_api_key: Some(secret("sk-secret")),
-            }
-        ),
-        expected("sk-openai")
+        tags_headers(None, None, &section, &openai_and_secret),
+        Some(String::from("Bearer sk-openai"))
     );
+    let secret_only = LiteLlmGlobals {
+        secret_manager_api_key: Some(secret("sk-secret")),
+        ..no_globals()
+    };
     assert_eq!(
-        tags_headers(
-            None,
-            None,
-            ollama_settings(None, None),
-            LiteLlmGlobals {
-                api_key: None,
-                openai_key: None,
-                secret_manager_api_key: Some(secret("sk-secret")),
-            }
-        ),
-        expected("sk-secret")
+        tags_headers(None, None, &section, &secret_only),
+        Some(String::from("Bearer sk-secret"))
     );
-    assert!(
-        tags_headers(None, None, ollama_settings(None, None), no_globals()).is_empty(),
+}
+
+#[test]
+fn tags_request_drops_every_key_for_an_explicit_base() {
+    let section = ollama_settings(None, Some("sk-env"));
+    assert_eq!(
+        tags_headers(None, None, &ollama_settings(None, None), &no_globals()),
+        None,
         "no key means no header"
     );
-    assert!(
-        tags_headers(
-            Some("http://passed"),
-            None,
-            ollama_settings(None, Some("sk-env")),
-            no_globals()
-        )
-        .is_empty(),
+    assert_eq!(
+        tags_headers(Some("http://passed"), None, &section, &no_globals()),
+        None,
         "a passed base without its own key drops every key"
     );
-    assert!(
-        tags_headers(
-            Some("http://passed"),
-            Some(""),
-            ollama_settings(None, Some("sk-env")),
-            no_globals()
-        )
-        .is_empty(),
+    assert_eq!(
+        tags_headers(Some("http://passed"), Some(""), &section, &no_globals()),
+        None,
         "an empty passed key is no key, so an explicit base drops the environment key too"
     );
     assert_eq!(
         tags_headers(
             Some("http://passed"),
             Some("sk-passed"),
-            ollama_settings(None, Some("sk-env")),
-            no_globals()
+            &section,
+            &no_globals()
         ),
-        expected("sk-passed")
+        Some(String::from("Bearer sk-passed"))
     );
 }
 

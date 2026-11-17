@@ -89,21 +89,21 @@ pub enum EmbeddingRequest {
 
 // B1440's EmbeddingCall carries no Debug, so the shared arm reports the fields that identify it
 impl fmt::Debug for EmbeddingRequest {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Compatible {
                 provider, api_base, ..
-            } => formatter
+            } => f
                 .debug_struct("Compatible")
                 .field("provider", provider)
                 .field("api_base", api_base)
                 .finish_non_exhaustive(),
-            Self::Ollama(request) => formatter
+            Self::Ollama(request) => f
                 .debug_struct("Ollama")
                 .field("api_base", &request.api_base)
                 .field("model", &request.model)
                 .finish_non_exhaustive(),
-            Self::Shared { provider, call } => formatter
+            Self::Shared { provider, call } => f
                 .debug_struct("Shared")
                 .field("provider", provider)
                 .field("model", &call.model)

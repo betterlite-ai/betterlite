@@ -124,10 +124,10 @@ pub fn decode_model_names(body: &[u8]) -> Result<Vec<String>, LemonadeError> {
     };
     let mut names = Vec::with_capacity(entries.len());
     for entry in entries {
-        let DecisionsJson::Object(entry) = entry else {
+        let DecisionsJson::Object(object) = entry else {
             return Err(LemonadeError::Entry);
         };
-        let Some(DecisionsJson::Text(id)) = entry.get(ID) else {
+        let Some(DecisionsJson::Text(id)) = object.get(ID) else {
             return Err(LemonadeError::Entry);
         };
         names.push(format!("{PROVIDER}/{id}"));

@@ -11,7 +11,7 @@ use serde_json::Number;
 use crate::petals::error::{ENGINE_MISSING_MESSAGE, PetalsSetupError};
 use crate::self_hosted_dispatch::call::{CompletionCall, SelfHostedConfig};
 use crate::self_hosted_dispatch::chat::{complete_lemonade, dispatch};
-use crate::self_hosted_dispatch::context::{CallLogging, DispatchContext, DispatchSettings};
+use crate::self_hosted_dispatch::context::CallLogging;
 use crate::self_hosted_dispatch::error::DispatchError;
 use crate::self_hosted_dispatch::handler::HandlerError;
 use crate::vllm::completion::ENGINE_ERROR;
@@ -19,25 +19,6 @@ use crate::vllm::error::VllmError;
 
 use super::section::SectionFixture;
 use super::support::{Fixture, Recorder, logging, redactor, secret, secret_text};
-
-impl Fixture {
-    fn chat_context(&self) -> DispatchContext<'_> {
-        DispatchContext {
-            acompletion: self.acompletion,
-            api_base: self.api_base.as_deref(),
-            api_key: self.api_key.as_ref(),
-            custom_llm_provider: &self.provider,
-            headers: self.headers.as_ref(),
-            litellm_params: &self.litellm_params,
-            messages: &self.messages,
-            model: &self.model,
-            optional_params: &self.optional_params,
-            stream: self.stream,
-            timeout: self.timeout,
-            settings: DispatchSettings::from(&self.settings),
-        }
-    }
-}
 
 fn run(
     tag: ChatConfigTag,
@@ -82,9 +63,9 @@ fn arm_fixture(passed: Option<&str>, section: SectionFixture) -> Fixture {
     fixture
 }
 
-fn arm_call(tag: ChatConfigTag, fixture: Fixture) -> CompletionCall {
+fn arm_call(tag: ChatConfigTag, fixture: &Fixture) -> CompletionCall {
     let handler = Recorder::succeeding();
-    let (outcome, _state) = run(tag, &fixture, &handler);
+    let (outcome, _state) = run(tag, fixture, &handler);
     succeeded(outcome);
     only_call(&handler)
 }
@@ -136,18 +117,21 @@ fn dispatch_answers_vllm_with_the_engine_error() {
         .expect_err("the engine cannot run");
     assert_eq!(error.to_string(), "No module named 'vllm'");
     assert_eq!(error.status(), ENGINE_ERROR.status());
+    let DispatchError::Vllm(inner) = error else {
+        panic!("vllm answers the engine error");
+    };
     assert!(matches!(
-        error,
-        DispatchError::Vllm(VllmError::Engine {
+        *inner,
+        VllmError::Engine {
             status_code: 400,
             ..
-        })
+        }
     ));
     assert!(handler.calls().is_empty());
 }
 
 fn hosted_vllm_base(passed: Option<&str>, section: SectionFixture) -> Option<String> {
-    arm_call(ChatConfigTag::HostedVllmChat, arm_fixture(passed, section)).api_base
+    arm_call(ChatConfigTag::HostedVllmChat, &arm_fixture(passed, section)).api_base
 }
 
 #[test]
@@ -191,7 +175,7 @@ fn hosted_vllm_key(passed: Option<&str>, section: SectionFixture) -> Option<Stri
     let mut fixture = arm_fixture(passed, section);
     fixture.api_key = passed.map(secret);
     secret_text(
-        arm_call(ChatConfigTag::HostedVllmChat, fixture)
+        arm_call(ChatConfigTag::HostedVllmChat, &fixture)
             .api_key
             .as_ref(),
     )
@@ -292,7 +276,7 @@ fn oobabooga_drops_the_key_and_headers() {
 }
 
 fn ollama_base(passed: Option<&str>, section: SectionFixture) -> String {
-    arm_call(ChatConfigTag::Ollama, arm_fixture(passed, section))
+    arm_call(ChatConfigTag::Ollama, &arm_fixture(passed, section))
         .api_base
         .expect("the ollama arm always resolves a base")
 }
@@ -473,7 +457,7 @@ fn ollama_chat_key_falls_through_ollama_key_the_environment_and_litellm(
 fn ollama_chat_base(passed: Option<&str>, section: SectionFixture) -> String {
     let mut fixture = arm_fixture(passed, section);
     fixture.provider = String::from("ollama_chat");
-    arm_call(ChatConfigTag::OllamaChat, fixture)
+    arm_call(ChatConfigTag::OllamaChat, &fixture)
         .api_base
         .expect("the ollama_chat arm always resolves a base")
 }
@@ -513,9 +497,10 @@ fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
         String::from("X-Extra"),
         String::from("one"),
     )]));
-    fixture
-        .optional_params
-        .insert(String::from("temperature"), Json::Number(Number::from(1)));
+    fixture.optional_params.insert(
+        String::from("temperature"),
+        Json::Number(Number::from(1_i32)),
+    );
     fixture
         .litellm_params
         .insert(String::from("deployment"), Json::Text(String::from("one")));
@@ -538,7 +523,7 @@ fn triton_prefers_litellm_api_base_and_keeps_the_context_values() {
     assert_eq!(call.timeout, Some(Duration::from_secs(12)));
     assert_eq!(
         call.optional_params.get("temperature"),
-        Some(&Json::Number(Number::from(1)))
+        Some(&Json::Number(Number::from(1_i32)))
     );
     assert_eq!(
         call.litellm_params.get("deployment"),
@@ -573,7 +558,7 @@ fn petals_takes_the_stream_out_of_the_optional_params() {
         SectionFixture::default().api_base(Some("http://litellm")),
         &[
             ("stream", Json::Bool(true)),
-            ("temperature", Json::Number(Number::from(1))),
+            ("temperature", Json::Number(Number::from(1_i32))),
         ],
     );
     assert_eq!(first.expect("the arm answers"), "reply");
@@ -583,7 +568,7 @@ fn petals_takes_the_stream_out_of_the_optional_params() {
     assert!(call.optional_params.get("stream").is_none());
     assert_eq!(
         call.optional_params.get("temperature"),
-        Some(&Json::Number(Number::from(1)))
+        Some(&Json::Number(Number::from(1_i32)))
     );
     assert_eq!(call.custom_llm_provider, "petals");
 
@@ -602,15 +587,18 @@ fn petals_takes_the_stream_out_of_the_optional_params() {
     );
     no_stream.expect("the arm answers");
     assert_eq!(only_call(&no_handler).stream, Some(false));
+}
 
-    let (litellm_base, litellm_handler) = petals_call(
+#[test]
+fn petals_takes_litellm_api_base_when_no_passed_base_arrives() {
+    let (result, handler) = petals_call(
         None,
         SectionFixture::default().api_base(Some("http://litellm")),
         &[],
     );
-    litellm_base.expect("the arm answers");
+    result.expect("the arm answers");
     assert_eq!(
-        only_call(&litellm_handler).api_base,
+        only_call(&handler).api_base,
         Some(String::from("http://litellm"))
     );
 }

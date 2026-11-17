@@ -97,14 +97,13 @@ async fn list(
     get_models(client, credentials, deployment, Duration::from_secs(9)).await
 }
 
-#[test]
-fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
-    let settings = LemonadeSettings {
-        repeat_penalty: Some(1.5),
+fn every_field() -> LemonadeSettings {
+    LemonadeSettings {
+        repeat_penalty: Some(1.5_f64),
         functions: Some(vec![DecisionsJson::Text(String::from("f"))]),
         logit_bias: Some(IndexMap::from([(
             String::from("50256"),
-            DecisionsJson::Number(Number::from(1)),
+            DecisionsJson::Number(Number::from(1_i32)),
         )])),
         max_completion_tokens: Some(20),
         max_tokens: Some(10),
@@ -119,8 +118,12 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
             DecisionsJson::Text(String::from("json_object")),
         )])),
         tools: Some(vec![DecisionsJson::Text(String::from("tool"))]),
-    };
-    let config = get_config(&settings).expect("every configured field converts");
+    }
+}
+
+#[test]
+fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
+    let config = get_config(&every_field()).expect("every configured field converts");
     let names: Vec<&str> = config.keys().map(String::as_str).collect();
     assert_eq!(
         names,
@@ -140,6 +143,11 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
             "tools",
         ]
     );
+}
+
+#[test]
+fn get_config_converts_the_configured_values() {
+    let config = get_config(&every_field()).expect("every configured field converts");
     assert_eq!(
         config.get("stop"),
         Some(&ConfigJson::Text(String::from("END")))
@@ -150,7 +158,10 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
             "tool"
         ))]))
     );
-    assert_eq!(config.get("n"), Some(&ConfigJson::Number(Number::from(2))));
+    assert_eq!(
+        config.get("n"),
+        Some(&ConfigJson::Number(Number::from(2_i32)))
+    );
     assert_eq!(PROVIDER, "lemonade");
 }
 
@@ -158,8 +169,8 @@ fn get_config_lists_only_the_configured_fields_in_the_class_body_order() {
 fn get_config_skips_the_unset_fields() {
     let config = get_config(&LemonadeSettings::default()).expect("nothing to convert");
     assert!(config.is_empty());
-    let config = get_config(&LemonadeSettings {
-        repeat_penalty: Some(0.5),
+    let converted = get_config(&LemonadeSettings {
+        repeat_penalty: Some(0.5_f64),
         functions: None,
         logit_bias: None,
         max_completion_tokens: None,
@@ -174,11 +185,11 @@ fn get_config_skips_the_unset_fields() {
         tools: None,
     })
     .expect("the set field converts");
-    assert_eq!(config.len(), 1);
+    assert_eq!(converted.len(), 1);
     assert_eq!(
-        config.get("repeat_penalty"),
+        converted.get("repeat_penalty"),
         Some(&ConfigJson::Number(
-            Number::from_f64(0.5).expect("a finite float")
+            Number::from_f64(0.5_f64).expect("a finite float")
         ))
     );
 }

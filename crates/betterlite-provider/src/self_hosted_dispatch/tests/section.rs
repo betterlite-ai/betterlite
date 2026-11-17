@@ -61,17 +61,17 @@ impl SectionFixture {
         self
     }
 
-    pub(super) fn settings(&self) -> SectionSettings {
+    pub(super) fn into_settings(self) -> SectionSettings {
         SectionSettings {
-            hosted_vllm_api_base: self.hosted_vllm_api_base.clone(),
-            hosted_vllm_api_key: self.hosted_vllm_api_key.as_deref().map(SecretString::from),
-            ollama_api_base: self.ollama_api_base.clone(),
-            ollama_api_key: self.ollama_api_key.as_deref().map(SecretString::from),
-            lemonade_api_key: self.lemonade_api_key.as_deref().map(SecretString::from),
-            api_base: self.api_base.clone(),
-            api_key: self.api_key.as_deref().map(SecretString::from),
-            ollama_key: self.ollama_key.as_deref().map(SecretString::from),
-            lemonade_key: self.lemonade_key.as_deref().map(SecretString::from),
+            hosted_vllm_api_base: self.hosted_vllm_api_base,
+            hosted_vllm_api_key: self.hosted_vllm_api_key.map(SecretString::from),
+            ollama_api_base: self.ollama_api_base,
+            ollama_api_key: self.ollama_api_key.map(SecretString::from),
+            lemonade_api_key: self.lemonade_api_key.map(SecretString::from),
+            api_base: self.api_base,
+            api_key: self.api_key.map(SecretString::from),
+            ollama_key: self.ollama_key.map(SecretString::from),
+            lemonade_key: self.lemonade_key.map(SecretString::from),
         }
     }
 }

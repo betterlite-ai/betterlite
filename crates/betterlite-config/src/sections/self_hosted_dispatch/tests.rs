@@ -265,54 +265,48 @@ fn self_hosted_dispatch_reads_every_setting_at_once() {
     )
     .unwrap();
     assert_eq!(
-        settings.hosted_vllm_api_base,
+        read(&settings, Setting::HostedVllmApiBase),
         Some("http://vllm:8000/v1".to_owned())
     );
     assert_eq!(
-        settings
-            .hosted_vllm_api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::HostedVllmApiKey),
         Some("sk-vllm-env".to_owned())
     );
     assert_eq!(
-        settings.ollama_api_base,
+        read(&settings, Setting::OllamaApiBase),
         Some("http://ollama:11434".to_owned())
     );
     assert_eq!(
-        settings
-            .ollama_api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::OllamaApiKey),
         Some("sk-ollama-env".to_owned())
     );
     assert_eq!(
-        settings
-            .lemonade_api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::LemonadeApiKey),
         Some("sk-lemonade-env".to_owned())
     );
-    assert_eq!(settings.api_base, Some("http://global:4000".to_owned()));
+}
+
+#[test]
+fn self_hosted_dispatch_reads_every_sdk_global() {
+    let settings = load(
+        "litellm_settings:\n  api_base: http://global:4000\n  api_key: sk-global\n  ollama_key: sk-ollama-global\n  lemonade_key: sk-lemonade-global\n",
+        &[],
+    )
+    .unwrap();
     assert_eq!(
-        settings
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::ApiBase),
+        Some("http://global:4000".to_owned())
+    );
+    assert_eq!(
+        read(&settings, Setting::ApiKey),
         Some("sk-global".to_owned())
     );
     assert_eq!(
-        settings
-            .ollama_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::OllamaKey),
         Some("sk-ollama-global".to_owned())
     );
     assert_eq!(
-        settings
-            .lemonade_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
+        read(&settings, Setting::LemonadeKey),
         Some("sk-lemonade-global".to_owned())
     );
 }

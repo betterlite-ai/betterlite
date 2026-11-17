@@ -20,7 +20,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use secrecy::SecretString;
 
-use crate::self_hosted_dispatch::call::CompletionCall;
+use crate::self_hosted_dispatch::call::{CompletionCall, EmbeddingCall};
+use crate::self_hosted_dispatch::context::{DispatchContext, DispatchSettings, EmbeddingContext};
 use crate::self_hosted_dispatch::handler::{ChatCompletionHandler, HandlerError};
 
 use super::section::SectionFixture;
@@ -115,7 +116,7 @@ impl Fixture {
             stream: None,
             acompletion: false,
             timeout: None,
-            settings: SectionFixture::default().settings(),
+            settings: SectionFixture::default().into_settings(),
             environment: BTreeMap::new(),
             globals: compatible_embedding_settings::Globals::default(),
             compatible: compatible_embedding_settings::Settings::default(),
@@ -125,7 +126,7 @@ impl Fixture {
     }
 
     pub(super) fn configure(&mut self, section: SectionFixture) {
-        self.settings = section.settings();
+        self.settings = section.into_settings();
     }
 
     pub(super) fn openai_like(
@@ -138,6 +139,46 @@ impl Fixture {
             api_key: api_key.map(SecretString::from),
         };
         self
+    }
+
+    pub(super) fn chat_context(&self) -> DispatchContext<'_> {
+        DispatchContext {
+            acompletion: self.acompletion,
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
+            custom_llm_provider: &self.provider,
+            headers: self.headers.as_ref(),
+            litellm_params: &self.litellm_params,
+            messages: &self.messages,
+            model: &self.model,
+            optional_params: &self.optional_params,
+            stream: self.stream,
+            timeout: self.timeout,
+            settings: DispatchSettings::from(&self.settings),
+        }
+    }
+
+    pub(super) fn embedding_context(&self) -> EmbeddingContext<'_> {
+        EmbeddingContext {
+            settings: DispatchSettings::from(&self.settings),
+            environment: &self.environment,
+            compatible: &self.compatible,
+            globals: &self.globals,
+        }
+    }
+
+    pub(super) fn embedding_call(&self) -> EmbeddingCall {
+        EmbeddingCall {
+            model: self.model.clone(),
+            input: self.input.clone(),
+            optional_params: self.optional_params.clone(),
+            litellm_params: self.litellm_params.clone(),
+            api_key: self.api_key.clone(),
+            api_base: self.api_base.clone(),
+            headers: self.headers.clone(),
+            timeout: self.timeout.unwrap_or(Duration::from_secs(600)),
+            aembedding: self.aembedding,
+        }
     }
 }
 
