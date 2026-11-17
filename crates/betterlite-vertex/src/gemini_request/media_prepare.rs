@@ -164,8 +164,8 @@ fn attach_image_format(fields: &mut Object, mime_type: String) -> Result<(), His
         return Err(HistoryError::Invalid("image_url is missing".to_owned()));
     };
     match value {
-        Json::Text(url) => {
-            let url = take(url);
+        Json::Text(text) => {
+            let url = take(text);
             *value = Json::Object(object!(URL => Json::Text(url), FORMAT => format));
             Ok(())
         }

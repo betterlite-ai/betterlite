@@ -117,10 +117,10 @@ where
         params,
         litellm_params,
     } = prepare_body(input, capabilities)?;
-    let messages = resolve_gcs_content_types(messages, &litellm_params, gcs).await?;
+    let resolved_messages = resolve_gcs_content_types(messages, &litellm_params, gcs).await?;
     let resolved = Prepared {
         instruction,
-        messages,
+        messages: resolved_messages,
         params,
         litellm_params,
     };
