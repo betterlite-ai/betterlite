@@ -500,8 +500,8 @@ fn replays_the_model_rules_corpus() {
         ModelGeneralizations::install(&invalid),
         Err(GeneralizationError::Rules(ModelsError::RulesJson { .. }))
     ));
-    for entry in fs::read_dir(corpus).unwrap() {
+    fs::read_dir(corpus).unwrap().for_each(|entry| {
         let bytes = fs::read(entry.unwrap().path()).unwrap();
         drop(ModelGeneralizations::install(&bytes));
-    }
+    });
 }
