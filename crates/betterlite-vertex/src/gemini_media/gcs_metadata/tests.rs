@@ -115,7 +115,7 @@ enum MintScript {
 }
 
 impl MintScript {
-    fn recorder(self) -> RecordingMint {
+    const fn recorder(self) -> RecordingMint {
         let token = match self {
             Self::Mints => Some("token-abc"),
             Self::Fails => None,
@@ -140,7 +140,7 @@ impl Default for RecordingMint {
 }
 
 impl RecordingMint {
-    pub(crate) fn failing() -> Self {
+    pub(crate) const fn failing() -> Self {
         MintScript::Fails.recorder()
     }
 

@@ -1,4 +1,8 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "the built row is read back as JSON so the test checks the converted parts instead of a text prefix"
+)]
 
 use std::convert::Infallible;
 use std::fs;
