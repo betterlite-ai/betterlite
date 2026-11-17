@@ -103,8 +103,7 @@ fn threshold(
         None
         | Some(
             RawThreshold::Other(_)
-            | RawThreshold::Number(RawNumber::Boolean(_))
-            | RawThreshold::Number(RawNumber::Text(_)),
+            | RawThreshold::Number(RawNumber::Boolean(_) | RawNumber::Text(_)),
         ) => Ok(None),
     }
 }
