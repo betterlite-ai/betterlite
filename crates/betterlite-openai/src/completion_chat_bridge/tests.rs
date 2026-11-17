@@ -302,7 +302,10 @@ fn functions_keep_their_place_in_the_chat_passthrough() {
         r#"{"model":"m","prompt":"hi","functions":[{"name":"f","parameters":{"type":"object"}}]}"#,
     );
     let chat = chat_request(&request).expect("chat");
-    assert!(chat.passthrough.contains_key("functions"));
+    let Some(functions) = chat.passthrough.get("functions") else {
+        panic!("functions left the chat passthrough");
+    };
+    assert_eq!(functions.pointer("/0/name"), Some(&json!("f")));
 }
 
 #[test]
