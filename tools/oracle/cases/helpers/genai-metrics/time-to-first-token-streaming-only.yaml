@@ -1,0 +1,33 @@
+kind: helper
+name: time-to-first-token-streaming-only
+call:
+  b3869:
+    function: record
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      optional_params:
+        stream: true
+      api_call_start_time: 10.5
+      completion_start_time: 11.25
+    start_time: 10
+    end_time: 13
+calls:
+- b3869:
+    function: record
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      optional_params:
+        stream: false
+      api_call_start_time: 10.5
+      completion_start_time: 11.25
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

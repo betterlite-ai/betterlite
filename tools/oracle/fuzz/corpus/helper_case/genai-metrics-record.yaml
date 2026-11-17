@@ -1,0 +1,19 @@
+kind: helper
+name: genai-metrics-record-seed
+call:
+  b3869:
+    function: record
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+    response:
+      usage:
+        prompt_tokens: 1
+        completion_tokens: 2
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []
