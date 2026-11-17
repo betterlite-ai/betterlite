@@ -5,7 +5,6 @@ pub mod pre_routing;
 mod tests;
 
 use betterlite_models::decisions::Json;
-use betterlite_prompts::message_content::Message;
 use betterlite_prompts::message_fields::last_user::get_last_user_message;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
