@@ -77,19 +77,18 @@ pub fn max_tokens_value(model: &str, value: &ParamValue) -> ParamValue {
     if !requires_min_max_tokens(model) {
         return value.clone();
     }
-    let below_minimum = match value {
-        ParamValue::Bool(_) => true,
-        ParamValue::Number(number) => number
-            .as_i64()
-            .is_some_and(|tokens| tokens < MIN_MAX_TOKENS),
+    // A comparison here leaves an equivalent mutant at 16, where clamping and copying agree.
+    let raised = match value {
+        ParamValue::Bool(_) => Some(MIN_MAX_TOKENS),
+        ParamValue::Number(number) => number.as_i64().map(|tokens| tokens.max(MIN_MAX_TOKENS)),
         ParamValue::Null | ParamValue::Text(_) | ParamValue::List(_) | ParamValue::Mapping(_) => {
-            false
+            None
         }
     };
-    if below_minimum {
-        return ParamValue::Number(Number::from(MIN_MAX_TOKENS));
-    }
-    value.clone()
+    raised.map_or_else(
+        || value.clone(),
+        |tokens| ParamValue::Number(Number::from(tokens)),
+    )
 }
 
 // An empty string is the one stop value Converse rejects outright, so the field stays absent for it.
