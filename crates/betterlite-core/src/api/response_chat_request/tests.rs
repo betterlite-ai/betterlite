@@ -9,6 +9,7 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -87,6 +88,10 @@ fn map(source: &str) -> IndexMap<String, Value> {
     serde_json::from_str(source).expect("the fixture is a JSON object")
 }
 
+fn json_map(source: &str) -> IndexMap<String, Json> {
+    serde_json::from_str(source).expect("the fixture is a JSON object")
+}
+
 fn string_map(source: &str) -> IndexMap<String, String> {
     serde_json::from_str(source).expect("the fixture is a JSON object of strings")
 }
@@ -118,7 +123,7 @@ fn build_with(
     auto_summary: bool,
 ) -> Built {
     let mut state = logging_state();
-    let mut optional_params = map(optional);
+    let mut optional_params = json_map(optional);
     let litellm_params = map(litellm);
     let headers = string_map(headers);
     let history = chat_messages(messages);
@@ -165,6 +170,12 @@ fn options(params: &Value) -> Value {
     object.remove("model");
     object.remove("input");
     options
+}
+
+fn built_options(messages: &str, optional: &str, auto_summary: bool) -> Value {
+    let built = build_with(messages, optional, "{}", "{}", auto_summary);
+    let request = built.outcome.expect("the request builds");
+    options(&request.params)
 }
 
 #[rstest]
@@ -381,9 +392,7 @@ fn prefers_history_instructions(
     #[case] optional: &str,
     #[case] expected: Value,
 ) {
-    let built = build_with(messages, optional, "{}", "{}", false);
-    let projection = built.outcome.expect("the request builds");
-    assert_eq!(options(&projection.params), expected);
+    assert_eq!(built_options(messages, optional, false), expected);
 }
 
 #[rstest]
@@ -466,7 +475,7 @@ fn carries_the_client_and_sets_the_responses_call_type() {
 #[test]
 fn carries_a_null_client() {
     let mut state = logging_state();
-    let mut optional_params = map("{}");
+    let mut optional_params = json_map("{}");
     let litellm_params = map("{}");
     let headers = string_map("{}");
     let history = chat_messages(USER);
@@ -742,9 +751,23 @@ fn maps_reasoning_effort(
     #[case] optional: &str,
     #[case] expected: Value,
 ) {
-    let built = build_with(USER, optional, "{}", "{}", auto_summary);
-    let projection = built.outcome.expect("the request builds");
-    assert_eq!(options(&projection.params)["reasoning"], expected);
+    assert_eq!(
+        built_options(USER, optional, auto_summary)["reasoning"],
+        expected
+    );
+}
+
+#[rstest]
+#[case::reasoning_last(
+    r#"{"extra_body": {"reasoning_effort": "low", "reasoning": {"effort": "high"}}}"#,
+    json!({"effort": "high"})
+)]
+#[case::reasoning_effort_last(
+    r#"{"extra_body": {"reasoning": {"effort": "high"}, "reasoning_effort": "low"}}"#,
+    json!({"effort": "low"})
+)]
+fn keeps_the_extra_body_promotion_order(#[case] optional: &str, #[case] expected: Value) {
+    assert_eq!(built_options(USER, optional, false)["reasoning"], expected);
 }
 
 #[rstest]

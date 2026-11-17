@@ -11,7 +11,7 @@ pub enum RequestError {
     },
     #[error("{source}")]
     Json {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
     #[error("{source}")]

@@ -1,4 +1,5 @@
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -8,7 +9,8 @@ use crate::api::response_chat_history::history::HistoryMessage;
 pub struct ChatRequestInput<'a> {
     pub model: &'a str,
     pub messages: &'a [HistoryMessage],
-    pub optional_params: &'a mut IndexMap<String, Value>,
+    // Json keeps the caller's key order, which decides which of two keys mapping to reasoning wins
+    pub optional_params: &'a mut IndexMap<String, Json>,
     pub litellm_params: &'a IndexMap<String, Value>,
     pub headers: &'a IndexMap<String, String>,
     pub reasoning_auto_summary: bool,

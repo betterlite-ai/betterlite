@@ -10,6 +10,7 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
@@ -30,7 +31,7 @@ mod diagnostics;
 pub(crate) struct Input {
     model: String,
     messages: Vec<HistoryMessage>,
-    optional_params: IndexMap<String, Value>,
+    optional_params: IndexMap<String, Json>,
     litellm_params: IndexMap<String, Value>,
     headers: IndexMap<String, String>,
     reasoning_auto_summary: bool,

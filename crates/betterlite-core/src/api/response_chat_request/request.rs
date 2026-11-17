@@ -1,4 +1,5 @@
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -86,8 +87,8 @@ fn converted_input(
     Ok((converted.input, converted.instructions))
 }
 
-fn log_ignored_response_id(optional_params: &IndexMap<String, Value>) {
-    if let Some(Value::String(id)) = optional_params.get("previous_response_id") {
+fn log_ignored_response_id(optional_params: &IndexMap<String, Json>) {
+    if let Some(Json::Text(id)) = optional_params.get("previous_response_id") {
         if !id.is_empty() {
             tracing::debug!(
                 "Chat provider: Warning ignoring previous response ID: {}",
