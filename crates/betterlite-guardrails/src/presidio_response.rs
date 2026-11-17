@@ -14,7 +14,7 @@ pub mod post_call;
 pub mod wire;
 
 mod log_merge;
-mod messages;
+pub(crate) mod messages;
 mod runtime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
