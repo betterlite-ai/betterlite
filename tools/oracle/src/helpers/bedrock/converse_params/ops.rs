@@ -43,11 +43,12 @@ where
 }
 
 fn budgets(environment: &BTreeMap<String, String>) -> Result<Settings, Box<HelperError>> {
-    let config = ConfigLoader {
+    let loader = ConfigLoader {
         lookup: environment.clone(),
-    }
-    .load(FIXTURE_CONFIG)
-    .map_err(|error| helper_error(error, None))?;
+    };
+    let config = loader
+        .load(FIXTURE_CONFIG)
+        .map_err(|error| helper_error(error, None))?;
     Ok(config.sections.anthropic_capability_catalog)
 }
 
@@ -110,11 +111,7 @@ fn top_k(call: &TopKInput) -> HelperResult {
     let mapped = handle_top_k_value(&call.model, &mut remaining, drop, &catalogs)
         .map_err(|error| helper_error(&error, error.status_code()))?;
     let transformed = transform_inference_params(call.inference_params.clone());
-    Ok(json!({
-        "mapped": mapped,
-        "remaining": remaining,
-        "transformed": transformed,
-    }))
+    Ok(json!({ "mapped": mapped, "remaining": remaining, "transformed": transformed }))
 }
 
 fn parallel_config(call: &ParallelConfigInput) -> HelperResult {
@@ -124,10 +121,7 @@ fn parallel_config(call: &ParallelConfigInput) -> HelperResult {
     );
     let mut dropped = merged.clone();
     drop_tool_choice_type(&mut dropped);
-    Ok(json!({
-        "merged": merged,
-        "dropped": dropped,
-    }))
+    Ok(json!({ "merged": merged, "dropped": dropped }))
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
