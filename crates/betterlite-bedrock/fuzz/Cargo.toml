@@ -41,6 +41,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_converse_response"
+path = "fuzz_targets/bedrock_converse_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_image_reply"
 path = "fuzz_targets/bedrock_image_reply.rs"
 test = false
