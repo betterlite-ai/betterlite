@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 // What a streaming guardrail is handed: a decoded chunk object, or the raw bytes of an SSE frame.
@@ -7,17 +9,24 @@ pub enum Chunk {
     Bytes(Vec<u8>),
 }
 
-#[must_use]
-pub fn field<'value>(value: &'value GuardrailValue, name: &str) -> Option<&'value GuardrailValue> {
+fn object(value: &GuardrailValue) -> Option<&BTreeMap<String, GuardrailValue>> {
     let GuardrailValue::Object(fields) = value else {
         return None;
     };
-    fields
+    Some(fields)
+}
+
+#[must_use]
+pub fn field<'value>(value: &'value GuardrailValue, name: &str) -> Option<&'value GuardrailValue> {
+    object(value)?
         .get(name)
         .filter(|found| !matches!(found, GuardrailValue::Null))
 }
 
-pub fn field_mut<'v>(value: &'v mut GuardrailValue, name: &str) -> Option<&'v mut GuardrailValue> {
+pub fn field_mut<'value>(
+    value: &'value mut GuardrailValue,
+    name: &str,
+) -> Option<&'value mut GuardrailValue> {
     let GuardrailValue::Object(fields) = value else {
         return None;
     };
