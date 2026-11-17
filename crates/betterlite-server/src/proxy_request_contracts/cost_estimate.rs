@@ -53,23 +53,14 @@ impl CostEstimateRequest {
                 self.num_requests_per_month.unwrap_or(0),
             ),
         ];
-        for (name, count) in counts {
-            if count < 0 {
-                return Err(ContractError::from(format!("{name} must be at least 0")));
-            }
+        if let Some((name, _)) = counts.iter().find(|entry| entry.1 < 0) {
+            return Err(ContractError::from(format!("{name} must be at least 0")));
         }
-        self.check_subsets()
-    }
-
-    // LiteLLM checks the cache counts first, so a body that breaks both subsets reports the cache message.
-    fn check_subsets(&self) -> Result<(), ContractError> {
-        let Some(cache_total) = self
+        // LiteLLM checks the cache counts first, so a body that breaks both subsets reports the cache message.
+        let cache_total = self
             .cache_read_input_tokens
-            .checked_add(self.cache_creation_input_tokens)
-        else {
-            return Err(ContractError::from(CACHE_SUBSET));
-        };
-        if cache_total > self.input_tokens {
+            .checked_add(self.cache_creation_input_tokens);
+        if cache_total.is_none_or(|total| total > self.input_tokens) {
             return Err(ContractError::from(CACHE_SUBSET));
         }
         if self.reasoning_tokens > self.output_tokens {
@@ -155,5 +146,4 @@ impl CostEstimateResponse {
     }
 }
 
-#[cfg(test)]
 mod tests;
