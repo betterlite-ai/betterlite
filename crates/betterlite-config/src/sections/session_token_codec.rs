@@ -6,8 +6,6 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 
-mod tests;
-
 const BUDGET_PATH: &str = "litellm_settings.max_ui_session_budget";
 const DEFAULT_CLI_HOURS: i64 = 24;
 const CLI_HOURS_ENVIRONMENTS: [&str; 2] = [

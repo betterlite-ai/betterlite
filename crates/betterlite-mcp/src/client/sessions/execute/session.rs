@@ -34,6 +34,7 @@ where
         SessionOptions {
             read_timeout: client.auth.timeout,
             callbacks: client.settings.callbacks.clone(),
+            handlers: client.settings.handlers.clone(),
             message_handler: handler.clone(),
         },
     );

@@ -6,10 +6,12 @@ use std::time::Duration;
 use crate::client::cleanup::http_client::{
     CleanupScope, McpHttpClient, Transport as HttpTransport,
 };
+use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 
 use super::error::ExitFailure;
 use super::factory::{HttpClientConfig, SseRequest};
 use super::negotiate::{Callbacks, ClientSession};
+use super::stdio::{StdioServer, StdioTransport};
 use super::stream::MessageHandler;
 use super::transport::{StdioServerParameters, TransportContext};
 
@@ -19,7 +21,18 @@ where
 {
     pub read_timeout: Duration,
     pub callbacks: Callbacks,
+    pub handlers: ServerRequestHandlers,
     pub message_handler: MessageHandler<Source>,
+}
+
+#[must_use]
+pub fn stdio_transport(parameters: StdioServerParameters) -> StdioTransport {
+    StdioTransport::Server(Box::new(StdioServer {
+        parameters,
+        child: None,
+        stdin: None,
+        stdout: None,
+    }))
 }
 
 pub trait SessionContext: Sized + Send + 'static {

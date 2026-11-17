@@ -3,7 +3,7 @@ title: Fine-tuning job list and retrieval SDK calls
 description: >-
   Implement the complete alist/list/aretrieve/retrieve_fine_tuning_job functions in core::api::fine_tuning_read.
   B518 and B542 own OpenAI/Azure clients and wire conversion; B2487 supplies loaded resource settings and
-  timeout capability, B010 GenericLiteLLMParams and B012 the decorated retrieve-call boundary. List has
+  timeout capability, B010 GenericLiteLLMParams and B011 the decorated retrieve-call boundary. List has
   no @client decorator. Use B2401 FineTuningRead with actual SDK HTTP for both modes, preserving context
   and awaiting only coroutine results. No registry/file credential resolver is called by these functions.
 
@@ -64,7 +64,7 @@ dod:
     Invalid numeric timeout fails before dispatch. A mock HTTP 404 reaches the SDK's NotFoundError with
     status=404; use provider body {error:{message:missing,type:invalid_request_error,param:null,code:null}}
     and assert type=invalid_request_error,param/code=null for undecorated list, while decorated retrieve
-    returns mapped NotFoundError,status=404,type=null,param=null,code=null through B012/B011. With
+    returns mapped NotFoundError,status=404,type=null,param=null,code=null through B011. With
     timeout="bad", undecorated list raises ValueError with no status/type/param/code, while decorated
     retrieve maps it to APIConnectionError,status=500,type/param/code=null; both send zero requests.
     Add separate cases, not an assumed common mapper.

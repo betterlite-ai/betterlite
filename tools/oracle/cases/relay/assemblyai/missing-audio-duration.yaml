@@ -1,0 +1,18 @@
+kind: helper
+name: relay-assemblyai-missing-audio-duration
+call:
+  b3647:
+    calls:
+      - method: POST
+        url_route: "https://api.assemblyai.com/v2/transcript"
+        response_body: {id: t1, speech_model: best}
+        transcripts:
+          - {status: 200, body: {id: t1, status: completed}}
+        catalog:
+          assemblyai/best: {litellm_provider: assemblyai, input_cost_per_second: 0.00003333}
+          assemblyai/nano: {litellm_provider: assemblyai, input_cost_per_second: 0.00010278}
+        api_key: secret-key
+        polling_interval_seconds: 0
+        max_polling_attempts: 3
+env: {}
+compare: {ignore: []}

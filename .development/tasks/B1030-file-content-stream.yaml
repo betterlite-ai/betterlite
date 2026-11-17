@@ -9,7 +9,7 @@ description: >-
   concrete Vertex configs retain their own live credential settings.
 
   Use B2463 for generic binary/streamed HTTP, B516 compatible content, B694 Azure, B500/B2200
-  credentials, B174 model resolution, B176 trusted controls, B1080 stream logging and B012 logger
+  credentials, B174 model resolution, B176 trusted controls, B1080 stream logging and B247 logger
   construction. B2464 owns file config and timeout selection. xAI batch-results detection/handling
   stays with its existing B1407 provider owner.
   Register B2401 SDK HTTP operation file_content_stream for both SDK modes, actual bytes/headers,

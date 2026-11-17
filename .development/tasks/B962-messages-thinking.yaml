@@ -4,7 +4,7 @@ description: >-
   Complete the native Messages transformation facade with the response JSON decoder and stream factory, and
   implement every function in pass_through/utils.py. B2430 now owns request/effort transforms as whole functions.
   Keep this facade in betterlite-core::api::messages_thinking, using B958 response records, B567 AnthropicError,
-  B2436's native stream factory, B323's supported-effort resolver and B2225 model metadata. B012 supplies logging
+  B2436's native stream factory, B323's supported-effort resolver and B2225 model metadata. B247 supplies logging
   context identity; the logging-object helper accepts that type only, never a dictionary resembling it.
 
   decode_messages_response(bytes,status,ApiLimits) returns the decoded JSON object without replacing the provider
