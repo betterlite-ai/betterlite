@@ -1,0 +1,17 @@
+kind: helper
+name: sso-roles-access-mode-string-versus-object
+call:
+  sso_roles:
+    claims: [proxy_admin]
+    role_names: [admin_only, restricted_sso_group]
+    ui_roles: [proxy_admin]
+    access_modes:
+      - admin_only
+      - ADMIN_ONLY
+      - " admin_only"
+      - admin_only_extra
+      - restricted_sso_group
+      - {type: restricted_sso_group, restricted_sso_group: litellm-admins, sso_group_jwt_field: groups}
+      - {type: restricted_sso_group, restricted_sso_group: admin_only, sso_group_jwt_field: groups}
+env: {}
+compare: {ignore: []}
