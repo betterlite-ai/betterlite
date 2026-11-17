@@ -1,0 +1,15 @@
+kind: helper
+name: b9961-gcs-failures
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: read}
+          - {type: file, file: {file_id: "gs://my-bucket/report"}}
+    litellm_params: {}
+    metadata: {status: 500, json: null, body: "server error", connect: false}
+    mint_error: false
+env: {}
+compare: {ignore: []}
