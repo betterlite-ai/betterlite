@@ -36,15 +36,18 @@ pub fn convert_message(
     request: &ReplyRequest<'_>,
     ids: &dyn IdSource,
 ) -> Result<ConvertedMessage, MessageError> {
-    let json_mode = request.resolved_json_mode();
+    let json_mode = request
+        .json_mode
+        .or(request.optional.json_mode)
+        .unwrap_or(false);
     let translation = translate(reply, request)?;
     let (content, annotations) = align_citations(&translation);
     let filtered = filter_json_mode_tools(json_mode, &translation.tools, Some(content.as_str()));
-    let content = filtered.content.unwrap_or(content);
+    let answer = filtered.content.unwrap_or(content);
     let finish_reason =
         forced_finish_reason(reply, json_mode, &filtered.tools, &translation.tools)?;
-    let (recovered, finish_reason) = with_recovery(
-        content,
+    let (recovered, resolved_finish_reason) = with_recovery(
+        answer,
         filtered.tools.as_deref(),
         request,
         finish_reason,
@@ -63,7 +66,7 @@ pub fn convert_message(
             reasoning_content,
             thinking_blocks,
         },
-        finish_reason,
+        finish_reason: resolved_finish_reason,
     })
 }
 
@@ -158,10 +161,13 @@ fn with_recovery(
         content: Some(content),
         tool_calls: None,
     };
-    let recovered = recover_tool_call(&mut message, request.tools(), Some(finish_reason), &|| {
-        ids.next_id()
-    });
-    let finish_reason = recovered.unwrap_or_else(|| finish_reason.to_owned());
+    let recovered = recover_tool_call(
+        &mut message,
+        request.optional.tools.as_deref(),
+        Some(finish_reason),
+        &|| ids.next_id(),
+    );
+    let resolved_finish_reason = recovered.unwrap_or_else(|| finish_reason.to_owned());
     let tool_calls: Option<Vec<ReplyToolCall>> = message.tool_calls.as_deref().map_or_else(
         || content_tools.map(|tools| tools.iter().map(ReplyToolCall::from).collect()),
         |calls| Some(calls.iter().map(ReplyToolCall::from).collect()),
@@ -171,7 +177,7 @@ fn with_recovery(
             content: message.content,
             tool_calls,
         },
-        finish_reason,
+        resolved_finish_reason,
     )
 }
 
@@ -193,11 +199,11 @@ fn provider_fields(translation: &Translation) -> Option<Extra> {
 fn reasoning_blocks(
     blocks: Option<&[Json]>,
 ) -> Result<(Option<String>, Option<Vec<ThinkingBlock>>), ConverseUsageError> {
-    let Some(blocks) = blocks else {
+    let Some(present) = blocks else {
         return Ok((None, None));
     };
-    let content = transform_reasoning_content(blocks)?;
-    let thinking = transform_thinking_blocks(blocks)?;
+    let content = transform_reasoning_content(present)?;
+    let thinking = transform_thinking_blocks(present)?;
     Ok((Some(content), Some(thinking)))
 }
 
@@ -208,7 +214,9 @@ fn align_citations(translation: &Translation) -> (String, Option<Vec<CitationAnn
     let Some(text) = blocks.text.as_deref().filter(|text| !text.is_empty()) else {
         return (content, None);
     };
-    let stripped = python_strip(&content);
+    let stripped = content.trim_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+    });
     if stripped.is_empty() {
         return (text.to_owned(), blocks.annotations);
     }
@@ -216,15 +224,6 @@ fn align_citations(translation: &Translation) -> (String, Option<Vec<CitationAnn
         return (content, None);
     }
     (format!("{text}{content}"), blocks.annotations)
-}
-
-// Python's str.strip() removes the characters str.isspace() accepts, which includes the four information separators.
-fn python_strip(text: &str) -> &str {
-    text.trim_matches(is_python_space)
-}
-
-fn is_python_space(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
 }
 
 // Python's str.isalnum(): the Lu/Ll/Lt/Lm/Lo letter categories or the Nd/Nl/No number categories.

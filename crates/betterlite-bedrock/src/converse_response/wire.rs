@@ -64,20 +64,3 @@ impl From<&MessageToolCall> for ReplyToolCall {
         Self::Recovered(tool.clone())
     }
 }
-
-impl ModelResponse {
-    #[must_use]
-    pub fn new(id: String, model: String) -> Self {
-        Self {
-            id,
-            created: 0,
-            model,
-            object: "chat.completion".to_owned(),
-            system_fingerprint: None,
-            choices: Vec::new(),
-            usage: None,
-            service_tier: None,
-            trace: None,
-        }
-    }
-}

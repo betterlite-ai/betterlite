@@ -17,6 +17,7 @@ pub struct ReplyRequest<'request> {
     pub model: &'request str,
     pub messages: &'request Json,
     pub data: RawBody,
+    // The explicit argument wins whenever it is set, even as false; only an absent one falls back to the options.
     pub json_mode: Option<bool>,
     pub optional: &'request OptionalParams,
     pub tool_name_mappings: &'request IndexMap<String, String>,
@@ -25,17 +26,4 @@ pub struct ReplyRequest<'request> {
 pub struct RawReply<'reply> {
     pub headers: &'reply [(String, String)],
     pub body: &'reply [u8],
-}
-
-// The explicit json_mode argument wins whenever it is set, even as false.
-impl ReplyRequest<'_> {
-    #[must_use]
-    pub fn resolved_json_mode(&self) -> bool {
-        self.json_mode.or(self.optional.json_mode).unwrap_or(false)
-    }
-
-    #[must_use]
-    pub fn tools(&self) -> Option<&[ToolBlock]> {
-        self.optional.tools.as_deref()
-    }
 }

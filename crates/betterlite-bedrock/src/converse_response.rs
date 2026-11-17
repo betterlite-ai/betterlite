@@ -13,11 +13,11 @@ pub mod wire;
 // A Converse reply body, kept as the parsed mapping LiteLLM hands to ConverseResponseBlock; the members the conversion reads are reached through the accessors below.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConverseReply {
-    body: IndexMap<String, Json>,
+    pub(crate) body: IndexMap<String, Json>,
 }
 
 // Only reading the body fails the 422 catch in LiteLLM: later missing members keep their own KeyError.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
     #[error(
         "Error converting to valid response block=the body is not a JSON object. File an issue if litellm error - https://github.com/BerriAI/litellm/issues"
@@ -72,11 +72,6 @@ pub fn decode_converse_reply(body: &[u8]) -> Result<ConverseReply, ConversionErr
 }
 
 impl ConverseReply {
-    #[must_use]
-    pub fn get(&self, key: &str) -> Option<&Json> {
-        self.body.get(key)
-    }
-
     // completion_response["output"]["message"]: output must exist and be a mapping, message must be a key, and null is the legal "no message" value.
     pub fn message(&self) -> Result<Option<&Json>, ReplyFieldError> {
         let Some(output) = self.body.get("output") else {

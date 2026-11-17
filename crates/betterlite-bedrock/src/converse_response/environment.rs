@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, HeaderError};
 use crate::error::BedrockError as MetadataError;
@@ -24,15 +25,18 @@ pub fn get_error_class(
 // A truthy api_key writes the canonical bearer header; no environment lookup happens here. The B596 merge then owns the metadata header.
 pub fn validate_environment(
     headers: &IndexMap<String, String>,
-    api_key: Option<&str>,
+    api_key: Option<&SecretString>,
     policy: Option<&BedrockRequestPolicy>,
     litellm_params: &Params,
 ) -> Result<IndexMap<String, String>, MetadataError> {
-    let mut headers = headers.clone();
-    if let Some(api_key) = api_key.filter(|key| !key.is_empty()) {
-        headers.insert("Authorization".to_owned(), format!("Bearer {api_key}"));
+    let mut merged_headers = headers.clone();
+    if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
+        merged_headers.insert(
+            "Authorization".to_owned(),
+            format!("Bearer {}", key.expose_secret()),
+        );
     }
-    merge_invoke_headers(&headers, &[], policy, litellm_params)
+    merge_invoke_headers(&merged_headers, &[], policy, litellm_params)
 }
 
 // Streaming selection only: an explicit fake_stream wins, then a streaming AI21 model, matched case-sensitively on the model name.

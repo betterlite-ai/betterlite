@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::agentcore_stream::IdSource;
 use crate::bedrock_settings::{BedrockError, HeaderError};
@@ -117,8 +118,12 @@ fn log_post_call(request: &ReplyRequest<'_>, reply: &RawReply<'_>, log: LogConte
             original_response: Json::Text(response_text(reply.body)),
             input: request.messages.clone(),
             additional_args: AdditionalArgs {
+                api_base: None,
+                headers: None,
                 complete_input_dict: Some(request.data.clone()),
-                ..AdditionalArgs::default()
+                request_str: None,
+                openai_sdk: None,
+                passthrough: IndexMap::new(),
             },
         },
         log.env,
@@ -143,6 +148,7 @@ where
 {
     let block = ConverseTokenUsage::decode(reply.usage()?)?;
     let provider_tokens = reply
+        .body
         .get("additionalModelResponseFields")
         .and_then(thinking_tokens_from_fields);
     let reasoning = converted.message.reasoning_content.as_deref();
@@ -161,19 +167,19 @@ fn created_seconds(now: SystemTime) -> Result<i64, ClockError> {
         Ok(elapsed) => (elapsed.as_secs(), false),
         Err(error) => (error.duration().as_secs(), true),
     };
-    let seconds = i64::try_from(seconds).map_err(|_error| ClockError::OutOfRange)?;
+    let whole_seconds = i64::try_from(seconds).map_err(|_error| ClockError::OutOfRange)?;
     if negative {
-        return seconds.checked_neg().ok_or(ClockError::OutOfRange);
+        return whole_seconds.checked_neg().ok_or(ClockError::OutOfRange);
     }
-    Ok(seconds)
+    Ok(whole_seconds)
 }
 
 // Only a guardrail trace and a typed serviceTier reach the envelope; metrics, headers and other top-level members stay with the provider body.
 fn apply_optional_fields(reply: &ConverseReply, model_response: &mut ModelResponse) {
-    if let Some(trace) = reply.get("trace") {
+    if let Some(trace) = reply.body.get("trace") {
         model_response.trace = Some(trace.clone());
     }
-    if let Some(Json::Object(fields)) = reply.get("serviceTier")
+    if let Some(Json::Object(fields)) = reply.body.get("serviceTier")
         && let Some(kind) = fields.get("type")
     {
         model_response.service_tier = Some(kind.clone());
