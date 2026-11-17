@@ -1,0 +1,35 @@
+kind: sdk_http
+name: sdk-http-chat-response-stream-primed-identity
+env: {}
+call:
+  chat_response_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    request_input: hi
+    runs:
+      - {mode: sync, steps: [next, drain]}
+      - {mode: async, steps: [next, drain]}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":null}]}'
+      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}'
+      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}'
+      - '{"id":"chat_late","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore: []
