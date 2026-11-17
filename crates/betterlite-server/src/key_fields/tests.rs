@@ -179,6 +179,29 @@ fn object_permission_defaults() {
 }
 
 #[test]
+fn key_object_permission() {
+    let request =
+        GenerateKeyRequest::read(&value(r#"{"object_permission": {"models": ["gpt-4o"]}}"#))
+            .expect("a key permission");
+    let projection = request.project().expect("the projection");
+    assert_field(
+        &projection.supplied,
+        "object_permission",
+        r#"{"models": ["gpt-4o"]}"#,
+    );
+    assert_field(
+        &projection.resolved,
+        "object_permission",
+        concat!(
+            r#"{"mcp_servers": null, "mcp_access_groups": null, "mcp_tool_permissions": null,"#,
+            r#" "mcp_toolsets": null, "blocked_tools": null, "vector_stores": null, "agents": null,"#,
+            r#" "agent_access_groups": null, "models": ["gpt-4o"], "search_tools": null,"#,
+            r#" "mcp_tool_search_enabled": null, "skills": null}"#
+        ),
+    );
+}
+
+#[test]
 fn key_field_defaults() {
     let request = KeyRequestBase::read(&value("{}")).expect("the key defaults");
     let fields = &request.key_fields;
@@ -898,6 +921,10 @@ fn stored_windows_invalid() {
     ));
     assert!(matches!(
         stored_budget_limit_windows(Some(&json_data("true"))),
+        Err(DecodeError::StoredWindowsNotAList)
+    ));
+    assert!(matches!(
+        stored_budget_limit_windows(Some(&json_data("5"))),
         Err(DecodeError::StoredWindowsNotAList)
     ));
     assert!(matches!(

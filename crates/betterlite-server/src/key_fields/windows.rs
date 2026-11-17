@@ -12,7 +12,6 @@ pub fn stored_budget_limit_windows(
     stored: Option<&JsonData>,
 ) -> Result<Vec<BTreeMap<String, JsonData>>, DecodeError> {
     let items: Vec<JsonData> = match stored {
-        Some(JsonData::Array(items)) if items.is_empty() => return Ok(Vec::new()),
         Some(JsonData::Array(items)) => items.clone(),
         Some(JsonData::String(text)) if text.is_empty() => return Ok(Vec::new()),
         Some(JsonData::String(text)) => match serde_json::from_str::<JsonData>(text) {
