@@ -1,13 +1,13 @@
 id: B9978
 milestone: R2 bug fixes
 title: Malformed Bedrock Converse tools and response_format answer 400
-status: todo
+status: done
 depends_on: [B601]
 file: tasks/B9978-bedrock-converse-tools-400.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2268

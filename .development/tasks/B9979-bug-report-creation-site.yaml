@@ -1,0 +1,84 @@
+id: B9979
+title: Bug report frames come from where the error was created
+description: >-
+  build_bug_report (crates/betterlite-reporting/src/bug_report/report.rs) takes a backtrace::Backtrace, and
+  litellm_frames reads each frame's file and line from debug info. Release builds never carry debug info, and since
+  11-17 no betterlite build does, so litellm_frames is always empty and a bug report never names the code that
+  failed. LiteLLM lists up to 12 traceback frames under its package as "path:line in function".
+
+
+  Max chose (11-17) to take the place where the error was created instead: the caller captures it with
+  #[track_caller] and std::panic::Location::caller() and passes the &Location to build_bug_report in place of the
+  backtrace. litellm_frames then holds one frame, `crates/<path>:<line>`, when the location's file is under the
+  workspace crates directory (an absolute path under it, or a path starting with crates/), and is empty otherwise.
+  Location carries no function name, so the frame ends at the line. The backtrace dependency leaves
+  betterlite-reporting, and the frames code keeps no debug-info path.
+
+
+  Nothing outside betterlite-reporting calls build_bug_report yet. B4171 calls it later and now depends on this
+  task.
+scope:
+  paths:
+  - crates/betterlite-reporting/Cargo.toml
+  - crates/betterlite-reporting/src/bug_report/frames.rs
+  - crates/betterlite-reporting/src/bug_report/report.rs
+  - crates/betterlite-reporting/src/bug_report/tests.rs
+  - Cargo.lock
+  - docs/deviations/B4170.yaml
+  - docs/deviations/B9979.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L52-L71
+  why: LiteLLM keeps traceback frames under its package directory, formatted as path:line in name, at most 12.
+- url: https://doc.rust-lang.org/std/panic/struct.Location.html#method.caller
+  why: "Location::caller() inside a #[track_caller] function reports the caller's file and line with no debug info."
+dod:
+- text: >-
+    build_bug_report takes the error's creation site as a std::panic::Location instead of a Backtrace, and a test
+    that creates the error through a #[track_caller] function gets exactly one frame naming the test file and the
+    line!() of that call.
+  proof: [reporting-tests, creation-site-tests]
+- text: >-
+    A location outside the workspace crates directory gives no frames, and betterlite-reporting no longer depends on
+    the backtrace crate.
+  proof: [creation-site-tests, no-backtrace]
+- text: >-
+    docs/deviations/B9979.yaml lists the one-frame report with the pinned LiteLLM link, and the backtrace row in
+    docs/deviations/B4170.yaml is gone.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: reporting-tests
+    why: A bug report test broke.
+    run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^bug_report/)'
+  - id: creation-site-tests
+    why: "No test shows the frame coming from a #[track_caller] creation site, or a location outside the crates directory."
+    run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/bug_report.*creation_site/)'
+  - id: no-backtrace
+    why: betterlite-reporting still uses the backtrace crate.
+    run: "! grep -q -E '^backtrace' crates/betterlite-reporting/Cargo.toml && ! grep -r -q 'backtrace::' crates/betterlite-reporting/src"
+  - id: deviation-rows
+    why: The one-frame report is not listed as a deviation, or B4170 still lists the backtrace.
+    run: grep -q -F 'bug_report.py#L52-L71' docs/deviations/B9979.yaml && ! grep -q -i 'backtrace' docs/deviations/B4170.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A bug report holds one frame, the place where the error was created, written as crates/<path>:<line> with no
+    function name. LiteLLM lists up to 12 traceback frames under its package as path:line in name.
+  why: >-
+    Rust errors carry no traceback, and builds carry no debug info, so a backtrace has no file or line.
+    #[track_caller] gives the creation site without either (Max, 11-17).
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L52-L71
+out_of_scope:
+- Capturing the location in the proxy and SDK error paths; B4171 and the SDK error handling wire build_bug_report into their own paths.
+- The issue URL, the notice and the environment report; only the frames change.
+pitfalls:
+- "Location::caller() reports the caller only when every function between it and the call site has #[track_caller]; the test checks the line with line!() at the call."
+- Location::file() is relative to the workspace root for workspace crates and absolute for registry crates, so keep accepting both forms the frames code takes today.
+- Keep MAX_FRAMES and the issue URL's frame trimming as they are; one frame fits under the limit.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0
