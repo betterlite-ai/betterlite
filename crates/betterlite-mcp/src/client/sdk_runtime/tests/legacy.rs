@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use betterlite_prompts::arguments::json::{Json, Object};
 use futures_util::stream::{self, StreamExt as _};
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -140,7 +141,7 @@ fn cursor(params: Option<&RawValue>) -> Option<String> {
 
 fn call_reply(id: &str, params: Option<&RawValue>) -> Option<String> {
     match tool_name(params).as_deref() {
-        Some("echo") => Some(echo_reply(id)),
+        Some("echo") => Some(echo_reply(id, params)),
         Some("stream-fail") => None,
         Some(other) => Some(failure_reply(id, &format!("unknown tool {other}"))),
         None => Some(failure_reply(id, "missing tool name")),
@@ -154,10 +155,18 @@ fn tool_name(params: Option<&RawValue>) -> Option<String> {
         .map(|call| call.name)
 }
 
-fn echo_reply(id: &str) -> String {
-    format!(
-        r#"{{"jsonrpc":"2.0","id":{id},"result":{{"content":[{{"type":"text","text":"echoed"}}]}}}}"#
-    )
+// The request line rides back in the text, so a case can read the params the client put on the wire
+fn echo_reply(id: &str, params: Option<&RawValue>) -> String {
+    let text = params.map_or_else(
+        || "echoed".to_owned(),
+        |raw| format!("echoed {}", raw.get()),
+    );
+    let reply = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": serde_json::from_str::<serde_json::Value>(id).unwrap_or(serde_json::Value::Null),
+        "result": {"content": [{"type": "text", "text": text}]},
+    });
+    reply.to_string()
 }
 
 fn failure_reply(id: &str, message: &str) -> String {
@@ -212,9 +221,14 @@ async fn a_legacy_sse_session_lists_every_tool_page_and_calls_a_tool() {
         client.last_initialize_instructions.as_deref(),
         Some(INSTRUCTIONS)
     );
+    let arguments = Object::from([("city".to_owned(), Json::Text("Paris".to_owned()))]);
+    let request = CallRequest {
+        name: "echo".to_owned(),
+        arguments: Some(arguments),
+    };
     let result = call_tool(
         &mut client,
-        &call("echo"),
+        &request,
         None::<&RecordingHost>,
         CallToolOptions::default(),
     )
@@ -224,7 +238,10 @@ async fn a_legacy_sse_session_lists_every_tool_page_and_calls_a_tool() {
         panic!("expected a complete tool result");
     };
     match complete.content.as_slice() {
-        [ContentBlock::Text(text)] => assert_eq!(text.text, "echoed"),
+        [ContentBlock::Text(text)] => {
+            assert!(text.text.starts_with("echoed"), "{}", text.text);
+            assert!(text.text.contains(r#""city":"Paris""#), "{}", text.text);
+        }
         other => panic!("unexpected content blocks: {other:?}"),
     }
 }
