@@ -1,4 +1,5 @@
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -28,5 +29,11 @@ pub trait RouteServices: Send + Sync {
         deployments: Vec<DeploymentSpec>,
     ) -> Result<Vec<DeploymentSpec>, Cancelled> {
         Ok(deployments)
+    }
+
+    // The fallback_generalizations rules a stage fills into each deployment, absent on a router without them
+    #[must_use]
+    fn model_generalizations(&self) -> Option<&ModelGeneralizations> {
+        None
     }
 }
