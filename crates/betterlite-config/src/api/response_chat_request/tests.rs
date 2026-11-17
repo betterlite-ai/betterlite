@@ -4,9 +4,8 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{Raw, Settings};
-use crate::loader::{ConfigError, parse_view};
-use crate::sections::Section as _;
+use super::Settings;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn variables(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -22,10 +21,14 @@ fn source(yaml: Option<&str>) -> String {
     )
 }
 
-// the section parses and converts through the same two calls RawSections makes while the loader runs
 fn settings(source: &str, environment: &BTreeMap<String, String>) -> Settings {
-    let (raw, _ignored) = parse_view::<Raw>(source).expect("the section parses");
-    raw.convert(environment).expect("the section converts")
+    ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(source)
+    .expect("the config loads")
+    .sections
+    .response_chat_request
 }
 
 #[rstest]
@@ -60,17 +63,28 @@ fn loads_reasoning_summary_settings(
 #[case::word("maybe")]
 #[case::quoted("'true'")]
 fn rejects_an_invalid_yaml_boolean(#[case] yaml: &str) {
-    let error = parse_view::<Raw>(&source(Some(yaml))).expect_err("the view rejects the value");
+    let error = ConfigLoader {
+        lookup: variables(&[]),
+    }
+    .load(&source(Some(yaml)))
+    .expect_err("the loader rejects the value");
     assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }
 
 #[test]
 fn recognizes_the_reasoning_auto_summary_key() {
-    let (_raw, ignored) = parse_view::<Raw>(&source(Some("true"))).expect("the section parses");
-    assert!(
-        !ignored
-            .iter()
-            .any(|path| path.contains("reasoning_auto_summary")),
-        "{ignored:?}"
-    );
+    let config = ConfigLoader {
+        lookup: variables(&[]),
+    }
+    .load(&source(Some("true")))
+    .expect("the recognized key loads");
+    assert!(config.sections.response_chat_request.reasoning_auto_summary);
+    let error = ConfigLoader {
+        lookup: variables(&[]),
+    }
+    .load(
+        "model_list: []\nlitellm_settings:\n  reasoning_auto_summary: true\n  vendor_flag: true\n",
+    )
+    .expect_err("an unclaimed sibling key stays unsupported");
+    assert!(matches!(error, ConfigError::Unsupported { .. }), "{error}");
 }
