@@ -1,3 +1,10 @@
+mod response;
+pub mod schema;
+mod services;
+
+use self::response::observe;
+use self::schema::{Entry, Found, Observed, Outcome, ResponseFound, Route, Scenario, Selected};
+use self::services::{NoLimits, NoParams, NoServices};
 use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -10,16 +17,14 @@ use betterlite_router::deployment_catalog::types::{Authority, CandidateView};
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::router_core::attempt::AttemptResult;
 use betterlite_router::router_core::error::RoutingError;
-use betterlite_router::router_core::headers::{
-    Response, apply_response_model_id, ensure_additional_headers, prepare_response,
-    response_has_hidden_params,
-};
 use betterlite_router::router_core::no_deployment::NoDeployment;
 use betterlite_router::router_core::pipeline::{self, StrategyRoute};
 use betterlite_router::router_core::route::{RouteContext, RoutePolicy, RouteRequest};
-use betterlite_router::router_core::test_support::{NoLimits, NoParams, NoServices};
+use betterlite_router::router_core::services::RouteServices;
+use betterlite_router::router_predicates::params::{ParamSupport, ResolvedProvider};
 use betterlite_router::static_eligibility::error::EligibilityError;
 use betterlite_router::static_eligibility::request::RequestFacts;
+use betterlite_router::static_eligibility::tokens::TokenLimits;
 use betterlite_router::strategy_dispatch::groups::{RoutingGroups, RoutingScope};
 use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
@@ -28,38 +33,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use tokio::runtime::Builder;
+
 const API_KEY: &str = "sk-probe";
 const ENVIRONMENT: &str = "production";
 const EXHAUSTED: &str = "the request has no sample left for this draw";
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Entry {
-    pub model_name: String,
-    pub model: String,
-    pub id: String,
-    pub weight: Option<u32>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Route {
-    pub model: String,
-    #[serde(default)]
-    pub excluded_deployment_ids: Vec<String>,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Carrier {
-    Dict,
-    Attributed,
-    Stream,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Scenario {
-    pub carrier: Carrier,
-    pub hidden: Option<JsonObject>,
-    pub metadata: Option<JsonObject>,
-}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Input {
@@ -68,38 +46,6 @@ pub struct Input {
     pub routes: Vec<Route>,
     #[serde(default)]
     pub responses: Vec<Scenario>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Selected {
-    pub model_name: String,
-    pub model: String,
-    pub id: String,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Observed {
-    pub error_type: String,
-    pub model: String,
-    pub cooldown_time: String,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Outcome {
-    Selected,
-    BadRequest,
-    RateLimited,
-    ServiceUnavailable,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Found {
-    pub outcome: Outcome,
-    pub selected: Option<Selected>,
-    pub error: Option<Observed>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ResponseFound {
-    pub prepared: bool,
-    pub has_hidden: bool,
-    pub hidden: JsonObject,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Output {
@@ -192,43 +138,6 @@ fn found(
         }
         Err(_) => selection(Outcome::BadRequest, None),
     })
-}
-
-// prepare_response over each carrier a caller can hand the router
-fn response(scenario: &Scenario) -> Response {
-    match scenario.carrier {
-        Carrier::Dict => {
-            let mut body = JsonObject::new();
-            if let Some(hidden) = &scenario.hidden {
-                body.insert("_hidden_params".to_owned(), Json::Object(hidden.clone()));
-            }
-            Response::Object(body)
-        }
-        Carrier::Attributed => Response::Attributed(scenario.hidden.clone().unwrap_or_default()),
-        Carrier::Stream => Response::Stream,
-    }
-}
-fn observe(scenario: &Scenario) -> ResponseFound {
-    let Some(mut prepared) = prepare_response(response(scenario)) else {
-        return ResponseFound {
-            prepared: false,
-            has_hidden: false,
-            hidden: JsonObject::new(),
-        };
-    };
-    ensure_additional_headers(&mut prepared);
-    apply_response_model_id(&mut prepared, scenario.metadata.as_ref());
-    let has_hidden = response_has_hidden_params(&prepared);
-    let hidden = if has_hidden {
-        prepared.hidden_params()
-    } else {
-        JsonObject::new()
-    };
-    ResponseFound {
-        prepared: true,
-        has_hidden,
-        hidden,
-    }
 }
 
 // The probe router has no access groups, reserved models, default fallbacks or provider inference.
