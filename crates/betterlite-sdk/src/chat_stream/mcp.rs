@@ -41,7 +41,7 @@ fn holds_metadata(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|amount| amount != 0.0),
+        JsonValue::Number(number) => number.as_f64().is_some_and(|amount| amount != 0.0_f64),
         JsonValue::String(_) | JsonValue::Array(_) | JsonValue::Object(_) => item_count(value) > 0,
     }
 }

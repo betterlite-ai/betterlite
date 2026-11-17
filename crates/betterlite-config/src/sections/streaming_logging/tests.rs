@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(yaml: &str, variables: &[(&str, &str)]) -> bool {
     let lookup: BTreeMap<String, String> = variables
@@ -61,13 +61,15 @@ fn an_unset_environment_reference_is_a_load_error() {
 #[case::number("litellm_settings: {disable_streaming_logging: 3}")]
 #[case::literal_string("litellm_settings: {disable_streaming_logging: \"true\"}")]
 fn a_wrong_type_is_a_load_error(#[case] yaml: &str) {
-    assert!(
-        ConfigLoader {
-            lookup: BTreeMap::new(),
-        }
-        .load(yaml)
-        .is_err()
-    );
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::Yaml { .. } | ConfigError::Environment { .. }
+    ));
 }
 
 #[test]

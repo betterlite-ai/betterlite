@@ -1,13 +1,13 @@
 #[tokio::test]
 async fn duration_blocking_fails_without_reading() {
     let mut config = config(CallMode::Blocking);
-    config.max_streaming_duration = Some(5.0);
+    config.max_streaming_duration = Some(5.0_f64);
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
     let reads = Arc::clone(&source.reads);
     let mut stream = start(&world, &mut correlation, config, source);
-    world.clock.set(0, 1006.0);
+    world.clock.set(0, 1006.0_f64);
 
     let error = stream.next().await.unwrap_err();
     assert_eq!(
@@ -22,13 +22,13 @@ async fn duration_blocking_fails_without_reading() {
 #[tokio::test]
 async fn duration_async_logs_the_failure() {
     let mut config = config(CallMode::Async);
-    config.max_streaming_duration = Some(5.0);
+    config.max_streaming_duration = Some(5.0_f64);
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
     let reads = Arc::clone(&source.reads);
     let mut stream = start(&world, &mut correlation, config, source);
-    world.clock.set(0, 1006.0);
+    world.clock.set(0, 1006.0_f64);
 
     let error = stream.next().await.unwrap_err();
     assert_eq!(
@@ -49,12 +49,12 @@ async fn duration_async_logs_the_failure() {
 #[tokio::test]
 async fn duration_within_limit_reads_a_chunk() {
     let mut config = config(CallMode::Async);
-    config.max_streaming_duration = Some(5.0);
+    config.max_streaming_duration = Some(5.0_f64);
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
     let mut stream = start(&world, &mut correlation, config, source);
-    world.clock.set(0, 1004.0);
+    world.clock.set(0, 1004.0_f64);
 
     assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
 }
@@ -62,12 +62,12 @@ async fn duration_within_limit_reads_a_chunk() {
 #[tokio::test]
 async fn duration_exact_limit_still_reads() {
     let mut config = config(CallMode::Async);
-    config.max_streaming_duration = Some(5.0);
+    config.max_streaming_duration = Some(5.0_f64);
     let world = World::new();
     let mut correlation = CorrelationContext::default();
     let source = FakeSource::new(vec![content_chunk("Hi")]);
     let mut stream = start(&world, &mut correlation, config, source);
-    world.clock.set(0, 1005.0);
+    world.clock.set(0, 1005.0_f64);
 
     assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
 }

@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_core::rules::RuleError;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::{
@@ -131,7 +133,7 @@ fn shape_class(
 
 // exception_type() over an exception betterlite only knows as text and a Python class name.
 fn raw_class(
-    error: &dyn std::error::Error,
+    error: &dyn StdError,
     exception_type: &str,
     config: &ChatStreamConfig,
     redactor: &Redactor,

@@ -11,12 +11,12 @@ use serde_json::{from_value, to_value};
 use super::ChatStream;
 use super::config::CallMode;
 use super::error::ChatStreamCause;
-use super::ports::SharedRules;
+use super::ports::{ChunkSource, SharedRules};
 use super::{empty, hooks, json, mcp};
 
 // What one source chunk became: a chunk to return, silence, or the end of the stream.
 pub(super) enum Step {
-    Chunk(StreamChunk),
+    Chunk(Box<StreamChunk>),
     Skip,
     End,
 }
@@ -32,7 +32,10 @@ pub(super) fn skip_source_chunk(mode: CallMode, chunk: &ProviderChunk) -> bool {
 pub(super) async fn process<S>(
     stream: &mut ChatStream<'_, S>,
     raw: ProviderChunk,
-) -> Result<Step, ChatStreamCause> {
+) -> Result<Step, ChatStreamCause>
+where
+    S: ChunkSource,
+{
     let outcome = chunk_creator(&mut stream.shaper, &mut stream.decode, &raw);
     // chunk_creator names the shaped chunk after the call's model; every later creator call uses the logged one.
     stream.shaper.model.clone_from(&stream.logged_model);
@@ -58,7 +61,10 @@ fn mark_started<S>(stream: &mut ChatStream<'_, S>) {
 async fn produced<S>(
     stream: &mut ChatStream<'_, S>,
     mut chunk: StreamChunk,
-) -> Result<Step, ChatStreamCause> {
+) -> Result<Step, ChatStreamCause>
+where
+    S: ChunkSource,
+{
     let mode = stream.config.mode;
     if matches!(mode, CallMode::Blocking) && !stream.config.logging.disable {
         stream.ports.logging.log_chunk(&chunk, stream.cache_hit);
@@ -82,7 +88,7 @@ async fn produced<S>(
         CallMode::Blocking => blocking_final(stream, &mut chunk)?,
         CallMode::Async => chunk = async_final(stream, chunk).await?,
     }
-    Ok(Step::Chunk(chunk))
+    Ok(Step::Chunk(Box::new(chunk)))
 }
 
 fn accumulate_content<S>(stream: &mut ChatStream<'_, S>, chunk: &StreamChunk) {
@@ -114,13 +120,16 @@ fn first_chunk_mcp<S>(stream: &mut ChatStream<'_, S>, chunk: &mut StreamChunk) {
     stream.shaper.progress.sent_first_chunk = true;
 }
 
-// The usage branch: move usage to hidden params, strip it, and drop the chunk when nothing is left.
+// The usage branch: rebuild the chunk without its usage, and drop it when nothing else is left.
 fn usage_rebuilt<S>(
     stream: &mut ChatStream<'_, S>,
     chunk: &StreamChunk,
 ) -> Result<Option<StreamChunk>, ChatStreamCause> {
     let mut hidden = chunk.hidden_params.clone();
-    if let Some(usage) = &chunk.usage {
+    // __anext__ passes the chunk's own hidden params through, so only __next__ adds the usage here.
+    if matches!(stream.config.mode, CallMode::Blocking)
+        && let Some(usage) = &chunk.usage
+    {
         let serialized = to_value(usage).map_err(StreamShapeError::from)?;
         let encoded: JsonValue = from_value(serialized).map_err(StreamShapeError::from)?;
         hidden.insert("usage".to_owned(), encoded);
@@ -150,7 +159,10 @@ fn blocking_final<S>(
 async fn async_final<S>(
     stream: &ChatStream<'_, S>,
     mut chunk: StreamChunk,
-) -> Result<StreamChunk, ChatStreamCause> {
+) -> Result<StreamChunk, ChatStreamCause>
+where
+    S: ChunkSource,
+{
     if !stream.shaper.progress.sent_last_chunk {
         return Ok(chunk);
     }

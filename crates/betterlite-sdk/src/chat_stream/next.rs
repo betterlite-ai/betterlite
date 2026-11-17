@@ -8,9 +8,12 @@ use super::ports::ChunkSource;
 use super::{duration, failure, finalize};
 
 // __anext__ and, for CallMode::Blocking, __next__: the duration check, then chunks until the source ends.
-pub(super) async fn advance<S: ChunkSource>(
+pub(super) async fn advance<S>(
     stream: &mut ChatStream<'_, S>,
-) -> Result<Option<StreamChunk>, ChatStreamError> {
+) -> Result<Option<StreamChunk>, ChatStreamError>
+where
+    S: ChunkSource,
+{
     if let Some(cause) = duration::exceeded(stream) {
         return match stream.config.mode {
             CallMode::Blocking => Err(error::direct(cause, stream)),
@@ -27,8 +30,8 @@ pub(super) async fn advance<S: ChunkSource>(
             continue;
         }
         match chunk::process(stream, raw).await {
-            Ok(Step::Chunk(chunk)) => return Ok(Some(chunk)),
-            Ok(Step::Skip) => continue,
+            Ok(Step::Chunk(chunk)) => return Ok(Some(*chunk)),
+            Ok(Step::Skip) => {}
             Ok(Step::End) => return end_of_stream(stream).await,
             Err(cause) => return Err(failure::failed(stream, cause)),
         }
@@ -38,7 +41,10 @@ pub(super) async fn advance<S: ChunkSource>(
 // The source and its finalize failures are reported as mapped, without the fallback wrapper.
 async fn end_of_stream<S>(
     stream: &mut ChatStream<'_, S>,
-) -> Result<Option<StreamChunk>, ChatStreamError> {
+) -> Result<Option<StreamChunk>, ChatStreamError>
+where
+    S: ChunkSource,
+{
     match finalize::end_of_source(stream).await {
         Ok(chunk) => Ok(chunk),
         Err(cause) => Err(error::direct(cause, stream)),

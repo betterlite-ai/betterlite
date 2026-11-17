@@ -412,7 +412,7 @@ struct World {
 impl World {
     fn new() -> Self {
         Self {
-            clock: FakeClock::new(0, 1000.0),
+            clock: FakeClock::new(0, 1000.0_f64),
             logging: FakeLogging::new(),
             cache: None,
             hooks: Vec::new(),
@@ -437,12 +437,15 @@ impl World {
     }
 }
 
-fn start<'world, S: ChunkSource>(
+fn start<'world, S>(
     world: &'world World,
     correlation: &'world mut CorrelationContext,
     config: ChatStreamConfig,
     source: S,
-) -> ChatStream<'world, S> {
+) -> ChatStream<'world, S>
+where
+    S: ChunkSource,
+{
     let ports = ChatStreamPorts {
         clock: &world.clock,
         logging: &world.logging,
@@ -458,7 +461,10 @@ fn start<'world, S: ChunkSource>(
     ChatStream::new(config, source, ports)
 }
 
-async fn drain<S: ChunkSource>(stream: &mut ChatStream<'_, S>) -> Vec<StreamChunk> {
+async fn drain<S>(stream: &mut ChatStream<'_, S>) -> Vec<StreamChunk>
+where
+    S: ChunkSource,
+{
     let mut seen = Vec::new();
     while let Ok(Some(chunk)) = stream.next().await {
         seen.push(chunk);

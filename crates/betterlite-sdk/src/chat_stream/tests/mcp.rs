@@ -10,8 +10,9 @@ fn mcp_config(mode: CallMode) -> ChatStreamConfig {
 
 fn world_with_hook(action: HookAction) -> (World, Arc<FakeHook>) {
     let hook = Arc::new(FakeHook::new(action));
+    let shared: Arc<dyn StreamingDeploymentHook> = Arc::clone(&hook);
     let mut world = World::new();
-    world.hooks.push(Arc::clone(&hook));
+    world.hooks.push(shared);
     (world, hook)
 }
 
@@ -114,7 +115,8 @@ async fn mcp_list_tools_only_for_the_first_chunk() {
     let source = FakeSource::new(vec![finish_chunk()]);
     let mut stream = start(&world, &mut correlation, config, source);
 
-    let fields = delta_fields(&only_chunk(stream.next().await)).unwrap();
+    let chunk = only_chunk(stream.next().await);
+    let fields = delta_fields(&chunk).unwrap();
     assert!(fields.contains_key("mcp_list_tools"));
     assert!(!fields.contains_key("mcp_tool_results"));
 }
@@ -170,34 +172,32 @@ async fn mcp_list_tools_skip_after_a_shaped_first_chunk_without_final_metadata()
     assert!(delta_fields(&only_chunk(stream.next().await)).is_none());
 }
 
+#[rstest::rstest]
+#[case::number("5", true)]
+#[case::zero("0", false)]
+#[case::text("\"abc\"", true)]
+#[case::empty_text("\"\"", false)]
+#[case::object("{\"a\":1}", true)]
+#[case::empty_object("{}", false)]
+#[case::null("null", false)]
 #[tokio::test]
-async fn mcp_list_tools_follows_python_truthiness() {
-    for (value, expected) in [
-        ("5", true),
-        ("0", false),
-        ("\"abc\"", true),
-        ("\"\"", false),
-        ("{\"a\":1}", true),
-        ("{}", false),
-        ("null", false),
-    ] {
-        let mut config = config(CallMode::Blocking);
-        config.stream_options = Some(StreamOptions {
-            include_usage: false,
-        });
-        config.mcp_metadata = Some(object(&format!(r#"{{"mcp_list_tools":{value}}}"#)));
-        let world = World::new();
-        let mut correlation = CorrelationContext::default();
-        let source = FakeSource::new(vec![finish_chunk()]);
-        let mut stream = start(&world, &mut correlation, config, source);
+async fn mcp_list_tools_follows_python_truthiness(#[case] value: &str, #[case] expected: bool) {
+    let mut config = config(CallMode::Blocking);
+    config.stream_options = Some(StreamOptions {
+        include_usage: false,
+    });
+    config.mcp_metadata = Some(object(&format!(r#"{{"mcp_list_tools":{value}}}"#)));
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![finish_chunk()]);
+    let mut stream = start(&world, &mut correlation, config, source);
 
-        let chunk = only_chunk(stream.next().await);
-        assert_eq!(
-            delta_fields(&chunk).is_some(),
-            expected,
-            "mcp_list_tools {value}"
-        );
-    }
+    let chunk = only_chunk(stream.next().await);
+    assert_eq!(
+        delta_fields(&chunk).is_some(),
+        expected,
+        "mcp_list_tools {value}"
+    );
 }
 
 #[tokio::test]

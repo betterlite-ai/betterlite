@@ -36,7 +36,7 @@ pub struct StreamSourceError {
 
 // The provider stream CustomStreamWrapper iterates: one async next plus a close.
 #[async_trait]
-pub trait ChunkSource: Send {
+pub trait ChunkSource: Send + Sync {
     async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, StreamSourceError>;
     async fn close(&mut self) -> Result<(), StreamSourceError>;
 }

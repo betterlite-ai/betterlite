@@ -79,7 +79,7 @@ async fn next_keeps_a_second_content_usage_chunk_that_only_carries_content() {
     let second = only_chunk(stream.next().await);
     assert_eq!(content_of(&second), "Hi");
     assert!(second.usage.is_none());
-    assert_eq!(hidden_usage_total(&second), Some(10));
+    assert!(hidden_usage_total(&second).is_none());
 }
 
 #[tokio::test]
@@ -108,26 +108,29 @@ async fn next_keeps_a_stripped_usage_chunk_with_a_nonzero_choice_index() {
     let chunk = only_chunk(stream.next().await);
     assert_eq!(chunk.choices[0].index, 1);
     assert!(chunk.usage.is_none());
-    assert_eq!(hidden_usage_total(&chunk), Some(10));
+    assert!(hidden_usage_total(&chunk).is_none());
 }
 
+#[rstest::rstest]
+#[case::empty_reasoning(
+    r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#
+)]
+#[case::empty_vendor_fields(
+    r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"provider_specific_fields":{}},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"vendor_note":"","vendor_list":[],"vendor_obj":{}}"#
+)]
+#[case::empty_provider_fields(
+    r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"provider_specific_fields":{}}"#
+)]
 #[tokio::test]
-async fn next_drops_stripped_usage_chunks_that_carry_nothing() {
-    let variants = [
-        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}"#,
-        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{"provider_specific_fields":{}},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"vendor_note":"","vendor_list":[],"vendor_obj":{}}"#,
-        r#"{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10},"provider_specific_fields":{}}"#,
-    ];
-    for raw in variants {
-        let world = World::new();
-        let mut correlation = CorrelationContext::default();
-        let source = FakeSource::new(vec![content_chunk("Hi"), provider_json(raw)]);
-        let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
+async fn next_drops_stripped_usage_chunks_that_carry_nothing(#[case] raw: &str) {
+    let world = World::new();
+    let mut correlation = CorrelationContext::default();
+    let source = FakeSource::new(vec![content_chunk("Hi"), provider_json(raw)]);
+    let mut stream = start(&world, &mut correlation, config(CallMode::Async), source);
 
-        assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
-        let after = only_chunk(stream.next().await);
-        assert_eq!(finish_of(&after).as_deref(), Some("stop"));
-    }
+    assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
+    let after = only_chunk(stream.next().await);
+    assert_eq!(finish_of(&after).as_deref(), Some("stop"));
 }
 
 #[tokio::test]

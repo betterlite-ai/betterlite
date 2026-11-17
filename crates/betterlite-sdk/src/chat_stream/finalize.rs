@@ -14,12 +14,16 @@ use serde_json::{from_value, to_value};
 use super::ChatStream;
 use super::config::CallMode;
 use super::error::ChatStreamCause;
-use super::{Lifecycle, chunk, mcp};
+use super::ports::ChunkSource;
+use super::{Lifecycle, chunk};
 
 // The three stream_chunk_builder results go through B252, which hands back what it built.
 pub(super) async fn end_of_source<S>(
     stream: &mut ChatStream<'_, S>,
-) -> Result<Option<StreamChunk>, ChatStreamCause> {
+) -> Result<Option<StreamChunk>, ChatStreamCause>
+where
+    S: ChunkSource,
+{
     if stream.shaper.progress.sent_last_chunk {
         return handoff(stream).await;
     }
@@ -49,9 +53,10 @@ fn synthesized_finish<S>(
 }
 
 // The finished stream: cache the complete response, log it, then answer with the usage chunk if asked.
-async fn handoff<S>(
-    stream: &mut ChatStream<'_, S>,
-) -> Result<Option<StreamChunk>, ChatStreamCause> {
+async fn handoff<S>(stream: &mut ChatStream<'_, S>) -> Result<Option<StreamChunk>, ChatStreamCause>
+where
+    S: ChunkSource,
+{
     let built = stream.ports.logging.completed(&stream.shaper.chunks);
     let mut response = model_response_creator(&mut stream.shaper, None, None)?;
     stream.lifecycle = Lifecycle::Completed;
@@ -129,7 +134,10 @@ fn with_hidden_params(mut complete: Json, hidden: Json) -> Json {
     complete
 }
 
-async fn store_and_log<S>(stream: &ChatStream<'_, S>, complete: &Json) {
+async fn store_and_log<S>(stream: &ChatStream<'_, S>, complete: &Json)
+where
+    S: ChunkSource,
+{
     if !stream.cache_hit
         && let Some(cache) = stream.ports.cache
     {

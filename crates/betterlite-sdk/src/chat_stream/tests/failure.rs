@@ -61,7 +61,8 @@ async fn failure_blocking_skips_partial_usage() {
     let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
 
     assert_eq!(content_of(&only_chunk(stream.next().await)), "Hi");
-    assert!(stream.next().await.is_err());
+    let error = stream.next().await.unwrap_err();
+    assert_eq!(fallback_of(&error).original_status.0, 500);
     let logged = world.logging.logged.lock().unwrap();
     assert_eq!(logged.failures.len(), 1);
     assert!(logged.partial.is_empty());
@@ -83,7 +84,8 @@ async fn failure_blocking_read_after_finish_raises() {
     let mut stream = start(&world, &mut correlation, config(CallMode::Blocking), source);
 
     assert!(stream.next().await.unwrap().is_some());
-    assert!(stream.next().await.is_err());
+    let error = stream.next().await.unwrap_err();
+    assert_eq!(fallback_of(&error).original_status.0, 500);
 }
 
 #[tokio::test]
