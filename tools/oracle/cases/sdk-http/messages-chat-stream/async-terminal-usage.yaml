@@ -1,0 +1,41 @@
+kind: sdk_http
+name: messages-chat-async-terminal-usage
+env: {}
+call:
+  messages_chat_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    applied_edits:
+      - {type: clear_tool_uses_20250919, cleared_tool_uses: 1}
+    iterations_usage:
+      - {type: compaction, input_tokens: 4, output_tokens: 1}
+    runs:
+      - mode: wrapper
+        steps: [drain]
+      - mode: wrapper
+        steps: [drain]
+      - mode: wrapper
+        initial:
+          holding_chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: H}}
+          holding_stop_reason_chunk: {type: message_delta, delta: {stop_reason: end_turn}, usage: {input_tokens: 9, output_tokens: 3}}
+        steps: [next, next, next, next, drain]
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"Z"},"finish_reason":null}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
