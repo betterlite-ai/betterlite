@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-payload-validation-eligibility
+call:
+  b4716:
+    function: eligibility
+    auth_type: oauth2
+    oauth2_flow: authorization_code
+    delegate_auth_to_upstream: false
+calls:
+  - b4716:
+      function: eligibility
+      auth_type: oauth2
+      oauth2_flow: client_credentials
+      delegate_auth_to_upstream: false
+  - b4716:
+      function: eligibility
+      auth_type: null
+      oauth2_flow: null
+      delegate_auth_to_upstream: true
+env: {}
+compare: {ignore: []}

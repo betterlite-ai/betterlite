@@ -1,0 +1,48 @@
+kind: helper
+name: mcp-connector-import-authorization-token-wins
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        both:
+          url: https://both.example/mcp
+          authorization_token: tok
+          headers:
+            Authorization: Bearer header
+            X-Extra: e
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          both:
+            url: https://both.example/mcp
+            authorization_token: tok
+            headers:
+              Authorization: Bearer header
+              X-Extra: e
+          camel:
+            url: https://camel.example/mcp
+            authorizationToken: camel-token
+          empty-snake-header:
+            url: https://empty-snake.example/mcp
+            authorization_token: ""
+            headers:
+              Authorization: Bearer from-header
+          snake-null-camel:
+            url: https://null-snake.example/mcp
+            authorization_token: null
+            authorizationToken: camel2
+          empty-header:
+            url: https://empty-header.example/mcp
+            authorization_token: tok
+            headers:
+              Authorization: ""
+          token-only:
+            url: https://token-only.example/mcp
+            authorization_token: solo
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}
