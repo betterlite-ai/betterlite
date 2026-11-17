@@ -1,0 +1,29 @@
+task: B307
+deviations:
+  - what: >-
+      DeploymentHealthCache::set_states returns a write or expiry failure to its caller, where LiteLLM catches every
+      exception in set_deployment_health_states, logs it, and drops the update.
+    why: >-
+      betterlite's typed service hands the failure to B4443's health cycle, which logs it once and carries on; the
+      routing read path still fails open with an empty unhealthy set, so an unavailable observation never becomes a
+      request error.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/health_state_cache.py#L56-L88
+  - what: >-
+      The all-unhealthy safety net logs its warning on the async filter path too, where only LiteLLM's sync
+      _filter_health_check_unhealthy_deployments logs "All deployments marked unhealthy by health checks, bypassing
+      health filter".
+    why: >-
+      One filter function serves both the async and the sync candidate list, and a health filter bypassed for a whole
+      pool is worth the same line whichever caller asks.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14568-L14597
+kept_bugs:
+  - what: >-
+      get_min_cooldown reports the shortest configured cooldown time among the cooling deployments, not the time each
+      cooldown has left, so the no-deployment retry delay can wait a full cooldown after the earliest one ran out.
+    why: >-
+      The retry delay and the cooldown filter are read from the same record and a working proxy depends on the
+      configured value being the delay; correcting it here would change when every retry happens.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_cache.py#L206-L223
