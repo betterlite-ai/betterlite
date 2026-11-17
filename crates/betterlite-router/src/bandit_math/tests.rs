@@ -239,7 +239,7 @@ fn pick(samples: &[f64], costs: &[f64]) -> Result<String, BanditMathError> {
 #[rstest]
 #[case::highest_sample_wins(&[0.2_f64, 0.9_f64, 0.5_f64], &[0.0_f64, 0.0_f64, 0.0_f64], "b")]
 #[case::first_of_a_tie_wins(&[0.5_f64, 0.5_f64], &[0.0_f64, 0.0_f64], "a")]
-#[case::cost_breaks_a_tie(&[0.5_f64, 0.5_f64], &[1.0_f64, 0.0_f64], "b")]
+#[case::cost_breaks_a_tie(&[0.5_f64, 0.5_f64], &[0.0_f64, 1.0_f64], "b")]
 #[case::cost_and_quality_mix(
     &[0.2_f64, 0.95_f64, 0.4_f64],
     &[1.0_f64, 0.5_f64, 0.0_f64],
