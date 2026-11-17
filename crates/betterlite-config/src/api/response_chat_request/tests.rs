@@ -61,7 +61,7 @@ fn loads_reasoning_summary_settings(
 
 #[rstest]
 #[case::word("maybe")]
-#[case::quoted("'true'")]
+#[case::quoted("'maybe'")]
 fn rejects_an_invalid_yaml_boolean(#[case] yaml: &str) {
     let error = ConfigLoader {
         lookup: variables(&[]),
