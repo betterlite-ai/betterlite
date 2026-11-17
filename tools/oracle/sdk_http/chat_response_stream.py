@@ -1,7 +1,8 @@
 import asyncio
 import base64
 import uuid
-from typing import Final, Literal, TypedDict
+from collections.abc import Awaitable
+from typing import Final, Literal, TypedDict, cast
 
 import litellm
 import openai
@@ -11,6 +12,7 @@ from litellm.responses.litellm_completion_transformation.streaming_iterator impo
 )
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
+from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 
@@ -18,6 +20,11 @@ from messages_sync_stream import Message
 from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
+
+# completion and acompletion declare both answers, and stream=True narrows it to the wrapper
+type CompletionAnswer = (
+    ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+)
 
 
 class StepOutcome(TypedDict):
@@ -110,7 +117,8 @@ def event_view(event: BaseResponse) -> dict[str, Json]:
     return {key: normalized_field(key, value) for key, value in view.items()}
 
 
-def build_iterator(call: ChatResponseStreamCall, stream: CustomStreamWrapper) -> ResponsesIterator:
+def build_iterator(call: ChatResponseStreamCall, answer: CompletionAnswer) -> ResponsesIterator:
+    stream = cast(CustomStreamWrapper, answer)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5198
     return ResponsesIterator(
         model=call.model,
         litellm_custom_stream_wrapper=stream,
@@ -168,19 +176,19 @@ async def async_step(iterator: ResponsesIterator, step: Literal["next", "drain"]
 
 def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        stream: CustomStreamWrapper = litellm.completion(**request_options(call, api_base))
+        answer: CompletionAnswer = litellm.completion(**request_options(call, api_base))
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
-    iterator = build_iterator(call, stream)
+    iterator = build_iterator(call, answer)
     return RunOutcome(steps=[sync_step(iterator, step) for step in spec.steps], failure=None)
 
 
 async def async_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        stream: CustomStreamWrapper = await litellm.acompletion(**request_options(call, api_base))
+        answer: CompletionAnswer = await litellm.acompletion(**request_options(call, api_base))
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
-    iterator = build_iterator(call, stream)
+    iterator = build_iterator(call, answer)
     steps = [await async_step(iterator, step) for step in spec.steps]
     return RunOutcome(steps=steps, failure=None)
 
