@@ -46,15 +46,15 @@ fn test_assistant_first_text() {
     assert_eq!(extract_content(&messages(skipped)).content, "found");
 
     let no_value = r#"{"data": [{"role": "assistant", "content": [{"type": "text"}]}]}"#;
-    let extracted = extract_content(&messages(no_value));
-    assert_eq!(extracted.content, "");
-    assert_eq!(extracted.annotations, None);
+    let without_value = extract_content(&messages(no_value));
+    assert_eq!(without_value.content, "");
+    assert_eq!(without_value.annotations, None);
 
     let null_annotations = r#"{"data": [{"role": "assistant", "content": [
         {"type": "text", "text": {"value": "hi", "annotations": null}}]}]}"#;
-    let extracted = extract_content(&messages(null_annotations));
-    assert_eq!(extracted.content, "hi");
-    assert_eq!(extracted.annotations, None);
+    let with_null_annotations = extract_content(&messages(null_annotations));
+    assert_eq!(with_null_annotations.content, "hi");
+    assert_eq!(with_null_annotations.annotations, None);
 
     let empty_annotations = r#"{"data": [{"role": "assistant", "content": [
         {"type": "text", "text": {"value": "hi", "annotations": []}}]}]}"#;
@@ -315,8 +315,8 @@ fn test_message_delta_stream() {
             "event: thread.message.completed\n",
             "data: {\"content\": []}\n\n",
         );
-        let chunks = chunks_of(stream_for(compact).await).await;
-        assert_eq!(chunks, vec![delta_chunk("a"), delta_chunk("b")]);
+        let compact_chunks = chunks_of(stream_for(compact).await).await;
+        assert_eq!(compact_chunks, vec![delta_chunk("a"), delta_chunk("b")]);
 
         let malformed = concat!(
             "event: thread.message.delta\n",
@@ -328,8 +328,8 @@ fn test_message_delta_stream() {
             "data: {\"delta\": {\"content\": [{\"type\": \"text\", \"text\": {\"value\": 5}}]}}\n",
             "data: [DONE]\n",
         );
-        let chunks = chunks_of(stream_for(malformed).await).await;
-        assert_eq!(chunks, vec![terminal_chunk(None, None)]);
+        let malformed_chunks = chunks_of(stream_for(malformed).await).await;
+        assert_eq!(malformed_chunks, vec![terminal_chunk(None, None)]);
     });
 }
 

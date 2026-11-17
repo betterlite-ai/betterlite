@@ -176,10 +176,10 @@ fn body(text: &str, split: Option<usize>) -> BoxStream<'static, Result<Vec<u8>, 
     let Some(at) = split else {
         return iter([Ok::<Vec<u8>, HttpError>(bytes.to_vec())]).boxed();
     };
-    let at = at.min(bytes.len());
+    let offset = at.min(bytes.len());
     iter([
-        Ok::<Vec<u8>, HttpError>(bytes.get(..at).unwrap_or_default().to_vec()),
-        Ok::<Vec<u8>, HttpError>(bytes.get(at..).unwrap_or_default().to_vec()),
+        Ok::<Vec<u8>, HttpError>(bytes.get(..offset).unwrap_or_default().to_vec()),
+        Ok::<Vec<u8>, HttpError>(bytes.get(offset..).unwrap_or_default().to_vec()),
     ])
     .boxed()
 }

@@ -69,9 +69,9 @@ pub fn extract_content(messages: &MessagesData) -> ExtractedContent {
 // a falsey annotation list becomes None; url_citation outputs move the indexes inside the citation
 #[must_use]
 pub fn transform_annotations(raw: Option<&[Object]>) -> Option<Vec<Object>> {
-    let raw = raw.filter(|annotations| !annotations.is_empty())?;
-    let mut result = Vec::with_capacity(raw.len());
-    for annotation in raw {
+    let annotations = raw.filter(|values| !values.is_empty())?;
+    let mut result = Vec::with_capacity(annotations.len());
+    for annotation in annotations {
         if annotation.get("type").and_then(Json::as_str) == Some(URL_CITATION_TYPE) {
             result.push(transform_url_citation(annotation));
         } else {

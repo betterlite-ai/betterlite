@@ -19,7 +19,7 @@ fn replays_the_foundry_agent_results_corpus() {
             let bytes = fs::read(path).expect("corpus file");
             let name = path
                 .file_name()
-                .and_then(|name| name.to_str())
+                .and_then(|file_name| file_name.to_str())
                 .expect("name");
             (decode_agent_event(&bytes).is_ok() != name.starts_with("ok-")).then(|| name.to_owned())
         })

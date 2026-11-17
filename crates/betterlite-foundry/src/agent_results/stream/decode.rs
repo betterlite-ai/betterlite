@@ -96,20 +96,20 @@ impl ChunkState {
     }
 
     fn handle(&mut self, line: &str) {
-        let line = line.trim();
-        if let Some(event) = line.strip_prefix(EVENT_PREFIX) {
+        let trimmed = line.trim();
+        if let Some(event) = trimmed.strip_prefix(EVENT_PREFIX) {
             self.current_event = event.trim().to_owned();
             return;
         }
-        let Some(data) = line.strip_prefix(DATA_PREFIX) else {
+        let Some(data) = trimmed.strip_prefix(DATA_PREFIX) else {
             return;
         };
-        let data = data.trim();
-        if data == DONE_DATA {
+        let payload = data.trim();
+        if payload == DONE_DATA {
             self.finish();
             return;
         }
-        let Ok(event) = decode_agent_event(data.as_bytes()) else {
+        let Ok(event) = decode_agent_event(payload.as_bytes()) else {
             return;
         };
         let kind = self.current_event.clone();

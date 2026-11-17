@@ -151,10 +151,10 @@ pub(super) fn split_bytes(body: &[u8], split_at: &[usize]) -> Vec<Vec<u8>> {
     let mut chunks = Vec::new();
     let mut start = 0_usize;
     for end in split_at {
-        let end = (*end).min(body.len());
-        if end > start {
-            chunks.push(body.get(start..end).unwrap_or_default().to_vec());
-            start = end;
+        let stop = (*end).min(body.len());
+        if stop > start {
+            chunks.push(body.get(start..stop).unwrap_or_default().to_vec());
+            start = stop;
         }
     }
     if start < body.len() {
