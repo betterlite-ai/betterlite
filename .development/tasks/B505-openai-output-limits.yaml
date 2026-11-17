@@ -84,6 +84,7 @@ description: >-
   wiring lines; 645 planned, 650 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/src/gateway.rs"
   - "tools/oracle/src/case.rs"
   - "tools/oracle"
   - "crates/betterlite-openai"
