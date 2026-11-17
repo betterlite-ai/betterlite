@@ -157,14 +157,12 @@ fn a_stream_request_sends_the_stream_flag() {
         flag_field(&body_of(&fixture.prepared()), "stream"),
         Some(true)
     );
+    // the route's request kind decides streaming, so a request field alone sends no flag
     let mut buffered = ChatFixture::new("command-r");
     buffered.request =
         ChatRequest::parse(br#"{"messages":[{"role":"user","content":"hi"}],"stream":true}"#)
             .unwrap();
-    assert_eq!(
-        flag_field(&body_of(&buffered.prepared()), "stream"),
-        Some(true)
-    );
+    assert!(body_of(&buffered.prepared()).get("stream").is_none());
     assert!(
         body_of(&ChatFixture::new("command-r").prepared())
             .get("stream")

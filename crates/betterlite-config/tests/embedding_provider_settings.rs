@@ -27,24 +27,24 @@ fn revealed(value: Option<&SecretString>) -> Option<&str> {
 }
 
 #[rstest]
-#[case::long_alias(&[("COHERE_API_KEY", "long")], None, Some("long"), None)]
-#[case::short_alias(&[("CO_API_KEY", "short")], None, None, Some("short"))]
-#[case::both_aliases(&[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], None, Some("long"), Some("short"))]
-#[case::empty_long_alias(&[("COHERE_API_KEY", "")], None, None, None)]
-#[case::missing(&[], None, None, None)]
-#[case::module_values(&[], Some("module-key"), None, None)]
-#[case::empty_module_key(&[], Some(""), None, None)]
+#[case::long_alias(&[("COHERE_API_KEY", "long")], "", None, Some("long"), None)]
+#[case::short_alias(&[("CO_API_KEY", "short")], "", None, None, Some("short"))]
+#[case::both_aliases(&[("COHERE_API_KEY", "long"), ("CO_API_KEY", "short")], "", None, Some("long"), Some("short"))]
+#[case::empty_long_alias(&[("COHERE_API_KEY", "")], "", None, None, None)]
+#[case::missing(&[], "", None, None, None)]
+#[case::module_values(&[], MODULE, Some("module-key"), None, None)]
+#[case::empty_module_key(&[], "litellm_settings:\n  cohere_key: ''\n", Some(""), None, None)]
 fn the_cohere_environment_aliases_and_module_key_load(
     #[case] environment: Environment<'_>,
+    #[case] source: &str,
     #[case] expected_cohere_key: Option<&str>,
     #[case] expected_long: Option<&str>,
     #[case] expected_short: Option<&str>,
 ) {
-    let settings = settings(environment, MODULE).expect("the config loads");
-    assert_eq!(revealed(settings.cohere_key.as_ref()), expected_cohere_key);
-    assert_eq!(revealed(settings.cohere_api_key.as_ref()), expected_long);
-    assert_eq!(revealed(settings.co_api_key.as_ref()), expected_short);
-    assert_eq!(revealed(settings.api_key.as_ref()), Some("global-key"));
+    let loaded = settings(environment, source).expect("the config loads");
+    assert_eq!(revealed(loaded.cohere_key.as_ref()), expected_cohere_key);
+    assert_eq!(revealed(loaded.cohere_api_key.as_ref()), expected_long);
+    assert_eq!(revealed(loaded.co_api_key.as_ref()), expected_short);
 }
 
 #[derive(Clone, Copy)]

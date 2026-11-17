@@ -53,11 +53,9 @@ fn a_family_preparation_failure_reaches_the_caller_as_an_unsupported_operation()
         model: String::from("cohere/embed-v4.0"),
         request: serde_json::from_str(r#"{"input":"hi"}"#).unwrap(),
     }));
-    let refused = EmbeddingRerank.prepare(
-        &embedding,
-        &deployment("cohere/embed-v4.0", "not a url", Some("key")),
-        &catalog(),
-    );
+    let mut deployed = deployment("cohere/embed-v4.0", "https://host", Some("key"));
+    deployed.api_base = String::from("not a url");
+    let refused = EmbeddingRerank.prepare(&embedding, &deployed, &catalog());
     assert!(matches!(
         refused,
         Err(OperationError::UnsupportedOperation { provider, operation })

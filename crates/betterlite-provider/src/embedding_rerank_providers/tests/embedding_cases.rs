@@ -169,7 +169,7 @@ fn voyage_variants_follow_the_model_text() {
     );
     // the leaf sends the item as given, so LiteLLM's content wrapper is a listed deviation
     let body = body_of(&multimodal);
-    assert_eq!(items_field(&body, "inputs")[0].as_str(), Some("hi"));
+    assert_eq!(text_field(&body, "inputs").as_deref(), Some("hi"));
     assert!(body.get("enable_auto_chunking").is_none());
 
     let text = EmbeddingFixture::new(ProviderId::Voyage, "voyage-3").prepared();
