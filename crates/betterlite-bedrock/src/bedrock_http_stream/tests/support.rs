@@ -501,10 +501,7 @@ async fn open_with(
         logs: Vec::new(),
     };
     drain(opened, consume, &mut outcome).await;
-    drop(log);
-    drop(env);
-    drop(logger);
-    outcome.logs = logged.into_inner().unwrap_or_else(PoisonError::into_inner);
+    outcome.logs = std::mem::take(&mut *logged.lock().unwrap_or_else(PoisonError::into_inner));
     outcome
 }
 
