@@ -72,10 +72,7 @@ impl Helper for Op {
 
 fn billing(input: &Input) -> HelperResult {
     let logging_obj = fixture::logging_object()?;
-    let submitted = match input.run.as_ref() {
-        Some(payload) => parse_run(payload),
-        None => None,
-    };
+    let submitted = input.run.as_ref().and_then(parse_run);
     let kwargs = PassThroughLoggingKwargs::default();
     let rate = cost_per_step_from_text(input.environment.get(COST_VARIABLE).map(String::as_str));
     drop(
