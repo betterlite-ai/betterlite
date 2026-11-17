@@ -1,0 +1,210 @@
+kind: helper
+name: bedrock-converse-params-inference-config-options
+call:
+  bedrock_converse_params:
+    function: map_params
+    model: anthropic.claude-sonnet-4-20250514-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true, supports_native_structured_output: false}
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      deepseek.v3-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+    environment: {}
+    non_default_params:
+      max_tokens: 64
+      max_completion_tokens: 128
+      stream: true
+      stop: ''
+      temperature: 0.4
+      top_p: 0.8
+    optional_params: {}
+    global_drop: false
+    call_drop: false
+calls:
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {stop: STOP}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {stop: [a, b]}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {stop: null}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_tokens: 4}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_tokens: 100}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_completion_tokens: -5}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_tokens: true}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_tokens: 16.5, max_completion_tokens: '32'}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {max_tokens: 12}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params:
+        stream: true
+        tools:
+          - type: function
+            function: {name: lookup, description: find a row, parameters: {type: object, properties: {id: {type: string}}}}
+      optional_params: {temperature: 1}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true, supports_native_structured_output: false}
+      environment: {}
+      non_default_params: {response_format: {type: json_object}, stream: true}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {response_format: {type: text}}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_sampling_params: true, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      non_default_params: {response_format: json, tools: lookup}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: cohere.command-r-v1:0
+      model_cost:
+        cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      environment: {}
+      non_default_params: {temperature: 0.3}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: cohere.command-r-v1:0
+      model_cost:
+        cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      environment: {}
+      non_default_params: {temperature: 0.3}
+      optional_params: {}
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_params:
+      function: map_params
+      model: cohere.command-r-v1:0
+      model_cost:
+        cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      environment: {}
+      non_default_params: {temperature: 0.3}
+      optional_params: {}
+      global_drop: true
+      call_drop: false
+  - bedrock_converse_params:
+      function: map_params
+      model: cohere.command-r-v1:0
+      model_cost:
+        cohere.command-r-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      environment: {}
+      non_default_params: {temperature: 1, top_p: 0.5}
+      optional_params: {}
+      global_drop: false
+      call_drop: true
+  - bedrock_converse_params:
+      function: map_params
+      model: deepseek.v3-v1:0
+      model_cost:
+        deepseek.v3-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {temperature: 0.2, top_p: 0.7}
+      optional_params: {}
+      global_drop: false
+      call_drop: false
+env: {}
+compare: {ignore: []}
