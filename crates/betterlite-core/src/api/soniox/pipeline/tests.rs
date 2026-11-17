@@ -9,6 +9,7 @@
 )]
 
 mod failures;
+mod formats;
 mod references;
 mod selection;
 mod support;
