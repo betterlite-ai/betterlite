@@ -27,8 +27,11 @@ fn deployment(keys: &str) -> String {
 
 fn only(keys: &str, variables: &[(&str, &str)]) -> Result<Option<Config>, String> {
     let mut deployments = settings(&deployment(keys), variables)?.deployments;
-    assert_eq!(deployments.len(), 1, "one deployment expected");
-    Ok(deployments.remove(0))
+    let count = deployments.len();
+    if count != 1 {
+        return Err(format!("one deployment expected, got {count}"));
+    }
+    Ok(deployments.pop().flatten())
 }
 
 fn weights(pairs: &[(&str, f64)]) -> BTreeMap<String, f64> {
@@ -61,7 +64,7 @@ fn a_deployment_without_the_router_config_carries_none() {
     assert_eq!(settings(source, &[]).unwrap().deployments, [None]);
 }
 
-const BASELINE_KEYS: &str = r#"        tier_models:
+const BASELINE_KEYS: &str = "        tier_models:
           SIMPLE: small-model
           MEDIUM: [pool-a, pool-b]
         complexity_thresholds:
@@ -78,7 +81,7 @@ const BASELINE_KEYS: &str = r#"        tier_models:
         custom_technical_keywords: [epsilon]
         simple_keywords: [zeta]
         default_model: fallback-model
-"#;
+";
 
 #[test]
 fn every_baseline_key_is_read() {
@@ -94,9 +97,9 @@ fn every_baseline_key_is_read() {
     let expected = Config {
         tier_models: Some(tier_models),
         complexity_thresholds: Some(thresholds),
-        dimension_weights: Some(weights(&[("codePresence", 0.5)])),
-        tier_boundaries: Some(weights(&[("simple_medium", 0.2)])),
-        reasoning_override_min_score: Some(0.4),
+        dimension_weights: Some(weights(&[("codePresence", 0.5_f64)])),
+        tier_boundaries: Some(weights(&[("simple_medium", 0.2_f64)])),
+        reasoning_override_min_score: Some(0.4_f64),
         code_keywords: Some(strings(&["alpha", "beta"])),
         reasoning_keywords: Some(strings(&["gamma"])),
         technical_keywords: Some(strings(&["delta"])),
@@ -109,16 +112,16 @@ fn every_baseline_key_is_read() {
 
 #[test]
 fn the_litellm_spellings_are_aliases_for_the_same_keys() {
-    let litellm = r#"        tiers:
+    let litellm = "        tiers:
           SIMPLE: small-model
         token_thresholds:
           simple: 12
-"#;
-    let betterlite = r#"        tier_models:
+";
+    let betterlite = "        tier_models:
           SIMPLE: small-model
         complexity_thresholds:
           simple: 12
-"#;
+";
     assert_eq!(only(litellm, &[]).unwrap(), only(betterlite, &[]).unwrap());
 }
 
@@ -133,7 +136,7 @@ fn both_spellings_of_one_key_are_rejected(#[case] first: &str, #[case] second: &
 
 #[test]
 fn nulls_read_as_absent() {
-    let keys = r#"        tier_models: null
+    let keys = "        tier_models: null
         complexity_thresholds: null
         dimension_weights: null
         tier_boundaries: null
@@ -144,16 +147,16 @@ fn nulls_read_as_absent() {
         custom_technical_keywords: null
         simple_keywords: null
         default_model: null
-"#;
+";
     assert_eq!(only(keys, &[]).unwrap(), Some(Config::default()));
 }
 
 #[test]
 fn an_unknown_router_key_is_ignored_by_this_section() {
-    let keys = r#"        default_model: fallback-model
+    let keys = "        default_model: fallback-model
         adaptive_routing:
           enabled: true
-"#;
+";
     let configured = only(keys, &[]).unwrap().unwrap();
     assert_eq!(configured.default_model, Some("fallback-model".to_owned()));
     assert_eq!(configured.tier_models, None);
@@ -161,10 +164,10 @@ fn an_unknown_router_key_is_ignored_by_this_section() {
 
 #[test]
 fn a_tier_matrix_reads_a_bare_model_and_a_pool() {
-    let keys = r#"        tier_models:
+    let keys = "        tier_models:
           SIMPLE: single
           COMPLEX: [pool-first, pool-second]
-"#;
+";
     let configured = only(keys, &[]).unwrap().unwrap().tier_models.unwrap();
     assert_eq!(configured.get("SIMPLE"), Some(&single("single")));
     assert_eq!(
@@ -246,7 +249,10 @@ fn a_boundary_environment_reference_is_resolved() {
 fn a_floor_environment_reference_is_resolved() {
     let keys = "        reasoning_override_min_score: os.environ/OVERRIDE_FLOOR\n";
     let configured = only(keys, &[("OVERRIDE_FLOOR", "0.4")]).unwrap();
-    assert_eq!(configured.unwrap().reasoning_override_min_score, Some(0.4));
+    assert_eq!(
+        configured.unwrap().reasoning_override_min_score,
+        Some(0.4_f64)
+    );
 }
 
 #[rstest]
@@ -306,7 +312,7 @@ fn a_threshold_that_is_not_an_integer_is_rejected(#[case] value: &str) {
 
 #[test]
 fn deployments_stay_aligned_with_the_model_list() {
-    let source = r#"model_list:
+    let source = "model_list:
   - model_name: first
     litellm_params:
       model: gpt-4o
@@ -317,7 +323,7 @@ fn deployments_stay_aligned_with_the_model_list() {
   - model_name: third
     litellm_params:
       model: gpt-4o-mini
-"#;
+";
     let loaded = settings(source, &[]).unwrap();
     assert_eq!(loaded.deployments.len(), 3);
     assert_eq!(loaded.deployments[0], None);
