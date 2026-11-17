@@ -79,8 +79,12 @@ impl ServerHandler for TestServer {
     async fn list_tools(
         &self,
         request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        // The SDK stamps a progress token on every request, listings included, so its absence is the framing bug
+        if context.meta.get_progress_token().is_none() {
+            return Err(ErrorData::invalid_params("missing progress token", None));
+        }
         let cursor = request.and_then(|params| params.cursor);
         let (tools, next) = match cursor.as_deref() {
             None => (
