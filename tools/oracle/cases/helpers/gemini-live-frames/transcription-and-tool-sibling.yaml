@@ -1,0 +1,9 @@
+kind: helper
+name: transcription-and-tool-sibling
+call:
+  gemini_live_frames:
+    frames:
+      - '{"serverContent": {"inputTranscription": {"text": "hello"}}, "toolCall": {"functionCalls": [{"name": "lookup", "args": {"city": "Paris"}}]}}'
+calls: []
+env: {}
+compare: {ignore: []}

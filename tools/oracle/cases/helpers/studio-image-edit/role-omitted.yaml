@@ -1,0 +1,14 @@
+kind: helper
+name: studio-image-edit-role-omitted
+call:
+  studio_image_edit:
+    factories: []
+    requests:
+      - model: gemini-2.5-flash-image
+        image: {kind: one, record: {kind: bytes, data_base64: R0lGODlh}}
+        api_key: explicit-key
+        env: {GEMINI_API_BASE: https://studio.test/v1beta}
+    responses: []
+    costs: []
+env: {}
+compare: {ignore: []}

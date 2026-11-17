@@ -1,0 +1,24 @@
+task: B6594
+deviations:
+  - what: The tool prefix separator, the short-prefix flag and PROXY_BASE_URL arrive as arguments, where LiteLLM reads them from the process environment at import (the separator) or at call time (the flag and the base url).
+    why: Library code in betterlite reads no environment; B8620 reads the same variables once at startup, so a change takes effect when the process restarts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L43-L47
+  - what: is_mcp_available is not built; the MCP support is compiled in, so the places that gate on it are always open.
+    why: LiteLLM probes whether the optional mcp package imports; betterlite has no optional MCP package, so there is nothing to probe.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L133-L141
+  - what: build_synthetic_mcp_request returns the ASGI scope as the SyntheticMcpRequest struct instead of a FastAPI Request built from that scope.
+    why: There is no FastAPI Request in Rust; the struct carries the same method, path, server, headers and client, so the caller that builds the HTTP request sees the same fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L1007-L1057
+  - what: The credential and key-header exclusions of the synthetic request arrive as extra_excluded, where LiteLLM computes them inside the function from general_settings, the MCP server manager and a fixed x-mcp prefix rule.
+    why: That code belongs to B4682 in betterlite-server, which this crate cannot depend on; the caller passes the same lowercased names, so the filtering itself is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L1024-L1030
+  - what: allowlist_enforced reads mcp_info as the typed MCPInfo and does not accept a JSON string.
+    why: LiteLLM's server record types mcp_info as MCPInfo; the string form exists only for rows stored before that type, which betterlite decodes when it loads the row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L219-L246
+  - what: The synthetic request takes the connection's raw headers as an ordered list of name and value pairs, where LiteLLM takes a Mapping.
+    why: The ASGI scope LiteLLM rebuilds is a list of pairs, so a repeated header name survives in betterlite and is filtered pair by pair; a Mapping keeps one value per name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L1007-L1012
+kept_bugs:
+  - what: is_tool_name_prefixed without a known-prefix set reports any name containing the separator as prefixed, so a non-MCP tool such as text-to-speech counts as prefixed.
+    why: The legacy branch is what LiteLLM's callers without a registry depend on, and the task keeps it; every caller that has the registry passes the prefix set, which is exact.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L493-L498

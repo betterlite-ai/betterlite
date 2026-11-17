@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-server-utils-short-prefix-flag
+call:
+  b6594:
+    function: short_tool_prefix_enabled
+    raw: "  Yes  "
+calls:
+  - b6594:
+      function: short_tool_prefix_enabled
+      raw: enable
+  - b6594:
+      function: short_tool_prefix_enabled
+env: {}
+compare: {ignore: []}

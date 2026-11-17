@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-server-utils-interpolate
+call:
+  b6594:
+    function: interpolate
+    value: "${KNOWN} then ${UNKNOWN} then ${KNOWN}${OTHER}"
+    headers:
+      Authorization: "Bearer ${KNOWN}"
+      X-Literal: "${UNKNOWN}"
+    variables: {KNOWN: tok-1}
+calls:
+  - b6594:
+      function: interpolate
+      value: ""
+      headers: {}
+      variables: {}
+env: {}
+compare: {ignore: []}

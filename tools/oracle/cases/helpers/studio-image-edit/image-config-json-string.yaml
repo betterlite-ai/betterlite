@@ -1,0 +1,27 @@
+kind: helper
+name: studio-image-edit-image-config-json-string
+call:
+  studio_image_edit:
+    factories: []
+    requests:
+      - model: gemini-2.5-flash-image
+        image: {kind: one, record: {kind: bytes, data_base64: iVBORw0KGgo=}}
+        params:
+          imageConfig: '{"aspectRatio":"16:9"}'
+          size: 1024x1024
+          n: 2
+        api_key: explicit-key
+    responses: []
+    costs: []
+calls:
+  - studio_image_edit:
+      factories: []
+      requests:
+        - model: gemini-2.5-flash-image
+          image: {kind: one, record: {kind: bytes, data_base64: iVBORw0KGgo=}}
+          params: {imageConfig: "{not json"}
+          api_key: explicit-key
+      responses: []
+      costs: []
+env: {}
+compare: {ignore: []}

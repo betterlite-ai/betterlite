@@ -3,6 +3,7 @@ use betterlite_models::decisions::Json as ParametersJson;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::message_content::Message;
 use serde::de::DeserializeOwned;
 
 use crate::cache_create::orchestration::{
@@ -14,6 +15,7 @@ use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityP
 
 use super::body::{BodyInput, Transformed, transform};
 use super::error::{BodyError, RequestError, encode};
+use super::media_prepare::{FetchMode, prepare};
 
 pub mod async_media;
 
@@ -37,6 +39,22 @@ where
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
 {
+    // LiteLLM's synchronous conversion downloads each url while it walks the part, so this entry fetches one at a time
+    transformed(transport, request, hooks, FetchMode::Sequential).await
+}
+
+pub(crate) async fn transformed<T, F, L, C>(
+    transport: &T,
+    request: CallRequest<'_, F>,
+    hooks: &VerboseHooks<L, C>,
+    mode: FetchMode,
+) -> Result<Transformed, RequestError>
+where
+    T: CacheTransport,
+    F: RemoteMediaFetcher + Sync,
+    L: LoggerSink + Sync,
+    C: ConsoleSink + Sync,
+{
     let mut optional_params = request.optional_params.clone();
     let (cached_content, mut options) = cache_options(&mut optional_params)?;
     let cache_request = CacheCreateRequest {
@@ -45,13 +63,28 @@ where
     };
     let outcome = check_and_create_cache(transport, &cache_request, &mut options, hooks).await?;
     restore_cache_options(&mut optional_params, &options)?;
-    body_from(&cache_request, &request, optional_params, &outcome).await
+    let messages = prepare(
+        &outcome.messages,
+        capability_provider(cache_request.provider),
+        cache_request.fetcher,
+        mode,
+    )
+    .await?;
+    body_from(
+        &cache_request,
+        &request,
+        optional_params,
+        &messages,
+        &outcome,
+    )
+    .await
 }
 
 async fn body_from<F>(
     cache: &CacheCreateRequest<'_, F>,
     request: &CallRequest<'_, F>,
     optional_params: Object,
+    messages: &[Message],
     outcome: &CacheCreateOutcome,
 ) -> Result<Transformed, RequestError>
 where
@@ -60,7 +93,7 @@ where
     let input = BodyInput {
         provider: capability_provider(cache.provider),
         model: cache.model,
-        messages: &outcome.messages,
+        messages,
         optional_params: &optional_params,
         litellm_params: request.litellm_params,
         cached_content: outcome.cached_content.as_deref(),

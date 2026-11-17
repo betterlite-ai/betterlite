@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-server-utils-known-tool-name-empty-list
+call:
+  b6594:
+    function: match_known_tool_name
+    tool_name: get_pets
+    server: {server_id: srv-1, alias: pets}
+    names: []
+env: {}
+compare: {ignore: []}
