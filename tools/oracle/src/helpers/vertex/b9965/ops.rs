@@ -92,12 +92,14 @@ struct MapFetch {
 
 impl MapFetch {
     fn lookup(&self, url: &str) -> Result<String, ImageFetchError> {
-        match self.data_urls.get(url) {
-            Some(data_url) => Ok(data_url.clone()),
-            None => Err(ImageFetchError::Attempts {
-                url: url.to_owned(),
-            }),
-        }
+        self.data_urls.get(url).map_or_else(
+            || {
+                Err(ImageFetchError::Attempts {
+                    url: url.to_owned(),
+                })
+            },
+            |data_url| Ok(data_url.clone()),
+        )
     }
 }
 

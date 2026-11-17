@@ -3,6 +3,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import litellm
+from litellm.exceptions import ImageFetchError
 from litellm.litellm_core_utils.prompt_templates import factory, image_handling
 from litellm.litellm_core_utils.prompt_templates.image_handling import (
     RemoteMedia,
@@ -11,10 +12,11 @@ from litellm.litellm_core_utils.prompt_templates.image_handling import (
 )
 from litellm.llms.gemini.chat import transformation as studio_transformation
 from litellm.llms.vertex_ai.gemini import transformation
-from litellm.llms.vertex_ai.gemini.transformation import _ai_studio_inlines  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1318-L1319
-from litellm.llms.vertex_ai.gemini.transformation import _get_gcs_object_content_type  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L333
-from litellm.llms.vertex_ai.gemini.transformation import _transform_request_body  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1160
-from litellm.llms.vertex_ai.gemini.transformation import _vertex_inlines  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1322-L1327
+from litellm.llms.vertex_ai.gemini.transformation import (
+    _ai_studio_inlines,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1318-L1319
+    _transform_request_body,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1160
+    _vertex_inlines,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1322-L1327
+)
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
@@ -48,9 +50,9 @@ class Transform(Protocol):
 
 
 # LiteLLM's transform takes bare dicts and its RequestBody TypedDicts carry Any
-TRANSFORM: Transform = _transform_request_body  # type: ignore[assignment, misc]  # pyright: ignore[reportAssignmentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1160
-INLINE: SyncInline = inline_remote_media  # type: ignore[assignment, misc]  # pyright: ignore[reportAssignmentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L314-L322
-ASYNC_INLINE: AsyncInline = async_inline_remote_media  # type: ignore[assignment, misc]  # pyright: ignore[reportAssignmentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L325-L334
+TRANSFORM: Transform = _transform_request_body  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1160
+INLINE: SyncInline = inline_remote_media  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L314-L322
+ASYNC_INLINE: AsyncInline = async_inline_remote_media  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L325-L334
 
 
 class Case(TypedDict):
@@ -69,7 +71,8 @@ class MappedConvert:
 
     def __call__(self, url: str) -> str:
         if url not in self.data_urls:
-            raise litellm.ImageFetchError(f"Error: Unable to fetch image from URL after 3 attempts. url={url}")
+            message = f"Error: Unable to fetch image from URL after 3 attempts. url={url}"
+            raise ImageFetchError(message)
         return self.data_urls[url]
 
 
@@ -79,7 +82,8 @@ class AsyncMappedConvert:
 
     async def __call__(self, url: str) -> str:
         if url not in self.data_urls:
-            raise litellm.ImageFetchError(f"Error: Unable to fetch image from URL after 3 attempts. url={url}")
+            message = f"Error: Unable to fetch image from URL after 3 attempts. url={url}"
+            raise ImageFetchError(message)
         return self.data_urls[url]
 
 
@@ -88,7 +92,7 @@ def _no_gcs_metadata(
     vertex_project: str | None = None,
     vertex_credentials: Json = None,
 ) -> str | None:
-    message = f"the helper resolves no GCS metadata for {image_url} in {vertex_project} with {vertex_credentials}"
+    message = f"no GCS content type for {image_url} ({vertex_project}, {vertex_credentials})"
     raise RuntimeError(message)
 
 
@@ -96,8 +100,8 @@ def _install_fetches(data_urls: dict[str, str]) -> None:
     mapped = MappedConvert(data_urls)
     image_handling.convert_url_to_base64 = mapped
     image_handling.async_convert_url_to_base64 = AsyncMappedConvert(data_urls)
-    factory.convert_url_to_base64 = mapped
-    studio_transformation.convert_url_to_base64 = mapped
+    factory.convert_url_to_base64 = mapped  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L59
+    studio_transformation.convert_url_to_base64 = mapped  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L9
     transformation._get_gcs_object_content_type = _no_gcs_metadata  # type: ignore[assignment]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAssignmentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L333
 
 
