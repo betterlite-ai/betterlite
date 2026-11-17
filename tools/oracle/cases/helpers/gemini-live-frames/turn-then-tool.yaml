@@ -1,0 +1,9 @@
+kind: helper
+name: turn-then-tool
+call:
+  gemini_live_frames:
+    frames:
+      - '{"serverContent": {"turnComplete": true}, "toolCall": {"functionCalls": [{"name": "lookup", "args": {"city": "Paris"}}]}, "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}}'
+calls: []
+env: {}
+compare: {ignore: []}

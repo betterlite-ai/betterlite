@@ -1,0 +1,10 @@
+kind: helper
+name: trailing-tool-turn-suppressed
+call:
+  gemini_live_frames:
+    frames:
+      - '{"toolCall": {"functionCalls": [{"name": "lookup", "args": {"city": "Paris"}}]}}'
+      - '{"serverContent": {"turnComplete": true}, "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5, "totalTokenCount": 15}}'
+calls: []
+env: {}
+compare: {ignore: []}
