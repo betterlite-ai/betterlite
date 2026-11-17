@@ -125,13 +125,10 @@ pub fn pick(deployments: &[DeploymentSpec], target: Target) -> Option<(usize, bo
     if deployments.is_empty() {
         return None;
     }
-    match deployments
+    let position = deployments
         .iter()
-        .position(|deployment| kind(deployment) == Some(target.wire_name()))
-    {
-        Some(index) => Some((index, true)),
-        None => Some((0, false)),
-    }
+        .position(|deployment| kind(deployment) == Some(target.wire_name()));
+    Some(position.map_or((0, false), |index| (index, true)))
 }
 
 fn kind(deployment: &DeploymentSpec) -> Option<&str> {

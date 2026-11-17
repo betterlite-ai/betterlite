@@ -86,7 +86,7 @@ enum Behavior {
 async fn lar1_routing_behaviors(#[case] behavior: Behavior) {
     match behavior {
         Behavior::DeclaredDefaults => declared_defaults().await,
-        Behavior::WireEnums => wire_enums().await,
+        Behavior::WireEnums => wire_enums(),
         Behavior::Selection {
             pool,
             metadata,
@@ -113,8 +113,8 @@ async fn lar1_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::InvalidMetadata => invalid_metadata().await,
         Behavior::ExactMatchLog => exact_match_log().await,
         Behavior::FallbackLog => fallback_log().await,
-        Behavior::AsyncOnly => async_only().await,
-        Behavior::DefaultArgs => default_args().await,
+        Behavior::AsyncOnly => async_only(),
+        Behavior::DefaultArgs => default_args(),
     }
 }
 
@@ -137,7 +137,7 @@ async fn declared_defaults() {
     assert_eq!(id.as_deref(), Some("local-1"));
 }
 
-async fn wire_enums() {
+fn wire_enums() {
     let metadata = Lar1Metadata::parse(
         br#"{"act":"GEN","time":"PRE","mind":"ACT","confidence":0.25,"evidence":["SYNTH","RETRIEVED","UNVERIFIED","CONFIRMED"],"ignored":true}"#,
     )
@@ -305,7 +305,7 @@ async fn fallback_log() {
     assert!(captured.messages().contains("actual=unknown"));
 }
 
-async fn async_only() {
+fn async_only() {
     let error = sync_deployment().unwrap_err();
     assert_eq!(error, Lar1Error::AsyncOnly);
     assert_eq!(
@@ -314,7 +314,7 @@ async fn async_only() {
     );
 }
 
-async fn default_args() {
+fn default_args() {
     let defaults = Thresholds::default();
     assert_eq!(defaults.low, dec("0.3"));
     assert_eq!(defaults.medium, dec("0.5"));

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use rstest::rstest;
+use tokio::time::timeout;
 
 use super::support::{
     Failing, Group, Pending, args, dec, selected, spec, strategy_with, typed_pool,
@@ -241,9 +242,7 @@ async fn pending() {
     let strategy = Lar1Strategy::default();
     let router = Pending;
     let selection = selected(&strategy, Some(&router), None, false);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(20), selection)
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), selection)
+        .await
+        .unwrap_err();
 }

@@ -1,3 +1,4 @@
+use std::future::pending;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -112,7 +113,7 @@ impl HealthyDeployments for Pending {
         _model: &str,
         _specific_deployment: bool,
     ) -> Result<Candidates, RoutingError> {
-        std::future::pending().await
+        pending().await
     }
 }
 
