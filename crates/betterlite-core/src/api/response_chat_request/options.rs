@@ -12,7 +12,7 @@ use crate::api::responses_parameters::stream_options::normalize_stream_options;
 pub fn map_optional_params(
     optional_params: &IndexMap<String, Value>,
     params: &mut Map<String, Value>,
-    reasoning_auto_summary: bool,
+    auto_summary: bool,
 ) -> Result<(), RequestError> {
     for (key, value) in optional_params {
         if value.is_null() {
@@ -36,10 +36,8 @@ pub fn map_optional_params(
             }
             "stream_options" => mapped_stream_options(params, value)?,
             "reasoning_effort" => {
-                params.insert(
-                    "reasoning".to_owned(),
-                    mapped_reasoning(value, reasoning_auto_summary),
-                );
+                let reasoning = mapped_reasoning(value, auto_summary);
+                params.insert("reasoning".to_owned(), reasoning);
             }
             "web_search_options" => add_web_search_tool(params, value)?,
             _ if declared_key(key) => {
