@@ -143,6 +143,13 @@ fn an_empty_metadata_is_not_stamped_with_the_origin() {
     let nulled = caller_context(&requested(Some(&null)), PrivacyContext::default())
         .expect("a null metadata takes the default");
     assert!(nulled.metadata.is_empty());
+    let request = CallerRequest {
+        litellm_metadata: Some(&null),
+        ..requested(None)
+    };
+    let nulled_litellm = caller_context(&request, PrivacyContext::default())
+        .expect("a null litellm_metadata takes the default");
+    assert!(nulled_litellm.litellm_metadata.is_empty());
 }
 
 #[test]
