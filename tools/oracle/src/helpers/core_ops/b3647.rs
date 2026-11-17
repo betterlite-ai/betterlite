@@ -1,6 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+mod scripted;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
@@ -8,12 +10,9 @@ use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_ro
 use betterlite_core::cost::completion::lookup::{CatalogLookup, LookupSettings};
 use betterlite_core::relay::assemblyai::poll::TokioSleeper;
 use betterlite_core::relay::assemblyai::{
-    AssemblyAiLogging, AssemblyAiPorts, AssemblyAiSettings, AssemblyCredentialSource,
-    AssemblyLogCall, AssemblyTranscriptLog, AssemblyTranscriptLogSink, AssemblyTranscriptTransport,
+    AssemblyAiLogging, AssemblyAiPorts, AssemblyAiSettings, AssemblyLogCall,
     assembly_base_url_from_region, assembly_region_from_url,
 };
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -23,14 +22,15 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
-use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
+use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
-use url::Url;
+
+use scripted::{Recorded, RecordingSink, Reply, ScriptedTransport, StaticCredentials};
 
 pub(crate) struct Op;
 
@@ -51,92 +51,6 @@ struct Call {
     api_key: Option<String>,
     polling_interval_seconds: u64,
     max_polling_attempts: u32,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Reply {
-    status: u16,
-    body: Json,
-}
-
-struct Recorded {
-    url: Url,
-    headers: HeaderMap,
-}
-
-#[derive(Clone)]
-struct ScriptedTransport {
-    replies: Arc<Mutex<VecDeque<Reply>>>,
-    repeat: Reply,
-    requests: Arc<Mutex<Vec<Recorded>>>,
-}
-
-impl ScriptedTransport {
-    fn new(replies: &[Reply]) -> Self {
-        let repeat = replies.last().cloned().unwrap_or(Reply {
-            status: 200,
-            body: Json::Object(IndexMap::new()),
-        });
-        Self {
-            replies: Arc::new(Mutex::new(VecDeque::from(replies.to_vec()))),
-            repeat,
-            requests: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn take_requests(&self) -> Vec<Recorded> {
-        std::mem::take(&mut *self.requests.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-}
-
-impl AssemblyTranscriptTransport for ScriptedTransport {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Recorded { url, headers });
-        let reply = self
-            .replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or_else(|| self.repeat.clone());
-        let body = serde_json::to_vec(&reply.body).map_err(|_error| TransportError::Closed)?;
-        Ok(UpstreamResponse {
-            status: reply.status,
-            headers: HeaderMap::new(),
-            body,
-        })
-    }
-}
-
-struct StaticCredentials {
-    key: Option<SecretString>,
-}
-
-impl AssemblyCredentialSource for StaticCredentials {
-    async fn get_credentials(
-        &self,
-        _custom_llm_provider: &str,
-        _region_name: Option<&str>,
-    ) -> Option<SecretString> {
-        self.key.clone()
-    }
-}
-
-#[derive(Clone, Default)]
-struct RecordingSink {
-    logs: Arc<Mutex<Vec<AssemblyTranscriptLog>>>,
-}
-
-impl AssemblyTranscriptLogSink for RecordingSink {
-    async fn handle_logging(&self, call: AssemblyTranscriptLog) {
-        self.logs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-    }
 }
 
 struct Outcome {

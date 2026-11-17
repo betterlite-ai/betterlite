@@ -1,0 +1,101 @@
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_core::relay::assemblyai::{
+    AssemblyCredentialSource, AssemblyTranscriptLog, AssemblyTranscriptLogSink,
+    AssemblyTranscriptTransport,
+};
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
+use http::header::HeaderMap;
+use indexmap::IndexMap;
+use secrecy::SecretString;
+use serde::Deserialize;
+use url::Url;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Reply {
+    status: u16,
+    body: Json,
+}
+
+pub(super) struct Recorded {
+    pub(super) url: Url,
+    pub(super) headers: HeaderMap,
+}
+
+#[derive(Clone)]
+pub(super) struct ScriptedTransport {
+    replies: Arc<Mutex<VecDeque<Reply>>>,
+    repeat: Reply,
+    requests: Arc<Mutex<Vec<Recorded>>>,
+}
+
+impl ScriptedTransport {
+    pub(super) fn new(replies: &[Reply]) -> Self {
+        let repeat = replies.last().cloned().unwrap_or(Reply {
+            status: 200,
+            body: Json::Object(IndexMap::new()),
+        });
+        Self {
+            replies: Arc::new(Mutex::new(VecDeque::from(replies.to_vec()))),
+            repeat,
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    pub(super) fn take_requests(&self) -> Vec<Recorded> {
+        std::mem::take(&mut *self.requests.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+impl AssemblyTranscriptTransport for ScriptedTransport {
+    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Recorded { url, headers });
+        let reply = self
+            .replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| self.repeat.clone());
+        let body = serde_json::to_vec(&reply.body).map_err(|_error| TransportError::Closed)?;
+        Ok(UpstreamResponse {
+            status: reply.status,
+            headers: HeaderMap::new(),
+            body,
+        })
+    }
+}
+
+pub(super) struct StaticCredentials {
+    pub(super) key: Option<SecretString>,
+}
+
+impl AssemblyCredentialSource for StaticCredentials {
+    async fn get_credentials(
+        &self,
+        _custom_llm_provider: &str,
+        _region_name: Option<&str>,
+    ) -> Option<SecretString> {
+        self.key.clone()
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct RecordingSink {
+    pub(super) logs: Arc<Mutex<Vec<AssemblyTranscriptLog>>>,
+}
+
+impl AssemblyTranscriptLogSink for RecordingSink {
+    async fn handle_logging(&self, call: AssemblyTranscriptLog) {
+        self.logs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+    }
+}
