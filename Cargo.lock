@@ -4285,6 +4285,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-streaming",
  "chrono",
  "hex",
  "http 1.5.0",
@@ -4297,6 +4298,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 

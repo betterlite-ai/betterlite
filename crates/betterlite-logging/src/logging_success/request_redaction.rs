@@ -78,7 +78,7 @@ pub(super) fn redact_stored_payload(state: &mut LoggingState) {
     }
 }
 
-pub(super) fn redact_payload(payload: &mut StandardLoggingPayload) {
+pub(crate) fn redact_payload(payload: &mut StandardLoggingPayload) {
     payload.classifier_input = None;
     payload.originating_request_masked = None;
     if payload
@@ -86,15 +86,19 @@ pub(super) fn redact_payload(payload: &mut StandardLoggingPayload) {
         .as_ref()
         .is_some_and(|messages| *messages != Json::Null)
     {
-        let message = IndexMap::from([
-            ("role".to_owned(), Json::Text("user".to_owned())),
-            ("content".to_owned(), Json::Text(REDACTED.to_owned())),
-        ]);
-        payload.messages = Some(Json::List(vec![Json::Object(message)]));
+        payload.messages = Some(redacted_messages_json());
     }
     if let Some(response) = payload.response.as_mut() {
         redact_response(response);
     }
+}
+
+// perform_redaction rewrites kwargs["messages"] to this marker before the payload reads them.
+pub(crate) fn redacted_messages_json() -> Json {
+    Json::List(vec![Json::Object(IndexMap::from([
+        ("role".to_owned(), Json::Text("user".to_owned())),
+        ("content".to_owned(), Json::Text(REDACTED.to_owned())),
+    ]))])
 }
 
 fn redact_response(response: &mut Json) {
