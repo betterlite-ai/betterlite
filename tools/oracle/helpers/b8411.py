@@ -15,8 +15,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 _JSON: Final = TypeAdapter(JsonValue)
 _OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 _NAMES: Final = TypeAdapter(list[JsonValue])
-# GenerateRequestBase's bare dict and list fields make mypy read the user classes as Any-typed, so
-# the two adapters are built from the type form, which keeps the validators and a typed result.
+# The user classes carry Any through GenerateRequestBase, so adapt from the type form.
 _NEW_USER: Final[TypeAdapter[NewUserRequest]] = TypeAdapter(NewUserRequest)
 _UPDATE_USER: Final[TypeAdapter[UpdateUserRequest]] = TypeAdapter(UpdateUserRequest)
 
@@ -161,13 +160,9 @@ ANSWERS: Final[dict[Function, Callable[[Call], JsonValue]]] = {
 }
 
 
-def answer(call: Call) -> JsonValue:
-    return ANSWERS[call["function"]](call)
-
-
 def call_outcome(call: Call) -> JsonValue:
     try:
-        return {"ok": True, "value": answer(call)}
+        return {"ok": True, "value": ANSWERS[call["function"]](call)}
     except (ValueError, TypeError, KeyError):
         return {"ok": False}
 
