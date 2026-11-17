@@ -1,5 +1,14 @@
 task: B918
-deviations: []
+deviations:
+  - what: >-
+      the auto-summary flag resolves once at config load, from litellm_settings.reasoning_auto_summary
+      OR LITELLM_REASONING_AUTO_SUMMARY; a process that changes the environment or the
+      litellm.reasoning_auto_summary global after startup keeps the value it loaded
+    why: >-
+      B002 loads every setting once and the builder receives the resolved boolean; re-reading the
+      environment per request would bypass the loader, and with a fixed environment both give the
+      same answer
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1189-L1191
 kept_bugs:
   - what: >-
       a non-empty previous_response_id logs "Chat provider: Warning ignoring previous response ID"
