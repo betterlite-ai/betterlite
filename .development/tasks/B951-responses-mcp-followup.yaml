@@ -89,7 +89,7 @@ description: >-
   The owned ranges contain 247 nonblank, non-comment, non-docstring Python lines (282 nonblank, non-comment
   physical lines including signatures and docstrings). Estimate 267 implementation lines, 120 behavior-test lines,
   80 helper fixtures, 90 Rust/Python adapter lines and 30 wiring lines: 587 changed lines, within the 600-line cap.
-  Direct inputs are B012's diagnostic seam, B171's helper oracle, B902's Responses records, B950's typed MCP tool
+  Direct inputs are the tracing diagnostic seam, B171's helper oracle, B902's Responses records, B950's typed MCP tool
   results, B1087's API limits, B932's Responses provider-call seam and B952's MCP event builder. These are callable
   owners, not umbrella provider dependencies.
 scope:

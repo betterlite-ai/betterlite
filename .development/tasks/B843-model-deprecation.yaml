@@ -69,7 +69,7 @@ description: >-
   with compatibility for the source's ISO formats. Catalog/config/helper bounds are enforced upstream;
   there is no JSON depth or new one-megabyte policy in a date-string helper. Fuzz this actual parser
   with arbitrary UTF-8 strings, invalid days, leap years, week dates, whitespace and truncation; replay
-  the committed corpus in replays_the_model_deprecation_corpus. B770 supplies the server fuzz workspace.
+  the committed corpus in replays_the_model_deprecation_corpus. B003 supplies the server fuzz workspace.
 
 
   The helper module has 179 nonblank noncomment lines excluding docstrings, including imports/types;

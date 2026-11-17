@@ -4,8 +4,6 @@ use serde::de::IgnoredAny;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-mod tests;
-
 const PREFIX: &str = "general_settings.litellm_jwtauth";
 
 #[derive(Debug, Default, Deserialize)]
