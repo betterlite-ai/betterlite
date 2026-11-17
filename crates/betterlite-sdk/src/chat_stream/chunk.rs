@@ -2,9 +2,11 @@ use betterlite_core::rules::{RulePhase, evaluate};
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::creator::chunk_creator;
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
+use betterlite_streaming::stream_chunk_shaping::StreamShapeError;
 use betterlite_streaming::stream_chunk_shaping::creation::model_response_creator;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
 use betterlite_streaming::stream_chunk_shaping::usage_totals::calculate_total_usage;
+use serde_json::{from_value, to_value};
 
 use super::ChatStream;
 use super::config::CallMode;
@@ -41,10 +43,7 @@ pub(super) async fn process<S>(
         Err(error) => return Err(ChatStreamCause::Chunk(error)),
     };
     mark_started(stream);
-    match stream.config.mode {
-        CallMode::Blocking => blocking(stream, created),
-        CallMode::Async => asynchronous(stream, created).await,
-    }
+    produced(stream, created).await
 }
 
 fn mark_started<S>(stream: &mut ChatStream<'_, S>) {
@@ -55,44 +54,35 @@ fn mark_started<S>(stream: &mut ChatStream<'_, S>) {
     stream.ports.logging.started(stream.ports.clock.now());
 }
 
-fn blocking<S>(
+// __next__ and __anext__ run the same steps; only the per-chunk logging, the chunk order and the final step differ.
+async fn produced<S>(
     stream: &mut ChatStream<'_, S>,
     mut chunk: StreamChunk,
 ) -> Result<Step, ChatStreamCause> {
-    if !stream.config.logging.disable {
+    let mode = stream.config.mode;
+    if matches!(mode, CallMode::Blocking) && !stream.config.logging.disable {
         stream.ports.logging.log_chunk(&chunk, stream.cache_hit);
     }
     accumulate_content(stream, &chunk);
     evaluate_post_call(stream)?;
-    stream.shaper.chunks.push(chunk.clone());
-    first_chunk_mcp(stream, &mut chunk);
+    if matches!(mode, CallMode::Blocking) {
+        stream.shaper.chunks.push(chunk.clone());
+        first_chunk_mcp(stream, &mut chunk);
+    } else {
+        first_chunk_mcp(stream, &mut chunk);
+        stream.shaper.chunks.push(chunk.clone());
+    }
     if chunk.usage.is_some() {
         let Some(rebuilt) = usage_rebuilt(stream, &chunk)? else {
             return Ok(Step::Skip);
         };
         chunk = rebuilt;
     }
-    blocking_final(stream, &mut chunk)?;
-    Ok(Step::Chunk(chunk))
-}
-
-async fn asynchronous<S>(
-    stream: &mut ChatStream<'_, S>,
-    mut chunk: StreamChunk,
-) -> Result<Step, ChatStreamCause> {
-    accumulate_content(stream, &chunk);
-    evaluate_post_call(stream)?;
-    first_chunk_mcp(stream, &mut chunk);
-    let has_usage = chunk.usage.is_some();
-    stream.shaper.chunks.push(chunk.clone());
-    if has_usage {
-        let Some(rebuilt) = usage_rebuilt(stream, &chunk)? else {
-            return Ok(Step::Skip);
-        };
-        chunk = rebuilt;
+    match mode {
+        CallMode::Blocking => blocking_final(stream, &mut chunk)?,
+        CallMode::Async => chunk = async_final(stream, chunk).await?,
     }
-    let ready = async_final(stream, chunk).await?;
-    Ok(Step::Chunk(ready))
+    Ok(Step::Chunk(chunk))
 }
 
 fn accumulate_content<S>(stream: &mut ChatStream<'_, S>, chunk: &StreamChunk) {
@@ -131,7 +121,8 @@ fn usage_rebuilt<S>(
 ) -> Result<Option<StreamChunk>, ChatStreamCause> {
     let mut hidden = chunk.hidden_params.clone();
     if let Some(usage) = &chunk.usage {
-        let encoded: JsonValue = json::bridge(usage)?;
+        let serialized = to_value(usage).map_err(StreamShapeError::from)?;
+        let encoded: JsonValue = from_value(serialized).map_err(StreamShapeError::from)?;
         hidden.insert("usage".to_owned(), encoded);
     }
     let object = json::chunk_object(chunk)?;
@@ -157,7 +148,7 @@ fn blocking_final<S>(
 
 // __anext__'s final chunk: hidden usage, then the deployment hook, then the MCP metadata.
 async fn async_final<S>(
-    stream: &ChatStream<'_, S>,
+    stream: &mut ChatStream<'_, S>,
     mut chunk: StreamChunk,
 ) -> Result<StreamChunk, ChatStreamCause> {
     if !stream.shaper.progress.sent_last_chunk {
@@ -176,7 +167,8 @@ pub(super) fn insert_total_usage(
     chunks: &[StreamChunk],
 ) -> Result<(), ChatStreamCause> {
     let usage = calculate_total_usage(chunks);
-    let encoded: JsonValue = json::bridge(&usage)?;
+    let serialized = to_value(&usage).map_err(StreamShapeError::from)?;
+    let encoded: JsonValue = from_value(serialized).map_err(StreamShapeError::from)?;
     chunk.hidden_params.insert("usage".to_owned(), encoded);
     Ok(())
 }

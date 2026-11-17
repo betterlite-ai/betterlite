@@ -11,13 +11,9 @@ pub(super) fn add_list_tools(chunk: &mut StreamChunk, metadata: Option<&JsonObje
     else {
         return;
     };
-    for choice in &mut chunk.choices {
-        choice
-            .delta
-            .provider_specific_fields
-            .get_or_insert_with(JsonObject::new)
-            .insert("mcp_list_tools".to_owned(), tools.clone());
-    }
+    let mut selected = JsonObject::new();
+    selected.insert("mcp_list_tools".to_owned(), tools.clone());
+    add_to_choices(chunk, &selected);
 }
 
 // _add_mcp_metadata_to_final_chunk: every key of mcp_metadata, replacing what the delta carried.
@@ -25,6 +21,10 @@ pub(super) fn add_final_metadata(chunk: &mut StreamChunk, metadata: Option<&Json
     let Some(fields) = metadata.filter(|fields| !fields.is_empty()) else {
         return;
     };
+    add_to_choices(chunk, fields);
+}
+
+fn add_to_choices(chunk: &mut StreamChunk, fields: &JsonObject) {
     for choice in &mut chunk.choices {
         choice
             .delta
