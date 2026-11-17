@@ -64,8 +64,8 @@ impl<'case> Scenario<'case> {
         };
         let shared = Arc::new(shared_cooldowns(input)?);
         let cooldowns = CooldownCache::new(&settings, shared, Arc::clone(&clock_fn));
-        let snapshot = snapshot(&input.shared_health);
-        let snapshot = (!snapshot.is_empty()).then_some(snapshot);
+        let states = snapshot(&input.shared_health);
+        let snapshot = (!states.is_empty()).then_some(states);
         let health = DeploymentHealthCache::new(
             settings.staleness_threshold,
             Arc::new(FakeHealth {
