@@ -79,10 +79,11 @@ def run(input_value: Call) -> Object:
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     try:
-        if input_value["operation"] == "success":
-            returned = run_success(input_value, handler)
-        else:
-            returned = run_streaming(input_value, handler)
+        returned = (
+            run_success(input_value, handler)
+            if input_value["operation"] == "success"
+            else run_streaming(input_value, handler)
+        )
     finally:
         logger.removeHandler(handler)
         for existing in previous_handlers:
