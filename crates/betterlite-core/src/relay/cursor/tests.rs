@@ -272,61 +272,57 @@ fn capture_logs(level: tracing::Level) -> (LogBuffer, DefaultGuard) {
 }
 
 #[rstest]
-#[case::create_agent("POST", "/v0/agents", "cursor:agent:create")]
-#[case::list_agents("GET", "/v0/agents", "cursor:agent:list")]
-#[case::followup("POST", "/v0/agents/bc-1/followup", "cursor:agent:followup")]
-#[case::stop("POST", "/v0/agents/bc-1/stop", "cursor:agent:stop")]
-#[case::delete("DELETE", "/v0/agents/bc-1", "cursor:agent:delete")]
-#[case::conversation("GET", "/v0/agents/bc-1/conversation", "cursor:agent:conversation")]
-#[case::status("GET", "/v0/agents/bc-1", "cursor:agent:status")]
-#[case::account("GET", "/v0/me", "cursor:account:info")]
-#[case::models("GET", "/v0/models", "cursor:models:list")]
-#[case::repositories("GET", "/v0/repositories", "cursor:repositories:list")]
-#[case::lowercase_method("get", "/v0/me", "cursor:account:info")]
-#[case::trailing_slash("POST", "/v0/agents/", "cursor:agent:create")]
-#[case::no_leading_slash("GET", "v0/me", "cursor:account:info")]
-#[case::absolute_route("GET", "https://api.cursor.com/v0/agents/bc-1", "cursor:agent:status")]
-#[case::query_dropped("GET", "/v0/models?limit=5", "cursor:models:list")]
-#[case::fragment_dropped("GET", "/v0/models#page", "cursor:models:list")]
-#[case::dot_segments("GET", "https://api.cursor.com/v0/agents/../me", "cursor:account:info")]
-#[case::encoded_separator("GET", "/v0/agents%2Fbc-1", "cursor:agent:status")]
-fn cursor_names_the_operation_of_every_tracked_endpoint(
+#[case::create_agent("POST", "/v0/agents", "cursor/cursor:agent:create")]
+#[case::list_agents("GET", "/v0/agents", "cursor/cursor:agent:list")]
+#[case::followup("POST", "/v0/agents/bc-1/followup", "cursor/cursor:agent:followup")]
+#[case::stop("POST", "/v0/agents/bc-1/stop", "cursor/cursor:agent:stop")]
+#[case::delete("DELETE", "/v0/agents/bc-1", "cursor/cursor:agent:delete")]
+#[case::conversation(
+    "GET",
+    "/v0/agents/bc-1/conversation",
+    "cursor/cursor:agent:conversation"
+)]
+#[case::status("GET", "/v0/agents/bc-1", "cursor/cursor:agent:status")]
+#[case::account("GET", "/v0/me", "cursor/cursor:account:info")]
+#[case::models("GET", "/v0/models", "cursor/cursor:models:list")]
+#[case::repositories("GET", "/v0/repositories", "cursor/cursor:repositories:list")]
+#[case::lowercase_method("get", "/v0/me", "cursor/cursor:account:info")]
+#[case::trailing_slash("POST", "/v0/agents/", "cursor/cursor:agent:create")]
+#[case::no_leading_slash("GET", "v0/me", "cursor/cursor:account:info")]
+#[case::absolute_route(
+    "GET",
+    "https://api.cursor.com/v0/agents/bc-1",
+    "cursor/cursor:agent:status"
+)]
+#[case::query_dropped("GET", "/v0/models?limit=5", "cursor/cursor:models:list")]
+#[case::fragment_dropped("GET", "/v0/models#page", "cursor/cursor:models:list")]
+#[case::dot_segments(
+    "GET",
+    "https://api.cursor.com/v0/agents/../me",
+    "cursor/cursor:account:info"
+)]
+#[case::encoded_separator("GET", "/v0/agents%2Fbc-1", "cursor/cursor:agent:status")]
+#[case::unknown_path("POST", "/v0/unknown", "cursor/cursor:post:/v0/unknown")]
+#[case::wrong_method("PUT", "/v0/agents", "cursor/cursor:put:/v0/agents")]
+#[case::unknown_subpath(
+    "GET",
+    "/v0/agents/bc-1/unknown",
+    "cursor/cursor:get:/v0/agents/bc-1/unknown"
+)]
+#[case::root_path("GET", "/", "cursor/cursor:get:")]
+#[case::empty_route("GET", "", "cursor/cursor:get:")]
+#[case::trailing_slashes("GET", "/v0/agents2/", "cursor/cursor:get:/v0/agents2")]
+fn cursor_names_the_operation_of_every_request(
     #[case] method: &str,
     #[case] route: &str,
-    #[case] operation: &str,
+    #[case] model: &str,
 ) {
     let fixture = Fixture::new(method, route);
     let outcome = run(&fixture);
     let payload = payload(&outcome);
 
-    assert_eq!(
-        text(field(&payload, "model")),
-        format!("cursor/{operation}")
-    );
-    assert_eq!(
-        text(entry(&outcome, "model")),
-        format!("cursor/{operation}")
-    );
-}
-
-#[rstest]
-#[case::unknown_path("POST", "/v0/unknown", "cursor:post:/v0/unknown")]
-#[case::wrong_method("PUT", "/v0/agents", "cursor:put:/v0/agents")]
-#[case::unknown_subpath("GET", "/v0/agents/bc-1/unknown", "cursor:get:/v0/agents/bc-1/unknown")]
-#[case::root_path("GET", "/", "cursor:get:")]
-#[case::empty_route("GET", "", "cursor:get:")]
-#[case::trailing_slashes("GET", "/v0/agents2/", "cursor:get:/v0/agents2")]
-fn cursor_falls_back_to_the_method_and_path(
-    #[case] method: &str,
-    #[case] route: &str,
-    #[case] expected: &str,
-) {
-    let fixture = Fixture::new(method, route);
-    let outcome = run(&fixture);
-    let payload = payload(&outcome);
-
-    assert_eq!(text(field(&payload, "model")), expected);
-    assert_eq!(text(entry(&outcome, "model")), expected);
+    assert_eq!(text(field(&payload, "model")), model);
+    assert_eq!(text(entry(&outcome, "model")), model);
 }
 
 #[test]
