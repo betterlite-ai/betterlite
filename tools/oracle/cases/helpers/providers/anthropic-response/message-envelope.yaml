@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-response-message-envelope
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"id":"msg_upstream_b580","type":"message","role":"assistant","model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"},{"type":"thinking","thinking":"plan","signature":"sig-b580"},{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{"city":"Paris"}}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":3,"output_tokens":4,"output_tokens_details":{"thinking_tokens":2}}}
+    headers:
+      content-type: application/json
+      x-request-id: req-b580
+      anthropic-ratelimit-requests-limit: "100"
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      speed: fast
+    litellm_params: {}
+    request_data:
+      model: claude-sonnet-4-6
+      max_tokens: 64
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}
