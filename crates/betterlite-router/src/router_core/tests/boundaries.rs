@@ -1,10 +1,12 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Cancelling, Cooldown, Fixture, RequestSetup, body, deployment, group_and_ids, hidden,
-    hidden_with, metadata, number, object, run_healthy, run_route, run_simple, seeded, text,
-    weighted, with_info,
+    Cancelling, Checked, Cooldown, Fixture, NarrowProviders, RequestSetup, Windows, body,
+    deployment, group_and_ids, hidden, hidden_with, metadata, number, object, picked, run_checked,
+    run_healthy, run_route, run_simple, seeded, text, weighted, with_info,
 };
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
@@ -87,6 +89,13 @@ pub(super) async fn run(name: &str) {
         "token_count_zero_total" => token_count_zero_total(),
         "token_count_non_numeric" => token_count_non_numeric(),
         "header_empty_metadata_id" => header_empty_metadata_id(),
+        "no_deployment_infinite_cooldown" => no_deployment_infinite_cooldown().await,
+        "context_window_after_blocked" => context_window_after_blocked().await,
+        "pre_call_disabled_keeps_over_window" => pre_call_disabled_keeps_over_window().await,
+        "compaction_keeps_over_window" => compaction_keeps_over_window().await,
+        "pre_call_uncountable_skips" => pre_call_uncountable_skips().await,
+        "response_format_empties_pool" => response_format_empties_pool().await,
+        "window_keeps_fitting_beside_rejected" => window_keeps_fitting_beside_rejected().await,
         _ => panic!("unknown case {name}"),
     }
 }
@@ -273,6 +282,172 @@ async fn blocked_pool_empty() {
     };
     assert_eq!(no_deployment.model, "gpt-4o");
     assert_eq!(no_deployment.model_ids, vec![String::from("paused")]);
+}
+
+// a cooldown the float cannot narrow is reported as itself, never as a zero-second retry
+async fn no_deployment_infinite_cooldown() {
+    let paused = with_info("gpt-4o", "paused", &[], &[("blocked", Json::Bool(true))]);
+    let fixture = Fixture::plain(vec![paused]);
+    let services = Cooldown {
+        ids: Vec::new(),
+        seconds: f64::INFINITY,
+    };
+    let mut random = seeded();
+    let error = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap_err();
+    let RoutingError::NoDeployment(no_deployment) = error else {
+        panic!("a pool of paused deployments leaves nothing to select");
+    };
+    assert!(
+        no_deployment
+            .to_string()
+            .contains("Try again in inf seconds.")
+    );
+}
+
+// the context window runs after the paused filter: a paused deployment that fits cannot hide the live one that does not
+async fn context_window_after_blocked() {
+    let fitting = with_info(
+        "gpt-4o",
+        "a",
+        &[("order", number(1))],
+        &[("blocked", Json::Bool(true))],
+    );
+    let small = deployment("gpt-4o", "b", &[("order", number(2))]);
+    let fixture = Fixture::plain(vec![fitting, small]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.input_token_count = Some(50);
+    let windows = Windows {
+        by_id: BTreeMap::from([(String::from("a"), 100), (String::from("b"), 10)]),
+    };
+    let checks = Checked {
+        limits: &windows,
+        params: &NoParams,
+        pre_call: true,
+    };
+    let error = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap_err();
+    let RoutingError::Eligibility(EligibilityError::ContextWindow(exceeded)) = error else {
+        panic!("every live deployment exceeds the context window");
+    };
+    assert!(
+        exceeded.causes.contains("Max Input Tokens=10"),
+        "{}",
+        exceeded.causes
+    );
+    assert!(exceeded.causes.contains("Got=50"), "{}", exceeded.causes);
+}
+
+// the pre-call checks are the router's opt-in: with them off the window never drops a deployment
+async fn pre_call_disabled_keeps_over_window() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.input_token_count = Some(50);
+    let windows = Windows {
+        by_id: BTreeMap::from([(String::from("a"), 10)]),
+    };
+    let checks = Checked {
+        limits: &windows,
+        params: &NoParams,
+        pre_call: false,
+    };
+    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "a");
+}
+
+// a request under compaction skips the window count, so the too-small deployment still serves
+async fn compaction_keeps_over_window() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.input_token_count = Some(50);
+    setup.facts.compaction_pending = true;
+    let windows = Windows {
+        by_id: BTreeMap::from([(String::from("a"), 10)]),
+    };
+    let checks = Checked {
+        limits: &windows,
+        params: &NoParams,
+        pre_call: true,
+    };
+    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "a");
+}
+
+// a request that carries neither messages nor input has nothing to count, so the window check is skipped
+async fn pre_call_uncountable_skips() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[])]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.input_token_count = Some(50);
+    let windows = Windows {
+        by_id: BTreeMap::from([(String::from("a"), 10)]),
+    };
+    let checks = Checked {
+        limits: &windows,
+        params: &NoParams,
+        pre_call: true,
+    };
+    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "a");
+}
+
+// the supported-parameter filter empties a provider pool without a window rejection, which is the no-deployment answer
+async fn response_format_empties_pool() {
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[]),
+        deployment("gpt-4o", "b", &[]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.response_format = true;
+    let checks = Checked {
+        limits: &NoLimits,
+        params: &NarrowProviders,
+        pre_call: true,
+    };
+    let error = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, RoutingError::NoDeployment(_)));
+}
+
+// a window rejection beside a deployment that fits keeps the fitting one serving
+async fn window_keeps_fitting_beside_rejected() {
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "small", &[]),
+        deployment("gpt-4o", "big", &[]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.input_token_count = Some(50);
+    let windows = Windows {
+        by_id: BTreeMap::from([(String::from("small"), 10), (String::from("big"), 100)]),
+    };
+    let checks = Checked {
+        limits: &windows,
+        params: &NoParams,
+        pre_call: true,
+    };
+    let result = run_checked(&fixture, &setup, &NoServices, &checks)
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "big");
 }
 
 // the typed healthy view returns the catalog error LiteLLM's legacy helper swallows

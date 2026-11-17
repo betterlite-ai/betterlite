@@ -5,7 +5,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
     Fixture, LastOnly, RequestSetup, body, clock, deployment, group_and_ids, hidden, metadata,
-    number, object, picked, run_healthy, run_route, run_simple, seeded, text, weighted,
+    number, object, picked, run_healthy, run_route, run_simple, seeded, text, weighted, with_info,
 };
 use crate::deployment_catalog::types::{AliasSource, AliasStep, Candidates};
 use crate::deployment_clients::clients::{CachedClient, CachedClients, ClientCredential};
@@ -32,6 +32,9 @@ pub(super) async fn run(name: &str) {
         "client_acquired" => client_acquired().await,
         "healthy_pool" => healthy_pool().await,
         "healthy_single" => healthy_single().await,
+        "healthy_blocked_pool" => healthy_blocked_pool().await,
+        "order_lowest_wins" => order_lowest_wins().await,
+        "order_after_blocked" => order_after_blocked().await,
         "headers_attach_to_object" => headers_attach_to_object(),
         "header_model_id_kept" => header_model_id_kept(),
         "token_count_from_usage" => token_count_from_usage(),
@@ -244,6 +247,53 @@ async fn healthy_single() {
     assert_eq!(found.group, "openai/a");
     assert_eq!(found.all.len(), 1);
     assert!(matches!(&found.healthy, Candidates::Single(one) if one.id() == Some("a")));
+}
+
+// the healthy view drops what an admin paused, while the whole pool still counts it
+async fn healthy_blocked_pool() {
+    let paused = with_info("gpt-4o", "paused", &[], &[("blocked", Json::Bool(true))]);
+    let fixture = Fixture::plain(vec![paused, deployment("gpt-4o", "live", &[])]);
+    let Ok(found) = run_healthy(&fixture, &RequestSetup::new("gpt-4o")).await else {
+        panic!("the group resolves to its pool");
+    };
+    assert_eq!(found.all.len(), 2);
+    let Candidates::Pool(pool) = &found.healthy else {
+        panic!("a group answers a pool");
+    };
+    assert_eq!(pool.len(), 1);
+    assert_eq!(pool[0].id(), Some("live"));
+}
+
+// the lowest declared order narrows the pool before the strategy weighs what is left
+async fn order_lowest_wins() {
+    let first = deployment("gpt-4o", "a", &[("order", number(1))]);
+    let second = with_info(
+        "gpt-4o",
+        "b",
+        &[("order", number(2)), ("weight", number(5))],
+        &[],
+    );
+    let fixture = Fixture::plain(vec![second, first]);
+    let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "a");
+}
+
+// the order filter runs after the paused filter, so a paused order-1 leaves the live order-2 to serve
+async fn order_after_blocked() {
+    let paused = with_info(
+        "gpt-4o",
+        "a",
+        &[("order", number(1))],
+        &[("blocked", Json::Bool(true))],
+    );
+    let live = deployment("gpt-4o", "b", &[("order", number(2))]);
+    let fixture = Fixture::plain(vec![paused, live]);
+    let result = run_simple(&fixture, &RequestSetup::new("gpt-4o"))
+        .await
+        .unwrap();
+    assert_eq!(picked(&result), "b");
 }
 
 fn headers_attach_to_object() {

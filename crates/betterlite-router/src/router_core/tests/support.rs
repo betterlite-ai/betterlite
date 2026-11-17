@@ -43,6 +43,17 @@ impl TokenLimits for NoLimits {
     }
 }
 
+// A model registry that declares a context window per deployment id.
+pub(crate) struct Windows {
+    pub(crate) by_id: BTreeMap<String, usize>,
+}
+
+impl TokenLimits for Windows {
+    fn max_input_tokens(&self, spec: &DeploymentSpec, _model: &str) -> Option<usize> {
+        self.by_id.get(spec.id()?).copied()
+    }
+}
+
 // A provider registry that knows no provider.
 pub(crate) struct NoParams;
 
@@ -67,6 +78,42 @@ impl ParamSupport for NoParams {
     ) -> Option<Vec<String>> {
         None
     }
+}
+
+// A provider registry whose providers all answer the same openai params, without response_format.
+pub(crate) struct NarrowProviders;
+
+impl ParamSupport for NarrowProviders {
+    fn is_authenticating_provider(&self, _model: &str, _custom_llm_provider: Option<&str>) -> bool {
+        false
+    }
+
+    fn resolve_provider(
+        &self,
+        model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<ResolvedProvider> {
+        Some(ResolvedProvider {
+            model: model.to_owned(),
+            custom_llm_provider: "openai".to_owned(),
+        })
+    }
+
+    fn supported_openai_params(
+        &self,
+        _model: &str,
+        _custom_llm_provider: &str,
+        _base_model: Option<&str>,
+    ) -> Option<Vec<String>> {
+        Some(vec![String::from("temperature")])
+    }
+}
+
+// The pre-call settings a route test asks for: its limits, its providers, and whether the router checks them.
+pub(crate) struct Checked<'checks> {
+    pub(crate) limits: &'checks (dyn TokenLimits + Sync),
+    pub(crate) params: &'checks (dyn ParamSupport + Sync),
+    pub(crate) pre_call: bool,
 }
 
 // A request that names one model and asks for nothing else.
@@ -323,17 +370,13 @@ pub(super) fn clock() -> ClientClock {
     Arc::new(SystemTime::now)
 }
 
-pub(super) async fn run_route(
+// The route over a built context, with B395's dispatch resolved once for the request.
+async fn drive(
     fixture: &Fixture,
-    setup: &RequestSetup,
-    services: &dyn RouteServices,
+    context: &RouteContext<'_>,
     strategy: RoutingStrategy,
     random: &mut StdRng,
 ) -> Result<AttemptResult, RoutingError> {
-    let request = setup.request();
-    let (limits, params) = (NoLimits, NoParams);
-    let mut context = route_context(&request, services, &limits, &params);
-    context.clients = setup.client_access();
     let groups = RoutingGroups::default();
     let shadowing = BTreeSet::new();
     let mut dispatch = StrategyDispatch::new(strategy, None).unwrap();
@@ -346,7 +389,42 @@ pub(super) async fn run_route(
         },
     };
     let resolver = fixture.resolver();
-    route(&resolver, &context, routing, random).await
+    route(&resolver, context, routing, random).await
+}
+
+pub(super) async fn run_route(
+    fixture: &Fixture,
+    setup: &RequestSetup,
+    services: &dyn RouteServices,
+    strategy: RoutingStrategy,
+    random: &mut StdRng,
+) -> Result<AttemptResult, RoutingError> {
+    let request = setup.request();
+    let (limits, params) = (NoLimits, NoParams);
+    let mut context = route_context(&request, services, &limits, &params);
+    context.clients = setup.client_access();
+    drive(fixture, &context, strategy, random).await
+}
+
+// A simple-shuffle route over the caller's limits and providers, with the pre-call checks it asks for.
+pub(super) async fn run_checked(
+    fixture: &Fixture,
+    setup: &RequestSetup,
+    services: &dyn RouteServices,
+    checks: &Checked<'_>,
+) -> Result<AttemptResult, RoutingError> {
+    let request = setup.request();
+    let mut context = route_context(&request, services, checks.limits, checks.params);
+    context.policy.enable_pre_call_checks = checks.pre_call;
+    context.clients = setup.client_access();
+    let mut random = seeded();
+    drive(
+        fixture,
+        &context,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
 }
 
 pub(super) async fn run_simple(
