@@ -95,7 +95,7 @@ impl VertexPredictLogger {
         &self,
         input: VertexPredictInput<'_>,
     ) -> Result<HandlerOutcome, VertexPredictError> {
-        predict::predict(&input, self.cost.as_ref(), &self.catalog)
+        predict::predict(input, self.cost.as_ref(), &self.catalog)
     }
 
     // ast-grep-ignore: no-one-line-functions - B3642 calls this fixed name with the fixed input type
@@ -103,6 +103,6 @@ impl VertexPredictLogger {
         &self,
         input: VertexEmbedContentInput<'_>,
     ) -> Result<HandlerOutcome, VertexPredictError> {
-        embed::embed_content(&input, self.cost.as_ref(), self.counter.as_ref())
+        embed::embed_content(input, self.cost.as_ref(), self.counter.as_ref())
     }
 }

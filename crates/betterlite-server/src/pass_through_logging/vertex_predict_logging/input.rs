@@ -48,9 +48,7 @@ fn parts_list(content: &Json) -> Option<&[Json]> {
     let Json::Object(fields) = content else {
         return None;
     };
-    let Some(value) = fields.get(PARTS) else {
-        return None;
-    };
+    let value = fields.get(PARTS)?;
     let Json::List(parts) = value else {
         return None;
     };

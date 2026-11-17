@@ -25,9 +25,7 @@ pub(super) fn is_multimodal_embedding(body: &Extra) -> bool {
     let Some(Json::List(predictions)) = body.get(PREDICTIONS) else {
         return false;
     };
-    predictions
-        .iter()
-        .any(|prediction| has_embedding_key(prediction))
+    predictions.iter().any(has_embedding_key)
 }
 
 fn counts_as_audio(prediction: &Json) -> bool {
