@@ -56,15 +56,20 @@ fn logging_kwargs(
     service_account: Option<&SecretString>,
 ) -> GcsLoggingKwargs {
     let mut fields = IndexMap::new();
+    // get_gcs_logging_config falls back to the base bucket and credential when the dynamic value is blank
     fields.insert(
         BUCKET_FIELD.to_owned(),
-        bucket_name.map_or(Json::Null, |name| Json::Text(name.to_owned())),
+        bucket_name
+            .filter(|name| !name.is_empty())
+            .map_or(Json::Null, |name| Json::Text(name.to_owned())),
     );
     fields.insert(
         SERVICE_ACCOUNT_FIELD.to_owned(),
-        service_account.map_or(Json::Null, |secret| {
-            Json::Text(secret.expose_secret().to_owned())
-        }),
+        service_account
+            .filter(|secret| !secret.expose_secret().is_empty())
+            .map_or(Json::Null, |secret| {
+                Json::Text(secret.expose_secret().to_owned())
+            }),
     );
     GcsLoggingKwargs {
         dynamic_params: Some(Json::Object(fields)),

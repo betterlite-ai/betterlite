@@ -13,9 +13,12 @@ use crate::vertex_file_content::settings::ReadDeployment;
 
 mod support;
 
+use betterlite_logging::gcs_client::gcs_storage_auth::SERVICE_ACCOUNT_ENV;
+
 use self::support::{
     BUCKET, FILE_ID, Harness, LEGACY_FILE_ID, LEGACY_STORAGE_URL, MODEL_FILE_ID, MODEL_STORAGE_URL,
-    SPACED_FILE_ID, SPACED_STORAGE_URL, STORAGE_URL, Step, content_request, token_for,
+    SERVICE_ACCOUNT_PATH, SPACED_FILE_ID, SPACED_STORAGE_URL, STORAGE_URL, Step, content_request,
+    token_for,
 };
 use super::ContentRead;
 use super::error::FileContentError;
@@ -184,6 +187,33 @@ async fn credential_partition() {
     assert_eq!(
         harness.authorization(1),
         format!("Bearer {}", token_for(Some("second-sa")))
+    );
+}
+
+#[tokio::test]
+async fn blank_dynamic_values_use_the_base_environment() {
+    let harness = Harness::with_env(&[
+        (GCS_BUCKET_ENV, BUCKET),
+        (SERVICE_ACCOUNT_ENV, SERVICE_ACCOUNT_PATH),
+    ]);
+    let base = harness.base();
+    let request = content_request(FILE_ID);
+    let deployment = deployment_of(None, Some(Json::Text(String::new())), None);
+    let blank_argument = Json::Text(String::new());
+    let trusted = trusted_record(false);
+    let read = content_read(&request, &deployment, Some(&blank_argument), &trusted);
+    let mut state = context();
+    let content = file_content(&base, &read, &mut state)
+        .await
+        .expect("the blank values fall back to the base environment");
+    assert_eq!(content.status, 200);
+    assert_eq!(
+        harness.steps(),
+        vec![
+            Step::Authorized(Some(SERVICE_ACCOUNT_PATH.to_owned())),
+            Step::Authorized(Some(SERVICE_ACCOUNT_PATH.to_owned())),
+            Step::Sent(STORAGE_URL.to_owned()),
+        ]
     );
 }
 

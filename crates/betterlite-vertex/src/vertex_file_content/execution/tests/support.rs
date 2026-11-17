@@ -31,6 +31,7 @@ pub(crate) const STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/
 pub(crate) const SPACED_STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/b/bucket/o/litellm-vertex-files%2Fa%20b.jsonl?alt=media";
 pub(crate) const MODEL_STORAGE_URL: &str = "https://storage.googleapis.com/storage/v1/b/bucket/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl?alt=media";
 pub(crate) const IAM_KEY: &str = "IAM_AUTH";
+pub(crate) const SERVICE_ACCOUNT_PATH: &str = "/secrets/base-sa.json";
 
 // what the read did, in order: an authorization with its credential, then one GET
 #[derive(Debug, Clone, PartialEq, Eq)]
