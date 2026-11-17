@@ -11,7 +11,6 @@ from litellm.responses.litellm_completion_transformation.streaming_iterator impo
 )
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
-from litellm.types.utils import ModelResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 
@@ -19,10 +18,6 @@ from messages_sync_stream import Message
 from openai_chat import Failure, project_failure
 
 NORMALIZED_UUID: Final[str] = "00000000-0000-0000-0000-000000000000"
-
-
-class StreamedResponseError(TypeError):
-    pass
 
 
 class StepOutcome(TypedDict):
@@ -63,12 +58,6 @@ class Sequenced(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     sequence_number: int | None = None
-
-
-def as_wrapper(stream: ModelResponse | CustomStreamWrapper) -> CustomStreamWrapper:
-    if isinstance(stream, CustomStreamWrapper):
-        return stream
-    raise StreamedResponseError("litellm returned a response, not a stream")
 
 
 def normalized_uuid_id(value: str) -> str:
@@ -131,34 +120,21 @@ def build_iterator(call: ChatResponseStreamCall, stream: CustomStreamWrapper) ->
     )
 
 
-def sync_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStreamWrapper:
-    stream: ModelResponse | CustomStreamWrapper = litellm.completion(
-        model=call.model,
-        messages=[{"role": m["role"], "content": m["content"]} for m in call.messages],
-        api_key=call.api_key,
-        api_base=api_base,
-        timeout=call.timeout_seconds,
-        stream=True,
-        stream_options={"include_usage": True},
-        custom_llm_provider="openai",
-        num_retries=0,
-    )
-    return as_wrapper(stream)
-
-
-async def async_stream(call: ChatResponseStreamCall, api_base: str) -> CustomStreamWrapper:
-    stream: ModelResponse | CustomStreamWrapper = await litellm.acompletion(
-        model=call.model,
-        messages=[{"role": m["role"], "content": m["content"]} for m in call.messages],
-        api_key=call.api_key,
-        api_base=api_base,
-        timeout=call.timeout_seconds,
-        stream=True,
-        stream_options={"include_usage": True},
-        custom_llm_provider="openai",
-        num_retries=0,
-    )
-    return as_wrapper(stream)
+def request_options(call: ChatResponseStreamCall, api_base: str) -> dict[str, Json]:
+    messages: list[Json] = [
+        {"role": message["role"], "content": message["content"]} for message in call.messages
+    ]
+    return {
+        "model": call.model,
+        "messages": messages,
+        "api_key": call.api_key,
+        "api_base": api_base,
+        "timeout": call.timeout_seconds,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "custom_llm_provider": "openai",
+        "num_retries": 0,
+    }
 
 
 def sync_step(iterator: ResponsesIterator, step: Literal["next", "drain"]) -> StepOutcome:
@@ -192,7 +168,7 @@ async def async_step(iterator: ResponsesIterator, step: Literal["next", "drain"]
 
 def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        stream = sync_stream(call, api_base)
+        stream: CustomStreamWrapper = litellm.completion(**request_options(call, api_base))
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
     iterator = build_iterator(call, stream)
@@ -201,7 +177,7 @@ def sync_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> 
 
 async def async_run(call: ChatResponseStreamCall, spec: ChatRunSpec, api_base: str) -> RunOutcome:
     try:
-        stream = await async_stream(call, api_base)
+        stream: CustomStreamWrapper = await litellm.acompletion(**request_options(call, api_base))
     except openai.APIError as error:
         return RunOutcome(steps=[], failure=project_failure(error).failure)
     iterator = build_iterator(call, stream)
