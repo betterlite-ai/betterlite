@@ -8,26 +8,25 @@ import litellm
 from litellm.exceptions import Timeout
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.responses import streaming_iterator as primitives
-from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
+from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator as StreamBase
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-MOMENT: Final = "2026-01-01T00:00:00+00:00"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 # the base constructor takes dict[str, object] maps, so the JSON-facing maps bind to that shape
 OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 # the private loaders, guards and classifiers the stream iterator wraps
-LOAD_VALUE: Final = primitives._load_json_value  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L153
-IS_OBJECT: Final = primitives._is_json_object  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L80
-IS_ARRAY: Final = primitives._is_json_array  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L84
-OPTIONAL_STR: Final = primitives._optional_str  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L88
-ARRAY_OR_EMPTY: Final = primitives._json_array_or_empty  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L93
-IS_STR_MAPPING: Final = primitives._is_str_mapping  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L98
-ERROR_FIELDS: Final = primitives._error_event_fields  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L221
+LOAD_VALUE: Final = primitives._load_json_value  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L153
+IS_OBJECT: Final = primitives._is_json_object  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L80
+IS_ARRAY: Final = primitives._is_json_array  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L84
+OPTIONAL_STR: Final = primitives._optional_str  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L88
+ARRAY_OR_EMPTY: Final = primitives._json_array_or_empty  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L93
+IS_STR_MAPPING: Final = primitives._is_str_mapping  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L98
+ERROR_FIELDS: Final = primitives._error_event_fields  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L221
 STATUS_AND_MESSAGE: Final = primitives.stream_error_status_and_message
-MAP_ERROR: Final = primitives._map_stream_error_to_exception  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L258
-FALLBACK_ELIGIBLE: Final = primitives._mid_stream_fallback_eligible  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L281
+MAP_ERROR: Final = primitives._map_stream_error_to_exception  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L258
+FALLBACK_ELIGIBLE: Final = primitives._mid_stream_fallback_eligible  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L281
 
 
 class ProbeSpec(TypedDict):
@@ -125,7 +124,7 @@ class Clock:
         return self.moments.pop(0)
 
 
-class StreamProbe(BaseResponsesAPIStreamingIterator):
+class StreamProbe(StreamBase):
     def duration_check(self) -> None:
         self._check_max_streaming_duration()
 
@@ -151,7 +150,7 @@ class StreamProbe(BaseResponsesAPIStreamingIterator):
             "generated_tool_arguments": self._generated_tool_arguments,
             "pending_tasks": len(self._pending_logging_tasks),
             "hidden_params": JSON.validate_python(self._hidden_params),
-            "raw_response_headers": JSON.validate_python(dict(self._raw_response_headers)),
+            "raw_response_headers": JSON.validate_python(dict(self._raw_response_headers)),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L349
         }
         return answer
 
@@ -208,29 +207,22 @@ def shape_answer(payload: str) -> JsonValue:
         "is_object": IS_OBJECT(loaded),
         "is_array": IS_ARRAY(loaded),
         "optional_str": OPTIONAL_STR(loaded),
-        "array_or_empty": JSON.validate_python(list(ARRAY_OR_EMPTY(loaded))),
+        "array_or_empty": JSON.validate_python(list(ARRAY_OR_EMPTY(loaded))),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L93-L95
         "str_mapping": IS_STR_MAPPING(loaded),
     }
     return answer
 
 
-def error_target(row: ErrorRow) -> dict[str, JsonValue] | ErrorAttributes:
-    if row["kind"] == "mapping":
-        return row["fields"]
-    return ErrorAttributes(row["fields"])
-
-
 def errors_answer(row: ErrorRow) -> JsonValue:
-    error_object = error_target(row)
+    error_object: dict[str, JsonValue] | ErrorAttributes = (
+        row["fields"] if row["kind"] == "mapping" else ErrorAttributes(row["fields"])
+    )
     status, message = STATUS_AND_MESSAGE(error_object)
     _, error_type, error_code = ERROR_FIELDS(error_object)
-    answer: dict[str, JsonValue] = {
-        "kind": row["kind"],
-        "message": message,
-        "type": error_type,
-        "code": error_code,
-        "status": status,
-    }
+    answer: dict[str, JsonValue] = {"kind": row["kind"], "status": status}
+    answer["message"] = message
+    answer["type"] = error_type
+    answer["code"] = error_code
     return answer
 
 
@@ -248,50 +240,42 @@ def mapped_answer(row: MappedRow) -> JsonValue:
     return answer
 
 
-def duration_spec(row: DurationRow) -> ProbeSpec:
-    spec: ProbeSpec = {
-        "model": row["model"],
-        "provider": row["provider"],
-        "litellm_metadata": None,
-        "request_data": None,
-        "call_type": None,
-        "start_time": MOMENT,
-        "created": row["created"],
-        "litellm_params": {},
-        "headers": {},
-    }
-    return spec
-
-
-def limit_text(limit: float | None) -> str | None:
-    return None if limit is None else repr(limit)
-
-
 def duration_answer(row: DurationRow) -> JsonValue:
     environment = row["environment"]
     try:
         limit = None if environment is None else float(environment)
     except ValueError:
         return {"loaded": False}
-    probe = stream_probe(duration_spec(row), Clock([row["created"], row["now"]]), limit)
+    spec: ProbeSpec = {
+        "model": row["model"],
+        "provider": row["provider"],
+        "litellm_metadata": None,
+        "request_data": None,
+        "call_type": None,
+        "start_time": "2026-01-01T00:00:00+00:00",
+        "created": row["created"],
+        "litellm_params": {},
+        "headers": {},
+    }
+    probe = stream_probe(spec, Clock([row["created"], row["now"]]), limit)
     try:
         probe.duration_check()
-    except Timeout as error:
+    except Timeout as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356
         record = TimeoutRecord.model_validate(error, from_attributes=True)
-        answer: dict[str, JsonValue] = {
+        raised: dict[str, JsonValue] = {
             "loaded": True,
-            "limit": limit_text(limit),
+            "limit": None if limit is None else repr(limit),
             "raised": True,
             "status": record.status_code,
             "message": record.message,
             "model": record.model,
             "llm_provider": record.llm_provider,
         }
-        return answer
+        return raised
     provider = "" if probe.custom_llm_provider is None else probe.custom_llm_provider
     return {
         "loaded": True,
-        "limit": limit_text(limit),
+        "limit": None if limit is None else repr(limit),
         "raised": False,
         "status": None,
         "message": None,
