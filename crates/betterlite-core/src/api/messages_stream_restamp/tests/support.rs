@@ -67,7 +67,7 @@ pub(super) enum Read {
 pub(super) struct ScriptedStream {
     reads: VecDeque<Read>,
     buffered: Option<Json>,
-    closed: bool,
+    close_failure: Option<&'static str>,
 }
 
 impl ScriptedStream {
@@ -75,7 +75,7 @@ impl ScriptedStream {
         Self {
             reads: VecDeque::from(reads),
             buffered: None,
-            closed: false,
+            close_failure: None,
         }
     }
 
@@ -84,8 +84,9 @@ impl ScriptedStream {
         self
     }
 
-    pub(super) fn closed(&self) -> bool {
-        self.closed
+    pub(super) fn with_close_failure(mut self, message: &'static str) -> Self {
+        self.close_failure = Some(message);
+        self
     }
 }
 
@@ -110,8 +111,12 @@ impl MessagesProviderStream for ScriptedStream {
     }
 
     async fn aclose(&mut self) -> Option<Result<(), StreamFailure>> {
-        self.closed = true;
-        Some(Ok(()))
+        Some(match self.close_failure {
+            Some(message) => Err(StreamFailure {
+                message: message.to_owned(),
+            }),
+            None => Ok(()),
+        })
     }
 
     fn buffered_provider_output(&self) -> Option<Json> {
@@ -244,13 +249,17 @@ impl Visit for MessageVisitor {
 
 impl<Inner: Subscriber> Layer<Inner> for Capture {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
+        let level = *event.metadata().level();
+        if level > Level::WARN {
+            return;
+        }
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(CapturedEvent {
-                level: *event.metadata().level(),
+                level,
                 message: visitor.0,
             });
     }
@@ -299,13 +308,13 @@ pub(super) fn cache_settings(
 pub(super) fn cache_deps(
     cache: Option<Arc<RecordingCache>>,
     tracker: &Arc<CacheWriteTracker>,
-    limits: ApiLimits,
+    api_limits: ApiLimits,
 ) -> MessagesStreamCacheDeps {
     MessagesStreamCacheDeps {
         cache: cache.map(|cache| cache as Arc<dyn MessagesStreamCacheTarget>),
         tracker: Arc::clone(tracker),
         call: call_context(),
-        limits,
+        limits: api_limits,
     }
 }
 
