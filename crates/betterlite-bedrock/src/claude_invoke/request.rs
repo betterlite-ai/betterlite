@@ -148,8 +148,8 @@ where
     Ok(converted)
 }
 
-impl<'context, 'environment, Source, Transport, Fetcher, Blocks, Ids, Lookup>
-    TransformSources<'context, 'environment, Source, Transport, Fetcher, Blocks, Ids, Lookup>
+impl<Source, Transport, Fetcher, Blocks, Ids, Lookup>
+    TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>
 where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,

@@ -1,5 +1,9 @@
+use std::collections::BTreeSet;
+
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 
 const BASE64_MARKER: &str = ";base64,";
@@ -20,6 +24,8 @@ const URL_TYPE: &str = "url";
 pub enum DocumentError {
     #[error(transparent)]
     Fetch(#[from] ImageFetchError),
+    #[error(transparent)]
+    Media(#[from] MediaError),
     #[error("the value fetched for {url} is not a data URL with a base64 payload")]
     MissingMarker { url: String },
 }
@@ -28,7 +34,7 @@ impl DocumentError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Fetch(_) => Some(400),
+            Self::Fetch(_) | Self::Media(_) => Some(400),
             Self::MissingMarker { .. } => None,
         }
     }
@@ -45,6 +51,7 @@ where
     let Some(Json::List(messages)) = body.get_mut(MESSAGES) else {
         return Ok(());
     };
+    check_remote_urls(messages)?;
     for message in messages.iter_mut() {
         let Json::Object(message_fields) = message else {
             continue;
@@ -62,6 +69,33 @@ where
             let data_url = fetch_url(fetcher, &url).await?;
             let source = base64_source(&url, &data_url)?;
             block_fields.insert(SOURCE.to_owned(), Json::Object(source));
+        }
+    }
+    Ok(())
+}
+
+// LiteLLM downloads every document URL it finds, so a request could keep the gateway fetching without end
+fn check_remote_urls(messages: &[Json]) -> Result<(), DocumentError> {
+    let mut seen = BTreeSet::new();
+    for message in messages {
+        let Some(Json::Object(message_fields)) = message else {
+            continue;
+        };
+        let Some(Json::List(blocks)) = message_fields.get(CONTENT) else {
+            continue;
+        };
+        for block in blocks {
+            let Some(Json::Object(block_fields)) = block else {
+                continue;
+            };
+            if let Some(url) = document_url(block_fields)
+                && seen.insert(url)
+                && seen.len() > MAX_REMOTE_URLS
+            {
+                return Err(DocumentError::Media(MediaError::TooManyRemoteUrls {
+                    limit: MAX_REMOTE_URLS,
+                }));
+            }
         }
     }
     Ok(())

@@ -16,6 +16,8 @@ use rstest::rstest;
 #[case::forced_tool_choice_removed(cases::forced_tool_choice_removed)]
 #[case::remote_url_inlined(cases::remote_url_inlined)]
 #[case::async_media_order(cases::async_media_order)]
+#[case::structured_output_body(cases::structured_output_body)]
+#[case::remote_url_limit(cases::remote_url_limit)]
 fn claude_invoke_cases(#[case] case: fn()) {
     case();
 }

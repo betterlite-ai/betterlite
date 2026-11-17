@@ -1,7 +1,9 @@
 use betterlite_anthropic::anthropic_capability_catalog::capability::supports_model_capability;
 use betterlite_anthropic::anthropic_capability_catalog::forced_tool::forced_tool_use_unsupported;
 use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
-use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
+use betterlite_anthropic::anthropic_capability_catalog::{
+    CatalogSources, DropParams, EffortThresholds,
+};
 use betterlite_anthropic::capabilities::supported_params::get_supported_openai_params as anthropic_supported_params;
 use betterlite_anthropic::feature_flags::messages::has_thinking_display_updates;
 use betterlite_anthropic::params::ParamsRequest;
@@ -72,11 +74,11 @@ where
     anthropic_supported_params(model, Some(CUSTOM_LLM_PROVIDER), environment, catalogs).await
 }
 
-pub async fn map_openai_params<Source, Transport, Lookup>(
-    request: &MapParamsRequest<'_, Lookup>,
+pub async fn map_openai_params<'environment, Source, Transport, Lookup>(
+    request: &MapParamsRequest<'environment, Lookup>,
     non_default_params: &IndexMap<String, Json>,
     optional_params: &mut IndexMap<String, Json>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    environment: &mut CapabilityEnvironment<'environment, Source, Transport>,
 ) -> Result<(), MapParamsError>
 where
     Source: DynamicMetadataSource,
@@ -94,10 +96,8 @@ where
         environment,
     )
     .await;
-    let mut clamped_params = non_default_params.clone();
-    request
-        .clamp_reasoning_effort(&mut clamped_params, environment)
-        .await?;
+    let clamped_params =
+        thinking::clamp_reasoning_effort(request, non_default_params.clone(), environment).await?;
     let params_request = ParamsRequest {
         model: mapped_model,
         provider: CUSTOM_LLM_PROVIDER,
@@ -113,7 +113,18 @@ where
         environment,
     )
     .await?;
-    thinking::translate_thinking(request, optional_params, environment).await?;
+    thinking::translate_thinking(
+        original_model,
+        EffortThresholds {
+            medium: request.budgets.medium,
+            high: request.budgets.high,
+            xhigh: request.budgets.xhigh,
+        },
+        optional_params,
+        environment,
+        request.catalogs,
+    )
+    .await?;
     thinking::apply_display_updates(display_updates, optional_params);
     remove_forced_tool_choice(
         has_response_format,

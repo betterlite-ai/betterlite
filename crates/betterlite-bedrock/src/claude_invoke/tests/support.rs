@@ -9,7 +9,7 @@ use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropPar
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
-use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
+use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest};
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
@@ -52,7 +52,7 @@ use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
-use crate::claude_invoke::ClaudeInvokeError;
+use crate::claude_invoke::error::ClaudeInvokeError;
 use crate::claude_invoke::params::{
     MapParamsRequest, get_supported_openai_params, map_openai_params,
 };
@@ -64,7 +64,7 @@ use crate::claude_invoke::response::transform_response as claude_transform_respo
 use crate::mantle_inputs::region::split_region_prefix;
 
 const BUNDLED_BETA_CONFIG: &str = include_str!(
-    "../../../../../betterlite-core/src/api/anthropic_beta_config/anthropic_beta_headers_config.json"
+    "../../../../betterlite-core/src/api/anthropic_beta_config/anthropic_beta_headers_config.json"
 );
 const INIT: &str = r#"{"model":"claude-plain","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1","messages":[],"litellm_params":{},"request_logging":{}}"#;
 const NOW: &str = "2026-01-01T00:00:05+00:00";
@@ -371,12 +371,15 @@ impl<'fixture> Session<'fixture> {
         })
     }
 
-    pub(super) fn transform(
+    pub(super) fn transform<Fetcher>(
         &mut self,
         request: &ClaudeInvokeRequest<'_>,
-        fetcher: &MapFetcher,
+        fetcher: &Fetcher,
         mode: Mode,
-    ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Infallible>> {
+    ) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Infallible>>
+    where
+        Fetcher: RemoteMediaFetcher + Sync,
+    {
         let catalogs = self.fixture.catalogs();
         let blocks = NoFileBlocks;
         let new_id: fn() -> String = || "generated".to_owned();
@@ -477,7 +480,7 @@ impl<'fixture> Session<'fixture> {
             },
             &redactor,
             || "generated".to_owned(),
-            Duration::default(),
+            || Duration::default(),
         )
         .expect("the logging state builds");
         let sink = Silent;
