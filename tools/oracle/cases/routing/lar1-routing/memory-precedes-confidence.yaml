@@ -1,0 +1,43 @@
+kind: probe
+name: lar1-memory-precedes-confidence
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '{"confidence": 0.99, "time": "MEM"}'
+  - clock: {unix_millis: 1700000000124, monotonic_millis: 42001}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: cloud-fast-1
+            model: openai/cloud-fast-1
+            kind: cloud-fast
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '{"confidence": 0.1, "time": "NOW"}'
+compare:
+  ignore: []

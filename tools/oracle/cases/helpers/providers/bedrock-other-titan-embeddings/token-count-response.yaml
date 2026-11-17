@@ -1,0 +1,94 @@
+kind: helper
+name: token-count-response
+call:
+  bedrock_other_titan_embeddings:
+    function: token_count_response
+    provider: g1
+    model: amazon.titan-embed-text-v1
+    response_list:
+      - embedding: [0.5, 1.5]
+        inputTextTokenCount: 2
+      - embedding: [2.5]
+        inputTextTokenCount: 3
+calls:
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: g1
+      model: amazon.titan-embed-text-v1
+      response_list: []
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: v2
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embeddingsByType:
+            float: [0.25]
+            binary: [7, 8]
+          inputTextTokenCount: 4
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: v2
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - embedding: [9.5]
+          inputTextTokenCount: 1
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: multimodal
+      model: amazon.titan-embed-image-v1
+      response_list:
+        - embedding: [0.5]
+          inputTextTokenCount: 6
+      batch_data:
+        - inputImage: aGVsbG8=
+        - inputText: hello
+        - inputImage: null
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: multimodal
+      model: amazon.titan-embed-image-v1
+      response_list:
+        - embedding: [0.5]
+          inputTextTokenCount: 1
+      batch_data: []
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: multimodal
+      model: amazon.titan-embed-image-v1
+      response_list:
+        - embedding: [0.5]
+          inputTextTokenCount: 1
+      batch_data:
+        - inputText: hello
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: g1
+      model: amazon.titan-embed-text-v1
+      response_list:
+        - embedding: [1.0]
+          inputTextTokenCount: 1
+          extra: ignored
+          embeddingTypes: [float]
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: g1
+      model: amazon.titan-embed-text-v1
+      response_list:
+        - embedding: [1.0]
+          inputTextTokenCount: 1
+        - embedding: [2.0]
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: v2
+      model: amazon.titan-embed-text-v2:0
+      response_list:
+        - inputTextTokenCount: 1
+  - bedrock_other_titan_embeddings:
+      function: token_count_response
+      provider: g1
+      model: amazon.titan-embed-text-v1
+      response_list:
+        - inputTextTokenCount: 1
+env: {}
+compare:
+  ignore: []

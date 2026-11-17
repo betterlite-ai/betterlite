@@ -1,0 +1,29 @@
+kind: probe
+name: lar1-parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      lar1_routing:
+        model: probe-group
+        deployments:
+          - id: cloud-smart-1
+            model: openai/cloud-smart-1
+            kind: cloud-smart
+          - id: local-1
+            model: openai/local-1
+            kind: local
+          - id: deep-1
+            model: openai/deep-1
+            kind: deep
+        metadata: '{"confidence": 0.9}'
+        padding_bytes: 1048576
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/lar1_routing/selected
+      reference: deep-1
+      rust: local-1
+      why: betterlite stops the lar1 metadata at 1048576 bytes before decoding and routes with the declared
+        default confidence of 0.5, while LiteLLM parses the padded object and reads 0.9
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L24-L179
