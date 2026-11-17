@@ -1,0 +1,15 @@
+kind: helper
+name: metadata-connect-error
+call:
+  b9961:
+    model: gemini-2.5-flash
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "gs://my-bucket/offline"}}
+    litellm_params: {}
+    metadata: {status: 0, json: null, body: null, connect: true}
+    mint_error: false
+env: {}
+compare: {ignore: []}

@@ -4434,6 +4434,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-tracing",
+ "betterlite-transcribe",
  "betterlite-vertex",
  "caseless",
  "chrono",

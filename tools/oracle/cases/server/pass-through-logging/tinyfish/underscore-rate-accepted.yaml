@@ -1,0 +1,10 @@
+kind: helper
+name: tinyfish-underscore-rate-accepted
+call:
+  b3648:
+    function: cost_per_step
+    environment:
+      TINYFISH_COST_PER_STEP: "1_0"
+env:
+  TINYFISH_COST_PER_STEP: "1_0"
+compare: {ignore: []}
