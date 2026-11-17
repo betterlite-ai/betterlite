@@ -1,0 +1,16 @@
+kind: helper
+name: token-count-response
+call:
+  bedrock_other_titan_embeddings:
+    function: token_count_response
+    provider: multimodal
+    model: amazon.titan-embed-image-v1
+    response_list:
+      - embedding: [0.5]
+        inputTextTokenCount: 2
+    batch_data:
+      - inputImage: aGVsbG8=
+      - inputText: hello
+env: {}
+compare:
+  ignore: []
