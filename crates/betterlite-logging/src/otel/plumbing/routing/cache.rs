@@ -40,7 +40,8 @@ pub struct TenantProvider {
     pub provider: SdkTracerProvider,
 }
 
-#[derive(Debug, Default)]
+// Neither existing cache routes tenants: fan_out/processor/cache.rs caches span processors with no 64-retiree bound or stalest shed, and legacy_exporters/tracer_cache.rs disposes a provider at once with no open-span lease; this key also adds endpoint and service name.
+#[derive(Default)]
 struct CacheState {
     providers: IndexMap<RouteKey, Arc<TenantProvider>>,
     // the open spans each provider still carries, so eviction can't shut it down under them
@@ -147,7 +148,8 @@ impl TenantTracerCache {
             return Ok(default_route(default));
         }
         let inputs = self.route_inputs(dynamic_params, auth_metadata);
-        if !inputs.tenant_account() && (inputs.service_name.is_none() || !backends.is_empty()) {
+        let tenant = !inputs.credential_headers.is_empty() || !inputs.project_headers.is_empty();
+        if !tenant && (inputs.service_name.is_none() || !backends.is_empty()) {
             return Ok(default_route(default));
         }
         let key = inputs.key();
@@ -157,7 +159,7 @@ impl TenantTracerCache {
         }
         Ok(TenantRoute {
             tracer: provider.provider.tracer_with_scope(self.scope.clone()),
-            detached: inputs.tenant_account(),
+            detached: tenant,
             provider: Some(provider),
         })
     }
@@ -238,18 +240,13 @@ struct RouteInputs {
 }
 
 impl RouteInputs {
-    // a request carrying a tenant credential or project is detached into that tenant's own trace
-    fn tenant_account(&self) -> bool {
-        !self.credential_headers.is_empty() || !self.project_headers.is_empty()
-    }
-
     fn key(&self) -> RouteKey {
-        RouteKey::new(
-            &self.credential_headers,
-            &self.project_headers,
-            self.endpoint.as_deref(),
-            self.service_name.as_deref(),
-        )
+        RouteKey {
+            credential_headers: self.credential_headers.clone().into_iter().collect(),
+            project_headers: self.project_headers.clone().into_iter().collect(),
+            endpoint: self.endpoint.clone(),
+            service_name: self.service_name.clone(),
+        }
     }
 }
 

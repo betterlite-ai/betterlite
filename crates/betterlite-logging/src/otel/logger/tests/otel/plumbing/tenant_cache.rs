@@ -170,8 +170,9 @@ mod headers {
 
     use betterlite_logging::otel::config::ExporterOwner;
     use betterlite_logging::otel::config::destination::SpanScope;
+    use betterlite_logging::otel::plumbing::routing::routed::RouteKey;
 
-    use crate::otel::support::{Built, cache, settings, spec, with_exporters};
+    use crate::otel::support::{Built, cache, spec, with_exporters};
 
     fn credentials() -> BTreeMap<String, String> {
         BTreeMap::from([
@@ -184,12 +185,12 @@ mod headers {
     fn headers_replace_the_static_credentials_of_an_owned_exporter() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_http",
                 Some(ExporterOwner::ArizeAx),
                 Some("space=static"),
                 None,
-            ),
+            )]),
             Some("arize"),
             &built,
         );
@@ -209,12 +210,12 @@ mod headers {
     fn headers_append_percent_encoded_project_headers() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_http",
                 Some(ExporterOwner::ArizePhoenix),
                 Some("Authorization=Bearer k"),
                 Some("http://phoenix:6006"),
-            ),
+            )]),
             Some("arize_phoenix"),
             &built,
         );
@@ -272,12 +273,12 @@ mod headers {
     fn headers_keep_project_headers_off_grpc_but_still_replace_credentials() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_grpc",
                 Some(ExporterOwner::ArizePhoenix),
                 Some("space=base"),
                 Some("http://localhost:4317"),
-            ),
+            )]),
             Some("arize_phoenix"),
             &built,
         );
@@ -308,12 +309,12 @@ mod headers {
     fn headers_skip_a_headerless_exporter() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "in_memory",
                 Some(ExporterOwner::ArizeAx),
                 Some("space=base"),
                 None,
-            ),
+            )]),
             Some("arize"),
             &built,
         );
@@ -330,13 +331,28 @@ mod headers {
     }
 
     #[test]
+    fn headers_keep_credentials_out_of_the_route_key_debug() {
+        let credentials = BTreeMap::from([("api_key".to_owned(), "secret".to_owned())]);
+        let key = RouteKey {
+            credential_headers: credentials.into_iter().collect(),
+            project_headers: Vec::new(),
+            endpoint: None,
+            service_name: None,
+        };
+        let rendered = format!("{key:?}");
+        // the header value is a collector credential, so Debug prints only the header name
+        assert!(rendered.contains("api_key"));
+        assert!(!rendered.contains("secret"));
+    }
+
+    #[test]
     fn headers_apply_the_tenant_endpoint_and_service_name() {
-        let mut routed_settings = settings(
+        let mut routed_settings = with_exporters(vec![spec(
             "otlp_http",
             Some(ExporterOwner::ArizeAx),
             None,
             Some("http://static:4318"),
-        );
+        )]);
         routed_settings.langfuse_span_scope = SpanScope::LlmOnly;
         let built = Built::default();
         let tenants = cache(routed_settings, Some("arize"), &built);
@@ -365,8 +381,12 @@ mod routing {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
+    use betterlite_logging::otel::config::ExporterOwner;
+    use betterlite_logging::otel::plumbing::routing::routed::tenant_service_name;
+
     use crate::otel::support::{
-        Built, cache, creds, default_tracer, destination, owned_http, phoenix_http,
+        Built, cache, creds, default_tracer, destination, owned_http, phoenix_http, spec,
+        text_params, with_exporters,
     };
 
     #[test]
@@ -456,6 +476,88 @@ mod routing {
             two.provider.as_ref().expect("two")
         ));
     }
+
+    #[test]
+    fn routing_keeps_a_credentialed_tenant_while_another_callbacks_destination_applies() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        let destinations = vec![destination("langfuse_otel")];
+        let route = tenants
+            .route_for(&default, Some(&creds("S")), None, &destinations)
+            .expect("route");
+        // the destination names another callback, so the tenant's own credentials still route
+        assert!(route.provider.is_some());
+        assert!(route.detached);
+        assert_eq!(built.builds(), 1);
+    }
+
+    #[test]
+    fn routing_keeps_one_provider_per_service_name() {
+        let built = Built::default();
+        let tenants = cache(owned_http(), Some("arize"), &built);
+        let default = default_tracer();
+        let payments = BTreeMap::from([("otel_service_name".to_owned(), "payments".to_owned())]);
+        let search = BTreeMap::from([("otel_service_name".to_owned(), "search".to_owned())]);
+        let one = tenants
+            .route_for(&default, None, Some(&payments), &[])
+            .expect("route");
+        let two = tenants
+            .route_for(&default, None, Some(&search), &[])
+            .expect("route");
+        // two tenants that differ only in otel_service_name keep their own service.name
+        assert_eq!(built.builds(), 2);
+        assert!(!Arc::ptr_eq(
+            one.provider.as_ref().expect("payments"),
+            two.provider.as_ref().expect("search")
+        ));
+    }
+
+    #[test]
+    fn routing_keeps_one_provider_per_newrelic_region() {
+        let built = Built::default();
+        let tenants = cache(
+            with_exporters(vec![spec(
+                "otlp_http",
+                Some(ExporterOwner::Newrelic),
+                None,
+                Some("http://static:4318"),
+            )]),
+            Some("newrelic"),
+            &built,
+        );
+        let default = default_tracer();
+        let us = text_params(&[("newrelic_api_key", "K"), ("newrelic_region", "us")]);
+        let eu = text_params(&[("newrelic_api_key", "K"), ("newrelic_region", "eu")]);
+        let one = tenants
+            .route_for(&default, Some(&us), None, &[])
+            .expect("route");
+        let two = tenants
+            .route_for(&default, Some(&eu), None, &[])
+            .expect("route");
+        // the same key in two regions exports to each region's endpoint, so the endpoint stays in the key
+        assert_eq!(built.builds(), 2);
+        assert!(!Arc::ptr_eq(
+            one.provider.as_ref().expect("us"),
+            two.provider.as_ref().expect("eu")
+        ));
+    }
+
+    #[test]
+    fn routing_prefers_the_service_name_override_key() {
+        let auth = BTreeMap::from([
+            (
+                "otel_service_name_override".to_owned(),
+                "payments".to_owned(),
+            ),
+            ("otel_service_name".to_owned(), "other".to_owned()),
+        ]);
+        // OTEL_SERVICE_NAME_METADATA_KEYS reads the override first
+        assert_eq!(
+            tenant_service_name(Some(&auth)).as_deref(),
+            Some("payments")
+        );
+    }
 }
 
 mod transport {
@@ -465,14 +567,19 @@ mod transport {
     use tracing_subscriber::layer::SubscriberExt as _;
 
     use crate::otel::support::{
-        Built, Warnings, cache, creds, default_tracer, settings, text_params,
+        Built, Warnings, cache, creds, default_tracer, spec, text_params, with_exporters,
     };
 
     #[test]
     fn transport_keeps_credentials_off_a_headerless_exporter() {
         let built = Built::default();
         let tenants = cache(
-            settings("in_memory", Some(ExporterOwner::ArizeAx), None, None),
+            with_exporters(vec![spec(
+                "in_memory",
+                Some(ExporterOwner::ArizeAx),
+                None,
+                None,
+            )]),
             Some("arize"),
             &built,
         );
@@ -490,12 +597,12 @@ mod transport {
     async fn transport_routes_credentials_over_grpc() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_grpc",
                 Some(ExporterOwner::ArizeAx),
                 None,
                 Some("http://localhost:4317"),
-            ),
+            )]),
             Some("arize"),
             &built,
         );
@@ -511,12 +618,12 @@ mod transport {
     async fn transport_keeps_project_headers_off_grpc() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_grpc",
                 Some(ExporterOwner::ArizePhoenix),
                 None,
                 Some("http://localhost:4317"),
-            ),
+            )]),
             Some("arize_phoenix"),
             &built,
         );
@@ -534,7 +641,12 @@ mod transport {
     fn transport_warns_once_about_credential_routing_without_an_otlp_exporter() {
         let built = Built::default();
         let tenants = cache(
-            settings("in_memory", Some(ExporterOwner::ArizeAx), None, None),
+            with_exporters(vec![spec(
+                "in_memory",
+                Some(ExporterOwner::ArizeAx),
+                None,
+                None,
+            )]),
             Some("arize"),
             &built,
         );
@@ -556,12 +668,12 @@ mod transport {
     fn transport_warns_once_about_project_routing_without_http() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_grpc",
                 Some(ExporterOwner::ArizePhoenix),
                 None,
                 Some("http://localhost:4317"),
-            ),
+            )]),
             Some("arize_phoenix"),
             &built,
         );
@@ -584,12 +696,12 @@ mod transport {
     fn transport_keeps_another_callbacks_exporter_untouched() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_http",
                 Some(ExporterOwner::ArizePhoenix),
                 Some("space=static"),
                 Some("http://phoenix:6006"),
-            ),
+            )]),
             Some("arize"),
             &built,
         );
@@ -606,12 +718,12 @@ mod transport {
     fn transport_routes_a_newrelic_tenant_endpoint() {
         let built = Built::default();
         let tenants = cache(
-            settings(
+            with_exporters(vec![spec(
                 "otlp_http",
                 Some(ExporterOwner::Newrelic),
                 None,
                 Some("http://static:4318"),
-            ),
+            )]),
             Some("newrelic"),
             &built,
         );

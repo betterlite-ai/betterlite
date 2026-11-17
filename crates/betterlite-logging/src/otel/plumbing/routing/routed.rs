@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
@@ -39,34 +40,33 @@ pub fn tenant_service_name(auth_metadata: Option<&BTreeMap<String, String>>) -> 
 }
 
 // the cache key LiteLLM sorts: (credential headers, project headers, endpoint, service name)
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RouteKey {
-    credential_headers: Vec<(String, String)>,
-    project_headers: Vec<(String, String)>,
-    endpoint: Option<String>,
-    service_name: Option<String>,
+    pub credential_headers: Vec<(String, String)>,
+    pub project_headers: Vec<(String, String)>,
+    pub endpoint: Option<String>,
+    pub service_name: Option<String>,
 }
 
-impl RouteKey {
-    #[must_use]
-    pub fn new(
-        credential_headers: &BTreeMap<String, String>,
-        project_headers: &BTreeMap<String, String>,
-        endpoint: Option<&str>,
-        service_name: Option<&str>,
-    ) -> Self {
-        Self {
-            credential_headers: credential_headers
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-            project_headers: project_headers
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-            endpoint: endpoint.map(str::to_owned),
-            service_name: service_name.map(str::to_owned),
-        }
+// the header values are collector credentials, so Debug prints only the header names, as CacheKey does
+impl fmt::Debug for RouteKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let credentials: Vec<&str> = self
+            .credential_headers
+            .iter()
+            .map(|(name, _value)| name.as_str())
+            .collect();
+        let projects: Vec<&str> = self
+            .project_headers
+            .iter()
+            .map(|(name, _value)| name.as_str())
+            .collect();
+        f.debug_struct("RouteKey")
+            .field("credential_headers", &credentials)
+            .field("project_headers", &projects)
+            .field("endpoint", &self.endpoint)
+            .field("service_name", &self.service_name)
+            .finish()
     }
 }
 
@@ -83,19 +83,13 @@ impl TenantTracerCache {
             &self.allowed_hosts,
         )
         .unwrap_or_default();
-        if requested.is_empty() || self.credential_routable {
+        if self.credential_routable || requested.is_empty() {
             return requested;
         }
-        if !self
-            .warned_credential_unroutable
-            .swap(true, Ordering::Relaxed)
-        {
-            tracing::warn!(
-                callback = self.callback_name.as_deref().unwrap_or_default(),
-                "OTel V2: request carries dynamic credentials, but the callback owns no OTLP exporter to stamp them onto; spans export to the default backend"
-            );
-        }
-        BTreeMap::new()
+        self.unroutable(
+            &self.warned_credential_unroutable,
+            "OTel V2: request carries dynamic credentials, but the callback owns no OTLP exporter to stamp them onto; spans export to the default backend",
+        )
     }
 
     // LiteLLM's _project_headers: the project header route is HTTP-only, so a gRPC-only exporter warns once and stays in the default project
@@ -104,13 +98,21 @@ impl TenantTracerCache {
         auth_metadata: Option<&BTreeMap<String, String>>,
     ) -> BTreeMap<String, String> {
         let requested = project_routing_headers(self.callback_name.as_deref(), auth_metadata);
-        if requested.is_empty() || self.project_routable {
+        if self.project_routable || requested.is_empty() {
             return requested;
         }
-        if !self.warned_project_unroutable.swap(true, Ordering::Relaxed) {
+        self.unroutable(
+            &self.warned_project_unroutable,
+            "OTel V2: key/team config names a per-request project, but its exporter is not OTLP/HTTP and the project header is HTTP-only; spans stay in the default project",
+        )
+    }
+
+    // LiteLLM warns once when a request's headers have nowhere to be stamped, then exports it unrouted
+    fn unroutable(&self, warned: &AtomicBool, message: &str) -> BTreeMap<String, String> {
+        if !warned.swap(true, Ordering::Relaxed) {
             tracing::warn!(
                 callback = self.callback_name.as_deref().unwrap_or_default(),
-                "OTel V2: key/team config names a per-request project, but its exporter is not OTLP/HTTP and the project header is HTTP-only; spans stay in the default project"
+                "{message}"
             );
         }
         BTreeMap::new()
@@ -137,13 +139,17 @@ impl TenantTracerCache {
         endpoint: Option<&str>,
         service_name: Option<&str>,
     ) -> Settings {
-        let mut routed = self.config.clone();
-        routed.exporters = self
-            .config
-            .exporters
-            .iter()
-            .map(|spec| self.routed_exporter(spec, credential_headers, project_headers, endpoint))
-            .collect();
+        let mut routed = Settings {
+            exporters: self
+                .config
+                .exporters
+                .iter()
+                .map(|spec| {
+                    self.routed_exporter(spec, credential_headers, project_headers, endpoint)
+                })
+                .collect(),
+            ..self.config.clone()
+        };
         routed.langfuse_span_scope = SpanScope::Full;
         if let Some(name) = service_name {
             routed.service_name = name.to_owned();
