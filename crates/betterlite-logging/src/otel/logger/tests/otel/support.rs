@@ -1,0 +1,664 @@
+#![cfg(test)]
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
+use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::event::LoggerEvent;
+use betterlite_logging::fields::payload::StandardLoggingPayload;
+use betterlite_logging::logging_pre_post::hooks::PreCallEvent;
+use betterlite_logging::otel::config::destination::{
+    DestinationFields, OtelDestination, SpanScope,
+};
+use betterlite_logging::otel::config::{
+    CaptureMessageContent, ExporterOwner, ExporterSpec, Settings,
+};
+use betterlite_logging::otel::emitter::span_emission::{DedupCache, SpanEmitter};
+use betterlite_logging::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
+use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
+use betterlite_logging::otel::logger::pre_call::log_pre_api_call;
+use betterlite_logging::otel::logger::v2::{
+    OpenTelemetryV2, OpenTelemetryV2Parts, RequestTraceSource,
+};
+use betterlite_logging::otel::model::payloads::RequestIdentity;
+use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_logging::otel::plumbing::context::context_slots::{
+    AnchoredSpan, RequestTraceContext,
+};
+use betterlite_logging::otel::plumbing::exporters::{
+    ExportResult, ExporterFactories, ExporterFactory, HttpClients, SpanSink,
+};
+use betterlite_logging::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
+use betterlite_logging::otel::plumbing::routing::cache::TenantTracerCache;
+use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
+use betterlite_logging::otel_provider_assembly::tracer_provider_assembly::{
+    AssemblyOptions, build_tracer_provider,
+};
+use betterlite_models::decisions::Json;
+use chrono::FixedOffset;
+use indexmap::IndexMap;
+use opentelemetry::metrics::MeterProvider as _;
+use opentelemetry::trace::{
+    SpanContext, SpanId, TraceFlags, TraceId, TraceState, TracerProvider as _,
+};
+use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
+use opentelemetry_sdk::metrics::data::{
+    AggregatedMetrics, MetricData, ResourceMetrics, ScopeMetrics,
+};
+use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer, SdkTracerProvider, SpanData};
+use rust_decimal::Decimal;
+use serde_json::{Value, json};
+use tracing::field::{Field, Visit};
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context as LayerContext, Layer};
+
+pub(crate) const CALLBACK: &str = "arize";
+pub(crate) const ROOT_TRACE: &str = "0af7651916cd43dd8448eb211c80319c";
+
+const PAYLOAD: &str = r#"{
+    "id": "chatcmpl-1",
+    "trace_id": "trace-1",
+    "session_id": "session-1",
+    "call_type": "completion",
+    "response_cost": 0.5,
+    "status": "success",
+    "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
+    "total_tokens": 5,
+    "prompt_tokens": 2,
+    "completion_tokens": 3,
+    "startTime": 1704067200.0,
+    "endTime": 1704067201.5,
+    "completionStartTime": 1704067200.5,
+    "response_time": 1.0,
+    "model_map_information": {"model_map_key": "", "model_map_value": null},
+    "model": "gpt-4o",
+    "api_base": "https://api.openai.com",
+    "metadata": {},
+    "saved_cache_cost": 0.0,
+    "request_tags": [],
+    "model_parameters": {},
+    "hidden_params": {}
+}"#;
+
+pub(crate) fn payload(call_type: &str, status: &str, metadata: Value) -> StandardLoggingPayload {
+    let mut value: Value = serde_json::from_str(PAYLOAD).expect("payload fixture");
+    let object = value.as_object_mut().expect("payload object");
+    object.insert("call_type".to_owned(), Value::String(call_type.to_owned()));
+    object.insert("status".to_owned(), Value::String(status.to_owned()));
+    if status == "failure" {
+        object.insert(
+            "status_fields".to_owned(),
+            json!({"llm_api_status": "failure", "guardrail_status": "not_run"}),
+        );
+    }
+    object.insert("metadata".to_owned(), metadata);
+    serde_json::from_value(value).expect("standard logging payload")
+}
+
+pub(crate) fn inference() -> StandardLoggingPayload {
+    payload("completion", "success", json!({}))
+}
+
+pub(crate) fn inference_failure() -> StandardLoggingPayload {
+    payload("completion", "failure", json!({}))
+}
+
+pub(crate) fn mcp_tool() -> StandardLoggingPayload {
+    payload(
+        "call_mcp_tool",
+        "success",
+        json!({"mcp_tool_call_metadata": {"name": "search"}}),
+    )
+}
+
+pub(crate) fn mcp_tool_failure() -> StandardLoggingPayload {
+    payload(
+        "call_mcp_tool",
+        "failure",
+        json!({"mcp_tool_call_metadata": {"name": "search"}}),
+    )
+}
+
+// the call id the OTel lifecycle keys its carrier and dedup markers on
+pub(crate) fn with_id(mut payload: StandardLoggingPayload, id: &str) -> StandardLoggingPayload {
+    id.clone_into(&mut payload.id);
+    payload
+}
+
+// a payload with no upstream start stamp: without a carrier, close cannot tell it ran
+pub(crate) fn zero_start(mut payload: StandardLoggingPayload) -> StandardLoggingPayload {
+    payload.start_time = Decimal::ZERO;
+    payload
+}
+
+pub(crate) fn mcp_list() -> StandardLoggingPayload {
+    payload("list_mcp_tools", "success", json!({}))
+}
+
+// key/team config a Phoenix route reads; the identity is trusted, never the caller's carrier
+pub(crate) fn mcp_tool_with_auth() -> StandardLoggingPayload {
+    payload(
+        "call_mcp_tool",
+        "success",
+        json!({
+            "mcp_tool_call_metadata": {"name": "search"},
+            "user_api_key_auth_metadata": {"phoenix_project_name": "proj"},
+        }),
+    )
+}
+
+pub(crate) fn mcp_list_with_auth() -> StandardLoggingPayload {
+    payload(
+        "list_mcp_tools",
+        "success",
+        json!({"user_api_key_auth_metadata": {"phoenix_project_name": "proj"}}),
+    )
+}
+
+pub(crate) fn mcp_list_failure() -> StandardLoggingPayload {
+    payload("list_mcp_tools", "failure", json!({}))
+}
+
+pub(crate) fn team_payload() -> StandardLoggingPayload {
+    payload(
+        "completion",
+        "success",
+        json!({"user_api_key_team_id": "team-a", "user_api_key_hash": "hash"}),
+    )
+}
+
+pub(crate) fn event(payload: StandardLoggingPayload) -> Arc<LoggerEvent> {
+    event_with(payload, Json::Object(IndexMap::new()), IndexMap::new())
+}
+
+pub(crate) fn event_with(
+    payload: StandardLoggingPayload,
+    dynamic: Json,
+    metadata: IndexMap<String, Json>,
+) -> Arc<LoggerEvent> {
+    Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(dynamic),
+        litellm_metadata: Arc::new(metadata),
+        stream: false,
+        guardrail_snapshot: None,
+    })
+}
+
+pub(crate) fn no_upstream() -> IndexMap<String, Json> {
+    IndexMap::from([("litellm_no_upstream_llm_call".to_owned(), Json::Bool(true))])
+}
+
+pub(crate) fn creds(space: &str) -> Json {
+    Json::Object(IndexMap::from([
+        ("arize_space_id".to_owned(), Json::Text(space.to_owned())),
+        ("arize_api_key".to_owned(), Json::Text("K".to_owned())),
+    ]))
+}
+
+pub(crate) fn details(
+    call_id: &str,
+    model: &str,
+    no_upstream: bool,
+    dynamic: Option<Json>,
+    auth: Option<Value>,
+) -> Json {
+    let mut object = serde_json::Map::new();
+    object.insert("model".to_owned(), json!(model));
+    object.insert("call_type".to_owned(), json!("completion"));
+    object.insert("litellm_call_id".to_owned(), json!(call_id));
+    object.insert(
+        "litellm_no_upstream_llm_call".to_owned(),
+        json!(no_upstream),
+    );
+    if let Some(dynamic) = dynamic {
+        object.insert(
+            "standard_callback_dynamic_params".to_owned(),
+            serde_json::to_value(dynamic).expect("dynamic params"),
+        );
+    }
+    if let Some(auth) = auth {
+        object.insert(
+            "litellm_params".to_owned(),
+            json!({"metadata": {"user_api_key_auth_metadata": auth}}),
+        );
+    }
+    serde_json::from_value(Value::Object(object)).expect("model call details")
+}
+
+pub(crate) fn pre_call(
+    logger: &OpenTelemetryV2,
+    call_id: &str,
+    model: &str,
+    no_upstream: bool,
+    dynamic: Option<Json>,
+    auth: Option<Value>,
+) {
+    let details = details(call_id, model, no_upstream, dynamic, auth);
+    let messages = Json::List(Vec::new());
+    log_pre_api_call(
+        logger,
+        &PreCallEvent {
+            model,
+            messages: &messages,
+            details: &details,
+        },
+    )
+    .expect("pre api call");
+}
+
+pub(crate) async fn success(logger: &OpenTelemetryV2, event: Arc<LoggerEvent>) {
+    <OpenTelemetryV2 as CallbackLogger>::async_log_success_event(logger, event)
+        .await
+        .expect("success event");
+}
+
+pub(crate) async fn failure(logger: &OpenTelemetryV2, event: Arc<LoggerEvent>) {
+    <OpenTelemetryV2 as CallbackLogger>::async_log_failure_event(logger, event)
+        .await
+        .expect("failure event");
+}
+
+pub(crate) fn anchored() -> RequestTraceContext {
+    RequestTraceContext {
+        root: Some(AnchoredSpan {
+            context: SpanContext::new(
+                TraceId::from_hex(ROOT_TRACE).expect("trace id"),
+                SpanId::from_hex("b7ad6b7169203331").expect("span id"),
+                TraceFlags::SAMPLED,
+                true,
+                TraceState::default(),
+            ),
+            http_route: Some("/v1/chat/completions".to_owned()),
+        }),
+        ..RequestTraceContext::default()
+    }
+}
+
+pub(crate) fn empty_trace() -> RequestTraceContext {
+    RequestTraceContext::default()
+}
+
+pub(crate) fn root_trace_id() -> TraceId {
+    TraceId::from_hex(ROOT_TRACE).expect("trace id")
+}
+
+pub(crate) fn destination(callback: &str) -> OtelDestination {
+    OtelDestination::from(DestinationFields {
+        endpoint: "http://collector:4318".to_owned(),
+        headers: BTreeMap::new(),
+        resource_attributes: BTreeMap::new(),
+        callback_name: Some(callback.to_owned()),
+        protocol: None,
+        span_scope: SpanScope::Full,
+    })
+}
+
+#[derive(Debug)]
+pub(crate) struct FixedScope;
+
+impl RequestScopeSource for FixedScope {
+    fn scope(&self) -> RequestOtelScope {
+        RequestOtelScope::default()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FixedTrace(Mutex<RequestTraceContext>);
+
+impl RequestTraceSource for FixedTrace {
+    fn trace_context(&self) -> RequestTraceContext {
+        self.0.lock().expect("trace context").clone()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct NoClient;
+
+#[async_trait::async_trait]
+impl HttpClient for NoClient {
+    async fn send_bytes(&self, _request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+        Err(Box::from("the lifecycle tests export in memory"))
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct Built(Arc<BuiltInner>);
+
+#[derive(Default)]
+struct BuiltInner {
+    specs: Mutex<Vec<ExporterSpec>>,
+    sinks: Mutex<Vec<InMemorySpanExporter>>,
+}
+
+impl Built {
+    pub(crate) fn specs(&self) -> Vec<ExporterSpec> {
+        self.0.specs.lock().expect("built specs").clone()
+    }
+
+    pub(crate) fn builds(&self) -> usize {
+        self.0.specs.lock().expect("built specs").len()
+    }
+
+    pub(crate) fn sink(&self, index: usize) -> InMemorySpanExporter {
+        self.0
+            .sinks
+            .lock()
+            .expect("built sinks")
+            .get(index)
+            .cloned()
+            .expect("a sink per built provider")
+    }
+}
+
+pub(crate) fn factories(built: &Built) -> Arc<ExporterFactories> {
+    let recorder = built.clone();
+    let factory: ExporterFactory = Arc::new(move |spec: &ExporterSpec| -> ExportResult<SpanSink> {
+        let sink = InMemorySpanExporter::default();
+        recorder
+            .0
+            .specs
+            .lock()
+            .expect("built specs")
+            .push(spec.clone());
+        recorder
+            .0
+            .sinks
+            .lock()
+            .expect("built sinks")
+            .push(sink.clone());
+        Ok(SpanSink::InMemory(sink))
+    });
+    let client: Arc<dyn HttpClient> = Arc::new(NoClient);
+    Arc::new(ExporterFactories::new(
+        HttpClients {
+            traces: Arc::clone(&client),
+            metrics: Arc::clone(&client),
+            logs: client,
+        },
+        BTreeMap::from([("otlp_http".to_owned(), factory)]),
+    ))
+}
+
+pub(crate) fn hosts() -> Arc<[AllowedDestination]> {
+    Arc::from(Vec::<AllowedDestination>::new())
+}
+
+pub(crate) fn cache(
+    settings: Settings,
+    callback: Option<&str>,
+    built: &Built,
+) -> TenantTracerCache {
+    TenantTracerCache::new(
+        settings,
+        callback.map(str::to_owned),
+        "litellm",
+        factories(built),
+        Arc::new(FixedScope),
+        hosts(),
+    )
+}
+
+pub(crate) fn default_tracer() -> SdkTracer {
+    SdkTracerProvider::builder().build().tracer("litellm")
+}
+
+pub(crate) struct Harness {
+    pub(crate) logger: OpenTelemetryV2,
+    pub(crate) spans: InMemorySpanExporter,
+    pub(crate) built: Built,
+}
+
+pub(crate) fn harness(settings: Settings, trace: RequestTraceContext) -> Harness {
+    harness_with(settings, trace, None)
+}
+
+pub(crate) fn harness_with(
+    settings: Settings,
+    trace: RequestTraceContext,
+    metrics: Option<Arc<GenAiMetricRecorder>>,
+) -> Harness {
+    harness_for(settings, trace, CALLBACK, metrics)
+}
+
+// a harness whose callback owns the exporters under another preset name, such as arize_phoenix
+pub(crate) fn harness_for(
+    settings: Settings,
+    trace: RequestTraceContext,
+    callback: &str,
+    metrics: Option<Arc<GenAiMetricRecorder>>,
+) -> Harness {
+    let built = Built::default();
+    let spans = InMemorySpanExporter::default();
+    let factories = factories(&built);
+    let scope: Arc<dyn RequestScopeSource> = Arc::new(FixedScope);
+    let provider = build_tracer_provider(
+        &settings,
+        &factories,
+        &scope,
+        AssemblyOptions {
+            exporter: Some(SpanSink::InMemory(spans.clone())),
+            use_simple_processor: Some(true),
+            ..AssemblyOptions::default()
+        },
+    )
+    .expect("main provider");
+    let tracer = provider.tracer("litellm");
+    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
+        Arc::new(BTreeMap::<String, String>::new());
+    let emitter = SpanEmitter {
+        tracer: tracer.clone(),
+        environment,
+        mappers: Vec::new(),
+        event_recorder: None,
+        attribute_limit: None,
+        emitted: DedupCache::default(),
+    };
+    let tenants = TenantTracerCache::new(
+        settings.clone(),
+        Some(callback.to_owned()),
+        "litellm",
+        factories,
+        Arc::clone(&scope),
+        hosts(),
+    );
+    let trace = Arc::new(FixedTrace(Mutex::new(trace)));
+    Harness {
+        logger: OpenTelemetryV2::with_parts(OpenTelemetryV2Parts {
+            name: callback.to_owned(),
+            config: settings,
+            tracer,
+            emitter,
+            metrics,
+            tenants,
+            trace,
+        }),
+        spans,
+        built,
+    }
+}
+
+pub(crate) fn settings(
+    kind: &str,
+    owner: Option<ExporterOwner>,
+    headers: Option<&str>,
+    endpoint: Option<&str>,
+) -> Settings {
+    with_exporters(vec![spec(kind, owner, headers, endpoint)])
+}
+
+pub(crate) fn with_exporters(exporters: Vec<ExporterSpec>) -> Settings {
+    Settings {
+        exporters,
+        service_name: "betterlite".to_owned(),
+        deployment_environment: None,
+        enable_metrics: false,
+        enable_events: false,
+        capture_message_content: CaptureMessageContent::SpanOnly,
+        legacy_compat: false,
+        langfuse_span_scope: SpanScope::Full,
+        excluded_services: BTreeSet::new(),
+        mapper_names: Vec::new(),
+        resource_attributes: BTreeMap::new(),
+        baggage_promoted_keys: Vec::new(),
+        baggage_metadata_keys: Vec::new(),
+        baggage_team_metadata_keys: Vec::new(),
+    }
+}
+
+pub(crate) fn spec(
+    kind: &str,
+    owner: Option<ExporterOwner>,
+    headers: Option<&str>,
+    endpoint: Option<&str>,
+) -> ExporterSpec {
+    ExporterSpec {
+        kind: kind.to_owned(),
+        endpoint: endpoint.map(str::to_owned),
+        traces_endpoint: None,
+        headers: headers.map(str::to_owned),
+        owner,
+        options: None,
+        use_simple_processor: Some(true),
+        requires_headers: false,
+    }
+}
+
+pub(crate) fn owned_http() -> Settings {
+    settings("otlp_http", Some(ExporterOwner::ArizeAx), None, None)
+}
+
+pub(crate) fn phoenix_http() -> Settings {
+    settings(
+        "otlp_http",
+        Some(ExporterOwner::ArizePhoenix),
+        None,
+        Some("http://phoenix:6006"),
+    )
+}
+
+pub(crate) fn payload_start() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_704_067_200))
+        .expect("payload start")
+}
+
+pub(crate) fn finished(spans: &InMemorySpanExporter) -> Vec<SpanData> {
+    spans.get_finished_spans().expect("finished spans")
+}
+
+pub(crate) fn names(spans: &[SpanData]) -> Vec<String> {
+    spans.iter().map(|span| span.name.to_string()).collect()
+}
+
+pub(crate) fn attribute(span: &SpanData, key: &str) -> Option<String> {
+    span.attributes
+        .iter()
+        .find(|pair| pair.key.as_str() == key)
+        .map(|pair| pair.value.as_str().into_owned())
+}
+
+pub(crate) fn identity() -> RequestIdentity {
+    RequestIdentity {
+        call_id: Some("call-1".to_owned()),
+        team_id: Some("team-a".to_owned()),
+        team_alias: None,
+        team_metadata: None,
+        key_hash: Some("hash".to_owned()),
+        end_user: None,
+        provider_model: None,
+        request_route: None,
+        metadata: BTreeMap::from([("route".to_owned(), "chat".to_owned())]),
+    }
+}
+
+pub(crate) struct FilterSettings(pub(crate) Option<OtelModelValue>);
+
+impl CallbackSettingsView for FilterSettings {
+    fn otel_attributes(&self) -> Option<OtelModelValue> {
+        self.0.clone()
+    }
+}
+
+pub(crate) fn recorder(
+    attributes: Option<OtelModelValue>,
+) -> (
+    Arc<GenAiMetricRecorder>,
+    SdkMeterProvider,
+    InMemoryMetricExporter,
+) {
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(exporter.clone()).build())
+        .build();
+    let recorder = GenAiMetricRecorder::new(
+        create_instruments(&provider.meter("otel-lifecycle-test")),
+        // the global otel callback is the one whose otel.attributes filter the recorder reads
+        None,
+        Arc::new(FilterSettings(attributes)),
+        FixedOffset::east_opt(0).expect("utc offset"),
+    )
+    .expect("metric recorder");
+    (Arc::new(recorder), provider, exporter)
+}
+
+pub(crate) fn metric_points(
+    provider: &SdkMeterProvider,
+    exporter: &InMemoryMetricExporter,
+) -> usize {
+    provider.force_flush().expect("metric flush");
+    exporter
+        .get_finished_metrics()
+        .expect("finished metrics")
+        .iter()
+        .flat_map(ResourceMetrics::scope_metrics)
+        .flat_map(ScopeMetrics::metrics)
+        .map(|metric| match metric.data() {
+            AggregatedMetrics::F64(MetricData::Histogram(histogram)) => {
+                histogram.data_points().count()
+            }
+            _ => 0,
+        })
+        .sum()
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct Captured(Arc<Mutex<Vec<String>>>);
+
+impl Captured {
+    pub(crate) fn messages(&self) -> Vec<String> {
+        self.0.lock().expect("captured messages").clone()
+    }
+}
+
+struct Message(String);
+
+impl Visit for Message {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            value.clone_into(&mut self.0);
+        }
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Captured {
+    fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
+        if *event.metadata().level() != Level::ERROR {
+            return;
+        }
+        let mut message = Message(String::new());
+        event.record(&mut message);
+        self.0.lock().expect("captured messages").push(message.0);
+    }
+}
