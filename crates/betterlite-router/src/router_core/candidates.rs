@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::router_core::error::RoutingError;
 use crate::simple_shuffle::Candidate;
 use crate::weighted_failover::drop_excluded;
 
@@ -42,25 +43,29 @@ pub fn deployment_ids(deployments: &[DeploymentSpec]) -> Vec<String> {
 }
 
 // The weights B008's simple-shuffle weighs a pool by, read the way router_strategy/simple_shuffle.py reads them.
-#[must_use]
-pub fn weights(deployments: &[DeploymentSpec]) -> Vec<Candidate> {
+pub fn weights(deployments: &[DeploymentSpec]) -> Result<Vec<Candidate>, RoutingError> {
     deployments
         .iter()
-        .map(|deployment| Candidate {
-            weight: metric(deployment, "weight"),
-            rpm: metric(deployment, "rpm"),
-            tpm: metric(deployment, "tpm"),
+        .map(|deployment| {
+            Ok(Candidate {
+                weight: metric(deployment, "weight")?,
+                rpm: metric(deployment, "rpm")?,
+                tpm: metric(deployment, "tpm")?,
+            })
         })
         .collect()
 }
 
-fn metric(deployment: &DeploymentSpec, key: &str) -> u32 {
+// _metric_weight: an absent or null value weighs nothing, and anything but a whole number names its field
+fn metric(deployment: &DeploymentSpec, key: &'static str) -> Result<u32, RoutingError> {
     match deployment.litellm_params.get(key) {
+        None | Some(Json::Null) => Ok(0),
         Some(Json::Number(number)) => number
             .as_u64()
             .and_then(|value| u32::try_from(value).ok())
-            .unwrap_or(0),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => 0,
+            .ok_or(RoutingError::Metric { field: key }),
+        Some(Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
+            Err(RoutingError::Metric { field: key })
+        }
     }
 }

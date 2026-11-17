@@ -26,6 +26,9 @@ pub enum RoutingError {
         #[from]
         source: ShuffleError,
     },
+    // _metric_weight's TypeError: a litellm_params weight that is not a number names its field
+    #[error("Deployment {field} must be numeric")]
+    Metric { field: &'static str },
 }
 
 impl RoutingError {
@@ -38,7 +41,8 @@ impl RoutingError {
             | Self::Eligibility(_)
             | Self::NoDeployment(_)
             | Self::Cancelled
-            | Self::Shuffle { .. } => None,
+            | Self::Shuffle { .. }
+            | Self::Metric { .. } => None,
         }
     }
 }

@@ -63,7 +63,7 @@ where
     R: Rng + Send,
 {
     match strategy {
-        Strategy::SimpleShuffle => Ok(pick(&weights(context.deployments), random)?),
+        Strategy::SimpleShuffle => Ok(pick(&weights(context.deployments)?, random)?),
         Strategy::LeastBusy => least_busy::select(&context, random).await,
         Strategy::LatencyBasedRouting => latency_routing::select(&context, random).await,
         Strategy::CostBasedRouting => cost_routing::select(&context, random).await,

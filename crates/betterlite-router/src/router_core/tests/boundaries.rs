@@ -385,9 +385,9 @@ async fn simple_shuffle_empty() {
     ));
 }
 
-// B008 weighs weight first, then rpm, then tpm, and reads a value that is not a number as zero
+// LiteLLM reads weight, rpm and tpm as numbers, an absent or null one as zero, and names anything else
 fn weights_read_metrics() {
-    let deployments = vec![
+    let numeric = vec![
         deployment(
             "gpt-4o",
             "a",
@@ -397,11 +397,11 @@ fn weights_read_metrics() {
                 ("tpm", number(7)),
             ],
         ),
-        deployment("gpt-4o", "b", &[("weight", text("5")), ("rpm", text("3"))]),
-        deployment("gpt-4o", "c", &[]),
+        deployment("gpt-4o", "b", &[]),
+        deployment("gpt-4o", "c", &[("tpm", Json::Null)]),
     ];
     assert_eq!(
-        weights(&deployments),
+        weights(&numeric).unwrap(),
         vec![
             Candidate {
                 weight: 5,
@@ -420,6 +420,23 @@ fn weights_read_metrics() {
             },
         ]
     );
+    let text_weight = vec![deployment("gpt-4o", "d", &[("weight", text("5"))])];
+    assert!(matches!(
+        weights(&text_weight),
+        Err(RoutingError::Metric { field: "weight" })
+    ));
+    let fractional_rpm = vec![deployment(
+        "gpt-4o",
+        "e",
+        &[(
+            "rpm",
+            Json::Number(serde_json::Number::from_f64(0.5).expect("0.5")),
+        )],
+    )];
+    assert!(matches!(
+        weights(&fractional_rpm),
+        Err(RoutingError::Metric { field: "rpm" })
+    ));
 }
 
 fn headers_absent() {
