@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-responses-url-seed
+call:
+  foundry_responses:
+    steps:
+      - kind: url
+        api_base: https://seed.services.ai.azure.com/api/projects/seed
+      - kind: url
+        environment: {AZURE_AI_API_BASE: https://seed-env.services.ai.azure.com}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: gemini-live-accounting-seed
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: calls
+        burst: {count: 2, id_prefix: call_, name_prefix: tool_}
+        response_id: resp
+        output_item_id: item
+      - kind: calls
+        tool_call:
+          functionCalls:
+            - {name: lookup, args: {city: Zürich}}
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_0", "output": "{}"}}'
+      - kind: audio
+        audio_bytes: 2880
+      - kind: standalone_usage
+        usage: {promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15, promptTokensDetails: [{modality: AUDIO, tokenCount: 10}]}
+      - kind: response_done
+        frame:
+          serverContent: {groundingMetadata: {webSearchQueries: [a]}}
+        output_items: [{id: item_1}]
+        session_configuration_request: '{"setup": {"generationConfig": {"temperature": 0.7, "maxOutputTokens": 100, "responseModalities": ["TEXT"]}}}'
+      - kind: close
+        model: gemini/gemini-3.5-transcribe-live
+calls:
+  - gemini_live_accounting:
+      op: aliases
+      usage:
+        input_tokens_details: {audio_tokens: 7, text_tokens: null}
+        output_token_details: null
+env: {}
+compare: {ignore: []}

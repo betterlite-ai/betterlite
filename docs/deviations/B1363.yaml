@@ -1,0 +1,28 @@
+task: B1363
+deviations:
+  - what: >-
+      An input_reference or image value that is neither a dictionary nor a file-like object is refused with a
+      typed error naming the image; a null image is still dropped and a dictionary still passes through
+      unchanged.
+    why: >-
+      LiteLLM calls read() on anything that is not a dict, so a string, number or list raises AttributeError
+      from _convert_image_to_gemini_format; its proxy answers 400 only by recognizing that crash in the
+      exception chain. A working setup sends a dict or a file, and the typed refusal keeps the failure on the
+      option the caller has to fix. The message is betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L282-L289
+  - what: >-
+      A request with no API key fails through a typed configuration error that carries LiteLLM's message,
+      which the video route reports as a client error.
+    why: >-
+      LiteLLM raises a bare ValueError from validate_environment; it carries no status, so its proxy reports
+      it as a 500 internal_server_error. A missing key is a client configuration mistake, so betterlite
+      answers 4xx and keeps the exact message. A setup that sends a key sees no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L212-L216
+kept_bugs:
+  - what: >-
+      A seconds value that is absent, null or fails integer conversion maps no durationSeconds at all; the
+      four-second default that map_openai_params' docstring describes is never inserted.
+    why: >-
+      The code catches the conversion error and passes, so a working setup sees an omitted duration rather
+      than a defaulted one; betterlite keeps that request body the same and lets the API default apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L144-L153

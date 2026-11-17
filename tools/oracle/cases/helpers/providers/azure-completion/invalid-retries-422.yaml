@@ -1,0 +1,26 @@
+kind: helper
+name: invalid-retries-422
+call:
+  azure_completion:
+    function: completion
+    cases:
+      - model: gpt-35-turbo-instruct
+        messages:
+          - {role: user, content: Hello}
+        api_key: sk-unit
+        api_base: https://unit.test
+        api_version: "2024-02-01"
+        timeout: 30.0
+        optional_params: {max_retries: "3"}
+calls:
+  - azure_completion:
+      function: stream
+      cases:
+        - model: gpt-35-turbo-instruct
+          api_key: sk-unit
+          api_base: https://unit.test
+          api_version: "2024-02-01"
+          timeout: 30.0
+          data: {model: gpt-35-turbo-instruct, prompt: Hello, max_retries: "3"}
+env: {}
+compare: {ignore: []}

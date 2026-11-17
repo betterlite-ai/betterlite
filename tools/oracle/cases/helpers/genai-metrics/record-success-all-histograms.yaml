@@ -1,0 +1,31 @@
+kind: helper
+name: record-success-all-histograms
+call:
+  b3869:
+    function: record
+    kwargs:
+      model: gpt-4o
+      call_type: acompletion
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        metadata:
+          user_api_key_alias: key-a
+          user_api_key_user_email: a@example.com
+        hidden_params:
+          model_id: deployment-1
+          api_base: 'https://api.openai.com'
+      optional_params:
+        stream: true
+      api_call_start_time: 10.5
+      completion_start_time: 11.0
+      response_cost: 0.5
+    response:
+      usage:
+        prompt_tokens: 2
+        completion_tokens: 4
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

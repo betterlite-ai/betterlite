@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicUsize;
+
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use serde_json::value::RawValue;
 
@@ -16,6 +18,8 @@ pub(crate) struct MediaCounter<'call, Fetcher> {
     pub(crate) texter: &'call Texter<'call>,
     pub(crate) settings: &'call Settings,
     pub(crate) fetcher: &'call Fetcher,
+    // image_tokens stops fetching once this count reaches MAX_REMOTE_URLS
+    pub(crate) remote_fetches: AtomicUsize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,6 +50,7 @@ where
         texter,
         settings,
         fetcher,
+        remote_fetches: AtomicUsize::new(0),
     };
     let parsed: Result<Vec<ContentItem>, MediaError> = media
         .content

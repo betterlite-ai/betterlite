@@ -1,6 +1,6 @@
 use opentelemetry::trace::Span;
 
-use crate::logging_privacy::internal::{Origin, call_category, is_unbilled};
+use crate::logging_privacy::internal::unbilled_call;
 use crate::otel::integrations::arize_attributes::truthy::is_truthy;
 use crate::otel::legacy_policy::annotations::{
     set_service_tier_attributes, write_identity_attributes,
@@ -22,7 +22,6 @@ mod tests;
 pub mod keys;
 
 pub(super) const UNKNOWN_PROVIDER: &str = "Unknown";
-const BACKGROUND_COST_POLL_ORIGIN: &str = "background_response_cost_poll";
 
 pub fn set_request_attributes<S>(
     span: &mut S,
@@ -185,7 +184,8 @@ fn write_usage<S>(
     let Some(returned) = response.filter(|value| is_truthy(value)) else {
         return;
     };
-    if is_unbilled_call(kwargs, litellm_params, returned) {
+    let call_type = kwargs.get("call_type").and_then(OtelModelValue::as_str);
+    if unbilled_call(call_type, Some(litellm_params), Some(returned)) {
         return;
     }
     let usage = returned
@@ -207,38 +207,4 @@ fn write_usage<S>(
             .unwrap_or(OtelModelValue::Null(()));
         span.safe_set_attribute(attribute, &value);
     }
-}
-
-fn is_unbilled_call(
-    kwargs: &MetadataMap,
-    litellm_params: &MetadataMap,
-    response: &OtelModelValue,
-) -> bool {
-    let call_type = kwargs.get("call_type").and_then(OtelModelValue::as_str);
-    let background = response
-        .as_object()
-        .and_then(|fields| fields.get("background"))
-        .and_then(OtelModelValue::as_bool)
-        == Some(true);
-    is_unbilled(
-        call_category(call_type),
-        cost_poll_origin(litellm_params),
-        background,
-    )
-}
-
-// only the origin is read from the merged metadata, and metadata wins over litellm_metadata
-fn cost_poll_origin(litellm_params: &MetadataMap) -> Option<Origin> {
-    let from_metadata = litellm_params
-        .get("metadata")
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("internal_call_origin"));
-    let from_litellm_metadata = litellm_params
-        .get("litellm_metadata")
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("internal_call_origin"));
-    let origin = from_metadata
-        .or(from_litellm_metadata)
-        .and_then(OtelModelValue::as_str)?;
-    (origin == BACKGROUND_COST_POLL_ORIGIN).then_some(Origin::BackgroundResponseCostPoll)
 }
