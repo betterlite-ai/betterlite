@@ -1,0 +1,49 @@
+kind: helper
+name: stream-chunks-serialize-drops-nulls
+call:
+  b8602:
+    function: chunk_view
+    view: serialized
+    chunks:
+      - kind: stream
+        body:
+          id: chatcmpl-1
+          object: chat.completion.chunk
+          created: 1
+          model: gpt-4o
+          system_fingerprint: null
+          choices:
+            - index: 0
+              delta: {content: hi, role: assistant}
+              finish_reason: null
+      - kind: stream
+        body:
+          id: chatcmpl-2
+          object: chat.completion.chunk
+          created: 2
+          model: gpt-4o
+          provider_specific_fields: {cache_read_input_tokens: 3}
+          choices:
+            - index: 0
+              delta: {}
+      - kind: event
+        body:
+          type: response.created
+          response: {id: resp-1}
+      - kind: full
+        body:
+          id: chatcmpl-3
+          object: chat.completion
+          created: 3
+          model: gpt-4o
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant}
+      - kind: plain
+        body:
+          model: gpt-4o
+          extra: {a: null}
+env: {}
+compare: {ignore: []}

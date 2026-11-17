@@ -1,0 +1,46 @@
+kind: helper
+name: stream-chunks-response-text
+call:
+  b8602:
+    function: chunk_view
+    view: text
+    chunks:
+      - kind: stream
+        body:
+          id: text-1
+          object: chat.completion.chunk
+          created: 1
+          model: gpt-4o
+          choices:
+            - {delta: {content: He}}
+            - {delta: {content: llo}}
+            - {delta: {content: null}}
+            - {delta: {role: assistant}}
+            - {index: 0}
+      - kind: full
+        body:
+          id: text-2
+          object: chat.completion
+          created: 2
+          model: gpt-4o
+          choices:
+            - {finish_reason: stop, index: 0, message: {content: hi, role: assistant}}
+            - {finish_reason: stop, index: 0}
+      - kind: full
+        body:
+          id: text-3
+          object: chat.completion
+          created: 3
+          model: gpt-4o
+          choices:
+            - {finish_reason: stop, index: 0, message: {content: null, role: assistant}}
+      - kind: stream
+        body: {id: text-4, object: chat.completion.chunk, created: 4, model: gpt-4o}
+      - kind: stream
+        body: {id: text-5, object: chat.completion.chunk, created: 5, model: gpt-4o, choices: []}
+      - kind: event
+        body: {type: response.created, model: gpt-4o}
+      - kind: plain
+        body: {model: gpt-4o, choices: [{delta: {content: hi}}]}
+env: {}
+compare: {ignore: []}
