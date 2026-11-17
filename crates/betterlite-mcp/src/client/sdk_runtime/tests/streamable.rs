@@ -83,7 +83,7 @@ async fn the_handshake_adopts_the_fallback_version_capabilities_and_instructions
 
 #[tokio::test]
 async fn a_configured_version_goes_out_in_the_initialize_request() {
-    let server = serve_http(TestServer::legacy()).await;
+    let server = serve_http(TestServer::standard()).await;
     let mut settings = support::settings(TransportType::Http);
     settings.protocol_version = ProtocolVersion::Legacy(LegacyVersion::Jun2025);
     let mut client = support::client_for(
