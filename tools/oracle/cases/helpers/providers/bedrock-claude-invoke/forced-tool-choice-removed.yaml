@@ -23,5 +23,26 @@ call:
         optional_params:
           tool_choice: {type: function, function: {name: json_tool_call}}
         drop_params: false
+      - model: claude-test
+        non_default_params:
+          response_format:
+            type: json_schema
+            json_schema: {name: answer, schema: {type: object, properties: {}}}
+          tool_choice: {type: function, function: {name: get_weather}}
+        optional_params: {}
+        drop_params: false
+      - model: claude-test
+        non_default_params:
+          response_format:
+            type: json_schema
+            json_schema: {name: answer, schema: {type: object, properties: {}}}
+          tool_choice: auto
+        optional_params: {}
+        drop_params: false
+      - model: claude-native
+        non_default_params:
+          tool_choice: {type: function, function: {name: get_weather}}
+        optional_params: {}
+        drop_params: false
 env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
 compare: {ignore: []}

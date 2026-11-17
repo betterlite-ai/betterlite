@@ -65,6 +65,8 @@ const CHOICE_STUB_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_t
 const CHOICE_NATIVE_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "tool", "name": "json_tool_call"}}"#;
 const CHOICE_WEATHER_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "tool", "name": "get_weather"}}"#;
 const CHOICE_AUTO_BODY: &str = r#"{"json_mode": true, "tools": [{"name": "json_tool_call", "input_schema": {"type": "object", "properties": {}}}], "tool_choice": {"type": "auto"}}"#;
+const CHOICE_WEATHER_ONLY_BODY: &str =
+    r#"{"tool_choice": {"type": "tool", "name": "get_weather"}}"#;
 
 fn plain_fixture() -> Fixture {
     Fixture::new(&model_cost_of(PLAIN_COST)).expect("the fixture builds")
@@ -613,16 +615,22 @@ fn choice_scenarios(session: &mut Session<'_>) {
         ("claude-test", r#""auto""#, CHOICE_AUTO_BODY),
     ];
     for (model, choice, expected) in scenarios {
+        let mut request = structured_params(FORCED_FORMAT);
+        request.extend(choice_params(choice));
         assert_eq!(
-            map_params_of(
-                session,
-                model,
-                &structured_params(FORCED_FORMAT),
-                choice_params(choice),
-            ),
+            map_params_of(session, model, &request, IndexMap::new()),
             json(expected)
         );
     }
+    assert_eq!(
+        map_params_of(
+            session,
+            "claude-native",
+            &choice_params(CHOICE_WEATHER),
+            IndexMap::new(),
+        ),
+        json(CHOICE_WEATHER_ONLY_BODY)
+    );
 }
 
 pub(super) fn remote_url_inlined() {
