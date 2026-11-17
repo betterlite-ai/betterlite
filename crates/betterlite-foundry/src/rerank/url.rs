@@ -3,6 +3,8 @@ use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_openai::openai_base_config::overlapping_api_base_path;
 use percent_encoding::percent_decode_str;
 
+use crate::responses::path::{PathError, requoted_path};
+
 use super::error::FoundryRerankError;
 
 const V1_RERANK: &str = "/v1/rerank";
@@ -44,16 +46,10 @@ pub fn complete_url(api_base: Option<&str>) -> Result<String, FoundryRerankError
 // httpx reads the path decoded and writes it back through its own quoting, so an escape that re-quotes differently changes the URL
 fn decoded_path(url: &HttpxUrl) -> Result<String, FoundryRerankError> {
     let decoded = percent_decode_str(&url.path).decode_utf8_lossy();
-    if decoded.contains(['?', '#']) {
-        return Err(FoundryRerankError::UnwritablePath);
-    }
-    let mut authority = url.clone();
-    authority.path = String::new();
-    authority.query = None;
-    authority.fragment = None;
-    let composed = HttpxUrl::parse(&format!("{}{decoded}", authority.href()))
-        .map_err(FoundryRerankError::InvalidUrl)?;
-    Ok(composed.path)
+    requoted_path(url, &decoded).map_err(|error| match error {
+        PathError::Unrewritable => FoundryRerankError::UnwritablePath,
+        PathError::InvalidUrl(source) => FoundryRerankError::InvalidUrl(source),
+    })
 }
 
 // B668's shared merge appends the route once, and the query comes back through the same re-encoding httpx applies

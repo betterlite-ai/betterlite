@@ -38,5 +38,8 @@ call:
     - {api_base: "/it's"}
     - {api_base: "/both'\"kinds"}
     - {api_base: "https://res.services.ai.azure.com/\t"}
+    - {api_base: "https://res.services.ai.azure.com/a%3Fb"}
+    - {api_base: "https://res.services.ai.azure.com/a%23b"}
+    - {api_base: "https://res.services.ai.azure.com/a%3Fb/v1?x=1"}
 env: {}
 compare: {ignore: []}

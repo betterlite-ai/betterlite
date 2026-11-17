@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use crate::rerank::error::FoundryRerankError;
 use crate::rerank::url::complete_url;
 
 const BASE: &str = "https://res.services.ai.azure.com";
@@ -56,6 +57,15 @@ pub(super) fn rerank_url_api_version() {
     let rejected = complete_url(Some("https://res.services.ai.azure.com/\t")).unwrap_err();
     assert_eq!(rejected.to_string(), "api_base is not a valid URL");
     assert!(Error::source(&rejected).is_some());
+    // httpx rejects the path it would have to rewrite when the decoded base path holds '?' or '#'
+    for path in ["/a%3Fb", "/a%23b", "/a%3Fb/v1?x=1"] {
+        let base = format!("{BASE}{path}");
+        let rejected = complete_url(Some(&base)).unwrap_err();
+        assert!(
+            matches!(rejected, FoundryRerankError::UnwritablePath),
+            "{path}"
+        );
+    }
     for (path, expected) in PATHS {
         let base = format!("{BASE}{path}");
         assert_eq!(
