@@ -1,59 +1,30 @@
 import { useCallback, useMemo, useState } from "react";
-import type uPlot from "uplot";
 import { number, oneDecimal } from "../format.ts";
 import { Modes, type Mode } from "../parts.tsx";
 import { LatestMerges, OpenPulls } from "../pulls.tsx";
 import type { Review, Site } from "../site.ts";
 import { Chart } from "./Chart.tsx";
-import { drawDaily, drawHours, drawStages, drawTotals, showSteps, stepMedians, type HourMode } from "./charts.ts";
-import { CI_EVENTS, CI_RESULTS, type History as Facts, type Series, type StepKey, type ViewKey } from "./facts.ts";
+import { drawDaily, drawTotals } from "./charts.ts";
+import { type History as Facts, type Series, type ViewKey } from "./facts.ts";
 import { MachineCharts, MachineNote, MachineTable } from "./Machine.tsx";
-import { CiTable, Compare, DailyTable, HoursTable, Pace, Sizes, StageCount, StageFigures, StageLegend, StageNote, StageTable } from "./tables.tsx";
+import { Compare, DailyTable, Pace, StageFigures, StageNote } from "./tables.tsx";
 import { VIOLIN_ABOUT, violinMetrics, Violins, ViolinTable, type ViolinMode } from "./Violins.tsx";
 import { Wait } from "./Wait.tsx";
 
-type RowMode = "tasks" | "prs";
-type CiMode = "result" | "event";
 type AgentMode = "runs" | "hours";
 
 const VIEW_MODES: Mode<ViewKey>[] = [
   { value: "tasks", label: "Tasks" },
   { value: "milestones", label: "Milestones" },
-  { value: "prs", label: "All PRs" },
-];
-const HOUR_MODES: Mode<HourMode>[] = [
-  { value: "hour", label: "Hour" },
-  { value: "weekday", label: "Weekday" },
-];
-const ROW_MODES: Mode<RowMode>[] = [
-  { value: "tasks", label: "Tasks" },
-  { value: "prs", label: "All PRs" },
 ];
 const VIOLIN_MODES: Mode<ViolinMode>[] = [
-  { value: "time", label: "Time" },
-  { value: "size", label: "Size" },
-  { value: "ci", label: "CI runs" },
   { value: "agents", label: "Agents" },
   { value: "disk", label: "Disk" },
-];
-const CI_MODES: Mode<CiMode>[] = [
-  { value: "result", label: "Result" },
-  { value: "event", label: "Event" },
 ];
 const AGENT_MODES: Mode<AgentMode>[] = [
   { value: "runs", label: "Runs" },
   { value: "hours", label: "Hours" },
 ];
-
-function ciView(facts: Facts, mode: CiMode): Series[] {
-  const groups = mode === "result" ? CI_RESULTS : CI_EVENTS;
-  return groups.map((group) => ({
-    label: group.label,
-    color: group.color,
-    times: facts.runs.filter((run) => (mode === "result" ? run.conclusion : run.event) === group.key).map((run) => run.created * 1000),
-    weights: null,
-  }));
-}
 
 function agentView(facts: Facts, mode: AgentMode): Series[] {
   const counts = new Map<string, number>();
@@ -115,67 +86,8 @@ function Daily({ history }: { history: Facts }) {
   );
 }
 
-function Hours({ history }: { history: Facts }) {
-  const [mode, setMode] = useState<HourMode>("hour");
-  const draw = useCallback((container: HTMLElement) => drawHours(container, history, mode), [history, mode]);
-  return (
-    <div className="block">
-      <header>
-        <h3>Merges by time of day</h3>
-        <p>Pull requests merged in each hour of the day or on each weekday, as an average per day of the stage. Hours are in your time zone.</p>
-        <Modes label="Merges by" modes={HOUR_MODES} value={mode} onChange={setMode} />
-      </header>
-      <div>
-        <Chart id="hours" draw={draw} />
-        <details>
-          <summary>Show the numbers</summary>
-          <HoursTable history={history} mode={mode} />
-        </details>
-      </div>
-    </div>
-  );
-}
-
-function Stages({ history }: { history: Facts }) {
-  const [mode, setMode] = useState<RowMode>("tasks");
-  const [point, setPoint] = useState<number | null>(null);
-  const [hidden, setHidden] = useState<StepKey[]>([]);
-  const rows = mode === "tasks" ? history.taskRows : history.rows;
-  const medians = useMemo(() => stepMedians(rows), [rows]);
-  const draw = useCallback((container: HTMLElement) => drawStages(container, rows, medians, history.cutovers, setPoint), [rows, medians, history]);
-  const apply = useCallback(
-    (chart: uPlot) => {
-      showSteps(chart, hidden);
-    },
-    [hidden],
-  );
-  return (
-    <div className="block">
-      <header>
-        <h3>Time per pull request</h3>
-        <p>One dot per pull request and step, placed at the day it merged. The line is the median of the last 20 pull requests. The scale is logarithmic, and a step under a minute sits on the one-minute line.</p>
-        <Modes label="Time per pull request for" modes={ROW_MODES} value={mode} onChange={setMode} />
-        <StageCount history={history} rows={rows} />
-      </header>
-      <div>
-        <Chart id="stages" draw={draw} apply={apply} />
-        <StageLegend
-          rows={rows}
-          medians={medians}
-          point={point !== null && point < rows.length ? point : rows.length - 1}
-          hidden={hidden}
-          onToggle={(step) => {
-            setHidden(hidden.includes(step) ? hidden.filter((other) => other !== step) : [...hidden, step]);
-          }}
-        />
-        <StageTable history={history} rows={rows} />
-      </div>
-    </div>
-  );
-}
-
 function Distributions({ history }: { history: Facts }) {
-  const [mode, setMode] = useState<ViolinMode>("time");
+  const [mode, setMode] = useState<ViolinMode>("agents");
   const metrics = useMemo(() => violinMetrics(history, mode), [history, mode]);
   return (
     <div className="block">
@@ -191,24 +103,6 @@ function Distributions({ history }: { history: Facts }) {
           <summary>Show the numbers</summary>
           <ViolinTable metrics={metrics} />
         </details>
-      </div>
-    </div>
-  );
-}
-
-function CiRuns({ history }: { history: Facts }) {
-  const [mode, setMode] = useState<CiMode>("result");
-  const draw = useCallback((container: HTMLElement) => drawDaily(container, history.days, ciView(history, mode), history.cutovers, (value) => number.format(value)), [history, mode]);
-  return (
-    <div className="block">
-      <header>
-        <h3>CI runs</h3>
-        <p>Runs of the gate workflow each day. A pull request run checks the branch, a merge queue run checks the result of the merge and a push run checks main afterwards.</p>
-        <Modes label="CI runs by" modes={CI_MODES} value={mode} onChange={setMode} />
-      </header>
-      <div>
-        <Chart id="ci" draw={draw} />
-        <CiTable history={history} />
       </div>
     </div>
   );
@@ -240,17 +134,14 @@ export function History({ site, review, hidden }: { site: Site; review: Review; 
         <StageNote cutovers={history.cutovers} />
         <p>Hover a chart to read its values below it. Click a legend entry to hide that line, drag across a chart to zoom in and double-click to zoom out.</p>
       </div>
-      {history.rows.length === 0 ? (
+      {history.days.length === 0 ? (
         <p className="empty">No pull request has merged yet.</p>
       ) : (
         <>
           <div className="block">
             <header>
               <h3>Three stages</h3>
-              <p>
-                Counts per day go by merge time. Times and sizes per pull request go by when the work started: a stage holds the pull requests that started and merged in it, and one that started before a switch and merged after it counts
-                only in All.
-              </p>
+              <p>Counts per day go by merge time.</p>
             </header>
             <div>
               <div className="stage-about">
@@ -270,7 +161,6 @@ export function History({ site, review, hidden }: { site: Site; review: Review; 
                 </p>
                 <p>
                   What stage 2 should change: less disk traffic and less waiting on the laptop, so pull requests open sooner. What it costs: more CI runs, and some tasks need an extra round when CI finds what the laptop no longer checks.
-                  The table below shows both sides.
                 </p>
                 <p>What stage 3 should change: many more tasks at once, since builds no longer fill the laptop's disk and CPU. What it costs: more CI rounds per task, since a compile error now shows up in CI instead of on the laptop.</p>
               </div>
@@ -280,17 +170,7 @@ export function History({ site, review, hidden }: { site: Site; review: Review; 
           </div>
           <Burnup history={history} unmatched={site.unmatched} />
           <Daily history={history} />
-          <Hours history={history} />
-          <Stages history={history} />
           <Distributions history={history} />
-          <div className="block">
-            <header>
-              <h3>Pull request size</h3>
-              <p>Task pull requests by lines changed, added plus deleted, with the median time from the first commit to merged and the CI runs each one needed.</p>
-            </header>
-            <Sizes history={history} />
-          </div>
-          <CiRuns history={history} />
           <AgentRuns history={history} />
           <div className="block">
             <header>

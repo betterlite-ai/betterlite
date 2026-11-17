@@ -1,31 +1,21 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { compact, duration, gigabytes, number, plural, rank, sum } from "../format.ts";
 import { STAGE_TICKS } from "./charts.ts";
-import { CI_EVENTS, STAGE_COLORS, STEPS, TOTAL, type History } from "./facts.ts";
+import { STAGE_COLORS, type History } from "./facts.ts";
 
-export type ViolinMode = "time" | "size" | "ci" | "agents" | "disk";
+export type ViolinMode = "agents" | "disk";
 
 export const VIOLIN_ABOUT: Record<ViolinMode, string> = {
-  time: "Time per task pull request in each step. A step under a minute counts as one minute.",
-  size: "Lines changed, files changed and commits per task pull request.",
-  ci: "Wall time of the gate runs that passed or failed, by event. Cancelled runs are left out, and a run under a minute counts as one minute.",
   agents: "Wall time of each worker and reviewer run, from launch to exit, and the output tokens of each worker run.",
   disk: "Size of a task checkout's build folder when it was deleted after the task merged.",
 };
 
 const VIOLIN = { lane: 34, label: 64, axis: 18, points: 80, gap: 44 };
-const CI_TICKS = [1, 2, 5, 10, 20, 30, 60, 120, 240];
-const COUNT_TICKS = [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000];
 const TIP_MARKS = [
   { name: "25th", at: 0.25 },
   { name: "median", at: 0.5 },
   { name: "75th", at: 0.75 },
   { name: "90th", at: 0.9 },
-];
-const SIZES: { key: "lines" | "files" | "commits"; title: string }[] = [
-  { key: "lines", title: "Lines changed" },
-  { key: "files", title: "Files changed" },
-  { key: "commits", title: "Commits" },
 ];
 
 interface Lane {
@@ -68,36 +58,6 @@ function wholeMinutes(value: number): number {
 }
 
 export function violinMetrics(facts: History, mode: ViolinMode): Metric[] {
-  if (mode === "time") {
-    return [...STEPS, TOTAL].map((step) => ({
-      title: step.label === "Total" ? "Total, first commit to merged" : `${step.label} step`,
-      ticks: STAGE_TICKS,
-      format: duration,
-      lanes: stageLanes(facts, (stage) =>
-        facts.taskRows
-          .filter((row) => row.stage === stage)
-          .map((row) => row[step.key])
-          .filter((value) => value !== null)
-          .map(wholeMinutes),
-      ),
-    }));
-  }
-  if (mode === "size") {
-    return SIZES.map((size) => ({
-      title: size.title,
-      ticks: COUNT_TICKS,
-      format: (value: number) => number.format(value),
-      lanes: stageLanes(facts, (stage) => facts.taskRows.filter((row) => row.stage === stage).map((row) => row[size.key])),
-    }));
-  }
-  if (mode === "ci") {
-    return CI_EVENTS.map((event) => ({
-      title: `${event.label} runs`,
-      ticks: CI_TICKS,
-      format: duration,
-      lanes: stageLanes(facts, (stage) => facts.runs.filter((run) => run.event === event.key && run.stage === stage && run.conclusion !== "cancelled").map((run) => wholeMinutes((run.updated - run.started) / 60))),
-    }));
-  }
   if (mode === "agents") {
     return [
       { title: "Worker run time", ticks: STAGE_TICKS, format: duration, lanes: stageLanes(facts, (stage) => facts.agentRuns.filter((run) => run.role === "w" && run.stage === stage).map((run) => wholeMinutes((run.end - run.start) / 60))) },
