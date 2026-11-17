@@ -173,10 +173,13 @@ def rendering_answer(call: RenderingCall) -> JsonValue:
     output = emulated_handler._format_search_results_as_tool_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L200-L225
         search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
     )
-    include = emulated_handler._build_search_results_for_include(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L228-L252
+    file_search = emulated_handler._build_file_search_call_output(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L255-L279
+        "fs_rendered",
+        [],
         search_results(call["results"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L83-L90
+        include_search_results=True,
     )
-    return {"output": output, "include": JSON.validate_python(include)}
+    return {"output": output, "include": JSON.validate_python(file_search["search_results"])}
 
 
 def items_answer(call: OutputItemsCall) -> JsonValue:
