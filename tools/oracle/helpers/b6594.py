@@ -29,13 +29,6 @@ class ShortFlagInput(TypedDict):
     raw: NotRequired[str | None]
 
 
-class SpellingsInput(TypedDict):
-    function: Literal["known_tool_name_spellings"]
-    tool_name: str
-    server: ServerSpec
-    short_prefix_enabled: NotRequired[bool]
-
-
 class MatchToolInput(TypedDict):
     function: Literal["match_known_tool_name"]
     tool_name: str
@@ -123,16 +116,14 @@ class SyntheticScope(TypedDict):
     client: NotRequired[tuple[str, int]]
 
 
-NamesInput = (
-    PrefixNameInput | ShortFlagInput | SpellingsInput | MatchToolInput | MatchPrefixInput | PrefixedInput
-)
+NamesInput = PrefixNameInput | ShortFlagInput | MatchToolInput | MatchPrefixInput | PrefixedInput
 EnvsInput = AdminEnvInput | ReferencesInput | InterpolateInput | SetupUrlInput | MissingVarsInput
 WireInput = AllowlistInput | ToolResultInput | MergeHeadersInput | SyntheticInput
 Input = NamesInput | EnvsInput | WireInput
 Output = JsonValue | dict[str, str] | list[str]
 
 SCOPE: Final[TypeAdapter[SyntheticScope]] = TypeAdapter(SyntheticScope)
-ENV_PAIR: Final = TypeAdapter(tuple[dict[str, str], list[dict[str, JsonValue]]])
+ENV_PAIR: Final = TypeAdapter(tuple[dict[str, JsonValue], list[JsonValue]])
 
 
 def set_env(name: str, value: str | None) -> None:
@@ -159,13 +150,18 @@ def run(input_value: Input) -> Output:
         case (
             "add_server_prefix_to_name"
             | "short_tool_prefix_enabled"
-            | "known_tool_name_spellings"
             | "match_known_tool_name"
             | "match_known_server_prefix"
             | "is_tool_name_prefixed"
         ):
             return run_names(input_value)
-        case "parse_admin_env_vars" | "env_references" | "interpolate" | "setup_url" | "missing_vars_message":
+        case (
+            "parse_admin_env_vars"
+            | "env_references"
+            | "interpolate"
+            | "setup_url"
+            | "missing_vars_message"
+        ):
             return run_envs(input_value)
         case "allowlist" | "tool_result_error" | "merge_headers" | "synthetic":
             return run_wire(input_value)
@@ -178,12 +174,11 @@ def run_names(call: NamesInput) -> Output:
         case "short_tool_prefix_enabled":
             set_env(SHORT_FLAG_ENV, call.get("raw"))
             return utils.is_short_mcp_tool_prefix_enabled()
-        case "known_tool_name_spellings":
-            set_env(SHORT_FLAG_ENV, "true" if call.get("short_prefix_enabled") else None)
-            return spellings(call)
         case "match_known_tool_name":
             set_env(SHORT_FLAG_ENV, "true" if call.get("short_prefix_enabled") else None)
-            return utils.match_known_tool_name(call["tool_name"], build_server(call["server"]), call["names"])
+            return utils.match_known_tool_name(
+                call["tool_name"], build_server(call["server"]), call["names"]
+            )
         case "match_known_server_prefix":
             return match_prefix(call)
         case "is_tool_name_prefixed":
@@ -210,7 +205,9 @@ def run_envs(call: EnvsInput) -> Output:
 def run_wire(call: WireInput) -> Output:
     match call["function"]:
         case "allowlist":
-            server = SimpleNamespace(mcp_info=call.get("mcp_info"), allowed_tools=call.get("allowed_tools"))
+            server = SimpleNamespace(
+                mcp_info=call.get("mcp_info"), allowed_tools=call.get("allowed_tools")
+            )
             return {
                 "enforced": utils.is_server_tool_allowlist_enforced(server),
                 "applies": utils.server_applies_tool_allowlist(server),
@@ -226,12 +223,6 @@ def run_wire(call: WireInput) -> Output:
             return synthetic(call)
 
 
-def spellings(call: SpellingsInput) -> dict[str, JsonValue]:
-    values: list[JsonValue] = []
-    values.extend(utils.iter_known_tool_name_spellings(call["tool_name"], build_server(call["server"])))
-    return {"spellings": values, "openapi": utils.openapi_tool_name(call["tool_name"])}
-
-
 def match_prefix(call: MatchPrefixInput) -> list[str] | None:
     matched = utils.match_known_server_prefix(call["name"], call["known_prefixes"])
     return list(matched) if matched is not None else None
@@ -239,8 +230,7 @@ def match_prefix(call: MatchPrefixInput) -> list[str] | None:
 
 def admin_env(call: AdminEnvInput) -> dict[str, JsonValue]:
     pair = ENV_PAIR.validate_python(utils.parse_admin_env_vars(call.get("env_vars")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L671-L673
-    globals_values: dict[str, JsonValue] = {name: value for name, value in pair[0].items()}
-    return {"globals": globals_values, "users": pair[1]}
+    return {"globals": pair[0], "users": pair[1]}
 
 
 def references(call: ReferencesInput) -> dict[str, JsonValue]:
@@ -252,10 +242,10 @@ def references(call: ReferencesInput) -> dict[str, JsonValue]:
 
 
 def interpolate(call: InterpolateInput) -> dict[str, JsonValue]:
-    headers: dict[str, JsonValue] = {}
-    for name, value in utils.interpolate_headers(call["headers"], call["variables"]).items():
-        headers[name] = value
-    return {"value": utils.interpolate_env_vars(call["value"], call["variables"]), "headers": headers}
+    interpolated = utils.interpolate_headers(call["headers"], call["variables"])
+    headers: dict[str, JsonValue] = dict[str, JsonValue](interpolated.items())
+    value = utils.interpolate_env_vars(call["value"], call["variables"])
+    return {"value": value, "headers": headers}
 
 
 def missing_message(call: MissingVarsInput) -> str:
@@ -286,7 +276,9 @@ def byte_values(raw: bytes) -> list[JsonValue]:
 
 
 def synthetic_output(scope: SyntheticScope) -> dict[str, JsonValue]:
-    headers: list[JsonValue] = [[byte_values(name), byte_values(value)] for name, value in scope["headers"]]
+    headers: list[JsonValue] = [
+        [byte_values(name), byte_values(value)] for name, value in scope["headers"]
+    ]
     client = scope.get("client")
     return {
         "method": scope["method"],
