@@ -65,8 +65,7 @@ enum Behavior {
 #[case::fallback_log(Behavior::FallbackLog)]
 #[case::async_only(Behavior::AsyncOnly)]
 #[case::default_args(Behavior::DefaultArgs)]
-// the metadata reader keeps the exact decimal text, where LiteLLM's float keeps 1e-30 and rounds
-// 1.0000000000000001 to 1.0; the first two values fall back to the declared 0.5 default
+// exact decimal reading: both values fall back to the declared 0.5 default here
 #[case::decimal_scale_confidence(Behavior::Selection {
     pool: &[("cloud-smart-1", "cloud-smart"), ("local-1", "local")],
     metadata: br#"{"confidence":1e-30}"#,
