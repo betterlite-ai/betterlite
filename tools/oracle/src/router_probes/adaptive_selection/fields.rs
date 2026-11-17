@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_prompts::message_content::Message;
 use betterlite_router::adaptive_classification::minimum_quality::minimum_quality_tier;
 use betterlite_router::adaptive_classification::request_type::RequestType;
 use betterlite_router::adaptive_selection::costs::normalized_cost;
@@ -129,7 +130,7 @@ fn planned_route(payload: &Payload) -> Result<RoutingOutput, OperationError> {
     let request_type = response.routing_decision.request_type;
     Ok(RoutingOutput {
         model: response.model,
-        messages: response.messages.map(|messages| messages.to_vec()),
+        messages: response.messages.map(<[Message]>::to_vec),
         routing_decision: response.routing_decision,
         metadata: metadata.ok_or_else(|| OperationError::InvalidRequest {
             message: "the adaptive pre-routing hook left no metadata".to_owned(),
