@@ -434,6 +434,19 @@ fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
     assert_eq!(declared_efforts_for_model("absent", "openai", &map), None);
 }
 
+fn a_prefixed_model_declares_the_bare_entry_levels() {
+    let map = cost_map(&[("m", r#"{"reasoning_effort_levels": ["high", "low"]}"#)]);
+    let model_info = info(&[
+        ("key", text("openai/m")),
+        ("litellm_provider", text("openai")),
+        ("supports_reasoning", Json::Bool(true)),
+    ]);
+    assert_eq!(
+        resolve_supported_efforts(&model_info, false, &map),
+        Some(vec![ReasoningEffort::Low, ReasoningEffort::High])
+    );
+}
+
 fn intersection_keeps_the_advertisement_order() {
     assert_eq!(
         intersect_supported_efforts(
@@ -889,6 +902,9 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
 #[case::the_own_flag_wins_over_the_bare_twin(settled(the_own_flag_wins_over_the_bare_twin))]
 #[case::declared_levels_read_the_prefixed_entry_then_the_bare_one(settled(
     declared_levels_read_the_prefixed_entry_then_the_bare_one
+))]
+#[case::a_prefixed_model_declares_the_bare_entry_levels(settled(
+    a_prefixed_model_declares_the_bare_entry_levels
 ))]
 #[case::intersection_keeps_the_advertisement_order(settled(
     intersection_keeps_the_advertisement_order

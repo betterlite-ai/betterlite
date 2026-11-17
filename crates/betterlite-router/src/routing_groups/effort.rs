@@ -38,9 +38,6 @@ pub fn nearest_declared_effort(
         .filter(|effort| STRENGTH_ORDER.contains(effort))
         .collect();
     ranked.sort_by_key(|effort| STRENGTH_ORDER.iter().position(|level| level == effort));
-    if ranked.contains(&requested) || ranked.is_empty() {
-        return requested;
-    }
     ranked
         .iter()
         .copied()
