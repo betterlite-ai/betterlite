@@ -48,6 +48,8 @@ fn keeps_the_last_duplicate_access_token() {
 #[case::numeric_access_token(br#"{"access_token":42}"#, "missing-access-token")]
 #[case::object_access_token(br#"{"access_token":{"token":"a"}}"#, "missing-access-token")]
 #[case::list_access_token(br#"{"access_token":["a"]}"#, "missing-access-token")]
+#[case::overflowing_float(br#"{"access_token":"a","expires_in":1e400}"#, "not-json")]
+#[case::nan_literal(br#"{"access_token":"a","score":NaN}"#, "not-json")]
 fn rejects_token_responses_the_provider_should_not_send(#[case] body: &[u8], #[case] reason: &str) {
     let error = decode_oidc_token_response(body).unwrap_err();
     assert_eq!(reason_of(&error), reason);
@@ -72,6 +74,16 @@ fn rejects_token_responses_the_provider_should_not_send(#[case] body: &[u8], #[c
 fn classifies_userinfo_bodies(#[case] body: &[u8], #[case] shape: &str) {
     let result = decode_oidc_userinfo(body);
     assert_eq!(shape_or_reason(result), shape);
+}
+
+#[test]
+fn keeps_an_integer_past_u64_as_a_float() {
+    let response =
+        decode_oidc_token_response(br#"{"access_token":"a","user_id":18446744073709551616}"#)
+            .unwrap();
+    let user_id = &response.claims.get("user_id").unwrap().json;
+    assert!(user_id.is_f64());
+    assert!(user_id.as_u64().is_none());
 }
 
 #[test]
