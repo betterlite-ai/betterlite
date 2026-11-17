@@ -6,11 +6,7 @@ call:
       requested_model: claude-3
       chunks:
         - kind: text
-          value: "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}"
-        - kind: text
-          value: "\n"
-        - kind: text
-          value: "\n"
+          value: "event: ping\ndata: {\"type\": \"ping\"}\n\n"
         - kind: text
           value: "data: {\"type\":\"message\\u005fstart\",\"message\":{\"id\":\"msg_1\",\"model\":\"upstream-model\"}}"
     cache_stream: null
