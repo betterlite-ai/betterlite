@@ -133,15 +133,15 @@ fn build_synthetic_mcp_request_adds_the_forwarded_for_and_the_client() {
 
 #[test]
 fn build_synthetic_mcp_request_encodes_a_value_as_utf8() {
-    let raw = pairs(&[("X-Text", "héllo ✓")]);
+    let raw = pairs(&[("X-Text", "h\u{e9}llo \u{2713}")]);
     let built = request(Some(&raw), Some("9.9.9.9"));
-    assert_eq!(built.headers[1].1, "héllo ✓".as_bytes());
+    assert_eq!(built.headers[1].1, "h\u{e9}llo \u{2713}".as_bytes());
     assert_eq!(built.headers[2].1, b"9.9.9.9".to_vec());
 }
 
 #[test]
 fn build_synthetic_mcp_request_encodes_a_name_as_latin1() {
-    let raw = pairs(&[("X-É", "v"), ("X-€", "v")]);
+    let raw = pairs(&[("X-\u{c9}", "v"), ("X-\u{20ac}", "v")]);
     let built = request(Some(&raw), None);
     assert_eq!(built.headers[1].0, vec![b'x', b'-', 0xE9]);
     assert_eq!(built.headers[2].0, vec![b'x', b'-', b'?']);

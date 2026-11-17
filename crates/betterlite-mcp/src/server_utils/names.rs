@@ -46,15 +46,15 @@ pub fn openapi_tool_name(operation_id: &str) -> String {
 }
 
 #[must_use]
-pub fn match_known_tool_name<'a, I>(
+pub fn match_known_tool_name<'name, I>(
     tool_name: &str,
     is_openapi: bool,
     known_prefixes: &[String],
     separator: &str,
     names: I,
-) -> Option<&'a str>
+) -> Option<&'name str>
 where
-    I: IntoIterator<Item = &'a str>,
+    I: IntoIterator<Item = &'name str>,
 {
     let spellings: BTreeSet<String> =
         known_tool_name_spellings(tool_name, known_prefixes, separator)

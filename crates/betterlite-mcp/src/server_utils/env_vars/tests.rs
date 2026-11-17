@@ -184,7 +184,7 @@ fn find_env_var_references_returns_nothing_for_an_empty_text() {
 #[case::space("${A B}")]
 #[case::unclosed("${A")]
 #[case::no_braces("$A$B")]
-#[case::non_ascii("${Ü}")]
+#[case::non_ascii("${\u{dc}}")]
 #[case::dollar_after_brace("${A$B}")]
 fn find_env_var_references_ignores_other_dollar_forms(#[case] text: &str) {
     assert!(find_env_var_references(text).is_empty());
@@ -300,7 +300,7 @@ fn build_env_var_setup_url_encodes_a_slash_in_the_server_id() {
 #[case::star("a*b", "a%2Ab")]
 #[case::at("a@b", "a%40b")]
 #[case::kept("a_b.c-d~e", "a_b.c-d~e")]
-#[case::unicode("é", "%C3%A9")]
+#[case::unicode("\u{e9}", "%C3%A9")]
 #[case::empty("", "")]
 fn build_env_var_setup_url_encodes_the_server_id_like_python_quote(
     #[case] server_id: &str,

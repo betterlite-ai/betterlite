@@ -27,7 +27,7 @@ fn short_enabled() -> PrefixPolicy {
 #[case::first_attempt("srv", 0, "tNu")]
 #[case::second_attempt("srv", 1, "p13")]
 #[case::third_attempt("srv", 2, "pKF")]
-#[case::uuid("abcdef12-3456-7890-abcd-ef1234567890", 0, "CIz")]
+#[case::uuid("cd78779d-0596-4d16-9961-d2e340ef2827", 0, "t93")]
 #[case::hyphenated("server-1", 0, "zin")]
 #[case::single_character("x", 0, "wQu")]
 fn compute_short_server_prefix_folds_the_sha256_of_the_seed(

@@ -20,7 +20,7 @@ const EXCLUDED_HEADERS: [&str; 10] = [
 
 const SYNTHETIC_SERVER: (&str, u16) = ("127.0.0.1", 4000);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyntheticMcpRequest {
     pub method: String,
     pub path: String,
