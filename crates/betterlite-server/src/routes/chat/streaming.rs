@@ -44,7 +44,7 @@ use crate::server::chat_setup::provider_call::{
     CallError, answer_chat, chat_error, control_options,
 };
 
-// Every chat, text-completion and embeddings call enters the service event track here, one pre-call and one terminal event.
+// Every chat, text-completion and embeddings call enters the service event track here, one pre-call and one terminal event; a sized body is complete at the handler's return, so it settles there rather than in the stream wrapper.
 pub(crate) async fn service_events(
     State(pipeline): State<Arc<ServicePipeline>>,
     mut request: Request,
@@ -65,16 +65,12 @@ pub(crate) async fn service_events(
     let call = pipeline.begin(kind, &call_id);
     let response = next.run(request).await;
     let (mut parts, body) = response.into_parts();
+    let failure = failure_for(parts.status);
     let Some(length) = body.size_hint().exact() else {
-        let streamed = Body::from_stream(ServiceEventStream::new(
-            body.into_data_stream(),
-            call,
-            failure_for(parts.status),
-        ));
-        return Response::from_parts(parts, streamed);
+        let streamed = ServiceEventStream::new(body.into_data_stream(), call, failure);
+        return Response::from_parts(parts, Body::from_stream(streamed));
     };
-    // A sized body is complete here, and hyper may drop it without a final poll, so settle now.
-    call.finish(failure_for(parts.status));
+    call.finish(failure);
     if let Ok(value) = HeaderValue::from_str(&length.to_string()) {
         parts.headers.entry(CONTENT_LENGTH).or_insert(value);
     }
