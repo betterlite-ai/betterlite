@@ -12,11 +12,11 @@ deviations:
   - what: >-
       A search score renders with three places by rounding the exact decimal its JSON token
       carries, half to even. LiteLLM formats the binary float it parsed, so a score token of
-      0.1245 renders 0.124 here and 0.125 there. Scores that are not an exact third-place midpoint
-      render the same in both.
+      0.1235 renders 0.124 here and 0.123 there. The two can differ only on a token that sits on a
+      third-place midpoint, where the binary value's error decides the direction.
     why: >-
       betterlite reads every number as the arbitrary-precision decimal the wire carries, so the
       score keeps the value the vector store sent. Python's result depends on the binary
-      representation of the token, which is why the two disagree only on an exact midpoint.
+      representation of the token, which is why a disagreement needs a token on a midpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L219-L220
 kept_bugs: []

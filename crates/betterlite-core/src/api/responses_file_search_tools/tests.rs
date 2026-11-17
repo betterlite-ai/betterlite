@@ -234,6 +234,11 @@ fn formatted_output() {
         )]),
         "[Result 1 | n | file_id=f]\n"
     );
+    // an exact third-place midpoint rounds half to even here, while LiteLLM's float sits below it
+    assert_eq!(
+        format_results_as_tool_output(&[result(r#"{"score":0.1235}"#)]),
+        "[Result 1 | score=0.124]\n"
+    );
 }
 
 fn included(results: &[VectorStoreSearchResult]) -> Json {
