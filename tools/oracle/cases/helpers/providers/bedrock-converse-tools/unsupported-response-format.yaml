@@ -93,4 +93,9 @@ calls:
       is_thinking_enabled: false
       optional_params: {}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /error/status
+      why: >-
+        betterlite answers 400 for a response_format with no type, where LiteLLM raises KeyError
+        and answers 500; docs/deviations/B9978.yaml lists the fix.

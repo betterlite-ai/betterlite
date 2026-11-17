@@ -2,10 +2,11 @@
 
 use std::path::Path;
 
-use backtrace::Backtrace;
+use backtrace::{Backtrace, SymbolName};
 use rstest::rstest;
 
 use crate::bug_report::environment::{Host, build_environment_report};
+use crate::bug_report::frames::{FrameSymbol, format_frames};
 use crate::bug_report::issue_url::{MAX_URL_LENGTH, bug_report_issue_url};
 use crate::bug_report::notice::{NOTICE_PREFIX, bug_report_notice, strip_bug_report_notice};
 use crate::bug_report::providers::KNOWN_PROVIDERS;
@@ -31,11 +32,15 @@ fn report(frames: Vec<String>, config_lines: Vec<String>) -> BugReport {
     }
 }
 
-fn nested_backtrace(depth: u32) -> Backtrace {
-    if depth == 0 {
-        Backtrace::new()
-    } else {
-        nested_backtrace(depth.saturating_sub(1))
+fn symbol<'symbol>(
+    file: Option<&'symbol Path>,
+    line: Option<u32>,
+    name: Option<&'symbol str>,
+) -> FrameSymbol<'symbol> {
+    FrameSymbol {
+        file,
+        line,
+        name: name.map(|text| SymbolName::new(text.as_bytes())),
     }
 }
 
@@ -91,7 +96,51 @@ fn bug_report_environment_detects_deployment(
 }
 
 #[test]
-fn bug_report_build_keeps_type_frames_and_allowlisted_provider() {
+fn bug_report_frames_keep_workspace_frames_outermost_first() {
+    let crates_dir = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let absolute = crates_dir.join("betterlite-reporting/src/bug_report/report.rs");
+    let library = Path::new("/rustc/library/std/src/panicking.rs");
+    let relative = Path::new("crates/betterlite-core/src/lib.rs");
+    let symbols = [
+        symbol(
+            Some(&absolute),
+            Some(40),
+            Some(
+                "_ZN20betterlite_reporting10bug_report6report16build_bug_report17h0123456789abcdefE",
+            ),
+        ),
+        symbol(Some(library), Some(1), Some("std::panicking::begin_panic")),
+        symbol(None, Some(2), Some("no_file")),
+        symbol(Some(relative), None, Some("no_line")),
+        symbol(Some(relative), Some(3), None),
+        symbol(
+            Some(Path::new("crates/betterlite-server/src/main.rs")),
+            Some(7),
+            Some("betterlite_server::main"),
+        ),
+    ];
+    assert_eq!(
+        format_frames(symbols.into_iter()),
+        [
+            "crates/betterlite-server/src/main.rs:7 in betterlite_server::main",
+            "crates/betterlite-reporting/src/bug_report/report.rs:40 in betterlite_reporting::bug_report::report::build_bug_report",
+        ]
+    );
+}
+
+#[test]
+fn bug_report_frames_keep_the_twelve_innermost() {
+    let file = Path::new("crates/betterlite-core/src/lib.rs");
+    let symbols = (1_u32..=14).map(|line| symbol(Some(file), Some(line), Some("frame")));
+    let innermost: Vec<String> = (1_u32..=12)
+        .rev()
+        .map(|line| format!("crates/betterlite-core/src/lib.rs:{line} in frame"))
+        .collect();
+    assert_eq!(format_frames(symbols), innermost);
+}
+
+#[test]
+fn bug_report_build_keeps_type_and_allowlisted_provider() {
     let error = "x".parse::<u32>().unwrap_err();
     let context = CallContext {
         surface: Surface::Proxy,
@@ -100,17 +149,8 @@ fn bug_report_build_keeps_type_frames_and_allowlisted_provider() {
         stream: Some(true),
         config_lines: Vec::new(),
     };
-    let built = build_bug_report(&error, &nested_backtrace(20), context.clone(), no_docker());
-    let innermost = built.litellm_frames.last().unwrap();
-    assert!(
-        innermost.starts_with("crates/betterlite-reporting/src/bug_report/tests.rs:")
-            && innermost.ends_with("nested_backtrace"),
-        "{innermost}"
-    );
-    assert_eq!(
-        (built.exception_type.as_str(), built.litellm_frames.len()),
-        ("ParseIntError", 12)
-    );
+    let built = build_bug_report(&error, &Backtrace::new(), context.clone(), no_docker());
+    assert_eq!(built.exception_type, "ParseIntError");
     assert_eq!(
         (built.call_type, built.custom_llm_provider, built.stream),
         (

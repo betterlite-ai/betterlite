@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod cases;
+mod error_cases;
 mod response_format_cases;
 mod support;
 
