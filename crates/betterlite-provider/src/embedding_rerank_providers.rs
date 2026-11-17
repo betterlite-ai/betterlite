@@ -22,7 +22,7 @@ use http::{HeaderMap, Method};
 use secrecy::SecretString;
 use url::Url;
 
-use crate::operation::{OperationError, OperationRequest, OperationResult, RequestKind};
+use crate::operation::{OperationError, OperationRequest, OperationResult, RequestKind, success};
 use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Adapter;
@@ -178,10 +178,10 @@ impl Adapter for EmbeddingRerank {
         prepared: &PreparedRequest,
         _deployment: &Deployment,
     ) -> Result<Upstream, OperationError> {
-        let PreparedRequest::EmbeddingRerank(prepared) = prepared else {
+        let PreparedRequest::EmbeddingRerank(inner) = prepared else {
             return Err(unavailable());
         };
-        let call = &prepared.0;
+        let call = &inner.0;
         let request = OutboundRequest {
             method: Method::POST,
             url: call.url.clone(),
@@ -206,17 +206,16 @@ impl Adapter for EmbeddingRerank {
         prepared: &PreparedRequest,
         upstream: Upstream,
     ) -> Result<OperationResult, OperationError> {
-        let PreparedRequest::EmbeddingRerank(prepared) = prepared else {
+        let PreparedRequest::EmbeddingRerank(inner) = prepared else {
             return Err(unavailable());
         };
-        let Upstream::Buffered(response) = upstream else {
+        let Upstream::Buffered(buffered) = upstream else {
             return Err(OperationError::UnsupportedOperation {
                 provider: Self::NAME.to_owned(),
                 operation: String::from("stream"),
             });
         };
-        let response = crate::operation::success(response)?;
-        let answer = decode::answer(&prepared.0.decode, &response)?;
+        let answer = decode::answer(&inner.0.decode, &success(buffered)?)?;
         Ok(OperationResult::EmbeddingRerank(answer))
     }
 }

@@ -50,8 +50,8 @@ impl FamilyRerankConfig<'_> {
 // the prepared call the dispatch sends, built from the contract's URL, headers and transformed body
 pub fn prepare(
     config: RerankConfig,
-    endpoint: String,
-    headers: Headers,
+    endpoint: &str,
+    headers: &Headers,
     body: &Params,
     timeout: Duration,
 ) -> Result<EmbeddingRerankPrepared, FamilyError> {
@@ -62,8 +62,8 @@ pub fn prepare(
         RerankConfig::Voyage => "voyage",
     };
     Ok(EmbeddingRerankPrepared(Call {
-        url: url(family, &endpoint)?,
-        headers: http_headers(&headers)?,
+        url: url(family, endpoint)?,
+        headers: http_headers(headers)?,
         body: serde_json::to_vec(body)?,
         timeout,
         decode: Decode::Rerank(config),
@@ -76,9 +76,10 @@ pub fn decode(
     status: u16,
     body: &[u8],
 ) -> Result<RerankResponse, FamilyError> {
-    let response = match config {
-        RerankConfig::Cohere => cohere_rerank::transform_rerank_response(status, body, LIMITS)?,
-        RerankConfig::CohereV2 => cohere_rerank::transform_rerank_response(status, body, LIMITS)?,
+    Ok(match config {
+        RerankConfig::Cohere | RerankConfig::CohereV2 => {
+            cohere_rerank::transform_rerank_response(status, body, LIMITS)?
+        }
         RerankConfig::Infinity => host_rerank::decode_host_rerank(
             HostProvider::Infinity,
             status,
@@ -90,6 +91,5 @@ pub fn decode(
             host_rerank::decode_host_rerank(HostProvider::Jina, status, body, Uuid::new_v4, |_| {})?
         }
         RerankConfig::Voyage => voyage::voyage_response(status, body)?,
-    };
-    Ok(response)
+    })
 }

@@ -180,10 +180,10 @@ fn a_jina_rerank_reply_is_decoded() {
     let prepared = RerankFixture::new(ProviderId::JinaAi, "jina-reranker-v2").prepared();
     let reply = r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5,"document":{"text":"doc"}}],"usage":{"total_tokens":2}}"#;
     let answer = embedding_result(decode(&prepared, 200, reply).unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let EmbeddingRerankResult::Rerank(decoded) = answer else {
         panic!("the rerank answer");
     };
-    let results = reply.results.unwrap();
+    let results = decoded.results.unwrap();
     assert_eq!(results[0].document.as_ref().unwrap().text, "doc");
 }
 
@@ -194,10 +194,10 @@ fn an_infinity_rerank_reply_is_decoded() {
     let prepared = fixture.prepared();
     let reply = r#"{"id":"r-1","results":[{"index":0,"relevance_score":0.5}]}"#;
     let answer = embedding_result(decode(&prepared, 200, reply).unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let EmbeddingRerankResult::Rerank(decoded) = answer else {
         panic!("the rerank answer");
     };
-    let results = reply.results.unwrap();
+    let results = decoded.results.unwrap();
     assert_eq!(results[0].index, 0);
     assert!(results[0].document.is_none());
 }

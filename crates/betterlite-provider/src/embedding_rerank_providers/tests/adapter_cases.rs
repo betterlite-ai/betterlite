@@ -76,10 +76,10 @@ fn the_adapter_prepares_embeddings_from_the_deployment() {
             &catalog(),
         )
         .unwrap();
-    let PreparedRequest::EmbeddingRerank(prepared) = prepared else {
+    let PreparedRequest::EmbeddingRerank(call) = prepared else {
         panic!("the embedding prepared call");
     };
-    assert_eq!(url_of(&prepared), "https://host/v2/embed");
+    assert_eq!(url_of(&call), "https://host/v2/embed");
 }
 
 #[tokio::test]
@@ -110,8 +110,8 @@ async fn the_adapter_sends_and_decodes_a_family_chat() {
     assert!(sent.starts_with("POST / HTTP/1.1"));
     assert!(lowered.contains("authorization: bearer key"));
     assert!(sent.contains(r#""model":"command-r""#));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::CohereV2Chat(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::CohereV2Chat(reply) = result else {
         panic!("the v2 chat reply");
     };
     assert_eq!(reply.message.content.as_deref(), Some("hello"));
@@ -138,8 +138,8 @@ async fn a_cohere_rerank_call_is_sent_and_projected() {
     .unwrap();
     assert!(sent.starts_with("POST /v2/rerank HTTP/1.1"));
     assert!(sent.contains(r#""query":"what""#));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::Rerank(reply) = result else {
         panic!("the rerank answer");
     };
     let results = reply.results.unwrap();
@@ -167,11 +167,11 @@ async fn a_jina_rerank_call_is_sent_and_projected() {
     .await
     .unwrap();
     assert!(sent.starts_with("POST /v1/rerank HTTP/1.1"));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::Rerank(decoded) = result else {
         panic!("the rerank answer");
     };
-    let results = reply.results.unwrap();
+    let results = decoded.results.unwrap();
     assert_eq!(results[0].document.as_ref().unwrap().text, "doc");
 }
 
@@ -196,11 +196,11 @@ async fn an_infinity_rerank_call_is_sent_and_projected() {
     .await
     .unwrap();
     assert!(sent.starts_with("POST /rerank HTTP/1.1"));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::Rerank(decoded) = result else {
         panic!("the rerank answer");
     };
-    assert_eq!(reply.id.as_deref(), Some("r-1"));
+    assert_eq!(decoded.id.as_deref(), Some("r-1"));
 }
 
 #[tokio::test]
@@ -226,8 +226,8 @@ async fn a_voyage_rerank_call_is_sent_and_projected() {
     .await
     .unwrap();
     assert!(sent.starts_with("POST /v1/rerank HTTP/1.1"));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::Rerank(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::Rerank(reply) = result else {
         panic!("the rerank answer");
     };
     let results = reply.results.unwrap();
@@ -258,8 +258,8 @@ async fn a_cohere_embedding_call_is_sent_and_decoded() {
     .unwrap();
     assert!(sent.starts_with("POST /v2/embed HTTP/1.1"));
     assert!(sent.contains(r#""texts":["hi"]"#));
-    let answer = embedding_result(answer.unwrap());
-    let EmbeddingRerankResult::CohereEmbedding(reply) = answer else {
+    let result = embedding_result(answer.unwrap());
+    let EmbeddingRerankResult::CohereEmbedding(reply) = result else {
         panic!("the cohere embedding reply");
     };
     assert_eq!(reply.usage.prompt_tokens, 2);

@@ -91,17 +91,19 @@ fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
 fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let variant = VoyageEmbeddingVariant::for_model(leaf.common.model);
     let options = voyage_options(leaf.non_default, variant)?;
-    let given = serde_json::to_value(&leaf.request.input)?;
-    let request_body = voyage_embedding::request(leaf.common.model, given, &options, variant);
-    let body: BaseObject = serde_json::from_value(request_body)?;
+    let body: BaseObject = serde_json::from_value(voyage_embedding::request(
+        leaf.common.model,
+        serde_json::to_value(&leaf.request.input)?,
+        &options,
+        variant,
+    ))?;
     // LiteLLM's Voyage handler receives no caller headers, and its validate_environment clears them
-    let authorization = voyage_embedding::voyage_credentials(
-        leaf.common.api_key.map(ExposeSecret::expose_secret),
-        |name| leaf.common.environment.lookup(name),
-    );
     let headers = text_headers(voyage_embedding::voyage_headers(
         BaseObject::new(),
-        authorization,
+        voyage_embedding::voyage_credentials(
+            leaf.common.api_key.map(ExposeSecret::expose_secret),
+            |name| leaf.common.environment.lookup(name),
+        ),
     ));
     let endpoint = voyage_embedding::endpoint(leaf.common.api_base, variant);
     call(

@@ -1,4 +1,5 @@
 use betterlite_openai::openai_base_config::{Headers, Object as BaseObject};
+use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Serialize;
 use url::Url;
@@ -8,13 +9,16 @@ use super::error::FamilyError;
 use super::{Call, Decode};
 
 // every family builds one prepared call the same way; only its named target, headers and body differ
-pub(super) fn call<T: Serialize>(
+pub(super) fn call<T>(
     common: &Common<'_>,
     target: (&'static str, &str),
     headers: &Headers,
     body: &T,
     decode: Decode,
-) -> Result<Call, FamilyError> {
+) -> Result<Call, FamilyError>
+where
+    T: Serialize,
+{
     let (family, endpoint) = target;
     Ok(Call {
         url: url(family, endpoint)?,
@@ -57,7 +61,7 @@ pub(super) fn http_headers(headers: &Headers) -> Result<HeaderMap, FamilyError> 
             })?;
         map.insert(header_name, header_value);
     }
-    if let Some(value) = map.get_mut(http::header::AUTHORIZATION) {
+    if let Some(value) = map.get_mut(AUTHORIZATION) {
         value.set_sensitive(true);
     }
     Ok(map)

@@ -10,13 +10,15 @@ use betterlite_config::sections::{
     cohere_rerank_settings, embedding_host_settings, jina_infinity_rerank,
 };
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::embedding_rerank_providers::rerank_config;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::{Json as Field, Object};
 use http::HeaderMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -100,8 +102,8 @@ fn url_of(prepared: &EmbeddingRerankPrepared) -> String {
     prepared.0.url.to_string()
 }
 
-fn key(value: &str) -> Option<SecretString> {
-    Some(SecretString::from(value.to_owned()))
+fn key(value: &str) -> SecretString {
+    SecretString::from(value.to_owned())
 }
 
 fn headers(entries: &[(&str, &str)]) -> Headers {
@@ -112,32 +114,32 @@ fn headers(entries: &[(&str, &str)]) -> Headers {
 }
 
 fn text_field(object: &Object, name: &str) -> Option<String> {
-    object.get(name).and_then(Json::as_str).map(str::to_owned)
+    object.get(name).and_then(Field::as_str).map(str::to_owned)
 }
 
 fn number_field(object: &Object, name: &str) -> Option<i64> {
-    let Json::Number(number) = object.get(name)? else {
+    let Field::Number(number) = object.get(name)? else {
         return None;
     };
     number.as_i64()
 }
 
 fn flag_field(object: &Object, name: &str) -> Option<bool> {
-    let Json::Bool(value) = object.get(name)? else {
+    let Field::Bool(value) = object.get(name)? else {
         return None;
     };
     Some(*value)
 }
 
-fn items_field<'object>(object: &'object Object, name: &str) -> &'object [Json] {
-    let Some(Json::List(items)) = object.get(name) else {
+fn items_field<'object>(object: &'object Object, name: &str) -> &'object [Field] {
+    let Some(Field::List(items)) = object.get(name) else {
         return &[];
     };
     items
 }
 
 fn object_field<'object>(object: &'object Object, name: &str) -> Option<&'object Object> {
-    object.get(name).and_then(Json::as_object)
+    object.get(name).and_then(Field::as_object)
 }
 
 async fn serve(listener: &TcpListener, status: u16, reply: &[u8]) -> String {
@@ -188,7 +190,7 @@ impl Setup {
         Self {
             provider,
             model: model.to_owned(),
-            api_key: key("key"),
+            api_key: Some(key("key")),
             api_base: None,
             headers: None,
             extra: Headers::new(),
@@ -320,11 +322,11 @@ impl RerankFixture {
         })?;
         let endpoint = family.url(self.setup.api_base.as_deref())?;
         let body = family.transform_rerank_request(&self.setup.model, &params, &headers, None)?;
-        rerank::prepare(family.config, endpoint, headers, &body, TIMEOUT)
+        rerank::prepare(family.config, &endpoint, &headers, &body, TIMEOUT)
     }
 
     fn family(&self) -> Result<FamilyRerankConfig<'_>, FamilyError> {
-        let config = betterlite_core::embedding_rerank_providers::rerank_config(
+        let config = rerank_config(
             self.setup.provider,
             self.setup.api_base.as_deref(),
             &self.present_version_params(),
@@ -356,13 +358,7 @@ impl RerankFixture {
         if let Some(rank_fields) = self.options.rank_fields.as_deref() {
             non_default.insert(
                 String::from("rank_fields"),
-                betterlite_models::decisions::Json::List(
-                    rank_fields
-                        .iter()
-                        .cloned()
-                        .map(betterlite_models::decisions::Json::Text)
-                        .collect(),
-                ),
+                Json::List(rank_fields.iter().cloned().map(Json::Text).collect()),
             );
         }
         get_optional_rerank_params(

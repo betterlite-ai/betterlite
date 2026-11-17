@@ -168,9 +168,12 @@ fn voyage_variants_follow_the_model_text() {
         "https://api.voyageai.com/v1/multimodalembeddings"
     );
     // the leaf sends the item as given, so LiteLLM's content wrapper is a listed deviation
-    let body = body_of(&multimodal);
-    assert_eq!(text_field(&body, "inputs").as_deref(), Some("hi"));
-    assert!(body.get("enable_auto_chunking").is_none());
+    let multimodal_body = body_of(&multimodal);
+    assert_eq!(
+        text_field(&multimodal_body, "inputs").as_deref(),
+        Some("hi")
+    );
+    assert!(multimodal_body.get("enable_auto_chunking").is_none());
 
     let text = EmbeddingFixture::new(ProviderId::Voyage, "voyage-3").prepared();
     assert!(body_of(&text).get("inputs").is_none());
@@ -326,13 +329,13 @@ fn cohere_embedding_counts_the_input_when_usage_is_missing() {
     let prepared = fixture.prepared();
     let reply = r#"{"embeddings":{"float":[[0.1,0.2]]},"meta":{"billed_units":{}}}"#;
     let answer = embedding_result(decode(&prepared, 200, reply).unwrap());
-    let EmbeddingRerankResult::CohereEmbedding(reply) = answer else {
+    let EmbeddingRerankResult::CohereEmbedding(decoded) = answer else {
         panic!("the cohere embedding reply");
     };
     // the logger carries the input the tokenizer counts, and the sentence is nine cl100k tokens
-    assert_eq!(reply.usage.prompt_tokens, 9);
-    assert_eq!(reply.usage.total_tokens, 9);
-    assert!(reply.usage.prompt_tokens_details.is_none());
+    assert_eq!(decoded.usage.prompt_tokens, 9);
+    assert_eq!(decoded.usage.total_tokens, 9);
+    assert!(decoded.usage.prompt_tokens_details.is_none());
 }
 
 #[test]

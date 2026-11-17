@@ -143,8 +143,7 @@ fn an_environment_reference_in_the_module_values_loads_the_variable() {
         &[],
         "litellm_settings:\n  api_base: os.environ/MISSING_BASE\n",
     )
-    .err()
-    .expect("the reference cannot resolve");
+    .expect_err("the reference cannot resolve");
     assert!(matches!(error, ConfigError::MissingEnvironment { .. }));
 }
 

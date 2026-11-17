@@ -60,36 +60,36 @@ fn the_chat_base_falls_through_the_globals_and_then_the_route_default() {
 #[test]
 fn the_chat_key_falls_through_the_globals_in_order() {
     let mut fixture = ChatFixture::new("command-r");
-    fixture.setup.api_key = key("");
-    fixture.setup.settings.cohere_key = key("first");
+    fixture.setup.api_key = Some(key(""));
+    fixture.setup.settings.cohere_key = Some(key("first"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer first")
     );
-    fixture.setup.settings.cohere_key = key("");
-    fixture.setup.settings.cohere_api_key = key("second");
+    fixture.setup.settings.cohere_key = Some(key(""));
+    fixture.setup.settings.cohere_api_key = Some(key("second"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer second")
     );
-    fixture.setup.settings.cohere_api_key = key("");
-    fixture.setup.settings.co_api_key = key("third");
+    fixture.setup.settings.cohere_api_key = Some(key(""));
+    fixture.setup.settings.co_api_key = Some(key("third"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer third")
     );
-    fixture.setup.settings.co_api_key = key("");
-    fixture.setup.settings.api_key = key("last");
+    fixture.setup.settings.co_api_key = Some(key(""));
+    fixture.setup.settings.api_key = Some(key("last"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer last")
     );
-    fixture.setup.settings.api_key = key("");
+    fixture.setup.settings.api_key = Some(key(""));
     assert!(header_of(&fixture.prepared(), "authorization").is_none());
     fixture.setup.api_key = None;
     fixture.setup.settings.api_key = None;
     assert!(header_of(&fixture.prepared(), "authorization").is_none());
-    fixture.setup.api_key = key("explicit");
+    fixture.setup.api_key = Some(key("explicit"));
     assert_eq!(
         header_of(&fixture.prepared(), "authorization").as_deref(),
         Some("Bearer explicit")
@@ -223,10 +223,10 @@ fn a_v2_reply_mints_the_missing_tool_call_id() {
     let prepared = ChatFixture::new("v2/command-r").prepared();
     let reply = r#"{"message":{"tool_calls":[{"id":"call-1","type":"function","function":{"name":"f","arguments":"{}"}},{"type":"function","function":{"name":"g","arguments":"{}"}}]},"usage":{"tokens":{"input_tokens":1,"output_tokens":2}}}"#;
     let answer = embedding_result(decode(&prepared, 200, reply).unwrap());
-    let EmbeddingRerankResult::CohereV2Chat(reply) = answer else {
+    let EmbeddingRerankResult::CohereV2Chat(decoded) = answer else {
         panic!("the v2 chat reply");
     };
-    let calls = reply.message.tool_calls.unwrap();
+    let calls = decoded.message.tool_calls.unwrap();
     assert_eq!(calls[0].id, "call-1");
-    assert!(Uuid::parse_str(&calls[1].id).is_ok());
+    Uuid::parse_str(&calls[1].id).unwrap();
 }
