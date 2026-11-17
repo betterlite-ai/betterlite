@@ -23,7 +23,9 @@ use crate::router_core::no_deployment::NoDeployment;
 use crate::router_core::pipeline::{
     HealthyDeployments, StrategyRoute, healthy_deployments, prepare, resolve_catalog, route,
 };
-use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
+use crate::router_core::route::{
+    ClientAccess, PromptInputs, RouteContext, RoutePolicy, RouteRequest,
+};
 use crate::router_core::services::{Cancelled, RouteServices};
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::static_eligibility::request::RequestFacts;
@@ -125,8 +127,6 @@ pub(crate) fn route_request<'request>(
         affinity_pinned: false,
         excluded_deployment_ids: &[],
         retry_skipped_deployment_ids: &[],
-        messages: None,
-        request_kwargs: None,
     }
 }
 
@@ -364,6 +364,11 @@ impl RequestSetup {
             affinity_pinned: self.pinned,
             excluded_deployment_ids: &self.excluded,
             retry_skipped_deployment_ids: &self.retry_skipped,
+        }
+    }
+
+    pub(super) fn prompt_inputs(&self) -> PromptInputs<'_> {
+        PromptInputs {
             messages: self.messages.as_deref(),
             request_kwargs: self.request_kwargs.as_ref(),
         }
@@ -431,6 +436,7 @@ pub(super) async fn run_route(
     let request = setup.request();
     let (limits, params) = (NoLimits, Providers::Unknown);
     let mut context = route_context(&request, services, &limits, &params);
+    context.policy.prompt = setup.prompt_inputs();
     context.clients = setup.client_access();
     drive(fixture, &context, setup, strategy, random).await
 }
@@ -444,6 +450,7 @@ pub(super) async fn run_checked(
 ) -> Result<AttemptResult, RoutingError> {
     let request = setup.request();
     let mut context = route_context(&request, services, checks.limits, checks.params);
+    context.policy.prompt = setup.prompt_inputs();
     context.policy.enable_pre_call_checks = checks.pre_call;
     context.clients = setup.client_access();
     let mut random = seeded();
@@ -478,7 +485,8 @@ pub(super) async fn run_healthy(
 ) -> Result<HealthyDeployments, RoutingError> {
     let request = setup.request();
     let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
-    let context = route_context(&request, &services, &limits, &params);
+    let mut context = route_context(&request, &services, &limits, &params);
+    context.policy.prompt = setup.prompt_inputs();
     let matched = {
         let resolver = fixture.resolver();
         resolve_catalog(&resolver, context.request)?

@@ -20,8 +20,8 @@ pub(super) async fn apply(
     let selection = FilterRequest {
         model: route.request.model,
         deployments: &candidates.deployments,
-        messages: route.request.messages,
-        request_kwargs: route.request.request_kwargs,
+        messages: route.policy.prompt.messages,
+        request_kwargs: route.policy.prompt.request_kwargs,
         priority_group: false,
         target_order: route.request.facts.target_order,
     };

@@ -179,8 +179,6 @@ fn route_request<'request>(
         affinity_pinned: false,
         excluded_deployment_ids: &route.excluded_deployment_ids,
         retry_skipped_deployment_ids: &[],
-        messages: None,
-        request_kwargs: None,
     }
 }
 

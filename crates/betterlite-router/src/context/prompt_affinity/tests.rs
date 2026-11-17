@@ -45,10 +45,10 @@ async fn a_pinned_prefix_narrows_the_pool() {
     };
     let facts = RequestFacts::default();
     let typed = messages(MARKED_MESSAGES);
-    let mut request = route_request("gpt-4o", &facts);
-    request.messages = Some(typed.as_slice());
+    let request = route_request("gpt-4o", &facts);
     let (limits, params) = (NoLimits, Providers::Unknown);
-    let route = route_context(&request, &services, &limits, &params);
+    let mut route = route_context(&request, &services, &limits, &params);
+    route.policy.prompt.messages = Some(typed.as_slice());
     let narrowed = apply(pool(), &route).await.unwrap();
     assert_eq!(ids(&narrowed.deployments), ["a"]);
 }
@@ -87,10 +87,10 @@ async fn a_target_order_keeps_the_pool() {
         compaction_pending: false,
     };
     let typed = messages(MARKED_MESSAGES);
-    let mut request = route_request("gpt-4o", &facts);
-    request.messages = Some(typed.as_slice());
+    let request = route_request("gpt-4o", &facts);
     let (limits, params) = (NoLimits, Providers::Unknown);
-    let route = route_context(&request, &services, &limits, &params);
+    let mut route = route_context(&request, &services, &limits, &params);
+    route.policy.prompt.messages = Some(typed.as_slice());
     let kept = apply(pool(), &route).await.unwrap();
     assert_eq!(ids(&kept.deployments), ["a", "b"]);
 }
@@ -107,11 +107,11 @@ async fn request_kwargs_enable_prompt_caching_narrows_the_pool() {
     };
     let facts = RequestFacts::default();
     let typed = messages(PLAIN_MESSAGES);
-    let mut request = route_request("gpt-4o", &facts);
-    request.messages = Some(typed.as_slice());
-    request.request_kwargs = Some(&kwargs);
+    let request = route_request("gpt-4o", &facts);
     let (limits, params) = (NoLimits, Providers::Unknown);
-    let route = route_context(&request, &services, &limits, &params);
+    let mut route = route_context(&request, &services, &limits, &params);
+    route.policy.prompt.messages = Some(typed.as_slice());
+    route.policy.prompt.request_kwargs = Some(&kwargs);
     let narrowed = apply(pool(), &route).await.unwrap();
     assert_eq!(ids(&narrowed.deployments), ["a"]);
 }
