@@ -5,20 +5,13 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use secrecy::SecretString;
 
 use super::support;
-use crate::openai_dispatch::call::ChatCall;
-use crate::openai_dispatch::fixtures::{FixtureAnswer, FixtureLogger};
+use crate::openai_dispatch::call::{ChatCall, Composition};
+use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
+use crate::openai_dispatch::fixtures::logger::FixtureLogger;
 use crate::operation::{ChatCompletion, OperationResult};
 
-pub async fn check() {
-    let mut composition = support::composition();
-    composition.globals = LiteLlmGlobals {
-        api_base: Some(String::from("https://global.test/v1")),
-        api_key: Some(SecretString::from("sk-global")),
-        openai_key: None,
-        organization: Some(String::from("org-global")),
-    };
-    composition.chat_defaults = support::chat_defaults(r#"{"temperature":0.5,"max_tokens":7}"#);
-    let call = ChatCall {
+fn call() -> ChatCall {
+    ChatCall {
         model: String::from("gpt-4o"),
         request: support::chat_request(
             r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"temperature":0.0}"#,
@@ -38,24 +31,55 @@ pub async fn check() {
         ])),
         timeout: Some(30.0),
         metadata: None,
+    }
+}
+
+fn composition() -> Composition {
+    let mut composition = support::composition();
+    composition.globals = LiteLlmGlobals {
+        api_base: Some(String::from("https://global.test/v1")),
+        api_key: Some(SecretString::from("sk-global")),
+        openai_key: None,
+        organization: Some(String::from("org-global")),
     };
+    composition.chat_defaults = support::chat_defaults(r#"{"temperature":0.5,"max_tokens":7}"#);
+    composition
+}
+
+async fn dispatched() -> (FixtureAnswer, FixtureLogger, OperationResult) {
     let answer = FixtureAnswer::new(200, support::CHAT_REPLY.as_bytes().to_vec());
     let mut logger = FixtureLogger::default();
-    let result = support::dispatch_chat(&composition, call, &answer, &mut logger)
+    let result = support::dispatch_chat(&composition(), call(), &answer, &mut logger)
         .await
         .expect("the chat dispatch");
+    (answer, logger, result)
+}
+
+// The explicit identity names the call, and the configured organization is sent beside it.
+pub(super) async fn check_identity() {
+    let (answer, _logger, _result) = dispatched().await;
     let sent = answer.requests();
     assert_eq!(sent.len(), 1);
-    let sent = &sent[0];
-    assert_eq!(sent.method, "POST");
-    assert_eq!(sent.url, "https://explicit.test/v1/chat/completions");
-    assert_eq!(sent.header("authorization"), Some("Bearer sk-explicit"));
-    assert_eq!(sent.header("accept"), Some("application/json"));
-    assert_eq!(sent.header("content-type"), Some("application/json"));
-    assert_eq!(sent.header("openai-organization"), Some("org-global"));
-    assert_eq!(sent.header("x-header"), Some("e"));
-    assert_eq!(sent.header("x-other"), Some("1"));
-    let body = support::body_fields(&sent.body);
+    assert_eq!(sent[0].method, "POST");
+    assert_eq!(sent[0].url, "https://explicit.test/v1/chat/completions");
+    assert_eq!(sent[0].header("authorization"), Some("Bearer sk-explicit"));
+    assert_eq!(sent[0].header("openai-organization"), Some("org-global"));
+}
+
+// completion() merges the caller's map with its extra headers, and the SDK sends JSON.
+pub(super) async fn check_headers() {
+    let (answer, _logger, _result) = dispatched().await;
+    let sent = answer.requests();
+    assert_eq!(sent[0].header("accept"), Some("application/json"));
+    assert_eq!(sent[0].header("content-type"), Some("application/json"));
+    assert_eq!(sent[0].header("x-header"), Some("e"));
+    assert_eq!(sent[0].header("x-other"), Some("1"));
+}
+
+// The body keeps the explicit zero over the configured default and fills the absent key, and the reply decodes.
+pub(super) async fn check_body_and_reply() {
+    let (answer, logger, result) = dispatched().await;
+    let body = support::body_fields(&answer.requests()[0].body);
     assert_eq!(
         support::field(&body, "model"),
         &support::text_value("gpt-4o")
@@ -80,4 +104,10 @@ pub async fn check() {
     assert_eq!(reply.usage.total_tokens, 2);
     // a successful non-streamed chat call has no post_call of main.py's
     assert!(logger.calls.is_empty());
+}
+
+pub(super) async fn check_all() {
+    check_identity().await;
+    check_headers().await;
+    check_body_and_reply().await;
 }

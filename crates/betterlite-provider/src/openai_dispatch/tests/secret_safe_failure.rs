@@ -3,7 +3,7 @@ use secrecy::SecretString;
 use super::support;
 use crate::openai_dispatch::call::ChatCall;
 use crate::openai_dispatch::compose::{chat_plan, resolve};
-use crate::openai_dispatch::fixtures::RecordedRequest;
+use crate::openai_dispatch::fixtures::answer::RecordedRequest;
 
 const KEY: &str = "sk-fixture-super-secret";
 

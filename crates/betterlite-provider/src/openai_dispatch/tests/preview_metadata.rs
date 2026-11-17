@@ -3,7 +3,10 @@ use indexmap::IndexMap;
 
 use super::support;
 use crate::openai_dispatch::call::{ChatCall, Composition};
-use crate::openai_dispatch::fixtures::{FixtureAnswer, FixtureLogger};
+use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
+use crate::openai_dispatch::fixtures::logger::FixtureLogger;
+
+const BODY: &str = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"metadata":{"keep":"request"}}"#;
 
 fn metadata(fields: &[(&str, JsonValue)]) -> IndexMap<String, JsonValue> {
     fields
@@ -28,18 +31,8 @@ fn call(body: &str, metadata: Option<IndexMap<String, JsonValue>>) -> ChatCall {
     }
 }
 
-async fn sent_body(composition: &Composition, call: ChatCall) -> IndexMap<String, JsonValue> {
-    let answer = FixtureAnswer::new(200, support::CHAT_REPLY.as_bytes().to_vec());
-    let mut logger = FixtureLogger::default();
-    let _result = support::dispatch_chat(composition, call, &answer, &mut logger)
-        .await
-        .expect("the chat dispatch");
-    support::body_fields(&answer.requests()[0].body)
-}
-
-pub async fn check() {
-    let body = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"metadata":{"keep":"request"}}"#;
-    let nested = metadata(&[
+fn nested() -> IndexMap<String, JsonValue> {
+    metadata(&[
         (
             "requester_metadata",
             JsonValue::Object(metadata(&[
@@ -49,26 +42,45 @@ pub async fn check() {
             ])),
         ),
         ("outer", support::text_value("ignored")),
-    ]);
+    ])
+}
 
-    // preview is off by default: the call metadata never reaches the body
-    let composition = support::composition();
-    assert!(!composition.provider.enable_preview_features);
-    let fields = sent_body(&composition, call(body, Some(nested.clone()))).await;
-    assert!(!fields.contains_key("metadata"));
-
-    // enabled: the cleaned nested map becomes the body metadata and keeps strings only
+fn preview_composition() -> Composition {
     let mut composition = support::composition();
     composition.provider.enable_preview_features = true;
-    let fields = sent_body(&composition, call(body, Some(nested))).await;
+    composition
+}
+
+async fn sent_body(composition: &Composition, call: ChatCall) -> IndexMap<String, JsonValue> {
+    let answer = FixtureAnswer::new(200, support::CHAT_REPLY.as_bytes().to_vec());
+    let mut logger = FixtureLogger::default();
+    let _result = support::dispatch_chat(composition, call, &answer, &mut logger)
+        .await
+        .expect("the chat dispatch");
+    support::body_fields(&answer.requests()[0].body)
+}
+
+// Preview is off by default: the call metadata never reaches the body.
+pub(super) async fn check_disabled() {
+    let composition = support::composition();
+    assert!(!composition.provider.enable_preview_features);
+    let fields = sent_body(&composition, call(BODY, Some(nested()))).await;
+    assert!(!fields.contains_key("metadata"));
+}
+
+// Enabled: the cleaned nested map becomes the body metadata and keeps strings only.
+pub(super) async fn check_enabled() {
+    let fields = sent_body(&preview_composition(), call(BODY, Some(nested()))).await;
     let cleaned = support::object_field(&fields, "metadata");
     assert_eq!(cleaned.len(), 1);
     assert_eq!(
         cleaned.get("user_id").expect("the string value"),
         &support::text_value("u-1")
     );
+}
 
-    // an empty cleaned nested map falls back to the whole metadata, strings only
+// An empty cleaned nested map falls back to the whole metadata, strings only.
+pub(super) async fn check_outer_fallback() {
     let outer_only = metadata(&[
         (
             "requester_metadata",
@@ -77,32 +89,26 @@ pub async fn check() {
         ("team", support::text_value("t-1")),
         ("hidden_params", support::text_value("secret")),
     ]);
-    let fields = sent_body(&composition, call(body, Some(outer_only))).await;
+    let fields = sent_body(&preview_composition(), call(BODY, Some(outer_only))).await;
     let cleaned = support::object_field(&fields, "metadata");
     assert_eq!(cleaned.len(), 1);
     assert_eq!(
         cleaned.get("team").expect("the fallback value"),
         &support::text_value("t-1")
     );
+}
 
-    // nothing survives cleaning and no map was given: the body carries no metadata
+// Nothing survives cleaning and no map was given: the body carries no metadata.
+pub(super) async fn check_nothing_survives() {
     let nothing = metadata(&[("count", support::number_value(4))]);
-    assert!(
-        !sent_body(&composition, call(body, Some(nothing)))
-            .await
-            .contains_key("metadata")
-    );
-    assert!(
-        !sent_body(&composition, call(body, None))
-            .await
-            .contains_key("metadata")
-    );
+    let cleaned = sent_body(&preview_composition(), call(BODY, Some(nothing))).await;
+    assert!(!cleaned.contains_key("metadata"));
+    let absent = sent_body(&preview_composition(), call(BODY, None)).await;
+    assert!(!absent.contains_key("metadata"));
 }
 
 // The cleaned map keeps the first sixteen string values and drops the rest.
-pub async fn check_limits_to_sixteen() {
-    let mut composition = support::composition();
-    composition.provider.enable_preview_features = true;
+pub(super) async fn check_limits_to_sixteen() {
     let mut fields = IndexMap::new();
     for index in 0..18 {
         fields.insert(format!("key-{index}"), support::text_value("v"));
@@ -114,9 +120,17 @@ pub async fn check_limits_to_sixteen() {
             JsonValue::Object(fields),
         )])),
     );
-    let sent = sent_body(&composition, call).await;
+    let sent = sent_body(&preview_composition(), call).await;
     let cleaned = support::object_field(&sent, "metadata");
     assert_eq!(cleaned.len(), 16);
     assert!(cleaned.contains_key("key-15"));
     assert!(!cleaned.contains_key("key-16"));
+}
+
+pub(super) async fn check_all() {
+    check_disabled().await;
+    check_enabled().await;
+    check_outer_fallback().await;
+    check_nothing_survives().await;
+    check_limits_to_sixteen().await;
 }

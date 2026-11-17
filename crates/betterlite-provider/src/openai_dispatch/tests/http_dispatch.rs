@@ -14,7 +14,7 @@ use super::support;
 use crate::openai_dispatch::OpenAi;
 use crate::openai_dispatch::call::ChatCall;
 use crate::openai_dispatch::compose::chat_plan;
-use crate::openai_dispatch::fixtures::RecordedRequest;
+use crate::openai_dispatch::fixtures::answer::RecordedRequest;
 use crate::operation::{ChatCompletion, OperationError, OperationResult};
 use crate::prepared::deployment::Deployment;
 use crate::provider::Adapter as _;
@@ -69,25 +69,23 @@ fn deployment(api_base: &str) -> Deployment {
     Deployment::from_params(params).expect("the deployment")
 }
 
-pub async fn check() {
+async fn loopback() -> (TcpListener, String) {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("the listener");
     let address = listener.local_addr().expect("the address");
-    let api_base = format!("http://{address}/v1");
+    (listener, format!("http://{address}/v1"))
+}
+
+// Sends the composed call to a one-shot loopback server and returns the request text, its body and the decoded reply.
+async fn round_trip(reply: &str) -> (String, Vec<u8>, Result<OperationResult, OperationError>) {
+    let (listener, api_base) = loopback().await;
     let composition = support::composition();
     let call = call(api_base.clone());
     let plan = chat_plan(&composition, &call).expect("the chat plan");
-    let sent = RecordedRequest::of(&plan.prepared).expect("a prepared HTTP request");
-    assert_eq!(sent.url, format!("http://{address}/v1/chat/completions"));
-    assert_eq!(sent.header("authorization"), Some("Bearer oracle-key"));
-    assert_eq!(sent.header("content-type"), Some("application/json"));
-    let expected = sent.body.clone();
-
-    let reply = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{REPLY}",
-        REPLY.len()
-    );
+    let expected = RecordedRequest::of(&plan.prepared)
+        .expect("a prepared request")
+        .body;
     let (result, request) = tokio::join!(
         async {
             let client = client().await;
@@ -98,15 +96,34 @@ pub async fn check() {
                 .expect("the upstream answer");
             OpenAi.decode(&plan.prepared, upstream)
         },
-        serve_once(listener, &expected, &reply)
+        serve_once(listener, &expected, reply)
     );
-    // the upstream request carries the composed auth, headers and body
+    (request, expected, result)
+}
+
+// The composed plan names the endpoint and carries the resolved auth and content type.
+pub(super) fn check_plan_shape() {
+    let composition = support::composition();
+    let plan = chat_plan(&composition, &call(String::from("http://127.0.0.1:9/v1")))
+        .expect("the chat plan");
+    let sent = RecordedRequest::of(&plan.prepared).expect("a prepared HTTP request");
+    assert_eq!(sent.url, "http://127.0.0.1:9/v1/chat/completions");
+    assert_eq!(sent.header("authorization"), Some("Bearer oracle-key"));
+    assert_eq!(sent.header("content-type"), Some("application/json"));
+}
+
+// The composed call reaches the upstream with its auth, headers and body, and the reply decodes.
+pub(super) async fn check_round_trip() {
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{REPLY}",
+        REPLY.len()
+    );
+    let (request, expected, result) = round_trip(&reply).await;
     assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
     let lowercase = request.to_ascii_lowercase();
     assert!(lowercase.contains("authorization: bearer oracle-key"));
     assert!(lowercase.contains("content-type: application/json"));
     assert!(request.ends_with(String::from_utf8_lossy(&expected).as_ref()));
-    // the caller receives the provider's own reply
     let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = result.expect("the chat completion")
     else {
         panic!("a chat completion");
@@ -121,34 +138,12 @@ pub async fn check() {
 }
 
 // An upstream refusal keeps the provider's status and body, so the route renders its type, param and code.
-pub async fn check_failure() {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("the listener");
-    let address = listener.local_addr().expect("the address");
-    let api_base = format!("http://{address}/v1");
-    let composition = support::composition();
-    let call = call(api_base.clone());
-    let plan = chat_plan(&composition, &call).expect("the chat plan");
-    let expected = RecordedRequest::of(&plan.prepared)
-        .expect("a prepared HTTP request")
-        .body;
+pub(super) async fn check_failure() {
     let reply = format!(
         "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{ERROR_BODY}",
         ERROR_BODY.len()
     );
-    let (result, request) = tokio::join!(
-        async {
-            let client = client().await;
-            let deployment = deployment(&api_base);
-            let upstream = OpenAi
-                .execute(&client, &plan.prepared, &deployment)
-                .await
-                .expect("the upstream answer");
-            OpenAi.decode(&plan.prepared, upstream)
-        },
-        serve_once(listener, &expected, &reply)
-    );
+    let (request, _expected, result) = round_trip(&reply).await;
     assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
     let Err(error) = result else {
         panic!("the provider refusal");
@@ -160,7 +155,7 @@ pub async fn check_failure() {
     assert_eq!(response.body, ERROR_BODY.as_bytes());
 }
 
-pub fn check_stream() {
+pub(super) fn check_stream() {
     // the composed stream branch builds the same endpoint with its own accept header
     let composition = support::composition();
     let call = ChatCall {
@@ -178,4 +173,11 @@ pub fn check_stream() {
         support::field(&body, "stream"),
         &betterlite_models::controls::json_value::JsonValue::Bool(true)
     );
+}
+
+pub(super) async fn check_all() {
+    check_plan_shape();
+    check_round_trip().await;
+    check_failure().await;
+    check_stream();
 }

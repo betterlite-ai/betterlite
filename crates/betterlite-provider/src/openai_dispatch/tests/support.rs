@@ -21,9 +21,9 @@ use crate::openai_dispatch::call::{
 };
 use crate::openai_dispatch::dispatch::dispatch;
 use crate::openai_dispatch::error::OpenAiProviderError;
-use crate::openai_dispatch::fixtures::{
-    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply,
-};
+use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
+use crate::openai_dispatch::fixtures::logger::FixtureLogger;
+use crate::openai_dispatch::fixtures::text_transport::{FixtureTextSource, TextReply};
 use crate::openai_dispatch::logging::LoggedCall;
 use crate::openai_dispatch::transport::Deps;
 use crate::operation::{OperationRequest, OperationResult};
@@ -141,7 +141,7 @@ pub fn object_field<'body>(
 }
 
 // The clock a projected text reply stamps its created field with, fixed so a test can compare it
-fn fixed_now() -> StreamInstant {
+pub fn fixed_now() -> StreamInstant {
     StreamInstant {
         seconds: 1_700_000_000,
         timestamp: 1_700_000_000.0,
@@ -149,7 +149,7 @@ fn fixed_now() -> StreamInstant {
 }
 
 // The identifier a projected text reply names itself with, fixed so a test can compare it
-fn fixed_id() -> Uuid {
+pub fn fixed_id() -> Uuid {
     Uuid::from_u128(1)
 }
 

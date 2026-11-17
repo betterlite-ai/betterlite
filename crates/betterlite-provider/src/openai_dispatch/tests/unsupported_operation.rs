@@ -3,9 +3,9 @@ use crate::aiohttp_openai_dispatch::AiohttpOpenAiRequest;
 use crate::openai_dispatch::call::{ChatCall, OpenAiOperation};
 use crate::openai_dispatch::dispatch::dispatch;
 use crate::openai_dispatch::error::OpenAiProviderError;
-use crate::openai_dispatch::fixtures::{
-    FixtureAnswer, FixtureLogger, FixtureTextSource, TextReply,
-};
+use crate::openai_dispatch::fixtures::answer::FixtureAnswer;
+use crate::openai_dispatch::fixtures::logger::FixtureLogger;
+use crate::openai_dispatch::fixtures::text_transport::{FixtureTextSource, TextReply};
 use crate::openai_dispatch::transport::Deps;
 use crate::operation::OperationRequest;
 
@@ -27,7 +27,7 @@ async fn openai_provider_unsupported_operation() {
         timeout: None,
         metadata: None,
     };
-    let error = dispatch(
+    let result = dispatch(
         OperationRequest::AiohttpOpenAi(AiohttpOpenAiRequest),
         OpenAiOperation::Chat(Box::new(call)),
         &composition,
@@ -39,8 +39,10 @@ async fn openai_provider_unsupported_operation() {
         },
         &mut logger,
     )
-    .await
-    .expect_err("the unsupported request");
+    .await;
+    let Err(error) = result else {
+        panic!("the unsupported request");
+    };
     assert!(matches!(error, OpenAiProviderError::UnsupportedOperation));
     assert_eq!(
         error.to_string(),
