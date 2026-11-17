@@ -35,10 +35,10 @@ pub fn is_positive_int_like(value: Option<&Json>) -> bool {
 
 fn positive_number(number: &Number) -> bool {
     if let Some(value) = number.as_i64() {
-        return value > 0;
+        return value.is_positive();
     }
     if let Some(value) = number.as_u64() {
-        return value > 0;
+        return value != 0;
     }
     number.as_f64().is_some_and(|value| value.trunc() > 0.0_f64)
 }
