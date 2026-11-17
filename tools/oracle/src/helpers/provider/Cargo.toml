@@ -24,7 +24,7 @@ betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
-betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
+betterlite-provider = { path = "../../../../../crates/betterlite-provider", features = ["testing"] }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
