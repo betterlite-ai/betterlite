@@ -3,6 +3,9 @@ title: Logging and service-event integration
 description: >-
   Wire the completed logging components into betterlite-server and the binary. Add typed service timing/failure
   events, JSON tracing integration and correlation IDs, reusing B003's stderr JSON format and B187 redaction. Inject
+  ServiceType and ServiceLoggerPayload already exist on main in
+  crates/betterlite-logging/src/otel/model/payloads/service.rs: extend those two with the fields and derives
+  you need and use them everywhere; define no second type of either name.
   clock, sink and callback registry; initialize them once from config, feed pre-call and terminal events from the
   actual chat/embedding paths, and drain B191 during graceful shutdown. Register service events as their own phase,
   prevent recursive logging of callback failures, and never print raw body/header/exception dumps. Match log-level
@@ -10,7 +13,9 @@ description: >-
   sink for success, upstream error, streamed cancellation and shutdown. Keep exporter-specific initialization from
   _service_logger.py in later integration tasks; no callback is advertised as installed until it is.  Seed B171's
   shared helper_case corpus with every added operation and replay it through the common typed parser. Resolve LITELLM_LOG
-  (DEBUG), JSON_LOGS (only case-insensitive true enables its parsed flag), and litellm_settings.service_callback
+  (DEBUG), JSON_LOGS (only case-insensitive true enables its parsed flag), LITELLM_DISABLE_REDACT_SECRETS
+  (litellm/_logging.py L71: secret redaction stays on unless the value is "true" ignoring case; later tasks
+  read this one parsed flag) and litellm_settings.service_callback
   through config. B003 keeps stderr JSON as the gateway format; retain the JSON_LOGS flag for compatible callback/service
   formatting. B012 also wires LOGGING_WORKER_MAX_QUEUE_SIZE=50000, LOGGING_WORKER_CONCURRENCY=100 and LOGGING_WORKER_MAX_TIME_PER_COROUTINE=20
   into B191. Request Logging dispatch is supplied by the split B190 lifecycle tasks, not invented in this integration.

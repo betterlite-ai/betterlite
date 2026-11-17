@@ -1,6 +1,6 @@
 id: B304
 title: Router counters, callback state and batched reads
-description: 'Implement RouterCounters and batched delta synchronization over B360, with B012 success/failure
+description: 'Implement RouterCounters and batched delta synchronization over B360, with B397 success/failure
   callbacks and server-owned retirement/shutdown. Preserve LiteLLM merge arithmetic and failure recovery:
   log a failed flush and discard its detached deltas, without replay after an ambiguous response. B382
   owns read prefetch; this task owns counter lifetime and writes. Resolve default_sync_interval with Python

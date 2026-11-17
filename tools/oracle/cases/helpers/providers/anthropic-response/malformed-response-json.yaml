@@ -1,0 +1,47 @@
+kind: helper
+name: anthropic-response-malformed-response-json
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      not json at all
+    headers: {x-request-id: req-b580}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data:
+      model: claude-sonnet-4-6
+      max_tokens: 64
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+calls:
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 429
+      now: 1767225600
+      raw_text: |
+        {"content":[{"type":"text"
+      headers: {x-request-id: req-b580, retry-after: "7"}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data:
+        model: claude-sonnet-4-6
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 400
+      now: 1767225600
+      raw_text: ""
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}

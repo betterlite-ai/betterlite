@@ -74,7 +74,7 @@ dod:
     still attempts close. Close RuntimeError containing "already completed" or "websocket.close" is ignored;
     another RuntimeError becomes "Unexpected error while closing WebSocket: <close_error>". Other close
     exception classes propagate. Older InvalidStatusCode is not caught by the outer InvalidStatus branch
-    and therefore takes the generic1011 path. Count all attempts and ensure secrets are redacted by B012.
+    and therefore takes the generic1011 path. Count all attempts and ensure secrets are redacted by B187.
   proof: [behavior-tests, oracle, service-python]
 - text: >-
     realtime_backend_size_limit uses native default 16777216 and explicit 1024 to close 1009 on cap+1, accepting
