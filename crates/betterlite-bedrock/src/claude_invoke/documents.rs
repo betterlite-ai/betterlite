@@ -74,7 +74,7 @@ where
 
 // Each accepted block is fetched, repeated URLs included, so every one counts against the ceiling.
 fn check_remote_urls(messages: &[Json]) -> Result<(), DocumentError> {
-    let mut accepted = 0;
+    let mut accepted: usize = 0;
     for message in messages {
         let Json::Object(message_fields) = message else {
             continue;

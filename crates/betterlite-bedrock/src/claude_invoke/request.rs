@@ -108,7 +108,9 @@ where
     body.shift_remove(MODELS);
     body.shift_remove(STREAM);
     sources.rewrite_body(request, &mut body).await?;
-    sources.apply_beta_headers(request, &mut body).await?;
+    sources
+        .apply_beta_headers(request, &prepared.headers, &mut body)
+        .await?;
     Ok(ClaudeInvokePrepared {
         body,
         tool_name_reverse: prepared.tool_name_reverse,
@@ -184,9 +186,11 @@ where
         Ok(())
     }
 
+    // The parent transform merged its optional betas into these headers before it returned them.
     async fn apply_beta_headers(
         &mut self,
         request: &ClaudeInvokeRequest<'_>,
+        headers: &AnthropicHeaders,
         body: &mut Object,
     ) -> Result<(), ClaudeInvokeError<Blocks::Failure>> {
         let betas = compute_beta_headers(
@@ -194,7 +198,7 @@ where
                 model: request.model,
                 messages: &request.messages,
                 optional_params: &request.optional_params,
-                headers: &request.headers,
+                headers,
                 thinking: body.get("thinking"),
             },
             &mut *self.environment,

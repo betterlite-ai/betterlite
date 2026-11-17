@@ -33,5 +33,14 @@ call:
         headers: {anthropic-beta: mcp-client-2025-11-20}
         fetch: {}
         inline: false
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params:
+          max_tokens: 64
+          context_management: {edits: [{type: clear_tool_uses_20250919}]}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
 env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
 compare: {ignore: []}

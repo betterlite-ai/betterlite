@@ -779,6 +779,10 @@ pub(super) fn structured_output_body() {
         .expect("the native structured output transforms");
     let body = body_json(&prepared);
     assert_eq!(body["output_config"], json!({"format": format}));
+    assert_eq!(
+        body["anthropic_beta"],
+        json!(["structured-outputs-2025-11-13"])
+    );
     assert!(body.get("output_format").is_none());
     let unsupported = chat_request(
         "claude-plain",
@@ -806,32 +810,22 @@ pub(super) fn structured_output_body() {
     );
 }
 
-fn document_bodies(count: usize) -> Vec<Json> {
+fn document_bodies<Url>(count: usize, url: Url) -> Vec<Json>
+where
+    Url: Fn(usize) -> String,
+{
     let mut messages = Vec::with_capacity(count);
     for index in 0..count {
         let message = json!({
             "role": "user",
             "content": [{
                 "type": "document",
-                "source": {"type": "url", "url": format!("https://example.test/{index}.pdf")},
+                "source": {"type": "url", "url": url(index)},
             }],
         });
         messages.push(serde_json::from_value(message).expect("the generated message parses"));
     }
     messages
-}
-
-fn repeated_document_bodies(count: usize) -> Vec<Json> {
-    let blocks: Vec<Value> = (0..count)
-        .map(|_| {
-            json!({
-                "type": "document",
-                "source": {"type": "url", "url": "https://example.test/same.pdf"},
-            })
-        })
-        .collect();
-    let message = json!({"role": "user", "content": blocks});
-    vec![serde_json::from_value(message).expect("the repeated message parses")]
 }
 
 pub(super) fn remote_url_limit() {
@@ -842,7 +836,9 @@ pub(super) fn remote_url_limit() {
     let fetcher = MapFetcher::default();
     let over = chat_request(
         "claude-plain",
-        document_bodies(MAX_REMOTE_URLS + 1),
+        document_bodies(MAX_REMOTE_URLS + 1, |index| {
+            format!("https://example.test/{index}.pdf")
+        }),
         map_of(r#"{"max_tokens": 64}"#),
         AnthropicHeaders::default(),
         &defaults,
@@ -860,7 +856,9 @@ pub(super) fn remote_url_limit() {
     assert!(fetcher.calls().is_empty());
     let within = chat_request(
         "claude-plain",
-        document_bodies(MAX_REMOTE_URLS),
+        document_bodies(MAX_REMOTE_URLS, |index| {
+            format!("https://example.test/{index}.pdf")
+        }),
         map_of(r#"{"max_tokens": 64}"#),
         AnthropicHeaders::default(),
         &defaults,
@@ -876,7 +874,9 @@ pub(super) fn remote_url_limit() {
     let quiet = MapFetcher::default();
     let repeated_over = chat_request(
         "claude-plain",
-        repeated_document_bodies(MAX_REMOTE_URLS + 1),
+        document_bodies(MAX_REMOTE_URLS + 1, |_| {
+            "https://example.test/same.pdf".to_owned()
+        }),
         map_of(r#"{"max_tokens": 64}"#),
         AnthropicHeaders::default(),
         &defaults,
@@ -900,7 +900,9 @@ pub(super) fn remote_url_limit() {
     )]);
     let repeated = chat_request(
         "claude-plain",
-        repeated_document_bodies(MAX_REMOTE_URLS),
+        document_bodies(MAX_REMOTE_URLS, |_| {
+            "https://example.test/same.pdf".to_owned()
+        }),
         map_of(r#"{"max_tokens": 64}"#),
         AnthropicHeaders::default(),
         &defaults,
