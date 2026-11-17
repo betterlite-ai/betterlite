@@ -7,10 +7,12 @@ from litellm.llms.vertex_ai.vertex_ai_partner_models.anthropic.transformation im
     VertexAIAnthropicConfig,
 )
 from litellm.types.utils import ModelResponse
-from pydantic import BaseModel, ConfigDict, JsonValue as Json, TypeAdapter
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
 BETA_LIST: Final = TypeAdapter(list[str])
+JSON_LIST: Final = TypeAdapter(list[Json])
 
 
 class Fixture(TypedDict):
@@ -89,7 +91,7 @@ class LoggingSink(Protocol):
 
 @runtime_checkable
 class Responder(Protocol):
-    def transform_response(  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2709-L2722
+    def transform_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2709-L2722
         self,
         model: str,
         raw_response: httpx.Response,
@@ -152,7 +154,11 @@ def request_answer(transformer: Transformer, step: RequestStep) -> Json:
     )
     betas = sorted(BETA_LIST.validate_python(body.pop("anthropic_beta", [])))
     beta_header = [part for part in headers.pop("anthropic-beta", "").split(",") if part]
-    return {"body": body, "anthropic_beta": betas, "beta_header": sorted(beta_header)}
+    return {
+        "body": body,
+        "anthropic_beta": JSON_LIST.validate_python(betas),
+        "beta_header": JSON_LIST.validate_python(sorted(beta_header)),
+    }
 
 
 def response_answer(responder: Responder, step: ResponseStep) -> Json:
