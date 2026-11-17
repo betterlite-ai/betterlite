@@ -23,10 +23,11 @@ pub fn prepare(
     common: &Common<'_>,
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingRerankPrepared, FamilyError> {
-    let config =
-        embedding_config(common.provider, common.model).ok_or(FamilyError::Unsupported {
+    let config = embedding_config(common.provider, common.model).ok_or_else(|| {
+        FamilyError::Unsupported {
             provider: common.provider.to_string(),
-        })?;
+        }
+    })?;
     let non_default = non_default_params(request)?;
     let leaf = Leaf {
         common,
@@ -54,10 +55,11 @@ struct Leaf<'leaf, 'request> {
 fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let key = leaf.common.settings.resolve_api_key(leaf.common.api_key);
     // `headers = headers or extra_headers` followed by `headers.update(extra_headers)`, and no globals
-    let mut supplied = match leaf.common.headers.filter(|headers| !headers.is_empty()) {
-        Some(headers) => headers.clone(),
-        None => leaf.common.extra_headers.clone(),
-    };
+    let mut supplied = leaf
+        .common
+        .headers
+        .filter(|headers| !headers.is_empty())
+        .map_or_else(|| leaf.common.extra_headers.clone(), Clone::clone);
     supplied.extend(leaf.common.extra_headers.clone());
     let headers = cohere_request::validate_environment(supplied, key.as_ref());
     let endpoint = cohere_request::get_complete_url(leaf.common.api_base);
@@ -75,7 +77,7 @@ fn cohere(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
         input: texts(&leaf.request.input)?,
         encoding: encoding()?,
     }));
-    call(leaf.common, ("cohere", endpoint), &headers, &body, decode)
+    call(leaf.common, ("cohere", &endpoint), &headers, &body, decode)
 }
 
 fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
@@ -92,7 +94,7 @@ fn voyage(leaf: &Leaf<'_, '_>) -> Result<Call, FamilyError> {
     let endpoint = voyage_embedding::endpoint(leaf.common.api_base, variant);
     call(
         leaf.common,
-        ("voyage", endpoint),
+        ("voyage", &endpoint),
         &headers,
         &body,
         Decode::VoyageEmbedding(variant),

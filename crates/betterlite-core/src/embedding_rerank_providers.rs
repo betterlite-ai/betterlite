@@ -45,7 +45,7 @@ pub fn embedding_config(provider: ProviderId, model: &str) -> Option<EmbeddingCo
         }),
         ProviderId::JinaAi => Some(EmbeddingConfig::JinaAi),
         ProviderId::Infinity => Some(EmbeddingConfig::Infinity),
-        _ => None,
+        _other => None,
     }
 }
 
@@ -66,7 +66,7 @@ pub fn rerank_config(
         ProviderId::Infinity => Some(RerankConfig::Infinity),
         ProviderId::JinaAi => Some(RerankConfig::JinaAi),
         ProviderId::Voyage => Some(RerankConfig::Voyage),
-        _ => None,
+        _other => None,
     }
 }
 

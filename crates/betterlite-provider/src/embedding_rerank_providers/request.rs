@@ -10,14 +10,14 @@ use super::{Call, Decode};
 // every family builds one prepared call the same way; only its named target, headers and body differ
 pub(super) fn call<T: Serialize>(
     common: &Common<'_>,
-    target: (&'static str, String),
+    target: (&'static str, &str),
     headers: &Headers,
     body: &T,
     decode: Decode,
 ) -> Result<Call, FamilyError> {
     let (family, endpoint) = target;
     Ok(Call {
-        url: url(family, &endpoint)?,
+        url: url(family, endpoint)?,
         headers: http_headers(headers)?,
         body: serde_json::to_vec(body)?,
         timeout: common.timeout,

@@ -15,7 +15,6 @@ use betterlite_openai::cohere_chat_v2::reply::{
 use betterlite_openai::cohere_streams;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
-use secrecy::SecretString;
 use uuid::Uuid;
 
 use super::Common;
@@ -60,7 +59,7 @@ pub fn prepare(
     let key = common
         .settings
         .resolve_api_key(common.api_key)
-        .unwrap_or_else(|| SecretString::from(String::new()));
+        .unwrap_or_default();
     cohere_streams::validate_environment(&mut headers, &key);
     let body = body(route, &model, &base, request, stream)?;
     Ok(EmbeddingRerankPrepared(Call {
@@ -129,10 +128,8 @@ fn body(
         CohereRoute::V1 => {
             let mapped = cohere_chat_v1::map_openai_params(&non_default, Object::new());
             let config = CohereV1ChatConfig::with_settings(Object::new())?;
-            let value = serde_json::to_value(&request.messages)
-                .map_err(|source| FamilyError::Encode { source })?;
-            let messages: Vec<Message> =
-                serde_json::from_value(value).map_err(|source| FamilyError::Encode { source })?;
+            let value = serde_json::to_value(&request.messages)?;
+            let messages: Vec<Message> = serde_json::from_value(value)?;
             let options = cohere_chat_v1::request_options(&cohere_chat_v1::RequestInput {
                 config: &config,
                 messages: &messages,

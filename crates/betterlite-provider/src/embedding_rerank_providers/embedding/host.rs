@@ -40,7 +40,7 @@ pub(super) fn prepare(kind: Kind, leaf: &Leaf<'_, '_>) -> Result<Call, FamilyErr
             (body, headers, Decode::InfinityEmbedding)
         }
     };
-    call(leaf.common, (name, endpoint), &headers, &body, decode)
+    call(leaf.common, (name, &endpoint), &headers, &body, decode)
 }
 
 #[derive(Debug, Clone, Copy)]

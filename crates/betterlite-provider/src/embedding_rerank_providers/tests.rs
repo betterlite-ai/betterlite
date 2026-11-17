@@ -329,7 +329,7 @@ impl RerankFixture {
             self.setup.api_base.as_deref(),
             &self.present_version_params(),
         )
-        .ok_or(FamilyError::Unsupported {
+        .ok_or_else(|| FamilyError::Unsupported {
             provider: self.setup.provider.to_string(),
         })?;
         Ok(FamilyRerankConfig {

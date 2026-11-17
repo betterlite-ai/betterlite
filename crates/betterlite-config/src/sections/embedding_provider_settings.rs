@@ -118,8 +118,7 @@ impl Section for Raw {
 }
 
 fn configured(value: Option<String>) -> Option<SecretString> {
-    match value {
-        Some(text) if !text.is_empty() => Some(SecretString::from(text)),
-        Some(_) | None => None,
-    }
+    value
+        .filter(|text| !text.is_empty())
+        .map(SecretString::from)
 }
