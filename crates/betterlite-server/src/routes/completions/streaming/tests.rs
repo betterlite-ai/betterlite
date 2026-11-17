@@ -68,6 +68,7 @@ enum Scenario {
     DoneLast,
     ErrorTruncates,
     StreamHeaders,
+    Incremental,
 }
 
 #[rstest]
@@ -75,6 +76,7 @@ enum Scenario {
 #[case::done_last(Scenario::DoneLast)]
 #[case::error_truncates(Scenario::ErrorTruncates)]
 #[case::stream_headers(Scenario::StreamHeaders)]
+#[case::incremental(Scenario::Incremental)]
 #[tokio::test]
 async fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
@@ -82,6 +84,7 @@ async fn text_streaming_text_stream_tests_behavior(#[case] scenario: Scenario) {
         Scenario::DoneLast => done_last().await,
         Scenario::ErrorTruncates => error_truncates().await,
         Scenario::StreamHeaders => stream_headers(),
+        Scenario::Incremental => incremental().await,
     }
 }
 
@@ -124,8 +127,7 @@ async fn error_truncates() {
 }
 
 // a chunk's frame leaves the route as soon as the provider produces it, not when the stream ends
-#[tokio::test]
-async fn the_first_frame_arrives_before_the_next_provider_chunk() {
+async fn incremental() {
     let (release, released) = oneshot::channel::<Result<Json, StreamError>>();
     let first = r#"{"choices":[{"index":0,"text":" Hello"}],"created":1,"id":"cmpl-1","model":"text-model","object":"text_completion"}"#;
     let second = r#"{"choices":[{"index":0,"text":" there"}],"created":2,"id":"cmpl-2","model":"text-model","object":"text_completion"}"#;
