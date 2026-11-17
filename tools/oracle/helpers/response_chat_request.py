@@ -1,7 +1,6 @@
 import datetime as dt
 import json
 import logging
-
 from logging.handlers import BufferingHandler
 from typing import Final, TypedDict
 
@@ -61,7 +60,7 @@ def run(input_value: Input) -> JsonValue:
     verbose_logger.setLevel(logging.DEBUG)
     litellm.reasoning_auto_summary = input_value["reasoning_auto_summary"]
     try:
-        request_data = handler.transform_request(  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L581
+        request_data = handler.transform_request(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L581
             model=input_value["model"],
             messages=input_value["messages"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L584
             optional_params=optional_params,
@@ -70,8 +69,8 @@ def run(input_value: Input) -> JsonValue:
             litellm_logging_obj=logging_obj,
             client=input_value["client"],
         )
-        request = request_view(request_data)  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L581
-        call_type: str = logging_obj.call_type  # type: ignore[misc, assignment]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L618
+        request = request_view(request_data)  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L581
+        call_type: str = logging_obj.call_type  # type: ignore[misc, assignment]  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L618
     finally:
         verbose_logger.handlers = saved_handlers
         verbose_logger.setLevel(saved_level)
