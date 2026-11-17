@@ -1,0 +1,19 @@
+kind: helper
+name: vector-stores-streaming-fields-seed
+call:
+  vector_stores:
+    operation: streaming
+    request_data:
+      search_results: [{object: vector_store.search_results.page, search_query: seeded, data: []}]
+      vector_store_search_failures: [{vector_store_id: vs_seed, custom_llm_provider: openai, error: failed}]
+    response:
+      id: seeded
+      created: 9
+      object: chat.completion.chunk
+      choices:
+        - index: 0
+          delta: {content: a}
+        - index: 1
+          delta: {content: b, provider_specific_fields: {keep: x}}
+env: {}
+compare: {ignore: []}

@@ -131,9 +131,8 @@ export function App({ loading, asking }: { loading: Promise<Site>; asking: Promi
       <footer>
         <div className="wrap">
           <p>
-            Data: the task list in <a href={`${GITHUB}/tree/main/.development/backlog`}>.development/backlog</a> and the logs in <a href={`${GITHUB}/tree/main/docs/deviations`}>docs/deviations</a>. Pull requests and CI runs are read from
-            GitHub at every deploy. Agent runs and the build machine come from the snapshot in <a href={`${GITHUB}/tree/main/.development/site/stats`}>.development/site/stats</a>. Source of this page:{" "}
-            <a href={`${GITHUB}/tree/main/.development/site`}>.development/site</a>.
+            Data: the task list in <a href={`${GITHUB}/tree/main/.development/backlog`}>.development/backlog</a> and the logs in <a href={`${GITHUB}/tree/main/docs/deviations`}>docs/deviations</a>. Agent runs and the build machine come from
+            the snapshot in <a href={`${GITHUB}/tree/main/.development/site/stats`}>.development/site/stats</a>. Source of this page: <a href={`${GITHUB}/tree/main/.development/site`}>.development/site</a>.
           </p>
         </div>
       </footer>

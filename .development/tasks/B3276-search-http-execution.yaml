@@ -11,7 +11,7 @@ description: >-
   Expose one async function, execute_search, generic over SearchProvider. Its input is a SearchHttpCall record:
   query (SearchQuery), optional_params (Object), timeout (Duration), api_key (Option<SecretString>), api_base
   (Option<String>), headers (Headers, empty when the caller has none), an optional supplied ProxiedClient and the
-  deployment's TlsPolicy and ProxyPolicy. It also takes the shared ClientPool, the logging handle B012 provides
+  deployment's TlsPolicy and ProxyPolicy. It also takes the shared ClientPool, the logging handle B247 provides
   and the network_mock flag. The output is Result<SearchResponse, SearchHttpError>. SearchHttpError wraps
   ProviderError (an HTTP status failure or a transport failure after conversion) and a missing-config case is
   not needed because the trait object is always present (the Python ValueError "No provider config found for
