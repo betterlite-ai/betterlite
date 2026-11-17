@@ -1,7 +1,7 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::assembly::Assembly;
-use super::chunk::{Chunk, field};
+use super::chunk::{Chunk, field, text_field};
 use super::surface::Surface;
 use super::wire::StreamWire;
 
@@ -53,10 +53,7 @@ pub fn delta_field_texts(chunks: &[Chunk]) -> Vec<String> {
         let Some(payload) = chunk.payload() else {
             continue;
         };
-        if !chunk
-            .event_type()
-            .is_some_and(|kind| DELTA_EVENTS.contains(&kind))
-        {
+        if !text_field(field(payload, "type")).is_some_and(|kind| DELTA_EVENTS.contains(&kind)) {
             continue;
         }
         let Some(GuardrailValue::Text(delta)) = field(payload, "delta") else {

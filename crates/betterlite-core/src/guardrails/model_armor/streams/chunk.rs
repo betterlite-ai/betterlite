@@ -43,16 +43,4 @@ impl Chunk {
             Self::Bytes(_) => None,
         }
     }
-
-    #[must_use]
-    pub fn event_type(&self) -> Option<&str> {
-        let payload = self.payload()?;
-        text_field(field(payload, "type"))
-    }
-
-    #[must_use]
-    pub fn payload_field(&self, name: &str) -> Option<&GuardrailValue> {
-        let payload = self.payload()?;
-        field(payload, name)
-    }
 }

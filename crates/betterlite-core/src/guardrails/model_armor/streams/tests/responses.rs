@@ -138,6 +138,18 @@ fn responses_delta_fields_the_body_lacks_are_scanned_after_it() {
 }
 
 #[test]
+fn responses_delta_fields_join_the_scan_without_a_leading_newline() {
+    let wire = FakeWire::new(Setup::default());
+    let body = Assembly::Responses(value(r#"{"output": []}"#));
+    let chunks = [chunk(
+        r#"{"type": "response.output_text.delta", "item_id": "msg_1", "output_index": 0, "content_index": 0, "delta": "The secret"}"#,
+    )];
+    let content =
+        content_to_scan(&wire, Surface::Responses, &body, &chunks).expect("the content reads");
+    assert_eq!(content, "The secret");
+}
+
+#[test]
 fn responses_delta_fields_already_in_the_body_are_not_repeated() {
     let wire = FakeWire::new(Setup {
         parts: vec![OutputParts {

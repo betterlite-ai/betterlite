@@ -1,4 +1,4 @@
-use super::chunk::Chunk;
+use super::chunk::{Chunk, field, text_field};
 use super::wire::StreamWire;
 
 // Wire format of a buffered stream, which decides how it is assembled, scanned and refused.
@@ -22,7 +22,10 @@ pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
     }
     if chunks
         .iter()
-        .filter_map(Chunk::event_type)
+        .filter_map(|chunk| {
+            let payload = chunk.payload()?;
+            text_field(field(payload, "type"))
+        })
         .any(|kind| kind.starts_with("response."))
     {
         Surface::Responses
@@ -34,8 +37,10 @@ pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
 // LiteLLM's _is_terminal_error_stream: the refusal a preceding guardrail already produced.
 #[must_use]
 pub fn is_terminal_error<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> bool {
-    chunks
-        .iter()
-        .all(|chunk| chunk.event_type() == Some("error"))
-        || wire.is_sse_error(chunks)
+    chunks.iter().all(|chunk| {
+        chunk
+            .payload()
+            .and_then(|payload| text_field(field(payload, "type")))
+            == Some("error")
+    }) || wire.is_sse_error(chunks)
 }

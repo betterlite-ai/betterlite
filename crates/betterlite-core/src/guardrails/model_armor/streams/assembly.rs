@@ -1,6 +1,6 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::chunk::Chunk;
+use super::chunk::{Chunk, field, text_field};
 use super::surface::Surface;
 use super::wire::StreamWire;
 
@@ -36,12 +36,12 @@ pub async fn assemble<W: StreamWire>(
 #[must_use]
 pub fn terminal_body(chunks: &[Chunk]) -> Option<GuardrailValue> {
     chunks.iter().rev().find_map(|chunk| {
-        let kind = chunk.event_type()?;
+        let payload = chunk.payload()?;
+        let kind = text_field(field(payload, "type"))?;
         if !TERMINAL_EVENTS.contains(&kind) {
             return None;
         }
-        chunk
-            .payload_field("response")
+        field(payload, "response")
             .filter(|body| matches!(body, GuardrailValue::Object(_)))
             .cloned()
     })

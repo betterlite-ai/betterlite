@@ -305,6 +305,40 @@ async fn sanitized_stream_rewrites_the_body_and_emits_the_chunks() {
 }
 
 #[tokio::test]
+async fn resolve_outcome_masking_off_forwards_the_original_chunks() {
+    let emitted = vec![chunk(
+        r#"{"id": "chatcmpl-1", "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": "[REDACTED]"}}]}"#,
+    )];
+    let wire = FakeWire::new(Setup {
+        chat: Some(Assembly::Model(value(CHAT_JSON))),
+        model_text: Some("The secret".to_owned()),
+        scan: ScanReply::Armor(value(r#"{"sanitizationResult": {}}"#)),
+        sanitized: Some("[REDACTED]".to_owned()),
+        logging: value(r#"{"logged": true}"#),
+        emit: EmitReply::Chunks(emitted),
+        ..Setup::default()
+    });
+    let mut data = request_data("{}");
+    let original = chunk(r#"{"id": "chatcmpl-1", "choices": []}"#);
+    let hook = StreamHook {
+        wire: &wire,
+        request_data: &mut data,
+        guardrail_name: "model-armor",
+        settings: settings(false),
+        chunks: vec![original.clone()],
+    };
+    let items = buffered_stream(hook)
+        .await
+        .expect("the stream passes through");
+    assert_eq!(items, vec![original]);
+    assert!(wire.emitted().is_empty());
+    assert_eq!(
+        metadata_of(&data),
+        value(r#"{"_model_armor_response": {"logged": true}, "_model_armor_status": "success"}"#)
+    );
+}
+
+#[tokio::test]
 async fn rewrite_emit_failure_is_raised_when_fail_on_error_is_true() {
     let wire = FakeWire::new(Setup {
         chat: Some(Assembly::Model(value(CHAT_JSON))),
