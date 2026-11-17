@@ -40,7 +40,7 @@ def captured_diagnostics(capture: BufferingHandler) -> list[JsonValue]:
 
 
 def run(input_value: Input) -> JsonValue:
-    handler = LiteLLMResponsesTransformationHandler()
+    handler = LiteLLMResponsesTransformationHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L286
     logging_obj = Logging(
         model=input_value["model"],
         messages=None,
@@ -64,13 +64,13 @@ def run(input_value: Input) -> JsonValue:
             model=input_value["model"],
             messages=input_value["messages"],  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L584
             optional_params=optional_params,
-            litellm_params=dict(input_value["litellm_params"]),
-            headers=dict(input_value["headers"]),
+            litellm_params=input_value["litellm_params"],
+            headers=input_value["headers"],
             litellm_logging_obj=logging_obj,
             client=input_value["client"],
         )
         request = request_view(request_data)  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L581
-        call_type: str = logging_obj.call_type  # type: ignore[misc, assignment]  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L618
+        call_type: str = logging_obj.call_type  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L618
     finally:
         verbose_logger.handlers = saved_handlers
         verbose_logger.setLevel(saved_level)
