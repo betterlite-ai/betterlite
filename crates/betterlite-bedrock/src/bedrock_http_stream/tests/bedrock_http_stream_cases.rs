@@ -340,16 +340,8 @@ fn fake_body_failures(messages: &Json) {
 }
 
 fn fake_read_failures(messages: &Json) {
-    let timeout_reply = Reply {
-        status: 500,
-        headers: Vec::new(),
-        reads: vec![Err(HttpError::Timeout)],
-        refused: None,
-    };
-    let timeout_inputs = Inputs::new(timeout_reply);
-    let mut timeout_call = invoke(BASE, DATA, messages);
-    timeout_call.fake_stream = true;
-    let timeout_outcome = run(Call::Invoke(timeout_call), &timeout_inputs, Consume::None);
+    let timeout_outcome =
+        fake_invoke_failure(messages, Reply::reading(500, Err(HttpError::Timeout)));
     assert_eq!(timeout_outcome.provider_status(), Some(408));
     assert_eq!(
         timeout_outcome.provider_message(),
@@ -357,25 +349,22 @@ fn fake_read_failures(messages: &Json) {
     );
 
     // A read failure that is not a timeout is the catch-all's 500.
-    let failed_read_inputs = Inputs::new(Reply {
-        status: 500,
-        headers: Vec::new(),
-        reads: vec![Err(HttpError::TooLarge { limit: 7 })],
-        refused: None,
-    });
-    let mut failed_read_call = invoke(BASE, DATA, messages);
-    failed_read_call.fake_stream = true;
-    let failed_read_outcome = run(
-        Call::Invoke(failed_read_call),
-        &failed_read_inputs,
-        Consume::None,
-    );
+    let too_large = Reply::reading(500, Err(HttpError::TooLarge { limit: 7 }));
+    let failed_read_outcome = fake_invoke_failure(messages, too_large);
     assert_eq!(failed_read_outcome.provider_status(), Some(500));
     assert!(
         failed_read_outcome
             .provider_message()
             .is_some_and(|message| message.contains("larger than 7 bytes"))
     );
+}
+
+// The fake-stream Invoke call every conversion failure in these cases comes through.
+fn fake_invoke_failure(messages: &Json, reply: Reply) -> Outcome {
+    let inputs = Inputs::new(reply);
+    let mut call = invoke(BASE, DATA, messages);
+    call.fake_stream = true;
+    run(Call::Invoke(call), &inputs, Consume::None)
 }
 
 fn transport_refusals(messages: &Json) {
@@ -781,10 +770,7 @@ fn buffered_json_tool(messages: &Json) {
 
 fn buffered_conversion_failures(messages: &Json) {
     // A body the converter cannot read is the 422 it raises; a missing output member is the catch-all's 500.
-    let bad_inputs = Inputs::new(Reply::buffered("[]"));
-    let mut bad_call = invoke(BASE, DATA, messages);
-    bad_call.fake_stream = true;
-    let bad_outcome = run(Call::Invoke(bad_call), &bad_inputs, Consume::None);
+    let bad_outcome = fake_invoke_failure(messages, Reply::buffered("[]"));
     assert_eq!(bad_outcome.provider_status(), Some(422));
     assert!(
         bad_outcome
@@ -792,10 +778,7 @@ fn buffered_conversion_failures(messages: &Json) {
             .is_some_and(|message| message.starts_with("Error converting to valid response block="))
     );
 
-    let missing_inputs = Inputs::new(Reply::buffered("{}"));
-    let mut missing_call = invoke(BASE, DATA, messages);
-    missing_call.fake_stream = true;
-    let missing_outcome = run(Call::Invoke(missing_call), &missing_inputs, Consume::None);
+    let missing_outcome = fake_invoke_failure(messages, Reply::buffered("{}"));
     assert_eq!(missing_outcome.provider_status(), Some(500));
 }
 

@@ -163,6 +163,14 @@ impl Reply {
         }
     }
 
+    // A reply with no content type whose one transport read carries the given outcome.
+    pub(super) fn reading(status: u16, read: Result<Vec<u8>, HttpError>) -> Self {
+        let mut reply = Self::event_stream(vec![read]);
+        reply.status = status;
+        reply.headers.clear();
+        reply
+    }
+
     pub(super) fn refusing(refused: Refusal) -> Self {
         Self {
             status: 200,
@@ -441,12 +449,7 @@ pub(super) fn converse<'call>(messages: &'call Json) -> ConverseCall<'call> {
 
 pub(super) fn run(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
     let handler: Arc<dyn StreamHandler> = inputs.handler.clone();
-    block_on(open_with(
-        call,
-        Some(Arc::clone(&handler)),
-        handler,
-        consume,
-    ))
+    block_on(open_with(call, Some(handler.clone()), handler, consume))
 }
 
 // No supplied client: the helper must post through the default handler it was given.

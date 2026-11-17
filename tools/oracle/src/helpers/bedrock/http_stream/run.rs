@@ -112,10 +112,9 @@ async fn open_route(
     headers: HeaderMap,
     deps: &StreamDeps<'_>,
 ) -> Result<PendingOpen, HttpStreamError<Infallible>> {
-    match case.path {
-        Route::ConverseSync => open_converse(&converse_case(case, headers), deps).await,
-        Route::InvokeSync => open_invoke(&invoke_case(case, headers, true), deps).await,
-        Route::InvokeAsync => open_invoke(&invoke_case(case, headers, false), deps).await,
+    match case_call(case, headers, matches!(case.path, Route::InvokeSync)) {
+        Call::Converse(call) => open_converse(&call, deps).await,
+        Call::Invoke(call) => open_invoke(&call, deps).await,
     }
 }
 
@@ -128,41 +127,45 @@ fn finish_route<'deps>(
     log: &mut LogContext<'_, '_>,
 ) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
     let pending = pending?;
+    match case_call(case, headers, matches!(case.path, Route::InvokeSync)) {
+        Call::Converse(call) => make_sync_call(&call, deps, pending, log),
+        Call::Invoke(call) => make_call(&call, deps, pending, log),
+    }
+}
+
+// One struct carries the route's fields, so each helper entry sees only the fields its own route has.
+enum Call<'case> {
+    Converse(ConverseCall<'case>),
+    Invoke(InvokeCall<'case>),
+}
+
+fn case_call<'case>(case: &'case Case, headers: HeaderMap, sync: bool) -> Call<'case> {
     match case.path {
-        Route::ConverseSync => make_sync_call(&converse_case(case, headers), deps, pending, log),
-        Route::InvokeSync => make_call(&invoke_case(case, headers, true), deps, pending, log),
-        Route::InvokeAsync => make_call(&invoke_case(case, headers, false), deps, pending, log),
-    }
-}
-
-fn converse_case<'case>(case: &'case Case, headers: HeaderMap) -> ConverseCall<'case> {
-    ConverseCall {
-        model: &case.model,
-        api_base: &case.api_base,
-        headers,
-        data: &case.data,
-        messages: &case.messages,
-        json_mode: case.json_mode,
-        fake_stream: case.fake_stream,
-    }
-}
-
-fn invoke_case<'case>(case: &'case Case, headers: HeaderMap, sync: bool) -> InvokeCall<'case> {
-    InvokeCall {
-        model: &case.model,
-        api_base: &case.api_base,
-        headers,
-        data: &case.data,
-        // make_sync_call sends the signed body whenever it has one; make_call never sees it
-        signed_json_body: match (sync, case.signed_json_body.as_deref()) {
-            (true, Some(signed)) => Some(signed.as_bytes()),
-            (true, None) | (false, _) => None,
-        },
-        messages: &case.messages,
-        fake_stream: case.fake_stream,
-        json_mode: case.json_mode,
-        provider: case.provider.as_deref(),
-        sync,
+        Route::ConverseSync => Call::Converse(ConverseCall {
+            model: &case.model,
+            api_base: &case.api_base,
+            headers,
+            data: &case.data,
+            messages: &case.messages,
+            json_mode: case.json_mode,
+            fake_stream: case.fake_stream,
+        }),
+        Route::InvokeSync | Route::InvokeAsync => Call::Invoke(InvokeCall {
+            model: &case.model,
+            api_base: &case.api_base,
+            headers,
+            data: &case.data,
+            // make_sync_call sends the signed body whenever it has one; make_call never sees it
+            signed_json_body: match (sync, case.signed_json_body.as_deref()) {
+                (true, Some(signed)) => Some(signed.as_bytes()),
+                (true, None) | (false, _) => None,
+            },
+            messages: &case.messages,
+            fake_stream: case.fake_stream,
+            json_mode: case.json_mode,
+            provider: case.provider.as_deref(),
+            sync,
+        }),
     }
 }
 
