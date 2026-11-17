@@ -68,7 +68,9 @@ where
     index: Arc<RouteIndex>,
     settings: AutoRouterSettings,
     embedder: Arc<E>,
+    // the caller's tracker, so the server drains the index build on shutdown
     tasks: TaskTracker,
+    max_input_chars: i64,
     slot: Arc<Mutex<BuildSlot<E::Error>>>,
 }
 
@@ -76,7 +78,11 @@ impl<E> AutoRouter<E>
 where
     E: RouteEmbedder + 'static,
 {
-    pub fn new(settings: AutoRouterSettings, embedder: Arc<E>) -> Result<Self, RouteIndexError> {
+    pub fn new(
+        settings: AutoRouterSettings,
+        embedder: Arc<E>,
+        tasks: TaskTracker,
+    ) -> Result<Self, RouteIndexError> {
         // the source reads both settings for truth, so an empty string chooses the other source
         let path = settings
             .config_path
@@ -91,11 +97,13 @@ where
             (None, Some(config)) => parse_inline(config)?,
             (None, None) => return Err(RouteIndexError::MissingConfig),
         };
+        let max_input_chars = settings.max_input_chars.unwrap_or(DEFAULT_MAX_INPUT_CHARS);
         Ok(Self {
             index: Arc::new(index),
             settings,
             embedder,
-            tasks: TaskTracker::new(),
+            tasks,
+            max_input_chars,
             slot: Arc::new(Mutex::new(BuildSlot {
                 built: None,
                 waiters: None,
@@ -163,11 +171,7 @@ where
 
     // any query-embedding failure warns and takes the default model; only a build failure reaches the caller
     async fn query_vector(&self, text: &str, caller: &CallerContext) -> Option<Vec<f64>> {
-        let limit = self
-            .settings
-            .max_input_chars
-            .unwrap_or(DEFAULT_MAX_INPUT_CHARS);
-        let clamped = clamp(text, limit);
+        let clamped = clamp(text, self.max_input_chars);
         let vectors = match self
             .embedder
             .embed_query(
@@ -215,12 +219,11 @@ where
         let embedder = Arc::clone(&self.embedder);
         let slot = Arc::clone(&self.slot);
         let model = self.settings.embedding_model.clone();
-        let limit = self
-            .settings
-            .max_input_chars
-            .unwrap_or(DEFAULT_MAX_INPUT_CHARS);
-        self.tasks.spawn(async move {
-            let outcome = build_entries(&index, embedder.as_ref(), &model, limit).await;
+        let limit = self.max_input_chars;
+        let _build = self.tasks.spawn(async move {
+            let outcome = build_entries(&index, embedder.as_ref(), &model, limit)
+                .await
+                .map_err(Arc::new);
             {
                 let mut slot = slot.lock().unwrap_or_else(PoisonError::into_inner);
                 if let Ok(entries) = &outcome {

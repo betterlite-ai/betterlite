@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatMessage, Role};
 use indexmap::IndexMap;
 use rstest::rstest;
+use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 
 use crate::semantic_router::error::{EmbeddingStage, RouterError};
 use crate::semantic_router::index::RouteIndexError;
@@ -129,6 +132,32 @@ async fn concurrent_calls_share_one_index_build() {
     assert_eq!(embedder.document_calls().len(), 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn the_index_build_runs_on_the_supplied_task_tracker() {
+    let tasks = TaskTracker::new();
+    let embedder =
+        Arc::new(FakeEmbedder::new(&embedding_arena()).with_delay(Duration::from_millis(10)));
+    let router = Arc::new(
+        AutoRouter::new(settings(TWO_ROUTES), Arc::clone(&embedder), tasks.clone())
+            .expect("the route config parses"),
+    );
+    let messages = vec![user_text("fix it")];
+    let caller_router = Arc::clone(&router);
+    let mut running = JoinSet::new();
+    running.spawn(async move {
+        caller_router
+            .decide_with(Some(&messages), || Some(caller()))
+            .await
+    });
+    tokio::task::yield_now().await;
+    assert_eq!(tasks.len(), 1, "the build runs on the caller's tracker");
+    let finished = running.join_next().await.expect("the call finishes");
+    assert_eq!(finished.unwrap().unwrap(), decisions(Some("code"), "code"));
+    tasks.close();
+    tasks.wait().await;
+    assert!(tasks.is_empty(), "the tracker drains once the build ends");
+}
+
 #[tokio::test]
 async fn a_missing_caller_falls_back_without_a_query_embedding() {
     let embedder = Arc::new(FakeEmbedder::new(&embedding_arena()));
@@ -203,7 +232,8 @@ async fn the_query_is_clamped_by_characters_and_reported_whole() {
         ("aé", vec![1.0, 0.0]),
     ]));
     let configured = with_limit(settings(r#"{"routes": []}"#), 2);
-    let router = AutoRouter::new(configured, Arc::clone(&embedder)).expect("the config parses");
+    let router = AutoRouter::new(configured, Arc::clone(&embedder), TaskTracker::new())
+        .expect("the config parses");
     let messages = vec![user_text("aé中🙂")];
     let decision = router
         .decide_with(Some(&messages), || Some(caller()))
@@ -269,7 +299,8 @@ async fn a_configured_path_wins_over_the_inline_config() {
         embedding_model: "fake-embed".to_owned(),
         max_input_chars: None,
     };
-    let router = AutoRouter::new(configured, Arc::clone(&embedder)).expect("the file parses");
+    let router = AutoRouter::new(configured, Arc::clone(&embedder), TaskTracker::new())
+        .expect("the file parses");
     let messages = vec![user_text("ask")];
     let decision = router
         .decide_with(Some(&messages), || Some(caller()))
@@ -294,8 +325,8 @@ async fn an_empty_path_falls_through_to_the_inline_config() {
         embedding_model: "fake-embed".to_owned(),
         max_input_chars: None,
     };
-    let router =
-        AutoRouter::new(configured, Arc::clone(&embedder)).expect("the inline config parses");
+    let router = AutoRouter::new(configured, Arc::clone(&embedder), TaskTracker::new())
+        .expect("the inline config parses");
     let messages = vec![user_text("ask")];
     let decision = router
         .decide_with(Some(&messages), || Some(caller()))
@@ -375,7 +406,7 @@ async fn utterances_reach_the_embedder_in_the_sync_order() {
         .unwrap();
     assert_eq!(
         embedder.utterance_texts(),
-        vec!["a b", "a", "a b", "a"],
+        vec!["a", "a b", "a b", "a"],
         "the composed sync key orders utterances, not the two fields"
     );
 }
@@ -445,7 +476,7 @@ fn a_config_without_any_source_is_missing_config() {
         embedding_model: "fake-embed".to_owned(),
         max_input_chars: None,
     };
-    let Err(error) = AutoRouter::new(configured, embedder) else {
+    let Err(error) = AutoRouter::new(configured, embedder, TaskTracker::new()) else {
         panic!("there is no config to load");
     };
     assert!(matches!(error, RouteIndexError::MissingConfig));
@@ -461,7 +492,7 @@ fn an_empty_inline_config_is_missing_config_too() {
         embedding_model: "fake-embed".to_owned(),
         max_input_chars: None,
     };
-    let Err(error) = AutoRouter::new(configured, embedder) else {
+    let Err(error) = AutoRouter::new(configured, embedder, TaskTracker::new()) else {
         panic!("there is no config to load");
     };
     assert!(matches!(error, RouteIndexError::MissingConfig));

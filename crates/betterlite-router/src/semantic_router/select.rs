@@ -70,15 +70,20 @@ fn top_scores<'a>(entries: &'a [BuiltEntry], query: &[f64]) -> Result<Vec<Scored
 }
 
 fn route_scores(scored: Vec<Scored<'_>>) -> Vec<RouteScore<'_>> {
-    let mut grouped: Vec<(&str, f64, Vec<f64>)> = Vec::new();
-    for row in scored {
-        match grouped.iter_mut().find(|(name, _, _)| *name == row.route) {
-            Some((_, _, scores)) => scores.push(row.score),
-            None => grouped.push((row.route, row.threshold, vec![row.score])),
+    // the threshold of the first route of each name, in the order the group first appears
+    let mut routes: Vec<(&str, f64)> = Vec::new();
+    for row in &scored {
+        if !routes.iter().any(|(name, _)| *name == row.route) {
+            routes.push((row.route, row.threshold));
         }
     }
-    let mut totals: Vec<RouteScore<'_>> = Vec::with_capacity(grouped.len());
-    for (route, threshold, scores) in grouped {
+    let mut totals: Vec<RouteScore<'_>> = Vec::with_capacity(routes.len());
+    for (route, threshold) in routes {
+        let scores: Vec<f64> = scored
+            .iter()
+            .filter(|row| row.route == route)
+            .map(|row| row.score)
+            .collect();
         totals.push(RouteScore {
             route,
             threshold,

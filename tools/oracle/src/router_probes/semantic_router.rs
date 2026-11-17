@@ -9,6 +9,7 @@ use futures_util::future::join_all;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Builder;
+use tokio_util::task::TaskTracker;
 
 use self::recorder::{Recorder, call_counts, delta};
 use crate::router_probes::ProbeOutput;
@@ -106,7 +107,7 @@ pub(crate) fn run(
         embedding_model: input.embedding_model.clone(),
         max_input_chars: input.max_input_chars,
     };
-    let router = match AutoRouter::new(settings, Arc::clone(&recorder)) {
+    let router = match AutoRouter::new(settings, Arc::clone(&recorder), TaskTracker::new()) {
         Ok(router) => router,
         Err(error) => {
             return Ok(ProbeOutput::SemanticRouter(Output {

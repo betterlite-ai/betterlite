@@ -10,6 +10,7 @@ use betterlite_router::semantic_router::service::{
 };
 use indexmap::IndexMap;
 use serde_json::Number;
+use tokio_util::task::TaskTracker;
 
 use super::{CallerRequest, caller_context, decide, proxy_server_request};
 
@@ -355,6 +356,7 @@ fn router() -> AutoRouter<FakeEmbedder> {
             max_input_chars: None,
         },
         Arc::new(FakeEmbedder),
+        TaskTracker::new(),
     )
     .expect("the route config parses")
 }

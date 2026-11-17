@@ -2547,6 +2547,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-tungstenite",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",

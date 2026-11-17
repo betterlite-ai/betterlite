@@ -8,6 +8,7 @@ use std::time::Duration;
 use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
 use serde_json::json;
+use tokio_util::task::TaskTracker;
 
 use crate::semantic_router::service::{
     AutoRouter, AutoRouterSettings, CallerContext, RouteDecision, RouteEmbedder,
@@ -241,7 +242,8 @@ pub(crate) fn with_limit(mut settings: AutoRouterSettings, limit: i64) -> AutoRo
 }
 
 pub(crate) fn router(config: &str, embedder: &Arc<FakeEmbedder>) -> AutoRouter<FakeEmbedder> {
-    AutoRouter::new(settings(config), Arc::clone(embedder)).expect("the route config parses")
+    AutoRouter::new(settings(config), Arc::clone(embedder), TaskTracker::new())
+        .expect("the route config parses")
 }
 
 pub(crate) fn caller() -> CallerContext {

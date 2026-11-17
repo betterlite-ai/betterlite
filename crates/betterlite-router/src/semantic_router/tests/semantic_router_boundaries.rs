@@ -5,6 +5,7 @@ use std::time::Duration;
 use rstest::rstest;
 use tokio::sync::watch;
 use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 
 use crate::semantic_math::MathError;
 use crate::semantic_router::build::{BuildState, wait_for_build};
@@ -19,16 +20,17 @@ use crate::semantic_router::tests::support::{
     user_text, with_limit,
 };
 
-// the smallest config the parser accepts, padded to an exact byte length with an ignored key
+// the smallest config the parser accepts, padded to an exact byte length with trailing whitespace
 fn padded_config(len: usize) -> String {
-    let skeleton = r#"{"pad":"","routes":[]}"#;
+    let skeleton = r#"{"routes":[]}"#;
     assert!(
         len >= skeleton.len(),
         "the skeleton is the smallest padded config"
     );
     format!(
-        r#"{{"pad":"{}","routes":[]}}"#,
-        "a".repeat(len.saturating_sub(skeleton.len()))
+        "{}{}",
+        skeleton,
+        " ".repeat(len.saturating_sub(skeleton.len()))
     )
 }
 
@@ -169,6 +171,66 @@ fn a_config_without_a_routes_key_is_an_empty_index() {
     let index = parse_inline(r#"{"encoder_type": "openai"}"#).expect("the config parses");
     assert!(index.rows.is_empty());
     assert!(index.groups.is_empty());
+}
+
+#[rstest]
+#[case::misspelled_utterances(r#"{"routes": [{"name": "r", "utterance": ["a"]}]}"#, "utterance")]
+#[case::misspelled_threshold(
+    r#"{"routes": [{"name": "r", "utterances": ["a"], "score_treshold": 0.4}]}"#,
+    "score_treshold"
+)]
+#[case::misspelled_top_level(r#"{"routse": []}"#, "routse")]
+fn a_misspelled_inline_config_key_is_rejected(#[case] source: &str, #[case] key: &str) {
+    let Err(error) = parse_inline(source) else {
+        panic!("{key} is not a key of the route config");
+    };
+    assert!(matches!(error, RouteIndexError::Json(_)));
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("unknown field `{key}`")),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::misspelled_utterances(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routes": [{"name": "r", "utterance": ["a"]}]}"#,
+    "utterance"
+)]
+#[case::misspelled_threshold(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routes": [{"name": "r", "utterances": ["a"], "score_treshold": 0.4}]}"#,
+    "score_treshold"
+)]
+#[case::misspelled_top_level(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routse": []}"#,
+    "routse"
+)]
+fn a_misspelled_file_config_key_is_rejected(#[case] source: &str, #[case] key: &str) {
+    let directory = temporary_directory("misspelled");
+    let path = directory.join("routes.json");
+    fs::write(&path, source).unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("{key} is not a key of the route config file");
+    };
+    assert!(matches!(error, RouteIndexError::Json(_)));
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("unknown field `{key}`")),
+        "{error}"
+    );
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn an_inline_route_keeps_the_fields_the_encoder_ignores() {
+    let index = parse_inline(
+        r#"{"routes": [{"name": "r", "utterances": ["a"], "function_schemas": [{"name": "f"}], "metadata": {"team": "t"}, "llm": {"module": "m"}}]}"#,
+    )
+    .expect("the dynamic route fields are accepted");
+    assert_eq!(index.rows.len(), 1);
+    assert_eq!(index.rows[0].route, "r");
 }
 
 #[tokio::test]
@@ -497,7 +559,8 @@ async fn a_limit_of_zero_or_less_embeds_the_whole_text(#[case] limit: i64) {
         (text.as_str(), vec![1.0, 0.0]),
     ]));
     let configured = with_limit(settings(r#"{"routes": []}"#), limit);
-    let router = AutoRouter::new(configured, Arc::clone(&embedder)).expect("the config parses");
+    let router = AutoRouter::new(configured, Arc::clone(&embedder), TaskTracker::new())
+        .expect("the config parses");
     router
         .decide_with(Some(&[user_text(&text)]), || Some(caller()))
         .await

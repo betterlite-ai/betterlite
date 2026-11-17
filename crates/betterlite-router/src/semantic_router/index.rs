@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 // the index is built once and then only read, so the whole route config stays in memory under one byte bound
 pub const ROUTE_INDEX_MAX_BYTES: usize = 1_048_576;
@@ -77,12 +78,20 @@ struct IndexedRoute {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawConfig {
+    // the encoder keys are accepted as a whole route file's contents, though the inline source never builds an encoder
+    #[serde(default, rename = "encoder_type")]
+    _encoder_type: Option<IgnoredAny>,
+    #[serde(default, rename = "encoder_name")]
+    _encoder_name: Option<IgnoredAny>,
     #[serde(default)]
     routes: Vec<RawRoute>,
 }
 
+// function_schemas, llm and metadata belong to a dynamic route, which this index never builds, so they are read and dropped
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawRoute {
     name: String,
     #[serde(default, rename = "description")]
@@ -91,9 +100,16 @@ struct RawRoute {
     utterances: Vec<String>,
     #[serde(default)]
     score_threshold: Option<f64>,
+    #[serde(default, rename = "function_schemas")]
+    _function_schemas: Option<IgnoredAny>,
+    #[serde(default)]
+    _llm: Option<IgnoredAny>,
+    #[serde(default)]
+    _metadata: Option<IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawFile {
     #[serde(rename = "encoder_type")]
     _encoder_type: String,
@@ -103,6 +119,7 @@ struct RawFile {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawFileRoute {
     name: String,
     #[serde(default, rename = "description")]
@@ -110,6 +127,12 @@ struct RawFileRoute {
     utterances: Vec<String>,
     #[serde(default)]
     score_threshold: Option<f64>,
+    #[serde(default, rename = "function_schemas")]
+    _function_schemas: Option<IgnoredAny>,
+    #[serde(default)]
+    _llm: Option<IgnoredAny>,
+    #[serde(default)]
+    _metadata: Option<IgnoredAny>,
 }
 
 fn assemble(routes: Vec<IndexedRoute>) -> Result<RouteIndex, RouteIndexError> {
