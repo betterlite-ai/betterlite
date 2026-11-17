@@ -9,7 +9,7 @@ pub mod permission_error;
 pub mod stream_services;
 pub mod streaming;
 pub mod success_hook;
-pub mod unparsable;
+include!("tool_permission_responses/stream_errors.rs");
 
 mod reconstruct;
 mod stream_assembly;

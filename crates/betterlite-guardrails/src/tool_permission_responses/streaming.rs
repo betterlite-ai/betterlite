@@ -16,7 +16,7 @@ use super::openai_rewrite::rewrite_openai_responses;
 use super::reconstruct::reconstruct_chunk;
 use super::stream_assembly::{assemble_anthropic_stream, assemble_openai_chunks, rewritten_record};
 use super::stream_services::StreamServices;
-use super::unparsable::UNPARSABLE_STREAM_MESSAGE;
+use super::unparseable::UNPARSABLE_STREAM_MESSAGE;
 
 // LiteLLM's async_post_call_streaming_iterator_hook: every chunk is buffered before the response is checked
 pub async fn streaming_iterator_hook(
