@@ -15,7 +15,7 @@ pub fn has_unhashable_member(value: &Literal) -> bool {
 
 fn unhashable(value: &Literal) -> bool {
     match value {
-        Literal::List(_items) | Literal::Set(_items) | Literal::Dict(_entries) => true,
+        Literal::List(_) | Literal::Set(_) | Literal::Dict(_) => true,
         Literal::Tuple(items) => items.iter().any(unhashable),
         _scalar => false,
     }

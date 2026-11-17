@@ -42,8 +42,8 @@ impl Cursor<'_> {
             return Err(LiteralError::Syntax);
         };
         let mut value = String::new();
+        let bytes = matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
         loop {
-            let bytes = matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
             let piece = self.scan_text(start)?;
             if !bytes {
                 value.push_str(&piece);
@@ -60,7 +60,7 @@ impl Cursor<'_> {
             }
             start = next;
         }
-        if matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes) {
+        if bytes {
             return Ok(Literal::Bytes);
         }
         Ok(Literal::Str(value))
@@ -71,14 +71,15 @@ impl Cursor<'_> {
             return Err(LiteralError::Syntax);
         };
         let triple = self.triple_quote(start.quote_at);
-        let mut at = start.quote_at.saturating_add(if triple { 3 } else { 1 });
+        let width = if triple { 3 } else { 1 };
+        let mut at = start.quote_at.saturating_add(width);
         let mut value = String::new();
         loop {
             let Some(character) = self.character(at) else {
                 return Err(LiteralError::Syntax);
             };
             if self.closes_text(at, triple, quote) {
-                self.at = at.saturating_add(if triple { 3 } else { 1 });
+                self.at = at.saturating_add(width);
                 return Ok(value);
             }
             if character == '\\' {

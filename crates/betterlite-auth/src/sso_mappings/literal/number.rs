@@ -52,10 +52,10 @@ impl Cursor<'_> {
             let Some(byte) = self.bytes.get(self.at).copied() else {
                 break;
             };
+            if byte == b'_' && after_underscore {
+                return Err(LiteralError::Syntax);
+            }
             if byte == b'_' {
-                if after_underscore {
-                    return Err(LiteralError::Syntax);
-                }
                 after_underscore = true;
                 self.at = self.at.saturating_add(1);
                 continue;
@@ -114,9 +114,7 @@ impl Cursor<'_> {
         let mut after_underscore = false;
         while let Some(byte) = self.bytes.get(self.at).copied() {
             if byte.is_ascii_digit() {
-                if byte != b'0' {
-                    digits.nonzero = true;
-                }
+                digits.nonzero = digits.nonzero || byte != b'0';
                 digits.count = digits.count.saturating_add(1);
                 after_underscore = false;
                 self.at = self.at.saturating_add(1);
