@@ -161,12 +161,12 @@ impl SdkRuntime {
         let url = Url::parse(&request.url).map_err(SdkError::EndpointUrl)?;
         let http = McpHttpTransport::new(&request.client, &self.base, Arc::clone(&self.capture))?;
         let handler = MessageHandler::default();
-        let transport = SdkTransport::LegacySse(LegacySse {
+        let sdk_transport = SdkTransport::LegacySse(LegacySse {
             url,
             http: Arc::new(http),
             handler: handler.clone(),
         });
-        let transport = Arc::new(Mutex::new(Some(transport)));
+        let transport = Arc::new(Mutex::new(Some(sdk_transport)));
         Ok(SdkTransportContext { transport, handler })
     }
 
@@ -177,13 +177,13 @@ impl SdkRuntime {
     ) -> Result<SdkTransportContext, SdkError> {
         let url = Url::parse(url).map_err(SdkError::EndpointUrl)?;
         let handler = MessageHandler::default();
-        let transport = SdkTransport::Streamable(StreamableHttp::new(
+        let sdk_transport = SdkTransport::Streamable(StreamableHttp::new(
             url,
             Arc::clone(&client.transport),
             Arc::clone(&client.client),
             handler.clone(),
         ));
-        let transport = Arc::new(Mutex::new(Some(transport)));
+        let transport = Arc::new(Mutex::new(Some(sdk_transport)));
         Ok(SdkTransportContext { transport, handler })
     }
 }
