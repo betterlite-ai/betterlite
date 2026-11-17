@@ -1,0 +1,24 @@
+kind: helper
+name: unbilled-call-skips-usage
+call:
+  b3869:
+    function: record
+    kwargs:
+      model: gpt-4o
+      call_type: get_responses
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        metadata:
+          user_api_key_alias: key-a
+      api_call_start_time: 10.5
+      completion_start_time: 11.0
+    response:
+      usage:
+        prompt_tokens: 2
+        completion_tokens: 4
+    start_time: 10
+    end_time: 13
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,24 @@
+kind: helper
+name: fail-closed-gateway-error
+call:
+  b3742:
+    unreachable_fallback: fail_closed
+    key_alias: alias-1
+    replies:
+      - kind: reply
+        status: 401
+        body:
+          error: invalid_client
+          error_description: "AADSTS700016: application with identifier 'client-xyz' was not found"
+          error_codes: [700016]
+        raw: null
+    repeat_last_reply: false
+    invocations:
+      - call_type: call_mcp_tool
+        data:
+          incoming_bearer_token: header.payload.signature
+          litellm_call_id: call-1
+          mcp_server_name: weather
+          mcp_tool_name: get_weather
+env: {}
+compare: {ignore: []}
