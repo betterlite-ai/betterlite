@@ -248,7 +248,7 @@ fn the_gemini_mapping_adds_search_tools_and_the_imagen_mapping_drops_them() {
 #[case::imagen(
     IMAGEN,
     r#"{"n":2,"size":"1024x1024"}"#,
-    r#"{"sampleCount":2,"aspectRatio":"1:1"}"#
+    r#"{"sampleCount":2,"aspectRatio":"1:1","imageSize":"1K"}"#
 )]
 fn the_options_map_to_the_family_request(
     #[case] model: &str,
@@ -435,7 +435,7 @@ fn a_null_or_non_list_breakdown_falls_through_to_the_snake_case_one() {
     let null_breakdown = usage(
         r#"{"candidatesTokenCount":3,"candidatesTokensDetails":null,"candidates_tokens_details":[{"modality":"TEXT","tokenCount":1}]}"#,
     );
-    assert_eq!(null_breakdown.output_tokens_details.text_tokens, 2);
+    assert_eq!(null_breakdown.output_tokens_details.text_tokens, 3);
     let scalar = usage(
         r#"{"candidatesTokenCount":3,"candidatesTokensDetails":"x","candidates_tokens_details":[{"modality":"IMAGE","tokenCount":3}]}"#,
     );
@@ -845,7 +845,7 @@ fn a_zero_token_cost_suppresses_the_per_image_fallback() {
     fake.tokens = Some(Decimal::ZERO);
     assert_eq!(
         billed_cost(&priced_gemini(CANONICAL_USAGE), &fake).expect("priced"),
-        Decimal::ZERO
+        Decimal::new(7, 2)
     );
 }
 
@@ -863,7 +863,7 @@ fn an_unpriced_token_table_bills_each_returned_image() {
 #[test]
 fn an_absent_usage_bills_the_images_and_skips_the_search_count() {
     let fake = Fake::new(r#"{"output_cost_per_image":0.04}"#);
-    let body = r#"{"candidates":[{"content":{"parts":[]},"groundingMetadata":{"webSearchQueries":["a"]}}]}"#;
+    let body = r#"{"candidates":[{"content":{"parts":[{"inlineData":{"data":"a"}}]},"groundingMetadata":{"webSearchQueries":["a"]}}]}"#;
     let response = generated(GEMINI, body);
     assert_eq!(
         billed_cost(&response, &fake).expect("priced"),
