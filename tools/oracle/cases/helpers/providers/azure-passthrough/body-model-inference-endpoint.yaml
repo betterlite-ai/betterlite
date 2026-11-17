@@ -1,0 +1,20 @@
+kind: helper
+name: azure-passthrough-body-model-inference-endpoint
+call:
+  azure_passthrough:
+    function: body_model_inference_endpoint
+    inference_steps:
+      - endpoint: chat/completions
+        request_data: {stream: true}
+      - endpoint: /v1/responses
+        request_data: {stream: 1}
+      - endpoint: audio/speech
+        request_data: {stream: ""}
+      - endpoint: openai/deployments/my-d/embeddings
+        request_data: {stream: [1]}
+      - endpoint: openai/deployments//embeddings
+        request_data: {stream: {nested: true}}
+      - endpoint: models/chat/completions
+        request_data: {}
+env: {}
+compare: {ignore: []}

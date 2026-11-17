@@ -1,0 +1,152 @@
+kind: helper
+name: anthropic-adaptive-effort
+call:
+  bedrock_converse_options:
+    function: handle
+    model_cost:
+      anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      fixture-adaptive-no-xhigh: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+    environment: {}
+    model: anthropic.claude-sonnet-4-6
+    effort: high
+    optional_params: {}
+calls:
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+        fixture-adaptive-no-xhigh: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: anthropic.claude-sonnet-4-6
+      effort: minimal
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: anthropic.claude-sonnet-4-6
+      effort: none
+      optional_params:
+        thinking: {type: enabled, budget_tokens: 2048}
+        output_config: {effort: high}
+        _output_config_normalized: false
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: anthropic.claude-sonnet-4-6
+      effort: high
+      optional_params:
+        output_config: {effort: xhigh}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: anthropic.claude-sonnet-4-6
+      effort: ultra
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: xhigh
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: max
+      optional_params:
+        output_config: plain
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive-no-xhigh: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: fixture-adaptive-no-xhigh
+      effort: xhigh
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: high
+      optional_params:
+        output_config: {effort: [high]}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: high
+      optional_params:
+        output_config: {effort: true}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: high
+      optional_params:
+        output_config: {effort: 5}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: true, supports_max_reasoning_effort: true}
+      environment: {}
+      model: fixture-adaptive
+      effort: high
+      optional_params:
+        output_config: {effort: null}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      effort: medium
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      effort: xhigh
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_adaptive_thinking: false, supports_reasoning: true}
+      environment: {}
+      model: anthropic.claude-sonnet-4-20250514-v1:0
+      effort: none
+      optional_params:
+        thinking: {type: enabled, budget_tokens: 2048}
+        output_config: {effort: low}
+  - bedrock_converse_options:
+      function: handle
+      model_cost:
+        anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true, supports_reasoning: true, supports_xhigh_reasoning_effort: false}
+      environment: {}
+      model: anthropic.claude-sonnet-4-6
+      effort: low
+      optional_params:
+        output_config: {effort: high, format: {type: json_schema}}
+env: {}
+compare: {ignore: []}

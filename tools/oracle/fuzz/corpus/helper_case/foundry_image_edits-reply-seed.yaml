@@ -1,0 +1,11 @@
+kind: helper
+name: foundry-image-edits-reply-seed
+call:
+  foundry_image_edits:
+    transforms:
+      - {model: MAI-Image-2.5, prompt: paint, images: [{kind: bytes, text: png}], options: {n: 1}}
+    replies:
+      - {body: '{"data": [{"b64_json": "aGk="}], "usage": {"num_input_text_tokens": 1, "num_input_image_tokens": 2, "output_image_tokens": 3}}'}
+      - {body: '<html>bad</html>', status: 502}
+env: {}
+compare: {ignore: []}

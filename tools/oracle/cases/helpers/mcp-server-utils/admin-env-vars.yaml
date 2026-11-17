@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-server-utils-admin-env-vars
+call:
+  b6594:
+    function: parse_admin_env_vars
+    env_vars:
+      - {name: API_KEY, value: secret, scope: global}
+      - {name: EMPTY_VALUE, value: null}
+      - {name: USER_TOKEN, scope: user, description: Your personal token}
+      - {name: WEIRD_SCOPE, scope: tenant, value: abc}
+      - {name: WORKERS, value: 4}
+      - {name: '3BAD', value: nope}
+      - null
+      - just-a-string
+calls:
+  - b6594:
+      function: parse_admin_env_vars
+env: {}
+compare: {ignore: []}

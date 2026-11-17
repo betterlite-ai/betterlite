@@ -1,0 +1,15 @@
+task: B1382
+deviations:
+  - what: A Live server frame whose top-level JSON is not an object, such as 5, "text" or [1], fails with a typed NotAnObject error that names the frame, where LiteLLM calls .get on the non-mapping and lets AttributeError escape from the transform that answers HTTP 500.
+    why: The frame arrives on the provider websocket, so a typed failure belongs there and no working Gemini Live session sends a non-object frame.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1269
+  - what: decode_gemini_live_frame_bytes refuses a frame longer than the caller's byte limit with TooLarge before parsing, where LiteLLM hands the whole message to json.loads with no bound.
+    why: The bytes arrive from an untrusted websocket frame, and a parser bound keeps an oversized frame from being decoded and walked before its type is known.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1245
+  - what: Frame bytes that are not UTF-8 fail with an InvalidJson error whose message names the frame as not UTF-8, where json.loads decodes bytes strictly and raises UnicodeDecodeError outside the JSONDecodeError handler.
+    why: betterlite reads the frame as bytes and names the real failure instead of letting a decode error escape; valid UTF-8 invalid JSON keeps LiteLLM's exact Invalid JSON message text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1245
+  - what: A frame nested past serde_json's 128-level recursion limit is refused with InvalidJson, where LiteLLM's json.loads accepts about a thousand levels before Python's recursion limit.
+    why: Rule bounded-inputs gives the decoder serde_json's default depth cap so a provider frame cannot exhaust the stack, and a real Live frame nests a handful of levels.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1245
+kept_bugs: []

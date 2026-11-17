@@ -1,0 +1,20 @@
+kind: helper
+name: gemini-media-prepare-studio-download
+call:
+  b9965:
+    model: gemini-2.5-flash
+    provider: gemini
+    mode: concurrent
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - type: image_url
+            image_url: {url: "https://example.com/cat.png"}
+    data_urls:
+      "https://example.com/cat.png": "data:image/png;base64,YWJj"
+    optional_params: {}
+    litellm_params: {}
+    supports: {system_message: true, response_schema: true}
+env: {}
+compare: {ignore: []}

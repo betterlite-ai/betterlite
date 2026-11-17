@@ -75,6 +75,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemini_live_frames"
+path = "fuzz_targets/gemini_live_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemini_live_setup"
 path = "fuzz_targets/gemini_live_setup.rs"
 test = false
@@ -336,6 +343,13 @@ bench = false
 [[bin]]
 name = "vertex_tuning_job"
 path = "fuzz_targets/vertex_tuning_job.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_veo_operation"
+path = "fuzz_targets/vertex_veo_operation.rs"
 test = false
 doc = false
 bench = false

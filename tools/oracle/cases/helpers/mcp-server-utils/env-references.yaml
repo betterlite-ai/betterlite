@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-server-utils-env-references
+call:
+  b6594:
+    function: env_references
+    value: "Bearer ${TOKEN} for ${HOST}; ${1BAD} and ${A-B} and $PLAIN and ${TOKEN}"
+    strings: ["x ${A}", "no refs", "${B}${TOKEN}", "$${ESCAPED}"]
+env: {}
+compare: {ignore: []}

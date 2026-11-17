@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-embed-no-request-body
+call:
+  b3639:
+    "operation": "embed_content"
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/text-embedding-004:embedContent
+    status: 200
+    body:
+      embedding: {values: [1, 2]}
+    request_body: null
+env: {}
+compare: {ignore: []}

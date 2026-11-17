@@ -403,6 +403,7 @@ async fn settings_project_and_credentials_reach_the_mint() {
         location: None,
         credentials: Some(ConfiguredCredentials::from_text("service-key".to_owned()).unwrap()),
         adc: AdcEnvironment::default(),
+        default_video_duration_seconds: 8,
     };
     config(Arc::clone(&mint))
         .target(&call(None, params(None, None, None), &settings))

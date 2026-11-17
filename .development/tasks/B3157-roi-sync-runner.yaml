@@ -18,6 +18,11 @@ description: >-
   `worker` is split to an upper task.
 scope:
   paths:
+    - "crates/betterlite-server/src/server/tests.rs"
+    - "crates/betterlite-server/src/server/connections.rs"
+    - "crates/betterlite-server/src/server"
+    - "crates/betterlite-server/src/roi_sync*"
+    - "crates/betterlite-server/src/database_startup/**"
     - crates/betterlite-server/src/roi_sync.rs
     - crates/betterlite-server/src/roi_sync/**
   lint_tables: false
