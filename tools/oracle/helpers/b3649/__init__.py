@@ -93,7 +93,7 @@ def configure(base: str, api_key: str) -> None:
 
 def blocking_value(input_value: Input) -> dict[str, JsonValue]:
     logging_obj = make_logging()
-    payload = cast(HandlerPayload, HANDLER.tinyfish_passthrough_handler(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L174
+    payload = cast(HandlerPayload, HANDLER.tinyfish_passthrough_handler(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L174
         httpx_response=httpx.Response(200),
         response_body=input_value.get("run"),
         logging_obj=logging_obj,
