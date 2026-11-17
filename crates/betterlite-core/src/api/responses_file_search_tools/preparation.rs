@@ -72,9 +72,9 @@ pub fn resolve_queries_from_args(
     input: &Json,
 ) -> Result<Vec<String>, FileSearchToolsError> {
     let queries = field(args, "queries", &NO_DEFAULT);
-    if !has_value(queries) {
+    if !has_value(&queries) {
         let single = field(args, "query", &NO_DEFAULT);
-        return if has_value(single) {
+        return if has_value(&single) {
             Ok(vec![value_text(&single, "query")?])
         } else {
             Ok(vec![string_value(input)])
