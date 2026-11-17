@@ -154,9 +154,7 @@ fn end_without_payload(
     call: &CallContext,
     times: SpanTimes,
 ) -> Option<SdkSpan> {
-    let Some(open) = boundary else {
-        return None;
-    };
+    let open = boundary?;
     // the marker only has to exist before a later close looks; this path has nothing to do with its answer
     let _marked = logger
         .emitter
