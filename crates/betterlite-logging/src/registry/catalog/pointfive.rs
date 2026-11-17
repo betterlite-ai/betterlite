@@ -12,25 +12,17 @@ use crate::finops::pointfive::upload::transport::PointFiveHttp;
 mod tests;
 
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    let params = inputs
-        .config
-        .sections
-        .pointfive_params
-        .params
-        .clone()
-        .unwrap_or_default();
-    let allowed_hosts = &inputs
-        .config
-        .sections
-        .user_url_policy
-        .user_url_allowed_hosts;
+    let config = &inputs.config;
+    let section = &config.sections.pointfive_params;
+    let params = section.params.clone().unwrap_or_default();
+    let policy = &config.sections.user_url_policy;
     let source = PointFiveService::new(
         Arc::new(PointFiveHttp {
             client: inputs.http.clone(),
         }),
         Arc::new(UrlValidator::new(
             SystemResolver,
-            allowed_hosts,
+            &policy.user_url_allowed_hosts,
             &Verification::Enabled,
         )),
         Arc::clone(&inputs.env),
@@ -40,11 +32,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
         PointFiveDeps {
             source: Arc::new(source),
             given_upload_client: None,
-            global_message_redaction: inputs
-                .config
-                .sections
-                .logging_privacy
-                .turn_off_message_logging,
+            global_message_redaction: config.sections.logging_privacy.turn_off_message_logging,
             start_periodic_flush: true,
             tasks: inputs.tracker.clone(),
             shutdown: inputs.shutdown.clone(),
