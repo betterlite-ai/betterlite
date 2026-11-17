@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod support;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,14 +16,15 @@ use rstest::rstest;
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
 
+use self::support::{
+    FixtureLookup, Hooks, MapFetch, NoTransport, RequestInput, cache_provider, counter, hooks,
+    parse_json, vertex_input,
+};
 use crate::cache_create::orchestration::CacheCreateRequest;
 use crate::gemini_history::error::HistoryError;
 use crate::gemini_media::error::MediaError as GeminiMediaError;
 use crate::gemini_media::gcs_metadata::GcsDeps;
-use crate::gemini_media::gcs_metadata::tests::{
-    FixtureLookup, Hooks, MapFetch, NoTransport, RecordingMint, RequestInput, ScriptedGcs,
-    cache_provider, counter, hooks, parse_json, parse_object, vertex_input,
-};
+use crate::gemini_media::gcs_metadata::tests::{RecordingMint, ScriptedGcs, parse_object};
 use crate::gemini_request::body::Transformed;
 use crate::gemini_request::error::{BodyError, RequestError};
 use crate::gemini_request::orchestration::CallRequest;
