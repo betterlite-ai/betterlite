@@ -12,8 +12,9 @@ use betterlite_core::vertex_embedding_dispatch::{Pinned, VertexEmbeddingDispatch
 use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
 use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
+use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_provider::vertex_embedding_binding::calls::VertexEmbeddingCalls;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
@@ -55,22 +56,21 @@ pub enum VertexEmbeddingSetupError {
 // None when no deployment is a vertex_ai one, so a config without Vertex builds no credential or tokenizer state
 pub fn vertex_embedding_calls(
     config: &Config,
-    client: &ProxiedClient,
-    deployments: &[ChatDeployment],
+    chat: &ChatExecutor,
     tasks: &TaskTracker,
 ) -> Result<Option<Arc<dyn EmbeddingCall>>, VertexEmbeddingSetupError> {
     let embedding = &config.sections.vertex_embedding_dispatch;
-    let pinned = pinned_deployments(deployments, embedding)?;
+    let pinned = pinned_deployments(&chat.deployments, embedding)?;
     if pinned.is_empty() {
         return Ok(None);
     }
-    let catalog = BundledCatalog::default().get();
-    let transport = Arc::new(client.clone());
+    let catalog = Arc::clone(&chat.bundled_catalog);
+    let transport = Arc::new(chat.client.clone());
     let clock: Arc<dyn CredentialClock> = Arc::new(SystemClock);
     let executor = Arc::new(VertexCredentialExecutor {
         environment: config.sections.vertex_credential_sources.adc.clone(),
         google: GoogleAuth {
-            client: client.clone(),
+            client: chat.client.clone(),
             policy: HttpPolicy::default(),
         },
         clock: Arc::clone(&clock),
@@ -144,7 +144,6 @@ fn token_counter(
     ));
     Ok(Counter::new(
         selector,
-        fetcher,
         service,
         Arc::clone(catalog),
         settings,

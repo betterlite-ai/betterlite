@@ -1,0 +1,13 @@
+task: B937
+deviations:
+  - what: >-
+      A failure cause that carries none of the detail attributes (message, code, type, status_code) is read
+      as having none of them, so format_failure still emits its response.failed frame.
+    why: >-
+      LiteLLM builds _FailureDetails.model_validate(original), and pydantic raises ValidationError when a
+      plain exception such as RuntimeError("broken") lacks those attributes, so its failure path emits no
+      frame at all. betterlite's FailureCause models every detail attribute as optional JSON, which is the
+      first case the task requires. LiteLLM's own exception classes always carry the attributes, so no
+      working setup relies on the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/responses_stream_errors.py#L63
+kept_bugs: []

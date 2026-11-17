@@ -83,13 +83,16 @@ impl ConsoleSink for RecordingConsole {
     }
 }
 
-pub(super) fn hooks() -> VerboseHooks<RecordingLogger, RecordingConsole> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
+pub(super) fn redactor() -> Arc<Redactor> {
+    Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles"))
+}
+
+pub(super) fn hooks(redactor: &Arc<Redactor>) -> VerboseHooks<RecordingLogger, RecordingConsole> {
     VerboseHooks {
         logger: RecordingLogger::default(),
         console: RecordingConsole,
         set_verbose: Payload::Bool(false),
-        redactor: Arc::new(redactor),
+        redactor: Arc::clone(redactor),
     }
 }
 

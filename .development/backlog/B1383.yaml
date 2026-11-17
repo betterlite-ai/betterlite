@@ -1,14 +1,14 @@
 id: B1383
 milestone: M3 providers
 title: Vertex native GCS file content execution
-status: todo
+status: done
 depends_on: [B1393, B1377, B1303, B173, B002, B171]
 file: tasks/B1383-vertex-file-content-executor.yaml
 covers:
   - "litellm/llms/vertex_ai/files/handler.py"
 parent: B034
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2310

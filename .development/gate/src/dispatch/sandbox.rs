@@ -1,6 +1,5 @@
 mod tests;
 
-use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -79,8 +78,6 @@ struct Filesystem<'dirs> {
 #[serde(rename_all = "camelCase")]
 struct Network {
     allowed_domains: [&'static str; 1],
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    allow_unix_sockets: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -104,7 +101,6 @@ pub(crate) fn write_settings(
             filesystem: Filesystem { allow_write },
             network: Network {
                 allowed_domains: ["*"],
-                allow_unix_sockets: env::var("GATE_POSTGRES_SOCKET").ok().into_iter().collect(),
             },
         },
         // on 11-13 workers got past bin/cargo by unsetting GATE_DISPATCHED or calling cargo by path, and a local gate run or cargo fmt took minutes while CI runs them anyway

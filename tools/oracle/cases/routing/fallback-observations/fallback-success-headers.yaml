@@ -1,0 +1,56 @@
+kind: probe
+name: fallback-success-headers
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_observations:
+        headers:
+          - {kind: absent, attempted_fallbacks: 2, errors: null, existing: null}
+          - kind: object
+            attempted_fallbacks: 2
+            errors:
+              - {message: "litellm.RateLimitError: slow down", type: throttling_error, param: model, code: "429"}
+          - kind: object
+            attempted_fallbacks: 0
+            errors: []
+            existing: {keep: me}
+          - kind: object
+            attempted_fallbacks: 1
+            errors:
+              - {message: "fallback to claude-3 failed", type: "None", param: null, code: null}
+            existing: {"x-litellm-fallback-errors": '[{"message": "old", "type": "RateLimitError", "param": null, "code": "429"}]'}
+          - kind: object
+            attempted_fallbacks: 1
+            existing: {"x-litellm-attempted-fallbacks": 7}
+          - kind: attributed
+            attempted_fallbacks: 3
+            existing: {keep: me}
+          - kind: opaque
+            attempted_fallbacks: 1
+            errors:
+              - {message: "lost on an opaque response", type: "None", param: null, code: null}
+          - kind: object
+            attempted_fallbacks: 0
+            existing: {"x-litellm-fallback-errors": not json}
+        events:
+          - observers: [fail, record, silent]
+            outcome: success
+            original_model_group: gpt-4
+            request: {model: gpt-4, metadata: {team: payments}}
+            message: primary exploded
+          - observers: [record]
+            outcome: failure
+            original_model_group: claude-3
+            request: {model: claude-3}
+            message: fallback failed
+          - observers: [silent]
+            outcome: success
+            original_model_group: gpt-4
+            request: {model: gpt-4}
+            message: nothing recorded
+          - observers: []
+            outcome: failure
+            original_model_group: gpt-4
+            request: {metadata: {team: payments}}
+            message: nobody listens

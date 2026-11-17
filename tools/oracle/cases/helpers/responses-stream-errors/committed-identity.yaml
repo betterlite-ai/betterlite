@@ -1,0 +1,146 @@
+kind: helper
+name: responses-stream-errors-committed-identity
+call:
+  responses_stream_errors:
+    redaction: enabled
+    steps:
+      - function: observe_chunk
+        chunk:
+          type: response.created
+          sequence_number: 4
+          response: {id: resp_a, model: gpt-x, created_at: 0}
+      - function: format_failure
+        failure:
+          kind: plain
+          text: broken
+          message: broken
+          type: null
+          code: null
+          status_code: null
+          body: null
+          original_exception: null
+      - function: mark_emitted
+        frame: "frame-after-failure"
+calls:
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: mark_emitted
+          frame: "no pending"
+        - function: observe_chunk
+          chunk:
+            type: response.created
+            sequence_number: 4
+            response: {id: resp_a, model: gpt-x, created_at: 0}
+        - function: mark_emitted
+          frame: "created-frame"
+        - function: observe_chunk
+          chunk:
+            type: response.output_text.delta
+            sequence_number: 2
+        - function: mark_emitted
+          frame: "delta-frame"
+        - function: format_failure
+          failure:
+            kind: plain
+            text: broken
+            message: broken
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: observe_chunk
+          chunk:
+            type: response.completed
+            sequence_number: 9
+        - function: format_failure
+          failure:
+            kind: plain
+            text: broken
+            message: broken
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: observe_chunk
+          chunk:
+            type: response.completed
+            sequence_number: 9
+        - function: mark_emitted
+          frame: "completed-frame"
+        - function: format_failure
+          failure:
+            kind: plain
+            text: broken
+            message: broken
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: observe_chunk
+          chunk:
+            type: response.created
+            sequence_number: 4
+            response: {id: resp_a, model: gpt-x, created_at: 0}
+        - function: mark_emitted
+          frame: "created-frame"
+        - function: observe_chunk
+          chunk:
+            type: response.in_progress
+            sequence_number: 6
+            response: {id: "", model: "", created_at: null}
+        - function: mark_emitted
+          frame: "progress-frame"
+        - function: format_failure
+          failure:
+            kind: plain
+            text: broken
+            message: broken
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: observe_chunk
+          chunk:
+            type: response.created
+            sequence_number: 4
+            response: {id: resp_a, model: gpt-x, created_at: 0}
+        - function: mark_emitted
+          frame: "created-frame"
+        - function: observe_chunk
+          chunk:
+            type: response.created
+            sequence_number: 9
+            response: {id: resp_b, model: other, created_at: 7}
+        - function: observe_chunk
+          chunk: [1, 2]
+        - function: mark_emitted
+          frame: "cleared-frame"
+        - function: format_failure
+          failure:
+            kind: plain
+            text: broken
+            message: broken
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+env: {}
+compare: {ignore: []}
