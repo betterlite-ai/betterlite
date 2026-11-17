@@ -45,7 +45,8 @@ const STALE_CHUNK: &str = r#"{
     "id": "chunk",
     "object": "chat.completion.chunk",
     "choices": [
-        {"index": 0, "delta": {"content": "a", "provider_specific_fields": {"keep": "x", "search_results": "old", "vector_store_search_failures": "oldf"}}}
+        {"index": 0, "delta": {"content": "a", "provider_specific_fields": {"keep": "x", "search_results": "old", "vector_store_search_failures": "oldf"}}},
+        {"index": 1, "delta": {"content": "b"}}
     ]
 }"#;
 
@@ -344,14 +345,33 @@ fn a_malformed_target_keeps_the_choices_decorated_before_it() {
 }
 
 #[rstest]
-#[case::both(RESULTS, FAILURES, RESULTS, FAILURES)]
-#[case::results_only(RESULTS, "[]", RESULTS, r#""oldf""#)]
-#[case::failures_only("[]", FAILURES, r#""old""#, FAILURES)]
+#[case::both(
+    RESULTS,
+    FAILURES,
+    RESULTS,
+    FAILURES,
+    r#"{"search_results":[{"search_query":"q","data":[]}],"vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}"#
+)]
+#[case::results_only(
+    RESULTS,
+    "[]",
+    RESULTS,
+    r#""oldf""#,
+    r#"{"search_results":[{"search_query":"q","data":[]}]}"#
+)]
+#[case::failures_only(
+    "[]",
+    FAILURES,
+    r#""old""#,
+    FAILURES,
+    r#"{"vector_store_search_failures":[{"vector_store_id":"vs_a","custom_llm_provider":"openai","error":"failed"}]}"#
+)]
 fn streaming_retrieval_fields(
     #[case] results: &str,
     #[case] failures: &str,
     #[case] expected_results: &str,
     #[case] expected_failures: &str,
+    #[case] expected_new: &str,
 ) {
     let mut chunk = record(STALE_CHUNK);
     let diagnostics = decorate_chunk(&chunk_request(results, failures), &mut chunk);
@@ -359,6 +379,10 @@ fn streaming_retrieval_fields(
     assert_eq!(
         member_fields(&chunk, "delta", 0),
         Some(decorated(expected_results, expected_failures))
+    );
+    assert_eq!(
+        member_fields(&chunk, "delta", 1),
+        Some(record(expected_new))
     );
     assert_eq!(top_field(&chunk, "id"), Some(record("\"chunk\"")));
 }
