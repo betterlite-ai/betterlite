@@ -120,24 +120,21 @@ impl<'case> Scenario<'case> {
                     .map_err(|_error| ScenarioError::CooldownKey)?;
                 output.local_expiry = self.expiries(&[step.model_id.clone()])?.pop().flatten();
             }
-            StepKind::Read => self.read(step, &mut output).await?,
+            StepKind::Read => {
+                let results = self.fetched(&step.model_ids).await?;
+                let active = self
+                    .cooldowns
+                    .active_from_results(&step.model_ids, &results)
+                    .map_err(|_error| ScenarioError::CooldownKey)?;
+                output.active = Some(active.iter().map(active_view).collect());
+                output.local_expiries = Some(self.expiries(&step.model_ids)?);
+            }
             StepKind::Minimum => self.minimum(step, &mut output).await?,
             StepKind::SetHealth => output.local_expiry = self.set_health(step)?,
             StepKind::Health => output.unhealthy = Some(self.health.unhealthy_now()),
             StepKind::Filter => output.kept = Some(self.filter(step)),
         }
         Ok(output)
-    }
-
-    async fn read(&self, step: &Step, output: &mut StepOutput) -> Result<(), ScenarioError> {
-        let results = self.fetched(&step.model_ids).await?;
-        let active = self
-            .cooldowns
-            .active_from_results(&step.model_ids, &results)
-            .map_err(|_error| ScenarioError::CooldownKey)?;
-        output.active = Some(active.iter().map(active_view).collect());
-        output.local_expiries = Some(self.expiries(&step.model_ids)?);
-        Ok(())
     }
 
     async fn minimum(&self, step: &Step, output: &mut StepOutput) -> Result<(), ScenarioError> {

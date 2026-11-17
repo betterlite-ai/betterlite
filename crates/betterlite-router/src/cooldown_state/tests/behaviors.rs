@@ -45,25 +45,59 @@ pub(crate) async fn run(name: &str) {
     }
 }
 
+type SyncCase = (&'static str, fn());
+
+const SYNC_CASES: &[SyncCase] = &[
+    (
+        "cooling_deployments_leave_the_pool",
+        cooling_deployments_leave_the_pool,
+    ),
+    (
+        "the_health_filter_is_a_no_op_until_it_is_enabled",
+        the_filter_is_opt_in,
+    ),
+    (
+        "an_allowed_fails_policy_skips_the_health_filter",
+        a_policy_skips_the_filter,
+    ),
+    (
+        "an_unhealthy_deployment_leaves_the_pool",
+        an_unhealthy_deployment_leaves,
+    ),
+    (
+        "unlisted_groups_keep_their_deployments_when_scoped",
+        unlisted_groups_keep_theirs,
+    ),
+    (
+        "the_health_probe_gets_an_empty_pool_when_every_candidate_is_unhealthy",
+        the_probe_gets_an_empty_pool,
+    ),
+    (
+        "a_request_keeps_its_candidates_when_every_one_is_unhealthy",
+        a_request_keeps_every_candidate,
+    ),
+    (
+        "a_model_with_every_deployment_paused_is_listed",
+        a_paused_model_is_listed,
+    ),
+    (
+        "a_fully_unhealthy_model_is_listed_with_its_team_alias",
+        a_fully_unhealthy_model_is_listed,
+    ),
+    (
+        "an_allowed_fails_policy_hides_no_model",
+        a_policy_hides_no_model,
+    ),
+];
+
 fn run_pool(name: &str) {
-    match name {
-        "cooling_deployments_leave_the_pool" => cooling_deployments_leave_the_pool(),
-        "the_health_filter_is_a_no_op_until_it_is_enabled" => the_filter_is_opt_in(),
-        "an_allowed_fails_policy_skips_the_health_filter" => a_policy_skips_the_filter(),
-        "an_unhealthy_deployment_leaves_the_pool" => an_unhealthy_deployment_leaves(),
-        "unlisted_groups_keep_their_deployments_when_scoped" => unlisted_groups_keep_theirs(),
-        "the_health_probe_gets_an_empty_pool_when_every_candidate_is_unhealthy" => {
-            the_probe_gets_an_empty_pool();
-        }
-        "a_request_keeps_its_candidates_when_every_one_is_unhealthy" => {
-            a_request_keeps_every_candidate();
-        }
-        "a_model_with_every_deployment_paused_is_listed" => a_paused_model_is_listed(),
-        "a_fully_unhealthy_model_is_listed_with_its_team_alias" => {
-            a_fully_unhealthy_model_is_listed();
-        }
-        "an_allowed_fails_policy_hides_no_model" => a_policy_hides_no_model(),
-        _ => panic!("unknown case {name}"),
+    match SYNC_CASES
+        .iter()
+        .find(|(case_name, _run)| *case_name == name)
+        .copied()
+    {
+        Some((_case, run)) => run(),
+        None => panic!("unknown case {name}"),
     }
 }
 
