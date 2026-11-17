@@ -35,6 +35,195 @@ const TOKENIZED_INPUT: &str =
 const INPUT_NOT_STRING: &str =
     "Bedrock batch embedding `input` must be a string (or a single-element list of strings).";
 
+// a url naming an endpoint wins over the body; only an absent, null or empty one falls through
+const URL_CASES: &[(&str, BatchRecordKind)] = &[
+    (
+        r#"{"url":"/v1/embeddings","body":{"messages":[]}}"#,
+        BatchRecordKind::Embedding,
+    ),
+    (
+        r#"{"url":"/v1/completions","body":{"messages":[]}}"#,
+        BatchRecordKind::TextCompletion,
+    ),
+    (
+        r#"{"url":"/v1/responses","body":{"messages":[]}}"#,
+        BatchRecordKind::Responses,
+    ),
+    (r#"{"url":"/v1/embeddings"}"#, BatchRecordKind::Embedding),
+    (
+        r#"{"url":"/v1/embeddings","body":"x"}"#,
+        BatchRecordKind::Embedding,
+    ),
+    (
+        r#"{"url":"/embeddings","body":{"input":"x"}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (
+        r#"{"url":"/v1/embeddings?beta=1","body":{"input":"x"}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (
+        r#"{"url":" /v1/embeddings","body":{"input":"x"}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (
+        r#"{"url":"/v1/Embeddings","body":{"input":"x"}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (r#"{"url":123,"body":{"input":"x"}}"#, BatchRecordKind::Chat),
+    (
+        r#"{"url":["/v1/embeddings"],"body":{"input":"x"}}"#,
+        BatchRecordKind::Chat,
+    ),
+];
+
+// without a usable url a non-object body is chat, then key presence decides, null included
+const BODY_CASES: &[(&str, BatchRecordKind)] = &[
+    (
+        r#"{"body":{"messages":[{"role":"user","content":"hi"}]}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (
+        r#"{"url":null,"body":"not-a-mapping"}"#,
+        BatchRecordKind::Chat,
+    ),
+    (r#"{"url":null}"#, BatchRecordKind::Chat),
+    (r#"{"url":null,"body":[1,2]}"#, BatchRecordKind::Chat),
+    (r#"{"url":null,"body":null}"#, BatchRecordKind::Chat),
+    (r#"{"url":null,"body":{}}"#, BatchRecordKind::Chat),
+    (
+        r#"{"url":null,"body":{"prompt":"p"}}"#,
+        BatchRecordKind::TextCompletion,
+    ),
+    (
+        r#"{"url":"","body":{"input":"x"}}"#,
+        BatchRecordKind::Embedding,
+    ),
+    (
+        r#"{"url":null,"body":{"prompt":null,"input":null}}"#,
+        BatchRecordKind::TextCompletion,
+    ),
+    (
+        r#"{"url":null,"body":{"messages":null,"prompt":"p"}}"#,
+        BatchRecordKind::Chat,
+    ),
+    (
+        r#"{"url":null,"body":{"input":null}}"#,
+        BatchRecordKind::Embedding,
+    ),
+    (r#"{"url":null,"body":{"other":1}}"#, BatchRecordKind::Chat),
+];
+
+const REGISTRY_ENTRIES: &[(&str, &str)] = &[
+    ("amazon.titan-embed-text-v2:0", TITAN_V2_ENTRY),
+    ("amazon.titan-embed-text-v2:9", COHERE_ENTRY),
+    ("amazon.titan-embed-text-v2:1", EMPTY_SCHEMA_ENTRY),
+    ("amazon.titan-embed-text-v2:2", NUMBER_SCHEMA_ENTRY),
+    ("amazon.titan-embed-text-v2:3", NO_SCHEMA_ENTRY),
+    ("amazon.titan-embed-text-v2:5", TEXT_SCHEMA_ENTRY),
+    ("cohere.embed-multilingual-v3", NULL_SCHEMA_ENTRY),
+];
+
+// one row per id, so the resolved schema and the flag it drives stay side by side
+const REGISTRY_CASES: &[(&str, Option<&str>, bool)] = &[
+    ("amazon.titan-embed-text-v2:0", Some("titan_v2"), true),
+    // a resolved id trusts its own schema, so another schema never falls back to the name
+    ("amazon.titan-embed-text-v2:9", Some("cohere_v3"), false),
+    // an empty, nonstring or absent schema and an absent entry all permit the name fallback
+    ("amazon.titan-embed-text-v2:1", None, true),
+    ("amazon.titan-embed-text-v2:2", None, true),
+    ("amazon.titan-embed-text-v2:3", None, true),
+    ("amazon.titan-embed-text-v2:5", None, true),
+    ("cohere.embed-multilingual-v3", None, false),
+    ("amazon.titan-embed-text-v4:0", None, false),
+    ("amazon.titan-embed-text-v1", None, false),
+];
+
+// every lookup fails for these ids, so each answer comes from the name alone
+const NAME_CASES: &[(&str, bool)] = &[
+    ("amazon.titan-embed-text-v2:0", true),
+    ("us.amazon.titan-embed-text-v2:0", true),
+    (
+        "arn:aws:bedrock:us-east-1:123:inference-profile/us.amazon.titan-embed-text-v2:0",
+        true,
+    ),
+    ("bedrock/amazon.titan-embed-text-v2:0", true),
+    ("bedrock/bedrock/amazon.titan-embed-text-v2:0", true),
+    ("amazon.titan-embed-text-v20", false),
+    ("amazon.titan-embed-text-v2-experimental", false),
+    ("amazon.titan-embed-text-v2", true),
+    ("AMAZON.TITAN-EMBED-TEXT-V2:0", true),
+    (
+        "amazon.titan-embed-text-v2-experimental/amazon.titan-embed-text-v2:0",
+        false,
+    ),
+    ("amazon.titan-embed-text-v2/foo", true),
+    ("titan-embed-text-v2", true),
+    ("notitan-embed-text-v2:0", true),
+    ("amazon.titan-embed-text-v1", false),
+];
+
+const MAPPING_CASES: &[(&str, &str)] = &[
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello"}"#,
+        r#"{"inputText":"hello"}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","dimensions":512}"#,
+        r#"{"inputText":"hello","dimensions":512}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","dimensions":null}"#,
+        r#"{"inputText":"hello","dimensions":null}"#,
+    ),
+    (
+        r#"{"model":"ignored-by-the-mapping","input":["hello"],"dimensions":1024,"encoding_format":"base64","normalize":true,"user":"someone","metadata":{"k":"v"}}"#,
+        r#"{"inputText":"hello","dimensions":1024,"embeddingTypes":["binary"]}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"base64"}"#,
+        r#"{"inputText":"hello","embeddingTypes":["binary"]}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"float"}"#,
+        r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"hex"}"#,
+        r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":""}"#,
+        r#"{"inputText":""}"#,
+    ),
+    (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","metadata":null}"#,
+        r#"{"inputText":"hello"}"#,
+    ),
+];
+
+const UNSUPPORTED_ENTRIES: &[(&str, &str)] = &[
+    ("cohere.embed-english-v3", TEXT_SCHEMA_ENTRY),
+    ("amazon.titan-embed-text-v1", NO_SCHEMA_ENTRY),
+    ("amazon.titan-embed-text-v2:9", COHERE_ENTRY),
+];
+
+// the first record has no input at all, so the model is refused before the body is inspected
+const UNSUPPORTED_CASES: &[(&str, &str)] = &[
+    (
+        "amazon.titan-embed-text-v1",
+        r#"{"model":"amazon.titan-embed-text-v1"}"#,
+    ),
+    (
+        "amazon.titan-embed-text-v2:9",
+        r#"{"model":"amazon.titan-embed-text-v2:9","input":"hello"}"#,
+    ),
+    (
+        "cohere.embed-english-v3",
+        r#"{"model":"cohere.embed-english-v3","input":"hello"}"#,
+    ),
+];
+
 fn parsed(source: &str) -> Object {
     serde_json::from_str(source).expect("the fixture is a JSON object")
 }
@@ -59,6 +248,26 @@ fn runtime() -> Runtime {
     Builder::new_current_thread()
         .build()
         .expect("the fixture runtime builds")
+}
+
+fn multiple_inputs(items: usize) -> String {
+    format!(
+        "{MULTIPLE_INPUTS} Got a list with {items} items for model=m; emit one JSONL line per input string instead."
+    )
+}
+
+fn tokenized() -> String {
+    format!("{TOKENIZED_INPUT} Pass `input` as a string (model=m).")
+}
+
+fn not_a_string(found: &str) -> String {
+    format!("{INPUT_NOT_STRING} Got type {found} for model=m.")
+}
+
+fn unsupported_message(model: &str) -> String {
+    format!(
+        "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model=\"{model}\". Track other embedding models in https://github.com/BerriAI/litellm/issues."
+    )
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -143,198 +352,41 @@ fn batch_embeddings_cases(#[case] check: fn()) {
 }
 
 fn url_before_body_classification() {
-    assert_supported_urls();
-    assert_other_urls();
-}
-
-fn assert_supported_urls() {
-    let cases = [
-        (
-            r#"{"url":"/v1/embeddings","body":{"messages":[]}}"#,
-            BatchRecordKind::Embedding,
-        ),
-        (
-            r#"{"url":"/v1/completions","body":{"messages":[]}}"#,
-            BatchRecordKind::TextCompletion,
-        ),
-        (
-            r#"{"url":"/v1/responses","body":{"messages":[]}}"#,
-            BatchRecordKind::Responses,
-        ),
-        (r#"{"url":"/v1/embeddings"}"#, BatchRecordKind::Embedding),
-        (
-            r#"{"url":"/v1/embeddings","body":"x"}"#,
-            BatchRecordKind::Embedding,
-        ),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(classify_batch_record(&parsed(source)), expected, "{source}");
-    }
-}
-
-fn assert_other_urls() {
-    let cases = [
-        (
-            r#"{"url":"/embeddings","body":{"input":"x"}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (
-            r#"{"url":"/v1/embeddings?beta=1","body":{"input":"x"}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (
-            r#"{"url":" /v1/embeddings","body":{"input":"x"}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (
-            r#"{"url":"/v1/Embeddings","body":{"input":"x"}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (r#"{"url":123,"body":{"input":"x"}}"#, BatchRecordKind::Chat),
-        (
-            r#"{"url":["/v1/embeddings"],"body":{"input":"x"}}"#,
-            BatchRecordKind::Chat,
-        ),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(classify_batch_record(&parsed(source)), expected, "{source}");
-    }
+    assert_classified(URL_CASES);
 }
 
 fn no_url_body_classification() {
-    assert_body_shapes();
-    assert_body_keys();
+    assert_classified(BODY_CASES);
 }
 
-fn assert_body_shapes() {
-    let cases = [
-        (
-            r#"{"body":{"messages":[{"role":"user","content":"hi"}]}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (
-            r#"{"url":null,"body":"not-a-mapping"}"#,
-            BatchRecordKind::Chat,
-        ),
-        (r#"{"url":null}"#, BatchRecordKind::Chat),
-        (r#"{"url":null,"body":[1,2]}"#, BatchRecordKind::Chat),
-        (r#"{"url":null,"body":null}"#, BatchRecordKind::Chat),
-        (r#"{"url":null,"body":{}}"#, BatchRecordKind::Chat),
-    ];
+fn assert_classified(cases: &[(&str, BatchRecordKind)]) {
     for (source, expected) in cases {
-        assert_eq!(classify_batch_record(&parsed(source)), expected, "{source}");
-    }
-}
-
-fn assert_body_keys() {
-    let cases = [
-        (
-            r#"{"url":null,"body":{"prompt":"p"}}"#,
-            BatchRecordKind::TextCompletion,
-        ),
-        (
-            r#"{"url":"","body":{"input":"x"}}"#,
-            BatchRecordKind::Embedding,
-        ),
-        (
-            r#"{"url":null,"body":{"prompt":null,"input":null}}"#,
-            BatchRecordKind::TextCompletion,
-        ),
-        (
-            r#"{"url":null,"body":{"messages":null,"prompt":"p"}}"#,
-            BatchRecordKind::Chat,
-        ),
-        (
-            r#"{"url":null,"body":{"input":null}}"#,
-            BatchRecordKind::Embedding,
-        ),
-        (r#"{"url":null,"body":{"other":1}}"#, BatchRecordKind::Chat),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(classify_batch_record(&parsed(source)), expected, "{source}");
+        assert_eq!(
+            classify_batch_record(&parsed(source)),
+            *expected,
+            "{source}"
+        );
     }
 }
 
 fn titan_v2_registry_schema() {
-    let lookup = registry(&[
-        ("amazon.titan-embed-text-v2:0", TITAN_V2_ENTRY),
-        ("amazon.titan-embed-text-v2:9", COHERE_ENTRY),
-        ("amazon.titan-embed-text-v2:1", EMPTY_SCHEMA_ENTRY),
-        ("amazon.titan-embed-text-v2:2", NUMBER_SCHEMA_ENTRY),
-        ("amazon.titan-embed-text-v2:3", NO_SCHEMA_ENTRY),
-        ("amazon.titan-embed-text-v2:5", TEXT_SCHEMA_ENTRY),
-        ("cohere.embed-multilingual-v3", NULL_SCHEMA_ENTRY),
-    ]);
-    assert_registry_schemas(&lookup);
-    assert_registry_titan(&lookup);
-}
-
-fn assert_registry_schemas(lookup: &Registry) {
+    let lookup = registry(REGISTRY_ENTRIES);
     let runtime = runtime();
-    let cases = [
-        ("amazon.titan-embed-text-v2:0", Some("titan_v2")),
-        ("amazon.titan-embed-text-v2:9", Some("cohere_v3")),
-        ("amazon.titan-embed-text-v2:1", None),
-        ("amazon.titan-embed-text-v2:2", None),
-        ("amazon.titan-embed-text-v2:3", None),
-        ("amazon.titan-embed-text-v2:5", None),
-        ("cohere.embed-multilingual-v3", None),
-        ("amazon.titan-embed-text-v4:0", None),
-    ];
-    for (model, expected) in cases {
-        let found = schema(&runtime, lookup, model);
-        assert_eq!(found.as_deref(), expected, "{model}");
-    }
-}
-
-fn assert_registry_titan(lookup: &Registry) {
-    let runtime = runtime();
-    let cases = [
-        // a resolved id trusts its own schema, so another schema never falls back to the name
-        ("amazon.titan-embed-text-v2:0", true),
-        ("amazon.titan-embed-text-v2:9", false),
-        // an empty, nonstring or absent schema and an absent entry all permit the name fallback
-        ("amazon.titan-embed-text-v2:1", true),
-        ("amazon.titan-embed-text-v2:2", true),
-        ("amazon.titan-embed-text-v2:3", true),
-        ("amazon.titan-embed-text-v2:5", true),
-        ("cohere.embed-multilingual-v3", false),
-        ("amazon.titan-embed-text-v4:0", false),
-        ("amazon.titan-embed-text-v1", false),
-    ];
-    for (model, expected) in cases {
-        assert_eq!(titan(&runtime, lookup, model), expected, "{model}");
+    for (model, expected_schema, expected_titan) in REGISTRY_CASES {
+        assert_eq!(
+            schema(&runtime, &lookup, model).as_deref(),
+            *expected_schema,
+            "{model}"
+        );
+        assert_eq!(titan(&runtime, &lookup, model), *expected_titan, "{model}");
     }
 }
 
 fn titan_v2_name_boundary() {
-    // every lookup fails here, so each answer comes from the id alone
     let lookup = registry(&[]);
     let runtime = runtime();
-    let cases = [
-        ("amazon.titan-embed-text-v2:0", true),
-        ("us.amazon.titan-embed-text-v2:0", true),
-        (
-            "arn:aws:bedrock:us-east-1:123:inference-profile/us.amazon.titan-embed-text-v2:0",
-            true,
-        ),
-        ("bedrock/amazon.titan-embed-text-v2:0", true),
-        ("bedrock/bedrock/amazon.titan-embed-text-v2:0", true),
-        ("amazon.titan-embed-text-v20", false),
-        ("amazon.titan-embed-text-v2-experimental", false),
-        ("amazon.titan-embed-text-v2", true),
-        ("AMAZON.TITAN-EMBED-TEXT-V2:0", true),
-        (
-            "amazon.titan-embed-text-v2-experimental/amazon.titan-embed-text-v2:0",
-            false,
-        ),
-        ("amazon.titan-embed-text-v2/foo", true),
-        ("titan-embed-text-v2", true),
-        ("notitan-embed-text-v2:0", true),
-        ("amazon.titan-embed-text-v1", false),
-    ];
-    for (model, expected) in cases {
-        assert_eq!(titan(&runtime, &lookup, model), expected, "{model}");
+    for (model, expected) in NAME_CASES {
+        assert_eq!(titan(&runtime, &lookup, model), *expected, "{model}");
     }
 }
 
@@ -358,70 +410,18 @@ fn single_input_coercion() {
 }
 
 fn invalid_multi_input() {
-    assert_multiple_inputs();
-    assert_tokenized_inputs();
-    assert_typed_inputs();
-}
-
-fn assert_multiple_inputs() {
     let cases = [
-        (
-            list(vec![text("a"), text("b")]),
-            format!(
-                "{MULTIPLE_INPUTS} Got a list with 2 items for model=m; emit one JSONL line per input string instead."
-            ),
-        ),
-        (
-            list(Vec::new()),
-            format!(
-                "{MULTIPLE_INPUTS} Got a list with 0 items for model=m; emit one JSONL line per input string instead."
-            ),
-        ),
-        (
-            list(vec![int(1), int(2)]),
-            format!(
-                "{MULTIPLE_INPUTS} Got a list with 2 items for model=m; emit one JSONL line per input string instead."
-            ),
-        ),
-    ];
-    for (raw, expected) in cases {
-        assert_eq!(
-            message_of(coerce_input_to_string(Some(&raw), "m")),
-            expected
-        );
-    }
-}
-
-fn assert_tokenized_inputs() {
-    let cases = [
-        (list(vec![list(vec![int(1)])]), TOKENIZED_INPUT),
-        (Json::Bool(true), TOKENIZED_INPUT),
-        (int(5), TOKENIZED_INPUT),
+        (list(vec![text("a"), text("b")]), multiple_inputs(2)),
+        (list(Vec::new()), multiple_inputs(0)),
+        (list(vec![int(1), int(2)]), multiple_inputs(2)),
+        (list(vec![list(vec![int(1)])]), tokenized()),
+        (Json::Bool(true), tokenized()),
+        (int(5), tokenized()),
         // a negative int is still an int even though it is not a u64
-        (int(-1), TOKENIZED_INPUT),
-    ];
-    for (raw, message) in cases {
-        assert_eq!(
-            message_of(coerce_input_to_string(Some(&raw), "m")),
-            format!("{message} Pass `input` as a string (model=m).")
-        );
-    }
-}
-
-fn assert_typed_inputs() {
-    let cases = [
-        (
-            float(1.5),
-            format!("{INPUT_NOT_STRING} Got type float for model=m."),
-        ),
-        (
-            Json::Object(parsed(r#"{"a":1}"#)),
-            format!("{INPUT_NOT_STRING} Got type dict for model=m."),
-        ),
-        (
-            list(vec![Json::Null]),
-            format!("{INPUT_NOT_STRING} Got type NoneType for model=m."),
-        ),
+        (int(-1), tokenized()),
+        (float(1.5), not_a_string("float")),
+        (Json::Object(parsed(r#"{"a":1}"#)), not_a_string("dict")),
+        (list(vec![Json::Null]), not_a_string("NoneType")),
     ];
     for (raw, expected) in cases {
         assert_eq!(
@@ -434,61 +434,10 @@ fn assert_typed_inputs() {
 fn dimensions_normalize_fields() {
     let lookup = registry(&[(TITAN_MODEL, TITAN_V2_ENTRY)]);
     let runtime = runtime();
-    assert_dimension_mapping(&runtime, &lookup);
-    assert_encoding_mapping(&runtime, &lookup);
+    assert_mapped(&runtime, &lookup, MAPPING_CASES);
 }
 
-fn assert_dimension_mapping(runtime: &Runtime, lookup: &Registry) {
-    let cases = [
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello"}"#,
-            r#"{"inputText":"hello"}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","dimensions":512}"#,
-            r#"{"inputText":"hello","dimensions":512}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","dimensions":null}"#,
-            r#"{"inputText":"hello","dimensions":null}"#,
-        ),
-        (
-            r#"{"model":"ignored-by-the-mapping","input":["hello"],"dimensions":1024,"encoding_format":"base64","normalize":true,"user":"someone","metadata":{"k":"v"}}"#,
-            r#"{"inputText":"hello","dimensions":1024,"embeddingTypes":["binary"]}"#,
-        ),
-    ];
-    for (source, expected) in cases {
-        assert_eq!(
-            mapped(runtime, lookup, source),
-            parsed(expected),
-            "{source}"
-        );
-    }
-}
-
-fn assert_encoding_mapping(runtime: &Runtime, lookup: &Registry) {
-    let cases = [
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"base64"}"#,
-            r#"{"inputText":"hello","embeddingTypes":["binary"]}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"float"}"#,
-            r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":"hex"}"#,
-            r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":""}"#,
-            r#"{"inputText":""}"#,
-        ),
-        (
-            r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","metadata":null}"#,
-            r#"{"inputText":"hello"}"#,
-        ),
-    ];
+fn assert_mapped(runtime: &Runtime, lookup: &Registry, cases: &[(&str, &str)]) {
     for (source, expected) in cases {
         assert_eq!(
             mapped(runtime, lookup, source),
@@ -499,32 +448,10 @@ fn assert_encoding_mapping(runtime: &Runtime, lookup: &Registry) {
 }
 
 fn unsupported_embedding_model() {
-    let lookup = registry(&[
-        ("cohere.embed-english-v3", TEXT_SCHEMA_ENTRY),
-        ("amazon.titan-embed-text-v1", NO_SCHEMA_ENTRY),
-        ("amazon.titan-embed-text-v2:9", COHERE_ENTRY),
-    ]);
+    let lookup = registry(UNSUPPORTED_ENTRIES);
     let runtime = runtime();
-    // the first record has no input at all, so the model is refused before the body is inspected
-    let cases = [
-        (
-            "amazon.titan-embed-text-v1",
-            r#"{"model":"amazon.titan-embed-text-v1"}"#,
-        ),
-        (
-            "amazon.titan-embed-text-v2:9",
-            r#"{"model":"amazon.titan-embed-text-v2:9","input":"hello"}"#,
-        ),
-        (
-            "cohere.embed-english-v3",
-            r#"{"model":"cohere.embed-english-v3","input":"hello"}"#,
-        ),
-    ];
-    for (model, source) in cases {
+    for (model, source) in UNSUPPORTED_CASES {
         let unknown = refuse(&runtime, &lookup, model, source);
-        let expected = format!(
-            "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model=\"{model}\". Track other embedding models in https://github.com/BerriAI/litellm/issues."
-        );
-        assert_eq!(unknown.to_string(), expected, "{model}");
+        assert_eq!(unknown.to_string(), unsupported_message(model), "{model}");
     }
 }
