@@ -13,7 +13,7 @@ use betterlite_models::available_models::environment::EnvironmentSnapshot;
 use betterlite_models::available_models::listing::{ListingCredentials, ModelListing};
 use betterlite_models::available_models::parameters::LiteLlmParams;
 use betterlite_models::available_models::{EnumerationRequest, get_valid_models};
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::provider_metadata_factory::selection::ProviderModelMetadata;
 use betterlite_models::provider_model_sets::ProviderModelSets;
@@ -26,10 +26,10 @@ pub struct Slot {
 }
 impl Slot {
     #[must_use]
-    pub fn new(config: &Config, _shared: &Shared) -> Self {
+    pub fn new(config: &Config, shared: &Shared) -> Self {
         Self {
             service: ListingService::from_config(config),
-            providers: CatalogModels::from_config(config),
+            providers: CatalogModels::from_config(config, &shared.bundled_catalog),
         }
     }
 
@@ -48,10 +48,9 @@ struct CatalogModels {
     check_provider_endpoint: bool,
 }
 impl CatalogModels {
-    fn from_config(config: &Config) -> Self {
-        let mut bundled = BundledCatalog::default();
+    fn from_config(config: &Config, catalog: &ModelCatalog) -> Self {
         let mut sets = ProviderModelSets::default();
-        sets.add_known_models(&bundled.get());
+        sets.add_known_models(catalog);
         Self {
             models_by_provider: sets
                 .models_by_provider
