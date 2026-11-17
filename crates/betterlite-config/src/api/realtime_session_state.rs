@@ -56,10 +56,7 @@ where
 {
     match value {
         JsonValue::Null => Ok(LoggedEventTypes::Default),
-        JsonValue::String(text) if text == "*" => Ok(LoggedEventTypes::All),
-        JsonValue::String(text) if text.starts_with(ENVIRONMENT_PREFIX) => {
-            environment_selection(text, lookup)
-        }
+        JsonValue::String(text) => string_selection(text, lookup),
         JsonValue::Array(items) => {
             let mut types = Vec::with_capacity(items.len());
             for item in items {
@@ -76,16 +73,17 @@ where
     }
 }
 
-// LiteLLM's proxy substitutes os.environ/ references in every value before it assigns the setting; an empty variable counts as unset
-fn environment_selection<L>(reference: String, lookup: &L) -> Result<LoggedEventTypes, ConfigError>
+// LiteLLM's proxy substitutes os.environ/ references before it assigns the setting, and an empty variable counts as unset; a literal "*" and a variable holding one both select everything
+fn string_selection<L>(text: String, lookup: &L) -> Result<LoggedEventTypes, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let resolved = resolve_string(reference, LOGGED_EVENT_TYPES_PATH, lookup)?;
+    let from_environment = text.starts_with(ENVIRONMENT_PREFIX);
+    let resolved = resolve_string(text, LOGGED_EVENT_TYPES_PATH, lookup)?;
     if resolved == "*" {
         return Ok(LoggedEventTypes::All);
     }
-    if resolved.is_empty() {
+    if from_environment && resolved.is_empty() {
         return Ok(LoggedEventTypes::Default);
     }
     Err(invalid_scalar(&JsonValue::String(resolved)))

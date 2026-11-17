@@ -57,6 +57,7 @@ fn loads_realtime_logged_events(#[case] source: &str, #[case] expected: LoggedEv
     "litellm_settings:\n  logged_real_time_event_types: session.created\n",
     false
 )]
+#[case::empty_text("litellm_settings:\n  logged_real_time_event_types: \"\"\n", false)]
 #[case::object(
     "litellm_settings:\n  logged_real_time_event_types: {type: response.done}\n",
     false
@@ -109,6 +110,23 @@ fn reads_an_environment_reference_in_logged_events(
             .logged_real_time_event_types,
         expected
     );
+}
+
+#[test]
+fn rejects_an_environment_selection_that_is_not_a_wildcard() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::from([("REALTIME_EVENTS".to_owned(), "session.created".to_owned())]),
+    }
+    .load("litellm_settings:\n  logged_real_time_event_types: os.environ/REALTIME_EVENTS\n")
+    .expect_err("a resolved event name is not the setting's type");
+    assert_eq!(error.category(), "invalid_scalar");
+    match error {
+        ConfigError::InvalidScalar { path, value } => {
+            assert_eq!(path, LOGGED_EVENT_TYPES_PATH);
+            assert!(!value);
+        }
+        other => panic!("unexpected error: {other}"),
+    }
 }
 
 #[test]
