@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-agent-results-stream-seed
+call:
+  foundry_agent_results:
+    streams:
+      - model: azure_ai/agents/seeded
+        id: chatcmpl-5eed5eed
+        created: 1700000000
+        split: 20
+        body: "event: thread.message.delta\n\ndata: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"seed\"}}]}}\n\ndata: [DONE]\n"
+env: {}
+compare: {ignore: []}

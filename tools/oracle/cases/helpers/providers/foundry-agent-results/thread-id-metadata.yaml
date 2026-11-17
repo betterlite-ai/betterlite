@@ -1,0 +1,32 @@
+kind: helper
+name: foundry-agent-results-thread-id-metadata
+call:
+  foundry_agent_results:
+    replies:
+      - model: azure_ai/agents/a
+        content: hello
+        thread_id: thread-9
+        messages: [{role: user, content: hi}]
+        annotations: null
+        existing_usage: null
+        hidden_params: null
+        fail: false
+      - model: azure_ai/agents/a
+        content: ""
+        thread_id: thread-9
+        messages: []
+        annotations: []
+        existing_usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+        hidden_params: {request-id: r1, thread_id: old}
+        fail: false
+      - model: azure_ai/agents/a
+        content: cited
+        thread_id: thread-9
+        messages: []
+        annotations:
+          - {type: url_citation, url_citation: {url: "https://a"}}
+        existing_usage: null
+        hidden_params: {thread_id: ""}
+        fail: false
+env: {}
+compare: {ignore: []}
