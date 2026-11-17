@@ -30,6 +30,31 @@ fn record(source: &str) -> IndexMap<String, Json> {
     }
 }
 
+fn logged_details(
+    message: IndexMap<String, Json>,
+    tool: IndexMap<String, Json>,
+    call: IndexMap<String, Json>,
+) -> Vec<(String, Json)> {
+    vec![
+        (
+            "messages".to_owned(),
+            Json::List(vec![Json::Object(message)]),
+        ),
+        (
+            "realtime_tools".to_owned(),
+            Json::List(vec![Json::Object(tool)]),
+        ),
+        (
+            "realtime_tool_calls".to_owned(),
+            Json::List(vec![Json::Object(call)]),
+        ),
+        (
+            "realtime_session_success_logged".to_owned(),
+            Json::Bool(true),
+        ),
+    ]
+}
+
 fn duration_usage(seconds: u64) -> AudioTranscriptionUsage {
     AudioTranscriptionUsage::Duration(DurationUsage {
         seconds: serde_json::Number::from(seconds),
@@ -708,26 +733,7 @@ fn realtime_usage_and_logging_copies_details_and_queues_once() {
         .store_message(SessionMessage::Text(r#"{"type":"response.create"}"#))
         .expect("the stored event is valid JSON");
     assert!(state.log_messages());
-    let details = spy.details();
-    let expected = [
-        (
-            "messages".to_owned(),
-            Json::List(vec![Json::Object(message)]),
-        ),
-        (
-            "realtime_tools".to_owned(),
-            Json::List(vec![Json::Object(tool)]),
-        ),
-        (
-            "realtime_tool_calls".to_owned(),
-            Json::List(vec![Json::Object(call)]),
-        ),
-        (
-            "realtime_session_success_logged".to_owned(),
-            Json::Bool(true),
-        ),
-    ];
-    assert_eq!(details, expected);
+    assert_eq!(spy.details(), logged_details(message, tool, call));
     assert_eq!(spy.flag(), Some(Json::Bool(true)));
     assert_eq!(spy.lock().dispatches.len(), 1);
     assert_eq!(
