@@ -1,7 +1,6 @@
 use thiserror::Error;
 
-// LiteLLM raises inside the hook's try block and logs the message; the same failures arrive here as
-// the text after its "Error adding search results to response: " prefix.
+// LiteLLM raises inside the hook's try block; the same failures arrive here as its logged message text.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum VectorStoresError {
     #[error("the {field} field must be a list of retrieval records")]

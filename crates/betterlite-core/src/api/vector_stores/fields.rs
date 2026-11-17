@@ -13,11 +13,10 @@ pub struct RetrievalFields<'data> {
     pub failures: &'data [Json],
 }
 
-// The success hook reads the logging object's model_call_details, not request_data itself
-// (vector_store_pre_call_hook.py:431-442). Ok(None) means there was no logging object to read.
-pub fn from_call_details<'data>(
-    request_data: &'data IndexMap<String, Json>,
-) -> Result<Option<RetrievalFields<'data>>, VectorStoresError> {
+// The success hook reads model_call_details, not request_data; Ok(None) means there was no logging object (vector_store_pre_call_hook.py:431-442).
+pub fn from_call_details(
+    request_data: &IndexMap<String, Json>,
+) -> Result<Option<RetrievalFields<'_>>, VectorStoresError> {
     match request_data.get(LOGGING_OBJECT) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(logging)) => match logging.get(MODEL_CALL_DETAILS) {
@@ -33,9 +32,9 @@ pub fn from_call_details<'data>(
 }
 
 // The streaming hook reads the two fields straight out of request_data (vector_store_pre_call_hook.py:488-489).
-pub fn from_request_data<'data>(
-    request_data: &'data IndexMap<String, Json>,
-) -> Result<RetrievalFields<'data>, VectorStoresError> {
+pub fn from_request_data(
+    request_data: &IndexMap<String, Json>,
+) -> Result<RetrievalFields<'_>, VectorStoresError> {
     Ok(RetrievalFields {
         search_results: sequence(request_data, SEARCH_RESULTS)?,
         failures: sequence(request_data, SEARCH_FAILURES)?,
@@ -53,8 +52,7 @@ fn sequence<'data>(
     }
 }
 
-// Both hooks walk the choices and write into each one's message or delta, keeping what the provider
-// put there and skipping a choice that has nothing to write into (vector_store_pre_call_hook.py:454-462).
+// Both hooks write into each choice's message or delta, keeping existing fields and skipping targets that are absent or null (vector_store_pre_call_hook.py:454-462).
 pub fn attach_to_choices(
     record: &mut IndexMap<String, Json>,
     member: &'static str,

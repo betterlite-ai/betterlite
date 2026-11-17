@@ -33,8 +33,7 @@ struct ChoiceProjection<'data> {
     delta: Option<&'data Json>,
 }
 
-// The pydantic objects on LiteLLM's side carry constructor defaults a decoded record never had, so
-// both sides compare the fields the hooks can change instead of the whole record.
+// LiteLLM's pydantic objects carry constructor defaults a decoded record never had, so both sides compare only the fields the hooks change.
 #[derive(Debug, Serialize)]
 struct Projection<'data> {
     id: Option<&'data Json>,
