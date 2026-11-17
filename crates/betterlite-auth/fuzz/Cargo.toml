@@ -51,3 +51,10 @@ path = "fuzz_targets/session_token_codec.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sso_record"
+path = "fuzz_targets/sso_record.rs"
+test = false
+doc = false
+bench = false
