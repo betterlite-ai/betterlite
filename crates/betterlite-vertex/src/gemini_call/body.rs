@@ -56,7 +56,7 @@ where
         capabilities: deps.capabilities,
         gcs: GcsDeps {
             transport: deps.gcs,
-            tokens: &*deps.llm.cache,
+            tokens: deps.llm.cache.as_ref(),
         },
     }
 }
