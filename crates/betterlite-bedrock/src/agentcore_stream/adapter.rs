@@ -141,7 +141,9 @@ async fn check_status(
     if status == 200 {
         return Ok(());
     }
-    let error_body = read_body(chunks).await?;
+    let error_body = read_body(chunks)
+        .await
+        .map_err(AgentCoreStreamError::Body)?;
     let message = String::from_utf8(error_body)
         .unwrap_or_else(|error| format!("{} bytes that are not text", error.as_bytes().len()));
     Err(provider_error(status, message, headers, Some(api_base)))
@@ -152,7 +154,7 @@ async fn json_reply(
     headers: &HeaderMap,
     chunks: &mut Chunks,
 ) -> Result<String, AgentCoreStreamError> {
-    let body = match read_body(chunks).await {
+    let body = match read_body(chunks).await.map_err(AgentCoreStreamError::Body) {
         Ok(body) => body,
         Err(error) => {
             return Err(provider_error(
@@ -178,18 +180,18 @@ async fn json_reply(
     Ok(reply.content)
 }
 
-async fn read_body(chunks: &mut Chunks) -> Result<Vec<u8>, AgentCoreStreamError> {
+pub(crate) async fn read_body(chunks: &mut Chunks) -> Result<Vec<u8>, HttpError> {
     let mut body = Vec::new();
     while let Some(chunk) = chunks.next().await {
-        let bytes = chunk.map_err(AgentCoreStreamError::Body)?;
+        let bytes = chunk?;
         if body
             .len()
             .checked_add(bytes.len())
             .is_none_or(|size| size > MAX_BODY_BYTES)
         {
-            return Err(AgentCoreStreamError::Body(HttpError::TooLarge {
+            return Err(HttpError::TooLarge {
                 limit: MAX_BODY_BYTES,
-            }));
+            });
         }
         body.extend_from_slice(&bytes);
     }

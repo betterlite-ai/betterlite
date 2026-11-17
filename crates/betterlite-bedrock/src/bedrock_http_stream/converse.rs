@@ -4,16 +4,15 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 
-use crate::agentcore_stream::adapter::header_pairs;
+use crate::agentcore_stream::adapter::{header_pairs, read_body};
 use crate::agentcore_stream::transport::{StreamHandler, StreamHead};
 use crate::bedrock_http_stream::error::{HttpStreamError, status_error, transform_failure};
 use crate::bedrock_http_stream::fake::{FakeCall, buffered};
 use crate::bedrock_http_stream::stream::{ChunkStream, FramedCall, OpenedStream, framed};
-use crate::bedrock_http_stream::{
-    Opening, SendFailure, StreamDeps, body_text, log_open, read_body, send,
-};
+use crate::bedrock_http_stream::{Opening, SendFailure, StreamDeps, body_text, log_open, send};
 use crate::bedrock_settings::ResponseBody;
 use crate::converse_response::request::RawReply;
+use crate::event_frames::tally::repr_bytes;
 use crate::image_call::plan::LogContext;
 
 pub struct ConverseCall<'call> {
@@ -74,9 +73,10 @@ async fn bad_status(
     let body = read_body(&mut head.chunks)
         .await
         .map_err(HttpStreamError::Body)?;
+    // message=str(response.read()): Python shows the bytes as a b'...' literal and escapes quote, controls and non-ASCII.
     let error = status_error(
         head.status,
-        bytes_text(&body),
+        repr_bytes(&body),
         &head.headers,
         call.api_base,
         ResponseBody::Read(body_text(&body)),
@@ -135,29 +135,4 @@ fn framed_opened<'deps>(
         deps,
         head,
     )
-}
-
-// message=str(response.read()): Python shows the bytes as a b'...' literal and escapes quote, controls and non-ASCII.
-fn bytes_text(body: &[u8]) -> String {
-    let quote = if body.contains(&b'\'') && !body.contains(&b'"') {
-        '"'
-    } else {
-        '\''
-    };
-    let escaped: String = body.iter().map(|byte| escaped_byte(*byte, quote)).collect();
-    format!("b{quote}{escaped}{quote}")
-}
-
-fn escaped_byte(byte: u8, quote: char) -> String {
-    if char::from(byte) == quote {
-        return format!("\\{quote}");
-    }
-    match byte {
-        b'\\' => "\\\\".to_owned(),
-        b'\n' => "\\n".to_owned(),
-        b'\r' => "\\r".to_owned(),
-        b'\t' => "\\t".to_owned(),
-        _ if byte.is_ascii_graphic() || byte == b' ' => char::from(byte).to_string(),
-        _ => format!("\\x{byte:02x}"),
-    }
 }

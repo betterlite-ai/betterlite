@@ -2,8 +2,6 @@ use std::str;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use betterlite_http::error::HttpError;
-use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -11,7 +9,6 @@ use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use futures_util::StreamExt as _;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use thiserror::Error;
@@ -19,7 +16,7 @@ use url::Url;
 
 use crate::agentcore_stream::FIRST_RESPONSE;
 use crate::agentcore_stream::IdSource;
-use crate::agentcore_stream::transport::{Chunks, PostRequest, StreamHandler, StreamHead};
+use crate::agentcore_stream::transport::{PostRequest, StreamHandler, StreamHead};
 use crate::invoke_events::DecoderClock;
 
 pub mod converse;
@@ -73,22 +70,6 @@ pub(crate) async fn send(
         })
         .await
         .map_err(SendFailure::Transport)
-}
-
-// The transport bounds each read, not the body a caller buffers, so the caller stops at the same ceiling.
-pub(crate) async fn read_body(chunks: &mut Chunks) -> Result<Vec<u8>, HttpError> {
-    let limit = TransportLimits::DEFAULT.body_bytes;
-    let mut body = Vec::new();
-    while let Some(chunk) = chunks.next().await {
-        let bytes = chunk?;
-        let total = body
-            .len()
-            .checked_add(bytes.len())
-            .filter(|total| *total <= limit)
-            .ok_or(HttpError::TooLarge { limit })?;
-        body.extend_from_slice(&bytes);
-    }
-    Ok(body)
 }
 
 // response.text, and a body that is not UTF-8 is named by its byte count instead of decoding replacement characters.

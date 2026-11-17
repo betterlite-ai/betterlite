@@ -6,16 +6,14 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 
-use crate::agentcore_stream::adapter::header_pairs;
+use crate::agentcore_stream::adapter::{header_pairs, read_body};
 use crate::agentcore_stream::transport::{StreamHandler, StreamHead};
 use crate::bedrock_http_stream::error::{
     HttpStreamError, raised, reason_phrase, status_error, transform_failure,
 };
 use crate::bedrock_http_stream::fake::{FakeCall, buffered};
 use crate::bedrock_http_stream::stream::{ChunkStream, FramedCall, OpenedStream, framed};
-use crate::bedrock_http_stream::{
-    Opening, SendFailure, StreamDeps, body_text, log_open, read_body, send,
-};
+use crate::bedrock_http_stream::{Opening, SendFailure, StreamDeps, body_text, log_open, send};
 use crate::bedrock_settings::ResponseBody;
 use crate::converse_response::request::RawReply;
 use crate::converse_response::transform::TransformError;
