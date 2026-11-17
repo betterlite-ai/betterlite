@@ -144,9 +144,9 @@ fn a_built_metric_provider_keeps_exporting() {
         .expect("held meter provider")
         .force_flush()
         .expect("flush");
-    let exported = exporter.get_finished_metrics().expect("finished metrics");
+    let finished = exporter.get_finished_metrics().expect("finished metrics");
     assert!(
-        exported
+        finished
             .iter()
             .flat_map(ResourceMetrics::scope_metrics)
             .flat_map(ScopeMetrics::metrics)
