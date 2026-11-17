@@ -94,7 +94,7 @@ class RouterView(Protocol):
 
 class HiddenResponse:
     def __init__(self, hidden: dict[str, JsonValue]) -> None:
-        self._hidden_params = hidden
+        self._hidden_params: dict[str, JsonValue] = hidden
 
 
 class BareStream:
@@ -145,7 +145,7 @@ def observe(scenario: Scenario) -> ResponseFound:
     prepared = prepare_response_for_header_attachment(carrier_response(scenario))
     if prepared is None:
         return ResponseFound(prepared=False, has_hidden=False, hidden={})
-    ensure_response_additional_headers(prepared)
+    _ = ensure_response_additional_headers(prepared)
     apply_response_model_id(prepared, scenario.metadata)
     has_hidden = response_has_hidden_params(prepared)
     hidden: dict[str, JsonValue] = _HIDDEN.validate_python(get_hidden_params_dict(prepared)) if has_hidden else {}
