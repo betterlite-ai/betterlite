@@ -94,20 +94,13 @@ where
     let requested_thinking = thinking_param(non_default_params)?;
     let display_updates = has_thinking_display_updates(requested_thinking.as_ref());
     let has_response_format = non_default_params.contains_key(RESPONSE_FORMAT);
-    let mut mapped_model = original_model;
-    if has_response_format
-        && !supports_model_capability(
-            original_model,
-            NATIVE_STRUCTURED_OUTPUT,
-            CUSTOM_LLM_PROVIDER,
-            environment,
-            request.catalogs,
-        )
-        .await
-    {
-        // The stub model hides the original from the parent's own native-schema probe.
-        mapped_model = RESPONSE_FORMAT_STUB_MODEL;
-    }
+    let mapped_model = stub_model(
+        original_model,
+        has_response_format,
+        request.catalogs,
+        environment,
+    )
+    .await;
     let mut clamped_params = non_default_params.clone();
     clamp_reasoning_effort(original_model, &mut clamped_params, request, environment).await?;
     let params_request = ParamsRequest {
@@ -134,6 +127,34 @@ where
         request.catalogs,
     );
     Ok(())
+}
+
+// The stub model hides the original from the parent's own native-schema probe.
+async fn stub_model<'model, Source, Transport>(
+    model: &'model str,
+    has_response_format: bool,
+    catalogs: &CatalogSources<'_>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> &'model str
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    if !has_response_format {
+        return model;
+    }
+    let native = supports_model_capability(
+        model,
+        NATIVE_STRUCTURED_OUTPUT,
+        CUSTOM_LLM_PROVIDER,
+        environment,
+        catalogs,
+    )
+    .await;
+    if native {
+        return model;
+    }
+    RESPONSE_FORMAT_STUB_MODEL
 }
 
 fn thinking_param(
