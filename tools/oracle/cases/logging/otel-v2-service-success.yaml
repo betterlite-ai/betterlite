@@ -1,0 +1,13 @@
+kind: helper
+name: otel-v2-service-success
+call:
+  b3853:
+    function: service
+    call_type: get
+    error: null
+    metrics_only: false
+    status: 0
+    second_status: 0
+env: {}
+compare:
+  ignore: []

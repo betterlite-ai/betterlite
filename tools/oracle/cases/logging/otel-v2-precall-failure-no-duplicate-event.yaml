@@ -1,0 +1,13 @@
+kind: helper
+name: otel-v2-precall-failure-no-duplicate-event
+call:
+  b3853:
+    function: precall
+    call_type: completion
+    error: null
+    metrics_only: false
+    status: 401
+    second_status: 422
+env: {}
+compare:
+  ignore: []

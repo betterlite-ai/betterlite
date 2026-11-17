@@ -1,0 +1,13 @@
+kind: helper
+name: otel-v2-precall-failure-status
+call:
+  b3853:
+    function: precall
+    call_type: completion
+    error: null
+    metrics_only: false
+    status: 400
+    second_status: 0
+env: {}
+compare:
+  ignore: []
