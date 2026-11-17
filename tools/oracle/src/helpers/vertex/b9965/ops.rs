@@ -165,9 +165,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         &fetcher,
         input.mode.fetch_mode(),
     ));
-    let messages = match prepared {
-        Ok(messages) => messages,
-        Err(_) => return Ok(failure(&fetcher, "prepare")),
+    let Ok(messages) = prepared else {
+        return Ok(failure(&fetcher, "prepare"));
     };
     let body_input = BodyInput {
         provider,

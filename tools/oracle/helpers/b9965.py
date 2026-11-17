@@ -3,7 +3,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 import litellm
-from litellm.exceptions import BadRequestError, ImageFetchError
+from litellm.exceptions import ImageFetchError
 from litellm.litellm_core_utils.prompt_templates import factory, image_handling
 from litellm.litellm_core_utils.prompt_templates.image_handling import (
     RemoteMedia,
@@ -17,6 +17,7 @@ from litellm.llms.vertex_ai.gemini.transformation import (
     _transform_request_body,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1160
     _vertex_inlines,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1322-L1327
 )
+from openai import BadRequestError
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
@@ -125,7 +126,7 @@ def _inline(input_value: Case) -> list[JsonObject]:
     return asyncio.run(ASYNC_INLINE(input_value["messages"], predicate))
 
 
-# the compared value carries the failing stage and attempted urls, since compare_helper drops the error class and message
+# compare_helper drops the error class and message, so a failure travels in the compared value
 def _failure(stage: Stage, attempted: list[Json], status: int) -> JsonObject:
     failure: JsonObject = {"status": status, "type": None, "param": None, "code": None}
     return {"failure": failure, "stage": stage, "fetched": attempted}
