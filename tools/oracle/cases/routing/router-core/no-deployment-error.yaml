@@ -1,0 +1,40 @@
+kind: probe
+name: no-deployment-error
+probes:
+  - clock: {unix_millis: 1700000000550, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 1}
+          - {model_name: gpt, model: "openai/gpt-4o-mini", id: mini, weight: 1}
+        routes:
+          - {model: gpt, excluded_deployment_ids: [chat, mini]}
+  - clock: {unix_millis: 1700000000551, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 1}
+          - {model_name: gpt, model: "openai/gpt-4o-mini", id: mini, weight: 1}
+        routes:
+          - {model: absent}
+  - clock: {unix_millis: 1700000000552, monotonic_millis: 0}
+    samples: [0]
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 1}
+          - {model_name: gpt, model: "openai/gpt-4o-mini", id: mini, weight: 1}
+        routes:
+          - {model: gpt, excluded_deployment_ids: [mini]}
+  - clock: {unix_millis: 1700000000553, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_core:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: chat, weight: 1}
+          - {model_name: gpt, model: "openai/gpt-4o-mini", id: mini, weight: 1}
+        routes:
+          - {model: chat}
+compare: {ignore: []}
