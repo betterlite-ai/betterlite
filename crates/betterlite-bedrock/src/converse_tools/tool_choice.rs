@@ -71,9 +71,7 @@ fn choice(kind: &str) -> ToolChoiceValuesBlock {
     block
 }
 
-fn tool_choice_name<'choice>(
-    fields: &'choice IndexMap<String, Json>,
-) -> Result<Option<&'choice Json>, ConverseToolsError> {
+fn tool_choice_name(fields: &IndexMap<String, Json>) -> Result<Option<&Json>, ConverseToolsError> {
     let Some(function) = fields.get("function") else {
         return Ok(None);
     };
