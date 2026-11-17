@@ -1,20 +1,15 @@
 use std::collections::BTreeMap;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
-use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 
-use super::input_failure;
-
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Operation {
     Chat,
-    Embedding,
     LemonadeModels,
     LemonadeReply,
     OllamaModels,
@@ -57,17 +52,6 @@ impl Provider {
             Self::Lemonade | Self::Triton | Self::Oobabooga | Self::Xinference => None,
         }
     }
-
-    pub(super) const fn embedding_id(self) -> Option<ProviderId> {
-        match self {
-            Self::HostedVllm => Some(ProviderId::HostedVllm),
-            Self::Triton => Some(ProviderId::Triton),
-            Self::Oobabooga => Some(ProviderId::Oobabooga),
-            Self::Ollama => Some(ProviderId::Ollama),
-            Self::Xinference => Some(ProviderId::Xinference),
-            Self::OllamaChat | Self::Lemonade | Self::Petals => None,
-        }
-    }
 }
 
 // the module-level litellm settings the arms read, as a case names them
@@ -105,8 +89,6 @@ pub(crate) struct Case {
     #[serde(default)]
     pub(super) messages: Vec<Message>,
     #[serde(default)]
-    pub(super) input: Option<Json>,
-    #[serde(default)]
     pub(super) api_base: Option<String>,
     #[serde(default)]
     pub(super) api_key: Option<String>,
@@ -133,30 +115,6 @@ impl Case {
             Some(value) => Ok(serde_json::from_value::<Object>(serde_json::to_value(
                 value,
             )?)?),
-        }
-    }
-
-    // the embedding arms take a prompt string or a list of them, as LiteLLM's embedding input does
-    pub(super) fn embedding_input(&self) -> Result<EmbeddingInput, Box<HelperError>> {
-        match &self.input {
-            Some(Json::Text(text)) => Ok(EmbeddingInput::Text(text.clone())),
-            Some(Json::List(items)) => {
-                let mut texts = Vec::with_capacity(items.len());
-                for item in items {
-                    let Json::Text(text) = item else {
-                        return Err(input_failure(String::from(
-                            "an embedding input list holds a value that is not a string",
-                        )));
-                    };
-                    texts.push(text.clone());
-                }
-                Ok(EmbeddingInput::Texts(texts))
-            }
-            None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) => {
-                Err(input_failure(String::from(
-                    "the embedding case names no prompt string or list of them",
-                )))
-            }
         }
     }
 }

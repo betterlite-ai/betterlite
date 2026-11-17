@@ -1,5 +1,4 @@
 mod chat;
-mod embed;
 mod fixtures;
 mod input;
 mod listing;
@@ -21,7 +20,6 @@ impl Helper for Op {
             .or_value_error()?;
         match input.op {
             input::Operation::Chat => chat::run(input),
-            input::Operation::Embedding => embed::run(input),
             input::Operation::LemonadeModels => listing::lemonade_models(&runtime, input),
             input::Operation::LemonadeReply => listing::lemonade_reply(input),
             input::Operation::OllamaModels => listing::ollama_models(input),

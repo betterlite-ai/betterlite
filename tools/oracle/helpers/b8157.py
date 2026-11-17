@@ -43,7 +43,7 @@ class Globals(TypedDict):
 
 
 class Case(TypedDict):
-    op: Literal["chat", "embedding", "lemonade_models", "lemonade_reply", "ollama_models"]
+    op: Literal["chat", "lemonade_models", "lemonade_reply", "ollama_models"]
     provider: Literal[
         "hosted_vllm",
         "ollama",
@@ -56,7 +56,6 @@ class Case(TypedDict):
     ]
     model: NotRequired[str]
     messages: NotRequired[list[Message]]
-    input: NotRequired[str | list[str]]
     api_base: NotRequired[str]
     api_key: NotRequired[str]
     headers: NotRequired[dict[str, str]]
@@ -201,29 +200,6 @@ def chat_value(case: Case) -> JsonValue:
     return {"request": request_view(recorder.requests, PLACEHOLDER), "error": error}
 
 
-def embedding_value(case: Case) -> JsonValue:
-    recorder = Recorder(answered(case))
-    client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
-    litellm.module_level_client = client
-    replace_environment(case, PLACEHOLDER)
-    apply_globals(case.get("globals"))
-    try:
-        litellm.embedding(
-            model=f"{case['provider']}/{case.get('model', '')}",
-            input=case.get("input"),
-            api_base=substituted_base(case, PLACEHOLDER),
-            api_key=case.get("api_key"),
-            headers=case.get("headers"),
-            client=client,
-        )
-    except openai.APIError as raised:
-        error: JsonValue = {
-            "status": Raised.model_validate(raised, from_attributes=True).status_code
-        }
-        return {"request": request_view(recorder.requests, PLACEHOLDER), "error": error}
-    return {"request": request_view(recorder.requests, PLACEHOLDER)}
-
-
 def lemonade_reply_value(case: Case) -> JsonValue:
     recorder = Recorder(answered(case))
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
@@ -278,8 +254,6 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
             server.close()
     if case["op"] == "chat":
         return chat_value(case)
-    if case["op"] == "embedding":
-        return embedding_value(case)
     if case["op"] == "lemonade_reply":
         return lemonade_reply_value(case)
     return lemonade_models_value(case)

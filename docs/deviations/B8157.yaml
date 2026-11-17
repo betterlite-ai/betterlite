@@ -9,8 +9,8 @@ deviations:
   - what: The oracle covers the triton and oobabooga chat arms through unit tests only.
     why: LiteLLM's _complete_triton and _complete_oobabooga build their request inside a module-cached httpx client that takes no injected client, so the oracle cannot record the request without patching a private module function. The base, provider string and absent key and headers of both arms are asserted by self_hosted_dispatch::tests instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4540-L4575
-  - what: The embedding cases compare the prepared request (URL and Authorization header) only.
-    why: The embedding reply transforms and response decoding belong to the provider configs of B8150 to B8156, and the arm only resolves base, key and headers before handing them on.
+  - what: The oracle covers the five embedding arms through unit tests only.
+    why: The case files this task names compare the chat arms and the two model listings; the embedding arms' base, key and header fallbacks are asserted by self_hosted_dispatch::tests instead, since their reply transforms belong to the provider configs of B8150 to B8156 and the arm only resolves values before handing them on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6575-L6595
   - what: A petals call with neither a passed api_base nor litellm.api_base answers 400 with the local engine message.
     why: LiteLLM's PetalsConfig.get_complete_url raises a bare ValueError("api_base is required") when the base is missing, which surfaces as a 500 without a provider status. betterlite keeps B8153's typed petals setup error, which carries status 400 and the pip install message.
