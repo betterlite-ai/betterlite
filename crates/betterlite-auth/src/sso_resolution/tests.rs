@@ -524,9 +524,11 @@ fn the_descriptor_table_matches_the_litellm_field_order() {
         })
         .collect::<Vec<_>>();
     assert_eq!(fields, EXPECTED_FIELDS);
-    for descriptor in &SSO_DESCRIPTORS {
-        assert_eq!(descriptor.db_key, descriptor.field_name);
-    }
+    assert!(
+        SSO_DESCRIPTORS
+            .iter()
+            .all(|descriptor| descriptor.db_key == descriptor.field_name)
+    );
 }
 
 #[test]
