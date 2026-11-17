@@ -171,8 +171,9 @@ impl CooldownCache {
                 },
             );
         }
+        drop(state);
         Some(ActiveCooldown {
-            model_id: model_id.to_owned(),
+            model_id: model_id.clone(),
             remaining_seconds: remaining,
             record,
         })

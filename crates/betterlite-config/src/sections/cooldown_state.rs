@@ -64,7 +64,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enable_health_check_routing: false,
-            staleness_threshold: DEFAULT_HEALTH_CHECK_INTERVAL * STALENESS_MULTIPLIER,
+            staleness_threshold: DEFAULT_HEALTH_CHECK_INTERVAL.mul_add(STALENESS_MULTIPLIER, 0.0),
             ignore_transient_errors: false,
             read_interval_seconds: DEFAULT_READ_INTERVAL_SECONDS,
         }
@@ -120,5 +120,5 @@ where
     let text = lookup.lookup(INTERVAL_VARIABLE).unwrap_or_default();
     let seconds = betterlite_env::number::<f64>(INTERVAL_VARIABLE, &text)?
         .unwrap_or(DEFAULT_HEALTH_CHECK_INTERVAL);
-    Ok(seconds * STALENESS_MULTIPLIER)
+    Ok(seconds.mul_add(STALENESS_MULTIPLIER, 0.0))
 }

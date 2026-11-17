@@ -173,22 +173,22 @@ async fn the_key_limit() {
     assert_eq!(shared.writes().len(), 1);
     let past = "a".repeat(MAX_KEY_BYTES.saturating_sub(19));
     let bytes = format!("deployment:{past}:cooldown").len();
-    let error = cache.add(&past, "boom", 429, None).unwrap_err();
+    let add_error = cache.add(&past, "boom", 429, None).unwrap_err();
     assert!(
-        matches!(error, StoreError::KeyTooLong { bytes: seen, limit } if seen == bytes && limit == MAX_KEY_BYTES)
+        matches!(add_error, StoreError::KeyTooLong { bytes: seen, limit } if seen == bytes && limit == MAX_KEY_BYTES)
     );
     let keys = ids(&[past.as_str()]);
     let mut batch = RoutingReadBatch::default();
     let mut request = RequestReads::default();
-    let error = cache
+    let read_error = cache
         .read(&mut batch, &mut request, &keys)
         .await
         .unwrap_err();
-    assert!(matches!(error, StoreError::KeyTooLong { .. }));
-    let error = cache
+    assert!(matches!(read_error, StoreError::KeyTooLong { .. }));
+    let active_error = cache
         .active_from_results(&keys, &[Some(record(0.0, 5.0))])
         .unwrap_err();
-    assert!(matches!(error, StoreError::KeyTooLong { .. }));
+    assert!(matches!(active_error, StoreError::KeyTooLong { .. }));
     assert_eq!(shared.writes().len(), 1);
 }
 

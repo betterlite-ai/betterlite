@@ -28,7 +28,7 @@ pub struct HealthState {
     pub reason: String,
 }
 
-fn default_is_healthy() -> bool {
+const fn default_is_healthy() -> bool {
     true
 }
 
