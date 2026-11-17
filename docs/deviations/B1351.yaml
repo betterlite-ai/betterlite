@@ -1,0 +1,24 @@
+task: B1351
+deviations:
+  - what: A reply whose usageMetadata is absent or null leaves usage away, while LiteLLM's edit transform builds its own ImageResponse whose constructor filled in a zero usage; an absent key keeps that zero usage, and a null value crashes the request on .get.
+    why: A reply that reports no usage carries none, and a zero usage would report token counts the reply never sent; no working setup receives a null from Google.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2685-L2693
+  - what: A file record whose position cannot be read, whose rewind fails or whose read fails ends in a typed Stream error carrying the io error, where LiteLLM lets the OSError escape the transform as an unhandled 500.
+    why: The record is the caller's upload, so the failure is named and chained instead of crashing the request; no working setup sends a stream that refuses to be read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L186-L195
+  - what: A reply body over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM passes the edit reply to httpx.Response.json() with no size limit.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the shared generate-content decoder's reply cap; an edit reply that large is not one any working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L127-L134
+  - what: An edit reply whose root is not a JSON object, or whose candidates, content, parts or inlineData are not the declared types, fails with a typed Shape error naming the path, where LiteLLM's candidate loop raises an uncaught AttributeError or TypeError and the proxy answers HTTP 500.
+    why: The declared reply is an object holding a candidates list of objects, so such a reply is malformed; betterlite names the failure instead of answering 500, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L136-L150
+  - what: A present usageMetadata that is not an object fails with a typed UsageShape error, where LiteLLM calls .get on the value and the proxy answers HTTP 500.
+    why: The declared usage type is an object, so such a reply is malformed; betterlite names the failure instead of crashing the request, and no working setup receives one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L153-L154
+  - what: An edit usage's TEXT or IMAGE detail counts whose sum leaves the signed 64-bit range fail with a typed TokenOverflow error, where LiteLLM adds unbounded Python integers.
+    why: betterlite's token counts are i64, and a reply summing past that is not one any working setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_usage_transformation.py#L25-L34
+kept_bugs:
+  - what: A single empty bytes image is falsey and carries no image, while a list holding the same empty bytes carries one part with empty data; betterlite keeps that split because LiteLLM's truthiness test runs on the whole field before the records are read.
+    why: A working call can hit either side, and the edit body must match LiteLLM's for the field shape the caller gave.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L95
