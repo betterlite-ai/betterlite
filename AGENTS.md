@@ -22,6 +22,8 @@ Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check too
 `--self-check` runs LiteLLM on both sides against the same mock provider, so it checks
 the cases only. Omit it to compare a built betterlite gateway or the native helpers
 with LiteLLM; a task check on helper cases never uses it.
+Cases with a database need POSTGRES_TEST_URL, since only nextest starts a server on its own;
+point it at any PostgreSQL 16 server whose user may create databases.
 
 A helper case only needs the group crates that own its operations.
 `cargo gate oracle-groups <case files or folders>` prints the package for each case
