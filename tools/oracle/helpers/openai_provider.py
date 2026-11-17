@@ -173,7 +173,6 @@ def call(
     flag = os.environ.get(EXPERIMENTAL_HANDLER_FLAG)
     if flag is not None and flag.strip().lower() == "true":
         client = HTTPHandler(client=httpx.Client(transport=transport))
-        # litellm.completion's decorated return is Any to mypy, so its type is named here.
         experimental: (
             ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
         ) = litellm.completion(
@@ -190,7 +189,6 @@ def call(
             **case["optional_params"],
         )
         return TypeAdapter(ModelResponse).validate_python(experimental)
-    # litellm.completion's decorated return is Any to mypy, so its type is named here.
     chat: (
         ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
     ) = litellm.completion(
