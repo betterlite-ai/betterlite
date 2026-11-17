@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
@@ -74,24 +72,25 @@ where
     Ok(())
 }
 
-// LiteLLM downloads every document URL it finds, so a request could keep the gateway fetching without end
+// Each accepted block is fetched, repeated URLs included, so every one counts against the ceiling.
 fn check_remote_urls(messages: &[Json]) -> Result<(), DocumentError> {
-    let mut seen = BTreeSet::new();
+    let mut accepted = 0;
     for message in messages {
-        let Some(Json::Object(message_fields)) = message else {
+        let Json::Object(message_fields) = message else {
             continue;
         };
         let Some(Json::List(blocks)) = message_fields.get(CONTENT) else {
             continue;
         };
         for block in blocks {
-            let Some(Json::Object(block_fields)) = block else {
+            let Json::Object(block_fields) = block else {
                 continue;
             };
-            if let Some(url) = document_url(block_fields)
-                && seen.insert(url)
-                && seen.len() > MAX_REMOTE_URLS
-            {
+            if document_url(block_fields).is_none() {
+                continue;
+            }
+            accepted = accepted.saturating_add(1);
+            if accepted > MAX_REMOTE_URLS {
                 return Err(DocumentError::Media(MediaError::TooManyRemoteUrls {
                     limit: MAX_REMOTE_URLS,
                 }));

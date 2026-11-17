@@ -821,6 +821,19 @@ fn document_bodies(count: usize) -> Vec<Json> {
     messages
 }
 
+fn repeated_document_bodies(count: usize) -> Vec<Json> {
+    let blocks: Vec<Value> = (0..count)
+        .map(|_| {
+            json!({
+                "type": "document",
+                "source": {"type": "url", "url": "https://example.test/same.pdf"},
+            })
+        })
+        .collect();
+    let message = json!({"role": "user", "content": blocks});
+    vec![serde_json::from_value(message).expect("the repeated message parses")]
+}
+
 pub(super) fn remote_url_limit() {
     let fixture = plain_fixture();
     let mut session = Session::new(&fixture).expect("the session builds");
@@ -860,6 +873,43 @@ pub(super) fn remote_url_limit() {
         }))) => {}
         Err(other) => panic!("unexpected error: {other}"),
     }
+    let quiet = MapFetcher::default();
+    let repeated_over = chat_request(
+        "claude-plain",
+        repeated_document_bodies(MAX_REMOTE_URLS + 1),
+        map_of(r#"{"max_tokens": 64}"#),
+        AnthropicHeaders::default(),
+        &defaults,
+        &catalog,
+    );
+    match session.transform(&repeated_over, &quiet, Mode::Sync) {
+        Ok(_prepared) => {
+            panic!("one URL repeated more than {MAX_REMOTE_URLS} times must fail the request")
+        }
+        Err(ClaudeInvokeError::Documents(DocumentError::Media(
+            MediaError::TooManyRemoteUrls { limit },
+        ))) => {
+            assert_eq!(limit, MAX_REMOTE_URLS);
+        }
+        Err(other) => panic!("unexpected error: {other}"),
+    }
+    assert!(quiet.calls().is_empty());
+    let served = MapFetcher::new(&[(
+        "https://example.test/same.pdf",
+        "data:application/pdf;base64,U0VN",
+    )]);
+    let repeated = chat_request(
+        "claude-plain",
+        repeated_document_bodies(MAX_REMOTE_URLS),
+        map_of(r#"{"max_tokens": 64}"#),
+        AnthropicHeaders::default(),
+        &defaults,
+        &catalog,
+    );
+    session
+        .transform(&repeated, &served, Mode::Sync)
+        .expect("one URL repeated up to the ceiling transforms");
+    assert_eq!(served.calls().len(), MAX_REMOTE_URLS);
 }
 
 pub(super) fn billing_header() {
