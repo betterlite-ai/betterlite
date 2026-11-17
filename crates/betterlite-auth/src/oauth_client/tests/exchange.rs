@@ -99,6 +99,18 @@ async fn a_callback_url_that_is_not_a_url_is_a_server_error() {
 }
 
 #[tokio::test]
+async fn a_plain_http_callback_url_is_accepted() {
+    let accepted = exchanged("http://proxy.test/cb?code=abc", None).await;
+    assert!(matches!(
+        &accepted,
+        Err(OAuthClientError::Endpoint {
+            endpoint: OAuthEndpoint::Token,
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
 async fn a_state_cookie_must_match_a_supplied_state() {
     let mismatched = exchanged("https://proxy.test/cb?code=abc&state=one", Some("two")).await;
     assert!(matches!(&mismatched, Err(OAuthClientError::InvalidState)));
