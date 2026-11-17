@@ -34,7 +34,7 @@ use rust_decimal::Decimal;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::{CursorPassthroughInput, CursorPassthroughLogger};
+use super::{CursorPassthroughInput, CursorPassthroughLogger, path_matches};
 
 const RESULT: &str = "raw result";
 
@@ -327,6 +327,16 @@ fn cursor_falls_back_to_the_method_and_path(
 
     assert_eq!(text(field(&payload, "model")), expected);
     assert_eq!(text(entry(&outcome, "model")), expected);
+}
+
+#[test]
+fn cursor_treats_only_a_fully_braced_part_as_a_wildcard() {
+    assert!(path_matches(
+        "/v0/agents/{agent_id}/stop",
+        "/v0/agents/bc-1/stop"
+    ));
+    assert!(!path_matches("/v0/agents/{id/stop", "/v0/agents/bc-1/stop"));
+    assert!(!path_matches("/v0/agents/id}/stop", "/v0/agents/bc-1/stop"));
 }
 
 #[rstest]

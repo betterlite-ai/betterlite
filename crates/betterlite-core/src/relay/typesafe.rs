@@ -34,7 +34,7 @@ struct TypesafeResponse {
     usage: Option<TypesafeUsage>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 struct TypesafeUsage {
     #[serde(default)]
     input_tokens: i64,
@@ -83,7 +83,7 @@ impl TypesafePassthroughLogger {
         let response = parse_response(input.response_body);
         let provider = input.custom_llm_provider;
         let requested_model = body_model(input.request_body);
-        let logged_model = [response.model.as_deref(), requested_model]
+        let logged_model = [response.model.as_deref(), Some(requested_model)]
             .into_iter()
             .flatten()
             .find(|model| !model.is_empty())
@@ -110,7 +110,7 @@ impl TypesafePassthroughLogger {
         &self,
         input: &TypesafePassthroughInput<'_>,
         response: &TypesafeResponse,
-        requested_model: Option<&str>,
+        requested_model: &str,
         usage: &TypesafeUsage,
     ) -> Decimal {
         if input.custom_llm_provider == OPENROUTER
@@ -161,14 +161,14 @@ fn parse_response(body: &Json) -> TypesafeResponse {
         .unwrap_or_default()
 }
 
-fn body_model(body: &Json) -> Option<&str> {
+fn body_model(body: &Json) -> &str {
     let Json::Object(fields) = body else {
-        return None;
+        return "";
     };
     let Some(Json::Text(model)) = fields.get("model") else {
-        return None;
+        return "";
     };
-    Some(model.as_str())
+    model.as_str()
 }
 
 // litellm.model_cost holds alias keys beside the entries they name, so the lookup resolves one like ModelCatalog::metadata does.
@@ -200,13 +200,13 @@ fn token_cost(
     prompt_cost.saturating_add(completion_cost)
 }
 
-// Both models are candidate keys even when the response's own one is empty, since Python checks for None alone.
+// Both models are candidate keys even when one is empty, since Python checks for None alone.
 fn candidate_keys(
     provider: &str,
     response_model: Option<&str>,
-    request_model: Option<&str>,
+    request_model: &str,
 ) -> Vec<String> {
-    [response_model, request_model]
+    [response_model, Some(request_model)]
         .into_iter()
         .flatten()
         .map(|model| format!("{provider}/{model}"))

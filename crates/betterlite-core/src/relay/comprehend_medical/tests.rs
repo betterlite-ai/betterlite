@@ -432,7 +432,7 @@ fn comprehend_warns_and_returns_the_raw_result_for_a_body_that_is_not_an_object(
 
     let contents = logs.contents();
     assert!(contents.contains("Error in Comprehend Medical passthrough logging handler"));
-    assert!(contents.contains("must be a JSON object"));
+    assert!(contents.contains("must be a JSON object, found a list"));
     assert_eq!(outcome.kwargs, caller);
     assert_eq!(text(field(&result_json(&outcome), "response")), RESULT);
     let call_details = details(&fixture.logging_obj);

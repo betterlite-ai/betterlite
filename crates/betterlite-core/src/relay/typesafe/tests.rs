@@ -447,6 +447,21 @@ fn typesafe_honors_the_openrouter_cost() {
     );
 }
 
+#[test]
+fn typesafe_ignores_the_usage_cost_for_any_other_provider() {
+    let fixture = Fixture::new(
+        "typesafe",
+        r#"{"model": "gpt-4o", "usage": {"input_tokens": 100, "output_tokens": 20, "cost": 0.42}}"#,
+        "{}",
+    );
+    let outcome = run(&fixture);
+
+    assert_eq!(
+        decimal(field(&payload(&outcome), "response_cost")),
+        Decimal::new(45, 5)
+    );
+}
+
 #[rstest]
 #[case::absent_cost(r#"{"input_tokens": 10, "output_tokens": 5}"#)]
 #[case::null_cost(r#"{"input_tokens": 10, "output_tokens": 5, "cost": null}"#)]
