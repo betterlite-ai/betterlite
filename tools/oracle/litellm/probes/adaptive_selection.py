@@ -3,7 +3,7 @@ import random
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from random import betavariate as stock_betavariate
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Protocol
 
 from litellm.router_strategy.adaptive_router import bandit
 from litellm.router_strategy.adaptive_router.adaptive_router import AdaptiveRouter
@@ -11,6 +11,7 @@ from litellm.types.router import (
     AdaptiveRouterConfig,
     AdaptiveRouterPreferences,
     AdaptiveRouterWeights,
+    PreRoutingHookResponse,
     RequestType,
 )
 from pydantic import ConfigDict, Field, JsonValue
@@ -185,6 +186,18 @@ def scripted_betavariate(scripted: ScriptedRandom) -> Generator[None, None, None
         random.betavariate = stock_betavariate
 
 
+class PreRoutingHook(Protocol):
+    async def async_pre_routing_hook(
+        self, model: str, request_kwargs: dict[str, JsonValue], messages: list[dict[str, str]] | None
+    ) -> PreRoutingHookResponse | None: ...
+
+
+async def run_pre_routing(
+    hook: PreRoutingHook, request_kwargs: dict[str, JsonValue], messages: list[dict[str, str]] | None
+) -> PreRoutingHookResponse | None:
+    return await hook.async_pre_routing_hook(model="probe", request_kwargs=request_kwargs, messages=messages)
+
+
 class RecordingRouter(AdaptiveRouter):
     recorded: list[tuple[RequestType, int | None]]
 
@@ -327,9 +340,7 @@ class AdaptiveSelection(Operation):
             kwargs["metadata"] = self.metadata
         try:
             with scripted_betavariate(self.scripted()):
-                response = asyncio.run(
-                    router.async_pre_routing_hook(model="probe", request_kwargs=kwargs, messages=self.messages)
-                )
+                response = asyncio.run(run_pre_routing(router, kwargs, self.messages))
         except ValueError as error:
             raise ProbeError("invalid_request", str(error)) from error
         if response is None:
