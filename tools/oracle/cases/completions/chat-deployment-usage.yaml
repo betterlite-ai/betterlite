@@ -1,0 +1,30 @@
+name: completions-chat-deployment-usage
+config: |
+  model_list:
+    - model_name: chat-model
+      litellm_params: {model: openai/gpt-4o, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: chat-model, prompt: Once upon a time, stream: true, stream_options: {include_usage: true}}
+upstream:
+  - status: 200
+    headers: {content-type: text/event-stream, x-request-id: provider-stream}
+    events:
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chatcmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"gpt-4o","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}'
+      - '[DONE]'
+compare:
+  headers: [content-type, llm_provider-x-request-id, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /0/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /1/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /2/created, why: LiteLLM timestamps every stream chunk}
+    - {pointer: /3/created, why: LiteLLM timestamps the usage chunk}
+    - {pointer: /3/usage/cost, why: the proxy prices the usage chunk; B203 writes the provider counters alone}

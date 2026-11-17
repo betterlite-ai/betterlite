@@ -1,0 +1,22 @@
+name: chat-text-bridge-fine-tuned-babbage
+config: |
+  model_list:
+    - model_name: ft-babbage
+      litellm_params: {model: "openai/ft:babbage-002", api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body:
+    model: ft-babbage
+    messages: [{role: user, content: Say hello.}]
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: provider-call}
+    body: {id: cmpl-nonstream, object: text_completion, created: 1700000000, model: gpt-3.5-turbo-instruct, choices: [{text: ' Hello', index: 0, logprobs: null, finish_reason: stop}], usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5}}
+compare:
+  headers: [content-type, llm_provider-x-request-id, x-litellm-model-api-base, x-litellm-model-group, x-litellm-model-id, x-litellm-model-name]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore: []
