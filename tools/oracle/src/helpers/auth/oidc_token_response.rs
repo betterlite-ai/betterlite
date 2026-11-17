@@ -23,7 +23,10 @@ impl Helper for Op {
 }
 
 // LiteLLM raises every validation failure as a ProxyException, which carries no status_code
-fn proxy_exception<M: Display>(message: M) -> Box<HelperError> {
+fn proxy_exception<M>(message: M) -> Box<HelperError>
+where
+    M: Display,
+{
     Box::new(HelperError {
         class: "ProxyException".to_owned(),
         status: None,
