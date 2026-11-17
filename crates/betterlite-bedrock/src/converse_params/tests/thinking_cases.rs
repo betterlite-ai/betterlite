@@ -1,6 +1,6 @@
-use crate::converse_params::budget::update_optional_params_with_thinking_tokens;
+use crate::converse_params::budget::update_thinking_budget;
 
-use super::scenario::{ANTHROPIC, KEEP, MODEL_COST, mapped};
+use super::scenario::{ANTHROPIC, DROP_CALL, DROP_GLOBAL, KEEP, MODEL_COST, mapped};
 use super::support::{Answers, Call, Fixture, params, run};
 
 pub(super) fn thinking_budget_with_max_tokens() {
@@ -9,24 +9,21 @@ pub(super) fn thinking_budget_with_max_tokens() {
     let answers = Answers::new(&[]);
     let mut optional =
         params(r#"{"thinking": {"type": "disabled", "budget_tokens": 100}, "maxTokens": 5}"#);
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(r#"{"thinking": {"type": "disabled", "budget_tokens": 1024}, "maxTokens": 5}"#)
     );
     let enabled = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}}"#);
     let mut optional = enabled.clone();
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}, "maxTokens": 6144}"#)
     );
     let mut optional =
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}, "maxTokens": 999}"#);
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}, "maxTokens": 6144}"#)
@@ -37,7 +34,7 @@ pub(super) fn thinking_budget_with_max_tokens() {
         r#"{"max_tokens": 100}"#,
     ] {
         let mut optional = enabled.clone();
-        update_optional_params_with_thinking_tokens(&params(non_default), &mut optional, 1024)
+        update_thinking_budget(&params(non_default), &mut optional, 1024)
             .expect("the budget updates");
         assert_eq!(
             optional,
@@ -46,8 +43,7 @@ pub(super) fn thinking_budget_with_max_tokens() {
         );
     }
     let mut optional = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 1024.5}}"#);
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(
@@ -55,8 +51,7 @@ pub(super) fn thinking_budget_with_max_tokens() {
         )
     );
     let mut optional = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 0}}"#);
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 1024}, "maxTokens": 5120}"#)
@@ -65,8 +60,7 @@ pub(super) fn thinking_budget_with_max_tokens() {
         let mut optional = params(&format!(
             r#"{{"thinking": {{"type": "enabled", "budget_tokens": {budget}}}}}"#
         ));
-        update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 0)
-            .expect("the budget updates");
+        update_thinking_budget(&params("{}"), &mut optional, 0).expect("the budget updates");
         assert_eq!(
             optional,
             params(&format!(
@@ -76,25 +70,23 @@ pub(super) fn thinking_budget_with_max_tokens() {
         );
     }
     let mut optional = params(r#"{"thinking": {"type": "enabled", "budget_tokens": null}}"#);
-    update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-        .expect("the budget updates");
+    update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
     assert_eq!(
         optional,
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": null}}"#)
     );
     let mut optional = params(r#"{"thinking": {"type": "enabled", "budget_tokens": "many"}}"#);
-    let error = update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
+    let error = update_thinking_budget(&params("{}"), &mut optional, 1024)
         .expect_err("a text budget is not a number");
     assert_eq!(error.to_string(), "thinking.budget_tokens must be a number");
-    for optional in [
+    for source in [
         r#"{"reasoning_effort": "high"}"#,
         r#"{"thinking": true}"#,
         "{}",
     ] {
-        let mut optional = params(optional);
-        update_optional_params_with_thinking_tokens(&params("{}"), &mut optional, 1024)
-            .expect("the budget updates");
-        assert_eq!(optional, params(optional), "{optional}");
+        let mut optional = params(source);
+        update_thinking_budget(&params("{}"), &mut optional, 1024).expect("the budget updates");
+        assert_eq!(optional, params(source), "{source}");
     }
     assert_eq!(
         mapped(
@@ -162,6 +154,28 @@ pub(super) fn adaptive_thinking_fallback() {
             "{max_tokens}"
         );
     }
+    assert_eq!(
+        mapped(
+            &fixture,
+            &mut session,
+            &answers,
+            ANTHROPIC,
+            r#"{"thinking": {"type": "adaptive"}}"#
+        )
+        .mapped(),
+        params(r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}, "maxTokens": 6144}"#)
+    );
+    assert_eq!(
+        mapped(
+            &fixture,
+            &mut session,
+            &answers,
+            ANTHROPIC,
+            r#"{"thinking": {"type": "adaptive"}, "max_tokens": null}"#
+        )
+        .mapped(),
+        params(r#"{"maxTokens": null, "thinking": {"type": "enabled", "budget_tokens": 2048}}"#)
+    );
     let warned = mapped(
         &fixture,
         &mut session,
@@ -301,13 +315,13 @@ pub(super) fn final_forced_tool_downgrade() {
             r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
             r#"{"tool_choice": {"auto": {}}}"#,
         ),
-        (r#"{}"#, r#"{"tool_choice": {"any": {}}}"#),
+        ("{}", r#"{"tool_choice": {"any": {}}}"#),
         (
             r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}}"#,
             r#"{"tool_choice": "required"}"#,
         ),
         (
-            r#"{}"#,
+            "{}",
             r#"{"thinking": {"type": "adaptive"}, "tool_choice": {"any": {}}}"#,
         ),
     ] {
@@ -344,4 +358,30 @@ pub(super) fn final_forced_tool_downgrade() {
         gpt_oss.mapped(),
         params(r#"{"reasoning_effort": "high", "tool_choice": {"auto": {}}}"#)
     );
+    for drop in [DROP_CALL, DROP_GLOBAL] {
+        let dropped = run(
+            &fixture,
+            &mut session,
+            &answers,
+            Call {
+                model: ANTHROPIC,
+                non_default: params(r#"{"tool_choice": "none"}"#),
+                optional: params("{}"),
+                drop,
+            },
+        );
+        assert_eq!(dropped.mapped(), params("{}"));
+    }
+    let refused = run(
+        &fixture,
+        &mut session,
+        &answers,
+        Call {
+            model: ANTHROPIC,
+            non_default: params(r#"{"tool_choice": "none"}"#),
+            optional: params("{}"),
+            drop: KEEP,
+        },
+    );
+    assert_eq!(refused.error().status_code(), Some(400));
 }

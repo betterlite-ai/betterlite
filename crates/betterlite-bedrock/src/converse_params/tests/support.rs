@@ -104,7 +104,7 @@ impl Fixture {
         }
     }
 
-    const fn catalogs(&self) -> CatalogSources<'_> {
+    pub(super) const fn catalogs(&self) -> CatalogSources<'_> {
         CatalogSources {
             patterns: &self.patterns,
             runtime: &self.runtime_catalog,

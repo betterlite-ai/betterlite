@@ -1,11 +1,8 @@
 use crate::converse_params::cache_point::{build_cache_point_block, get_cache_point_block};
 use crate::converse_params::inference::{handle_top_k_value, transform_inference_params};
-use crate::converse_params::mapping::{
-    map_context_management_param, map_request_metadata_param, map_service_tier_param,
-};
+use crate::converse_params::mapping::{map_request_metadata_param, map_service_tier_param};
 use crate::converse_params::merge::{
-    drop_tool_choice_type_conflicting_with_tool_config, merge_parallel_tool_use_config,
-    parallel_tool_use_config,
+    drop_tool_choice_type, merge_parallel_tool_use_config, parallel_tool_use_config,
 };
 use crate::model_routes::ParamMap;
 
@@ -692,19 +689,19 @@ pub(super) fn parallel_tool_config() {
         params(r#"{"unrelated": 1, "tool_choice": {"type": "auto"}}"#)
     );
     let mut filled = params(r#"{"tool_choice": {"type": "auto"}}"#);
-    drop_tool_choice_type_conflicting_with_tool_config(&mut filled);
+    drop_tool_choice_type(&mut filled);
     assert_eq!(filled, params(r#"{"tool_choice": {}}"#));
     let mut with_name = params(r#"{"tool_choice": {"type": "tool", "name": "lookup"}, "x": 1}"#);
-    drop_tool_choice_type_conflicting_with_tool_config(&mut with_name);
+    drop_tool_choice_type(&mut with_name);
     assert_eq!(
         with_name,
         params(r#"{"tool_choice": {"name": "lookup"}, "x": 1}"#)
     );
     let mut absent = params(r#"{"x": 1}"#);
-    drop_tool_choice_type_conflicting_with_tool_config(&mut absent);
+    drop_tool_choice_type(&mut absent);
     assert_eq!(absent, params(r#"{"x": 1}"#));
     let mut textual = params(r#"{"tool_choice": "required"}"#);
-    drop_tool_choice_type_conflicting_with_tool_config(&mut textual);
+    drop_tool_choice_type(&mut textual);
     assert_eq!(textual, params(r#"{"tool_choice": "required"}"#));
 }
 
@@ -712,67 +709,68 @@ pub(super) fn context_management() {
     let fixture = Fixture::new(MODEL_COST);
     let mut session = fixture.session();
     let answers = Answers::new(&[]);
-    let mut optional = ParamMap::new();
-    map_context_management_param(
-        &value(r#"[{"type": "compaction", "compact_threshold": 100000, "keep": true}]"#),
-        &mut optional,
-    )
-    .expect("context management maps");
-    assert_eq!(
-        optional,
-        params(
-            r#"{"context_management": {"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 100000}, "keep": true}]}}"#
-        )
-    );
-    let mut optional = ParamMap::new();
-    map_context_management_param(
-        &value(r#"[{"type": "compaction", "compact_threshold": 100000.9}]"#),
-        &mut optional,
-    )
-    .expect("context management maps");
-    assert_eq!(
-        optional,
-        params(
-            r#"{"context_management": {"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 100000}}]}}"#
-        )
-    );
-    let mut optional = ParamMap::new();
-    map_context_management_param(
-        &value(r#"[{"type": "compaction", "compact_threshold": "many"}]"#),
-        &mut optional,
-    )
-    .expect("context management maps");
-    assert_eq!(
-        optional,
-        params(r#"{"context_management": {"edits": [{"type": "compact_20260112"}]}}"#)
-    );
-    let mut optional = params(r#"{"context_management": {"edits": [{"type": "old"}]}}"#);
-    map_context_management_param(&value(r#"[{"type": "clear"}]"#), &mut optional)
-        .expect("context management maps");
-    assert_eq!(
-        optional,
-        params(r#"{"context_management": {"edits": [{"type": "old"}]}}"#)
-    );
-    for request in [
-        r#"{"edits": [{"type": "compact_20260112"}]}"#,
-        "{}",
-        r#"{"other": 1}"#,
+    for (request, expected) in [
+        (
+            r#"[{"type": "compaction", "compact_threshold": 100000, "keep": true}]"#,
+            r#"{"context_management": {"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 100000}, "keep": true}]}}"#,
+        ),
+        (
+            r#"[{"type": "compaction", "compact_threshold": 100000.9}]"#,
+            r#"{"context_management": {"edits": [{"type": "compact_20260112", "trigger": {"type": "input_tokens", "value": 100000}}]}}"#,
+        ),
+        (
+            r#"[{"type": "compaction", "compact_threshold": "many"}]"#,
+            r#"{"context_management": {"edits": [{"type": "compact_20260112"}]}}"#,
+        ),
+        (
+            r#"{"edits": [{"type": "compact_20260112"}]}"#,
+            r#"{"context_management": {"edits": [{"type": "compact_20260112"}]}}"#,
+        ),
+        ("{}", r#"{"context_management": {}}"#),
+        (r#"{"other": 1}"#, r#"{"context_management": {"other": 1}}"#),
     ] {
-        let mut optional = ParamMap::new();
-        map_context_management_param(&value(request), &mut optional)
-            .expect("context management maps");
         assert_eq!(
-            optional,
-            params(&format!(r#"{{"context_management": {request}}}"#)),
+            mapped(
+                &fixture,
+                &mut session,
+                &answers,
+                ANTHROPIC,
+                &format!(r#"{{"context_management": {request}}}"#)
+            )
+            .mapped(),
+            params(expected),
             "{request}"
         );
     }
     for request in ["\"edits\"", "5", "true", "null"] {
-        let mut optional = ParamMap::new();
-        map_context_management_param(&value(request), &mut optional)
-            .expect("context management maps");
-        assert_eq!(optional, params("{}"), "{request}");
+        assert_eq!(
+            mapped(
+                &fixture,
+                &mut session,
+                &answers,
+                ANTHROPIC,
+                &format!(r#"{{"context_management": {request}}}"#)
+            )
+            .mapped(),
+            params("{}"),
+            "{request}"
+        );
     }
+    let kept = run(
+        &fixture,
+        &mut session,
+        &answers,
+        Call {
+            model: ANTHROPIC,
+            non_default: params(r#"{"context_management": [{"type": "clear"}]}"#),
+            optional: params(r#"{"context_management": {"edits": [{"type": "old"}]}}"#),
+            drop: KEEP,
+        },
+    );
+    assert_eq!(
+        kept.mapped(),
+        params(r#"{"context_management": {"edits": [{"type": "old"}]}}"#)
+    );
     assert_eq!(
         mapped(
             &fixture,
