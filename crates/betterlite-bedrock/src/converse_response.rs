@@ -90,7 +90,11 @@ impl ConverseReply {
         };
         Ok(match message {
             Json::Null => None,
-            other => Some(other),
+            other @ (Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_)) => Some(other),
         })
     }
 

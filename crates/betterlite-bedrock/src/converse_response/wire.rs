@@ -46,7 +46,7 @@ pub struct Message {
 }
 
 // A content toolUse block keeps its block index while a recovered textual call has none, so the two wire shapes stay their own types.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ReplyToolCall {
     Content(ToolCall),

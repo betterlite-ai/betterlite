@@ -86,8 +86,12 @@ pub fn transform_response<Counter>(
 where
     Counter: ReasoningTokenCounter,
 {
-    let TransformCall { request, log, now } = call;
-    log_post_call(&request, reply, log);
+    let TransformCall {
+        request,
+        mut log,
+        now,
+    } = call;
+    log_post_call(&request, reply, &mut log);
     let decoded = match decode_converse_reply(reply.body) {
         Ok(decoded) => decoded,
         Err(error) => {
@@ -105,13 +109,13 @@ where
         message: converted.message,
     }];
     model_response.created = created_seconds(now)?;
-    model_response.model = request.model.to_owned();
+    request.model.clone_into(&mut model_response.model);
     model_response.usage = Some(usage);
     apply_optional_fields(&decoded, &mut model_response);
     Ok(model_response)
 }
 
-fn log_post_call(request: &ReplyRequest<'_>, reply: &RawReply<'_>, log: LogContext<'_, '_>) {
+fn log_post_call(request: &ReplyRequest<'_>, reply: &RawReply<'_>, log: &mut LogContext<'_, '_>) {
     post_call(
         log.state,
         &PostCall {

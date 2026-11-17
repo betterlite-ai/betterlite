@@ -44,8 +44,12 @@ pub fn convert_message(
     let (content, annotations) = align_citations(&translation);
     let filtered = filter_json_mode_tools(json_mode, &translation.tools, Some(content.as_str()));
     let answer = filtered.content.unwrap_or(content);
-    let finish_reason =
-        forced_finish_reason(reply, json_mode, &filtered.tools, &translation.tools)?;
+    let finish_reason = forced_finish_reason(
+        reply,
+        json_mode,
+        filtered.tools.as_deref(),
+        &translation.tools,
+    )?;
     let (recovered, resolved_finish_reason) = with_recovery(
         answer,
         filtered.tools.as_deref(),
@@ -113,7 +117,7 @@ fn decode_blocks(content: &Json) -> Result<Vec<ContentBlock>, ReplyFieldError> {
     serde_json::from_str(&text).map_err(|_error| not_a_block_list())
 }
 
-fn not_a_block_list() -> ReplyFieldError {
+const fn not_a_block_list() -> ReplyFieldError {
     ReplyFieldError::NotA {
         path: "output.message.content",
         expected: "a list of content blocks",
@@ -124,7 +128,7 @@ fn not_a_block_list() -> ReplyFieldError {
 fn forced_finish_reason(
     reply: &ConverseReply,
     json_mode: bool,
-    filtered: &Option<Vec<ToolCall>>,
+    filtered: Option<&[ToolCall]>,
     original: &[ToolCall],
 ) -> Result<&'static str, MessageError> {
     let mapped = match reply.stop_reason()? {
@@ -138,7 +142,7 @@ fn forced_finish_reason(
         }
     };
     // json_mode turned every synthetic call into content, so the reply is a plain answer rather than a tool invocation.
-    if json_mode && filtered.as_ref().is_none_or(Vec::is_empty) && !original.is_empty() {
+    if json_mode && filtered.is_none_or(<[ToolCall]>::is_empty) && !original.is_empty() {
         return Ok(FinishReason::Stop.as_str());
     }
     Ok(mapped.as_str())
