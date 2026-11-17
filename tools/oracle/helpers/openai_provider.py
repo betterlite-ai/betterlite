@@ -1,5 +1,6 @@
 import os
 from collections.abc import Awaitable
+from dataclasses import dataclass, field
 from typing import TypeAlias, TypedDict
 
 import httpx
@@ -93,20 +94,13 @@ def original_kind(value: JsonValue) -> JsonValue:
             return "object"
 
 
+@dataclass
 class Answer:
-    def __init__(
-        self,
-        status: int,
-        reply: dict[str, JsonValue],
-        keep: frozenset[str],
-        *,
-        include_headers: bool,
-    ) -> None:
-        self.status = status
-        self.reply = reply
-        self.keep = keep
-        self.include_headers = include_headers
-        self.requests: list[JsonValue] = []
+    status: int
+    reply: dict[str, JsonValue]
+    keep: frozenset[str]
+    include_headers: bool
+    requests: list[JsonValue] = field(default_factory=list)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         entry: dict[str, JsonValue] = {
@@ -268,12 +262,7 @@ def dispatch_case(case: ProviderCase) -> JsonValue:
     for mapping in (case["headers"], case["extra_headers"]):
         if mapping is not None:
             keep = keep.union(name.lower() for name in mapping)
-    answer = Answer(
-        case["status"],
-        case["reply"],
-        keep,
-        include_headers=case["case"] != "text",
-    )
+    answer = Answer(case["status"], case["reply"], keep, include_headers=case["case"] != "text")
     transport = httpx.MockTransport(answer.handle)
     litellm.client_session = httpx.Client(transport=transport)
     recorder = Recorder()
