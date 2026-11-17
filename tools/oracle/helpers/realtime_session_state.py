@@ -112,7 +112,7 @@ class ProviderConfig(BaseRealtimeConfig):
 
     @override
     def unbilled_usage_on_session_close(  # ast-grep-ignore: no-long-names
-        self, model: str  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L97-L98
+        self, model: str  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/realtime/transformation.py#L97-L98
     ) -> LiteLLMUsage | None:
         return self._usage
 
