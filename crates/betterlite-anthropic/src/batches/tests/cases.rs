@@ -705,6 +705,13 @@ fn status_timestamps() {
     let numeric = transform(&batched, r#"{"id":"b","created_at":12345}"#);
     assert_eq!(numeric.created_at, NOW);
     assert_eq!(numeric.in_progress_at, None);
+    let implicit = transform(
+        &batched,
+        r#"{"id":"b","created_at":"2023-12-31T00:00:00Z"}"#,
+    );
+    assert_eq!(implicit.status, BatchStatus::InProgress);
+    assert_eq!(implicit.created_at, 1_703_980_800);
+    assert_eq!(implicit.in_progress_at, Some(1_703_980_800));
 }
 
 fn batch_auth_headers() {
