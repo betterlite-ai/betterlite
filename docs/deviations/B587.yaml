@@ -67,6 +67,17 @@ deviations:
       compatibility rules keep Python's wall-clock reads out of the port. The
       projected ModelResponse, its usage and its content are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L282-L331
+  - what: >-
+      The Rust handler exposes one async retrieve_batch. LiteLLM's
+      retrieve_batch returns the coroutine when _is_async is truthy and
+      otherwise runs that same coroutine with asyncio.run.
+    why: >-
+      Rust has no separate blocking facade here: the single future sends the
+      same one GET and maps its reply through the same transform, so a caller
+      that blocks on it and a caller that awaits it observe the same request
+      and the same batch object. docs/compatibility.md keeps Python's runtime
+      dispatch out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/handler.py#L149-L168
 kept_bugs:
   - what: >-
       get_complete_batch_url strips trailing slashes and appends the route
