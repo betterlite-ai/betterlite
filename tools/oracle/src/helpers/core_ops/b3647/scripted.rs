@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::relay::assemblyai::{
@@ -48,7 +49,11 @@ impl ScriptedTransport {
 }
 
 impl AssemblyTranscriptTransport for ScriptedTransport {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -59,12 +64,15 @@ impl AssemblyTranscriptTransport for ScriptedTransport {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or_else(|| self.repeat.clone());
-        let body = serde_json::to_vec(&reply.body).map_err(|_error| TransportError::Closed)?;
-        Ok(UpstreamResponse {
-            status: reply.status,
-            headers: HeaderMap::new(),
-            body,
-        })
+        ready(
+            serde_json::to_vec(&reply.body)
+                .map_err(|_error| TransportError::Closed)
+                .map(|body| UpstreamResponse {
+                    status: reply.status,
+                    headers: HeaderMap::new(),
+                    body,
+                }),
+        )
     }
 }
 
@@ -73,12 +81,12 @@ pub(super) struct StaticCredentials {
 }
 
 impl AssemblyCredentialSource for StaticCredentials {
-    async fn get_credentials(
+    fn get_credentials(
         &self,
         _custom_llm_provider: &str,
         _region_name: Option<&str>,
-    ) -> Option<SecretString> {
-        self.key.clone()
+    ) -> impl Future<Output = Option<SecretString>> + Send {
+        ready(self.key.clone())
     }
 }
 

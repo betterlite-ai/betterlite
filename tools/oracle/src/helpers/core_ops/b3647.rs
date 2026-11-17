@@ -61,7 +61,7 @@ struct Outcome {
     cost: Option<rust_decimal::Decimal>,
 }
 
-fn settings_of(call: &Call) -> AssemblyAiSettings {
+const fn settings_of(call: &Call) -> AssemblyAiSettings {
     AssemblyAiSettings {
         polling_base_url: "https://api.assemblyai.com",
         polling_eu_base_url: "https://eu.assemblyai.com",
@@ -106,14 +106,18 @@ fn outcome_of(transport: &ScriptedTransport, sink: &RecordingSink) -> Outcome {
             .lock()
             .unwrap_or_else(PoisonError::into_inner),
     );
-    let logs = sink.logs.lock().unwrap_or_else(PoisonError::into_inner);
-    let details = logs.first().map(|log| {
-        (
-            Some(log.spend.model.clone()),
-            Some(log.spend.custom_llm_provider),
-            log.spend.response_cost,
-        )
-    });
+    let details = sink
+        .logs
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .map(|log| {
+            (
+                Some(log.spend.model.clone()),
+                Some(log.spend.custom_llm_provider),
+                log.spend.response_cost,
+            )
+        });
     let (model, provider, cost) = details.unwrap_or((None, None, None));
     Outcome {
         requests,
