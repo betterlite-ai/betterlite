@@ -11,8 +11,8 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
-    #[serde(default)]
-    expose_fallback_errors_to_caller: Option<bool>,
+    #[serde(default, rename = "expose_fallback_errors_to_caller")]
+    expose_to_caller: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -31,10 +31,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(FallbackErrors {
-            expose_to_caller: self
-                .general_settings
-                .expose_fallback_errors_to_caller
-                .unwrap_or_default(),
+            expose_to_caller: self.general_settings.expose_to_caller.unwrap_or_default(),
         })
     }
 }
