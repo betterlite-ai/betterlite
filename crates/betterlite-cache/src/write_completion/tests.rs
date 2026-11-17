@@ -23,6 +23,7 @@ use crate::handler::value::to_cache_value;
 use crate::types::cache_type::LiteLlmCacheType;
 use crate::types::call_type::CachingSupportedCallType;
 use crate::write_completion::dual::SharedDualCache;
+use crate::write_completion::request::add_parent_otel_span;
 use crate::write_completion::store::{
     CacheContext, StoreRequest, WriteContext, store_response, store_response_sync,
 };
@@ -432,6 +433,48 @@ async fn store_other_result_writes_raw_without_dual_cache() {
     );
     let expected = to_cache_value(&other_json()).expect("the raw fixture converts");
     assert_eq!(write.response, expected);
+}
+
+#[test]
+fn store_resolves_the_parent_span_from_the_request() {
+    let parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let stored = Some(KeyValue::String(parent.to_owned()));
+    let mut plain = chat_kwargs();
+    add_parent_otel_span(&mut plain);
+    assert_eq!(plain.get("parent_otel_span"), Some(&KeyValue::Null));
+    let mut metadata = chat_kwargs();
+    metadata.insert(
+        "metadata".to_owned(),
+        object(&[("litellm_parent_otel_span", text(parent))]),
+    );
+    add_parent_otel_span(&mut metadata);
+    assert_eq!(
+        metadata.get("parent_otel_span"),
+        stored.as_ref(),
+        "metadata carries the parent span"
+    );
+    let mut params = chat_kwargs();
+    params.insert(
+        "litellm_params".to_owned(),
+        object(&[(
+            "metadata",
+            object(&[("litellm_parent_otel_span", text(parent))]),
+        )]),
+    );
+    add_parent_otel_span(&mut params);
+    assert_eq!(
+        params.get("parent_otel_span"),
+        stored.as_ref(),
+        "litellm_params metadata carries the parent span"
+    );
+    let mut direct = chat_kwargs();
+    direct.insert("litellm_parent_otel_span".to_owned(), text(parent));
+    add_parent_otel_span(&mut direct);
+    assert_eq!(
+        direct.get("parent_otel_span"),
+        stored.as_ref(),
+        "the span kwarg itself carries the parent span"
+    );
 }
 
 #[test]
