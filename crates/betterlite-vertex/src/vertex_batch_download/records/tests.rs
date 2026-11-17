@@ -18,6 +18,7 @@ const STATUS_ROW: &str =
     r#"{"request":{},"status":"FAILED_PRECONDITION","processed_time":"","response":{}}"#;
 const BLOCKED_ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":4}}}"#;
 const NO_USAGE_ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{"candidates":[{"content":{"role":"model","parts":[{"text":"hi"}]},"finishReason":"STOP"}]}}"#;
+const OTHER_KIND_ROW: &str = r#"{"request":{},"status":"","processed_time":"","response":{}}"#;
 const EMBEDDING_ROWS: &str = concat!(
     r#"{"key":"id%23one#1/2","request":{"content":{}},"status":"","response":{"embedding":{"values":[2]},"usageMetadata":{"promptTokenCount":2}}}"#,
     "\n",
@@ -337,6 +338,13 @@ fn a_failed_conversion_becomes_a_transformation_error_row() {
     assert!(message.starts_with("Failed to transform response: "));
     assert!(message.contains("usageMetadata"));
     assert_eq!(declared_length(&response), response.content.len());
+}
+
+#[test]
+fn a_row_of_neither_output_kind_returns_the_whole_payload() {
+    let response = convert(OTHER_KIND_ROW, URL);
+    assert_eq!(response.content, OTHER_KIND_ROW.as_bytes());
+    assert_eq!(declared_length(&response), OTHER_KIND_ROW.len());
 }
 
 #[test]

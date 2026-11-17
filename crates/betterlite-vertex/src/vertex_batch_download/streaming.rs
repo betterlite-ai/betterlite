@@ -86,11 +86,11 @@ impl DownloadDecoder {
             }
             return self.keep_original(buffered);
         };
-        self.classify(buffered, range)
+        self.classify(buffered, range, at_eof)
     }
 
     // the first row selects the conversion; a row LiteLLM cannot classify keeps every byte as it arrived
-    fn classify(&mut self, buffered: Vec<u8>, range: Range<usize>) -> Vec<u8> {
+    fn classify(&mut self, buffered: Vec<u8>, range: Range<usize>, at_eof: bool) -> Vec<u8> {
         let Some(row) = buffered
             .get(range)
             .and_then(|line| decode_vertex_batch_row(line).ok())
@@ -112,7 +112,7 @@ impl DownloadDecoder {
                 pending: buffered,
                 emitted: false,
             },
-            false,
+            at_eof,
         )
     }
 
@@ -218,11 +218,14 @@ pub fn decode_download_chunk(decoder: &mut DownloadDecoder, chunk: &[u8]) -> Vec
     decoder.advance(Some(chunk))
 }
 
+// the tail line can turn the file into an embeddings one, which then needs the bytes held in the phase
 #[must_use]
 pub fn finish_download(decoder: &mut DownloadDecoder) -> Vec<u8> {
     let output = decoder.advance(None);
-    decoder.phase = Phase::Finished;
-    output
+    match mem::replace(&mut decoder.phase, Phase::Finished) {
+        Phase::Collect { buffered } => decoder.collect(buffered),
+        _finished => output,
+    }
 }
 
 pub struct FileContentStreamingResult {

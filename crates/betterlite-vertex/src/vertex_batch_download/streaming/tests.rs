@@ -262,6 +262,30 @@ async fn closes_upstream_on_drop() {
 }
 
 #[tokio::test]
+async fn a_newline_terminated_download_ends_without_an_empty_chunk() {
+    let content = format!("{ROW}\n");
+    let result = transform_file_content_stream(
+        source(&[content.as_bytes()]),
+        URL,
+        HeaderMap::new(),
+        false,
+        context(),
+    )
+    .await
+    .unwrap();
+    let mut stream = result.stream;
+    assert!(
+        stream
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .starts_with(b"{\"id\":\"batch_req_")
+    );
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
 async fn cancelling_the_stream_closes_the_source() {
     let content = format!("{ROW}\n{OTHER_ROW}\n");
     let (head, tail) = content.split_once('\n').unwrap();
