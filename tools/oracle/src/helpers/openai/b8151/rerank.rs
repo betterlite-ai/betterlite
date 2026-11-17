@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
+use betterlite_openai::hosted_vllm_media::rerank as rerank_config;
 use betterlite_openai::hosted_vllm_media::rerank::reply::transform_rerank_response;
 use betterlite_openai::hosted_vllm_media::rerank::{
     CohereRerankCall, HostedVllmRerankError, MappedRerankParams, get_complete_url,
-    get_supported_cohere_rerank_params, map_cohere_rerank_params, transform_rerank_request,
-    validate_environment,
+    map_cohere_rerank_params, transform_rerank_request, validate_environment,
 };
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::together_ai_rerank::ReturnDocuments;
@@ -56,7 +56,8 @@ pub(super) fn params_value(call: &ParamsCall) -> Result<Value, Box<HelperError>>
     let url = get_complete_url(call.api_base.as_deref()).map_err(rerank_failure)?;
     let headers = validate_environment(&call.headers, key.as_ref(), &call.env);
     let mapped = map_cohere_rerank_params(&rerank_call(call)).map_err(rerank_failure)?;
-    let supported = get_supported_cohere_rerank_params();
+    // ast-grep-ignore: no-long-names
+    let supported = rerank_config::get_supported_cohere_rerank_params();
     Ok(json!({
         "supported": supported,
         "url": url,
@@ -66,8 +67,9 @@ pub(super) fn params_value(call: &ParamsCall) -> Result<Value, Box<HelperError>>
 }
 
 pub(super) fn request_value(call: &RequestCall) -> Result<Value, Box<HelperError>> {
-    let body = transform_rerank_request(&call.model, &call.mapped).map_err(rerank_failure)?;
-    Ok(Value::Object(body))
+    transform_rerank_request(&call.model, &call.mapped)
+        .map(Value::Object)
+        .map_err(rerank_failure)
 }
 
 pub(super) fn reply_value(call: &ReplyCall) -> Result<Value, Box<HelperError>> {

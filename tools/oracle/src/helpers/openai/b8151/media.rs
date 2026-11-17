@@ -41,34 +41,48 @@ pub(crate) struct VideoCall {
     params: Map<String, Value>,
 }
 
-pub(super) fn responses_value(call: &EnvCall) -> Result<Value, Box<HelperError>> {
-    let key = call.api_key.clone().map(SecretString::from);
-    let url = responses::get_complete_url(call.api_base.as_deref(), &call.env)
-        .map_err(|error| invalid(error.to_string()))?;
-    let headers = responses::validate_environment(call.headers.clone(), key.as_ref(), &call.env);
-    Ok(json!({
-        "url": url,
-        "headers": headers,
-        "websocket": responses::SUPPORTS_NATIVE_WEBSOCKET,
-    }))
+#[derive(Clone, Copy)]
+pub(crate) enum Environment {
+    Responses,
+    ImageEdit,
 }
 
-pub(super) fn image_edit_value(call: &EnvCall) -> Result<Value, Box<HelperError>> {
+pub(super) fn environment_value(
+    environment: Environment,
+    call: &EnvCall,
+) -> Result<Value, Box<HelperError>> {
     let key = call.api_key.clone().map(SecretString::from);
-    let url = image_edit::get_complete_url(call.api_base.as_deref(), &call.env)
-        .map_err(|error| invalid(error.to_string()))?;
-    let headers = image_edit::validate_environment(call.headers.clone(), key.as_ref(), &call.env);
-    let supported = image_edit::get_supported_openai_params();
-    Ok(json!({
-        "supported": supported,
-        "url": url,
-        "headers": headers,
-    }))
+    match environment {
+        Environment::Responses => {
+            let url = responses::get_complete_url(call.api_base.as_deref(), &call.env)
+                .map_err(|error| invalid(error.to_string()))?;
+            let headers =
+                responses::validate_environment(call.headers.clone(), key.as_ref(), &call.env);
+            Ok(json!({
+                "url": url,
+                "headers": headers,
+                "websocket": responses::SUPPORTS_NATIVE_WEBSOCKET,
+            }))
+        }
+        Environment::ImageEdit => {
+            let url = image_edit::get_complete_url(call.api_base.as_deref(), &call.env)
+                .map_err(|error| invalid(error.to_string()))?;
+            let headers =
+                image_edit::validate_environment(call.headers.clone(), key.as_ref(), &call.env);
+            let supported = image_edit::get_supported_openai_params();
+            Ok(json!({
+                "supported": supported,
+                "url": url,
+                "headers": headers,
+            }))
+        }
+    }
 }
 
 pub(super) fn transcription_value(call: &TranscriptionCall) -> Result<Value, Box<HelperError>> {
     let url = transcription::get_complete_url(call.api_base.as_deref())
         .map_err(|error| invalid(error.to_string()))?;
+    // ast-grep-ignore: no-long-names
     let data = transcription::transform_audio_transcription_request(&call.model, &call.options)
         .map_err(|error| invalid(error.to_string()))?;
     let mut fields = Map::new();

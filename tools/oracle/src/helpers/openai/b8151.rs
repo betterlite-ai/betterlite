@@ -3,6 +3,7 @@ use serde_json::Value;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use media::Environment;
 
 mod decisions;
 mod media;
@@ -47,8 +48,12 @@ impl Helper for Op {
             Input::RerankParams { calls } => collect(calls, rerank::params_value),
             Input::RerankRequest { calls } => collect(calls, rerank::request_value),
             Input::RerankReply { calls } => collect(calls, rerank::reply_value),
-            Input::ResponsesUrl { calls } => collect(calls, media::responses_value),
-            Input::ImageEditUrl { calls } => collect(calls, media::image_edit_value),
+            Input::ResponsesUrl { calls } => collect(calls, |call| {
+                media::environment_value(Environment::Responses, call)
+            }),
+            Input::ImageEditUrl { calls } => collect(calls, |call| {
+                media::environment_value(Environment::ImageEdit, call)
+            }),
             Input::TranscriptionRequest { calls } => collect(calls, media::transcription_value),
             Input::VideoForm { calls } => collect(calls, media::video_value),
             Input::DecisionsKey { calls } => collect(calls, decisions::key_value),
@@ -56,15 +61,15 @@ impl Helper for Op {
     }
 }
 
-fn collect<Call>(
-    calls: &[Call],
-    make: fn(&Call) -> Result<Value, Box<HelperError>>,
-) -> HelperResult {
-    let mut values = Vec::with_capacity(calls.len());
-    for call in calls {
-        values.push(make(call)?);
-    }
-    Ok(Value::Array(values))
+fn collect<Call, Make>(calls: &[Call], make: Make) -> HelperResult
+where
+    Make: Fn(&Call) -> Result<Value, Box<HelperError>>,
+{
+    calls
+        .iter()
+        .map(make)
+        .collect::<Result<Vec<Value>, _>>()
+        .map(Value::Array)
 }
 
 fn invalid(message: String) -> Box<HelperError> {

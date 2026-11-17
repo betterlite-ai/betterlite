@@ -20,6 +20,11 @@ deviations:
     why: >-
       The audio file is an argument of the transcription call in betterlite's request type, so an option map cannot overwrite it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L61
+  - what: >-
+      A media reference that looks like JSON but does not parse, and a media URL the parser refuses, are typed MediaJson and UrlParse errors, while LiteLLM lets json.loads raise JSONDecodeError and urllib raise ValueError out of its transform.
+    why: >-
+      Both exceptions come from input the caller sent, so an unhandled 500 is a bug no working setup relies on; betterlite answers with the 4xx its caller needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L79-L94
 kept_bugs:
   - what: >-
       The transcription config's missing api_base error reads "api_base must be provided for Hosted VLLM rerank", naming rerank.

@@ -49,5 +49,17 @@ calls:
       function: "video_form"
       calls:
         - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", params: {image_reference: "{\"image_url\": \"http://10.0.0.1/x\"}"}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", params: {image_reference: {image_url: "http://8.8.8.8:bad/x.png"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", params: {image_reference: {image_url: "http://[::1/x"}}}
+  - b8151:
+      function: "video_form"
+      calls:
+        - {api_base: "http://host", env: {}, headers: {}, api_key: "secret", params_api_key: null, model: "my-model", prompt: "a cat", params: {image_reference: "{\"image_url\": "}}
 env: {}
 compare: {ignore: []}
