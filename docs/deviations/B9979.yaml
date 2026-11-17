@@ -1,0 +1,11 @@
+task: B9979
+deviations:
+  - what: >-
+      A bug report holds one frame, the place where the error was created, written as crates/<path>:<line> with no
+      function name. LiteLLM lists up to 12 traceback frames under its package as path:line in name.
+    why: >-
+      Rust errors carry no traceback, and builds carry no debug info, so a backtrace has no file or line.
+      #[track_caller] gives the creation site without either (Max, 11-17).
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/bug_report.py#L52-L71
+kept_bugs: []

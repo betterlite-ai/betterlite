@@ -4,7 +4,7 @@ description: >-
   Build the complete create/acreate and search/asearch functions and their three local helpers from
   vector_stores/main.py:46-491 in core::api::vector_store_search. Resolve provider names with B174 and configs with B010,
   optional fields with B1058, embedding execution with B1059 and search registry credentials with B1062.
-  Call B2484 search or B2485 create transport; B011 maps exceptions and B012 owns client logging.
+  Call B2484 search or B2485 create transport; B011 maps exceptions and B247 owns client logging.
   SDK calls run through B2401 VectorStoreSearchCreate against a mock provider, including both execution
   modes and request-context preservation. Pure mock constructors and executor validation use native tests.
   REQUEST_TIMEOUT is B002's float seconds setting, default 6000. Timeout null or 0 uses that value.

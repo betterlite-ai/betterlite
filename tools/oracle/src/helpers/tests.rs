@@ -126,18 +126,10 @@ fn group_operations(root: &Path) -> BTreeSet<String> {
 }
 
 #[test]
-fn dispatch_py_lists_exactly_the_registered_operations() {
+fn operations_txt_lists_exactly_the_registered_operations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let dispatch = fs::read_to_string(root.join("helpers/dispatch.py")).unwrap();
-    let (_, listed) = dispatch
-        .split_once("OPERATIONS: frozenset[str] = frozenset(")
-        .unwrap();
-    let (operations, _) = listed.split_once(')').unwrap();
-    let python: BTreeSet<String> = operations
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix('"')?.strip_suffix("\","))
-        .map(str::to_owned)
-        .collect();
+    let listed = fs::read_to_string(root.join("helpers/operations.txt")).unwrap();
+    let python: BTreeSet<String> = listed.lines().map(str::to_owned).collect();
     assert_eq!(group_operations(root), python);
 }
 

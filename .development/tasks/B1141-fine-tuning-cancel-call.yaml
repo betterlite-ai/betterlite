@@ -3,7 +3,7 @@ title: Fine-tuning cancellation and provider configuration
 description: >-
   Own complete cancel/acancel_fine_tuning_job in core::api::fine_tuning_cancel_call and complete
   set_fine_tuning_config/get_fine_tuning_provider_config in server::api::fine_tuning_provider_config.
-  B518/B542 execute OpenAI/Azure cancellation, B010 builds GenericLiteLLMParams, B012 owns @client and
+  B518/B542 execute OpenAI/Azure cancellation, B010 builds GenericLiteLLMParams, B5368 owns @client and
   B2487 supplies resource settings/timeout policy. Add FineTuningCancel to B2401 for SDK HTTP and
   FineTuningProviderConfig to B171 for pure ordered config lookup. These are separate adapters.
 

@@ -18,7 +18,7 @@ description: >-
 
 
   Use betterlite-server::api::batch_read_routes for HTTP extraction and betterlite-core::api::batch_read_routes
-  for retrieval orchestration. B1087 bounds the addressed id; B1019 decodes it. B012 supplies success/failure hooks
+  for retrieval orchestration. B1087 bounds the addressed id; B1019 decodes it. B8394/B8395 supply success/failure hooks
   and tracked request-status updates. The server owns and drains those updates instead of detaching tasks.
 
 
@@ -72,7 +72,7 @@ description: >-
   38 wiring; 679 total within the 700-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct service owners are B004/B012 for processing/hooks, B844 for resolved model names, B1037 for provider retrieval,
+  Direct service owners are B004/B8394/B8395 for processing/hooks, B844 for resolved model names, B1037 for provider retrieval,
   B8353 for Router.aretrieve_batch, B1019-B1021 for ids/credentials/managed requirements, B1041/B1112 for MIT batch support,
   B1048 for batch_error and B2400 for provider-hint accessors/error handling. B732/B855/B756 provide authenticated
   admission; B003/B002/B1087 provide HTTP/config/limits and B1139/B856 supply isolated HTTP fixtures.
@@ -80,7 +80,7 @@ description: >-
 
   A provider response passes through the success hook before existing file-id normalization, then the tracked
   success-status update is submitted and custom headers are attached. A hook exception enters the failure path;
-  do not mark that call successful or return the pre-hook body. B012 owns callback execution and its own failures.
+  do not mark that call successful or return the pre-hook body. B8394 owns callback execution and its own failures.
 
 
   Errors before common_processing_pre_call_logic may have no call id; request_litellm_call_id returns None in that

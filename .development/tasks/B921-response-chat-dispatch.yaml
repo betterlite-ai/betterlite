@@ -5,7 +5,7 @@ description: >-
   validation, sync/async execution, stream collection, cached-result handling and provider
   post-processing. Compose B918 request mapping, B919 results, B920 streaming, B1078 sync
   Responses and B932 async Responses. B010 supplies MockResponseIterator, B005 the stream
-  wrapper, B012 logging, B2230 chat-config selection and B2202 its default post-processing.
+  wrapper, B247 logging, B2230 chat-config selection and B2202 its default post-processing.
   Use typed constructor inputs for response/config objects; validation still reports the
   same missing/wrong-type fields at the SDK boundary. This layer decodes no bytes.
 

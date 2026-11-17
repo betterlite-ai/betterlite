@@ -1,12 +1,13 @@
 #![cfg(test)]
 
+use std::num::ParseIntError;
+use std::panic::Location;
 use std::path::Path;
 
-use backtrace::{Backtrace, SymbolName};
 use rstest::rstest;
 
 use crate::bug_report::environment::{Host, build_environment_report};
-use crate::bug_report::frames::{FrameSymbol, format_frames};
+use crate::bug_report::frames::litellm_frames;
 use crate::bug_report::issue_url::{MAX_URL_LENGTH, bug_report_issue_url};
 use crate::bug_report::notice::{NOTICE_PREFIX, bug_report_notice, strip_bug_report_notice};
 use crate::bug_report::providers::KNOWN_PROVIDERS;
@@ -32,16 +33,9 @@ fn report(frames: Vec<String>, config_lines: Vec<String>) -> BugReport {
     }
 }
 
-fn symbol<'symbol>(
-    file: Option<&'symbol Path>,
-    line: Option<u32>,
-    name: Option<&'symbol str>,
-) -> FrameSymbol<'symbol> {
-    FrameSymbol {
-        file,
-        line,
-        name: name.map(|text| SymbolName::new(text.as_bytes())),
-    }
+#[track_caller]
+fn failing_parse() -> (&'static Location<'static>, ParseIntError) {
+    (Location::caller(), "x".parse::<u32>().unwrap_err())
 }
 
 #[rstest]
@@ -96,52 +90,55 @@ fn bug_report_environment_detects_deployment(
 }
 
 #[test]
-fn bug_report_frames_keep_workspace_frames_outermost_first() {
+fn bug_report_frames_come_from_the_creation_site() {
+    let ((location, error), call_line) = (failing_parse(), line!());
+    let context = CallContext {
+        surface: Surface::Proxy,
+        call_type: None,
+        custom_llm_provider: None,
+        stream: Some(false),
+        config_lines: Vec::new(),
+    };
+    let built = build_bug_report(&error, location, context, no_docker());
+    assert_eq!(built.litellm_frames, [format!("{}:{call_line}", file!())]);
+}
+
+#[rstest]
+#[case::relative_outside_crates("tools/oracle/src/lib.rs")]
+#[case::relative_named_like_crates("crates-extra/betterlite-core/src/lib.rs")]
+#[case::absolute_stdlib("/rustc/library/std/src/panicking.rs")]
+#[case::absolute_registry(
+    "/home/user/.cargo/registry/src/index.crates.io-1/serde-1.0.228/src/lib.rs"
+)]
+#[case::absolute_other_checkout("/srv/other-checkout/crates/betterlite-core/src/lib.rs")]
+fn bug_report_creation_site_outside_the_crates_directory_gives_no_frames(#[case] file: &str) {
+    let frames = litellm_frames(file, 7);
+    assert!(frames.is_empty(), "{frames:?}");
+}
+
+#[rstest]
+#[case::relative("crates/betterlite-core/src/lib.rs", false)]
+#[case::absolute("betterlite-core/src/lib.rs", true)]
+fn bug_report_creation_site_keeps_the_workspace_crates_directory(
+    #[case] file: &str,
+    #[case] absolute: bool,
+) {
     let crates_dir = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let absolute = crates_dir.join("betterlite-reporting/src/bug_report/report.rs");
-    let library = Path::new("/rustc/library/std/src/panicking.rs");
-    let relative = Path::new("crates/betterlite-core/src/lib.rs");
-    let symbols = [
-        symbol(
-            Some(&absolute),
-            Some(40),
-            Some(
-                "_ZN20betterlite_reporting10bug_report6report16build_bug_report17h0123456789abcdefE",
-            ),
-        ),
-        symbol(Some(library), Some(1), Some("std::panicking::begin_panic")),
-        symbol(None, Some(2), Some("no_file")),
-        symbol(Some(relative), None, Some("no_line")),
-        symbol(Some(relative), Some(3), None),
-        symbol(
-            Some(Path::new("crates/betterlite-server/src/main.rs")),
-            Some(7),
-            Some("betterlite_server::main"),
-        ),
-    ];
+    let path = if absolute {
+        crates_dir.join(file)
+    } else {
+        Path::new(file).to_path_buf()
+    };
+    let frames = litellm_frames(path.to_str().unwrap(), 5);
     assert_eq!(
-        format_frames(symbols.into_iter()),
-        [
-            "crates/betterlite-server/src/main.rs:7 in betterlite_server::main",
-            "crates/betterlite-reporting/src/bug_report/report.rs:40 in betterlite_reporting::bug_report::report::build_bug_report",
-        ]
+        frames,
+        [String::from("crates/betterlite-core/src/lib.rs:5")]
     );
 }
 
 #[test]
-fn bug_report_frames_keep_the_twelve_innermost() {
-    let file = Path::new("crates/betterlite-core/src/lib.rs");
-    let symbols = (1_u32..=14).map(|line| symbol(Some(file), Some(line), Some("frame")));
-    let innermost: Vec<String> = (1_u32..=12)
-        .rev()
-        .map(|line| format!("crates/betterlite-core/src/lib.rs:{line} in frame"))
-        .collect();
-    assert_eq!(format_frames(symbols), innermost);
-}
-
-#[test]
 fn bug_report_build_keeps_type_and_allowlisted_provider() {
-    let error = "x".parse::<u32>().unwrap_err();
+    let (location, error) = failing_parse();
     let context = CallContext {
         surface: Surface::Proxy,
         call_type: Some(String::from("aembedding")),
@@ -149,7 +146,7 @@ fn bug_report_build_keeps_type_and_allowlisted_provider() {
         stream: Some(true),
         config_lines: Vec::new(),
     };
-    let built = build_bug_report(&error, &Backtrace::new(), context.clone(), no_docker());
+    let built = build_bug_report(&error, location, context.clone(), no_docker());
     assert_eq!(built.exception_type, "ParseIntError");
     assert_eq!(
         (built.call_type, built.custom_llm_provider, built.stream),
@@ -164,7 +161,7 @@ fn bug_report_build_keeps_type_and_allowlisted_provider() {
         ..context
     };
     assert_eq!(
-        build_bug_report(&error, &Backtrace::new(), unknown, no_docker()).custom_llm_provider,
+        build_bug_report(&error, location, unknown, no_docker()).custom_llm_provider,
         None
     );
     assert_eq!(KNOWN_PROVIDERS.split_ascii_whitespace().count(), 165);

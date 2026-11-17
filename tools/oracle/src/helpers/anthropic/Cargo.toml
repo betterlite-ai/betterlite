@@ -14,12 +14,14 @@ betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-oracle-tokenizer = { path = "../tokenizer" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 chrono.workspace = true
