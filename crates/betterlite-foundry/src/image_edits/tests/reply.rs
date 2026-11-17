@@ -13,6 +13,7 @@ pub(super) fn mai_edit_usage() {
     clock_and_default_usage();
     size_is_not_synthesized();
     failures_keep_the_provider_status();
+    malformed_bodies_fail();
 }
 
 fn normalize_log_and_project() {
@@ -37,7 +38,7 @@ fn normalize_log_and_project() {
     assert!(call.complete_input_dict.is_empty());
     assert_eq!(
         call.original_response,
-        support::params(concat!(
+        support::object(concat!(
             r#"{"created": 7, "data": [{"b64_json": "aGk="}], "usage": {"#,
             r#""num_input_text_tokens": 3, "num_input_image_tokens": 4, "output_image_tokens": 5, "#,
             r#""input_tokens": 7, "output_tokens": 5, "total_tokens": 12, "#,
@@ -47,46 +48,46 @@ fn normalize_log_and_project() {
 }
 
 fn clock_and_default_usage() {
-    let reply = decode_mai_edit_reply(br#"{"data": []}"#, 200, NOW).unwrap();
-    assert_eq!(reply.created, NOW);
-    assert_eq!(reply.usage, ImageUsage::default());
-    assert!(reply.data.is_empty());
+    let empty_reply = decode_mai_edit_reply(br#"{"data": []}"#, 200, NOW).unwrap();
+    assert_eq!(empty_reply.created, NOW);
+    assert_eq!(empty_reply.usage, ImageUsage::default());
+    assert!(empty_reply.data.is_empty());
 
     // an explicit null usage is normalized to zeros, so the usage is no longer absent
-    let reply = decode_mai_edit_reply(br#"{"created": 1, "usage": null}"#, 200, NOW).unwrap();
-    assert_eq!(reply.created, 1);
-    assert_eq!(reply.usage.input_tokens, 0);
-    assert_eq!(reply.usage.output_tokens, 0);
-    assert_eq!(reply.usage.total_tokens, 0);
-    assert_eq!(reply.usage.prompt_tokens, Some(0));
-    assert_eq!(reply.usage.completion_tokens, Some(0));
+    let null_usage = decode_mai_edit_reply(br#"{"created": 1, "usage": null}"#, 200, NOW).unwrap();
+    assert_eq!(null_usage.created, 1);
+    assert_eq!(null_usage.usage.input_tokens, 0);
+    assert_eq!(null_usage.usage.output_tokens, 0);
+    assert_eq!(null_usage.usage.total_tokens, 0);
+    assert_eq!(null_usage.usage.prompt_tokens, Some(0));
+    assert_eq!(null_usage.usage.completion_tokens, Some(0));
 
-    let reply = decode_mai_edit_reply(
+    let counted = decode_mai_edit_reply(
         br#"{"usage": {"input_tokens": 2, "output_tokens": 3}}"#,
         200,
         NOW,
     )
     .unwrap();
-    assert_eq!(reply.usage.input_tokens, 2);
-    assert_eq!(reply.usage.output_tokens, 3);
-    assert_eq!(reply.usage.total_tokens, 5);
-    assert_eq!(reply.usage.prompt_tokens, Some(2));
-    assert_eq!(reply.size, None);
+    assert_eq!(counted.usage.input_tokens, 2);
+    assert_eq!(counted.usage.output_tokens, 3);
+    assert_eq!(counted.usage.total_tokens, 5);
+    assert_eq!(counted.usage.prompt_tokens, Some(2));
+    assert_eq!(counted.size, None);
 }
 
 fn size_is_not_synthesized() {
-    let reply = decode_mai_edit_reply(br#"{"size": "1024x1024"}"#, 200, NOW).unwrap();
-    assert_eq!(reply.size.as_deref(), Some("1024x1024"));
+    let sized = decode_mai_edit_reply(br#"{"size": "1024x1024"}"#, 200, NOW).unwrap();
+    assert_eq!(sized.size.as_deref(), Some("1024x1024"));
 
-    let reply = decode_mai_edit_reply(
+    let url_reply = decode_mai_edit_reply(
         br#"{"data": [{"url": "https://example.test/i.png"}]}"#,
         200,
         NOW,
     )
     .unwrap();
-    assert_eq!(reply.size, None);
+    assert_eq!(url_reply.size, None);
     assert_eq!(
-        reply.data[0].url.as_deref(),
+        url_reply.data[0].url.as_deref(),
         Some("https://example.test/i.png")
     );
 }
@@ -102,41 +103,44 @@ fn failures_keep_the_provider_status() {
     }
     assert_eq!(error.status_code(), Some(502));
 
-    let error = decode_mai_edit_reply(b"[1]", 200, NOW).unwrap_err();
+    let not_object = decode_mai_edit_reply(b"[1]", 200, NOW).unwrap_err();
     assert!(matches!(
-        error,
+        not_object,
         ImageEditError::Mai(MaiImageError::NotAnObject)
     ));
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(not_object.status_code(), Some(500));
+}
 
-    let error =
+fn malformed_bodies_fail() {
+    let field_type =
         decode_mai_edit_reply(br#"{"usage": {"input_tokens": true}}"#, 200, NOW).unwrap_err();
     assert!(matches!(
-        error,
+        field_type,
         ImageEditError::Mai(MaiImageError::FieldType {
             field: "input_tokens"
         })
     ));
 
     // a usage counter summed past i64::MAX fails with a 500, never a wrapped count
-    let error = decode_mai_edit_reply(
+    let overflow = decode_mai_edit_reply(
         br#"{"usage": {"input_tokens": 9223372036854775807, "output_tokens": 1}}"#,
         200,
         NOW,
     )
     .unwrap_err();
     assert!(matches!(
-        error,
+        overflow,
         ImageEditError::Mai(MaiImageError::TokenOverflow { .. })
     ));
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(overflow.status_code(), Some(500));
 
     // a body with an error object is a failure through B004's projection, not an empty reply
-    let error = decode_mai_edit_reply(br#"{"error": {"message": "boom", "code": 500}}"#, 200, NOW)
-        .unwrap_err();
+    let projection =
+        decode_mai_edit_reply(br#"{"error": {"message": "boom", "code": 500}}"#, 200, NOW)
+            .unwrap_err();
     assert!(matches!(
-        error,
+        projection,
         ImageEditError::Projection(ImageReplyError::ResponseObject { status: 500, .. })
     ));
-    assert_eq!(error.status_code(), Some(500));
+    assert_eq!(projection.status_code(), Some(500));
 }

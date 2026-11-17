@@ -30,7 +30,7 @@ fn url(
     global_api_version: Option<&str>,
     env: &Env,
 ) -> Result<String, ImageEditError> {
-    complete_url(CompleteUrlRequest {
+    complete_url(&CompleteUrlRequest {
         model,
         accessors: ModelInfoAccessors {
             global_api_base: None,
@@ -122,9 +122,13 @@ pub(super) fn flux1_missing_version() {
         "https://res.services.ai.azure.com/openai/deployments/FLUX-1-kontext-pro/images/edits?api-version="
     );
 
-    let error = url(FLUX1, None, None, None, &Env::new(None, None)).unwrap_err();
-    assert!(matches!(error, ImageEditError::ApiBaseRequired));
-    assert!(error.to_string().contains("Azure AI API base is required"));
+    let no_base = url(FLUX1, None, None, None, &Env::new(None, None)).unwrap_err();
+    assert!(matches!(no_base, ImageEditError::ApiBaseRequired));
+    assert!(
+        no_base
+            .to_string()
+            .contains("Azure AI API base is required")
+    );
 }
 
 pub(super) fn flux2_preview_default() {

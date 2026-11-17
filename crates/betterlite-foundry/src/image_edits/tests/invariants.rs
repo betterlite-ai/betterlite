@@ -27,18 +27,10 @@ fn foundry_image_edit_credential_identity_isolation() {
         .expect("a key");
     assert_eq!(first_key.expose_secret(), "key-a");
     assert_eq!(second_key.expose_secret(), "key-b");
-    assert_eq!(
-        support::accessors(&first, None, None)
-            .api_base(None)
-            .as_deref(),
-        Some("https://first.test")
-    );
-    assert_eq!(
-        support::accessors(&second, None, None)
-            .api_base(None)
-            .as_deref(),
-        Some("https://second.test")
-    );
+    let first_base = support::accessors(&first, None, None).api_base(None);
+    let second_base = support::accessors(&second, None, None).api_base(None);
+    assert_eq!(first_base.as_deref(), Some("https://first.test"));
+    assert_eq!(second_base.as_deref(), Some("https://second.test"));
 
     // a resolved header belongs to the call that made it: changing it never reaches the other identity
     let mut first_headers = Headers::new();
@@ -87,7 +79,7 @@ fn foundry_image_edit_secret_safe_failure() {
     })
     .unwrap_err();
     assert_secret_safe(&missing_key);
-    let missing_base = complete_url(CompleteUrlRequest {
+    let missing_base = complete_url(&CompleteUrlRequest {
         model: FLUX1,
         accessors: support::accessors(&configured, None, None),
         api_base: None,

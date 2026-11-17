@@ -80,6 +80,6 @@ fn reference_field(index: usize) -> String {
     if index == 0 {
         String::from("input_image")
     } else {
-        format!("input_image_{}", index + 1)
+        format!("input_image_{}", index.saturating_add(1))
     }
 }

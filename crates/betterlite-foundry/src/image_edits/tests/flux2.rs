@@ -93,20 +93,20 @@ fn mapped_options() {
 
 fn required_fields() {
     let mut one = bytes_sources(1);
-    let error = form(FLUX2, None, Some(&mut one), &ImageParams::new()).unwrap_err();
-    assert!(matches!(error, ImageEditError::Flux2PromptRequired));
+    let no_prompt = form(FLUX2, None, Some(&mut one), &ImageParams::new()).unwrap_err();
+    assert!(matches!(no_prompt, ImageEditError::Flux2PromptRequired));
 
-    let error = form(FLUX2, Some("draw"), None, &ImageParams::new()).unwrap_err();
-    assert!(matches!(error, ImageEditError::Flux2ImageRequired));
+    let no_image = form(FLUX2, Some("draw"), None, &ImageParams::new()).unwrap_err();
+    assert!(matches!(no_image, ImageEditError::Flux2ImageRequired));
 
     let mut empty: Vec<ImageSource> = Vec::new();
-    let error = form(FLUX2, Some("draw"), Some(&mut empty), &ImageParams::new()).unwrap_err();
-    assert!(matches!(error, ImageEditError::Flux2NoReferenceImages));
+    let no_refs = form(FLUX2, Some("draw"), Some(&mut empty), &ImageParams::new()).unwrap_err();
+    assert!(matches!(no_refs, ImageEditError::Flux2NoReferenceImages));
 }
 
 fn reference_limit() {
     let mut at_limit = bytes_sources(DEFAULT_REFERENCE_LIMIT);
-    let form = form(
+    let built = form(
         FLUX2,
         Some("draw"),
         Some(&mut at_limit),
@@ -114,7 +114,8 @@ fn reference_limit() {
     )
     .unwrap();
     assert_eq!(
-        form.data
+        built
+            .data
             .keys()
             .filter(|key| key.starts_with("input_image"))
             .count(),
@@ -155,14 +156,14 @@ fn flex_limit() {
 
 fn field_numbering_and_overlay() {
     let mut three = bytes_sources(3);
-    let form = form(
+    let built = form(
         FLUX2,
         Some("draw"),
         Some(&mut three),
         &support::params(r#"{"num_images": 2}"#),
     )
     .unwrap();
-    let names: Vec<&str> = form.data.keys().map(String::as_str).collect();
+    let names: Vec<&str> = built.data.keys().map(String::as_str).collect();
     assert_eq!(
         names,
         [
@@ -175,29 +176,21 @@ fn field_numbering_and_overlay() {
         ]
     );
     assert_eq!(
-        form.data.get("input_image"),
+        built.data.get("input_image"),
         Some(&Json::Text(support::encoded(PNG)))
     );
     let mut second = PNG.to_vec();
     second.push(1);
     assert_eq!(
-        form.data.get("input_image_2"),
+        built.data.get("input_image_2"),
         Some(&Json::Text(support::encoded(&second)))
     );
-    assert!(form.files.is_empty());
+    assert!(built.files.is_empty());
 
     let overlay = support::params(r#"{"prompt": "over", "model": "over", "input_image": "over"}"#);
     let mut one = bytes_sources(1);
-    let form = form(FLUX2, Some("draw"), Some(&mut one), &overlay).unwrap();
-    assert_eq!(
-        form.data.get("prompt"),
-        Some(&Json::Text("over".to_owned()))
-    );
-    assert_eq!(form.data.get("model"), Some(&Json::Text("over".to_owned())));
-    assert_eq!(
-        form.data.get("input_image"),
-        Some(&Json::Text("over".to_owned()))
-    );
+    let overlaid = form(FLUX2, Some("draw"), Some(&mut one), &overlay).unwrap();
+    assert_eq!(overlaid.data, overlay);
 }
 
 fn bytes_are_inline() {

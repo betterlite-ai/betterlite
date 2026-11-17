@@ -19,7 +19,7 @@ pub struct CompleteUrlRequest<'data> {
 }
 
 // FLUX 1 requires a version, FLUX 2 defaults to preview, and MAI never reads litellm.api_version, matching its config
-pub fn complete_url(request: CompleteUrlRequest<'_>) -> Result<String, ImageEditError> {
+pub fn complete_url(request: &CompleteUrlRequest<'_>) -> Result<String, ImageEditError> {
     let variant = ImageEditVariant::select(request.model)?;
     let base = request
         .accessors

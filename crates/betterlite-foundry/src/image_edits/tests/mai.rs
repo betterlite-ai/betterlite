@@ -18,7 +18,7 @@ fn form(
     image: Option<&[Option<ImageEditFile>]>,
     options: &ImageParams,
 ) -> ImageEditForm {
-    transform_request(MaiEditRequest {
+    transform_request(&MaiEditRequest {
         model: MAI,
         prompt,
         image,
@@ -35,60 +35,63 @@ pub(super) fn mai_edit_prompt_images() {
 
 fn prompt_and_first_image() {
     let images = [None, file(PNG), file(JPEG)];
-    let form = form(
+    let built = form(
         Some("paint"),
         Some(&images),
         &support::params(r#"{"image": "dropped", "mask": "dropped", "n": 2}"#),
     );
     assert_eq!(
-        form.data,
+        built.data,
         support::params(r#"{"model": "MAI-Image-2.5", "n": 2, "prompt": "paint"}"#)
     );
-    assert_eq!(form.files.len(), 1);
-    let (field, uploaded) = form.files.first().expect("one image file");
+    assert_eq!(built.files.len(), 1);
+    let (field, uploaded) = built.files.first().expect("one image file");
     assert_eq!(field, "image");
     assert_eq!(uploaded.content, PNG.to_vec());
     assert_eq!(uploaded.filename.as_deref(), Some("image.png"));
     assert_eq!(uploaded.content_type.as_deref(), Some("image/png"));
 
     let only_jpeg = [file(JPEG)];
-    let form = form(None, Some(&only_jpeg), &ImageParams::new());
-    assert_eq!(form.data, support::params(r#"{"model": "MAI-Image-2.5"}"#));
-    let (_, uploaded) = form.files.first().expect("one image file");
-    assert_eq!(uploaded.content_type.as_deref(), Some("image/jpeg"));
+    let jpeg_form = form(None, Some(&only_jpeg), &ImageParams::new());
+    assert_eq!(
+        jpeg_form.data,
+        support::params(r#"{"model": "MAI-Image-2.5"}"#)
+    );
+    let (_, jpeg_file) = jpeg_form.files.first().expect("one image file");
+    assert_eq!(jpeg_file.content_type.as_deref(), Some("image/jpeg"));
 }
 
 fn prompt_ordering() {
-    let form = form(
+    let positional = form(
         Some("positional"),
         None,
         &support::params(r#"{"prompt": "option", "model": "other-model"}"#),
     );
     assert_eq!(
-        form.data,
+        positional.data,
         support::params(r#"{"model": "other-model", "prompt": "positional"}"#)
     );
-    let form = form(None, None, &support::params(r#"{"prompt": "option"}"#));
+    let option_form = form(None, None, &support::params(r#"{"prompt": "option"}"#));
     assert_eq!(
-        form.data,
+        option_form.data,
         support::params(r#"{"model": "MAI-Image-2.5", "prompt": "option"}"#)
     );
 }
 
 fn missing_values_are_not_rejected() {
-    let form = form(None, None, &ImageParams::new());
-    assert_eq!(form.data, support::params(r#"{"model": "MAI-Image-2.5"}"#));
-    assert!(form.files.is_empty());
+    let unset = form(None, None, &ImageParams::new());
+    assert_eq!(unset.data, support::params(r#"{"model": "MAI-Image-2.5"}"#));
+    assert!(unset.files.is_empty());
 
     let images = [None, None];
-    let form = form(Some("paint"), Some(&images), &ImageParams::new());
-    assert!(form.files.is_empty());
+    let nulls = form(Some("paint"), Some(&images), &ImageParams::new());
+    assert!(nulls.files.is_empty());
 
     let empty: [Option<ImageEditFile>; 0] = [];
-    let form = form(Some("paint"), Some(&empty), &ImageParams::new());
-    assert!(form.files.is_empty());
+    let empty_list = form(Some("paint"), Some(&empty), &ImageParams::new());
+    assert!(empty_list.files.is_empty());
     assert_eq!(
-        form.data,
+        empty_list.data,
         support::params(r#"{"model": "MAI-Image-2.5", "prompt": "paint"}"#)
     );
 }

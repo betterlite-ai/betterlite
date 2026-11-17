@@ -50,7 +50,7 @@ enum ProviderFailure<'error> {
 
 impl ImageEditError {
     // FLUX raises ValueError with its own 400s, and a non-JSON MAI reply keeps the provider status through B668
-    fn provider_failure(&self) -> Option<ProviderFailure<'_>> {
+    const fn provider_failure(&self) -> Option<ProviderFailure<'_>> {
         match self {
             Self::Params(error) => Some(ProviderFailure::Params(error)),
             Self::Mai(error) => Some(ProviderFailure::Mai(error)),

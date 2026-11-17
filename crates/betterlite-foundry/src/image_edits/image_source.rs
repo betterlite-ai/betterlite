@@ -14,14 +14,14 @@ pub enum ImageSource {
 
 pub fn convert_image_to_base64(image: &mut ImageSource) -> Result<String, ImageEditError> {
     let bytes = match image {
-        Self::Bytes(content) => content.as_slice(),
-        Self::Buffered { content, position } => {
+        ImageSource::Bytes(content) => content.as_slice(),
+        ImageSource::Buffered { content, position } => {
             let tail = content.get(*position..).unwrap_or_default();
             *position = 0;
             tail
         }
-        Self::Reader { content, position } => content.get(*position..).unwrap_or_default(),
-        Self::Unsupported { kind } => {
+        ImageSource::Reader { content, position } => content.get(*position..).unwrap_or_default(),
+        ImageSource::Unsupported { kind } => {
             return Err(ImageEditError::UnsupportedImageType { kind: kind.clone() });
         }
     };

@@ -13,7 +13,8 @@ pub struct MaiEditRequest<'data> {
 }
 
 // A prompt overrides the options, image and mask leave the form data, and only the first non-None listed image is uploaded
-pub fn transform_request(request: MaiEditRequest<'_>) -> ImageEditForm {
+#[must_use]
+pub fn transform_request(request: &MaiEditRequest<'_>) -> ImageEditForm {
     let mut data = ImageParams::new();
     data.insert(String::from("model"), Json::Text(request.model.to_owned()));
     for (name, value) in request.options {

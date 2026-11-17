@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use base64::Engine as _;
+use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use betterlite_azure::credentials::source::{
-    CallableTokenProvider, ClientSecretRecord, CredentialSources, OidcExchangeInput,
-    ProviderFailure, SourceFailure, TokenReply, UsernamePasswordRecord,
+    CallableTokenProvider, CredentialSources, ProviderFailure, SourceFailure, TokenReply,
 };
+use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::foundry_credentials::Settings as FoundrySettings;
 use betterlite_config::sections::foundry_image_edits::Settings as VersionSettings;
 use betterlite_openai::api::image_contracts::records::ImageParams;

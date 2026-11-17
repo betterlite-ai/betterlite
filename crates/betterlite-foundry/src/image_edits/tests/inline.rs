@@ -7,11 +7,11 @@ use crate::image_edits::image_source::{ImageSource, convert_image_to_base64};
 
 use super::support::{self, FLUX2, PNG};
 
-fn reference_field(sources: &mut Vec<ImageSource>) -> Result<String, ImageEditError> {
+fn reference_field(sources: &mut [ImageSource]) -> Result<String, ImageEditError> {
     let form = transform_request(Flux2EditRequest {
         model: FLUX2,
         prompt: Some("draw"),
-        images: Some(sources.as_mut_slice()),
+        images: Some(sources),
         options: &ImageParams::new(),
     })?;
     match form.data.get("input_image") {
@@ -96,12 +96,12 @@ pub(super) fn unsupported_sources_are_refused() {
     let mut tuple = vec![ImageSource::Unsupported {
         kind: String::from("tuple"),
     }];
-    let error = transform_request(Flux2EditRequest {
+    let tuple_error = transform_request(Flux2EditRequest {
         model: FLUX2,
         prompt: Some("draw"),
         images: Some(tuple.as_mut_slice()),
         options: &ImageParams::new(),
     })
     .unwrap_err();
-    assert!(error.to_string().contains("tuple"));
+    assert!(tuple_error.to_string().contains("tuple"));
 }
