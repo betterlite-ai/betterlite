@@ -57,7 +57,8 @@ def run(input_value: Input) -> Output:
             request_body={},
         )
     )
+    model = payload.kwargs.model
     return {
-        "operation": payload.kwargs.model.removeprefix(f"{handler.TRANSCRIBE_CUSTOM_LLM_PROVIDER}/"),
+        "operation": model.removeprefix(f"{handler.TRANSCRIBE_CUSTOM_LLM_PROVIDER}/"),
         "priced": handler.TranscribePassthroughLoggingHandler.is_priced_job_start(response),
     }
