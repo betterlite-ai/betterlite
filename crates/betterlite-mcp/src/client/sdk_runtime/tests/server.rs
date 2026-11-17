@@ -168,6 +168,13 @@ impl ServerHandler for TestServer {
                     peer_answer(&context, request).await,
                 )])
             }
+            "capabilities" => {
+                let text = context.peer.peer_info().map_or_else(
+                    || "no peer info".to_owned(),
+                    |info| serde_json::to_string(&info.capabilities).unwrap_or_default(),
+                );
+                CallToolResult::success(vec![ContentBlock::text(text)])
+            }
             "log" => {
                 let params =
                     LoggingMessageNotificationParam::new(LoggingLevel::Info, json!("a log line"));

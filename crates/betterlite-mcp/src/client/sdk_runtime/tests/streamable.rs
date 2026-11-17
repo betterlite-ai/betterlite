@@ -238,6 +238,21 @@ async fn a_roots_request_answers_the_sdk_default() {
 }
 
 #[tokio::test]
+async fn the_client_capabilities_name_the_configured_callbacks_only() {
+    let handlers = ServerRequestHandlers {
+        sampling: Some(Arc::new(TestSampling)),
+        elicitation: None,
+    };
+    let default = answered("capabilities", ServerRequestHandlers::default())
+        .await
+        .unwrap();
+    assert!(!default.contains("sampling"), "{default}");
+    let configured = answered("capabilities", handlers).await.unwrap();
+    assert!(configured.contains("\"sampling\""), "{configured}");
+    assert!(!configured.contains("elicitation"), "{configured}");
+}
+
+#[tokio::test]
 async fn a_logging_notification_does_not_disturb_the_call() {
     let answer = answered("log", ServerRequestHandlers::default())
         .await
