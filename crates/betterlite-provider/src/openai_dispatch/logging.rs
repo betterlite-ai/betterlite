@@ -8,7 +8,10 @@ use serde::Serialize;
 // serde moves between the wire JSON and the logging tree; a value the tree cannot hold is logged as null
 #[must_use]
 pub fn logged_json<T: Serialize>(value: &T) -> Json {
-    serde_json::from_value(serde_json::to_value(value).unwrap_or_default()).unwrap_or(Json::Null)
+    let Ok(serialized) = serde_json::to_value(value) else {
+        return Json::Null;
+    };
+    serde_json::from_value(serialized).unwrap_or(Json::Null)
 }
 
 // main.py's post_call carries the messages, the reply or the error text it logged, and the headers it resolved

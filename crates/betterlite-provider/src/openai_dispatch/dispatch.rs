@@ -1,11 +1,12 @@
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::text_completion_transport::sdk::ClientConstructor;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
 use uuid::Uuid;
 
-use crate::operation::{ChatCompletion, OperationRequest, OperationResult};
+use crate::operation::{ChatCompletion, OperationError, OperationRequest, OperationResult};
 use crate::provider::Adapter as _;
 
 use super::call::{ChatCall, Composition, EmbeddingCall, OpenAiOperation, TextCall};
@@ -27,7 +28,7 @@ pub async fn dispatch<Answer, Source, Logger>(
 where
     Answer: ProviderAnswer,
     Source: TextClientSource,
-    Source::Constructor::Client: Clone,
+    <Source::Constructor as ClientConstructor>::Client: Clone,
     Logger: OpenAiLogger,
 {
     let OperationRequest::OpenAi(OpenAiRequest) = request else {
@@ -75,14 +76,14 @@ fn logged_failure<Logger: OpenAiLogger>(
     logger: &mut Logger,
     call: &ChatCall,
     plan: &ChatPlan,
-    error: OpenAiProviderError,
+    error: OperationError,
 ) -> OpenAiProviderError {
     logger.post_call(LoggedCall {
         input: logged_json(&call.request.messages),
         original_response: Json::Text(error.to_string()),
         headers: logged_headers(plan.logged_headers.as_ref()),
     });
-    error
+    OpenAiProviderError::Operation(error)
 }
 
 async fn embedding<Answer>(
@@ -95,7 +96,7 @@ where
 {
     let prepared = embedding_plan(composition, call)?;
     let upstream = answer.answer(&prepared).await?;
-    OpenAi.decode(&prepared, upstream)
+    Ok(OpenAi.decode(&prepared, upstream)?)
 }
 
 async fn text<Answer, Source, Logger>(
@@ -106,7 +107,7 @@ async fn text<Answer, Source, Logger>(
 ) -> Result<OperationResult, OpenAiProviderError>
 where
     Source: TextClientSource,
-    Source::Constructor::Client: Clone,
+    <Source::Constructor as ClientConstructor>::Client: Clone,
     Logger: OpenAiLogger,
 {
     let plan = text::plan(composition, call)?;
@@ -123,7 +124,7 @@ where
             return Ok(OperationResult::OpenAi(OpenAiResult::TextStream(stream)));
         }
     };
-    let (result, logged) = buffered_text(&plan, response, deps.now(), deps.next_id())?;
+    let (result, logged) = buffered_text(&plan, response, (deps.now)(), (deps.next_id)())?;
     // main.py logs a truthy stream option or an async call; the transport refused every stream value but a bool
     if matches!(
         plan.optional_params.get("stream"),
@@ -164,8 +165,8 @@ fn buffered_text(
 
 // main.py logs the resolved supplied header map itself, never the extra headers the SDK merged beside it
 fn logged_headers(headers: Option<&Headers>) -> Option<IndexMap<String, Json>> {
-    headers.map(|headers| {
-        headers
+    headers.map(|supplied| {
+        supplied
             .iter()
             .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
             .collect()

@@ -11,6 +11,7 @@ use betterlite_openai::text_completion_transport::call::{
     TextCompletionOutcome, TextCompletionRequest,
 };
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
+use betterlite_openai::text_completion_transport::sdk::ClientConstructor;
 use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use betterlite_openai::text_completion_transport::{
     TextCompletionConfigs, TextCompletionTransport,
@@ -107,7 +108,7 @@ pub async fn execute<Source, Logger>(
 ) -> Result<TextOutcome, OpenAiProviderError>
 where
     Source: TextClientSource,
-    Source::Constructor::Client: Clone,
+    <Source::Constructor as ClientConstructor>::Client: Clone,
     Logger: OpenAiLogger,
 {
     let transport = TextCompletionTransport {
@@ -135,9 +136,9 @@ where
 }
 
 fn text_request(plan: &TextPlan) -> Result<TextCompletionRequest, OpenAiProviderError> {
-    let messages = serde_json::to_value(&plan.messages)
+    let serialized = serde_json::to_value(&plan.messages)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    let messages = serde_json::from_value(messages)
+    let messages = serde_json::from_value(serialized)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
     Ok(TextCompletionRequest {
         model: Some(plan.model.clone()),
@@ -194,12 +195,12 @@ pub fn project(
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
     let target: Object = serde_json::from_value(serialized)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    let response = serde_json::to_value(response)
+    let body = serde_json::to_value(response)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    let converted = to_chat_model_response(Some(response), Some(target), &identifier, &clock)?;
-    let converted = serde_json::to_value(converted)
+    let converted = to_chat_model_response(Some(body), Some(target), &identifier, &clock)?;
+    let serialized = serde_json::to_value(converted)
         .map_err(|source| OpenAiProviderError::Operation(OperationError::Encode { source }))?;
-    serde_json::from_value(converted).map_err(|source| {
+    serde_json::from_value(serialized).map_err(|source| {
         OpenAiProviderError::Operation(OperationError::Decode {
             operation: "text completion chat projection",
             source,

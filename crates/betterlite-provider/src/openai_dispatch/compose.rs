@@ -268,8 +268,8 @@ fn build_deployment(
             JsonValue::Text(key.expose_secret().to_owned()),
         );
     }
-    if let Some(organization) = organization {
-        params.insert(String::from("organization"), JsonValue::Text(organization));
+    if let Some(name) = organization {
+        params.insert(String::from("organization"), JsonValue::Text(name));
     }
     if let Some(seconds) = timeout {
         let number = Number::from_f64(seconds).ok_or(OpenAiProviderError::FieldType {

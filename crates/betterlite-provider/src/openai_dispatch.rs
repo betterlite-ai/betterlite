@@ -28,7 +28,6 @@ pub mod fixtures;
 pub mod headers;
 pub mod logging;
 pub mod metadata;
-#[cfg(test)]
 mod tests;
 pub mod text;
 pub mod transport;

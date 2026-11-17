@@ -26,15 +26,15 @@ pub fn resolved_headers(
                 .as_ref()
                 .filter(|map| !map.is_empty())
         });
-    merge_headers(base.as_ref(), extra)
+    merge_headers(base, extra)
 }
 
 // The first map is the base and the second wins a shared name; an absent map keeps the other one as it is.
 #[must_use]
 pub fn merge_headers(base: Option<&Headers>, over: Option<&Headers>) -> Option<Headers> {
     let mut merged = base.cloned();
-    if let Some(over) = over {
-        merged.get_or_insert_with(Headers::new).extend(over.clone());
+    if let Some(overrides) = over {
+        merged.get_or_insert_default().extend(overrides.clone());
     }
     merged
 }
@@ -49,17 +49,17 @@ pub fn chat_headers(
         .ok_or(OpenAiProviderError::Operation(
             OperationError::MissingApiKey,
         ))?;
-    let authorization = authorization_value(authorization.expose_secret())?;
+    let authorization_header = authorization_value(authorization.expose_secret())?;
     let mut headers = HeaderMap::new();
     // the base handler takes the caller's headers, adds Content-Type when absent, and sets the key over them
     if experimental {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         insert_headers(&mut headers, supplied)?;
-        headers.insert(AUTHORIZATION, authorization);
+        headers.insert(AUTHORIZATION, authorization_header);
         return Ok(headers);
     }
     // the OpenAI SDK sends JSON for a stream too, and merges the caller's headers over its own
-    headers.insert(AUTHORIZATION, authorization);
+    headers.insert(AUTHORIZATION, authorization_header);
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     insert_organization(&mut headers, deployment.organization.as_deref())?;
@@ -91,12 +91,12 @@ fn insert_organization(
     headers: &mut HeaderMap,
     organization: Option<&str>,
 ) -> Result<(), OpenAiProviderError> {
-    let Some(organization) = organization else {
+    let Some(organization_id) = organization else {
         return Ok(());
     };
     headers.insert(
         HeaderName::from_static("openai-organization"),
-        header_value(organization, "openai-organization")?,
+        header_value(organization_id, "openai-organization")?,
     );
     Ok(())
 }
@@ -105,10 +105,10 @@ fn insert_headers(
     headers: &mut HeaderMap,
     extra: Option<&Headers>,
 ) -> Result<(), OpenAiProviderError> {
-    let Some(extra) = extra else {
+    let Some(extra_headers) = extra else {
         return Ok(());
     };
-    for (name, value) in extra {
+    for (name, value) in extra_headers {
         let header_name = HeaderName::try_from(name.as_str()).map_err(|source| {
             OpenAiProviderError::HeaderName {
                 name: name.clone(),
