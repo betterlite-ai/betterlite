@@ -73,6 +73,8 @@ struct Named {
 struct LegacyServer {
     outbox: Mutex<Option<Sender<String>>>,
     initialized: AtomicBool,
+    // set by a case that needs the handshake refused with a JSON-RPC error
+    reject_initialize: AtomicBool,
 }
 
 impl LegacyServer {
@@ -119,7 +121,11 @@ async fn receive_message(State(server): State<Arc<LegacyServer>>, body: Bytes) -
     };
     let id = id.get().to_owned();
     let answer = match request.method.as_str() {
-        "initialize" => Some(initialize_reply(&id)),
+        "initialize" => Some(if server.reject_initialize.load(Ordering::SeqCst) {
+            failure_reply(&id, "unsupported protocol")
+        } else {
+            initialize_reply(&id)
+        }),
         "tools/list" => Some(list_reply(&server, &id, request.params.as_deref())),
         "tools/call" => call_reply(&id, request.params.as_deref()).await,
         other => Some(failure_reply(&id, &format!("unknown method {other}"))),
@@ -208,6 +214,7 @@ fn input_required_reply(id: &str) -> String {
 
 struct LegacySseServer {
     url: String,
+    state: Arc<LegacyServer>,
     _tasks: JoinSet<Result<(), io::Error>>,
 }
 
@@ -216,13 +223,14 @@ async fn serve_legacy() -> LegacySseServer {
     let router = Router::new()
         .route("/sse", get(open_events))
         .route("/messages", post(receive_message))
-        .with_state(state);
+        .with_state(Arc::clone(&state));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address: SocketAddr = listener.local_addr().unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { axum::serve(listener, router).await });
     LegacySseServer {
         url: format!("http://{address}/sse"),
+        state,
         _tasks: tasks,
     }
 }
@@ -341,6 +349,26 @@ async fn a_broken_legacy_sse_stream_fails_the_pending_call() {
         }
         other => panic!("expected a stream failure, got {other}"),
     }
+}
+
+#[tokio::test]
+async fn an_initialize_error_keeps_its_json_rpc_code() {
+    let server = serve_legacy().await;
+    server.state.reject_initialize.store(true, Ordering::SeqCst);
+    let mut client = support::client_for(
+        support::runtime(),
+        support::settings(TransportType::Sse),
+        &server.url,
+        support::CALL_TIMEOUT,
+    );
+    let error = list_tools(&mut client, support::CALL_TIMEOUT, true)
+        .await
+        .expect_err("the server refused the handshake");
+    let SessionError::Protocol(failure) = error else {
+        panic!("expected a protocol failure, got {error}");
+    };
+    assert_eq!(failure.code, -32_602);
+    assert_eq!(failure.message, "unsupported protocol");
 }
 
 #[tokio::test]
