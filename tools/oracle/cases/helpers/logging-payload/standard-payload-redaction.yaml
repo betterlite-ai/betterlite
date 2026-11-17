@@ -49,6 +49,8 @@ call:
     status: success
     settings:
       turn_off_message_logging: true
+      request_correlation_in_logs: false
+      log_client_error_tracebacks: false
 calls:
   - logging_payload:
       init:
