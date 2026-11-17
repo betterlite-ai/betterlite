@@ -86,10 +86,10 @@ impl JobWorker {
         } else {
             full_queue_cost(&job_name, rate)
         };
-        let Some(cost) = cost else {
+        let Some(charged) = cost else {
             return;
         };
-        dispatch(job, cost).await;
+        dispatch(job, charged).await;
     }
 
     async fn priced(
