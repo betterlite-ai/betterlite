@@ -6,14 +6,13 @@ use betterlite_bedrock::bedrock_settings::{BedrockError, error_response_text};
 use betterlite_bedrock::converse_response::environment::{
     get_error_class, should_fake_stream, validate_environment,
 };
-use betterlite_bedrock::converse_response::request::{
-    OptionalParams, RawBody, RawReply, ReplyRequest,
-};
+use betterlite_bedrock::converse_response::request::{OptionalParams, RawReply, ReplyRequest};
 use betterlite_bedrock::converse_response::transform::{
     TransformCall, TransformError, transform_response,
 };
 use betterlite_bedrock::converse_response::wire::ModelResponse;
 use betterlite_bedrock::image_call::plan::LogContext;
+use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};

@@ -192,7 +192,7 @@ def _fake_stream(case: FakeStreamCase) -> JsonValue:
 
 def _environment(case: EnvironmentCase) -> JsonValue:
     litellm.bedrock_request_metadata_fields = case["fields"]
-    caller: dict[str, str] = {name: value for name, value in case["headers"]}
+    caller: dict[str, str] = dict(case["headers"])
     headers = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
         "dict[str, str]",
         CONFIG.validate_environment(  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2711-L2724
