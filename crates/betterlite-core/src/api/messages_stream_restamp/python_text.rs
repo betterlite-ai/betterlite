@@ -4,13 +4,20 @@ const LINE_BREAKS: [char; 10] = [
 
 // CPython's str.strip whitespace, which char::is_whitespace does not match
 pub(super) const fn is_space(character: char) -> bool {
-    match character {
-        '\u{9}'..='\u{d}' | '\u{1c}'..='\u{20}' => true,
-        '\u{85}' | '\u{a0}' | '\u{1680}' => true,
-        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' => true,
-        '\u{202f}' | '\u{205f}' | '\u{3000}' => true,
-        _ => false,
-    }
+    matches!(
+        character,
+        '\u{9}'..='\u{d}'
+            | '\u{1c}'..='\u{20}'
+            | '\u{85}'
+            | '\u{a0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200a}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202f}'
+            | '\u{205f}'
+            | '\u{3000}'
+    )
 }
 
 pub(super) fn splitlines_keepends(text: &str) -> Vec<&str> {
