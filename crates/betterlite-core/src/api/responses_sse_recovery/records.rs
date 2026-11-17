@@ -55,8 +55,8 @@ pub fn record_output_text_chunk(
     let Some(Json::Text(text)) = parsed.get("text") else {
         return Ok(());
     };
-    let fallback = i64::try_from(text_only_items.len()).unwrap_or(i64::MAX);
-    let output_index = chunk_index(parsed, "output_index", fallback);
+    let output_fallback = i64::try_from(text_only_items.len()).unwrap_or(i64::MAX);
+    let output_index = chunk_index(parsed, "output_index", output_fallback);
     if output_items.contains_key(&output_index) {
         return Ok(());
     }
@@ -67,15 +67,33 @@ pub fn record_output_text_chunk(
     let item = text_only_items
         .entry(output_index)
         .or_insert_with(|| synthetic_item(parsed, output_index));
-    let fallback = i64::try_from(item.content.len()).unwrap_or(i64::MAX);
-    let content_index = chunk_index(parsed, "content_index", fallback);
-    let Ok(content_index) = u16::try_from(content_index) else {
+    let content_fallback = i64::try_from(item.content.len()).unwrap_or(i64::MAX);
+    let content_index = chunk_index(parsed, "content_index", content_fallback);
+    let Ok(slot_index) = u16::try_from(content_index) else {
         return Ok(());
     };
-    if content_index > MAX_CONTENT_INDEX {
+    if slot_index > MAX_CONTENT_INDEX {
         return Ok(());
     }
-    let slot = usize::from(content_index);
+    let slot = usize::from(slot_index);
+    pad_content(item, slot, limits)?;
+    let Some(content_item) = item.content.get_mut(slot) else {
+        return Ok(());
+    };
+    content_item.text.clone_from(text);
+    match parsed.get("annotations") {
+        None | Some(Json::Null) => {}
+        Some(annotations) => content_item.annotations = annotations.clone(),
+    }
+    Ok(())
+}
+
+// the message content is padded with empty parts up to the recorded content index
+fn pad_content(
+    item: &mut SyntheticItem,
+    slot: usize,
+    limits: &ApiLimits,
+) -> Result<(), ResponsesSseRecoveryError> {
     while item.content.len() <= slot {
         let known_count = item.content.len().saturating_add(1);
         limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
@@ -83,14 +101,6 @@ pub fn record_output_text_chunk(
             text: String::new(),
             annotations: Json::List(Vec::new()),
         });
-    }
-    let Some(content_item) = item.content.get_mut(slot) else {
-        return Ok(());
-    };
-    content_item.text = text.clone();
-    match parsed.get("annotations") {
-        None | Some(Json::Null) => {}
-        Some(annotations) => content_item.annotations = annotations.clone(),
     }
     Ok(())
 }
@@ -152,7 +162,9 @@ fn keeps_item_id(value: &Json) -> bool {
         Json::Null => false,
         Json::Bool(flag) => *flag,
         // a nonzero number is the only numeric id Python keeps; the ordering comparison avoids clippy::float_cmp
-        Json::Number(number) => number.as_f64().is_none_or(|value| value.abs() > 0.0),
+        Json::Number(number) => number
+            .as_f64()
+            .is_none_or(|magnitude| magnitude.abs() > 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
