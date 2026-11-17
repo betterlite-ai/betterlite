@@ -6,7 +6,7 @@ deviations:
   - what: langfuse.trace.tags is stamped as its JSON text, so a reader parses ["env:test","beta"] back into a list, where LiteLLM sets a string-list attribute.
     why: RootSpanSink carries strings only, as the task requires, so the mapper's list travels as JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/langfuse.py#L91-L100
-  - what: An entry of OTEL_PYTHON_FASTAPI_EXCLUDED_URLS that is not a valid regex is an error from ServerSpanPolicy::from_gate. LiteLLM lets the instrumentation raise, swallows it in instrument_fastapi_app and mounts nothing, logging at debug.
+  - what: An entry of OTEL_PYTHON_FASTAPI_EXCLUDED_URLS that is not a valid regex is an error from ServerSpanPolicy::from_gate. LiteLLM lets the instrumentation raise, swallows it in instrument_fastapi_app and mounts nothing, logging at debug. Python's re accepts lookaround and backreferences, so a pattern that uses them is valid in LiteLLM and an invalid entry here.
     why: A config typo must surface where the operator can see it instead of silently dropping every server span.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L126-L141
   - what: 'A projection that renders nothing is a None in betterlite, so the debug line "otel v2 langfuse: could not render the root observation input or output" and its exception path do not exist; a stamped output stays when only the input renders nothing.'
