@@ -13,5 +13,6 @@ call:
     answer:
       status: 200
       body: '{"id":"msg-1","type":"message","role":"assistant","model":"claude-3-5-sonnet","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}'
+env: {}
 compare:
   ignore: []

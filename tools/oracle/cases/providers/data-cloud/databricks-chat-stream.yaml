@@ -11,5 +11,6 @@ call:
     api_base: "{{upstream}}/serving-endpoints"
     api_key: oracle-databricks-key
     stream: true
+env: {}
 compare:
   ignore: []
