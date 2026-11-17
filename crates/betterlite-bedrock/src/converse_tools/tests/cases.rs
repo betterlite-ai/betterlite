@@ -192,6 +192,7 @@ pub(crate) fn computer_use_tool_split() {
             {"type": "computer_20250124", "function": {"name": "comp", "parameters": {"type": "object", "name": "overridden"}}},
             {"type": "bash_20250124"},
             {"type": "text_editor_20250124"},
+            {"type": "bash_20250124", "name": ""},
             {"type": "computer_20250124"},
             {"type": "computer_20250124", "name": null},
             {"type": "custom_tool", "description": "kept"},
@@ -230,7 +231,7 @@ fn detector_answers(tools: &[Json]) {
 fn partition_answers(tools: &[Json]) {
     let (computer, regular) =
         separate_computer_use_tools(tools).expect("the tools separate cleanly");
-    assert_eq!(computer.len(), 6);
+    assert_eq!(computer.len(), 7);
     assert_eq!(regular.len(), 2);
     assert_eq!(computer.first(), tools.first());
     assert_eq!(
@@ -251,6 +252,7 @@ fn transform_answers(tools: &[Json]) {
             json(r#"{"type": "object", "name": "overridden"}"#),
             json(r#"{"type": "bash_20250124", "name": "bash"}"#),
             json(r#"{"type": "text_editor_20250124", "name": "str_replace_editor"}"#),
+            json(r#"{"type": "bash_20250124", "name": ""}"#),
             json(r#"{"type": "computer_20250124"}"#),
             json(r#"{"type": "computer_20250124", "name": null}"#),
             json(r#"{"type": "custom_tool", "description": "kept"}"#),

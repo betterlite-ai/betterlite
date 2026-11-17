@@ -43,6 +43,8 @@ calls:
             name: act
             parameters: {type: object, name: overridden, left_click: true}
         - type: bash_20241022
+        - type: bash_20241022
+          name: ""
         - type: text_editor_20241022
           name: kept
         - type: computer_20241022
