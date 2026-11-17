@@ -52,9 +52,7 @@ fn failure_answer(run: &Run) -> HelperResult {
             code: None,
             message: failure.message.clone(),
         })),
-        None => "the call was expected to fail and did not"
-            .to_owned()
-            .or_value_error(),
+        None => Err("the call was expected to fail and did not").or_value_error(),
     }
 }
 
@@ -73,9 +71,7 @@ pub(super) fn native_error_body(input: &Input) -> HelperResult {
 pub(super) fn chat_failure_projection(input: &Input) -> HelperResult {
     let asynchronous = execute(input, true, ClientKind::Async)?;
     if asynchronous.failure.is_none() {
-        return "the call was expected to fail and did not"
-            .to_owned()
-            .or_value_error();
+        return Err("the call was expected to fail and did not").or_value_error();
     }
     failure_answer(&asynchronous)
 }

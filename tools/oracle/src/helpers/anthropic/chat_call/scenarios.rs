@@ -56,18 +56,14 @@ impl Run {
     fn reply(&self) -> Result<&ResponseEnvelope, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Reply(envelope) => Ok(envelope),
-            _ => "the buffered call did not return a reply"
-                .to_owned()
-                .or_value_error(),
+            _ => Err("the buffered call did not return a reply").or_value_error(),
         }
     }
 
     fn stream(&self) -> Result<&FixtureStream, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Stream(wrapper) => Ok(wrapper),
-            _ => "the stream call did not open a stream"
-                .to_owned()
-                .or_value_error(),
+            _ => Err("the stream call did not open a stream").or_value_error(),
         }
     }
 }
@@ -90,14 +86,15 @@ fn endpoint_of(input: &Input) -> Result<(FixtureReply, Trip), Box<HelperError>> 
         body: body.clone(),
         lines: input.upstream_lines.clone(),
     };
+    // httpx only raises on a non-2xx status, so a 2xx is a reply even when the fixture names a message
     let trip = match (input.upstream_status, &input.failure_message) {
-        (Some(status_code), _) => Trip::Status {
+        (None, Some(message)) => Trip::Unknown(message.clone()),
+        (Some(status_code), _) if !(200..300).contains(&status_code) => Trip::Status {
             status_code,
             headers,
             body,
         },
-        (None, Some(message)) => Trip::Unknown(message.clone()),
-        (None, None) => Trip::Reply,
+        _ => Trip::Reply,
     };
     Ok((reply, trip))
 }
@@ -213,13 +210,15 @@ fn request_of(input: &Input, run: &Run) -> Value {
 
 pub(super) fn messages_post_request(input: &Input) -> HelperResult {
     let (asynchronous, synchronous) = both(input)?;
+    let async_base = asynchronous.posts.first().map(|post| post.url.as_str());
+    let sync_base = synchronous.posts.first().map(|post| post.url.as_str());
     Ok(json!({
         "async": {
-            "pre_call": pre_call_value(&asynchronous.details),
+            "pre_call": pre_call_value(&asynchronous.details, async_base),
             "request": request_of(input, &asynchronous),
         },
         "sync": {
-            "pre_call": pre_call_value(&synchronous.details),
+            "pre_call": pre_call_value(&synchronous.details, sync_base),
             "request": request_of(input, &synchronous),
         },
     }))
@@ -246,7 +245,7 @@ fn stream_answer(input: &Input, run: &Run) -> Result<Value, Box<HelperError>> {
     let logged = run.logger_calls.first().map_or(Value::Null, logger_value);
     Ok(json!({
         "stream": stream_value(wrapper),
-        "pre_call": pre_call_value(&run.details),
+        "pre_call": pre_call_value(&run.details, run.posts.first().map(|post| post.url.as_str())),
         "request": request_of(input, run),
         "post_call": logged,
     }))

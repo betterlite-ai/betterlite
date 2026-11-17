@@ -9,6 +9,8 @@ use betterlite_anthropic::anthropic_http_stream::transport::{
 use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest};
 use betterlite_anthropic::chat_call::error::ConfigError;
 use betterlite_anthropic::chat_call::transport::{BufferedReply, ChatTransport};
+use betterlite_anthropic::headers::AnthropicHeaders;
+use betterlite_anthropic::request::beta_headers::add_optional_betas;
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
@@ -188,6 +190,34 @@ impl ChatConfig for FixtureConfig {
         // a text round trip keeps the key order Python's dicts have; a serde_json::Value one sorts it
         let encoded = serde_json::to_string(&*body)?;
         let mut prompt: IndexMap<String, PromptJson> = serde_json::from_str(&encoded)?;
+        // the provider config this fixture stands in for adds its own betas before the matrix filters them
+        let messages: &[PromptJson] = match prompt.get("messages") {
+            Some(PromptJson::List(items)) => items.as_slice(),
+            None
+            | Some(
+                PromptJson::Null
+                | PromptJson::Bool(_)
+                | PromptJson::Number(_)
+                | PromptJson::Text(_)
+                | PromptJson::Object(_),
+            ) => &[],
+        };
+        let tools: &[PromptJson] = match prompt.get("tools") {
+            Some(PromptJson::List(items)) => items.as_slice(),
+            None
+            | Some(
+                PromptJson::Null
+                | PromptJson::Bool(_)
+                | PromptJson::Number(_)
+                | PromptJson::Text(_)
+                | PromptJson::Object(_),
+            ) => &[],
+        };
+        let mut native = AnthropicHeaders {
+            values: headers.clone(),
+        };
+        add_optional_betas(&mut native, body, tools, messages, provider)?;
+        *headers = native.values;
         filter_request_betas(headers, &mut prompt, &self.matrix, provider)?;
         let filtered = serde_json::to_string(&prompt)?;
         *body = serde_json::from_str(&filtered)?;

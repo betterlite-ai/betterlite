@@ -72,11 +72,14 @@ fn detail<'details>(args: Option<&'details Json>, key: &str) -> Option<&'details
     }
 }
 
-pub(crate) fn pre_call_value(details: &IndexMap<String, Json>) -> Value {
+// the response mapper's post_call drops api_base from the details, so the sent post supplies it
+pub(crate) fn pre_call_value(details: &IndexMap<String, Json>, api_base: Option<&str>) -> Value {
+    let body = detail(details.get("additional_args"), "complete_input_dict");
+    let base = api_base.map_or(Value::Null, |value| Value::String(value.to_owned()));
     json!({
         "input": details.get("input"),
-        "body": detail(details.get("additional_args"), "complete_input_dict"),
-        "api_base": detail(details.get("additional_args"), "api_base"),
+        "body": body,
+        "api_base": base,
     })
 }
 
@@ -88,10 +91,10 @@ pub(crate) fn post_call_value(details: &IndexMap<String, Json>) -> Value {
     })
 }
 
-// the async stream hands post_call a live iterator, which neither side renders, so only the body is compared
+// the stream post_call body stays the JSON string LiteLLM sent, so the two sides compare it byte for byte
 pub(crate) fn logger_value(call: &LoggerCall) -> Value {
     json!({
         "input": call.input,
-        "body": serde_json::from_str::<Value>(&call.complete_input_dict).unwrap_or(Value::Null),
+        "body": call.complete_input_dict,
     })
 }
