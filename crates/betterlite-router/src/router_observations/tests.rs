@@ -779,11 +779,11 @@ fn failures_key() -> String {
 )]
 #[case::update_usage_stores_the_first_count(
     case_update_usage_once(),
-    Evidence { request_count: Some(1), writes: vec![Write { value: 1, ttl: Some(ROUTER_COUNTER_TTL) }], ..Evidence::default() }
+    Evidence { request_count: Some(1), writes: vec![Write { value: 1, ttl: Some(Duration::from_secs(60)) }], ..Evidence::default() }
 )]
 #[case::update_usage_keeps_the_ttl(
     case_update_usage_twice(),
-    Evidence { request_count: Some(2), writes: vec![Write { value: 1, ttl: Some(ROUTER_COUNTER_TTL) }, Write { value: 2, ttl: None }], ..Evidence::default() }
+    Evidence { request_count: Some(2), writes: vec![Write { value: 1, ttl: Some(Duration::from_secs(60)) }, Write { value: 2, ttl: None }], ..Evidence::default() }
 )]
 #[case::track_without_a_response_counts_the_request(
     case_track(Some("dep-1"), false),
