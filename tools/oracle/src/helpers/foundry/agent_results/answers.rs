@@ -45,7 +45,7 @@ pub(super) fn annotations(calls: &[AnnotationCall]) -> Calls {
         .iter()
         .map(|call| transform_annotations(Some(&call.annotations)))
         .collect::<Vec<_>>();
-    Ok(serde_json::to_value(answers).or_config_error()?)
+    serde_json::to_value(answers).or_config_error()
 }
 
 pub(super) async fn replies(calls: &[ReplyCall]) -> Calls {
@@ -53,7 +53,7 @@ pub(super) async fn replies(calls: &[ReplyCall]) -> Calls {
     for call in calls {
         answers.push(reply_response(call).await?);
     }
-    Ok(serde_json::to_value(answers).or_config_error()?)
+    serde_json::to_value(answers).or_config_error()
 }
 
 async fn reply_response(call: &ReplyCall) -> Result<ReplyAnswer, Box<HelperError>> {
@@ -212,7 +212,7 @@ struct RecordingCounter {
 }
 
 impl RecordingCounter {
-    fn new(fail: bool) -> Self {
+    const fn new(fail: bool) -> Self {
         Self {
             fail,
             calls: Mutex::new(Vec::new()),
