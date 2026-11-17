@@ -37,8 +37,41 @@ fn shown(request: &StreamRequest) -> String {
     secret.expose_secret().to_owned()
 }
 
+fn assert_distinct_credentials(first: &StreamRequest, second: &StreamRequest) {
+    assert_eq!(shown(first), format!("Bearer {FIRST_KEY}"));
+    assert_eq!(shown(second), format!("Bearer {SECOND_KEY}"));
+    assert_ne!(
+        shown_headers(&first.headers),
+        shown_headers(&second.headers)
+    );
+    assert_eq!(first.headers.len(), 1);
+}
+
+fn assert_distinct_agent_and_host(first: &StreamRequest, second: &StreamRequest) {
+    assert_eq!(first.payload.assistant_id, "asst_first");
+    assert_eq!(second.payload.assistant_id, "asst_second");
+    assert!(
+        first
+            .url
+            .starts_with("https://first.example/api/threads/runs")
+    );
+    assert!(
+        second
+            .url
+            .starts_with("https://second.example/api/threads/runs")
+    );
+    assert!(!first.url.contains("second.example"));
+    assert!(!second.url.contains("first.example"));
+    assert!(first.payload.thread.is_none());
+    assert_eq!(
+        second.payload.thread.map(|thread| thread.messages.len()),
+        Some(0)
+    );
+}
+
 #[test]
 fn agent_results_credential_identity_isolation() {
+    let empty = object("{}");
     let first = prepared(
         FIRST_KEY,
         "asst_first",
@@ -51,40 +84,10 @@ fn agent_results_credential_identity_isolation() {
         "https://second.example/api",
         None,
     );
-    let empty = object("{}");
-
     let first_request = build_stream_request(&first, &[], &empty, &empty).expect("a request");
     let second_request = build_stream_request(&second, &[], &empty, &empty).expect("a request");
-
-    assert_eq!(shown(&first_request), format!("Bearer {FIRST_KEY}"));
-    assert_eq!(shown(&second_request), format!("Bearer {SECOND_KEY}"));
-    assert_ne!(
-        shown_headers(&first_request.headers),
-        shown_headers(&second_request.headers)
-    );
-    assert_eq!(first_request.headers.len(), 1);
-    assert_eq!(first_request.payload.assistant_id, "asst_first");
-    assert_eq!(second_request.payload.assistant_id, "asst_second");
-    assert!(
-        first_request
-            .url
-            .starts_with("https://first.example/api/threads/runs")
-    );
-    assert!(
-        second_request
-            .url
-            .starts_with("https://second.example/api/threads/runs")
-    );
-    assert!(!first_request.url.contains("second.example"));
-    assert!(!second_request.url.contains("first.example"));
-    assert!(first_request.payload.thread.is_none());
-    assert_eq!(
-        second_request
-            .payload
-            .thread
-            .map(|thread| thread.messages.len()),
-        Some(0)
-    );
+    assert_distinct_credentials(&first_request, &second_request);
+    assert_distinct_agent_and_host(&first_request, &second_request);
 
     let mut isolated = build_stream_request(&first, &[], &empty, &empty).expect("a request");
     isolated

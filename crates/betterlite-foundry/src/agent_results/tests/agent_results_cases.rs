@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -21,6 +21,9 @@ use super::support::{
     shown_headers, split_bytes, stream_for, stream_for_chunks, terminal_chunk, whole,
     with_warnings,
 };
+
+const COUNT_WARNING: &str =
+    "Failed to calculate token usage: either text or messages must be provided";
 
 fn test_assistant_first_text() {
     let text = r#"{
@@ -113,92 +116,112 @@ fn test_citation_index_relocation() {
     );
 }
 
-fn test_thread_id_metadata() {
-    block_on(async {
-        let counter = FakeCounter::counting(11, 5);
-        let existing = AgentReply {
-            model: None,
-            choices: Vec::new(),
-            hidden_params: Some(object(r#"{"request-id": "r1", "thread_id": "old"}"#)),
-            usage: Some(Usage {
-                prompt_tokens: 1,
-                completion_tokens: 2,
-                total_tokens: 3,
-            }),
-        };
-        let input = ReplyInput {
-            model: "azure_ai/agents/a",
-            content: "hello",
-            thread_id: "thread-9",
-            messages: &[],
-            annotations: Some(Vec::new()),
-        };
-        let reply = build_model_response(existing, &input, &counter).await;
-        assert_eq!(reply.model.as_deref(), Some("azure_ai/agents/a"));
-        assert_eq!(
-            reply.choices,
-            vec![AgentChoice {
-                index: 0,
-                finish_reason: String::from("stop"),
-                message: ReplyMessage {
-                    role: String::from("assistant"),
-                    content: String::from("hello"),
-                    annotations: None,
-                },
-            }]
-        );
-        assert_eq!(
-            reply.hidden_params,
-            Some(object(r#"{"request-id": "r1", "thread_id": "thread-9"}"#))
-        );
-        assert_eq!(
-            reply.usage,
-            Some(Usage {
-                prompt_tokens: 11,
-                completion_tokens: 5,
-                total_tokens: 16,
-            })
-        );
-
-        let annotations = vec![object(r#"{"type": "file_citation", "file_id": "f1"}"#)];
-        let with_annotations = ReplyInput {
-            annotations: Some(annotations.clone()),
-            ..input
-        };
-        let annotated =
-            build_model_response(AgentReply::default(), &with_annotations, &counter).await;
-        assert_eq!(
-            annotated
-                .choices
-                .first()
-                .and_then(|choice| choice.message.annotations.as_ref()),
-            Some(&annotations)
-        );
-        assert_eq!(
-            annotated.hidden_params,
-            Some(object(r#"{"thread_id": "thread-9"}"#))
-        );
-    });
+fn reply_input<'a>(messages: &'a [Object], annotations: Option<Vec<Object>>) -> ReplyInput<'a> {
+    ReplyInput {
+        model: "azure_ai/agents/a",
+        content: "hello",
+        thread_id: "thread-9",
+        messages,
+        annotations,
+    }
 }
 
-fn test_token_count_warning() {
+fn existing_reply() -> AgentReply {
+    AgentReply {
+        model: None,
+        choices: Vec::new(),
+        hidden_params: Some(object(r#"{"request-id": "r1", "thread_id": "old"}"#)),
+        usage: Some(Usage {
+            prompt_tokens: 1,
+            completion_tokens: 2,
+            total_tokens: 3,
+        }),
+    }
+}
+
+fn existing_usage() -> Usage {
+    Usage {
+        prompt_tokens: 4,
+        completion_tokens: 6,
+        total_tokens: 10,
+    }
+}
+
+fn reply_for(existing: AgentReply, input: &ReplyInput<'_>) -> AgentReply {
+    block_on(build_model_response(
+        existing,
+        input,
+        &FakeCounter::counting(11, 5),
+    ))
+}
+
+fn a_reply_keeps_the_thread_id_and_the_counted_usage() {
+    let input = reply_input(&[], Some(Vec::new()));
+    let reply = reply_for(existing_reply(), &input);
+    assert_eq!(reply.model.as_deref(), Some("azure_ai/agents/a"));
+    assert_eq!(
+        reply.choices,
+        vec![AgentChoice {
+            index: 0,
+            finish_reason: String::from("stop"),
+            message: ReplyMessage {
+                role: String::from("assistant"),
+                content: String::from("hello"),
+                annotations: None,
+            },
+        }]
+    );
+    assert_eq!(
+        reply.hidden_params,
+        Some(object(r#"{"request-id": "r1", "thread_id": "thread-9"}"#))
+    );
+    assert_eq!(
+        reply.usage,
+        Some(Usage {
+            prompt_tokens: 11,
+            completion_tokens: 5,
+            total_tokens: 16,
+        })
+    );
+}
+
+fn an_annotated_reply_stamps_the_thread_id() {
+    let annotations = vec![object(r#"{"type": "file_citation", "file_id": "f1"}"#)];
+    let input = ReplyInput {
+        annotations: Some(annotations.clone()),
+        ..reply_input(&[], None)
+    };
+    let reply = reply_for(AgentReply::default(), &input);
+    assert_eq!(
+        reply
+            .choices
+            .first()
+            .and_then(|choice| choice.message.annotations.as_ref()),
+        Some(&annotations)
+    );
+    assert_eq!(
+        reply.hidden_params,
+        Some(object(r#"{"thread_id": "thread-9"}"#))
+    );
+}
+
+fn test_thread_id_metadata() {
+    a_reply_keeps_the_thread_id_and_the_counted_usage();
+    an_annotated_reply_stamps_the_thread_id();
+}
+
+fn counted_usage_is_recorded() {
     block_on(async {
         let counter = FakeCounter::counting(7, 3);
         let messages = vec![object(r#"{"role": "user", "content": "hi"}"#)];
-        let input = ReplyInput {
-            model: "azure_ai/agents/a",
-            content: "hello",
-            thread_id: "thread-9",
-            messages: &messages,
-            annotations: None,
-        };
-        let (built, counted_warnings) = with_warnings(build_model_response(
+        let input = reply_input(&messages, None);
+        let (built, warnings) = with_warnings(build_model_response(
             AgentReply::default(),
             &input,
             &counter,
         ))
         .await;
-        assert!(counted_warnings.is_empty());
+        assert!(warnings.is_empty());
         assert_eq!(
             counter.records(),
             vec![
@@ -224,72 +247,52 @@ fn test_token_count_warning() {
                 total_tokens: 10,
             })
         );
-
-        let existing = Usage {
-            prompt_tokens: 4,
-            completion_tokens: 6,
-            total_tokens: 10,
-        };
-        let failing = FakeCounter::failing();
-        let (failed, failed_warnings) = with_warnings(build_model_response(
-            AgentReply {
-                model: None,
-                choices: Vec::new(),
-                hidden_params: None,
-                usage: Some(existing),
-            },
-            &input,
-            &failing,
-        ))
-        .await;
-        assert_eq!(failed.usage, Some(existing));
-        assert_eq!(
-            failed_warnings,
-            vec![String::from(
-                "Failed to calculate token usage: either text or messages must be provided"
-            )]
-        );
-        assert_eq!(failing.records().len(), 1);
-
-        let (unreported, _warnings) = with_warnings(build_model_response(
-            AgentReply::default(),
-            &input,
-            &failing,
-        ))
-        .await;
-        assert_eq!(unreported.usage, None);
-
-        let completion_failing = FakeCounter::failing_completion();
-        let (kept, kept_warnings) = with_warnings(build_model_response(
-            AgentReply {
-                model: None,
-                choices: Vec::new(),
-                hidden_params: None,
-                usage: Some(existing),
-            },
-            &input,
-            &completion_failing,
-        ))
-        .await;
-        assert_eq!(kept.usage, Some(existing));
-        assert_eq!(kept_warnings.len(), 1);
-        assert_eq!(completion_failing.records().len(), 2);
-
-        let overflowing = FakeCounter::counting(u64::MAX, 1);
-        let (wrapped, overflow_warnings) = with_warnings(build_model_response(
-            AgentReply {
-                model: None,
-                choices: Vec::new(),
-                hidden_params: None,
-                usage: Some(existing),
-            },
-            &input,
-            &overflowing,
-        ))
-        .await;
-        assert_eq!(wrapped.usage, Some(existing));
-        assert_eq!(overflow_warnings.len(), 1);
     });
+}
+
+fn a_failed_count_keeps_the_given_usage(
+    counter: &FakeCounter,
+    existing: Option<Usage>,
+    calls: usize,
+    warning: &str,
+) {
+    block_on(async {
+        let input = reply_input(&[], None);
+        let starting = AgentReply {
+            model: None,
+            choices: Vec::new(),
+            hidden_params: None,
+            usage: existing,
+        };
+        let (built, warnings) =
+            with_warnings(build_model_response(starting, &input, counter)).await;
+        assert_eq!(built.usage, existing);
+        assert_eq!(warnings, vec![String::from(warning)]);
+        assert_eq!(counter.records().len(), calls);
+    });
+}
+
+fn test_token_count_warning() {
+    counted_usage_is_recorded();
+    a_failed_count_keeps_the_given_usage(&FakeCounter::failing(), None, 1, COUNT_WARNING);
+    a_failed_count_keeps_the_given_usage(
+        &FakeCounter::failing(),
+        Some(existing_usage()),
+        1,
+        COUNT_WARNING,
+    );
+    a_failed_count_keeps_the_given_usage(
+        &FakeCounter::failing_completion(),
+        Some(existing_usage()),
+        2,
+        COUNT_WARNING,
+    );
+    a_failed_count_keeps_the_given_usage(
+        &FakeCounter::counting(u64::MAX, 1),
+        Some(existing_usage()),
+        2,
+        "Failed to calculate token usage: the token count does not fit in a machine word",
+    );
 }
 
 fn test_message_delta_stream() {
@@ -333,24 +336,27 @@ fn test_message_delta_stream() {
     });
 }
 
-fn test_run_terminal_stream() {
+fn terminal_body() -> String {
+    let citation =
+        r#"{"type": "url_citation", "url_citation": {"url": "https://a"}, "start_index": 1}"#;
+    let template = concat!(
+        "event: thread.created\ndata: {\"id\": \"thread_1\"}\n\n",
+        "event: thread.message.delta\n",
+        "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"Hi\"}}]}}\n\n",
+        "event: thread.message.completed\n",
+        "data: {\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"\",\"annotations\":[CITE]}}]}\n\n",
+        "event: run.failed\ndata: {\"error\": \"boom\"}\n\n",
+        "event: thread.message.completed\n",
+        "data: {\"content\":[{\"type\":\"text\",\"text\":{\"annotations\":[CITE]}}]}\n\n",
+        "data: [DONE]\n\n",
+        "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"after\"}}]}}\n\n",
+    );
+    template.replace("CITE", citation)
+}
+
+fn the_terminal_chunk_collects_the_annotations() {
     block_on(async {
-        let citation =
-            r#"{"type": "url_citation", "url_citation": {"url": "https://a"}, "start_index": 1}"#;
-        let template = concat!(
-            "event: thread.created\ndata: {\"id\": \"thread_1\"}\n\n",
-            "event: thread.message.delta\n",
-            "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"Hi\"}}]}}\n\n",
-            "event: thread.message.completed\n",
-            "data: {\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"\",\"annotations\":[CITE]}}]}\n\n",
-            "event: run.failed\ndata: {\"error\": \"boom\"}\n\n",
-            "event: thread.message.completed\n",
-            "data: {\"content\":[{\"type\":\"text\",\"text\":{\"annotations\":[CITE]}}]}\n\n",
-            "data: [DONE]\n\n",
-            "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"after\"}}]}}\n\n",
-        );
-        let full_body = template.replace("CITE", citation);
-        let chunks = chunks_of(stream_for(&full_body).await).await;
+        let chunks = chunks_of(stream_for(&terminal_body()).await).await;
         let annotations = Some(vec![
             object(
                 r#"{"type": "url_citation", "url_citation": {"url": "https://a", "start_index": 1}}"#,
@@ -369,7 +375,11 @@ fn test_run_terminal_stream() {
                 terminal_chunk(annotations, Some(String::from("thread_1"))),
             ]
         );
+    });
+}
 
+fn an_unterminated_stream_yields_only_the_deltas() {
+    block_on(async {
         let unterminated = concat!(
             "event: thread.message.delta\n",
             "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"only\"}}]}}",
@@ -378,14 +388,22 @@ fn test_run_terminal_stream() {
             chunks_of(stream_for(unterminated).await).await,
             vec![delta_chunk("only")]
         );
+    });
+}
 
+fn an_empty_delta_yields_the_terminal_chunk() {
+    block_on(async {
         let empty_delta =
             "event: thread.message.delta\ndata: {\"delta\":{\"content\":[]}}\n\ndata: [DONE]";
         assert_eq!(
             chunks_of(stream_for(empty_delta).await).await,
             vec![terminal_chunk(None, None)]
         );
+    });
+}
 
+fn a_null_thread_id_clears_the_collected_thread() {
+    block_on(async {
         let thread_events = concat!(
             "event: thread.created\ndata: {\"id\": \"thread_2\"}\n\n",
             "event: thread.created\ndata: {\"note\": \"no id\"}\n\n",
@@ -408,21 +426,30 @@ fn test_run_terminal_stream() {
     });
 }
 
+fn test_run_terminal_stream() {
+    the_terminal_chunk_collects_the_annotations();
+    an_unterminated_stream_yields_only_the_deltas();
+    an_empty_delta_yields_the_terminal_chunk();
+    a_null_thread_id_clears_the_collected_thread();
+}
+
 fn test_split_sse_event() {
     block_on(async {
         let crlf = concat!(
             "event: thread.message.delta\r\n\r\n",
-            "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"héllo 世界\"}}]}}\r\n\r\n",
+            "data: {\"delta\":{\"content\":[{\"type\":\"text\",\"text\":{\"value\":\"h\u{e9}llo \u{4e16}\u{754c}\"}}]}}\r\n\r\n",
         );
         let split_at = vec![
             crlf.find("\r\n").expect("a CRLF").saturating_add(1),
-            crlf.find('é').expect("an accent").saturating_add(1),
-            crlf.find('世').expect("a wide character").saturating_add(1),
+            crlf.find('\u{e9}').expect("an accent").saturating_add(1),
+            crlf.find('\u{4e16}')
+                .expect("a wide character")
+                .saturating_add(1),
         ];
         let split = split_bytes(crlf.as_bytes(), &split_at);
         let chunks = chunks_of(stream_for_chunks(split).await).await;
         assert_eq!(chunks, chunks_of(stream_for(crlf).await).await);
-        assert_eq!(chunks, vec![delta_chunk("héllo 世界")]);
+        assert_eq!(chunks, vec![delta_chunk("h\u{e9}llo \u{4e16}\u{754c}")]);
 
         let repeated = concat!(
             "event: thread.message.delta\n\n",
@@ -436,8 +463,8 @@ fn test_split_sse_event() {
     });
 }
 
-fn test_stream_thread_payload() {
-    let headers: Headers = BTreeMap::from([
+fn stream_headers() -> Headers {
+    BTreeMap::from([
         (
             String::from("Authorization"),
             SecretString::from("Bearer secret"),
@@ -446,105 +473,119 @@ fn test_stream_thread_payload() {
             String::from("Content-Type"),
             SecretString::from("application/json"),
         ),
-    ]);
-    let prepared = PreparedAgentCall {
-        headers: headers.clone(),
+    ])
+}
+
+fn prepared_call(thread_id: Option<&str>) -> PreparedAgentCall {
+    PreparedAgentCall {
+        headers: stream_headers(),
         api_version: String::from("2025-05-01"),
         agent_id: String::from("asst_1"),
-        thread_id: None,
+        thread_id: thread_id.map(str::to_owned),
         api_base: String::from("https://base.example/api/projects/p"),
-    };
-    let thread_input = vec![
+    }
+}
+
+fn user_message(content: &str) -> ThreadMessage {
+    ThreadMessage {
+        role: String::from("user"),
+        content: Json::Text(String::from(content)),
+    }
+}
+
+fn thread_input() -> Vec<Object> {
+    vec![
         object(r#"{"role": "user", "content": "hi"}"#),
         object(r#"{"role": "system", "content": "sys"}"#),
         object(r#"{"role": "assistant", "content": "skip"}"#),
         object(r#"{"content": "no role"}"#),
         object(r#"{"role": "tool", "content": "skip"}"#),
         object(r#"{"role": "user"}"#),
-    ];
-    let optional_params = object(r#"{"instructions": "be brief"}"#);
-    let litellm_params = object(r#"{"ssl_verify": false}"#);
-    let fresh = build_stream_request(&prepared, &thread_input, &optional_params, &litellm_params)
-        .expect("a stream request");
+    ]
+}
+
+fn a_fresh_call_maps_the_thread_messages() {
+    let prepared = prepared_call(None);
+    let request = build_stream_request(
+        &prepared,
+        &thread_input(),
+        &object(r#"{"instructions": "be brief"}"#),
+        &object(r#"{"ssl_verify": false}"#),
+    )
+    .expect("a stream request");
     assert_eq!(
-        fresh.url,
+        request.url,
         "https://base.example/api/projects/p/threads/runs?api-version=2025-05-01"
     );
-    assert_eq!(shown_headers(&fresh.headers), shown_headers(&headers));
-    assert_eq!(fresh.ssl_verify, Json::Bool(false));
     assert_eq!(
-        fresh.payload,
+        shown_headers(&request.headers),
+        shown_headers(&prepared.headers)
+    );
+    assert_eq!(request.ssl_verify, Json::Bool(false));
+    assert_eq!(
+        request.payload,
         StreamPayload {
             assistant_id: String::from("asst_1"),
             stream: true,
             thread: Some(ThreadPayload {
-                messages: vec![
-                    ThreadMessage {
-                        role: String::from("user"),
-                        content: Json::Text(String::from("hi")),
-                    },
-                    ThreadMessage {
-                        role: String::from("user"),
-                        content: Json::Text(String::from("sys")),
-                    },
-                    ThreadMessage {
-                        role: String::from("user"),
-                        content: Json::Text(String::new()),
-                    },
-                ],
+                messages: vec![user_message("hi"), user_message("sys"), user_message("")],
             }),
             instructions: Some(Json::Text(String::from("be brief"))),
         }
     );
+}
 
-    let existing = PreparedAgentCall {
-        thread_id: Some(String::from("thread-7")),
-        ..prepared.clone()
-    };
-    let existing_request = build_stream_request(
-        &existing,
-        &thread_input,
+fn an_existing_thread_is_reused() {
+    let prepared = prepared_call(Some("thread-7"));
+    let request = build_stream_request(
+        &prepared,
+        &thread_input(),
         &object("{}"),
         &object(r#"{"ssl_verify": null}"#),
     )
     .expect("a stream request");
-    assert!(existing_request.payload.thread.is_none());
-    assert!(existing_request.payload.instructions.is_none());
-    assert_eq!(existing_request.ssl_verify, Json::Null);
+    assert!(request.payload.thread.is_none());
+    assert!(request.payload.instructions.is_none());
+    assert_eq!(request.ssl_verify, Json::Null);
     assert_eq!(
-        serde_json::to_string(&existing_request.payload).expect("the payload"),
+        serde_json::to_string(&request.payload).expect("the payload"),
         r#"{"assistant_id":"asst_1","stream":true}"#
     );
+}
 
-    let empty = PreparedAgentCall {
-        thread_id: Some(String::new()),
-        ..prepared
-    };
-    let empty_thread_request = build_stream_request(
-        &empty,
-        &thread_input,
+fn an_empty_thread_id_creates_the_thread() {
+    let prepared = prepared_call(Some(""));
+    let request = build_stream_request(
+        &prepared,
+        &thread_input(),
         &object(r#"{"instructions": null}"#),
         &object("{}"),
     )
     .expect("a stream request");
     assert_eq!(
-        empty_thread_request
+        request
             .payload
             .thread
             .as_ref()
             .map(|thread| thread.messages.len()),
         Some(3)
     );
-    assert_eq!(empty_thread_request.payload.instructions, Some(Json::Null));
-    assert_eq!(empty_thread_request.ssl_verify, Json::Null);
+    assert_eq!(request.payload.instructions, Some(Json::Null));
+    assert_eq!(request.ssl_verify, Json::Null);
     assert_eq!(
-        serde_json::to_string(&empty_thread_request.payload).expect("the payload"),
+        serde_json::to_string(&request.payload).expect("the payload"),
         concat!(
             r#"{"assistant_id":"asst_1","stream":true,"thread":{"messages":["#,
             r#"{"role":"user","content":"hi"},{"role":"user","content":"sys"},"#,
             r#"{"role":"user","content":""}]},"instructions":null}"#,
         )
     );
+}
+
+fn test_stream_thread_payload() {
+    a_fresh_call_maps_the_thread_messages();
+    an_existing_thread_is_reused();
+    an_empty_thread_id_creates_the_thread();
 }
 
 fn test_stream_status_failure() {

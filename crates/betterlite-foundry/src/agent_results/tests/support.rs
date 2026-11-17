@@ -15,7 +15,9 @@ use betterlite_tokenizer::count::error::CountError;
 use futures_util::stream::{BoxStream, iter};
 use futures_util::{Stream, StreamExt as _};
 use secrecy::ExposeSecret as _;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 use uuid::Uuid;
@@ -136,7 +138,7 @@ pub(super) fn block_on<Output, Fut>(future: Fut) -> Output
 where
     Fut: Future<Output = Output>,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime")
@@ -282,7 +284,7 @@ where
 {
     let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let output = future.await;
     drop(guard);
     (output, captured.messages())

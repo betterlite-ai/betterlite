@@ -67,8 +67,7 @@ fn a_transport_error_is_reported_once_and_ends_the_stream() {
             .next()
             .await
             .expect("a failure")
-            .err()
-            .expect("an error");
+            .expect_err("an error");
         assert!(matches!(error, AgentResultError::Body(HttpError::Timeout)));
         assert_eq!(
             error.to_string(),
@@ -99,8 +98,7 @@ fn a_line_at_the_limit_is_kept_and_one_past_it_fails() {
             .next()
             .await
             .expect("a failure")
-            .err()
-            .expect("an error");
+            .expect_err("an error");
         assert_eq!(
             error.to_string(),
             format!("a streaming response line is longer than {MAX_LINE_BYTES} bytes")
