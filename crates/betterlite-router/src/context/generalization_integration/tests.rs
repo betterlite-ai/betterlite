@@ -53,6 +53,15 @@ fn spec(model: &str, provider: Option<&str>, model_info: JsonObject) -> Deployme
     }
 }
 
+fn with_provider(provider: &str) -> JsonObject {
+    let mut model_info = JsonObject::new();
+    model_info.insert(
+        String::from("litellm_provider"),
+        Json::Text(provider.to_owned()),
+    );
+    model_info
+}
+
 async fn filled_by(services: &dyn RouteServices, spec: DeploymentSpec) -> DeploymentSpec {
     let facts = RequestFacts::default();
     let request = route_request("gpt-4o", &facts);
@@ -84,19 +93,89 @@ async fn a_routing_rule_supplies_a_missing_provider() {
 }
 
 #[tokio::test]
-async fn an_exact_provider_skips_the_routing_rules() {
+async fn an_exact_params_provider_skips_the_routing_rules() {
     let service = installed(ROUTING);
     let filled = filled_by(&service, spec("acme-1", Some("openai"), JsonObject::new())).await;
     assert!(filled.model_info.get("litellm_provider").is_none());
 }
 
 #[tokio::test]
-async fn an_empty_provider_still_takes_the_routing_rule() {
+async fn an_empty_params_provider_still_takes_the_routing_rule() {
     let service = installed(ROUTING);
     let filled = filled_by(&service, spec("acme-1", Some(""), JsonObject::new())).await;
     assert_eq!(
         filled.model_info.get("litellm_provider"),
         Some(&Json::Text(String::from("acme")))
+    );
+}
+
+#[tokio::test]
+async fn an_empty_model_info_provider_takes_the_routing_rule() {
+    let service = installed(ROUTING);
+    let filled = filled_by(&service, spec("acme-1", None, with_provider(""))).await;
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("acme")))
+    );
+}
+
+#[tokio::test]
+async fn a_model_info_provider_keeps_the_rules_off_itself() {
+    let service = installed(ROUTING);
+    let filled = filled_by(&service, spec("acme-1", None, with_provider("openai"))).await;
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("openai")))
+    );
+}
+
+#[tokio::test]
+async fn the_params_provider_wins_over_the_model_info_provider() {
+    let service = installed(OPENAI_FILL);
+    let filled = filled_by(
+        &service,
+        spec("gemini-2", Some("openai"), with_provider("azure")),
+    )
+    .await;
+    assert_eq!(
+        filled.model_info.get("supports_pdf"),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("azure")))
+    );
+}
+
+#[tokio::test]
+async fn an_empty_params_provider_falls_to_the_model_info_provider() {
+    let service = installed(ROUTE_THEN_FILL);
+    let filled = filled_by(
+        &service,
+        spec("gemini-2", Some(""), with_provider("vertex_ai")),
+    )
+    .await;
+    assert_eq!(
+        filled.model_info.get("supports_pdf"),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("vertex_ai")))
+    );
+}
+
+#[tokio::test]
+async fn a_model_info_provider_takes_the_fill_rules_without_a_params_provider() {
+    let service = installed(ROUTE_THEN_FILL);
+    let filled = filled_by(&service, spec("gemini-2", None, with_provider("vertex_ai"))).await;
+    assert_eq!(
+        filled.model_info.get("supports_pdf"),
+        Some(&Json::Bool(true))
+    );
+    assert_eq!(
+        filled.model_info.get("litellm_provider"),
+        Some(&Json::Text(String::from("vertex_ai")))
     );
 }
 
@@ -146,41 +225,6 @@ async fn the_deployment_keeps_the_values_it_declares() {
         Some(&Json::Bool(true))
     );
     assert_eq!(filled.model_info.get("max_tokens"), Some(&Json::Null));
-}
-
-#[tokio::test]
-async fn an_empty_model_info_provider_falls_to_the_params_provider() {
-    let service = installed(ROUTE_THEN_FILL);
-    let mut model_info = JsonObject::new();
-    model_info.insert(String::from("litellm_provider"), Json::Text(String::new()));
-    let filled = filled_by(&service, spec("gemini-2", Some("vertex_ai"), model_info)).await;
-    assert_eq!(
-        filled.model_info.get("supports_pdf"),
-        Some(&Json::Bool(true))
-    );
-    assert_eq!(
-        filled.model_info.get("litellm_provider"),
-        Some(&Json::Text(String::new()))
-    );
-}
-
-#[tokio::test]
-async fn the_model_info_provider_wins_over_the_params_provider() {
-    let service = installed(OPENAI_FILL);
-    let mut model_info = JsonObject::new();
-    model_info.insert(
-        String::from("litellm_provider"),
-        Json::Text(String::from("openai")),
-    );
-    let filled = filled_by(&service, spec("gemini-2", Some("vertex_ai"), model_info)).await;
-    assert_eq!(
-        filled.model_info.get("supports_pdf"),
-        Some(&Json::Bool(true))
-    );
-    assert_eq!(
-        filled.model_info.get("litellm_provider"),
-        Some(&Json::Text(String::from("openai")))
-    );
 }
 
 #[tokio::test]

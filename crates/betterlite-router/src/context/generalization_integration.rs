@@ -57,21 +57,20 @@ fn filled(
             deployment.model_info.entry(key).or_insert(json);
         }
     }
-    // a deployment without a provider takes the first routing rule's, as get_llm_provider does
+    // a deployment without a provider takes the rule-resolved one, as get_llm_provider hands it the request
     if declared.is_none()
         && let Some(provider) = resolved.answer
     {
         deployment
             .model_info
-            .entry(String::from("litellm_provider"))
-            .or_insert(Json::Text(provider));
+            .insert(String::from("litellm_provider"), Json::Text(provider));
     }
     deployment
 }
 
-// litellm_provider on the deployment wins over custom_llm_provider, and an empty one names no provider
+// custom_llm_provider is the explicit provider and litellm_provider the one the deployment resolved to
 fn declared_provider(deployment: &DeploymentSpec) -> Option<&str> {
-    let from_info = match deployment.model_info.get("litellm_provider") {
+    let from_params = match deployment.litellm_params.get("custom_llm_provider") {
         Some(Json::Text(provider)) if !provider.is_empty() => Some(provider.as_str()),
         Some(
             Json::Null
@@ -83,18 +82,16 @@ fn declared_provider(deployment: &DeploymentSpec) -> Option<&str> {
         )
         | None => None,
     };
-    from_info.or_else(
-        || match deployment.litellm_params.get("custom_llm_provider") {
-            Some(Json::Text(provider)) if !provider.is_empty() => Some(provider.as_str()),
-            Some(
-                Json::Null
-                | Json::Bool(_)
-                | Json::Number(_)
-                | Json::Text(_)
-                | Json::List(_)
-                | Json::Object(_),
-            )
-            | None => None,
-        },
-    )
+    from_params.or_else(|| match deployment.model_info.get("litellm_provider") {
+        Some(Json::Text(provider)) if !provider.is_empty() => Some(provider.as_str()),
+        Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
+        | None => None,
+    })
 }
