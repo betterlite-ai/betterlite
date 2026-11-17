@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-predict-multimodal-embedding
+call:
+  b3639:
+    operation: predict
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/demo/locations/us-central1/publishers/google/models/multimodalembedding@001:predict
+    status: 200
+    body:
+      predictions:
+        - textEmbedding: [1, 2]
+    request_body: null
+env: {}
+compare: {ignore: []}
