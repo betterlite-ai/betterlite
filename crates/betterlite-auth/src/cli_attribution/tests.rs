@@ -212,6 +212,7 @@ fn build_prefers_extra_fields_before_the_identity_document() {
 
 #[test]
 fn build_skips_unsafe_destinations_and_values() {
+    let events = Errors::capture();
     let metadata = builds(
         r#"{"jwt_claim": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature", "plain": "eyJhbGciOiJIUzI1NiJ9", "safe": "value", "note": "shown"}"#,
         "jwt_claim->token_note,plain->token_shape_ok,safe->api_key,note->secret_santa",
@@ -220,6 +221,13 @@ fn build_skips_unsafe_destinations_and_values() {
         metadata,
         document(r#"{"token_shape_ok": "eyJhbGciOiJIUzI1NiJ9"}"#)
     );
+    assert_eq!(events.debug_count(), 2);
+}
+
+#[test]
+fn build_stops_traversal_at_a_scalar_parent() {
+    let metadata = builds(r#"{"org_info": "acme"}"#, "org_info.department->dept");
+    assert!(metadata.is_empty());
 }
 
 #[test]
@@ -382,33 +390,62 @@ fn user_metadata_row_reports_unreadable_column_text() {
     ));
 }
 
-struct ErrorCounter(Arc<AtomicUsize>);
+struct LevelCounter {
+    level: tracing::Level,
+    count: Arc<AtomicUsize>,
+}
 
-impl<S: Subscriber> Layer<S> for ErrorCounter {
+impl<S: Subscriber> Layer<S> for LevelCounter {
     fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
-        if event.metadata().level() == &tracing::Level::ERROR {
-            self.0.fetch_add(1, Ordering::Relaxed);
+        if *event.metadata().level() == self.level {
+            self.count.fetch_add(1, Ordering::Relaxed);
         }
     }
 }
 
 struct Errors {
-    count: Arc<AtomicUsize>,
+    errors: Arc<AtomicUsize>,
+    infos: Arc<AtomicUsize>,
+    debugs: Arc<AtomicUsize>,
     _guard: DefaultGuard,
 }
 
 impl Errors {
     fn capture() -> Self {
-        let count = Arc::new(AtomicUsize::new(0));
-        let subscriber = tracing_subscriber::registry().with(ErrorCounter(Arc::clone(&count)));
+        let errors = Arc::new(AtomicUsize::new(0));
+        let infos = Arc::new(AtomicUsize::new(0));
+        let debugs = Arc::new(AtomicUsize::new(0));
+        let subscriber = tracing_subscriber::registry()
+            .with(LevelCounter {
+                level: tracing::Level::ERROR,
+                count: Arc::clone(&errors),
+            })
+            .with(LevelCounter {
+                level: tracing::Level::INFO,
+                count: Arc::clone(&infos),
+            })
+            .with(LevelCounter {
+                level: tracing::Level::DEBUG,
+                count: Arc::clone(&debugs),
+            });
         Self {
-            count,
+            errors,
+            infos,
+            debugs,
             _guard: set_default(subscriber),
         }
     }
 
     fn count(&self) -> usize {
-        self.count.load(Ordering::Relaxed)
+        self.errors.load(Ordering::Relaxed)
+    }
+
+    fn info_count(&self) -> usize {
+        self.infos.load(Ordering::Relaxed)
+    }
+
+    fn debug_count(&self) -> usize {
+        self.debugs.load(Ordering::Relaxed)
     }
 }
 
@@ -522,6 +559,7 @@ async fn persist_merges_attribution_into_the_stored_user_metadata() {
         r#"{"employment_type": "full_time", "region": "us"}"#,
         "employment_type->acme_employment_type,region->profile.region",
     );
+    let events = Errors::capture();
     persist_attribution_metadata(&postgres, "cli-user", &attribution).await;
     assert_eq!(
         document(&stored_metadata(&postgres, "cli-user").await),
@@ -530,6 +568,7 @@ async fn persist_merges_attribution_into_the_stored_user_metadata() {
         )
     );
     close(fixture, postgres).await;
+    assert!(events.info_count() >= 1);
 }
 
 #[tokio::test]
