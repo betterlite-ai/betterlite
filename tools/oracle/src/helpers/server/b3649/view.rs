@@ -70,8 +70,8 @@ fn outcome_text(outcome: &HandlerOutcome) -> Option<String> {
         return None;
     };
     match &response.response {
-        Json::Object(entries) => text_entry(entries, "response"),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        Json::Text(text) => Some(text.clone()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) | Json::List(_) => None,
     }
 }
 
