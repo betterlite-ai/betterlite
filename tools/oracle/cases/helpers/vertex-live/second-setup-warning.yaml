@@ -1,0 +1,41 @@
+kind: helper
+name: second-setup-warning
+call:
+  vertex_live:
+    calls:
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad, create_response: false}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        message:
+          type: session.update
+          session:
+            audio:
+              input:
+                turn_detection: {type: server_vad, create_response: false}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        session_configuration_request: stored
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad}
+      - op: transform
+        session: {project: my-project, location: us-central1, access_token: ya29.token}
+        model: gemini-2.5-flash
+        session_configuration_request: ""
+        message:
+          type: session.update
+          session:
+            turn_detection: {type: server_vad, create_response: false}
+env: {}
+compare: {ignore: []}
