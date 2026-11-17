@@ -3,6 +3,7 @@
 mod context;
 mod convert;
 mod duplex;
+mod handler;
 mod legacy;
 mod progress;
 mod server;
