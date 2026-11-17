@@ -12,7 +12,7 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use uuid::Uuid;
 
@@ -42,10 +42,6 @@ pub(crate) struct Silent;
 
 impl LogSink for Silent {
     fn emit(&self, _record: LogRecord) {}
-}
-
-pub(crate) fn redactor() -> Result<Redactor, Box<HelperError>> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()
 }
 
 pub(crate) fn logging_state(redactor: &Redactor) -> Result<LoggingState, Box<HelperError>> {

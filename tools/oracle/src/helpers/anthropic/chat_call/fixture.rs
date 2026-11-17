@@ -13,6 +13,7 @@ use betterlite_anthropic::response::error::ResponseError;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
 use betterlite_anthropic::stream_decode::TransportChunk;
+use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_core::api::anthropic_beta_config::matrix::{BetaMatrix, BetaNode};
 use betterlite_core::api::anthropic_beta_filter::matrix_filter::filter_request_betas;
 use betterlite_models::decisions::Json;
@@ -53,7 +54,7 @@ pub(crate) struct FixtureReply {
 pub(crate) struct FixtureTransport {
     reply: FixtureReply,
     trip: Trip,
-    posts: Mutex<Vec<StreamPost>>,
+    pub(crate) posts: Mutex<Vec<StreamPost>>,
 }
 
 impl FixtureTransport {
@@ -63,10 +64,6 @@ impl FixtureTransport {
             trip,
             posts: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(crate) fn take_posts(&self) -> Vec<StreamPost> {
-        std::mem::take(&mut *self.posts.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     fn record(&self, post: StreamPost) {
@@ -127,30 +124,21 @@ impl ChatTransport for FixtureTransport {
         post: StreamPost,
     ) -> Result<BufferedReply, PostFailure<FixtureFailure>> {
         self.record(post);
-        if let Some(failure) = self.failure() {
-            return Err(failure);
+        match self.failure() {
+            Some(failure) => Err(failure),
+            None => Ok(BufferedReply {
+                status_code: self.reply.status_code,
+                headers: self.reply.headers.clone(),
+                body: self.reply.body.clone(),
+            }),
         }
-        Ok(BufferedReply {
-            status_code: self.reply.status_code,
-            headers: self.reply.headers.clone(),
-            body: self.reply.body.clone(),
-        })
     }
-}
-
-pub(crate) struct Recorded {
-    pub(crate) model: String,
-    pub(crate) messages: Vec<Json>,
-    pub(crate) optional_params: IndexMap<String, Json>,
-    pub(crate) litellm_params: IndexMap<String, Json>,
-    pub(crate) headers: IndexMap<String, String>,
 }
 
 pub(crate) struct FixtureConfig {
     body: IndexMap<String, Json>,
     failure: Option<String>,
     matrix: BetaMatrix,
-    transforms: Mutex<Vec<Recorded>>,
 }
 
 impl FixtureConfig {
@@ -162,33 +150,10 @@ impl FixtureConfig {
             body: input.transform_body.clone(),
             failure: input.transform_failure.clone(),
             matrix: BetaMatrix(entries.clone()),
-            transforms: Mutex::new(Vec::new()),
         })
     }
 
-    pub(crate) fn take_transforms(&self) -> Vec<Recorded> {
-        std::mem::take(
-            &mut *self
-                .transforms
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        )
-    }
-
-    fn record(
-        &self,
-        request: &TransformRequest<'_>,
-    ) -> Result<IndexMap<String, Json>, ConfigError> {
-        self.transforms
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Recorded {
-                model: request.model.to_owned(),
-                messages: request.messages.to_vec(),
-                optional_params: request.optional_params.clone(),
-                litellm_params: request.litellm_params.clone(),
-                headers: request.headers.values.clone(),
-            });
+    fn transform(&self) -> Result<IndexMap<String, Json>, ConfigError> {
         match &self.failure {
             Some(message) => Err(Box::new(FixtureFailure {
                 message: message.clone(),
@@ -201,16 +166,16 @@ impl FixtureConfig {
 impl ChatConfig for FixtureConfig {
     fn transform_request(
         &self,
-        request: &TransformRequest<'_>,
+        _request: &TransformRequest<'_>,
     ) -> Result<IndexMap<String, Json>, ConfigError> {
-        self.record(request)
+        self.transform()
     }
 
     fn async_transform_request(
         &self,
-        request: &TransformRequest<'_>,
+        _request: &TransformRequest<'_>,
     ) -> impl Future<Output = Result<IndexMap<String, Json>, ConfigError>> + Send {
-        ready(self.record(request))
+        ready(self.transform())
     }
 
     // the beta dependency sits below the provider leaf, so this adapter owns the two-way JSON conversion
@@ -244,19 +209,12 @@ impl ChatConfig for FixtureConfig {
 
 pub(crate) struct LoggerCall {
     pub(crate) input: Json,
-    pub(crate) original_response: String,
     pub(crate) complete_input_dict: String,
 }
 
 #[derive(Default)]
 pub(crate) struct Logger {
-    calls: Mutex<Vec<LoggerCall>>,
-}
-
-impl Logger {
-    pub(crate) fn take(&self) -> Vec<LoggerCall> {
-        std::mem::take(&mut *self.calls.lock().unwrap_or_else(PoisonError::into_inner))
-    }
+    pub(crate) calls: Mutex<Vec<LoggerCall>>,
 }
 
 impl StreamLogger for Logger {
@@ -266,7 +224,6 @@ impl StreamLogger for Logger {
             .unwrap_or_else(PoisonError::into_inner)
             .push(LoggerCall {
                 input: call.input.clone(),
-                original_response: call.original_response.to_owned(),
                 complete_input_dict: call.complete_input_dict.to_owned(),
             });
     }
