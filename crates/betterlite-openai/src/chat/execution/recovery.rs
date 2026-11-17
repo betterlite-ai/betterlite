@@ -1,39 +1,67 @@
+use std::time::{Duration, Instant};
+
 use betterlite_http::proxy::UpstreamResponse;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use serde_json::{Map, Value};
 
-use super::{ChatError, ChatExecutor, ChatOutcome, ChatStream, Upstream};
+use super::transport_failure::http_failure;
+use super::{ChatError, ChatExecutor, ChatOutcome};
 use crate::chat::ChatRequest;
+use crate::chat::deployment::ChatDeployment;
 use crate::chat::response::ChatResponse;
 use crate::output_limits::build::{RecoveredBody, Recovery, build_output_token_limit_response};
 use crate::output_limits::tokens::TokenizerPromptTokens;
 use crate::output_limits::{
     ErrorBody, drop_params_from_unprocessable_entity_error, is_output_token_limit_error,
 };
+use crate::stream::ChatStream;
 
 impl ChatExecutor {
+    // one buffered provider exchange with the time it took, which a recovered reply keeps
+    pub(super) async fn buffered_attempt(
+        &self,
+        deployment: &ChatDeployment,
+        accept: &'static str,
+        body: &Map<String, Value>,
+    ) -> Result<(UpstreamResponse, Duration), ChatError> {
+        let outbound = self.outbound(deployment, accept, body)?;
+        let client = self.client_for(deployment);
+        let started = Instant::now();
+        let upstream = client
+            .send_following(outbound)
+            .await
+            .map_err(http_failure)?
+            .buffered(client.limits.body_bytes)
+            .await
+            .map_err(http_failure)?;
+        Ok((upstream, started.elapsed()))
+    }
+
     // a 400 that matches the marker is repaired, and any other failing status travels on to the client
     pub(super) async fn buffered_outcome(
         &self,
         request: &ChatRequest,
         body: &Map<String, Value>,
-        upstream: Upstream,
+        upstream: UpstreamResponse,
+        upstream_time: Duration,
     ) -> Result<ChatOutcome, ChatError> {
-        if upstream.response.status == 400 && output_limit_reached(&upstream.response.body) {
-            return self.recovered_outcome(request, body, upstream).await;
+        if upstream.status == 400 && output_limit_reached(&upstream.body) {
+            return self
+                .recovered_outcome(request, body, upstream, upstream_time)
+                .await;
         }
-        if upstream.response.status >= 400 {
+        if upstream.status >= 400 {
             return Err(ChatError::Provider {
-                response: Box::new(upstream.response),
+                response: Box::new(upstream),
             });
         }
-        let decoded: ChatResponse = serde_json::from_slice(&upstream.response.body)
+        let decoded: ChatResponse = serde_json::from_slice(&upstream.body)
             .map_err(|source| ChatError::Decode { source })?;
         Ok(ChatOutcome {
             response: decoded.for_client(request.model.as_deref()),
-            upstream: upstream.response,
-            upstream_time: upstream.time,
+            upstream,
+            upstream_time,
         })
     }
 
@@ -42,17 +70,18 @@ impl ChatExecutor {
         &self,
         request: &ChatRequest,
         body: &Map<String, Value>,
-        upstream: Upstream,
+        upstream: UpstreamResponse,
+        upstream_time: Duration,
     ) -> Result<ChatOutcome, ChatError> {
+        let tokens = TokenizerPromptTokens;
         let injected = Recovery {
             clock: self.clock,
             next_id: self.next_id,
-            tokens: &TokenizerPromptTokens,
+            tokens: &tokens,
         };
-        let recovered =
-            build_output_token_limit_response(body, upstream.response.headers, &injected)
-                .await
-                .map_err(|source| ChatError::OutputLimit { source })?;
+        let recovered = build_output_token_limit_response(body, upstream.headers, &injected)
+            .await
+            .map_err(|source| ChatError::OutputLimit { source })?;
         let RecoveredBody::Completion(completion) = recovered.body else {
             return Err(ChatError::Streaming);
         };
@@ -63,7 +92,7 @@ impl ChatExecutor {
                 headers: recovered.headers,
                 body: Vec::new(),
             },
-            upstream_time: upstream.time,
+            upstream_time,
         })
     }
 
@@ -86,10 +115,11 @@ impl ChatExecutor {
         body: &Map<String, Value>,
         upstream: UpstreamResponse,
     ) -> Result<ChatStream, ChatError> {
+        let tokens = TokenizerPromptTokens;
         let injected = Recovery {
             clock: self.clock,
             next_id: self.next_id,
-            tokens: &TokenizerPromptTokens,
+            tokens: &tokens,
         };
         let recovered = build_output_token_limit_response(body, upstream.headers, &injected)
             .await
