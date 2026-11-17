@@ -1,5 +1,5 @@
 import os
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Final, Protocol, cast
@@ -30,18 +30,18 @@ class Dumpable(Protocol):
 class AzurePassthroughConfigView(Protocol):
     def is_streaming_request(self, endpoint: str, request_data: dict[str, Json]) -> bool: ...
 
-    def get_complete_url(
+    def get_complete_url(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L109-L140
         self, api_base: str | None, api_key: str | None, model: str, endpoint: str,
         request_query_params: dict[str, Json] | None, litellm_params: dict[str, Json],
     ) -> tuple[httpx.URL, str]: ...
 
-    def validate_environment(
+    def validate_environment(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L142-L155
         self, headers: dict[str, str], model: str, messages: list[Json],
         optional_params: dict[str, Json], litellm_params: dict[str, Json],
         api_key: str | None = None,
     ) -> dict[str, str]: ...
 
-    def logging_non_streaming_response(
+    def logging_non_streaming_response(  # noqa: PLR0913, PLR0917, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L207
         self, model: str, custom_llm_provider: str, httpx_response: httpx.Response,
         request_data: dict[str, Json], logging_obj: Logging, endpoint: str,
     ) -> Dumpable | None: ...
@@ -52,7 +52,7 @@ class AzurePassthroughConfigView(Protocol):
     ) -> Dumpable | None: ...
 
 
-CONFIG: Final[AzurePassthroughConfigView] = cast(AzurePassthroughConfigView, AzurePassthroughConfig())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L105-L231
+CONFIG: Final[AzurePassthroughConfigView] = cast(AzurePassthroughConfigView, AzurePassthroughConfig())  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L105-L231
 
 
 class LoggingView(BaseModel):
@@ -96,38 +96,43 @@ def changed_call_type(logging_obj: Logging) -> str | None:
     return None if call_type == steps.PASSTHROUGH_CALL_TYPE else call_type
 
 
-def inference_report(payload: dict[str, Json]) -> Json:
-    return {
-        "steps": [
-            {
-                "inference": is_azure_body_model_inference_endpoint(step.endpoint),
-                "streaming": CONFIG.is_streaming_request(step.endpoint, step.request_data),
-            }
-            for step in steps.INFERENCE_STEPS.validate_python(payload["inference_steps"])
-        ]
-    }
+def inference_views(payload: dict[str, Json]) -> list[Json]:
+    return [
+        {
+            "inference": is_azure_body_model_inference_endpoint(step.endpoint),
+            "streaming": CONFIG.is_streaming_request(step.endpoint, step.request_data),
+        }
+        for step in steps.INFERENCE_STEPS.validate_python(payload["inference_steps"])
+    ]
 
 
-def router_report(payload: dict[str, Json]) -> Json:
-    return {
-        "steps": [
-            {"model": azure_router_model_in_endpoint(step.endpoint, step.router_models)}
-            for step in steps.ROUTER_STEPS.validate_python(payload["router_steps"])
-        ]
-    }
+def router_views(payload: dict[str, Json]) -> list[Json]:
+    return [
+        {"model": azure_router_model_in_endpoint(step.endpoint, step.router_models)}
+        for step in steps.ROUTER_STEPS.validate_python(payload["router_steps"])
+    ]
 
 
-def deployment_report(payload: dict[str, Json]) -> Json:
-    return {
-        "steps": [
-            {
-                "deployment": foreign_azure_deployment(
-                    step.endpoint, step.model_group, step.served_models.copy
-                )
-            }
-            for step in steps.DEPLOYMENT_STEPS.validate_python(payload["deployment_steps"])
-        ]
-    }
+def deployment_views(payload: dict[str, Json]) -> list[Json]:
+    views: list[Json] = []
+    for step in steps.DEPLOYMENT_STEPS.validate_python(payload["deployment_steps"]):
+        deployment = foreign_azure_deployment(
+            step.endpoint, step.model_group, step.served_models.copy
+        )
+        views.append({"deployment": deployment})
+    return views
+
+
+STEP_VIEWS: Final[dict[str, Callable[[dict[str, Json]], list[Json]]]] = {
+    "body_model_inference_endpoint": inference_views,
+    "router_model_in_path": router_views,
+    "foreign_deployment": deployment_views,
+}
+
+
+def step_report(payload: dict[str, Json]) -> Json:
+    function = steps.FUNCTION.validate_python(payload["function"])
+    return {"steps": STEP_VIEWS[function](payload)}
 
 
 def url_step(step: steps.UrlStep) -> Json:
@@ -164,33 +169,33 @@ def stream_report(payload: dict[str, Json]) -> Json:
     return {"steps": outcomes}
 
 
+def relay_step(step: steps.RelayStep) -> Json:
+    RECORDED.clear()
+    logging_obj = logging_obj_for(step.model)
+    if step.model_call_details is not None:
+        details: dict[str, Json] = logging_obj.model_call_details
+        details.update(step.model_call_details)
+    logged = CONFIG.handle_logging_collected_chunks(
+        all_chunks=step.chunks,
+        litellm_logging_obj=logging_obj,
+        model=step.model,
+        custom_llm_provider="azure",
+        endpoint=step.endpoint,
+    )
+    return {
+        "called": bool(RECORDED),
+        "result": logged is not None,
+        "model": step.model,
+        "messages": RECORDED[0] if RECORDED else None,
+        "call_type": changed_call_type(logging_obj),
+    }
+
+
 def relay_report(payload: dict[str, Json]) -> Json:
     # LiteLLM looks the assembler up on its module at call time, so the recorder covers every step
     litellm.stream_chunk_builder = record_stream_chunk_builder
-    outcomes: list[Json] = []
-    for step in steps.RELAY_STEPS.validate_python(payload["relay_steps"]):
-        RECORDED.clear()
-        logging_obj = logging_obj_for(step.model)
-        if step.model_call_details is not None:
-            details: dict[str, Json] = logging_obj.model_call_details
-            details.update(step.model_call_details)
-        logged = CONFIG.handle_logging_collected_chunks(
-            all_chunks=step.chunks,
-            litellm_logging_obj=logging_obj,
-            model=step.model,
-            custom_llm_provider="azure",
-            endpoint=step.endpoint,
-        )
-        outcomes.append(
-            {
-                "called": bool(RECORDED),
-                "result": logged is not None,
-                "model": step.model,
-                "messages": RECORDED[0] if RECORDED else None,
-                "call_type": changed_call_type(logging_obj),
-            }
-        )
-    return {"steps": outcomes}
+    relay_steps = steps.RELAY_STEPS.validate_python(payload["relay_steps"])
+    return {"steps": [relay_step(step) for step in relay_steps]}
 
 
 def nonstream_report(payload: dict[str, Json]) -> Json:
@@ -250,32 +255,26 @@ def validation_step(step: steps.ValidationStep) -> Json:
 
 
 def auth_report(payload: dict[str, Json]) -> Json:
+    keys = steps.KEY_STEPS.validate_python(payload["key_steps"])
+    validations = steps.VALIDATION_STEPS.validate_python(payload["validation_steps"])
     return {
-        "api_keys": [
-            key_step(step) for step in steps.KEY_STEPS.validate_python(payload["key_steps"])
-        ],
-        "headers": [
-            validation_step(step)
-            for step in steps.VALIDATION_STEPS.validate_python(payload["validation_steps"])
-        ],
+        "api_keys": [key_step(step) for step in keys],
+        "headers": [validation_step(step) for step in validations],
     }
 
 
+REPORTS: Final[dict[str, Callable[[dict[str, Json]], Json]]] = {
+    "api_version_removal": removal_report,
+    "passthrough_auth_inputs": auth_report,
+    "body_model_inference_endpoint": step_report,
+    "router_model_in_path": step_report,
+    "foreign_deployment": step_report,
+    "responses_stream_log": stream_report,
+    "messages_relay_log": relay_report,
+    "nonstream_usage": nonstream_report,
+}
+
+
 def run(input_value: dict[str, Json]) -> Json:
-    if input_value["function"] == "api_version_removal":
-        report = removal_report(input_value)
-    elif input_value["function"] == "passthrough_auth_inputs":
-        report = auth_report(input_value)
-    elif input_value["function"] == "body_model_inference_endpoint":
-        report = inference_report(input_value)
-    elif input_value["function"] == "router_model_in_path":
-        report = router_report(input_value)
-    elif input_value["function"] == "foreign_deployment":
-        report = deployment_report(input_value)
-    elif input_value["function"] == "responses_stream_log":
-        report = stream_report(input_value)
-    elif input_value["function"] == "messages_relay_log":
-        report = relay_report(input_value)
-    else:
-        report = nonstream_report(input_value)
-    return report
+    function = steps.FUNCTION.validate_python(input_value["function"])
+    return REPORTS[function](input_value)

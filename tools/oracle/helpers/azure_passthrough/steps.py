@@ -10,6 +10,7 @@ STREAM_MODEL: Final = "gpt-4o"
 ENVIRONMENT: Final = ("AZURE_API_BASE", "AZURE_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_AD_TOKEN")
 
 JSON: TypeAdapter[Json] = TypeAdapter(Json)
+FUNCTION: TypeAdapter[str] = TypeAdapter(str)
 ADDITIONAL: TypeAdapter[dict[str, Json] | None] = TypeAdapter(dict[str, Json] | None)
 TERMINAL: TypeAdapter[ResponsesTerminalEvent] = TypeAdapter(ResponsesTerminalEvent)
 
