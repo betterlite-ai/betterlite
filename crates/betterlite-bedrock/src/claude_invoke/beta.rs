@@ -28,7 +28,6 @@ use crate::bedrock_messages_beta::tool_search::{adjust_tool_search_beta, beta_mo
 use crate::event_frames::beta::{BetaHeader, BetaValue, anthropic_beta_from_headers};
 
 use super::CUSTOM_LLM_PROVIDER;
-use super::wire;
 
 pub const BETA_HEADER_FIELD: &str = "anthropic_beta";
 
@@ -39,7 +38,7 @@ pub enum InvokeBetaError {
     #[error(transparent)]
     Filter(#[from] BetaFilterError),
     #[error("the request body does not round-trip as JSON")]
-    Body(#[source] serde_json::Error),
+    Body(#[from] serde_json::Error),
 }
 
 impl InvokeBetaError {
@@ -73,7 +72,7 @@ where
 {
     let user_betas = user_betas(request.headers);
     let tools = tools(request.optional_params)?;
-    let messages: Vec<Json> = wire::convert(request.messages).map_err(InvokeBetaError::Body)?;
+    let messages: Vec<Json> = serde_json::from_value(serde_json::to_value(request.messages)?)?;
     let features = features(request, &messages, &tools)?;
     let mut betas = user_betas.clone();
     let params = FeatureParams {
@@ -152,7 +151,7 @@ fn tools(optional_params: &IndexMap<String, ContractJson>) -> Result<Vec<Json>, 
     let Some(ContractJson::List(items)) = optional_params.get("tools") else {
         return Ok(Vec::new());
     };
-    wire::convert(items).map_err(InvokeBetaError::Body)
+    Ok(serde_json::from_value(serde_json::to_value(items)?)?)
 }
 
 fn mcp_servers(
@@ -161,7 +160,7 @@ fn mcp_servers(
     let Some(ContractJson::List(items)) = optional_params.get("mcp_servers") else {
         return Ok(None);
     };
-    let converted = wire::convert(items).map_err(InvokeBetaError::Body)?;
+    let converted = serde_json::from_value(serde_json::to_value(items)?)?;
     Ok(Some(converted))
 }
 

@@ -32,7 +32,7 @@ use super::capabilities::InvokeCapabilities;
 use super::documents::convert_document_url_sources;
 use super::error::ClaudeInvokeError;
 use super::tools::normalize_tool_search_tools;
-use super::{ANTHROPIC_VERSION, CUSTOM_LLM_PROVIDER, STRIPS_BILLING_METADATA, wire};
+use super::{ANTHROPIC_VERSION, CUSTOM_LLM_PROVIDER, STRIPS_BILLING_METADATA};
 
 const MODELS: &str = "model";
 const STREAM: &str = "stream";
@@ -81,7 +81,34 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    build(request, request.messages.clone(), sources).await
+    let mut optional_params = authentication_filtered(&request.optional_params);
+    normalize_output_config_effort(request.model, &mut optional_params, sources).await?;
+    normalize_tool_search_tools(&mut optional_params)?;
+    let anthropic_request = AnthropicRequest {
+        model: request.model,
+        custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
+        messages: request.messages.clone(),
+        optional_params,
+        litellm_params: request.litellm_params.clone(),
+        headers: request.headers.clone(),
+        defaults: request.defaults,
+        catalog: request.catalog,
+        default_chat_max_tokens: request.default_chat_max_tokens,
+        billing_header: BillingHeader::from(STRIPS_BILLING_METADATA),
+        modify_params: request.modify_params,
+        global_drop_params: request.global_drop_params,
+    };
+    let prepared = anthropic_request
+        .prepare(&mut *sources.environment, sources.catalogs, sources.prompts)
+        .await?;
+    let mut body: Object = serde_json::from_value(serde_json::to_value(&prepared.body)?)?;
+    body.shift_remove(MODELS);
+    body.shift_remove(STREAM);
+    finalize(request, &request.messages, &mut body, sources).await?;
+    Ok(ClaudeInvokePrepared {
+        body,
+        tool_name_reverse: prepared.tool_name_reverse,
+    })
 }
 
 // LiteLLM inlines every remote part before the synchronous transform, so its failures come first.
@@ -97,55 +124,24 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    let typed: Vec<Message> = wire::convert(&request.messages).map_err(ClaudeInvokeError::Body)?;
+    let typed: Vec<Message> = serde_json::from_value(serde_json::to_value(&request.messages)?)?;
     let inlined =
         async_inline_remote_media(&typed, &INLINE_EVERY_REMOTE_URL, sources.prompts.fetcher)
             .await?;
-    let messages: Vec<Json> = wire::convert(&inlined).map_err(ClaudeInvokeError::Body)?;
-    build(request, messages, sources).await
-}
-
-async fn build<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
-    request: &ClaudeInvokeRequest<'_>,
-    messages: Vec<Json>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Fetcher, Blocks, Ids, Lookup>,
-) -> Result<ClaudeInvokePrepared, ClaudeInvokeError<Blocks::Failure>>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Fetcher: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-    Ids: Fn() -> String + Sync,
-    Lookup: ModelInfoLookup,
-{
-    let mut optional_params = authentication_filtered(&request.optional_params);
-    normalize_output_config_effort(request.model, &mut optional_params, sources).await?;
-    normalize_tool_search_tools(&mut optional_params)?;
-    let anthropic_request = AnthropicRequest {
+    let messages: Vec<Json> = serde_json::from_value(serde_json::to_value(&inlined)?)?;
+    let inlined_request = ClaudeInvokeRequest {
         model: request.model,
-        custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
-        messages: messages.clone(),
-        optional_params,
+        messages,
+        optional_params: request.optional_params.clone(),
         litellm_params: request.litellm_params.clone(),
         headers: request.headers.clone(),
         defaults: request.defaults,
         catalog: request.catalog,
         default_chat_max_tokens: request.default_chat_max_tokens,
-        billing_header: BillingHeader::from(STRIPS_BILLING_METADATA),
         modify_params: request.modify_params,
         global_drop_params: request.global_drop_params,
     };
-    let prepared = anthropic_request
-        .prepare(&mut *sources.environment, sources.catalogs, sources.prompts)
-        .await?;
-    let mut body: Object = wire::convert(&prepared.body).map_err(ClaudeInvokeError::Body)?;
-    body.shift_remove(MODELS);
-    body.shift_remove(STREAM);
-    finalize(request, &messages, &mut body, sources).await?;
-    Ok(ClaudeInvokePrepared {
-        body,
-        tool_name_reverse: prepared.tool_name_reverse,
-    })
+    transform_request(&inlined_request, sources).await
 }
 
 async fn finalize<Source, Transport, Fetcher, Blocks, Ids, Lookup>(
@@ -178,7 +174,7 @@ where
     }
     normalize_tool_custom_field(body);
     normalize_tool_schema_types(body);
-    strip_eager_input_streaming_tools(body);
+    strip_eager_streaming_tools(body);
     convert_document_url_sources(body, sources.prompts.fetcher).await?;
     apply_beta_headers(request, messages, body, sources).await
 }
@@ -231,20 +227,20 @@ where
     Ids: Fn() -> String + Sync,
     Lookup: ModelInfoLookup,
 {
-    let Some(Json::Object(_)) = optional_params.get("output_config") else {
+    let Some(value) = optional_params
+        .get("output_config")
+        .filter(|value| matches!(value, Json::Object(_)))
+    else {
         return Ok(());
     };
-    let Some(value) = optional_params.get("output_config") else {
-        return Ok(());
-    };
-    let mut output_config: ParamValue = wire::convert(value).map_err(ClaudeInvokeError::Body)?;
+    let mut output_config: ParamValue = serde_json::from_value(serde_json::to_value(value)?)?;
     normalize_opus_effort(model, &mut output_config, sources.lookup, sources.packaged).await?;
-    let normalized: Json = wire::convert(&output_config).map_err(ClaudeInvokeError::Body)?;
+    let normalized: Json = serde_json::from_value(serde_json::to_value(&output_config)?)?;
     optional_params.insert("output_config".to_owned(), normalized);
     Ok(())
 }
 
-fn strip_eager_input_streaming_tools(body: &mut Object) {
+fn strip_eager_streaming_tools(body: &mut Object) {
     let Some(tools) = strip_eager_input_streaming(body) else {
         return;
     };

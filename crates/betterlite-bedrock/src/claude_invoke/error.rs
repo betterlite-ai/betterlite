@@ -27,7 +27,7 @@ where
     #[error(transparent)]
     Capability(#[from] CapabilityError),
     #[error("the request body does not round-trip as JSON")]
-    Body(#[source] serde_json::Error),
+    Body(#[from] serde_json::Error),
 }
 
 impl<FileFailure> ClaudeInvokeError<FileFailure>

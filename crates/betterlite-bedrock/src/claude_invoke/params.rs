@@ -27,7 +27,7 @@ use crate::message_options::OptionsSources;
 use crate::message_options::effort::clamp_adaptive_effort;
 use crate::model_routes::{ParamMap, ParamValue};
 
-use super::{CUSTOM_LLM_PROVIDER, RESPONSE_FORMAT_STUB_MODEL, wire};
+use super::{CUSTOM_LLM_PROVIDER, RESPONSE_FORMAT_STUB_MODEL};
 
 const NATIVE_STRUCTURED_OUTPUT: &str = "supports_native_structured_output";
 const REASONING_EFFORT: &str = "reasoning_effort";
@@ -43,7 +43,7 @@ pub enum MapParamsError {
     #[error(transparent)]
     Thinking(#[from] ThinkingError),
     #[error("the optional parameters do not round-trip as JSON")]
-    Body(#[source] serde_json::Error),
+    Body(#[from] serde_json::Error),
 }
 
 impl MapParamsError {
@@ -127,7 +127,7 @@ where
     .await?;
     translate_thinking(original_model, optional_params, request, environment).await?;
     apply_display_updates(display_updates, optional_params);
-    remove_response_format_tool_choice(
+    remove_forced_tool_choice(
         has_response_format,
         original_model,
         optional_params,
@@ -142,7 +142,7 @@ fn thinking_param(
     let Some(value) = non_default_params.get("thinking") else {
         return Ok(None);
     };
-    let converted = wire::convert(value).map_err(MapParamsError::Body)?;
+    let converted = serde_json::from_value(serde_json::to_value(value)?)?;
     Ok(Some(converted))
 }
 
@@ -271,7 +271,7 @@ fn apply_display_updates(requested: bool, optional_params: &mut IndexMap<String,
 }
 
 // The stub model hides the original model from the parent's forced-tool-use backstop.
-fn remove_response_format_tool_choice(
+fn remove_forced_tool_choice(
     has_response_format: bool,
     model: &str,
     optional_params: &mut IndexMap<String, Json>,

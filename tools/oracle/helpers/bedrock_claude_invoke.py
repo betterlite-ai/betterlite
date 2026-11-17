@@ -102,15 +102,20 @@ class Fetcher:
         self.urls = urls
         self.calls: list[str] = []
 
-    def fetch(self, url: str) -> str:
+    def __call__(self, url: str) -> str:
         self.calls.append(url)
         value = self.urls.get(url)
         if value is None:
             raise litellm.ImageFetchError(FAILED.format(url=url))
         return value
 
-    async def fetch_async(self, url: str) -> str:
-        return self.fetch(url)
+
+class AsyncFetcher:
+    def __init__(self, fetcher: Fetcher) -> None:
+        self.fetcher = fetcher
+
+    async def __call__(self, url: str) -> str:
+        return self.fetcher(url)
 
 
 @runtime_checkable
@@ -175,7 +180,7 @@ class Clock:
     def __init__(self, now: int) -> None:
         self.now = now
 
-    def time(self) -> float:
+    def __call__(self) -> float:
         return float(self.now)
 
 
@@ -186,8 +191,8 @@ def call_body(transformer: Transformer, call: TransformCall) -> dict[str, JsonVa
     fetcher = Fetcher(call["fetch"])
     saved_url = bedrock_claude.convert_url_to_base64
     saved_async = image_handling.async_convert_url_to_base64
-    bedrock_claude.convert_url_to_base64 = fetcher.fetch
-    image_handling.async_convert_url_to_base64 = fetcher.fetch_async
+    bedrock_claude.convert_url_to_base64 = fetcher
+    image_handling.async_convert_url_to_base64 = AsyncFetcher(fetcher)
     try:
         if call["inline"]:
             body = asyncio.run(
@@ -280,7 +285,7 @@ def responses(argument: Response) -> JsonValue:
     for call in argument["calls"]:
         clock = Clock(call["now"])
         saved_time = time.time
-        time.time = clock.time
+        time.time = clock
         try:
             answers.append(reply(call, transformer, sink))
         finally:

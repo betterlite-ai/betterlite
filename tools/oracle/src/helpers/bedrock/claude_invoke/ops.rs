@@ -4,7 +4,7 @@ use std::fmt::Display;
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::option_primitives::OptionDefaults;
 use betterlite_anthropic::usage::AnthropicUsage;
-use betterlite_bedrock::claude_invoke::request::{ClaudeInvokePrepared, ClaudeInvokeRequest};
+use betterlite_bedrock::claude_invoke::request::ClaudeInvokeRequest;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -14,14 +14,6 @@ use super::fixture::{Fixture, Session};
 use super::input::{Input, MapCall, ModelCost, ResponseCall, TransformCall};
 use super::mock::MapFetcher;
 use super::response::response;
-
-fn catalog() -> ModelCatalog {
-    ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("the empty catalog parses")
-}
-
-fn body_of(prepared: &ClaudeInvokePrepared) -> Value {
-    serde_json::to_value(&prepared.body).expect("the body serializes")
-}
 
 fn failure<E>(error: E) -> Box<HelperError>
 where
@@ -49,7 +41,8 @@ fn transforms(model_cost: &ModelCost, calls: &[TransformCall]) -> HelperResult {
     let fixture = Fixture::load(model_cost).map_err(failure)?;
     let mut session = Session::new(&fixture).map_err(failure)?;
     let defaults = OptionDefaults::default();
-    let catalog = catalog();
+    let catalog =
+        ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("the empty catalog parses");
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
         let fetcher = MapFetcher::new(&call.fetch);
@@ -69,7 +62,7 @@ fn transforms(model_cost: &ModelCost, calls: &[TransformCall]) -> HelperResult {
             .transform(&request, &fetcher, call.inline)
             .map_err(failure)?;
         answers.push(json!({
-            "body": body_of(&prepared),
+            "body": serde_json::to_value(&prepared.body).expect("the body serializes"),
             "fetches": fetcher.calls(),
         }));
     }
