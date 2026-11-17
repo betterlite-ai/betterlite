@@ -1,17 +1,21 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
+
 use crate::streamed_response_assembly::AssemblyError;
 use crate::streamed_response_assembly::response::TextResponse;
 
 use super::support::chunks;
 use super::{FIXED_NOW, Harness, chat_of, failed, ok, text, value};
 
-pub(super) async fn text_completion_assembly() {
-    text_completion_join().await;
-    text_completion_usage().await;
-    text_defaults().await;
-    text_completion_failure().await;
-    text_total_overflow().await;
-    text_branch_selection().await;
-    text_branch_mixed().await;
+pub(super) async fn text_completion_assembly(redactor: &Arc<Redactor>) {
+    text_completion_join(redactor).await;
+    text_completion_usage(redactor).await;
+    text_defaults(redactor).await;
+    text_completion_failure(redactor).await;
+    text_total_overflow(redactor).await;
+    text_branch_selection(redactor).await;
+    text_branch_mixed(redactor).await;
 }
 
 const JOIN_STREAM: &str = r#"[
@@ -22,8 +26,8 @@ const JOIN_STREAM: &str = r#"[
      "logprobs": {"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}}]}
 ]"#;
 
-async fn join_run() -> (TextResponse, Vec<String>) {
-    let mut harness = Harness::new(Some(chunks(JOIN_STREAM)));
+async fn join_run(redactor: &Arc<Redactor>) -> (TextResponse, Vec<String>) {
+    let mut harness = Harness::new(Some(chunks(JOIN_STREAM)), redactor);
     harness.messages = true;
     harness.prompt = Some(Box::new(|| Ok(7)));
     harness.counter.messages = 3;
@@ -33,11 +37,11 @@ async fn join_run() -> (TextResponse, Vec<String>) {
     (text(ok(result)), logs)
 }
 
-pub(super) async fn text_completion_join() {
+pub(super) async fn text_completion_join(redactor: &Arc<Redactor>) {
     let logprobs = value(
         r#"{"tokens": ["Hey"], "token_logprobs": [-0.1], "top_logprobs": [{}], "text_offset": [0]}"#,
     );
-    let (response, logs) = join_run().await;
+    let (response, logs) = join_run(redactor).await;
     let metadata = (
         response.id.as_str(),
         response.object.as_str(),
@@ -70,8 +74,8 @@ pub(super) async fn text_completion_join() {
 }
 
 // The prompt count comes from the message counter, since the text builder never sees the callback.
-pub(super) async fn text_completion_usage() {
-    let (response, _logs) = join_run().await;
+pub(super) async fn text_completion_usage(redactor: &Arc<Redactor>) {
+    let (response, _logs) = join_run(redactor).await;
     let usage = &response.usage;
     assert_eq!(
         (
@@ -83,9 +87,9 @@ pub(super) async fn text_completion_usage() {
     );
 }
 
-pub(super) async fn text_defaults() {
+pub(super) async fn text_defaults(redactor: &Arc<Redactor>) {
     let stream = chunks(r#"[{"choices": [{"index": 0, "text": "Solo"}]}]"#);
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.counter.response_text = 1;
     let (result, logs) = harness.run().await;
     let response = text(ok(result));
@@ -106,14 +110,14 @@ pub(super) async fn text_defaults() {
     );
 }
 
-pub(super) async fn text_completion_failure() {
+pub(super) async fn text_completion_failure(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
          "choices": [{"index": 0, "text": "A"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.counter.fail_response_text = true;
     let (result, logs) = harness.run().await;
     assert!(matches!(failed(result), AssemblyError::TokenCount { .. }));
@@ -124,14 +128,14 @@ pub(super) async fn text_completion_failure() {
     ));
 }
 
-pub(super) async fn text_total_overflow() {
+pub(super) async fn text_total_overflow(redactor: &Arc<Redactor>) {
     let stream = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "text_completion", "created": 1700000000, "model": "gpt-4o",
          "choices": [{"index": 0, "text": "A"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(stream));
+    let mut harness = Harness::new(Some(stream), redactor);
     harness.messages = true;
     harness.counter.messages = i64::MAX;
     harness.counter.response_text = 1;
@@ -140,7 +144,7 @@ pub(super) async fn text_total_overflow() {
     assert!(logs[0].ends_with("Exception occurred - the token count overflowed"));
 }
 
-pub(super) async fn text_branch_selection() {
+pub(super) async fn text_branch_selection(redactor: &Arc<Redactor>) {
     let lead = chunks(
         r#"[
         {"id": "chatcmpl-lead", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -148,7 +152,7 @@ pub(super) async fn text_branch_selection() {
         {"choices": [{"index": 0, "text": "AB"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(lead));
+    let mut harness = Harness::new(Some(lead), redactor);
     harness.messages = true;
     harness.counter.messages = 1;
     harness.counter.response_text = 1;
@@ -159,7 +163,7 @@ pub(super) async fn text_branch_selection() {
     assert_eq!(response.choices[0].text, "AB");
 }
 
-pub(super) async fn text_branch_mixed() {
+pub(super) async fn text_branch_mixed(redactor: &Arc<Redactor>) {
     let mixed = chunks(
         r#"[
         {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
@@ -167,7 +171,7 @@ pub(super) async fn text_branch_mixed() {
         {"choices": [{"index": 0, "text": "B"}]}
     ]"#,
     );
-    let mut harness = Harness::new(Some(mixed));
+    let mut harness = Harness::new(Some(mixed), redactor);
     harness.messages = true;
     harness.counter.response_text = 1;
     let response = chat_of(&harness).await;

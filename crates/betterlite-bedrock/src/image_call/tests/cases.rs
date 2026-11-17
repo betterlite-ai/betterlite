@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_redact::secret::Redactor;
 use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
@@ -114,8 +115,13 @@ struct Stages<'stage> {
     factory: &'stage Factory,
 }
 
-pub(super) fn run(call: ImageCall<'_>, reply: Reply, supplied: Option<ClientKind>) -> Run {
-    run_with_source(call, reply, supplied, &Source::new())
+pub(super) fn run(
+    call: ImageCall<'_>,
+    reply: Reply,
+    supplied: Option<ClientKind>,
+    redactor: &Redactor,
+) -> Run {
+    run_with_source(call, reply, supplied, &Source::new(), redactor)
 }
 
 pub(super) fn run_with_source(
@@ -123,13 +129,13 @@ pub(super) fn run_with_source(
     reply: Reply,
     supplied: Option<ClientKind>,
     source: &Source,
+    redactor: &Redactor,
 ) -> Run {
     let client = FixtureClient::new(reply.clone());
     let factory = Factory::new(reply);
-    let mut state = logging_state();
-    let redactor = redactor();
+    let mut state = logging_state(redactor);
     let sink = DiscardingSink;
-    let env = prepost_env(&state, &redactor, &sink);
+    let env = prepost_env(&state, redactor, &sink);
     let runtime = Builder::new_current_thread().build().unwrap();
     let stages = Stages {
         runtime: &runtime,
@@ -192,51 +198,53 @@ fn drive(
 #[case::image_http_error("image_http_error")]
 #[case::image_transport_selection("image_transport_selection")]
 fn image_call_cases(#[case] name: &str) {
+    let redactor = &redactor();
     match name {
         "image_family_dispatch" => {
-            family_request_bodies();
-            family_reply_records();
-            family_precedence();
+            family_request_bodies(redactor);
+            family_reply_records(redactor);
+            family_precedence(redactor);
         }
         "image_runtime_url" => {
-            runtime_default_and_configured();
-            runtime_api_base_and_environment();
-            image_prepare_before_transport();
+            runtime_default_and_configured(redactor);
+            runtime_api_base_and_environment(redactor);
+            image_prepare_before_transport(redactor);
         }
         "signed_json_body" => {
-            signed_body_and_log();
-            pre_call_log();
-            bearer_authorization();
-            signed_authorization_precedence();
+            signed_body_and_log(redactor);
+            pre_call_log(redactor);
+            bearer_authorization(redactor);
+            signed_authorization_precedence(redactor);
         }
         "extra_headers_outside_body" => {
-            guardrail_titan_headers();
-            guardrail_family_bodies();
-            guardrail_null_and_empty();
+            guardrail_titan_headers(redactor);
+            guardrail_family_bodies(redactor);
+            guardrail_null_and_empty(redactor);
         }
         "base64_image_result" => {
-            titan_base64_and_log();
-            ordered_base64_results();
+            titan_base64_and_log(redactor);
+            ordered_base64_results(redactor);
         }
         "image_http_error" => {
-            provider_status_error();
-            timeout_and_transport_errors();
-            reply_decode_errors();
-            stability3_finish_reason_error();
+            provider_status_error(redactor);
+            timeout_and_transport_errors(redactor);
+            reply_decode_errors(redactor);
+            stability3_finish_reason_error(redactor);
         }
         "image_transport_selection" => {
-            sync_transport_selection();
-            async_transport_selection();
+            sync_transport_selection(redactor);
+            async_transport_selection(redactor);
         }
         _ => panic!("unknown case {name}"),
     }
 }
 
-fn family_request_bodies() {
+fn family_request_bodies(redactor: &Redactor) {
     let titan = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": ["dGl0YW4="]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(titan.response().data[0].b64_json, "dGl0YW4=");
     assert!(titan.body().contains_key("textToImageParams"));
@@ -245,16 +253,18 @@ fn family_request_bodies() {
         call("amazon.nova-canvas-v1:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": ["bm92YQ=="]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(nova.response().data[0].b64_json, "bm92YQ==");
     assert_eq!(field(&nova.body(), "taskType"), &Field::from("TEXT_IMAGE"));
 }
 
-fn family_reply_records() {
+fn family_reply_records(redactor: &Redactor) {
     let stability3 = run(
         call("stability.sd3-large-v1:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": ["czM="]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(stability3.response().data[0].b64_json, "czM=");
     assert_eq!(
@@ -266,6 +276,7 @@ fn family_reply_records() {
         call("stability.stable-diffusion-xl-v1", "a cat", auth_params()),
         Reply::ok(r#"{"artifacts": [{"base64": "czE="}]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(stability1.response().data[0].b64_json, "czE=");
     assert_eq!(
@@ -277,7 +288,7 @@ fn family_reply_records() {
     );
 }
 
-fn family_precedence() {
+fn family_precedence(redactor: &Redactor) {
     // Titan wins when a model name carries both markers, and the original model picks the reply record
     let both = run(
         call(
@@ -287,6 +298,7 @@ fn family_precedence() {
         ),
         Reply::ok(r#"{"images": ["Ym90aA=="]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(both.response().data[0].b64_json, "Ym90aA==");
     assert!(both.body().contains_key("textToImageParams"));
@@ -301,6 +313,7 @@ fn family_precedence() {
         call("amazon.titan-image-generator-v2:0", "a cat", overridden),
         Reply::ok(r#"{"images": ["dGl0YW4="]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(
         moved
@@ -312,11 +325,12 @@ fn family_precedence() {
     assert!(moved.body().contains_key("textToImageParams"));
 }
 
-fn runtime_default_and_configured() {
+fn runtime_default_and_configured(redactor: &Redactor) {
     let default = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         default.posted().url,
@@ -338,6 +352,7 @@ fn runtime_default_and_configured() {
         configured,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         proxied.posted().url,
@@ -345,13 +360,14 @@ fn runtime_default_and_configured() {
     );
 }
 
-fn runtime_api_base_and_environment() {
+fn runtime_api_base_and_environment(redactor: &Redactor) {
     let mut api_only = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
     api_only.api_base = Some("https://api.example");
     let direct = run(
         api_only,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         direct.posted().url,
@@ -365,6 +381,7 @@ fn runtime_api_base_and_environment() {
         environment,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         from_env.posted().url,
@@ -372,7 +389,7 @@ fn runtime_api_base_and_environment() {
     );
 }
 
-fn image_prepare_before_transport() {
+fn image_prepare_before_transport(redactor: &Redactor) {
     // preparation runs first, so a request that cannot be prepared never creates a client
     let mut broken = auth_params();
     broken.insert("prompt".to_owned(), Field::from("supplied"));
@@ -380,17 +397,19 @@ fn image_prepare_before_transport() {
         call("stability.sd3-large-v1:0", "a cat", broken),
         Reply::ok(r#"{"images": []}"#),
         None,
+        redactor,
     );
     assert!(matches!(failed.result, Err(ImageCallError::Models(_))));
     assert_eq!(failed.sync_calls, 0);
     assert!(failed.factory_requests.is_empty());
 }
 
-fn signed_body_and_log() {
+fn signed_body_and_log(redactor: &Redactor) {
     let signed = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     let headers = signed.headers();
     let authorization = &headers["Authorization"];
@@ -407,17 +426,19 @@ fn signed_body_and_log() {
     );
 }
 
-fn pre_call_log() {
+fn pre_call_log(redactor: &Redactor) {
     let signed = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     // a failed status skips post_call, so the details still hold what pre_call recorded
     let logged = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::status(500, &[], "{}"),
         Some(ClientKind::Sync),
+        redactor,
     );
     let details = &logged.state.model_call_details;
     assert_eq!(details.get("input"), Some(&Json::Text("a cat".to_owned())));
@@ -440,7 +461,7 @@ fn pre_call_log() {
     );
 }
 
-fn bearer_authorization() {
+fn bearer_authorization(redactor: &Redactor) {
     let bearer_token = secret("br-token");
     let mut bearer = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
     bearer.api_key = Some(&bearer_token);
@@ -448,6 +469,7 @@ fn bearer_authorization() {
         bearer,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     let bearer_headers = with_bearer.headers();
     assert_eq!(bearer_headers["Authorization"], "Bearer br-token");
@@ -461,11 +483,12 @@ fn bearer_authorization() {
         environment,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(from_env.headers()["Authorization"], "Bearer env-token");
 }
 
-fn signed_authorization_precedence() {
+fn signed_authorization_precedence(redactor: &Redactor) {
     let overridden_headers = vec![("Authorization".to_owned(), "Custom tok".to_owned())];
     let mut overridden = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
     overridden.extra_headers = Some(&overridden_headers);
@@ -473,6 +496,7 @@ fn signed_authorization_precedence() {
         overridden,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     let custom_headers = custom.headers();
     assert_eq!(custom_headers["Authorization"], "Custom tok");
@@ -488,6 +512,7 @@ fn signed_authorization_precedence() {
         sigv4,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(
         kept.headers()["Authorization"]
@@ -495,7 +520,7 @@ fn signed_authorization_precedence() {
     );
 }
 
-fn guardrail_titan_headers() {
+fn guardrail_titan_headers(redactor: &Redactor) {
     let extra = vec![
         (
             "x-amz-bedrock-guardrail-identifier".to_owned(),
@@ -512,6 +537,7 @@ fn guardrail_titan_headers() {
         guarded_call,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     let headers = titan.headers();
     assert_eq!(headers["x-amz-bedrock-guardrail-identifier"], "gr");
@@ -534,7 +560,7 @@ fn guardrail_titan_headers() {
     );
 }
 
-fn guardrail_family_bodies() {
+fn guardrail_family_bodies(redactor: &Redactor) {
     let mut nova_params = auth_params();
     nova_params.insert("guardrailIdentifier".to_owned(), Field::from("gr"));
     nova_params.insert("guardrailVersion".to_owned(), Field::from("1"));
@@ -542,6 +568,7 @@ fn guardrail_family_bodies() {
         call("amazon.nova-canvas-v1:0", "a cat", nova_params),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         field(&nova.body(), "imageGenerationConfig"),
@@ -563,6 +590,7 @@ fn guardrail_family_bodies() {
         ),
         Reply::ok(r#"{"artifacts": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         field(&stability1.body(), "guardrailIdentifier"),
@@ -574,7 +602,7 @@ fn guardrail_family_bodies() {
     );
 }
 
-fn guardrail_null_and_empty() {
+fn guardrail_null_and_empty(redactor: &Redactor) {
     // a null version is popped without a header, and the already-built Stability 3 body keeps it
     let mut stability3_params = auth_params();
     stability3_params.insert("guardrailIdentifier".to_owned(), Field::from("gr"));
@@ -583,6 +611,7 @@ fn guardrail_null_and_empty() {
         call("stability.sd3-large-v1:0", "a cat", stability3_params),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(
         !stability3
@@ -600,6 +629,7 @@ fn guardrail_null_and_empty() {
         call("amazon.titan-image-generator-v2:0", "a cat", bad),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(
         refused.result,
@@ -607,12 +637,13 @@ fn guardrail_null_and_empty() {
     ));
 }
 
-fn titan_base64_and_log() {
+fn titan_base64_and_log(redactor: &Redactor) {
     let (captured, _guard) = capture();
     let titan = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": ["b25l", "dHdv"]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     let response = titan.response();
     assert_eq!(response.created, Some(42));
@@ -637,13 +668,14 @@ fn titan_base64_and_log() {
     );
 }
 
-fn ordered_base64_results() {
+fn ordered_base64_results(redactor: &Redactor) {
     let mut url_params = auth_params();
     url_params.insert("response_format".to_owned(), Field::from("url"));
     let ordered = run(
         call("amazon.nova-canvas-v1:0", "a cat", url_params),
         Reply::ok(r#"{"images": ["dXJs"]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(ordered.response().data[0].b64_json, "dXJs");
     assert_eq!(
@@ -655,6 +687,7 @@ fn ordered_base64_results() {
         call("stability.stable-diffusion-xl-v1", "a cat", auth_params()),
         Reply::ok(r#"{"artifacts": [{"base64": "YQ=="}, {"base64": "Yg=="}]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         stability1
@@ -667,7 +700,7 @@ fn ordered_base64_results() {
     );
 }
 
-fn provider_status_error() {
+fn provider_status_error(redactor: &Redactor) {
     let failing = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::status(
@@ -676,6 +709,7 @@ fn provider_status_error() {
             r#"{"message": "slow down"}"#,
         ),
         Some(ClientKind::Sync),
+        redactor,
     );
     match &failing.result {
         Err(ImageCallError::Provider { status, error }) => {
@@ -698,11 +732,12 @@ fn provider_status_error() {
     );
 }
 
-fn timeout_and_transport_errors() {
+fn timeout_and_transport_errors(redactor: &Redactor) {
     let timed_out = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::Timeout,
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(
         timed_out.result,
@@ -714,17 +749,19 @@ fn timeout_and_transport_errors() {
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::Failed,
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(failed.result, Err(ImageCallError::Transport(_))));
     assert!(failed.post_call().is_none());
 }
 
-fn reply_decode_errors() {
+fn reply_decode_errors(redactor: &Redactor) {
     // a reply that parses but does not fit the record still runs post_call first
     let null = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok("null"),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(null.result, Err(ImageCallError::Decode(_))));
     assert!(null.post_call().is_some());
@@ -733,6 +770,7 @@ fn reply_decode_errors() {
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok("{not json"),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(malformed.result, Err(ImageCallError::Decode(_))));
     assert!(malformed.post_call().is_some());
@@ -741,15 +779,17 @@ fn reply_decode_errors() {
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok("[1, 2]"),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(nonobject.result, Err(ImageCallError::Decode(_))));
 }
 
-fn stability3_finish_reason_error() {
+fn stability3_finish_reason_error(redactor: &Redactor) {
     let finish_reason = run(
         call("stability.sd3-large-v1:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": [], "finish_reasons": ["ERROR"]}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(
         finish_reason.result,
@@ -766,11 +806,12 @@ fn stability3_finish_reason_error() {
     assert!(finish_reason.post_call().is_some());
 }
 
-fn sync_transport_selection() {
+fn sync_transport_selection(redactor: &Redactor) {
     let sync_default = run(
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         None,
+        redactor,
     );
     assert_eq!(sync_default.sync_calls, 1);
     assert!(sync_default.async_calls.is_empty());
@@ -780,6 +821,7 @@ fn sync_transport_selection() {
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Async),
+        redactor,
     );
     assert_eq!(sync_with_async.sync_calls, 1);
     assert!(sync_with_async.supplied_requests.is_empty());
@@ -788,21 +830,27 @@ fn sync_transport_selection() {
         call("amazon.titan-image-generator-v2:0", "a cat", auth_params()),
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(sync_supplied.sync_calls, 0);
     assert_eq!(sync_supplied.supplied_requests.len(), 1);
 }
 
-fn async_transport_selection() {
+fn async_transport_selection(redactor: &Redactor) {
     let mut async_default_call = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
     async_default_call.aimg_generation = true;
-    let async_default = run(async_default_call, Reply::ok(r#"{"images": []}"#), None);
+    let async_default = run(
+        async_default_call,
+        Reply::ok(r#"{"images": []}"#),
+        None,
+        redactor,
+    );
     assert_eq!(async_default.async_calls, vec![None]);
 
     let mut timed_call = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
     timed_call.aimg_generation = true;
     timed_call.timeout = Some(Duration::from_millis(2500));
-    let timed = run(timed_call, Reply::ok(r#"{"images": []}"#), None);
+    let timed = run(timed_call, Reply::ok(r#"{"images": []}"#), None, redactor);
     assert_eq!(timed.async_calls, vec![Some(Duration::from_millis(2500))]);
 
     let mut async_supplied_call = call("amazon.titan-image-generator-v2:0", "a cat", auth_params());
@@ -811,6 +859,7 @@ fn async_transport_selection() {
         async_supplied_call,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Async),
+        redactor,
     );
     assert!(async_supplied.async_calls.is_empty());
     assert_eq!(async_supplied.supplied_requests.len(), 1);
@@ -823,6 +872,7 @@ fn async_transport_selection() {
         sync_supplied_async_call,
         Reply::ok(r#"{"images": []}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         replaced.async_calls,

@@ -5,6 +5,7 @@ use std::process::id;
 use std::time::Duration;
 
 use betterlite_config::sections::azure_managed_identity::Settings;
+use betterlite_redact::secret::Redactor;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -17,7 +18,7 @@ use super::super::error::{ManagedIdentityError, NO_ENDPOINT, NO_RESPONSE_PREFIX}
 use super::super::imds::{CLIENT_SKU, CLIENT_VERSION, ProbePolicy};
 use super::super::runtime::{FsTokenFiles, TokenFiles as _};
 use super::super::selection::{ManagedIdentityKind, select};
-use super::fixture::{APP_SERVICE, Fixture, NOW, REQUEST_ID, Reply};
+use super::fixture::{APP_SERVICE, Fixture, NOW, REQUEST_ID, Reply, redactor};
 
 const SCOPE: &str = "https://cognitiveservices.azure.com/.default";
 const RESOURCE: &str = "https://cognitiveservices.azure.com";
@@ -33,12 +34,15 @@ const TOKEN: &str = r#"{"access_token":"imds-token","expires_in":3600}"#;
 #[case::imds_retry_policy(imds_retry_policy)]
 #[case::hosted_selection_order(hosted_selection_order)]
 #[case::partial_identity_endpoint(partial_identity_endpoint)]
-fn azure_managed_identity_cases(#[case] case: fn()) {
-    case();
+fn azure_managed_identity_cases(#[case] case: fn(&Redactor)) {
+    case(&redactor());
 }
 
-fn system_assigned_imds() {
-    let fixture = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test/")]);
+fn system_assigned_imds(redactor: &Redactor) {
+    let fixture = Fixture::new(
+        &[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test/")],
+        redactor,
+    );
     fixture.imds.push(Reply::ok(TOKEN));
     let token = fixture.acquire(&[SCOPE]).unwrap();
     assert_eq!(token.token.expose_secret(), "imds-token");
@@ -48,7 +52,7 @@ fn system_assigned_imds() {
     let requests = fixture.imds.recorded();
     assert_eq!(requests.len(), 1);
     imds_request_shape(&requests[0]);
-    default_authority();
+    default_authority(redactor);
 }
 
 fn imds_request_shape(request: &super::fixture::RecordedRequest) {
@@ -68,8 +72,8 @@ fn imds_request_shape(request: &super::fixture::RecordedRequest) {
     assert_eq!(request.timeout_seconds, 2);
 }
 
-fn default_authority() {
-    let fixture = Fixture::new(&[]);
+fn default_authority(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::ok(TOKEN));
     fixture.acquire(&[SCOPE]).unwrap();
     assert_eq!(
@@ -78,8 +82,11 @@ fn default_authority() {
     );
 }
 
-fn client_id_query() {
-    let user_assigned = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test")]);
+fn client_id_query(redactor: &Redactor) {
+    let user_assigned = Fixture::new(
+        &[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test")],
+        redactor,
+    );
     user_assigned.imds.push(Reply::ok(TOKEN));
     user_assigned
         .credential(Some("fixture-client"))
@@ -90,7 +97,10 @@ fn client_id_query() {
     assert_eq!(requests[0].query("object_id"), None);
     assert_eq!(requests[0].query("resource_id"), None);
 
-    let system_assigned = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test")]);
+    let system_assigned = Fixture::new(
+        &[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "http://pod.test")],
+        redactor,
+    );
     system_assigned.imds.push(Reply::ok(TOKEN));
     system_assigned
         .credential(Some(""))
@@ -99,20 +109,20 @@ fn client_id_query() {
     assert_eq!(system_assigned.imds.recorded()[0].query("client_id"), None);
 }
 
-fn imds_unavailable() {
-    probe_in_chain();
-    probe_no_response();
-    probe_forbidden_unreachable();
-    probe_forbidden_other();
-    status_400();
-    status_500();
-    status_403();
-    malformed_text();
-    pod_authority_skips_probe();
+fn imds_unavailable(redactor: &Redactor) {
+    probe_in_chain(redactor);
+    probe_no_response(redactor);
+    probe_forbidden_unreachable(redactor);
+    probe_forbidden_other(redactor);
+    status_400(redactor);
+    status_500(redactor);
+    status_403(redactor);
+    malformed_text(redactor);
+    pod_authority_skips_probe(redactor);
 }
 
 fn chained_probe(
-    fixture: &Fixture,
+    fixture: &Fixture<'_>,
 ) -> Result<super::super::ManagedIdentityToken, ManagedIdentityError> {
     let credential = super::super::ManagedIdentityCredential {
         environment: &fixture.environment,
@@ -128,8 +138,8 @@ fn chained_probe(
     credential.token(&fixture.io(), &[SCOPE])
 }
 
-fn probe_in_chain() {
-    let fixture = Fixture::new(&[]);
+fn probe_in_chain(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::ok(TOKEN));
     fixture.imds.push(Reply::ok(TOKEN));
     chained_probe(&fixture).unwrap();
@@ -147,16 +157,16 @@ fn probe_in_chain() {
     assert!(fixture.scheduler.recorded().is_empty());
 }
 
-fn probe_no_response() {
-    let fixture = Fixture::new(&[]);
+fn probe_no_response(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::Failure);
     let error = chained_probe(&fixture).unwrap_err();
     assert_eq!(fixture.imds.recorded().len(), 1);
     assert_eq!(error.to_string(), format!("{NO_RESPONSE_PREFIX} "));
 }
 
-fn probe_forbidden_unreachable() {
-    let fixture = Fixture::new(&[]);
+fn probe_forbidden_unreachable(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture
         .imds
         .push(Reply::json(403, r#"{"error":"unreachable"}"#));
@@ -170,16 +180,16 @@ fn probe_forbidden_unreachable() {
     );
 }
 
-fn probe_forbidden_other() {
-    let fixture = Fixture::new(&[]);
+fn probe_forbidden_other(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::json(403, r#"{"error":"denied"}"#));
     fixture.imds.push(Reply::ok(TOKEN));
     chained_probe(&fixture).unwrap();
     assert_eq!(fixture.imds.recorded().len(), 2);
 }
 
-fn status_400() {
-    let fixture = Fixture::new(&[]);
+fn status_400(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::bare(400, "boom"));
     let error = fixture.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(
@@ -189,8 +199,8 @@ fn status_400() {
     assert_eq!(fixture.imds.recorded().len(), 1);
 }
 
-fn status_500() {
-    let fixture = Fixture::new(&[]);
+fn status_500(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture
         .imds
         .push_all(repeat_n(Reply::json(500, "boom"), 6).collect());
@@ -211,20 +221,20 @@ fn status_500() {
     );
 }
 
-fn status_403() {
-    let unreachable = Fixture::new(&[]);
+fn status_403(redactor: &Redactor) {
+    let unreachable = Fixture::new(&[], redactor);
     unreachable.imds.push(Reply::bare(403, "unreachable host"));
     assert_eq!(
         unreachable.acquire(&[SCOPE]).unwrap_err().to_string(),
         "ManagedIdentityCredential authentication unavailable. Error: Unexpected response \"unreachable host\""
     );
-    let denied = Fixture::new(&[]);
+    let denied = Fixture::new(&[], redactor);
     denied.imds.push(Reply::bare(403, "denied"));
     assert!(matches!(
         denied.acquire(&[SCOPE]).unwrap_err(),
         ManagedIdentityError::ClientAuthentication { .. }
     ));
-    let retried = Fixture::new(&[]);
+    let retried = Fixture::new(&[], redactor);
     retried
         .imds
         .push_all(repeat_n(Reply::bare(500, "unreachable"), 6).collect());
@@ -234,8 +244,8 @@ fn status_403() {
     ));
 }
 
-fn malformed_text() {
-    let fixture = Fixture::new(&[]);
+fn malformed_text(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::text(200, "not-json"));
     let error = fixture.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(
@@ -244,8 +254,8 @@ fn malformed_text() {
     );
 }
 
-fn pod_authority_skips_probe() {
-    let fixture = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "")]);
+fn pod_authority_skips_probe(redactor: &Redactor) {
+    let fixture = Fixture::new(&[("AZURE_POD_IDENTITY_AUTHORITY_HOST", "")], redactor);
     fixture.imds.push(Reply::ok(TOKEN));
     chained_probe(&fixture).unwrap();
     let requests = fixture.imds.recorded();
@@ -254,13 +264,13 @@ fn pod_authority_skips_probe() {
     assert_eq!(requests[0].url, "/metadata/identity/oauth2/token");
 }
 
-fn token_expiry() {
-    token_expiry_success();
-    token_expiry_failures();
+fn token_expiry(redactor: &Redactor) {
+    token_expiry_success(redactor);
+    token_expiry_failures(redactor);
 }
 
-fn token_expiry_success() {
-    let full = Fixture::new(&[]);
+fn token_expiry_success(redactor: &Redactor) {
+    let full = Fixture::new(&[], redactor);
     full.imds.push(Reply::ok(
         r#"{"access_token":"tok","expires_in":7200,"token_type":"Custom"}"#,
     ));
@@ -269,7 +279,7 @@ fn token_expiry_success() {
     assert_eq!(token.token_type.as_deref(), Some("Custom"));
     assert_eq!(token.refresh_on, Some(NOW + 3600));
 
-    let numeric = Fixture::new(&[]);
+    let numeric = Fixture::new(&[], redactor);
     numeric
         .imds
         .push(Reply::ok(r#"{"access_token":"tok","expires_in":"7200"}"#));
@@ -278,19 +288,19 @@ fn token_expiry_success() {
         Some(NOW + 7200)
     );
 
-    let zero = Fixture::new(&[]);
+    let zero = Fixture::new(&[], redactor);
     zero.imds
         .push(Reply::ok(r#"{"access_token":"tok","expires_in":0}"#));
     assert_eq!(zero.acquire(&[SCOPE]).unwrap().expires_on, Some(NOW));
 }
 
-fn token_expiry_failures() {
-    let missing = Fixture::new(&[]);
+fn token_expiry_failures(redactor: &Redactor) {
+    let missing = Fixture::new(&[], redactor);
     missing.imds.push(Reply::ok(r#"{"access_token":"tok"}"#));
     let error = missing.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(error.to_string(), format!("{NO_RESPONSE_PREFIX} "));
 
-    let malformed = Fixture::new(&[]);
+    let malformed = Fixture::new(&[], redactor);
     malformed
         .imds
         .push(Reply::ok(r#"{"access_token":"tok","expires_in":"soon"}"#));
@@ -299,7 +309,7 @@ fn token_expiry_failures() {
         format!("{NO_RESPONSE_PREFIX} ")
     );
 
-    let payload = Fixture::new(&[]);
+    let payload = Fixture::new(&[], redactor);
     payload.imds.push(Reply::ok(
         r#"{"error":"invalid_request","error_description":"no identity"}"#,
     ));
@@ -308,7 +318,7 @@ fn token_expiry_failures() {
         format!("{NO_RESPONSE_PREFIX} Token request error: (invalid_request) no identity")
     );
 
-    let bare = Fixture::new(&[]);
+    let bare = Fixture::new(&[], redactor);
     bare.imds.push(Reply::ok(r#"{"error":"bad"}"#));
     assert_eq!(
         bare.acquire(&[SCOPE]).unwrap_err().to_string(),
@@ -326,18 +336,18 @@ fn workload_environment() -> [(&'static str, &'static str); 5] {
     ]
 }
 
-fn workload_reply(fixture: &Fixture) {
+fn workload_reply(fixture: &Fixture<'_>) {
     fixture.oidc.push(
         200,
         r#"{"access_token":"aad-token","expires_in":3600,"token_type":"Bearer"}"#,
     );
 }
 
-fn workload_selection() {
-    workload_grant();
-    workload_selection_details();
-    workload_selection_rejections();
-    workload_file_is_read_each_time();
+fn workload_selection(redactor: &Redactor) {
+    workload_grant(redactor);
+    workload_selection_details(redactor);
+    workload_selection_rejections(redactor);
+    workload_file_is_read_each_time(redactor);
     filesystem_token_file();
 }
 
@@ -352,8 +362,9 @@ fn filesystem_token_file() {
         .unwrap_err();
 }
 
-fn workload_grant() {
-    let fixture = Fixture::new(&workload_environment()).with_file("/var/run/token", "fixture-jwt");
+fn workload_grant(redactor: &Redactor) {
+    let fixture =
+        Fixture::new(&workload_environment(), redactor).with_file("/var/run/token", "fixture-jwt");
     workload_reply(&fixture);
     let token = fixture.acquire(&[SCOPE]).unwrap();
     assert_eq!(token.token.expose_secret(), "aad-token");
@@ -384,8 +395,9 @@ fn workload_grant() {
     assert!(fixture.imds.recorded().is_empty());
 }
 
-fn workload_selection_details() {
-    let argument = Fixture::new(&workload_environment()).with_file("/var/run/token", "fixture-jwt");
+fn workload_selection_details(redactor: &Redactor) {
+    let argument =
+        Fixture::new(&workload_environment(), redactor).with_file("/var/run/token", "fixture-jwt");
     workload_reply(&argument);
     argument
         .credential(Some("arg-client"))
@@ -398,16 +410,20 @@ fn workload_selection_details() {
         Some("arg-client")
     );
 
-    let incomplete = Fixture::new(&[
-        ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
-        ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
-        ("AZURE_CLIENT_ID", "env-client"),
-    ]);
+    let incomplete = Fixture::new(
+        &[
+            ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
+            ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
+            ("AZURE_CLIENT_ID", "env-client"),
+        ],
+        redactor,
+    );
     incomplete.imds.push(Reply::ok(TOKEN));
     let selection = incomplete.credential(None).select().unwrap();
     assert_eq!(selection.kind, ManagedIdentityKind::Imds);
 
-    let excluded = Fixture::new(&workload_environment()).with_file("/var/run/token", "fixture-jwt");
+    let excluded =
+        Fixture::new(&workload_environment(), redactor).with_file("/var/run/token", "fixture-jwt");
     let credential = super::super::ManagedIdentityCredential {
         environment: &excluded.environment,
         host: &excluded.host,
@@ -419,25 +435,29 @@ fn workload_selection_details() {
     assert_eq!(credential.select().unwrap().kind, ManagedIdentityKind::Imds);
 }
 
-fn workload_selection_rejections() {
-    let missing = Fixture::new(&[
-        ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
-        ("AZURE_TENANT_ID", "fixture-tenant"),
-        ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
-    ]);
+fn workload_selection_rejections(redactor: &Redactor) {
+    let missing = Fixture::new(
+        &[
+            ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
+            ("AZURE_TENANT_ID", "fixture-tenant"),
+            ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
+        ],
+        redactor,
+    );
     let error = missing.credential(None).select().unwrap_err();
     assert_eq!(
         error.to_string(),
         "Workload identity was selected but no client ID was provided. Configure the environment with a client ID or pass a value for \"client_id\" argument"
     );
 
-    let missing_file = Fixture::new(&workload_environment());
+    let missing_file = Fixture::new(&workload_environment(), redactor);
     let file_error = missing_file.acquire(&[SCOPE]).unwrap_err();
     assert!(matches!(file_error, ManagedIdentityError::TokenFile { .. }));
 }
 
-fn workload_file_is_read_each_time() {
-    let fixture = Fixture::new(&workload_environment()).with_file("/var/run/token", "jwt-one");
+fn workload_file_is_read_each_time(redactor: &Redactor) {
+    let fixture =
+        Fixture::new(&workload_environment(), redactor).with_file("/var/run/token", "jwt-one");
     workload_reply(&fixture);
     workload_reply(&fixture);
     fixture.acquire(&[SCOPE]).unwrap();
@@ -455,19 +475,23 @@ fn workload_file_is_read_each_time() {
     );
 }
 
-fn imds_retry_policy() {
-    exhausted_ladder(410, &[5, 10, 20, 40].map(Duration::from_secs));
-    exhausted_ladder(404, &[1600, 3200, 6400, 12800].map(Duration::from_millis));
-    retry_mixed();
-    retry_connection_then_status();
-    retry_after_headers();
-    retry_zero_header_backs_off();
-    retry_status_codes();
-    retry_transport_error();
+fn imds_retry_policy(redactor: &Redactor) {
+    exhausted_ladder(410, &[5, 10, 20, 40].map(Duration::from_secs), redactor);
+    exhausted_ladder(
+        404,
+        &[1600, 3200, 6400, 12800].map(Duration::from_millis),
+        redactor,
+    );
+    retry_mixed(redactor);
+    retry_connection_then_status(redactor);
+    retry_after_headers(redactor);
+    retry_zero_header_backs_off(redactor);
+    retry_status_codes(redactor);
+    retry_transport_error(redactor);
 }
 
-fn exhausted_ladder(status: u16, expected: &[Duration]) {
-    let fixture = Fixture::new(&[]);
+fn exhausted_ladder(status: u16, expected: &[Duration], redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture
         .imds
         .push_all(repeat_n(Reply::json(status, "failing"), 6).collect());
@@ -476,8 +500,8 @@ fn exhausted_ladder(status: u16, expected: &[Duration]) {
     assert_eq!(fixture.scheduler.recorded(), expected);
 }
 
-fn retry_mixed() {
-    let fixture = Fixture::new(&[]);
+fn retry_mixed(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::json(410, "gone"));
     fixture.imds.push(Reply::json(410, "gone"));
     fixture.imds.push(Reply::json(500, "boom"));
@@ -491,8 +515,8 @@ fn retry_mixed() {
 }
 
 // connection errors and error statuses spend one total budget and share one backoff history
-fn retry_connection_then_status() {
-    let fixture = Fixture::new(&[]);
+fn retry_connection_then_status(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push_all(repeat_n(Reply::Failure, 3).collect());
     fixture
         .imds
@@ -506,7 +530,7 @@ fn retry_connection_then_status() {
 }
 
 // a non-empty Retry-After header makes any error status retryable; the millisecond headers only set the wait
-fn retry_after_headers() {
+fn retry_after_headers(redactor: &Redactor) {
     let future = "Tue, 14 Nov 2023 22:13:50 GMT";
     let past = "Tue, 14 Nov 2023 22:13:10 GMT";
     let cases = [
@@ -523,7 +547,7 @@ fn retry_after_headers() {
         (400, "x-ms-retry-after-ms", "1500", 1, 0),
     ];
     for (status, name, value, requests, sleep_millis) in cases {
-        let fixture = Fixture::new(&[]);
+        let fixture = Fixture::new(&[], redactor);
         fixture.imds.push(Reply::Response {
             status,
             headers: vec![(name, value)],
@@ -550,8 +574,8 @@ fn retry_after_headers() {
 }
 
 // a zero Retry-After is no wait at all, so the backoff of the second retry applies
-fn retry_zero_header_backs_off() {
-    let fixture = Fixture::new(&[]);
+fn retry_zero_header_backs_off(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push(Reply::bare(404, "missing"));
     fixture.imds.push(Reply::Response {
         status: 429,
@@ -563,10 +587,10 @@ fn retry_zero_header_backs_off() {
     assert_eq!(fixture.scheduler.recorded(), [Duration::from_millis(1600)]);
 }
 
-fn retry_status_codes() {
+fn retry_status_codes(redactor: &Redactor) {
     let cases = [(400, 1), (403, 1), (408, 2), (505, 2), (998, 2), (999, 1)];
     for (status, requests) in cases {
-        let fixture = Fixture::new(&[]);
+        let fixture = Fixture::new(&[], redactor);
         fixture.imds.push(Reply::bare(status, "boom"));
         fixture.imds.push(Reply::ok(TOKEN));
         let _outcome = fixture.acquire(&[SCOPE]);
@@ -574,8 +598,8 @@ fn retry_status_codes() {
     }
 }
 
-fn retry_transport_error() {
-    let fixture = Fixture::new(&[]);
+fn retry_transport_error(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor);
     fixture.imds.push_all(repeat_n(Reply::Failure, 4).collect());
     let error = fixture.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(error.to_string(), format!("{NO_RESPONSE_PREFIX} "));
@@ -586,21 +610,23 @@ fn retry_transport_error() {
     );
 }
 
-fn hosted_selection_order() {
-    hosted_variants();
-    workload_and_unconfigured();
-    presence_over_truthiness();
-    arc_file_probe();
-    arc_token();
-    arc_client_id();
-    hosted_tokens();
-    hosted_client_id();
+fn hosted_selection_order(redactor: &Redactor) {
+    hosted_variants(redactor);
+    arc_and_azure_ml_variants(redactor);
+    workload_and_unconfigured(redactor);
+    presence_over_truthiness(redactor);
+    arc_file_probe(redactor);
+    arc_token(redactor);
+    arc_client_id(redactor);
+    hosted_tokens(redactor);
+    hosted_client_id(redactor);
     kind_names();
-    empty_partner_values();
+    empty_partner_values(redactor);
+    empty_workload_values(redactor);
     settings_environment();
 }
 
-fn selection_of(fixture: &Fixture) -> (ManagedIdentityKind, Option<&'static str>) {
+fn selection_of(fixture: &Fixture<'_>) -> (ManagedIdentityKind, Option<&'static str>) {
     let credential = fixture.credential(None);
     let selection = credential.select().unwrap();
     let inner = credential
@@ -609,55 +635,76 @@ fn selection_of(fixture: &Fixture) -> (ManagedIdentityKind, Option<&'static str>
     (selection.kind, inner)
 }
 
-fn hosted_variants() {
-    let service_fabric = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://sf.test/token"),
-        ("IDENTITY_HEADER", "header-secret"),
-        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
-    ]);
+fn hosted_variants(redactor: &Redactor) {
+    let service_fabric = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://sf.test/token"),
+            ("IDENTITY_HEADER", "header-secret"),
+            ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&service_fabric),
         (ManagedIdentityKind::ServiceFabric, Some("service_fabric"))
     );
-    let app_service = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", APP_SERVICE),
-        ("IDENTITY_HEADER", "header-secret"),
-    ]);
+    let app_service = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", APP_SERVICE),
+            ("IDENTITY_HEADER", "header-secret"),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&app_service),
         (ManagedIdentityKind::AppService, Some("app_service"))
     );
-    let arc = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://arc.test/token"),
-        ("IMDS_ENDPOINT", "http://arc.test/imds"),
-    ]);
+}
+
+fn arc_and_azure_ml_variants(redactor: &Redactor) {
+    let arc = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://arc.test/token"),
+            ("IMDS_ENDPOINT", "http://arc.test/imds"),
+        ],
+        redactor,
+    );
     assert_eq!(selection_of(&arc), (ManagedIdentityKind::Arc, Some("arc")));
-    let azure_ml = Fixture::new(&[
-        ("MSI_ENDPOINT", "http://ml.test/token"),
-        ("MSI_SECRET", "ml-secret"),
-    ]);
+    let azure_ml = Fixture::new(
+        &[
+            ("MSI_ENDPOINT", "http://ml.test/token"),
+            ("MSI_SECRET", "ml-secret"),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&azure_ml),
         (ManagedIdentityKind::AzureMl, Some("azure_ml"))
     );
 }
 
-fn hosted_tokens() {
-    let azure_ml = Fixture::new(&[
-        ("MSI_ENDPOINT", "http://ml.test/token"),
-        ("MSI_SECRET", "ml-secret"),
-    ]);
+fn hosted_tokens(redactor: &Redactor) {
+    let azure_ml = Fixture::new(
+        &[
+            ("MSI_ENDPOINT", "http://ml.test/token"),
+            ("MSI_SECRET", "ml-secret"),
+        ],
+        redactor,
+    );
     azure_ml.hosted.push(Reply::ok(
         r#"{"access_token":"ml-token","expires_on":1700003600}"#,
     ));
     let ml_token = azure_ml.acquire(&[SCOPE]).unwrap();
     assert_eq!(ml_token.token.expose_secret(), "ml-token");
     assert_eq!(azure_ml.hosted.recorded()[0].url, "http://ml.test/token");
-    let service_fabric = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://sf.test/token"),
-        ("IDENTITY_HEADER", "header-secret"),
-        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
-    ]);
+    let service_fabric = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://sf.test/token"),
+            ("IDENTITY_HEADER", "header-secret"),
+            ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+        ],
+        redactor,
+    );
     service_fabric.hosted.push(Reply::ok(
         r#"{"access_token":"sf-token","expires_on":1700003600,"token_type":"Bearer"}"#,
     ));
@@ -667,7 +714,7 @@ fn hosted_tokens() {
         service_fabric.hosted.recorded()[0].url,
         "http://sf.test/token"
     );
-    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")]);
+    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")], redactor);
     cloud_shell.hosted.push(Reply::ok(
         r#"{"access_token":"shell-token","expires_in":3600,"resource":"https://cognitiveservices.azure.com","token_type":"Bearer"}"#,
     ));
@@ -679,7 +726,7 @@ fn hosted_tokens() {
     );
 }
 
-fn rejected_client_id(fixture: &Fixture) -> ManagedIdentityError {
+fn rejected_client_id(fixture: &Fixture<'_>) -> ManagedIdentityError {
     fixture
         .credential(Some("user-client"))
         .token(&fixture.io(), &[SCOPE])
@@ -687,17 +734,20 @@ fn rejected_client_id(fixture: &Fixture) -> ManagedIdentityError {
 }
 
 // the client id reaches the hosted protocols, which reject it for Service Fabric and Cloud Shell
-fn hosted_client_id() {
-    let service_fabric = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://sf.test/token"),
-        ("IDENTITY_HEADER", "header-secret"),
-        ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
-    ]);
+fn hosted_client_id(redactor: &Redactor) {
+    let service_fabric = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://sf.test/token"),
+            ("IDENTITY_HEADER", "header-secret"),
+            ("IDENTITY_SERVER_THUMBPRINT", THUMBPRINT),
+        ],
+        redactor,
+    );
     assert!(matches!(
         rejected_client_id(&service_fabric),
         ManagedIdentityError::Hosted(HostedIdentityError::ServiceFabricIdentityConfig)
     ));
-    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")]);
+    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://shell.test/token")], redactor);
     assert!(matches!(
         rejected_client_id(&cloud_shell),
         ManagedIdentityError::Hosted(HostedIdentityError::CloudShellClientId)
@@ -777,27 +827,39 @@ fn kind_names() {
 }
 
 // the outer selector treats an empty partner value as absent
-fn empty_partner_values() {
-    let shell = Fixture::new(&[
-        ("MSI_ENDPOINT", "http://shell.test/token"),
-        ("MSI_SECRET", ""),
-    ]);
+fn empty_partner_values(redactor: &Redactor) {
+    let shell = Fixture::new(
+        &[
+            ("MSI_ENDPOINT", "http://shell.test/token"),
+            ("MSI_SECRET", ""),
+        ],
+        redactor,
+    );
     assert_eq!(selection_of(&shell).0, ManagedIdentityKind::CloudShell);
-    let arc = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", APP_SERVICE),
-        ("IDENTITY_HEADER", ""),
-        ("IMDS_ENDPOINT", "http://arc.test/imds"),
-    ]);
+    let arc = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", APP_SERVICE),
+            ("IDENTITY_HEADER", ""),
+            ("IMDS_ENDPOINT", "http://arc.test/imds"),
+        ],
+        redactor,
+    );
     assert_eq!(selection_of(&arc).0, ManagedIdentityKind::Arc);
-    let app_service = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", APP_SERVICE),
-        ("IDENTITY_HEADER", "header-secret"),
-        ("IDENTITY_SERVER_THUMBPRINT", ""),
-    ]);
+    let app_service = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", APP_SERVICE),
+            ("IDENTITY_HEADER", "header-secret"),
+            ("IDENTITY_SERVER_THUMBPRINT", ""),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&app_service).0,
         ManagedIdentityKind::AppService
     );
+}
+
+fn empty_workload_values(redactor: &Redactor) {
     for empty in [
         "AZURE_AUTHORITY_HOST",
         "AZURE_TENANT_ID",
@@ -809,80 +871,95 @@ fn empty_partner_values() {
                 pair.1 = "";
             }
         }
-        let fixture = Fixture::new(&variables);
+        let fixture = Fixture::new(&variables, redactor);
         assert_eq!(selection_of(&fixture).0, ManagedIdentityKind::Imds);
     }
 }
 
-fn workload_and_unconfigured() {
-    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://ml.test/token")]);
+fn workload_and_unconfigured(redactor: &Redactor) {
+    let cloud_shell = Fixture::new(&[("MSI_ENDPOINT", "http://ml.test/token")], redactor);
     assert_eq!(
         selection_of(&cloud_shell),
         (ManagedIdentityKind::CloudShell, None)
     );
-    let workload = Fixture::new(&[
-        ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
-        ("AZURE_TENANT_ID", "fixture-tenant"),
-        ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
-        ("AZURE_CLIENT_ID", "env-client"),
-    ]);
+    let workload = Fixture::new(
+        &[
+            ("AZURE_AUTHORITY_HOST", "https://login.contoso.test"),
+            ("AZURE_TENANT_ID", "fixture-tenant"),
+            ("AZURE_FEDERATED_TOKEN_FILE", "/var/run/token"),
+            ("AZURE_CLIENT_ID", "env-client"),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&workload),
         (ManagedIdentityKind::Workload, None)
     );
-    let imds = Fixture::new(&[]);
+    let imds = Fixture::new(&[], redactor);
     assert_eq!(selection_of(&imds), (ManagedIdentityKind::Imds, Some("vm")));
     assert!(imds.imds.recorded().is_empty());
-    let lone = Fixture::new(&[("IDENTITY_ENDPOINT", APP_SERVICE)]);
+    let lone = Fixture::new(&[("IDENTITY_ENDPOINT", APP_SERVICE)], redactor);
     assert_eq!(
         selection_of(&lone),
         (ManagedIdentityKind::Unconfigured, None)
     );
 }
 
-fn presence_over_truthiness() {
-    let empty_all = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", ""),
-        ("IDENTITY_HEADER", ""),
-        ("IDENTITY_SERVER_THUMBPRINT", ""),
-    ]);
+fn presence_over_truthiness(redactor: &Redactor) {
+    let empty_all = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", ""),
+            ("IDENTITY_HEADER", ""),
+            ("IDENTITY_SERVER_THUMBPRINT", ""),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&empty_all),
         (ManagedIdentityKind::Imds, Some("service_fabric"))
     );
-    let empty_pair = Fixture::new(&[("IDENTITY_ENDPOINT", ""), ("IDENTITY_HEADER", "")]);
+    let empty_pair = Fixture::new(
+        &[("IDENTITY_ENDPOINT", ""), ("IDENTITY_HEADER", "")],
+        redactor,
+    );
     assert_eq!(
         selection_of(&empty_pair),
         (ManagedIdentityKind::Imds, Some("app_service"))
     );
-    let empty_ml = Fixture::new(&[("MSI_ENDPOINT", ""), ("MSI_SECRET", "")]);
+    let empty_ml = Fixture::new(&[("MSI_ENDPOINT", ""), ("MSI_SECRET", "")], redactor);
     assert_eq!(
         selection_of(&empty_ml),
         (ManagedIdentityKind::Imds, Some("azure_ml"))
     );
-    let empty_arc = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", ""),
-        ("IMDS_ENDPOINT", "http://arc.test/imds"),
-    ]);
+    let empty_arc = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", ""),
+            ("IMDS_ENDPOINT", "http://arc.test/imds"),
+        ],
+        redactor,
+    );
     assert_eq!(
         selection_of(&empty_arc),
         (ManagedIdentityKind::Imds, Some("vm"))
     );
 }
 
-fn arc_file_probe() {
-    let fixture = Fixture::new(&[]).with_file("/opt/azcmagent/bin/himds", "");
+fn arc_file_probe(redactor: &Redactor) {
+    let fixture = Fixture::new(&[], redactor).with_file("/opt/azcmagent/bin/himds", "");
     assert_eq!(
         selection_of(&fixture),
         (ManagedIdentityKind::Imds, Some("arc"))
     );
 }
 
-fn arc_fixture() -> Fixture {
-    let fixture = Fixture::new(&[
-        ("IDENTITY_ENDPOINT", "http://arc.test/token"),
-        ("IMDS_ENDPOINT", "http://arc.test/imds"),
-    ])
+fn arc_fixture(redactor: &Redactor) -> Fixture<'_> {
+    let fixture = Fixture::new(
+        &[
+            ("IDENTITY_ENDPOINT", "http://arc.test/token"),
+            ("IMDS_ENDPOINT", "http://arc.test/imds"),
+        ],
+        redactor,
+    )
     .with_file("/var/opt/azcmagent/tokens/secret.key", "arc-secret");
     fixture.arc.push(Reply::Response {
         status: 401,
@@ -895,8 +972,8 @@ fn arc_fixture() -> Fixture {
     fixture
 }
 
-fn arc_token() {
-    let fixture = arc_fixture();
+fn arc_token(redactor: &Redactor) {
+    let fixture = arc_fixture(redactor);
     let token = fixture.acquire(&[SCOPE]).unwrap();
     assert_eq!(token.token.expose_secret(), "arc-token");
     assert_eq!(token.expires_on, Some(NOW + 3600));
@@ -905,12 +982,12 @@ fn arc_token() {
 }
 
 // Arc takes a user-assigned identity only through a non-empty client id, which the SDK rejects
-fn arc_client_id() {
+fn arc_client_id(redactor: &Redactor) {
     assert!(matches!(
-        rejected_client_id(&arc_fixture()),
+        rejected_client_id(&arc_fixture(redactor)),
         ManagedIdentityError::Arc(ArcIdentityError::UserAssignedIdentity)
     ));
-    let system = arc_fixture();
+    let system = arc_fixture(redactor);
     let accepted = system
         .credential(Some(""))
         .token(&system.io(), &[SCOPE])
@@ -918,8 +995,8 @@ fn arc_client_id() {
     assert_eq!(accepted.token.expose_secret(), "arc-token");
 }
 
-fn partial_identity_endpoint() {
-    let fixture = Fixture::new(&[("IDENTITY_ENDPOINT", "http://sf.test/token")]);
+fn partial_identity_endpoint(redactor: &Redactor) {
+    let fixture = Fixture::new(&[("IDENTITY_ENDPOINT", "http://sf.test/token")], redactor);
     let error = fixture.acquire(&[SCOPE]).unwrap_err();
     assert_eq!(error.to_string(), NO_ENDPOINT);
     assert!(fixture.imds.recorded().is_empty());

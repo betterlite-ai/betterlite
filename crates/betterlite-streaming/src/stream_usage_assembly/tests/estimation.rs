@@ -1,12 +1,14 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
+use betterlite_redact::secret::Redactor;
 use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 
 use super::support::{
     Call, FixtureCounter, TOKEN_COUNTER_FAILED, UsageCase, chunks, fixture_choices,
     fixture_completion_details, fixture_details, fixture_hooks, fixture_messages, fixture_usage,
-    real_counter, simple_case, simple_usage,
+    real_counter, redactor, simple_case, simple_usage,
 };
 use crate::stream_usage_assembly::details::{
     apply_grounding_request_counts, attach_cache_breakdown, capture_cache_breakdown,
@@ -16,14 +18,14 @@ use crate::stream_usage_assembly::{
     UsageAssemblyError, UsageRequest, calculate_usage, count_reasoning_tokens,
 };
 
-pub(super) async fn token_fallback_and_failures() {
-    prompt_fallbacks().await;
-    prompt_failures_are_swallowed().await;
-    completion_estimation_and_failures().await;
-    reported_zero_is_never_estimated().await;
+pub(super) async fn token_fallback_and_failures(redactor: &Arc<Redactor>) {
+    prompt_fallbacks(redactor).await;
+    prompt_failures_are_swallowed(redactor).await;
+    completion_estimation_and_failures(redactor).await;
+    reported_zero_is_never_estimated(redactor).await;
 }
 
-async fn prompt_fallbacks() {
+async fn prompt_fallbacks(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
@@ -34,7 +36,7 @@ async fn prompt_fallbacks() {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, verbose) = case.run().await;
+    let (result, verbose) = case.run(redactor).await;
     assert_eq!(
         result
             .expect("the messages counter fills the prompt")
@@ -42,10 +44,10 @@ async fn prompt_fallbacks() {
         4
     );
     assert!(verbose.is_empty());
-    prompt_callback_wins().await;
+    prompt_callback_wins(redactor).await;
 }
 
-async fn prompt_callback_wins() {
+async fn prompt_callback_wins(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
@@ -57,7 +59,7 @@ async fn prompt_callback_wins() {
         reasoning_tokens: None,
         count_prompt_tokens: Some(&prompt),
     };
-    let (result, _) = case.run().await;
+    let (result, _) = case.run(redactor).await;
     let usage = result.expect("the supplied callback wins");
     assert_eq!(usage.prompt_tokens, 11);
     assert_eq!(usage.total_tokens, 18);
@@ -70,13 +72,13 @@ async fn prompt_callback_wins() {
     );
 }
 
-async fn prompt_failures_are_swallowed() {
-    failed_message_count_is_swallowed().await;
-    failed_prompt_callback_is_swallowed().await;
-    missing_messages_fail_the_prompt_count().await;
+async fn prompt_failures_are_swallowed(redactor: &Arc<Redactor>) {
+    failed_message_count_is_swallowed(redactor).await;
+    failed_prompt_callback_is_swallowed(redactor).await;
+    missing_messages_fail_the_prompt_count(redactor).await;
 }
 
-async fn failed_message_count_is_swallowed() {
+async fn failed_message_count_is_swallowed(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
     let counter = FixtureCounter::failing_messages();
@@ -87,7 +89,7 @@ async fn failed_message_count_is_swallowed() {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, verbose) = case.run().await;
+    let (result, verbose) = case.run(redactor).await;
     assert_eq!(
         result
             .expect("a failed prompt count is swallowed")
@@ -97,7 +99,7 @@ async fn failed_message_count_is_swallowed() {
     assert_eq!(verbose, vec![TOKEN_COUNTER_FAILED.to_owned()]);
 }
 
-async fn failed_prompt_callback_is_swallowed() {
+async fn failed_prompt_callback_is_swallowed(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
     let counter = FixtureCounter::counting(7, 2, 4);
@@ -109,7 +111,7 @@ async fn failed_prompt_callback_is_swallowed() {
         reasoning_tokens: None,
         count_prompt_tokens: Some(&raising),
     };
-    let (result, verbose) = case.run().await;
+    let (result, verbose) = case.run(redactor).await;
     assert_eq!(
         result
             .expect("a failed callback is swallowed")
@@ -119,7 +121,7 @@ async fn failed_prompt_callback_is_swallowed() {
     assert_eq!(verbose, vec![TOKEN_COUNTER_FAILED.to_owned()]);
 }
 
-async fn missing_messages_fail_the_prompt_count() {
+async fn missing_messages_fail_the_prompt_count(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let counter = FixtureCounter::counting(7, 2, 4);
     let case = UsageCase {
@@ -129,7 +131,7 @@ async fn missing_messages_fail_the_prompt_count() {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, verbose) = case.run().await;
+    let (result, verbose) = case.run(redactor).await;
     assert_eq!(
         result
             .expect("missing messages fail the prompt count")
@@ -152,12 +154,12 @@ async fn missing_messages_fail_the_prompt_count() {
     );
 }
 
-async fn completion_estimation_and_failures() {
-    reasoning_extends_the_estimate().await;
-    failed_completion_count_propagates().await;
+async fn completion_estimation_and_failures(redactor: &Arc<Redactor>) {
+    reasoning_extends_the_estimate(redactor).await;
+    failed_completion_count_propagates(redactor).await;
 }
 
-async fn reasoning_extends_the_estimate() {
+async fn reasoning_extends_the_estimate(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
     let counter = FixtureCounter::counting(7, 2, 4);
@@ -168,7 +170,7 @@ async fn reasoning_extends_the_estimate() {
         reasoning_tokens: Some(3),
         count_prompt_tokens: None,
     };
-    let (result, _) = case.run().await;
+    let (result, _) = case.run(redactor).await;
     let usage = result.expect("reasoning tokens extend the estimate");
     assert_eq!(usage.completion_tokens, 10);
     assert_eq!(
@@ -179,7 +181,7 @@ async fn reasoning_extends_the_estimate() {
     );
 }
 
-async fn failed_completion_count_propagates() {
+async fn failed_completion_count_propagates(redactor: &Arc<Redactor>) {
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
     let counter = FixtureCounter::failing_text();
@@ -190,18 +192,19 @@ async fn failed_completion_count_propagates() {
         reasoning_tokens: None,
         count_prompt_tokens: None,
     };
-    let (result, _) = case.run().await;
+    let (result, _) = case.run(redactor).await;
     assert!(matches!(
         result,
         Err(UsageAssemblyError::CompletionCount(..))
     ));
 }
 
-async fn reported_zero_is_never_estimated() {
+async fn reported_zero_is_never_estimated(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let reported = simple_usage(
         &counter,
         r#"[{"usage":{"prompt_tokens":0,"completion_tokens":0}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -209,7 +212,7 @@ async fn reported_zero_is_never_estimated() {
         fixture_usage(r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}"#)
     );
 
-    let partial = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":2}}]"#).await;
+    let partial = simple_usage(&counter, r#"[{"usage":{"prompt_tokens":2}}]"#, redactor).await;
     assert_eq!(
         partial,
         fixture_usage(r#"{"prompt_tokens":2,"completion_tokens":0,"total_tokens":2}"#)
@@ -217,10 +220,11 @@ async fn reported_zero_is_never_estimated() {
     assert!(counter.calls().is_empty());
 }
 
-pub(super) async fn reasoning_usage() {
+pub(super) async fn reasoning_usage(redactor: &Arc<Redactor>) {
     reasoning_content_is_counted().await;
-    supplied_reasoning_creates_details().await;
-    reasoning_is_capped().await;
+    supplied_reasoning_creates_details(redactor).await;
+    reasoning_is_capped(redactor).await;
+    negative_reasoning_counts_as_zero(redactor).await;
 }
 
 async fn reasoning_content_is_counted() {
@@ -260,7 +264,7 @@ async fn reasoning_content_is_counted() {
     ));
 }
 
-async fn supplied_reasoning_creates_details() {
+async fn supplied_reasoning_creates_details(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let plain = r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10}}]"#;
     assert_reasoning_details(
@@ -268,6 +272,7 @@ async fn supplied_reasoning_creates_details() {
         plain,
         4,
         r#"{"reasoning_tokens":4,"text_tokens":6}"#,
+        redactor,
     )
     .await;
     assert_reasoning_details(
@@ -275,21 +280,20 @@ async fn supplied_reasoning_creates_details() {
         plain,
         0,
         r#"{"reasoning_tokens":0,"text_tokens":10}"#,
+        redactor,
     )
     .await;
     assert_reasoning_details(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"reasoning_tokens":2,"text_tokens":3}}}]"#,
         4,
-        r#"{"reasoning_tokens":2,"text_tokens":3}"#,
-    )
+        r#"{"reasoning_tokens":2,"text_tokens":3}"#, redactor)
     .await;
     assert_reasoning_details(
         &counter,
         r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10,"completion_tokens_details":{"text_tokens":3}}}]"#,
         4,
-        r#"{"reasoning_tokens":4,"text_tokens":3}"#,
-    )
+        r#"{"reasoning_tokens":4,"text_tokens":3}"#, redactor)
     .await;
 }
 
@@ -298,15 +302,21 @@ async fn assert_reasoning_details(
     source: &str,
     reasoning: i64,
     expected: &str,
+    redactor: &Arc<Redactor>,
 ) {
-    let usage = reasoning_case(counter, Some(reasoning), source).await;
+    let usage = reasoning_case(counter, Some(reasoning), source, redactor).await;
     assert_eq!(
         usage.completion_tokens_details,
         Some(fixture_completion_details(expected))
     );
 }
 
-async fn reasoning_case(counter: &FixtureCounter, reasoning: Option<i64>, source: &str) -> Usage {
+async fn reasoning_case(
+    counter: &FixtureCounter,
+    reasoning: Option<i64>,
+    source: &str,
+    redactor: &Arc<Redactor>,
+) -> Usage {
     let parsed = chunks(source);
     let case = UsageCase {
         counter,
@@ -315,18 +325,19 @@ async fn reasoning_case(counter: &FixtureCounter, reasoning: Option<i64>, source
         reasoning_tokens: reasoning,
         count_prompt_tokens: None,
     };
-    case.run()
+    case.run(redactor)
         .await
         .0
         .expect("the reasoning usage is calculated")
 }
 
-async fn reasoning_is_capped() {
+async fn reasoning_is_capped(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let capped = reasoning_case(
         &counter,
         Some(5),
         r#"[{"usage":{"prompt_tokens":1,"completion_tokens":2}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -340,6 +351,7 @@ async fn reasoning_is_capped() {
         &counter,
         Some(5),
         r#"[{"usage":{"prompt_tokens":1,"completion_tokens":-2}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -348,11 +360,15 @@ async fn reasoning_is_capped() {
             r#"{"reasoning_tokens":-2,"text_tokens":0}"#
         ))
     );
+}
 
+async fn negative_reasoning_counts_as_zero(redactor: &Arc<Redactor>) {
+    let counter = FixtureCounter::counting(7, 2, 4);
     let below_zero = reasoning_case(
         &counter,
         Some(-3),
         r#"[{"usage":{"prompt_tokens":1,"completion_tokens":10}}]"#,
+        redactor,
     )
     .await;
     assert_eq!(
@@ -363,11 +379,11 @@ async fn reasoning_is_capped() {
     );
 }
 
-pub(super) async fn usage_detail_copying() {
+pub(super) async fn usage_detail_copying(redactor: &Arc<Redactor>) {
     attachment_copying();
     grounding_copying();
     capture_keeps_incoming_or_current();
-    final_usage_keeps_every_field().await;
+    final_usage_keeps_every_field(redactor).await;
 }
 
 fn attachment_copying() {
@@ -435,13 +451,13 @@ fn capture_keeps_incoming_or_current() {
     assert_eq!(capture_cache_breakdown(None, None), None);
 }
 
-async fn final_usage_keeps_every_field() {
+async fn final_usage_keeps_every_field(redactor: &Arc<Redactor>) {
     let counter = FixtureCounter::counting(7, 2, 4);
     let source = chunks(
         r#"[{"usage":{"prompt_tokens":4,"cache_creation_input_tokens":3,"prompt_tokens_details":{"cached_tokens":1,"cache_creation_token_details":{"ephemeral_1h_input_tokens":5}},"server_tool_use":{"web_search_requests":2},"cost":0.25}},{"usage":{"prompt_tokens":6,"cache_read_input_tokens":7}}]"#,
     );
     let original = source.clone();
-    let (result, _) = simple_case(&counter, &source).run().await;
+    let (result, _) = simple_case(&counter, &source).run(redactor).await;
     let usage = result.expect("the final usage keeps every field");
     assert_eq!(usage.cache_creation_input_tokens, Some(3));
     assert_eq!(usage.cache_read_input_tokens, Some(7));
@@ -467,7 +483,7 @@ async fn real_counter_estimates_unreported_counts() {
     let counter = real_counter();
     let parsed = chunks(r#"[{"choices":[]}]"#);
     let messages = fixture_messages();
-    let hooks = fixture_hooks();
+    let hooks = fixture_hooks(&redactor());
     let text = "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}, \u{43a}\u{430}\u{43a} \u{434}\u{435}\u{43b}\u{430}? The quick brown fox jumps over 12345 lazy dogs!";
     let request = UsageRequest {
         chunks: &parsed,

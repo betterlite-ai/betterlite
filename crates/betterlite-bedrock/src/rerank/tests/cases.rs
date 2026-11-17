@@ -10,6 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
     RerankBilledUnits, RerankDocument, RerankRequest, RerankResponse, RerankTokens,
 };
+use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::value::RawValue;
@@ -192,10 +193,16 @@ struct Stages<'stage> {
     runtime: &'stage Runtime,
     source: &'stage Source,
     factory: &'stage Factory,
+    redactor: &'stage Redactor,
 }
 
-pub(super) fn run_case(call: RerankCall<'_>, reply: Reply, supplied: Option<ClientKind>) -> Run {
-    run_with_source(call, reply, supplied, &Source::new())
+pub(super) fn run_case(
+    call: RerankCall<'_>,
+    reply: Reply,
+    supplied: Option<ClientKind>,
+    redactor: &Redactor,
+) -> Run {
+    run_with_source(call, reply, supplied, &Source::new(), redactor)
 }
 
 pub(super) fn run_with_source(
@@ -203,10 +210,11 @@ pub(super) fn run_with_source(
     reply: Reply,
     supplied: Option<ClientKind>,
     source: &Source,
+    redactor: &Redactor,
 ) -> Run {
     let client = FixtureClient::new(reply.clone());
     let factory = Factory::new(reply);
-    let mut state = logging_state();
+    let mut state = logging_state(redactor);
     let captured = Captured::default();
     let runtime = Builder::new_current_thread().build().unwrap();
     let supplied_ref = supplied.map(|kind| SuppliedClient {
@@ -217,6 +225,7 @@ pub(super) fn run_with_source(
         runtime: &runtime,
         source,
         factory: &factory,
+        redactor,
     };
     let result = run_logged(&mut call, &stages, supplied_ref, &mut state, &captured);
     Run {
@@ -237,7 +246,6 @@ fn run_logged(
     state: &mut LoggingState,
     captured: &Captured,
 ) -> Result<RerankResponse, RerankCallError> {
-    let redactor = super::fixture::redactor();
     let sink = DiscardingSink;
     let logger = |details: &Json| -> Result<(), PrePostError> {
         let Json::Object(fields) = details else {
@@ -252,7 +260,7 @@ fn run_logged(
         }
         Ok(())
     };
-    let env = prepost_env(state, &redactor, &sink, Some(&logger));
+    let env = prepost_env(state, stages.redactor, &sink, Some(&logger));
     let mut log = LogContext { state, env: &env };
     let target = stages
         .runtime
@@ -279,19 +287,20 @@ const VALID_REPLY: &str = r#"{"id":"resp-1","results":[{"index":1,"relevanceScor
 #[case::rerank_error("rerank_error")]
 #[case::rerank_transport_logging("rerank_transport_logging")]
 fn rerank_cases(#[case] name: &str) {
+    let redactor = super::fixture::redactor();
     match name {
-        "text_and_json_document_source" => document_sources(),
-        "rerank_model_arn" => model_arn(),
-        "top_n" => top_n(),
-        "results_index_score" => results_index_score(),
-        "return_document_content" => return_document_content(),
-        "rerank_error" => rerank_error(),
-        "rerank_transport_logging" => transport_logging(),
+        "text_and_json_document_source" => document_sources(&redactor),
+        "rerank_model_arn" => model_arn(&redactor),
+        "top_n" => top_n(&redactor),
+        "results_index_score" => results_index_score(&redactor),
+        "return_document_content" => return_document_content(&redactor),
+        "rerank_error" => rerank_error(&redactor),
+        "rerank_transport_logging" => transport_logging(&redactor),
         _ => panic!("unknown case {name}"),
     }
 }
 
-fn document_sources() {
+fn document_sources(redactor: &Redactor) {
     let mut documented = request(
         MODEL_ARN,
         "what is rust",
@@ -305,6 +314,7 @@ fn document_sources() {
         call(&documented, auth_params()),
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         run.text(),
@@ -348,20 +358,25 @@ fn assert_source_shapes(body: &IndexMap<String, Json>) {
     assert_eq!(field(document, "title"), &Json::Text("second".to_owned()));
 }
 
-fn model_arn() {
-    model_arn_payload();
-    model_arn_endpoint_rewrites();
-    model_arn_environment_region();
-    model_arn_session_region_and_endpoint();
-    model_arn_bearer_api_key();
-    model_arn_extra_headers();
+fn model_arn(redactor: &Redactor) {
+    model_arn_payload(redactor);
+    model_arn_endpoint_rewrites(redactor);
+    model_arn_environment_region(redactor);
+    model_arn_session_region_and_endpoint(redactor);
+    model_arn_bearer_api_key(redactor);
+    model_arn_extra_headers(redactor);
 }
 
-fn model_arn_payload() {
+fn model_arn_payload(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let mut prepared = call(&documented, auth_params());
     prepared.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com");
-    let run = run_case(prepared, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let run = run_case(
+        prepared,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     assert_eq!(
         run.posted().url,
         "https://bedrock-agent-runtime.us-west-2.amazonaws.com/rerank"
@@ -382,11 +397,16 @@ fn model_arn_payload() {
     assert!(headers.contains_key("X-Amz-Date"));
 }
 
-fn model_arn_endpoint_rewrites() {
+fn model_arn_endpoint_rewrites(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let mut trailing = call(&documented, auth_params());
     trailing.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com/");
-    let trailing_run = run_case(trailing, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let trailing_run = run_case(
+        trailing,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     assert_eq!(
         trailing_run.posted().url,
         "https://bedrock-agent-runtime.us-west-2.amazonaws.com//rerank"
@@ -405,6 +425,7 @@ fn model_arn_endpoint_rewrites() {
         call(&documented, configured),
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         configured_run.posted().url,
@@ -412,7 +433,7 @@ fn model_arn_endpoint_rewrites() {
     );
 }
 
-fn model_arn_environment_region() {
+fn model_arn_environment_region(redactor: &Redactor) {
     let documented = request("rerank-model", "q", vec![text("doc")]);
     let source = Source::new();
     let mut environment = call(&documented, ParamMap::new());
@@ -423,6 +444,7 @@ fn model_arn_environment_region() {
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
         &source,
+        redactor,
     );
     assert_eq!(
         run.posted().url,
@@ -433,11 +455,16 @@ fn model_arn_environment_region() {
     assert_eq!(calls[0].1, "eu-central-1");
 }
 
-fn model_arn_session_region_and_endpoint() {
+fn model_arn_session_region_and_endpoint(redactor: &Redactor) {
     let documented = request("rerank-model", "q", vec![text("doc")]);
     let mut environment = call(&documented, ParamMap::new());
     environment.environment.session_region = Some("ap-south-1");
-    let session_run = run_case(environment, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let session_run = run_case(
+        environment,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     assert_eq!(
         session_run.posted().url,
         "https://bedrock-agent-runtime.ap-south-1.amazonaws.com/rerank"
@@ -446,25 +473,35 @@ fn model_arn_session_region_and_endpoint() {
     let mut endpoint = call(&documented, ParamMap::new());
     endpoint.environment.runtime_endpoint =
         Some("https://bedrock-runtime.ca-central-1.amazonaws.com");
-    let endpoint_run = run_case(endpoint, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let endpoint_run = run_case(
+        endpoint,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     assert_eq!(
         endpoint_run.posted().url,
         "https://bedrock-agent-runtime.ca-central-1.amazonaws.com/rerank"
     );
 }
 
-fn model_arn_bearer_api_key() {
+fn model_arn_bearer_api_key(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let token = secrecy::SecretString::from("bearer-token".to_owned());
     let mut bearer_like = call(&documented, auth_params());
     bearer_like.api_key = Some(&token);
-    let run = run_case(bearer_like, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let run = run_case(
+        bearer_like,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     let authorization = &run.headers()["Authorization"];
     assert!(authorization.starts_with("AWS4-HMAC-SHA256"));
     assert!(!authorization.starts_with("Bearer"));
 }
 
-fn model_arn_extra_headers() {
+fn model_arn_extra_headers(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let headers = vec![
         (
@@ -479,7 +516,12 @@ fn model_arn_extra_headers() {
     ];
     let mut prepared = call(&documented, auth_params());
     prepared.extra_headers = Some(&headers);
-    let run = run_case(prepared, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let run = run_case(
+        prepared,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     let posted = run.headers();
     assert_eq!(
         posted.get("Content-Type"),
@@ -492,7 +534,7 @@ fn model_arn_extra_headers() {
     assert_eq!(posted.get("x-custom"), Some(&"value".to_owned()));
 }
 
-fn top_n() {
+fn top_n(redactor: &Redactor) {
     for (top_n, expected) in [(None, 3), (Some(0), 3), (Some(-2), -2), (Some(7), 7)] {
         let mut documented = request(MODEL_ARN, "q", vec![text("a"), text("b"), text("c")]);
         documented.top_n = top_n;
@@ -500,6 +542,7 @@ fn top_n() {
             call(&documented, auth_params()),
             Reply::ok(VALID_REPLY),
             Some(ClientKind::Sync),
+            redactor,
         );
         let body = run.body();
         let configuration = object_field(&body, "rerankingConfiguration");
@@ -536,15 +579,15 @@ fn tokens(response: &RerankResponse) -> &RerankTokens {
         .expect("tokens are not null")
 }
 
-fn results_index_score() {
-    results_index_score_values();
-    results_index_score_ids();
-    results_index_score_usage();
-    results_index_score_usage_nulls();
-    results_index_score_failures();
+fn results_index_score(redactor: &Redactor) {
+    results_index_score_values(redactor);
+    results_index_score_ids(redactor);
+    results_index_score_usage(redactor);
+    results_index_score_usage_nulls(redactor);
+    results_index_score_failures(redactor);
 }
 
-fn results_index_score_values() {
+fn results_index_score_values(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run_case(
         call(&documented, auth_params()),
@@ -552,6 +595,7 @@ fn results_index_score_values() {
             r#"{"id":"resp-1","results":[{"index":2,"relevanceScore":0.125},{"index":0,"relevanceScore":-0.5}]}"#,
         ),
         Some(ClientKind::Sync),
+        redactor,
     );
     let response = run.response();
     assert_eq!(response.id.as_deref(), Some("resp-1"));
@@ -563,7 +607,7 @@ fn results_index_score_values() {
     assert_eq!(tokens(response).input_tokens, None);
 }
 
-fn results_index_score_ids() {
+fn results_index_score_ids(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     for (body, expected) in [
         (
@@ -587,12 +631,13 @@ fn results_index_score_ids() {
             call(&documented, auth_params()),
             Reply::ok(body),
             Some(ClientKind::Sync),
+            redactor,
         );
         assert_eq!(run.response().id.as_deref(), Some(expected), "{body}");
     }
 }
 
-fn results_index_score_usage() {
+fn results_index_score_usage(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let filled_run = run_case(
         call(&documented, auth_params()),
@@ -600,6 +645,7 @@ fn results_index_score_usage() {
             r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":5,"total_tokens":9,"input_tokens":1,"output_tokens":2}}"#,
         ),
         Some(ClientKind::Sync),
+        redactor,
     );
     let response = filled_run.response();
     assert_eq!(billed_units(response).search_units, Some(Some(5)));
@@ -611,6 +657,7 @@ fn results_index_score_usage() {
         call(&documented, auth_params()),
         Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{}}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         billed_units(empty_run.response()).search_units,
@@ -622,6 +669,7 @@ fn results_index_score_usage() {
         call(&documented, auth_params()),
         Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":null}"#),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert_eq!(
         billed_units(null_run.response()).search_units,
@@ -630,7 +678,7 @@ fn results_index_score_usage() {
     );
 }
 
-fn results_index_score_usage_nulls() {
+fn results_index_score_usage_nulls(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run_case(
         call(&documented, auth_params()),
@@ -638,6 +686,7 @@ fn results_index_score_usage_nulls() {
             r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":null,"total_tokens":null,"input_tokens":null,"output_tokens":null}}"#,
         ),
         Some(ClientKind::Sync),
+        redactor,
     );
     let response = run.response();
     assert_eq!(billed_units(response).search_units, Some(None));
@@ -646,7 +695,7 @@ fn results_index_score_usage_nulls() {
     assert_eq!(tokens(response).output_tokens, Some(None));
 }
 
-fn results_index_score_failures() {
+fn results_index_score_failures(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     for body in [
         r#"{"usage":{}}"#,
@@ -670,6 +719,7 @@ fn results_index_score_failures() {
             call(&documented, auth_params()),
             Reply::ok(body),
             Some(ClientKind::Sync),
+            redactor,
         );
         assert!(
             matches!(run.result, Err(RerankCallError::Decode(_))),
@@ -678,7 +728,7 @@ fn results_index_score_failures() {
     }
 }
 
-fn return_document_content() {
+fn return_document_content(redactor: &Redactor) {
     let documents = vec![text("a"), text("b")];
     let mut bodies = Vec::new();
     for (return_documents, rank_fields, max_chunks) in [
@@ -694,6 +744,7 @@ fn return_document_content() {
             call(&documented, auth_params()),
             Reply::ok(VALID_REPLY),
             Some(ClientKind::Sync),
+            redactor,
         );
         bodies.push(run.text().to_owned());
         assert!(
@@ -710,13 +761,14 @@ fn return_document_content() {
     assert_eq!(bodies[1], bodies[2]);
 }
 
-fn rerank_error() {
-    rerank_error_status();
-    rerank_error_transport();
-    rerank_error_decode();
+fn rerank_error(redactor: &Redactor) {
+    rerank_error_status(redactor);
+    rerank_error_transport(redactor);
+    rerank_error_redirect(redactor);
+    rerank_error_decode(redactor);
 }
 
-fn rerank_error_status() {
+fn rerank_error_status(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run_case(
         call(&documented, auth_params()),
@@ -726,6 +778,7 @@ fn rerank_error_status() {
             "slow down",
         ),
         Some(ClientKind::Sync),
+        redactor,
     );
     let Err(RerankCallError::Provider { status, error }) = &run.result else {
         panic!("a status error is a provider error");
@@ -747,12 +800,14 @@ fn rerank_error_status() {
     );
 }
 
-fn rerank_error_transport() {
+fn rerank_error_transport(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    let sync = Some(ClientKind::Sync);
     let timeout_run = run_case(
         call(&documented, auth_params()),
         Reply::Timeout,
-        Some(ClientKind::Sync),
+        sync,
+        redactor,
     );
     let Err(RerankCallError::Provider { status, error }) = &timeout_run.result else {
         panic!("a timeout is a provider error");
@@ -764,18 +819,24 @@ fn rerank_error_transport() {
     let failed_run = run_case(
         call(&documented, auth_params()),
         Reply::Failed,
-        Some(ClientKind::Sync),
+        sync,
+        redactor,
     );
     assert!(matches!(
         failed_run.result,
         Err(RerankCallError::Transport(_))
     ));
     assert_eq!(failed_run.result.as_ref().unwrap_err().status(), None);
+}
 
+fn rerank_error_redirect(redactor: &Redactor) {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    let sync = Some(ClientKind::Sync);
     let redirect_run = run_case(
         call(&documented, auth_params()),
         Reply::status(302, &[], VALID_REPLY),
-        Some(ClientKind::Sync),
+        sync,
+        redactor,
     );
     let Err(RerankCallError::Provider {
         status: redirect_status,
@@ -791,12 +852,13 @@ fn rerank_error_transport() {
     );
 }
 
-fn rerank_error_decode() {
+fn rerank_error_decode(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let sync_run = run_case(
         call(&documented, auth_params()),
         Reply::ok("{not json"),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(matches!(sync_run.result, Err(RerankCallError::Decode(_))));
     assert!(
@@ -810,6 +872,7 @@ fn rerank_error_decode() {
         asynchronous,
         Reply::ok("{not json"),
         Some(ClientKind::Async),
+        redactor,
     );
     assert!(matches!(async_run.result, Err(RerankCallError::Decode(_))));
     assert!(
@@ -818,17 +881,22 @@ fn rerank_error_decode() {
     );
 }
 
-fn transport_logging() {
-    transport_logging_sync();
-    transport_logging_async();
-    transport_logging_fallback();
+fn transport_logging(redactor: &Redactor) {
+    transport_logging_sync(redactor);
+    transport_logging_async(redactor);
+    transport_logging_fallback(redactor);
 }
 
-fn transport_logging_sync() {
+fn transport_logging_sync(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut synchronous = call(&documented, auth_params());
     synchronous.timeout = Some(Duration::from_millis(2500));
-    let run = run_case(synchronous, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let run = run_case(
+        synchronous,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+        redactor,
+    );
     assert_eq!(run.supplied_seen.len(), 1);
     assert!(!run.with_logging());
     assert_eq!(run.sync_calls, 0);
@@ -861,7 +929,7 @@ fn transport_logging_sync() {
     assert!(run.post_call().is_some());
 }
 
-fn transport_logging_async() {
+fn transport_logging_async(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut asynchronous = call(&documented, auth_params());
     asynchronous.is_async = true;
@@ -869,6 +937,7 @@ fn transport_logging_async() {
         asynchronous,
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Async),
+        redactor,
     );
     assert_eq!(run.supplied_seen.len(), 1);
     assert!(
@@ -879,7 +948,7 @@ fn transport_logging_async() {
     assert!(run.post_call().is_none());
 }
 
-fn transport_logging_fallback() {
+fn transport_logging_fallback(redactor: &Redactor) {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut async_mismatch = call(&documented, auth_params());
     async_mismatch.is_async = true;
@@ -887,6 +956,7 @@ fn transport_logging_fallback() {
         async_mismatch,
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
+        redactor,
     );
     assert!(async_fallback_run.supplied_seen.is_empty());
     assert_eq!(async_fallback_run.async_calls, 1);
@@ -898,6 +968,7 @@ fn transport_logging_fallback() {
         sync_mismatch,
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Async),
+        redactor,
     );
     assert!(sync_fallback_run.supplied_seen.is_empty());
     assert_eq!(sync_fallback_run.sync_calls, 1);
@@ -907,6 +978,7 @@ fn transport_logging_fallback() {
         call(&documented, auth_params()),
         Reply::ok(VALID_REPLY),
         None,
+        redactor,
     );
     assert_eq!(default_run.sync_calls, 1);
     assert!(!default_run.with_logging());
