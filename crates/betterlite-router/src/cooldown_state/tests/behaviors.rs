@@ -26,6 +26,10 @@ pub(crate) async fn run(name: &str) {
         "a_warning_from_the_shared_tier_is_not_an_error" => a_warning_is_not_an_error().await,
         "an_expired_cooldown_leaves_the_memory_tier" => an_expired_cooldown_leaves().await,
         "a_promoted_entry_keeps_the_remaining_time" => a_promoted_entry_is_corrected().await,
+        "an_unexpired_local_ttl_survives_a_second_add" => a_second_add_keeps_the_local_ttl(),
+        "a_re_add_after_the_local_ttl_expired_takes_the_new_ttl" => a_second_add_after_expiry(),
+        "local_expiries_report_the_memory_tier_deadlines" => local_expiries_report(),
+        "set_states_keeps_an_unexpired_local_ttl" => set_states_keeps_the_local_ttl(),
         "the_minimum_cooldown_is_the_smallest_configured_time" => minimum_cooldown_is_smallest(),
         "the_minimum_cooldown_falls_back_to_the_router_default" => minimum_cooldown_falls_back(),
         "set_states_merges_and_prunes_the_expired" => set_states_merges().await,
@@ -177,6 +181,77 @@ async fn a_promoted_entry_is_corrected() {
             record: record(65.0, 30.0),
         }]
     );
+}
+
+fn a_second_add_keeps_the_local_ttl() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryCooldowns::default());
+    let cache = cache(&clock, Arc::clone(&shared), &settings());
+    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    clock.set(2.0);
+    cache.add("a", "boom again", 500, Some(30.0)).unwrap();
+    assert_eq!(cache.local_expiries(&ids(&["a"])).unwrap(), vec![Some(5.0)]);
+    assert_eq!(shared.writes()[1].ttl_seconds.to_bits(), 30.0_f64.to_bits());
+    assert_eq!(
+        shared.writes()[1].record,
+        CooldownRecord {
+            exception_received: String::from("boom again"),
+            status_code: String::from("500"),
+            timestamp: 2.0,
+            cooldown_time: 30.0,
+        }
+    );
+}
+
+fn a_second_add_after_expiry() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryCooldowns::default());
+    let cache = cache(&clock, Arc::clone(&shared), &settings());
+    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    clock.set(6.0);
+    cache.add("a", "boom again", 429, Some(30.0)).unwrap();
+    assert_eq!(
+        cache.local_expiries(&ids(&["a"])).unwrap(),
+        vec![Some(36.0)]
+    );
+}
+
+fn local_expiries_report() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryCooldowns::default());
+    let cache = cache(&clock, Arc::clone(&shared), &settings());
+    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    cache.add("b", "boom", 429, Some(9.0)).unwrap();
+    clock.set(5.0);
+    assert_eq!(
+        cache.local_expiries(&ids(&["a", "b", "c"])).unwrap(),
+        vec![Some(5.0), Some(9.0), None]
+    );
+    clock.set(9.5);
+    assert_eq!(
+        cache.local_expiries(&ids(&["a", "b"])).unwrap(),
+        vec![None, None]
+    );
+}
+
+fn set_states_keeps_the_local_ttl() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryHealth::default());
+    let cache = health(&clock, Arc::clone(&shared), 10.0);
+    cache
+        .set_states(&snapshot(&[("a", unhealthy(0.0))]))
+        .unwrap();
+    assert_eq!(cache.local_expiry(), Some(15.0));
+    clock.set(1.0);
+    cache
+        .set_states(&snapshot(&[("b", unhealthy(1.0))]))
+        .unwrap();
+    assert_eq!(cache.local_expiry(), Some(15.0));
+    clock.set(16.0);
+    cache
+        .set_states(&snapshot(&[("c", unhealthy(16.0))]))
+        .unwrap();
+    assert_eq!(cache.local_expiry(), Some(31.0));
 }
 
 fn minimum_cooldown_is_smallest() {

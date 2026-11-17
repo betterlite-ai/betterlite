@@ -27,6 +27,16 @@ fn runtime() -> Runtime {
 )]
 #[case::an_expired_cooldown_leaves_the_memory_tier("an_expired_cooldown_leaves_the_memory_tier")]
 #[case::a_promoted_entry_keeps_the_remaining_time("a_promoted_entry_keeps_the_remaining_time")]
+#[case::an_unexpired_local_ttl_survives_a_second_add(
+    "an_unexpired_local_ttl_survives_a_second_add"
+)]
+#[case::a_re_add_after_the_local_ttl_expired_takes_the_new_ttl(
+    "a_re_add_after_the_local_ttl_expired_takes_the_new_ttl"
+)]
+#[case::local_expiries_report_the_memory_tier_deadlines(
+    "local_expiries_report_the_memory_tier_deadlines"
+)]
+#[case::set_states_keeps_an_unexpired_local_ttl("set_states_keeps_an_unexpired_local_ttl")]
 #[case::the_minimum_cooldown_is_the_smallest_configured_time(
     "the_minimum_cooldown_is_the_smallest_configured_time"
 )]
@@ -96,6 +106,12 @@ fn cooldown_state_behaviors(#[case] name: &str) {
     "a_key_at_the_length_limit_is_accepted_and_one_past_it_is_not"
 )]
 #[case::a_cancelled_read_leaves_the_key_readable("a_cancelled_read_leaves_the_key_readable")]
+#[case::a_re_add_at_the_exact_expiry_takes_the_new_ttl(
+    "a_re_add_at_the_exact_expiry_takes_the_new_ttl"
+)]
+#[case::set_states_replaces_a_local_ttl_ending_exactly_now(
+    "set_states_replaces_a_local_ttl_ending_exactly_now"
+)]
 #[case::the_minimum_cooldown_of_a_zero_entry_is_zero(
     "the_minimum_cooldown_of_a_zero_entry_is_zero"
 )]

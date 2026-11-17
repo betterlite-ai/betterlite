@@ -1,3 +1,4 @@
+use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
@@ -20,6 +21,12 @@ pub trait RouteServices: Send + Sync {
     #[must_use]
     fn cooldown_list(&self) -> Vec<String> {
         vec![]
+    }
+
+    // _async_filter_health_check_unhealthy_deployments: whether health routing is on, its group allowlist, and the deployments the snapshot marks unhealthy
+    #[must_use]
+    fn health_inputs(&self) -> HealthInputs {
+        HealthInputs::default()
     }
 
     // async_callback_filter_deployments: each callback replaces the pool, and its failure stops the route

@@ -23,6 +23,8 @@ pub(crate) async fn run(name: &str) {
         "the_staleness_ttl_truncates_a_fractional_expiry" => the_fractional_expiry().await,
         "a_key_at_the_length_limit_is_accepted_and_one_past_it_is_not" => the_key_limit().await,
         "a_cancelled_read_leaves_the_key_readable" => a_cancelled_read().await,
+        "a_re_add_at_the_exact_expiry_takes_the_new_ttl" => a_re_add_at_the_expiry().await,
+        "set_states_replaces_a_local_ttl_ending_exactly_now" => set_states_at_the_expiry().await,
         "the_minimum_cooldown_of_a_zero_entry_is_zero" => a_zero_cooldown_stays_zero(),
         _ => panic!("unknown case {name}"),
     }
@@ -192,6 +194,34 @@ async fn a_cancelled_read() {
             record: record(0.0, 5.0),
         }]
     );
+}
+
+async fn a_re_add_at_the_expiry() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryCooldowns::default());
+    let cache = cache(&clock, Arc::clone(&shared), &settings());
+    cache.add("a", "boom", 429, Some(5.0)).unwrap();
+    clock.set(5.0);
+    cache.add("a", "boom", 429, Some(30.0)).unwrap();
+    // InMemoryCache.set_cache prunes a TTL ending exactly now, so the re-add replaces it instead of keeping it
+    assert_eq!(
+        cache.local_expiries(&ids(&["a"])).unwrap(),
+        vec![Some(35.0)]
+    );
+}
+
+async fn set_states_at_the_expiry() {
+    let clock = TestClock::new();
+    let shared = Arc::new(MemoryHealth::default());
+    let cache = health(&clock, Arc::clone(&shared), 10.0);
+    cache
+        .set_states(&snapshot(&[("a", unhealthy(0.0))]))
+        .unwrap();
+    clock.set(15.0);
+    cache
+        .set_states(&snapshot(&[("b", unhealthy(15.0))]))
+        .unwrap();
+    assert_eq!(cache.local_expiry(), Some(30.0));
 }
 
 fn a_zero_cooldown_stays_zero() {

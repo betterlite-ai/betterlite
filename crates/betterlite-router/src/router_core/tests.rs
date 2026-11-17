@@ -50,7 +50,6 @@ where
 }
 
 #[rstest]
-#[case::stage_cooldown_state(boundaries::stage_skips(RouteStage::CooldownState))]
 #[case::stage_cooldown_policy(boundaries::stage_skips(RouteStage::CooldownPolicy))]
 #[case::stage_fallback_attempts(boundaries::stage_skips(RouteStage::FallbackAttempts))]
 #[case::stage_chat_stream_fallback(boundaries::stage_skips(RouteStage::ChatStreamFallback))]
