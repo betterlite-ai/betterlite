@@ -578,6 +578,7 @@ async fn simple_shuffle_empty() {
 fn weights_read_metrics() {
     numeric_weights();
     non_numeric_weights();
+    out_of_range_weights();
 }
 
 fn numeric_weights() {
@@ -634,6 +635,30 @@ fn non_numeric_weights() {
     assert!(matches!(
         weights(&fractional_rpm),
         Err(RoutingError::Metric { field: "rpm" })
+    ));
+}
+
+fn out_of_range_weights() {
+    let negative_weight = vec![deployment(
+        "gpt-4o",
+        "f",
+        &[("weight", Json::Number(serde_json::Number::from(-1)))],
+    )];
+    assert!(matches!(
+        weights(&negative_weight),
+        Err(RoutingError::Metric { field: "weight" })
+    ));
+    let huge_tpm = vec![deployment(
+        "gpt-4o",
+        "g",
+        &[(
+            "tpm",
+            Json::Number(serde_json::Number::from(u64::from(u32::MAX) + 1)),
+        )],
+    )];
+    assert!(matches!(
+        weights(&huge_tpm),
+        Err(RoutingError::Metric { field: "tpm" })
     ));
 }
 
