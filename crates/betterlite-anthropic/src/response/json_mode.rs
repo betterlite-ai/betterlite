@@ -20,12 +20,11 @@ pub(super) fn select(
     reverse: Option<&IndexMap<String, String>>,
 ) -> Result<Selection, ResponseContentError> {
     let internal = internal_count(tool_calls);
-    if json_mode != Some(true) || internal == 0 {
-        return Ok(Selection {
-            message: None,
-            tool_calls: tool_calls.to_vec(),
-            extra: None,
-        });
+    if json_mode != Some(true) {
+        return Ok(unresolved(tool_calls));
+    }
+    if internal == 0 {
+        return Ok(unresolved(tool_calls));
     }
     let replace = internal == tool_calls.len()
         && tool_calls
@@ -45,6 +44,15 @@ pub(super) fn select(
         tool_calls: detailed.tool_calls,
         extra: detailed.extra_content,
     })
+}
+
+// LiteLLM leaves the extracted calls and text untouched when JSON mode has nothing to resolve
+fn unresolved(tool_calls: &[AnthropicToolCall]) -> Selection {
+    Selection {
+        message: None,
+        tool_calls: tool_calls.to_vec(),
+        extra: None,
+    }
 }
 
 fn internal_count(tool_calls: &[AnthropicToolCall]) -> usize {
