@@ -58,15 +58,17 @@ struct ScriptedGcs {
 
 impl ScriptedGcs {
     fn for_script(script: &Metadata) -> Self {
-        let body = match &script.body {
-            Some(text) => text.clone().into_bytes(),
-            None => script
-                .json
-                .as_ref()
-                .map(Value::to_string)
-                .unwrap_or_default()
-                .into_bytes(),
-        };
+        let body = script.body.clone().map_or_else(
+            || {
+                script
+                    .json
+                    .as_ref()
+                    .map(Value::to_string)
+                    .unwrap_or_default()
+                    .into_bytes()
+            },
+            String::into_bytes,
+        );
         Self {
             status: script.status,
             body,

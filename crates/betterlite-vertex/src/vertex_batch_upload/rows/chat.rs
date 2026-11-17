@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 
 use crate::gemini_options::assembly::{OptionsContext, map_options};
 use crate::gemini_options::error::{GeminiOptionsError, decode};
-use crate::gemini_request::body::{BodyInput, transform, transform_with_gcs};
+use crate::gemini_request::body::{BodyInput, transform};
 use crate::gemini_request::error::encode;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_batch_records::rows::VERTEX_AI_PROVIDER;
@@ -121,7 +121,9 @@ where
     };
     let transformed = match context.mappers.gcs_deps() {
         Some(gcs) => {
-            transform_with_gcs(&gcs, &input, context.capabilities, context.fetcher).await?
+            input
+                .transform_with_gcs(&gcs, context.capabilities, context.fetcher)
+                .await?
         }
         None => transform(&input, context.capabilities, context.fetcher).await?,
     };

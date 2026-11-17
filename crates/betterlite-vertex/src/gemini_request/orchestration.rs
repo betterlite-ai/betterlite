@@ -14,7 +14,7 @@ use crate::cache_lookup::transport::CacheTransport;
 use crate::gemini_media::gcs_metadata::GcsDeps;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
 
-use super::body::{BodyInput, Transformed, transform_with_gcs};
+use super::body::{BodyInput, Transformed};
 use super::error::{BodyError, RequestError, encode};
 use super::media_prepare::{FetchMode, prepare};
 
@@ -102,7 +102,8 @@ where
         modify_params: request.modify_params,
         schema_template: request.schema_template,
     };
-    transform_with_gcs(&request.gcs, &input, request.capabilities, cache.fetcher)
+    input
+        .transform_with_gcs(&request.gcs, request.capabilities, cache.fetcher)
         .await
         .map_err(RequestError::from)
 }

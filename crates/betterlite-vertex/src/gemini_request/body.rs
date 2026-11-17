@@ -105,29 +105,21 @@ where
     convert_body(input, prepare_body(input, capabilities)?, fetcher).await
 }
 
-pub async fn transform_with_gcs<Source>(
-    gcs: &GcsDeps<'_>,
-    input: &BodyInput<'_>,
-    capabilities: &(dyn ModelCapabilityLookup + Sync),
-    fetcher: &Source,
-) -> Result<Transformed, BodyError>
-where
-    Source: RemoteMediaFetcher + Sync,
-{
-    let Prepared {
-        instruction,
-        messages,
-        params,
-        litellm_params,
-    } = prepare_body(input, capabilities)?;
-    let resolved_messages = resolve_gcs_content_types(messages, &litellm_params, gcs).await?;
-    let resolved = Prepared {
-        instruction,
-        messages: resolved_messages,
-        params,
-        litellm_params,
-    };
-    convert_body(input, resolved, fetcher).await
+impl BodyInput<'_> {
+    pub async fn transform_with_gcs<Source>(
+        &self,
+        gcs: &GcsDeps<'_>,
+        capabilities: &(dyn ModelCapabilityLookup + Sync),
+        fetcher: &Source,
+    ) -> Result<Transformed, BodyError>
+    where
+        Source: RemoteMediaFetcher + Sync,
+    {
+        let mut prepared = prepare_body(self, capabilities)?;
+        prepared.messages =
+            resolve_gcs_content_types(prepared.messages, &prepared.litellm_params, gcs).await?;
+        convert_body(self, prepared, fetcher).await
+    }
 }
 
 async fn convert_body<Source>(
