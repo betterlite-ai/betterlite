@@ -3,7 +3,7 @@ use betterlite_openai::containers::container_file_http::proxied::reply_headers;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::gitlab_client::payload::decode_text;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::data_cloud_dispatch::call::{EmbeddingCall, EmbeddingReply};
 use crate::data_cloud_dispatch::embed::EmbeddingContext;
@@ -67,7 +67,7 @@ pub(super) async fn complete(
     validate_environment(
         &mut headers,
         &call.model,
-        api_key.as_ref().map(|value| value.expose_secret().as_str()),
+        api_key.as_ref().map(ExposeSecret::expose_secret),
     )?;
     let (url, body) = request(call, context)?;
     let response = send_json(context, &url, &headers, &body, call.timeout).await?;
