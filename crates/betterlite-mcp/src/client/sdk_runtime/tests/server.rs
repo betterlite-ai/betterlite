@@ -293,10 +293,10 @@ async fn ask_peer(
     request: &str,
     context: &RequestContext<RoleServer>,
 ) -> Result<CallToolResult, ErrorData> {
-    let request: ServerRequest = serde_json::from_str(request)
+    let incoming: ServerRequest = serde_json::from_str(request)
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
     Ok(CallToolResult::success(vec![ContentBlock::text(
-        peer_answer(context, request).await,
+        peer_answer(context, incoming).await,
     )]))
 }
 
