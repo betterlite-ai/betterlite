@@ -308,8 +308,8 @@ pub(super) fn cache_deps(
     tracker: &Arc<CacheWriteTracker>,
     api_limits: ApiLimits,
 ) -> MessagesStreamCacheDeps {
-    let target: Option<Arc<dyn MessagesStreamCacheTarget>> = cache.as_ref().map(|recording| {
-        let target: Arc<dyn MessagesStreamCacheTarget> = Arc::<RecordingCache>::clone(recording);
+    let target: Option<Arc<dyn MessagesStreamCacheTarget>> = cache.map(|recording| {
+        let target: Arc<dyn MessagesStreamCacheTarget> = Arc::<RecordingCache>::clone(&recording);
         target
     });
     MessagesStreamCacheDeps {
