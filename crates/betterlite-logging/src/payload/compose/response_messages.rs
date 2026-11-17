@@ -6,7 +6,7 @@ use serde_json::value::RawValue;
 use crate::fields::messages::append_system_prompt_messages;
 use crate::fields::response::{ExtractedResponse, HiddenParams, get_final_response_obj};
 use crate::logging_state::LoggingState;
-use crate::payload::azure::{get_model_router_selected_model, is_model_router_call};
+use crate::payload::azure::{is_model_router_call, router_selected_model};
 use crate::payload::compose::inputs::optional_text;
 use crate::payload::compose::{PayloadComposition, PayloadRequest};
 use crate::payload::error::PayloadError;
@@ -35,7 +35,7 @@ pub(crate) fn model_name(
 ) -> String {
     let hidden = raw_hidden_params(extracted);
     let requested = Some(request.state.model.as_str());
-    if let Some(stamped) = get_model_router_selected_model(hidden.as_ref()) {
+    if let Some(stamped) = router_selected_model(hidden.as_ref()) {
         return stamped;
     }
     if is_model_router_call(requested, hidden.as_ref())
@@ -91,7 +91,11 @@ pub(crate) fn model_parameters(
         .collect::<Result<ModelParameters, PayloadError>>()?;
     logging_model_parameters(&parameters)
         .into_iter()
-        .map(|(name, raw)| Ok((name, parse_parameter(&raw)?)))
+        .map(|(name, raw)| {
+            let value =
+                serde_json::from_str(raw.get()).map_err(|source| PayloadError::Json { source })?;
+            Ok((name, value))
+        })
         .collect()
 }
 
@@ -99,8 +103,4 @@ fn raw_parameter(name: &str, value: &Json) -> Result<(String, Box<RawValue>), Pa
     let encoded = serde_json::to_string(value).map_err(|source| PayloadError::Json { source })?;
     let raw = RawValue::from_string(encoded).map_err(|source| PayloadError::Json { source })?;
     Ok((name.to_owned(), raw))
-}
-
-fn parse_parameter(raw: &RawValue) -> Result<Json, PayloadError> {
-    serde_json::from_str(raw.get()).map_err(|source| PayloadError::Json { source })
 }
