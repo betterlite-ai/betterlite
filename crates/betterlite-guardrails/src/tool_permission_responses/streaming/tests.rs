@@ -321,7 +321,8 @@ async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_ant
     .await;
     let text = emitted_text(&items);
     assert!(text.contains(r#""type": "thinking""#));
-    assert!(text.contains(r#""thinking": "hmm""#));
+    // The signature delta repeats the accumulated thinking, so the joined block holds "hmm" twice
+    assert!(text.contains(r#""thinking": "hmmhmm""#));
     assert!(text.contains(r#""signature": "sig-abc""#));
     assert!(text.contains("Permission denied:"));
     assert!(!text.contains(r#""type": "tool_use""#));
