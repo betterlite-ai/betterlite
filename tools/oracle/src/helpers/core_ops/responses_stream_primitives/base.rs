@@ -55,6 +55,10 @@ pub(crate) fn build_state(
     };
     let start_time = DateTime::parse_from_rfc3339(&spec.start_time)
         .map_err(|error| failure(error.to_string()))?;
+    // the fallback clock is a different instant, so the case fails when the logged start time is ignored
+    let now = start_time
+        .checked_add_signed(TimeDelta::hours(12))
+        .ok_or_else(|| failure(String::from("the fallback clock is out of range")))?;
     Ok(base_stream_state(&BaseStreamStateInput {
         model: &spec.model,
         custom_llm_provider: spec.provider.as_deref(),
@@ -68,8 +72,7 @@ pub(crate) fn build_state(
         headers: &spec.headers,
         api_base: &resolver,
         times: StreamTimes {
-            // the fallback clock is a different instant, so the case fails when the logged start time is ignored
-            now: start_time + TimeDelta::hours(12),
+            now,
             created_timestamp: spec.created,
         },
         max_streaming_duration_seconds,
