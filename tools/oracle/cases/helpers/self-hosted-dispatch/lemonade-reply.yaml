@@ -1,0 +1,33 @@
+kind: helper
+name: lemonade-reply
+call:
+  b8157:
+    op: lemonade_reply
+    provider: lemonade
+    model: llama-3
+    messages: [{role: user, content: hi}]
+    api_base: "http://self-hosted.test/api/v1"
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"something-else","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+calls:
+  - b8157:
+      op: lemonade_reply
+      provider: lemonade
+      model: qwen
+      messages: [{role: user, content: hi}]
+      api_base: "http://self-hosted.test/api/v1"
+      api_key: "sk-passed"
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-2","object":"chat.completion","created":1700000001,"model":"lemonade/qwen","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}'
+  - b8157:
+      op: lemonade_reply
+      provider: lemonade
+      model: mistral
+      messages: [{role: user, content: hi}]
+      answer:
+        status: 200
+        body: '{"id":"chatcmpl-3","object":"chat.completion","created":1700000002,"model":"mistral","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'
+env: {}
+compare: {ignore: []}

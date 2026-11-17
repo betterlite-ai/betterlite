@@ -4,7 +4,7 @@ description: >-
   Extract the complete SSE recovery helpers from B919 into api::responses_sse_recovery.
   Own all of sse_output_recovery.py and the three completed-output/raw-SSE/logging recovery
   methods L825-L888 in the reverse bridge. This is recovery from an already recorded string,
-  not a live provider pump. B005 supplies prefix stripping and B012 the logging snapshot.
+  not a live provider pump. B005 supplies prefix stripping and B247 the logging snapshot.
   B919 remains the final response assembly task and depends on this part.
 
   Expose decode_recovery_line(bytes,limits) and recover_recorded_output(bytes,limits) using

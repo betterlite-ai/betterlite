@@ -39,7 +39,7 @@ description: >-
   duplicate-field and limit-boundary inputs and add model_prompt_preview::tests::replays_the_model_prompt_preview_corpus.
   Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
   decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B770 owns crates/betterlite-server/fuzz; depend on it and register this decoder target
+  fetching URLs. B003 owns crates/betterlite-server/fuzz; depend on it and register this decoder target
   without recreating the workspace.
 
 

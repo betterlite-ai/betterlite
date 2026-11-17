@@ -10,8 +10,8 @@ description: >-
   thread awaits request.body but throws its contents away: messages, metadata and tool_resources in that
   body do not reach acreate_thread. Retrieval/listing also starts with empty data. Only add_messages parses
   strict JSON through B2489 decode_assistant_body. Pass thread_id as an explicit SDK argument; do not merge
-  it over a body key of the same name. Schedule B012 request status on success, project B004 headers, and
-  await B012 failure hooks on errors; no post-call success hook is present in these handlers.
+  it over a body key of the same name. Schedule B8395 request status on success, project B004 headers, and
+  await B8395 failure hooks on errors; no post-call success hook is present in these handlers.
 
   Ownership includes decorators at proxy_server.py:13325-13676, 302 nonblank/non-comment lines. The SDK
   functions live wholly in B1056/B1057 and are not owned here. Budget 205 routes, 185 behavioral tests,
@@ -118,7 +118,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B2489 owns dispatch, assistant_settings and the JSON byte decoder; SDK thread and message callables remain B1056/B1057, reached only through that dispatcher.
-- B1103 owns the complete authenticated request preparation interface, B004 response-header semantics, B012 hook/status machinery and B003 final error rendering/auth infrastructure.
+- B1103 owns the complete authenticated request preparation interface, B004 response-header semantics, B8395 hook/status machinery and B003 final error rendering/auth infrastructure.
 - B1085 owns assistant object handlers and B089 run handling plus its complete stream generator. Other proxy_server.py callables remain with B083 audio, B1125 realtime and B124 proxy support or their existing extracted owners.
 pitfalls:
 - The POST /threads handler reads its body without decoding it, so SDK support for messages does not imply route support.

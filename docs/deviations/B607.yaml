@@ -1,0 +1,21 @@
+task: B607
+deviations:
+  - what: The buffered conversion's post-call record carries no api_key, where LiteLLM passes api_key= into logging_obj.post_call.
+    why: B249's shared PostCall record has no api_key field, and routing every provider's callbacks through it keeps the key out of observability sinks; nothing that consumes the record reads the key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2541-L2548
+  - what: A reply body that is not valid UTF-8 is logged by its byte count ("N bytes that are not UTF-8"), where LiteLLM stores httpx's response.text decoded with replacement characters.
+    why: The byte count names the actual fault without inventing text the provider did not send; the conversion itself still fails the same 422 that LiteLLM's response.json() raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2546
+  - what: When a reply has neither usage nor stopReason, betterlite fails naming stopReason, where LiteLLM reads usage first and raises KeyError("usage").
+    why: Both are untyped provider faults that carry no status and no header; the conversion reads stopReason as part of the message pass, and a reply missing both is outside anything a working Bedrock setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2651-L2663
+  - what: Message content that is not a list of blocks is an error naming output.message.content, where LiteLLM iterates a string content character by character and answers with empty content, and a non-iterable content raises TypeError.
+    why: A non-list content is malformed Bedrock output, and silently returning empty content loses the provider's answer; docs/compatibility.md makes a value of the wrong type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2604-L2611
+  - what: A 422 conversion failure whose upstream headers cannot be encoded as ASCII fails with a header error instead of the 422 error, where LiteLLM carries any header text the HTTP client accepted.
+    why: The shared BedrockError stores error headers as ASCII, the encoding an HTTP/1.1 header carries; a reply body that fails to parse while the upstream also sent a header outside that range is a broken transport, not a conversion failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2554-L2561
+  - what: The 422 message carries serde_json's parse error inside the fixed prefix and suffix, where LiteLLM carries Python's json.JSONDecodeError or TypedDict-constructor text.
+    why: The decoder's own wording is the only faithful <error> each runtime can produce; the stable prefix and issue link callers match on are identical, and downstream members that fail later keep their own typed errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2556-L2559
+kept_bugs: []

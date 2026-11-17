@@ -2,7 +2,7 @@ id: B336
 title: Complexity routing through context compaction
 description: 'Integrate B3545 native compaction with B385 typed summary inputs and B386 context-fit checks. Own
   pending state, recursion protection, native/client-managed routing, authorized summary calls and post-summary
-  revalidation. Adapt through server services for B080/B081, charge B068/B012 caller cost and preserve
+  revalidation. Adapt through server services for B080/B081, charge B068 caller cost and preserve
   cancellation. Keep the integration adapter in betterlite-server in this task module; consume predecessor
   public interfaces without editing their implementation crates. Configuration boundary keys introduced
   or consumed here: context_compaction. Pinned declaration defaults: context_compaction=ContextCompactionConfig.
