@@ -298,7 +298,6 @@ pub(crate) struct Scenario {
     headers: IndexMap<String, String>,
     defaults: OptionDefaults,
     billing_header: BillingHeader,
-    packaged: String,
 }
 
 impl Scenario {
@@ -310,17 +309,11 @@ impl Scenario {
             headers: IndexMap::new(),
             defaults: OptionDefaults::default(),
             billing_header: BillingHeader::Keep,
-            packaged: String::from("{}"),
         }
     }
 
     pub(crate) fn optional(mut self, source: &str) -> Self {
         self.optional_params = fields(source);
-        self
-    }
-
-    pub(crate) fn packaged(mut self, source: &str) -> Self {
-        self.packaged = source.to_owned();
         self
     }
 
@@ -333,7 +326,7 @@ impl Scenario {
     where
         F: RemoteMediaFetcher + Sync,
     {
-        let fixture = Fixture::with_packaged(MODELS, &self.packaged);
+        let fixture = Fixture::new(MODELS);
         let mut session = Session::new(&fixture);
         let runtime = Builder::new_current_thread()
             .enable_all()
