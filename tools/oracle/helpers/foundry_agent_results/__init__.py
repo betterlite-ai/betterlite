@@ -11,7 +11,7 @@ from .types import Input, JsonObject
 
 
 def run(argument: Input) -> JsonObject:
-    handler = AgentHandler()
+    handler = AgentHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L122-L123
     answer: JsonObject = {}
     if "extractions" in argument:
         answer["extractions"] = [

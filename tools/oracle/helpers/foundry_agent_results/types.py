@@ -1,8 +1,8 @@
-from typing import Final, TypeAlias, TypedDict
+from typing import Final, NotRequired, TypeAlias, TypedDict
 
 from litellm.llms.azure_ai.agents.handler import (
-    _AzureMessagesData,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L78-L79
-    _AzureRawAnnotation,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L54-L57
+    _AzureMessagesData,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L78-L79
+    _AzureRawAnnotation,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L54-L57
 )
 from litellm.types.llms.openai import ChatCompletionAnnotation
 from pydantic import JsonValue, TypeAdapter
@@ -76,19 +76,19 @@ class Input(TypedDict, total=False):
     requests: list[RequestCall]
 
 
-class DeltaJson(TypedDict, total=False):
-    content: JsonValue
+class FieldsJson(TypedDict):
     role: JsonValue
+    content: JsonValue
     annotations: JsonValue
 
 
-class StreamingChoiceJson(TypedDict, total=False):
+class StreamingChoiceJson(TypedDict):
     index: JsonValue
     finish_reason: JsonValue
-    delta: DeltaJson
+    delta: FieldsJson
 
 
-class ChunkJson(TypedDict, total=False):
+class ChunkJson(TypedDict):
     id: JsonValue
     created: JsonValue
     model: JsonValue
@@ -96,22 +96,16 @@ class ChunkJson(TypedDict, total=False):
     choices: list[StreamingChoiceJson]
 
 
-class MessageJson(TypedDict, total=False):
-    role: JsonValue
-    content: JsonValue
-    annotations: JsonValue
-
-
-class ReplyChoiceJson(TypedDict, total=False):
+class ReplyChoiceJson(TypedDict):
     index: JsonValue
     finish_reason: JsonValue
-    message: MessageJson
+    message: FieldsJson
 
 
-class ReplyJson(TypedDict, total=False):
+class ReplyJson(TypedDict):
     model: JsonValue
     choices: list[ReplyChoiceJson]
-    usage: JsonObject
+    usage: NotRequired[JsonObject]
 
 
 CHUNK_JSON: Final = TypeAdapter(ChunkJson)

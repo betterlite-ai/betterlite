@@ -6,7 +6,9 @@ from uuid import UUID
 import httpx
 import litellm
 import litellm.llms.custom_httpx.http_handler
+from litellm.types.utils import LlmProviders
 from pydantic import JsonValue
+from typing_extensions import override
 
 from .types import JSON, JsonObject
 
@@ -33,6 +35,7 @@ class FixedStream(httpx.AsyncByteStream):
         self.body = body
         self.split = split
 
+    @override
     async def __aiter__(self) -> AsyncIterator[bytes]:
         encoded = self.body.encode()
         if self.split is None:
@@ -77,9 +80,9 @@ class ClientFactory:
         self.ssl_verify: JsonValue = None
 
     def __call__(
-        self, *, llm_provider: litellm.LlmProviders, params: JsonObject | None = None
+        self, *, llm_provider: LlmProviders, params: JsonObject | None = None
     ) -> FakeClient:
-        if llm_provider is not litellm.LlmProviders.AZURE_AI:
+        if llm_provider is not LlmProviders.AZURE_AI:
             raise ValueError("the fixture client only serves Azure AI agents")
         if params is not None:
             self.ssl_verify = params.get("ssl_verify")
@@ -123,5 +126,5 @@ def patch_identity(chunk_id: str, created: int) -> None:
 
 def install_client(client: FakeClient) -> ClientFactory:
     factory = ClientFactory(client)
-    litellm.llms.custom_httpx.http_handler.get_async_httpx_client = factory  # noqa: E501  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L589-L592
+    litellm.llms.custom_httpx.http_handler.get_async_httpx_client = factory  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L589-L592
     return factory
