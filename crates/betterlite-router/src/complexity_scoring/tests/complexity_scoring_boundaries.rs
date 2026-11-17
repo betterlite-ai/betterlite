@@ -17,11 +17,14 @@ use crate::complexity_scoring::error::ScoringError;
 use crate::complexity_scoring::keywords::{KeywordList, compile_patterns};
 use crate::complexity_scoring::tier::ComplexityTier;
 
+// an empty keyword list spells its type once, so a case needs no cast to reach a slice parameter
+const NO_KEYWORDS: &[&str] = &[];
+
 fn default_boundaries() -> TierBoundaries {
     TierBoundaries {
-        simple_medium: 0.15,
-        medium_complex: 0.35,
-        complex_reasoning: 0.6,
+        simple_medium: 0.15_f64,
+        medium_complex: 0.35_f64,
+        complex_reasoning: 0.6_f64,
     }
 }
 
@@ -45,14 +48,14 @@ fn equal_boundaries(
 }
 
 #[rstest]
-#[case::negative(-1.0, ComplexityTier::Simple)]
-#[case::just_below_simple_medium(0.149_999_999, ComplexityTier::Simple)]
-#[case::at_simple_medium(0.15, ComplexityTier::Medium)]
-#[case::just_below_medium_complex(0.349_999_999, ComplexityTier::Medium)]
-#[case::at_medium_complex(0.35, ComplexityTier::Complex)]
-#[case::just_below_complex_reasoning(0.599_999_999, ComplexityTier::Complex)]
-#[case::at_complex_reasoning(0.6, ComplexityTier::Reasoning)]
-#[case::far_above(10.0, ComplexityTier::Reasoning)]
+#[case::negative(-1.0_f64, ComplexityTier::Simple)]
+#[case::just_below_simple_medium(0.149_999_999_f64, ComplexityTier::Simple)]
+#[case::at_simple_medium(0.15_f64, ComplexityTier::Medium)]
+#[case::just_below_medium_complex(0.349_999_999_f64, ComplexityTier::Medium)]
+#[case::at_medium_complex(0.35_f64, ComplexityTier::Complex)]
+#[case::just_below_complex_reasoning(0.599_999_999_f64, ComplexityTier::Complex)]
+#[case::at_complex_reasoning(0.6_f64, ComplexityTier::Reasoning)]
+#[case::far_above(10.0_f64, ComplexityTier::Reasoning)]
 fn a_score_on_a_boundary_takes_the_tier_above_it(
     #[case] score: f64,
     #[case] expected: ComplexityTier,
@@ -65,32 +68,32 @@ fn a_score_on_a_boundary_takes_the_tier_above_it(
 #[case::at_simple_medium(
     "please review the following content and tell me what matters api",
     "MEDIUM",
-    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0_f64), ("complex_reasoning", 1.25_f64)]
 )]
 #[case::at_medium_complex(
     "please review the following content and tell me what matters api sql",
     "COMPLEX",
-    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0_f64), ("complex_reasoning", 1.25_f64)]
 )]
 #[case::at_complex_reasoning(
     "please review the following content and tell me what matters api sql architecture distributed encryption authentication",
     "REASONING",
-    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0), ("complex_reasoning", 1.25)]
+    &[("simple_medium", 0.5_f64), ("medium_complex", 1.0_f64), ("complex_reasoning", 1.25_f64)]
 )]
 #[case::below_simple_medium(
     "please review the following content and tell me what matters api",
     "SIMPLE",
-    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001_f64), ("complex_reasoning", 1.250_001_f64)]
 )]
 #[case::below_medium_complex(
     "please review the following content and tell me what matters api sql",
     "MEDIUM",
-    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001_f64), ("complex_reasoning", 1.250_001_f64)]
 )]
 #[case::below_complex_reasoning(
     "please review the following content and tell me what matters api sql architecture distributed encryption authentication",
     "COMPLEX",
-    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001), ("complex_reasoning", 1.250_001)]
+    &[("simple_medium", 0.500_001_f64), ("medium_complex", 1.000_001_f64), ("complex_reasoning", 1.250_001_f64)]
 )]
 fn a_score_on_a_boundary_takes_the_tier_above_it_and_a_hair_below_keeps_the_lower(
     #[case] prompt: &str,
@@ -98,7 +101,10 @@ fn a_score_on_a_boundary_takes_the_tier_above_it_and_a_hair_below_keeps_the_lowe
     #[case] boundaries: &[(&str, f64)],
 ) {
     let mut input = blank();
-    input.dimension_weights = Some(weights(&[("codePresence", 1.0), ("technicalTerms", 0.25)]));
+    input.dimension_weights = Some(weights(&[
+        ("codePresence", 1.0_f64),
+        ("technicalTerms", 0.25_f64),
+    ]));
     input.tier_boundaries = Some(
         boundaries
             .iter()
@@ -125,7 +131,7 @@ fn a_token_count_at_a_threshold_is_neither_short_nor_long(
 }
 
 #[rstest]
-#[case::code_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, CODE_PRESENCE)]
+#[case::code_none(NO_KEYWORDS, "nothing here", ("0.000000", None), 0, CODE_PRESENCE)]
 #[case::code_one(&["api"], "call the api", ("0.500000", Some("code (api)")), 1, CODE_PRESENCE)]
 #[case::code_two(&["api", "sql"], "api and sql", ("1.000000", Some("code (api, sql)")), 2, CODE_PRESENCE)]
 #[case::code_three(
@@ -135,7 +141,7 @@ fn a_token_count_at_a_threshold_is_neither_short_nor_long(
     3,
     CODE_PRESENCE
 )]
-#[case::reasoning_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, REASONING_MARKERS)]
+#[case::reasoning_none(NO_KEYWORDS, "nothing here", ("0.000000", None), 0, REASONING_MARKERS)]
 #[case::reasoning_one(
     &["think through"],
     "think through this",
@@ -178,7 +184,7 @@ fn a_token_count_at_a_threshold_is_neither_short_nor_long(
     4,
     TECHNICAL_TERMS
 )]
-#[case::simple_none(&[] as &[&str], "nothing here", ("0.000000", None), 0, SIMPLE_INDICATORS)]
+#[case::simple_none(NO_KEYWORDS, "nothing here", ("0.000000", None), 0, SIMPLE_INDICATORS)]
 #[case::simple_one(&["hello"], "hello there", ("-1.000000", Some("simple (hello)")), 1, SIMPLE_INDICATORS)]
 #[case::simple_two(
     &["hello", "thanks"],
@@ -250,11 +256,11 @@ fn the_weighted_score_adds_the_custom_dimensions_last() {
             score: FULL,
             signal: None,
         },
-        0.25,
+        0.25_f64,
     )];
     let score = weighted_score(
         &built_in,
-        &weights(&[("tokenCount", 0.1), ("codePresence", 0.3)]),
+        &weights(&[("tokenCount", 0.1_f64), ("codePresence", 0.3_f64)]),
         &custom,
     );
     assert_eq!(fixed(score), "0.300000");
@@ -263,26 +269,26 @@ fn the_weighted_score_adds_the_custom_dimensions_last() {
 }
 
 #[rstest]
-#[case::at_the_margin(0.5, true)]
-#[case::beyond_margin(0.500_001, false)]
-#[case::at_a_boundary(20.0, true)]
-#[case::between_boundaries(5.0, false)]
+#[case::at_the_margin(0.5_f64, true)]
+#[case::beyond_margin(0.500_001_f64, false)]
+#[case::at_a_boundary(20.0_f64, true)]
+#[case::between_boundaries(5.0_f64, false)]
 fn a_margin_holds_a_score_near_any_boundary(#[case] score: f64, #[case] expected: bool) {
-    let boundaries = equal_boundaries(0.0, 10.0, 20.0);
-    assert_eq!(within_boundary_margin(score, boundaries, 0.5), expected);
+    let boundaries = equal_boundaries(0.0_f64, 10.0_f64, 20.0_f64);
+    assert_eq!(within_boundary_margin(score, boundaries, 0.5_f64), expected);
 }
 
 #[rstest]
-#[case::unknown_window(None, Some(100), 0.5, true)]
-#[case::unknown_need(Some(10), None, 0.5, true)]
-#[case::exact_budget(Some(100), Some(50), 0.5, true)]
-#[case::truncated_budget(Some(101), Some(50), 0.5, true)]
-#[case::one_over(Some(101), Some(51), 0.5, false)]
-#[case::whole_window(Some(100), Some(100), 1.0, true)]
-#[case::whole_window_over(Some(100), Some(101), 1.0, false)]
-#[case::zero_need_on_zero_window(Some(0), Some(0), 0.5, true)]
-#[case::negative_buffer(Some(100), Some(1), -0.5, false)]
-#[case::window_past_u32(Some(u64::MAX), Some(u64::MAX), 1.0, false)]
+#[case::unknown_window(None, Some(100), 0.5_f64, true)]
+#[case::unknown_need(Some(10), None, 0.5_f64, true)]
+#[case::exact_budget(Some(100), Some(50), 0.5_f64, true)]
+#[case::truncated_budget(Some(101), Some(50), 0.5_f64, true)]
+#[case::one_over(Some(101), Some(51), 0.5_f64, false)]
+#[case::whole_window(Some(100), Some(100), 1.0_f64, true)]
+#[case::whole_window_over(Some(100), Some(101), 1.0_f64, false)]
+#[case::zero_need_on_zero_window(Some(0), Some(0), 0.5_f64, true)]
+#[case::negative_buffer(Some(100), Some(1), -0.5_f64, false)]
+#[case::window_past_u32(Some(u64::MAX), Some(u64::MAX), 1.0_f64, false)]
 fn a_window_holds_a_request_within_its_buffered_budget(
     #[case] window: Option<u64>,
     #[case] needed: Option<u64>,
@@ -370,7 +376,7 @@ fn an_invalid_pattern_is_rejected() {
     let mut custom = resolved(&blank());
     custom.custom_dimensions = vec![CustomDimension {
         name: "domain".to_owned(),
-        weight: 0.1,
+        weight: 0.1_f64,
         keywords: Vec::new(),
         patterns: strings(&["("]),
         scoring_mode: ScoringMode::Binary,
@@ -394,7 +400,7 @@ fn the_floor_tracks_the_simple_medium_boundary_unless_configured() {
         "0.400000"
     );
     let mut explicit = shifted.clone();
-    explicit.reasoning_override_min_score = Some(0.0);
+    explicit.reasoning_override_min_score = Some(0.0_f64);
     assert_eq!(
         fixed(resolved(&explicit).reasoning_override_min_score),
         "0.000000"
@@ -432,7 +438,7 @@ fn an_empty_weight_map_scores_every_dimension_at_zero() {
 #[test]
 fn an_unknown_dimension_weight_never_scores() {
     let mut input = blank();
-    input.dimension_weights = Some(weights(&[("unknownDimension", 1.0)]));
+    input.dimension_weights = Some(weights(&[("unknownDimension", 1.0_f64)]));
     let outcome = classify(&input, "function class def", None);
     assert_eq!(fixed(outcome.score), "0.000000");
     assert!(

@@ -23,9 +23,9 @@ use crate::complexity_scoring::tier::{ComplexityTier, Tier, tier_severity_order}
 
 fn default_boundaries() -> TierBoundaries {
     TierBoundaries {
-        simple_medium: 0.15,
-        medium_complex: 0.35,
-        complex_reasoning: 0.6,
+        simple_medium: 0.15_f64,
+        medium_complex: 0.35_f64,
+        complex_reasoning: 0.6_f64,
     }
 }
 
@@ -41,7 +41,7 @@ macro_rules! base_record {
             tier_label: None,
             score: None,
             boundaries: default_boundaries(),
-            reasoning_override_min_score: 0.15,
+            reasoning_override_min_score: 0.15_f64,
             signals: &[],
             matched_keyword: None,
             escalation_keyword: None,
@@ -336,12 +336,12 @@ fn a_single_word_keyword_misses_a_longer_word() {
 #[test]
 fn the_reasoning_override_needs_two_markers_and_the_floor() {
     let mut weighted = blank();
-    weighted.dimension_weights = Some(weights(&[("reasoningMarkers", 0.05)]));
+    weighted.dimension_weights = Some(weights(&[("reasoningMarkers", 0.05_f64)]));
     let below_floor = classify(&weighted, "step by step think through", None);
     assert_eq!(below_floor.tier.name(), "SIMPLE");
     assert_eq!(below_floor.cause, RoutingDecisionCause::HeuristicScorer);
     let mut explicit_zero = weighted.clone();
-    explicit_zero.reasoning_override_min_score = Some(0.0);
+    explicit_zero.reasoning_override_min_score = Some(0.0_f64);
     let overridden = classify(&explicit_zero, "step by step think through", None);
     assert_eq!(overridden.tier.name(), "REASONING");
     assert_eq!(overridden.cause, RoutingDecisionCause::ReasoningOverride);
@@ -351,7 +351,7 @@ fn the_reasoning_override_needs_two_markers_and_the_floor() {
 #[test]
 fn one_reasoning_marker_never_overrides() {
     let mut input = blank();
-    input.dimension_weights = Some(weights(&[("reasoningMarkers", 1.0)]));
+    input.dimension_weights = Some(weights(&[("reasoningMarkers", 1.0_f64)]));
     let outcome = classify(&input, "please think through this", None);
     assert_eq!(outcome.tier.name(), "REASONING");
     assert_eq!(outcome.cause, RoutingDecisionCause::HeuristicScorer);
@@ -370,13 +370,13 @@ fn the_resolved_config_carries_the_pinned_defaults() {
     assert_eq!(
         config.dimension_weights,
         weights(&[
-            ("tokenCount", 0.1),
-            ("codePresence", 0.3),
-            ("reasoningMarkers", 0.25),
-            ("technicalTerms", 0.25),
-            ("simpleIndicators", 0.05),
-            ("multiStepPatterns", 0.03),
-            ("questionComplexity", 0.02),
+            ("tokenCount", 0.1_f64),
+            ("codePresence", 0.3_f64),
+            ("reasoningMarkers", 0.25_f64),
+            ("technicalTerms", 0.25_f64),
+            ("simpleIndicators", 0.05_f64),
+            ("multiStepPatterns", 0.03_f64),
+            ("questionComplexity", 0.02_f64),
         ])
     );
     assert_eq!(config.code_keywords.len(), 45);
@@ -559,7 +559,7 @@ fn a_score_carries_its_boundaries_and_floor() {
     let tier = Tier::BuiltIn(ComplexityTier::Medium);
     let mut input = base_record!();
     input.tier = Some(&tier);
-    input.score = Some(0.15);
+    input.score = Some(0.15_f64);
     let decision = build_routing_decision(&input).unwrap();
     assert_eq!(
         rendered(&decision),
@@ -650,7 +650,7 @@ fn the_savings_baseline_carries_its_deployment() {
 fn classifier_facts_carry_over_from_the_previous_decision() {
     let mut previous = RoutingDecision::new();
     previous.insert("classifier_model".to_owned(), text("judge"));
-    previous.insert("classifier_cost".to_owned(), number(0.25));
+    previous.insert("classifier_cost".to_owned(), number(0.25_f64));
     previous.insert("heuristic_v2_forecast".to_owned(), text("0.4"));
     previous.insert("unrelated".to_owned(), text("dropped"));
     let mut input = base_record!();
@@ -713,7 +713,7 @@ fn a_whole_classifier_cost_keeps_the_decimal_point_a_float_carries() {
     let mut input = base_record!();
     input.classifier_cost = Some(Decimal::ONE);
     let decision = build_routing_decision(&input).unwrap();
-    assert_eq!(decision.get("classifier_cost"), Some(&number(1.0)));
+    assert_eq!(decision.get("classifier_cost"), Some(&number(1.0_f64)));
 }
 
 #[test]
@@ -725,7 +725,7 @@ fn a_context_fit_accepts_unknown_windows_and_known_windows_that_hold() {
     let fit = RequestContextFit {
         windows,
         needed: Some(50_u64),
-        buffer: 0.5,
+        buffer: 0.5_f64,
     };
     assert!(fit.accepts("small-window"));
     assert!(fit.accepts("unknown-window"));
@@ -733,13 +733,13 @@ fn a_context_fit_accepts_unknown_windows_and_known_windows_that_hold() {
     let too_big = RequestContextFit {
         windows: BTreeMap::from([("small-window".to_owned(), Some(101_u64))]),
         needed: Some(51_u64),
-        buffer: 0.5,
+        buffer: 0.5_f64,
     };
     assert!(!too_big.accepts("small-window"));
     let unknown_need = RequestContextFit {
         windows: BTreeMap::from([("small-window".to_owned(), Some(1_u64))]),
         needed: None,
-        buffer: 0.5,
+        buffer: 0.5_f64,
     };
     assert!(unknown_need.accepts("small-window"));
 }
@@ -760,7 +760,7 @@ fn a_custom_dimension_scores_by_its_saturation() {
     let mut config = resolved(&blank());
     config.custom_dimensions = vec![CustomDimension {
         name: "domain".to_owned(),
-        weight: 0.1,
+        weight: 0.1_f64,
         keywords: strings(&["widget", "WIDGET"]),
         patterns: Vec::new(),
         scoring_mode: ScoringMode::MatchCount,
@@ -778,7 +778,7 @@ fn a_binary_custom_dimension_saturates_at_one_hit() {
     let mut config = resolved(&blank());
     config.custom_dimensions = vec![CustomDimension {
         name: "domain".to_owned(),
-        weight: 0.1,
+        weight: 0.1_f64,
         keywords: strings(&["widget"]),
         patterns: strings(&["WIDGET AGAIN"]),
         scoring_mode: ScoringMode::Binary,
@@ -795,7 +795,7 @@ fn a_binary_custom_dimension_saturates_at_one_hit() {
 fn a_custom_pattern_reads_only_the_first_2048_characters() {
     let dimension = CustomDimension {
         name: "domain".to_owned(),
-        weight: 1.0,
+        weight: 1.0_f64,
         keywords: strings(&["target"]),
         patterns: strings(&["target"]),
         scoring_mode: ScoringMode::MatchCount,
@@ -813,7 +813,7 @@ fn a_custom_dimension_with_no_hit_is_not_scored() {
     let mut config = resolved(&blank());
     config.custom_dimensions = vec![CustomDimension {
         name: "domain".to_owned(),
-        weight: 1.0,
+        weight: 1.0_f64,
         keywords: strings(&["nomatch"]),
         patterns: Vec::new(),
         scoring_mode: ScoringMode::MatchCount,
