@@ -14,6 +14,7 @@ pub(super) fn inference_config_options() {
     max_tokens_and_stop(&harness);
     response_format_and_tools(&harness);
     sampling_cases(&harness);
+    sampling_drops(&harness);
     sampling_errors(&harness);
 }
 
@@ -91,44 +92,55 @@ fn sampling_cases(harness: &Harness) {
             "{model} {request}"
         );
     }
-    for drop in [DROP_CALL, DROP_GLOBAL] {
-        assert_eq!(
-            harness
-                .call(
-                    "anthropic.claude-opus-4-1-v1:0",
-                    params(r#"{"temperature": 0.5}"#),
-                    ParamMap::new(),
-                    drop,
-                )
-                .mapped(),
-            params("{}")
+    let single = harness
+        .mapped("anthropic.claude-opus-4-1-v1:0", r#"{"temperature": 1}"#)
+        .mapped();
+    assert_eq!(single.len(), 1);
+    assert_eq!(single.get("temperature"), Some(&value("1")));
+}
+
+fn sampling_drops(harness: &Harness) {
+    for (model, drop) in [
+        ("anthropic.claude-opus-4-1-v1:0", DROP_CALL),
+        ("anthropic.claude-opus-4-1-v1:0", DROP_GLOBAL),
+        ("cohere.command-r-v1:0", DROP_CALL),
+        ("cohere.command-r-v1:0", DROP_GLOBAL),
+    ] {
+        let dropped = harness.call(
+            model,
+            params(r#"{"temperature": 0.5}"#),
+            ParamMap::new(),
+            drop,
         );
+        assert!(dropped.mapped().is_empty(), "{model}");
     }
-    assert_eq!(
-        harness
-            .mapped("anthropic.claude-opus-4-1-v1:0", r#"{"temperature": 1}"#)
-            .mapped(),
-        params(r#"{"temperature": 1}"#)
-    );
 }
 
 fn sampling_errors(harness: &Harness) {
-    for (model, request, message) in [
-        (
-            "anthropic.claude-opus-4-1-v1:0",
-            r#"{"temperature": 0.5}"#,
-            "anthropic.claude-opus-4-1-v1:0 does not support temperature=0.5. Only temperature=1 is supported. To drop unsupported params, set `litellm.drop_params = True`.",
-        ),
-        (
-            "cohere.command-r-v1:0",
-            r#"{"top_p": 0.5}"#,
-            "cohere.command-r-v1:0 does not support top_p=0.5. To drop unsupported params, set `litellm.drop_params = True`.",
-        ),
-    ] {
-        let error = harness.mapped(model, request).error();
-        assert_eq!(error.status_code(), Some(400), "{model}");
-        assert_eq!(error.to_string(), message, "{model}");
-    }
+    let anthropic = harness
+        .mapped("anthropic.claude-opus-4-1-v1:0", r#"{"temperature": 0.5}"#)
+        .error();
+    assert_eq!(anthropic.status_code(), Some(400));
+    assert_eq!(
+        anthropic.to_string(),
+        "anthropic.claude-opus-4-1-v1:0 does not support temperature=0.5. Only temperature=1 is supported. To drop unsupported params, set `litellm.drop_params = True`."
+    );
+    let top_p = harness
+        .mapped("cohere.command-r-v1:0", r#"{"top_p": 0.5}"#)
+        .error();
+    assert_eq!(top_p.status_code(), Some(400));
+    assert_eq!(
+        top_p.to_string(),
+        "cohere.command-r-v1:0 does not support top_p=0.5. To drop unsupported params, set `litellm.drop_params = True`."
+    );
+    let temperature = harness
+        .mapped("cohere.command-r-v1:0", r#"{"temperature": 0.5}"#)
+        .error();
+    assert_eq!(temperature.status_code(), Some(400));
+    assert_eq!(
+        temperature.to_string(),
+        "cohere.command-r-v1:0 does not support temperature=0.5. Only temperature=1 is supported. To drop unsupported params, set `litellm.drop_params = True`."
+    );
 }
 
 pub(super) fn additional_model_fields() {
