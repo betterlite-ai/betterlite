@@ -16,6 +16,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-streaming = { path = "../betterlite-streaming" }
 caseless = "0.2.2"
 chrono.workspace = true
 hex.workspace = true
@@ -41,6 +42,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 rstest = "=0.27.0"
 tracing-subscriber.workspace = true
 

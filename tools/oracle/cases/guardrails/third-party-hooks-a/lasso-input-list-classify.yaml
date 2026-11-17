@@ -1,0 +1,30 @@
+kind: helper
+name: lasso-input-list-classify
+call:
+  b9451:
+    vendor: lasso
+    hook: moderation
+    gate: true
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: true
+    timeout: 5.0
+    data:
+      litellm_call_id: call-1
+      model: gpt-4o
+      input:
+        - {role: user, content: "my email is jane@example.com"}
+    outputs: []
+    answers:
+      - status: 200
+        headers: {}
+        body:
+          violations_detected: true
+          deputies: {pattern-detection: true}
+          findings:
+            pattern-detection:
+              - {action: AUTO_MASKING, severity: HIGH}
+          messages:
+            - {role: user, content: "my email is [EMAIL]"}
+env: {}
+compare: {ignore: []}

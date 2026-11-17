@@ -123,7 +123,8 @@ async fn provider_framework_tests_behavior(
     #[case] status: u16,
     #[case] reached: Option<(u64, bool)>,
 ) {
-    let (answered, body, sent, forwarded) = call(model, sent_body, OWN_KEY, (200, ANSWER)).await;
+    let (answered, body, sent, forwarded) =
+        Box::pin(call(model, sent_body, OWN_KEY, (200, ANSWER))).await;
     assert_eq!(answered, status);
     let Some((total_tokens, sends_organization)) = reached else {
         assert_eq!(sent, "");

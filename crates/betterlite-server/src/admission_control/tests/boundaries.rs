@@ -16,13 +16,15 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
 use super::harness::{Behavior, Requests, WAIT, await_queued, await_started, gates, harness};
 use crate::admission_control::AdmissionControl;
 use crate::routing::admission_control::hot_routes_first;
+use crate::server::application;
 use crate::server::chat_setup::chat_executor;
-use crate::server::{application, configure_connection_builder, serve_connection};
+use crate::server::connections::{configure_connection_builder, serve_connection};
 
 const RESERVATION_THREADS: usize = 8;
 const RESERVATION_ROUNDS: u32 = 200;
@@ -327,7 +329,13 @@ fn server_application() -> Router {
     .load(SATURATED)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+    application(
+        &config,
+        executor,
+        Arc::new(AtomicBool::new(false)),
+        &TaskTracker::new(),
+    )
+    .unwrap()
 }
 
 async fn content_length_survives_the_stack() {

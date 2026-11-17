@@ -1,0 +1,9 @@
+kind: helper
+name: conduct-missing-package
+call:
+  b9451:
+    vendor: conduct
+    name: conduct-guard
+    answers: []
+env: {}
+compare: {ignore: []}

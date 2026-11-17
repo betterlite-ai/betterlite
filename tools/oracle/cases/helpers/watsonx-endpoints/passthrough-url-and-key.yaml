@@ -1,0 +1,60 @@
+kind: helper
+name: watsonx-passthrough-url-and-key
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: passthrough
+    env: {}
+    step:
+      endpoint: /v1/chat
+      api_base: "https://host/"
+      api_key: explicit-key
+      query: {version: v, x: 1}
+      data: {stream: true}
+calls:
+  - b5842:
+      family: passthrough
+      env: {WATSONX_API_BASE: "https://env-host", WATSONX_API_KEY: env-key}
+      step:
+        endpoint: v1/chat
+        api_base: null
+        api_key: null
+        query: null
+        data: {}
+  - b5842:
+      family: passthrough
+      env: {WATSONX_API_BASE: "https://env-host", WATSONX_API_KEY: env-key}
+      step:
+        endpoint: /v1/chat
+        api_base: null
+        api_key: ""
+        query: {version: v3, y: 2}
+        data: {stream: false}
+  - b5842:
+      family: passthrough
+      env: {}
+      step:
+        endpoint: /v1/models
+        api_base: "https://host"
+        api_key: explicit-key
+        query: {}
+        data: {}
+  - b5842:
+      family: passthrough
+      env: {}
+      step:
+        endpoint: /v1/chat
+        api_base: null
+        api_key: null
+        query: null
+        data: {}
+  - b5842:
+      family: passthrough
+      env: {}
+      step:
+        endpoint: /v1/chat
+        api_base: "https://host"
+        api_key: null
+        query: null
+        data: {}

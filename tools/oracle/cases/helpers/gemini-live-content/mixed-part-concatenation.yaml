@@ -1,0 +1,51 @@
+kind: helper
+name: mixed-part-concatenation
+call:
+  gemini_live_content:
+    calls:
+      - op: delta
+        server_content:
+          modelTurn:
+            parts:
+              - text: Hel
+              - inlineData:
+                  mimeType: audio/pcm
+                  data: bG8=
+              - thought: true
+              - text: "!"
+        output_item_id: item-1
+        response_id: resp-1
+        delta_type: text
+      - op: delta
+        server_content:
+          modelTurn:
+            parts:
+              - inlineData:
+                  data: bG8=
+        output_item_id: item-2
+        response_id: resp-2
+        delta_type: audio
+      - op: delta
+        server_content:
+          modelTurn:
+            parts: []
+        output_item_id: item-3
+        response_id: resp-3
+        delta_type: text
+      - op: delta
+        server_content: {}
+        output_item_id: item-4
+        response_id: resp-4
+        delta_type: audio
+      - op: delta
+        server_content:
+          modelTurn:
+            parts:
+              - inlineData:
+                  mimeType: audio/pcm
+              - text: after
+        output_item_id: item-5
+        response_id: resp-5
+        delta_type: text
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: lasso-pre-call-classify
+call:
+  b9451:
+    vendor: lasso
+    hook: pre_call
+    gate: true
+    api_key: lasso-key
+    conversation_id: conv-1
+    mask: false
+    timeout: 5.0
+    data:
+      litellm_call_id: call-1
+      messages:
+        - {role: system, content: be brief}
+        - {role: user, content: hello}
+        - role: assistant
+          content: let me check
+          tool_calls:
+            - id: call-1
+              function: {name: weather, arguments: "{\"city\": \"Paris\"}"}
+    outputs: []
+    answers:
+      - status: 200
+        headers: {}
+        body: {violations_detected: false, deputies: {}, findings: {}}
+env: {}
+compare: {ignore: []}

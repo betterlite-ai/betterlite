@@ -1,0 +1,49 @@
+kind: helper
+name: fireworks-ai-completion-guided
+call:
+  b5832:
+    catalog: []
+    steps:
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body: {guided_json: {type: object, properties: {name: {type: string}}}, custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {guided_grammar: 'root ::= "a"', custom: 1}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {guided_choice: ["a", "b"], custom: 1}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body:
+            guided_json: {type: object}
+            guided_grammar: "root ::= x"
+            guided_choice: ["a"]
+            custom: 1
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body: {guided_json: null, guided_grammar: "root ::= x", guided_choice: ["a"], custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body: {guided_json: null, guided_grammar: null, guided_choice: null, custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          response_format: {type: json_object}
+          extra_body: {guided_json: {type: object}, custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params:
+          extra_body: {response_format: "x", guided_choice: ["a"], custom: 1}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {guided_choice: [], custom: 1}}
+      - op: extra_body
+        model: "plain-model"
+        optional_params: {extra_body: {guided_json: false, custom: 1}}
+env: {}
+compare: {ignore: []}
