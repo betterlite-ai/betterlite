@@ -421,22 +421,32 @@ fn nonexpected_status() {
 }
 
 fn decode_failures_are_typed() {
-    let bodies = [
-        (r#""thread-1""#, "the agent response is not a JSON object"),
-        (r#"{"id": "#, "the agent response is not valid JSON"),
-        (r#"{"id": 7}"#, "the agent response is not valid JSON"),
-    ];
-    for (body, expected) in bodies {
-        let outcome = execute(&Run::sync(vec![step(201, body)]));
-        let error = failure_of(&outcome);
-        assert_eq!(error.status(), None);
-        assert_eq!(error.to_string(), expected);
-        assert_eq!(
-            outcome.transport.state().requests().len(),
+    let created = [
+        (
+            r#""thread-1""#,
+            "the agent response is not a JSON object",
             1,
-            "a decoded body that is not a created object ends the run"
-        );
+        ),
+        (r#"{"id": "#, "the agent response is not valid JSON", 1),
+        (r#"{"id": 7}"#, "the agent response is not valid JSON", 1),
+    ];
+    for (body, expected, requests) in created {
+        let outcome = execute(&Run::sync(vec![step(201, body)]));
+        assert_decode_failure(&outcome, expected, requests);
     }
+    let mut polled = Run::sync(vec![
+        step(201, r#"{"id": "run-1"}"#),
+        step(200, r#"{"status": 3}"#),
+    ]);
+    polled.optional_params = object(r#"{"thread_id": "thread-9"}"#);
+    assert_decode_failure(&execute(&polled), "the agent response is not valid JSON", 2);
+}
+
+fn assert_decode_failure(outcome: &Outcome, expected: &str, requests: usize) {
+    let error = failure_of(outcome);
+    assert_eq!(error.status(), None);
+    assert_eq!(error.to_string(), expected);
+    assert_eq!(outcome.transport.state().requests().len(), requests);
 }
 
 fn assert_upstream_failure(
