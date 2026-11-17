@@ -4,9 +4,7 @@ use betterlite_auth::jwt_claims::TypedValue;
 use betterlite_auth::jwt_claims::handler::JwtHandler;
 use betterlite_auth::jwt_claims::settings::JwtAuthSettings;
 use betterlite_auth::sso_claims::access_token::process_sso_jwt_access_token;
-use betterlite_auth::sso_claims::convert::{
-    ConversionConfig, convert_generic_response, normalize_email,
-};
+use betterlite_auth::sso_claims::convert::{ConversionConfig, convert_generic_response};
 use betterlite_auth::sso_claims::decode::{decode_sso_token_claims, merge_sso_token_claims};
 use betterlite_auth::sso_claims::roles::determine_role_from_groups;
 use betterlite_auth::sso_types::identity::OpenIdIdentity;
@@ -89,7 +87,7 @@ fn claim_results(input: &Input) -> ClaimResults {
         emails: input
             .emails
             .iter()
-            .map(|email| normalize_email(email.as_deref()))
+            .map(|email| email.as_deref().map(str::to_lowercase))
             .collect(),
         roles: input
             .groups
@@ -135,8 +133,8 @@ fn handler(settings: &JwtAuthSettings) -> JwtHandler {
 }
 
 fn group_role(groups: &[String], mappings: Option<&RoleMappings>) -> Option<String> {
-    let mappings = mappings?;
-    let role = determine_role_from_groups(groups, mappings)?;
+    let configured = mappings?;
+    let role = determine_role_from_groups(groups, configured)?;
     Some(role.to_string())
 }
 

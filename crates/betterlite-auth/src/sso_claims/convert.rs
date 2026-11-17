@@ -10,7 +10,7 @@ use crate::sso_types::identity::OpenIdIdentity;
 use crate::sso_types::records::{RoleMappings, TeamMappings};
 use crate::user_roles::UserRole;
 
-use super::claims::{SsoClaimsError, claim_groups, claim_role, claim_text, navigate};
+use super::claims::{SsoClaimsError, claim_groups, claim_role, claim_text, present, type_error};
 use super::roles::determine_role_from_groups;
 
 // the configured handlers and mappings a generic provider's response is projected with
@@ -41,7 +41,10 @@ pub fn convert_generic_response(
     }
     Ok(OpenIdIdentity {
         id: claim_text(response, &attributes.user_id)?,
-        email: normalize_email(claim_text(response, &attributes.email)?.as_deref()),
+        // an SSO email compares case-insensitively, so the identity keeps it lowercased
+        email: claim_text(response, &attributes.email)?
+            .as_deref()
+            .map(str::to_lowercase),
         first_name: claim_text(response, &attributes.first_name)?,
         last_name: claim_text(response, &attributes.last_name)?,
         display_name: claim_text(response, &attributes.display_name)?,
@@ -68,16 +71,13 @@ fn all_team_ids(
 
 // the teams a DB team mapping names: a missing or non-list claim adds none, and a list holds strings
 fn mapped_team_ids(response: &TypedValue, field: &str) -> Result<Vec<String>, ClaimError> {
-    let Some(found) = navigate(response, field)? else {
+    let Some(found) = present(response, field)? else {
         return Ok(Vec::new());
     };
     if !found.json.is_array() {
         return Ok(Vec::new());
     }
-    serde_json::from_value::<Vec<String>>(found.json).map_err(|source| ClaimError::Type {
-        claim: field.to_owned(),
-        source,
-    })
+    serde_json::from_value::<Vec<String>>(found.json).map_err(|source| type_error(field, source))
 }
 
 // the convertor's role: a generic or okta mapping decides, its default role standing in when no group matches
@@ -115,16 +115,10 @@ fn extra_fields(
     }
     let mut fields = BTreeMap::new();
     for name in names {
-        let value = navigate(response, name)?.unwrap_or(TypedValue {
+        let value = present(response, name)?.unwrap_or(TypedValue {
             json: serde_json::json!(null),
         });
         fields.insert(name.clone(), value);
     }
     Ok(Some(fields))
-}
-
-// normalize_email: an SSO email compares case-insensitively, so the identity keeps it lowercased
-#[must_use]
-pub fn normalize_email(email: Option<&str>) -> Option<String> {
-    email.map(str::to_lowercase)
 }
