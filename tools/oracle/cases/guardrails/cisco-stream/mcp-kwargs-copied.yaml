@@ -1,0 +1,17 @@
+kind: helper
+name: mcp-kwargs-copied
+call:
+  b9450:
+    operation: mcp
+    settings: {api_key: oracle-key, inspection_type: mcp}
+    kwargs:
+      mcp_tool_name: get_weather
+      litellm_call_id: call-1
+      mcp_arguments: {city: SF}
+      mcp_tool_call_metadata: {name: get_weather, mcp_server_name: srv}
+      metadata: {}
+    tool_response:
+      - {type: text, text: "secret"}
+    answer: {status: 200, headers: {}, body: {action: allow}}
+env: {}
+compare: {ignore: []}

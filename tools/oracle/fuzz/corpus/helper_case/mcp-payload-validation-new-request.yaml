@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-payload-validation-new-request
+call:
+  b4716:
+    function: new_request
+    payload:
+      server_name: test srv
+      transport: http
+      url: https://mcp.example/mcp
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: new_request
+      payload: {transport: stdio}
+      stdio: {enabled: false, allowed_commands: [npx]}
+  - b4716:
+      function: new_request
+      payload: {dcr_bridge: true, auth_type: oauth2}
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

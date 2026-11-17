@@ -1,0 +1,24 @@
+task: B3007
+deviations:
+  - what: A LITELLM_MAX_BUDGET_PER_SESSION_TTL value below zero is a typed load error that names the variable.
+    why: LiteLLM's int() accepts the negative number and passes it to the Lua script's EXPIRE and to the local cache, where a negative TTL deletes the counter on its first write, so the budget never accumulates. A negative lifetime has no meaning for a session counter, and every other environment number in betterlite is refused the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L72-L77
+  - what: A max_budget_per_session whose float() is not finite ("inf", "Infinity", "nan") is a typed invalid-budget error at pre-call, and a response cost or budget beyond the decimal range is refused or skipped rather than carried as infinity or NaN.
+    why: money is an exact decimal in betterlite, which has no infinity or NaN, so a value the type cannot hold is rejected instead of letting Python's float() decide. An infinite budget never rejects a request in LiteLLM, and a NaN budget always admits one. No working setup stores an unbounded budget or a cost past roughly 7.9e28 dollars.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L190-L206
+  - what: A session_id or agent_id that is not text reads as absent; LiteLLM calls str() on it, so metadata carrying the number 5 as its session_id checks and charges the session "5".
+    why: the ids arrive from request metadata as text, and inventing an id from a number would put spend under a session no caller named. A non-text id names nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L176-L188
+  - what: A local spend counter that does not hold a number reads as zero and a fallback increment overwrites it; a spend that would overflow the decimal type saturates at the largest decimal instead of becoming infinity.
+    why: LiteLLM calls float() on the cached value, and that exception escapes the in-memory read as a 500 on every pre-call for the session and aborts the success-time increment after a warning. The counter is the gateway's own data, so an unreadable value is a stale-cache problem rather than a reason to fail requests or stop charging; saturation rejects every reachable budget exactly as an infinite spend does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L211-L234
+  - what: The 429 detail rounds the exact decimal spend and budget to 4 and 2 places; LiteLLM formats binary floats with {:.4f} and {:.2f}, so a budget of 2.675 prints as $2.67 there and $2.68 here.
+    why: betterlite keeps money as an exact decimal (no-float-money), and most cent fractions have no exact binary float; the widths and wording of the message stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L115-L126
+kept_bugs:
+  - what: With a Redis cache configured, a missing key reads as zero spend and the local fallback counter is not consulted, so spend that a failed increment wrote to the local cache stays invisible to admission until Redis holds the key again.
+    why: the fallback exists to survive an unhealthy Redis, and copying the read order keeps a setup that pairs betterlite with LiteLLM instances on the same Redis behaving identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L211-L218
+  - what: Pre-call reads the session id from metadata and then litellm_metadata, while success-time charging reads only kwargs["litellm_params"]["metadata"]; a call whose id came only from litellm_metadata is admitted against a session it never charges, so its budget never fills.
+    why: the task keeps this asymmetry, and a working setup that sends litellm_metadata session ids sees no charging today, so starting to charge them would begin rejecting calls that never were.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L130-L143

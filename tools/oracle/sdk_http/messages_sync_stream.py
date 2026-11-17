@@ -1,0 +1,292 @@
+import logging
+from collections.abc import AsyncIterator, Iterator, Sized
+from typing import Final, Literal, Protocol, TypedDict
+
+import httpx
+from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
+    AnthropicStreamWrapper,
+)
+from litellm.types.llms.anthropic import (
+    AppliedEdit,
+    CompactionBlock,
+    MessageBlockDelta,
+    MessageDelta,
+    UsageDelta,
+    UsageIteration,
+)
+from litellm.types.utils import ModelResponseStream
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import JsonValue as Json
+from typing_extensions import override
+
+ADAPTER_PREFIX = "Anthropic Adapter - "
+NORMALIZED_ID = "msg_00000000-0000-0000-0000-000000000000"
+CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
+EVENT: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
+
+
+class Message(TypedDict):
+    role: str
+    content: str
+
+
+class TextDelta(TypedDict):
+    type: Literal["text_delta"]
+    text: str
+
+
+class HeldDelta(TypedDict):
+    type: Literal["content_block_delta"]
+    index: int
+    delta: TextDelta
+
+
+class HeldStop(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["message_delta"]
+    delta: MessageDelta
+    usage: UsageDelta | None = None
+
+
+class Initial(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    holding_chunk: HeldDelta | None = None
+    holding_stop_reason_chunk: HeldStop | None = None
+    queued_usage_chunk: bool = False
+
+
+class RunSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    initial: Initial = Field(default_factory=Initial)
+    steps: list[Literal["next", "drain"]]
+
+
+class MessagesSyncStreamCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    messages: list[Message]
+    api_key: str
+    timeout_seconds: int
+    tool_name_mapping: dict[str, str] = Field(default_factory=dict)
+    applied_edits: list[AppliedEdit] = Field(default_factory=list)
+    compaction_block: CompactionBlock | None = None
+    iterations_usage: list[UsageIteration] | None = None
+    runs: list[RunSpec]
+
+
+class State(TypedDict):
+    pulls: int
+    index: int
+    block_type: str
+    sent_first_chunk: bool
+    sent_content_block_start: bool
+    sent_content_block_finish: bool
+    sent_last_message: bool
+    queued_usage_chunk: bool
+    holding_chunk: bool
+    holding_stop_reason: bool
+    sent_compaction_block: bool
+    sent_compaction_block_start: bool
+    sent_compaction_block_delta: bool
+
+
+class Diagnostic(TypedDict):
+    level: str
+    prefix: str
+
+
+class StepOutcome(TypedDict):
+    events: list[dict[str, Json]]
+    end: bool
+    state: State
+    diagnostics: list[Diagnostic]
+
+
+class RunOutcome(TypedDict):
+    steps: list[StepOutcome]
+
+
+class SyncValue(TypedDict):
+    runs: list[RunOutcome]
+
+
+class Outcome(TypedDict):
+    messages_sync_stream: dict[Literal["value"], SyncValue]
+
+
+class ProviderChunks(Iterator[ModelResponseStream]):
+    def __init__(self, payloads: list[bytes]) -> None:
+        self.payloads = payloads
+        self.index = 0
+        self.pulls = 0
+
+    @override
+    def __iter__(self) -> "ProviderChunks":
+        return self
+
+    def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
+        return self
+
+    async def __anext__(self) -> ModelResponseStream:
+        raise StopAsyncIteration
+
+    @override
+    def __next__(self) -> ModelResponseStream:
+        self.pulls += 1
+        if self.index >= len(self.payloads):
+            raise StopIteration
+        payload = self.payloads[self.index]
+        self.index += 1
+        return CHUNK.validate_json(payload)
+
+
+class Wrapper(AnthropicStreamWrapper):
+    def __init__(
+        self,
+        call: MessagesSyncStreamCall,
+        source: ProviderChunks,
+        initial: Initial,
+    ) -> None:
+        super().__init__(
+            completion_stream=source,
+            model=call.model,
+            tool_name_mapping=dict(call.tool_name_mapping),
+            applied_edits=list(call.applied_edits),
+            compaction_block=call.compaction_block,
+            iterations_usage=call.iterations_usage,
+        )
+        self.queued_usage_chunk = initial.queued_usage_chunk
+        self._message_id = NORMALIZED_ID
+        held = initial.holding_chunk
+        if held is not None:
+            object.__setattr__(self, "holding_chunk", held)
+        stopped = initial.holding_stop_reason_chunk
+        if stopped is not None:
+            stop = MessageBlockDelta(type="message_delta", delta=stopped.delta)
+            if stopped.usage is not None:
+                stop = MessageBlockDelta(
+                    type="message_delta", delta=stopped.delta, usage=stopped.usage
+                )
+            self.holding_stop_reason_chunk = stop
+
+
+class AdapterErrors(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.entries: list[Diagnostic] = []
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.getMessage().startswith(ADAPTER_PREFIX):
+            self.entries.append(Diagnostic(level=record.levelname.lower(), prefix=ADAPTER_PREFIX))
+
+
+class HeldState(Protocol):
+    @property
+    def holding_chunk(self) -> Sized | None: ...
+
+
+class EventStream(Protocol):
+    def __iter__(self) -> "EventStream": ...
+
+    def __next__(self) -> Sized: ...
+
+
+def next_event(stream: EventStream) -> dict[str, Json] | None:
+    try:
+        event = next(stream)
+    except StopIteration:
+        return None
+    return EVENT.validate_python(event)
+
+
+def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
+    held: HeldState = wrapper
+    return State(
+        pulls=source.pulls,
+        index=wrapper.current_content_block_index,
+        block_type=wrapper.current_content_block_type,
+        sent_first_chunk=wrapper.sent_first_chunk,
+        sent_content_block_start=wrapper.sent_content_block_start,
+        sent_content_block_finish=wrapper.sent_content_block_finish,
+        sent_last_message=wrapper.sent_last_message,
+        queued_usage_chunk=wrapper.queued_usage_chunk,
+        holding_chunk=held.holding_chunk is not None,
+        holding_stop_reason=wrapper.holding_stop_reason_chunk is not None,
+        sent_compaction_block=wrapper.sent_compaction_block,
+        sent_compaction_block_start=wrapper.sent_compaction_block_start,
+        sent_compaction_block_delta=wrapper.sent_compaction_block_delta,
+    )
+
+
+def run_steps(
+    spec: RunSpec,
+    wrapper: Wrapper,
+    source: ProviderChunks,
+    errors: AdapterErrors,
+) -> list[StepOutcome]:
+    stream: EventStream = wrapper
+    steps: list[StepOutcome] = []
+    for step in spec.steps:
+        events: list[dict[str, Json]] = []
+        event = next_event(stream)
+        if step != "next":
+            while event is not None:
+                events.append(event)
+                event = next_event(stream)
+        elif event is not None:
+            events.append(event)
+        diagnostics = errors.entries
+        errors.entries = []
+        steps.append(
+            StepOutcome(
+                events=events,
+                end=event is None,
+                state=observe(wrapper, source),
+                diagnostics=diagnostics,
+            )
+        )
+    return steps
+
+
+def frames(content: bytes) -> list[bytes]:
+    payloads: list[bytes] = []
+    for part in content.split(b"\n\n"):
+        data = [line[5:].lstrip() for line in part.splitlines() if line.startswith(b"data:")]
+        if payload := b"\n".join(data):
+            payloads.append(payload)
+    return payloads
+
+
+def run_one(call: MessagesSyncStreamCall, spec: RunSpec, api_base: str) -> RunOutcome:
+    messages: list[Json] = [
+        {"role": message["role"], "content": message["content"]} for message in call.messages
+    ]
+    request: dict[str, Json] = {
+        "model": call.model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    with httpx.Client(trust_env=False, timeout=float(call.timeout_seconds)) as client:
+        response = client.post(f"{api_base}/chat/completions", json=request)
+    source = ProviderChunks(frames(response.content))
+    wrapper = Wrapper(call, source, spec.initial)
+    errors = AdapterErrors()
+    logger = logging.getLogger("LiteLLM")
+    logger.addHandler(errors)
+    try:
+        steps = run_steps(spec, wrapper, source, errors)
+    finally:
+        logger.removeHandler(errors)
+    return RunOutcome(steps=steps)
+
+
+def run_messages_sync_stream(call: MessagesSyncStreamCall, api_base: str) -> str:
+    runs = [run_one(call, spec, api_base) for spec in call.runs]
+    outcome: Outcome = {"messages_sync_stream": {"value": {"runs": runs}}}
+    return TypeAdapter(Outcome).dump_json(outcome).decode()

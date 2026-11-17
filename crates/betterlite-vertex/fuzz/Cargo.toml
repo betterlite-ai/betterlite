@@ -187,6 +187,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_image"
+path = "fuzz_targets/studio_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_interaction"
 path = "fuzz_targets/studio_interaction.rs"
 test = false
@@ -287,6 +294,13 @@ bench = false
 [[bin]]
 name = "vertex_rag_payload"
 path = "fuzz_targets/vertex_rag_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_search_payload"
+path = "fuzz_targets/vertex_search_payload.rs"
 test = false
 doc = false
 bench = false

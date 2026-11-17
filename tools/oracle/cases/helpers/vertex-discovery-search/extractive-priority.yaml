@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-discovery-search-extractive-priority
+call:
+  vertex_discovery_search:
+    calls:
+      - function: search
+        vector_store_id: store-example
+        query: find policy
+        api_base: https://host/v1
+        litellm_params: {}
+        response:
+          status: 200
+          body: '{"results":[{"id":"doc-1","document":{"structData":{"category":"policy"},"derivedStructData":{"title":"Policy Title","link":"https://example.test/policy","displayLink":"example.test","formattedUrl":"https://example.test/policy","snippets":[{"snippet":"a snippet"}],"extractive_answers":[{"content":"answer one"}],"extractive_segments":[{"content":"segment one"},{"content":"segment two"}]}}}]}'
+env: {}
+compare: {ignore: []}

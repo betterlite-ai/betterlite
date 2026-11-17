@@ -1,0 +1,42 @@
+kind: helper
+name: mcp-connector-import-mapping-bearer-header
+call:
+  b4716:
+    function: convert_connectors
+    connectors:
+      mcpServers:
+        alpha:
+          url: https://alpha.example/mcp
+          headers:
+            Authorization: Bearer abc
+    stdio: {enabled: false, allowed_commands: []}
+calls:
+  - b4716:
+      function: convert_connectors
+      connectors:
+        mcpServers:
+          alpha:
+            url: https://alpha.example/mcp
+            headers:
+              Authorization: Bearer abc
+          beta:
+            url: https://beta.example/mcp
+            headers:
+              authorization: bearer lower
+              X-Api-Key: k1
+          gamma:
+            url: https://gamma.example/mcp
+            type: SSE
+          delta:
+            url: https://delta.example/mcp
+            type: Streamable_HTTP
+          epsilon:
+            url: https://epsilon.example/mcp
+            headers:
+              X-Only: v
+          zeta:
+            url: https://zeta.example/mcp
+            type: url
+      stdio: {enabled: false, allowed_commands: []}
+env: {}
+compare: {ignore: []}

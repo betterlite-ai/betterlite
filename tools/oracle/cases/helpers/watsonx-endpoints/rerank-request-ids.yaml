@@ -1,0 +1,66 @@
+kind: helper
+name: watsonx-rerank-request-ids
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: rerank
+    env: {WATSONX_PROJECT_ID: env-project}
+    step:
+      model: rerank-model
+      headers: {Authorization: "Bearer caller"}
+      api_key: null
+      reply: null
+      status: null
+      options: {}
+calls:
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {project_id: p-param}
+  - b5842:
+      family: rerank
+      env: {WATSONX_PROJECT_ID: env-project}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {watsonx_project: p-legacy}
+  - b5842:
+      family: rerank
+      env: {}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {space_id: s-param}
+  - b5842:
+      family: rerank
+      env: {}
+      step:
+        model: deployment/space-1
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {project_id: p-param}
+  - b5842:
+      family: rerank
+      env: {}
+      step:
+        model: rerank-model
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        reply: null
+        status: null
+        options: {}
