@@ -3,11 +3,11 @@ deviations:
   - what: The periodic and batch flush work runs as tokio tasks owned by a TaskTracker, and shutdown cancels the logger's token and joins them. LiteLLM creates asyncio tasks on the running loop and keeps only task references, leaving cleanup to the event loop.
     why: Rust has no implicit event-loop cleanup, so the tasks are owned explicitly and joined on shutdown instead of leaking past the logger that started them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L130-L148
-  - what: The adapter reads its parameters from the callback_settings.zerobus block. LiteLLM's _configured_params reads the litellm.zerobus_params module global, which the YAML config loader never assigns, so a config-file block for this logger never reaches it.
-    why: betterlite's config enters through the typed callback_settings section, and the LiteLLM side has no working config path to mirror; an operator sets the same names under callback_settings.zerobus.
+  - what: The adapter reads its parameters from the callback_settings.zerobus block. LiteLLM reads the litellm.zerobus_params module global instead.
+    why: betterlite's config enters through the typed callback_settings section, and its litellm_settings section declares no zerobus_params field, so the same names ride in the per-callback settings map.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L35-L41
   - what: A missing connection setting names callback_settings.zerobus.<key> in the error. LiteLLM's _setting names litellm_settings.zerobus_params.<key>.
-    why: The guidance names where betterlite actually reads the setting; litellm_settings.zerobus_params is a key LiteLLM's loader never reads, so following it would leave the proxy just as unconfigured.
+    why: The guidance names the block betterlite reads; betterlite does not type litellm_settings.zerobus_params, so pointing there would leave the proxy unconfigured.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L44-L52
   - what: An unknown key under the logger's settings block fails the adapter with an error naming the key. LiteLLM's ZerobusInitParams.model_validate silently ignores keys the model does not declare.
     why: A mistyped setting would otherwise start a logger that quietly uses the default; betterlite names the key so the operator sees it.
@@ -18,6 +18,9 @@ deviations:
   - what: When the framework redaction applies and the redacted map cannot be read back as a StandardLoggingPayload, the event is dropped with a warning. LiteLLM redacts the Python dict in place and always appends the row.
     why: betterlite redacts through its typed payload, and a map whose required field was excluded by standard_logging_payload_excluded_fields no longer parses; logging it unredacted would leak the content the exclusion was meant to hide, so the row is dropped and the drop is logged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L189-L197
+  - what: A configured secret resolves from the environment only, through the injected secret source. LiteLLM's get_secret_str also consults the configured secret manager.
+    why: The general get_secret_str dispatcher belongs to B189; until it lands this adapter consumes the environment-backed secret source the catalog injects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L25-L32
 kept_bugs:
   - what: An error while building or queueing a row is logged and swallowed, so the request path continues and that row is lost.
     why: LiteLLM catches every exception in _enqueue because logging must never fail the request, and a working setup relies on that protection.
