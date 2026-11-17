@@ -50,6 +50,36 @@ where
     NotResults,
 }
 
+// the response, request and counter every result row shares; the envelope and its logging arrive per row
+struct RowProjector<'call, Counter> {
+    status: u16,
+    headers: &'call HeaderMap,
+    request: ResponseRequest<'call>,
+    counter: &'call Counter,
+}
+
+impl<Counter> RowProjector<'_, Counter>
+where
+    Counter: ReasoningTokenCounter,
+{
+    // one row is encoded, projected onto the shared envelope, and its usage kept for the sum
+    fn project(
+        &self,
+        row: &Json,
+        envelope: &mut ResponseEnvelope,
+        logging: Logging<'_>,
+    ) -> Result<Option<AnthropicUsage>, ResultError<Counter::Failure>> {
+        let body = serde_json::to_vec(row).map_err(|source| ResultError::Encode { source })?;
+        let raw = RawResponse {
+            status: self.status,
+            headers: self.headers,
+            body: &body,
+        };
+        transform_response(envelope, &raw, &self.request, logging, self.counter)?;
+        Ok(envelope.usage.take())
+    }
+}
+
 // LiteLLM projects every row onto the same response, so the last row wins and each row's usage is added up
 pub fn project_batch_results<Counter>(
     envelope: &mut ResponseEnvelope,
@@ -70,35 +100,32 @@ where
     let optional_params = IndexMap::new();
     let litellm_params = IndexMap::new();
     let request_data = IndexMap::new();
-    let request = ResponseRequest {
-        messages: &no_messages,
-        optional_params: &optional_params,
-        litellm_params: &litellm_params,
-        request_data: &request_data,
-        json_mode: None,
-        now: response.now,
-        disable_add_prefix_to_prompt: false,
+    let projector = RowProjector {
+        status: response.status,
+        headers: response.headers,
+        request: ResponseRequest {
+            messages: &no_messages,
+            optional_params: &optional_params,
+            litellm_params: &litellm_params,
+            request_data: &request_data,
+            json_mode: None,
+            now: response.now,
+            disable_add_prefix_to_prompt: false,
+        },
+        counter,
     };
     let Logging { state, env } = logging;
     let mut usages = Vec::new();
     for message in messages {
-        let body = serde_json::to_vec(&message).map_err(|source| ResultError::Encode { source })?;
-        let raw = RawResponse {
-            status: response.status,
-            headers: response.headers,
-            body: &body,
-        };
-        transform_response(
+        let usage = projector.project(
+            &message,
             envelope,
-            &raw,
-            &request,
             Logging {
                 state: &mut *state,
                 env,
             },
-            counter,
         )?;
-        if let Some(usage) = envelope.usage.take() {
+        if let Some(usage) = usage {
             usages.push(usage);
         }
     }

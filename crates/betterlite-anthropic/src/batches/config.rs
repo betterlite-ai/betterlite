@@ -157,10 +157,49 @@ impl BatchesConfig for AnthropicBatchesConfig {
     }
 }
 
+// LiteLLM fills each status mark only from the timestamp of the status that owns it
+struct BatchMarks {
+    cancelled_at: Option<i64>,
+    cancelling_at: Option<i64>,
+    completed_at: Option<i64>,
+    in_progress_at: Option<i64>,
+}
+
+fn status_marks(
+    batch: &LifecycleBatch,
+    clock: &Clock,
+    created: Option<i64>,
+    ended: Option<i64>,
+) -> BatchMarks {
+    let raw_status = batch.raw_status.as_deref();
+    if raw_status == Some("canceling") {
+        return BatchMarks {
+            cancelled_at: ended.filter(|value| *value != 0),
+            cancelling_at: parse_timestamp(&batch.cancel_initiated_at, clock.zone),
+            completed_at: None,
+            in_progress_at: None,
+        };
+    }
+    BatchMarks {
+        cancelled_at: None,
+        cancelling_at: None,
+        completed_at: if raw_status == Some("ended") {
+            ended
+        } else {
+            None
+        },
+        in_progress_at: if raw_status == Some("in_progress") {
+            created
+        } else {
+            None
+        },
+    }
+}
+
 fn project_batch(batch: &LifecycleBatch, clock: &Clock) -> Result<BatchObject, DecodeError> {
     let created = parse_timestamp(&batch.created_at, clock.zone);
     let ended = parse_timestamp(&batch.ended_at, clock.zone);
-    let raw = batch.raw_status.as_deref();
+    let marks = status_marks(batch, clock, created, ended);
     Ok(BatchObject {
         id: batch.id.clone(),
         completion_window: COMPLETION_WINDOW.to_owned(),
@@ -169,28 +208,16 @@ fn project_batch(batch: &LifecycleBatch, clock: &Clock) -> Result<BatchObject, D
         input_file_id: DEFAULT_INPUT_FILE_ID.to_owned(),
         object: BatchObjectKind::Batch,
         status: batch.status,
-        cancelled_at: if raw == Some("canceling") {
-            ended.filter(|value| *value != 0)
-        } else {
-            None
-        },
-        cancelling_at: if raw == Some("canceling") {
-            parse_timestamp(&batch.cancel_initiated_at, clock.zone)
-        } else {
-            None
-        },
-        completed_at: if raw == Some("ended") { ended } else { None },
+        cancelled_at: marks.cancelled_at,
+        cancelling_at: marks.cancelling_at,
+        completed_at: marks.completed_at,
         error_file_id: None,
         errors: None,
         expired_at: parse_timestamp(&batch.archived_at, clock.zone).filter(|value| *value != 0),
         expires_at: parse_timestamp(&batch.expires_at, clock.zone),
         failed_at: None,
         finalizing_at: None,
-        in_progress_at: if raw == Some("in_progress") {
-            created
-        } else {
-            None
-        },
+        in_progress_at: marks.in_progress_at,
         metadata: Some(IndexMap::new()),
         model: None,
         output_file_id: Some(batch.id.clone()),

@@ -90,32 +90,9 @@ fn decode_lifecycle(body: &[u8]) -> Result<LifecycleBatch, DecodeError> {
             expected: "must be a JSON object",
         });
     };
-    let raw_status = match fields.shift_remove("processing_status") {
-        None => Some("in_progress".to_owned()),
-        Some(Json::Null) => None,
-        Some(Json::Text(text)) => Some(text),
-        Some(_other) => {
-            return Err(DecodeError::Shape {
-                field: "processing_status",
-                expected: "must be a string or null",
-            });
-        }
-    };
-    let status = match raw_status.as_deref() {
-        Some("ended") => BatchStatus::Completed,
-        Some("canceling") => BatchStatus::Cancelling,
-        _ => BatchStatus::InProgress,
-    };
-    let id = match fields.shift_remove("id") {
-        None => String::new(),
-        Some(Json::Text(text)) => text,
-        Some(_other) => {
-            return Err(DecodeError::Shape {
-                field: "id",
-                expected: "must be a string",
-            });
-        }
-    };
+    let raw_status = status_field(fields.shift_remove("processing_status"))?;
+    let status = batch_status(raw_status.as_deref());
+    let id = id_field(fields.shift_remove("id"))?;
     Ok(LifecycleBatch {
         id,
         raw_status,
@@ -129,6 +106,37 @@ fn decode_lifecycle(body: &[u8]) -> Result<LifecycleBatch, DecodeError> {
         archived_at: fields.shift_remove("archived_at").unwrap_or(Json::Null),
         counts: counts_of(fields.shift_remove("request_counts"))?,
     })
+}
+
+fn status_field(value: Option<Json>) -> Result<Option<String>, DecodeError> {
+    match value {
+        None => Ok(Some("in_progress".to_owned())),
+        Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(_other) => Err(DecodeError::Shape {
+            field: "processing_status",
+            expected: "must be a string or null",
+        }),
+    }
+}
+
+fn batch_status(raw_status: Option<&str>) -> BatchStatus {
+    match raw_status {
+        Some("ended") => BatchStatus::Completed,
+        Some("canceling") => BatchStatus::Cancelling,
+        _ => BatchStatus::InProgress,
+    }
+}
+
+fn id_field(value: Option<Json>) -> Result<String, DecodeError> {
+    match value {
+        None => Ok(String::new()),
+        Some(Json::Text(text)) => Ok(text),
+        Some(_other) => Err(DecodeError::Shape {
+            field: "id",
+            expected: "must be a string",
+        }),
+    }
 }
 
 fn counts_of(value: Option<Json>) -> Result<BatchCounts, DecodeError> {
