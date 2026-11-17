@@ -207,3 +207,5 @@ impl ChunkState {
         self.body = empty().boxed();
     }
 }
+
+mod tests;
