@@ -1,3 +1,4 @@
+use std::mem::take;
 use std::sync::PoisonError;
 
 use betterlite_anthropic::batches::config::AnthropicBatchesConfig;
@@ -62,7 +63,7 @@ fn retrieve_scenario(now: i64, scenario: &RetrieveScenario) -> Result<Value, Box
     );
     let (batch, raised) = outcome(&result)?;
     let logging = logging_value(&result, &constructed, &state);
-    let seen = std::mem::take(&mut *recorder.seen.lock().unwrap_or_else(PoisonError::into_inner));
+    let seen = take(&mut *recorder.seen.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({
         "sync": scenario.sync,
         "requests": seen.iter().map(request_view).collect::<Vec<_>>(),

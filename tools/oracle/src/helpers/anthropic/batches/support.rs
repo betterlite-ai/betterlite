@@ -59,17 +59,21 @@ pub(crate) fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, Box<He
 }
 
 pub(crate) fn header_fields(headers: &HeaderMap, names: Option<&[&str]>) -> Value {
-    let selected: Vec<(&str, &HeaderValue)> = match names {
-        Some(names) => names
-            .iter()
-            .filter_map(|name| headers.get(*name).map(|value| (*name, value)))
-            .collect(),
-        None => headers
-            .iter()
-            .filter(|(name, _value)| !matches!(name.as_str(), "authorization" | "x-api-key"))
-            .map(|(name, value)| (name.as_str(), value))
-            .collect(),
-    };
+    let selected: Vec<(&str, &HeaderValue)> = names.map_or_else(
+        || {
+            headers
+                .iter()
+                .filter(|(name, _value)| !matches!(name.as_str(), "authorization" | "x-api-key"))
+                .map(|(name, value)| (name.as_str(), value))
+                .collect()
+        },
+        |names| {
+            names
+                .iter()
+                .filter_map(|name| headers.get(*name).map(|value| (*name, value)))
+                .collect()
+        },
+    );
     let mut fields = BTreeMap::new();
     for (name, value) in selected {
         let text = value
@@ -186,7 +190,7 @@ impl Replay {
     }
 }
 
-impl BatchTransport for Replay {
+impl BatchTransport for &Replay {
     fn send_buffered(
         &self,
         request: OutboundRequest,

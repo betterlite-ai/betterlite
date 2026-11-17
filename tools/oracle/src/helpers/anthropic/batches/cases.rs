@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use betterlite_anthropic::batches::config::{AnthropicBatchesConfig, BatchesConfig, Environment};
+use betterlite_anthropic::batches::config::{
+    AnthropicBatchesConfig, BatchesConfig as _, Environment,
+};
 use betterlite_anthropic::batches::decode::DecodeError;
 use betterlite_anthropic::batches::error::BatchesError;
 use betterlite_anthropic::batches::result::{BatchResponse, project_batch_results};
@@ -81,9 +83,11 @@ pub(crate) fn error_counts(case: &ErrorCase) -> HelperResult {
         let value = match config.transform_retrieve_batch_response(body.as_bytes(), &clock) {
             Ok(batch) => json!({"batch": serde_json::to_value(&batch).map_err(failure)?}),
             Err(DecodeError::Parse { .. }) => json!({"prefix": true}),
-            Err(DecodeError::Shape { .. } | DecodeError::CountOverflow) => {
-                json!({"prefix": false})
-            }
+            Err(
+                DecodeError::Shape { .. }
+                | DecodeError::CountField { .. }
+                | DecodeError::CountOverflow,
+            ) => json!({"prefix": false}),
         };
         bodies.push(value);
     }
@@ -112,10 +116,9 @@ fn error_record(scenario: &ErrorScenario) -> Result<Value, Box<HelperError>> {
 }
 
 fn pairs_value(pairs: Option<&[(String, String)]>) -> Value {
-    match pairs {
-        Some(pairs) => json!(pairs.iter().cloned().collect::<BTreeMap<String, String>>()),
-        None => Value::Null,
-    }
+    pairs.map_or(Value::Null, |pairs| {
+        json!(pairs.iter().cloned().collect::<BTreeMap<String, String>>())
+    })
 }
 
 pub(crate) fn result_response(case: &BodiesCase) -> HelperResult {

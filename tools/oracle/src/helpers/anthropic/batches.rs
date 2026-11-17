@@ -5,6 +5,7 @@ mod input;
 mod retrieve;
 mod support;
 mod tests;
+mod views;
 
 pub(crate) struct Op;
 
