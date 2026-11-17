@@ -1,0 +1,17 @@
+kind: helper
+name: hosted-vllm-media-image-edit-url
+call:
+  b8151:
+    function: "image_edit_url"
+    calls:
+      - {api_base: "http://host/v1", env: {}, headers: {}, api_key: "secret", model: "my-model"}
+      - {api_base: "http://host", env: {}, headers: {Authorization: "Bearer caller", x-extra: "1"}, api_key: "secret", model: "my-model"}
+      - {api_base: null, env: {HOSTED_VLLM_API_BASE: "http://env/v1/"}, headers: {}, api_key: null, model: "my-model"}
+      - {api_base: "http://host", env: {HOSTED_VLLM_API_KEY: "env-key"}, headers: {}, api_key: "", model: "my-model"}
+calls:
+  - b8151:
+      function: "image_edit_url"
+      calls:
+        - {api_base: null, env: {}, headers: {}, api_key: "secret", model: "my-model"}
+env: {}
+compare: {ignore: []}

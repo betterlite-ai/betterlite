@@ -1,0 +1,43 @@
+kind: helper
+name: hosted-vllm-media-video-form
+call:
+  b8151:
+    function: "video_form"
+    calls:
+      - api_base: "http://host"
+        env: {}
+        headers: {x-extra: "1"}
+        api_key: "secret"
+        params_api_key: null
+        model: "my-model"
+        prompt: "a cat"
+        params:
+          width: 8
+          generate_sound: true
+          aspect_ratio: "16:9"
+          num_inference_steps: 4
+          extra_headers: {x: "1"}
+          extra_query: {y: "2"}
+          extra_body: {z: 3}
+          timeout: 30
+          custom_llm_provider: "hosted_vllm"
+          characters: [{name: "Ada"}]
+          skipped: null
+      - api_base: "http://host/v1/"
+        env: {}
+        headers: {}
+        api_key: "secret"
+        params_api_key: "param-key"
+        model: "my-model"
+        prompt: "a cat"
+        params: {image_reference: "data:image/png;base64,AA", video_reference: "", enable_frame_interpolation: false}
+      - api_base: null
+        env: {HOSTED_VLLM_API_BASE: "http://env", HOSTED_VLLM_API_KEY: "env-key"}
+        headers: {Authorization: "Bearer caller"}
+        api_key: null
+        params_api_key: null
+        model: "my-model"
+        prompt: "a cat"
+        params: {}
+env: {}
+compare: {ignore: []}
