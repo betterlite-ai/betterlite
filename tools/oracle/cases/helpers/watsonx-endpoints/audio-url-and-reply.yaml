@@ -1,0 +1,116 @@
+kind: helper
+name: watsonx-audio-url-and-reply
+env: {}
+compare: {ignore: []}
+call:
+  b5842:
+    family: audio
+    env: {WATSONX_API_BASE: "https://env-host"}
+    step:
+      model: whisper-large-v3-turbo
+      headers: {Authorization: "Bearer caller"}
+      api_base: null
+      api_key: null
+      options: {api_version: v1}
+      file: null
+      reply: null
+calls:
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host/"
+        api_key: null
+        options: {}
+        file: null
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {api_version: ""}
+        file: null
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {api_version: null}
+        file: null
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {}
+        file: null
+        reply: '{"text":"hello","task":"transcribe","duration":2.5,"model":"granite"}'
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {}
+        file: null
+        reply: '{"text":"","usage":null}'
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {}
+        file: null
+        reply: '{"text":null,"usage":null}'
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: "https://host"
+        api_key: null
+        options: {}
+        file: null
+        reply: not json
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {Authorization: "Bearer caller"}
+        api_base: null
+        api_key: null
+        options: {}
+        file: null
+        reply: null
+  - b5842:
+      family: audio
+      env: {}
+      step:
+        model: whisper-large-v3-turbo
+        headers: {}
+        api_base: null
+        api_key: null
+        options: {}
+        file: null
+        reply: null
