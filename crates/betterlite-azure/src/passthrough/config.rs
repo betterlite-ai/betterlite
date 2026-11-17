@@ -27,7 +27,9 @@ use crate::passthrough::logging::{
     NoChatStreamAssembly, OPENAI_RELAY_SHAPES, RESPONSES_SUFFIX, logged_responses_stream,
     relayed_messages,
 };
-use crate::passthrough::url::{API_VERSION, is_filled, version_from, without_api_version};
+use crate::passthrough::url::{
+    API_VERSION, PARAMS_API_VERSION, is_filled, version_from, without_api_version,
+};
 
 const CHAT_COMPLETIONS: &str = "chat/completions";
 const STREAM: &str = "stream";
@@ -192,7 +194,7 @@ where
         // a caller version short-circuits LiteLLM's `caller or litellm_params.get(...)`, so a badly typed deployment version is never read
         let mut version = caller_version;
         if version.is_none() {
-            version = version_from(request.litellm_params.get(API_VERSION))?;
+            version = version_from(request.litellm_params.get(PARAMS_API_VERSION))?;
         }
         let complete = get_base_azure_url(
             Some(&relay_base),

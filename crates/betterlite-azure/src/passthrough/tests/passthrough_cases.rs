@@ -249,6 +249,7 @@ fn api_version_removal_case() {
     api_version_stripping_table();
     caller_version_wins();
     deployment_version_fills_in();
+    deployment_version_ignores_the_query_key();
     base_version_is_replaced_by_the_caller();
     base_version_survives_without_a_caller();
     leading_model_segment_is_stripped();
@@ -322,6 +323,21 @@ fn deployment_version_fills_in() {
         url.as_str(),
         "https://my-resource.openai.azure.com/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2024-10-21"
     );
+}
+
+// litellm_params carries the deployment version under api_version; the query key is api-version
+fn deployment_version_ignores_the_query_key() {
+    let params = object(r#"{"api-version": "2024-10-21"}"#);
+    let config = base_config(None);
+    let (url, _base) = complete(
+        &config,
+        Some(RESOURCE),
+        target("gpt-4.1-mini", CHAT_ENDPOINT),
+        None,
+        &params,
+    )
+    .unwrap();
+    assert_eq!(url.as_str(), format!("{RESOURCE}/{CHAT_ENDPOINT}"));
 }
 
 fn base_version_is_replaced_by_the_caller() {

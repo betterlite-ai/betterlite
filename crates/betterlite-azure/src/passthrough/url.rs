@@ -7,6 +7,8 @@ use crate::azure_urls::AzureUrlError;
 use crate::azure_urls::url_parts::{encoded_query, query_pairs};
 
 pub(crate) const API_VERSION: &str = "api-version";
+// litellm_params carries the same deployment version under its own underscore key
+pub(crate) const PARAMS_API_VERSION: &str = "api_version";
 
 // Python truthiness of a JSON value: bool(request_data.get("stream")) and the api-version checks read 0, "", false, [] and {} as empty
 pub(crate) fn is_filled(value: &Json) -> bool {
