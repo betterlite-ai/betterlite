@@ -41,8 +41,7 @@ fn transforms(model_cost: &ModelCost, calls: &[TransformCall]) -> HelperResult {
     let fixture = Fixture::load(model_cost).map_err(failure)?;
     let mut session = Session::new(&fixture).map_err(failure)?;
     let defaults = OptionDefaults::default();
-    let catalog =
-        ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("the empty catalog parses");
+    let catalog = ModelCatalog::parse(b"{}", UnknownFields::Warn).map_err(failure)?;
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
         let fetcher = MapFetcher::new(&call.fetch);
@@ -61,8 +60,9 @@ fn transforms(model_cost: &ModelCost, calls: &[TransformCall]) -> HelperResult {
         let prepared = session
             .transform(&request, &fetcher, call.inline)
             .map_err(failure)?;
+        let body = serde_json::to_value(&prepared.body).map_err(failure)?;
         answers.push(json!({
-            "body": serde_json::to_value(&prepared.body).expect("the body serializes"),
+            "body": body,
             "fetches": fetcher.calls(),
         }));
     }

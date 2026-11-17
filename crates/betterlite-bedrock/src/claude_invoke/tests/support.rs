@@ -82,7 +82,10 @@ pub(super) struct FixtureError {
     message: String,
 }
 
-fn failed<E: std::fmt::Display>(error: E) -> FixtureError {
+fn failed<E>(error: E) -> FixtureError
+where
+    E: std::fmt::Display,
+{
     FixtureError {
         message: error.to_string(),
     }
