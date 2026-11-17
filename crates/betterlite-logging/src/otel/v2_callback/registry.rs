@@ -60,10 +60,9 @@ impl V2Registry {
 
     #[must_use]
     pub fn entries(&self, list: CallbackList) -> Vec<CallbackEntry> {
-        match self.lists().get(&list) {
-            Some(entries) => entries.clone(),
-            None => Vec::new(),
-        }
+        self.lists()
+            .get(&list)
+            .map_or_else(Vec::<CallbackEntry>::new, Clone::clone)
     }
 
     // the first logger to register keeps the slot, so later instances are not reachable through it
@@ -81,6 +80,7 @@ impl V2Registry {
         if !entries.iter().any(CallbackEntry::is_open_telemetry) {
             entries.push(CallbackEntry::OpenTelemetry(Arc::clone(callback)));
         }
+        drop(lists);
     }
 
     fn lists(&self) -> MutexGuard<'_, BTreeMap<CallbackList, Vec<CallbackEntry>>> {
