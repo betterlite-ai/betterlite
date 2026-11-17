@@ -1,5 +1,4 @@
 use std::sync::mpsc::sync_channel;
-use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::time::sleep;
@@ -56,10 +55,11 @@ async fn a_worker_that_checks_its_budget_times_out() {
 
 #[tokio::test]
 async fn a_worker_stuck_outside_a_budget_check_still_times_out_on_schedule() {
+    let (release, stuck) = sync_channel::<()>(1);
     let start = Instant::now();
     let result: Result<(), ExecutionError<&'static str>> = call_off_loop_with_timeout(
-        || {
-            thread::park_timeout(Duration::from_secs(5));
+        move || {
+            let _released = stuck.recv_timeout(Duration::from_secs(5));
             Ok(())
         },
         SHORT,
@@ -68,6 +68,8 @@ async fn a_worker_stuck_outside_a_budget_check_still_times_out_on_schedule() {
     .await;
     assert!(matches!(result, Err(ExecutionError::Timeout(_))));
     assert!(start.elapsed() < Duration::from_secs(3));
+    // The runtime waits for its blocking worker on shutdown, so free it once the call returned
+    drop(release);
 }
 
 #[test]
@@ -79,10 +81,11 @@ fn the_offloop_interrupt_grace_and_poll_match_the_synchronous_path() {
 #[tokio::test]
 async fn a_stuck_worker_spends_the_grace_period_and_is_logged() {
     let _logs = captured_logs();
+    let (release, stuck) = sync_channel::<()>(1);
     let start = Instant::now();
     let result: Result<(), ExecutionError<&'static str>> = call_off_loop_with_timeout(
-        || {
-            thread::park_timeout(Duration::from_secs(5));
+        move || {
+            let _released = stuck.recv_timeout(Duration::from_secs(5));
             Ok(())
         },
         SHORT,
@@ -99,6 +102,7 @@ async fn a_stuck_worker_spends_the_grace_period_and_is_logged() {
         captured_logs().contains("guardrail-code:stuck-offloop is still running"),
         "the stuck worker was not logged"
     );
+    drop(release);
 }
 
 #[tokio::test]

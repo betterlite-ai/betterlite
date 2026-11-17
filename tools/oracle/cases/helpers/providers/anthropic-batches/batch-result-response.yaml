@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-batches-result-response
+call:
+  anthropic_batches:
+    result_response:
+      now: 1704067200
+      bodies:
+        - |-
+          {"custom_id":"c1","result":{"type":"succeeded","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-a","content":[{"type":"text","text":"first"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":2,"cache_creation_input_tokens":4,"cache_read_input_tokens":6,"output_tokens_details":{"thinking_tokens":1}}}}}
+
+          {not json
+          {"custom_id":"c2","result":{"type":"succeeded","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-b","content":[{"type":"text","text":"second"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":5,"output_tokens_details":{"thinking_tokens":2}}}}}
+        - "\n{not json\n   \n"
+        - '{"custom_id":"c"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: titan-v2-binary-embedding
+call:
+  bedrock_other_titan_embeddings:
+    function: titan_v2_binary_embedding
+    model: amazon.titan-embed-text-v2:0
+    response_list:
+      - embeddingsByType:
+          binary: [1, 0]
+          float: [1.5]
+        inputTextTokenCount: 3
+env: {}
+compare:
+  ignore: []
