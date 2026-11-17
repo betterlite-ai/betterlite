@@ -6,6 +6,7 @@ from unittest.mock import patch
 from litellm.constants import DEFAULT_AUTO_ROUTER_MAX_INPUT_CHARS
 from litellm.router import Router
 from litellm.router_strategy.auto_router.auto_router import AutoRouter
+from litellm.types.router import PreRoutingStrategy
 from litellm.types.utils import Embedding, EmbeddingResponse
 from pydantic import Field, JsonValue
 from typing_extensions import override
@@ -189,7 +190,7 @@ class SemanticRouter(Operation):
 
     async def call(
         self,
-        router: AutoRouter,
+        router: PreRoutingStrategy,
         messages: list[dict[str, object]],
         request_kwargs: dict[str, object],
     ) -> tuple[bool, str | None]:
