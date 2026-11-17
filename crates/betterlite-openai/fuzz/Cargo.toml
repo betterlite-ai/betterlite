@@ -677,3 +677,10 @@ path = "fuzz_targets/fireworks_ai_models_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "text_stream"
+path = "fuzz_targets/text_stream.rs"
+test = false
+doc = false
+bench = false

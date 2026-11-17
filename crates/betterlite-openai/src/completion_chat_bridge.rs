@@ -1,1 +1,247 @@
+// The two bridges main.py puts around the text-completion endpoint: a chat request that reaches the
+// text endpoint is rebuilt as messages, and a text answer on the chat route is converted back.
 
+use indexmap::IndexMap;
+use serde_json::{Map, Value};
+
+use crate::chat::deployment::{ChatDeployment, Provider};
+use crate::chat::{ChatMessage, ChatRequest, MessageContent, Role};
+use crate::text_completion_execution::failure::CompletionFailure;
+use crate::text_completion_request::{CompletionPrompt, CompletionRequest};
+use crate::text_completion_transport::call::TextCompletionRequest as TransportRequest;
+
+// main.py's dispatch sends these three provider tags to the text endpoint and converts the answer back
+const TEXT_COMPLETION_PREFIXES: [&str; 3] = [
+    "text-completion-openai/",
+    "text-completion-codestral/",
+    "text-completion-inception/",
+];
+
+// completion() sends the OpenAI fine-tuned completion models to the text endpoint without a conversion
+const FINE_TUNED_COMPLETIONS: [&str; 2] = ["ft:babbage-002", "ft:davinci-002"];
+
+// Chat kwargs LiteLLM reads itself, so a rebuilt text request must not carry them to the provider
+const CONTROL_PARAMS: [&str; 12] = [
+    "api_base",
+    "api_key",
+    "api_version",
+    "engine",
+    "litellm_params",
+    "metadata",
+    "mock_delay",
+    "mock_response",
+    "mock_timeout",
+    "mock_tool_calls",
+    "num_retries",
+    "stream_chunk_size",
+];
+
+const UNMAPPED_PROMPT: &str =
+    "Unmapped prompt format. Your prompt is neither a list of strings nor a string.";
+
+const INTERNAL_ERROR: &str = "internal_server_error";
+
+// Where main.py's chat dispatch sends a request: the chat endpoint, or the text endpoint with or
+// without the text-to-chat conversion for the answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatEndpoint {
+    Chat,
+    Text { convert: bool },
+}
+
+// Where main.py's text dispatch sends a request: the text endpoint, or a chat endpoint whose answer
+// is converted with convert_chat_to_text_completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionEndpoint {
+    Text,
+    Chat,
+}
+
+#[must_use]
+pub fn chat_endpoint(deployment: &ChatDeployment) -> ChatEndpoint {
+    // the provider tag itself is the prefix, so only a provider that resolved to the prefix matches
+    if let Provider::Unsupported { model } = &deployment.provider
+        && TEXT_COMPLETION_PREFIXES
+            .iter()
+            .any(|prefix| model.starts_with(prefix))
+    {
+        return ChatEndpoint::Text { convert: true };
+    }
+    // completion() tests the stripped model name, whichever provider resolved it
+    let named = match &deployment.provider {
+        Provider::OpenAi { model } | Provider::Unsupported { model } => model.as_str(),
+    };
+    if FINE_TUNED_COMPLETIONS
+        .iter()
+        .any(|fine| named.contains(fine))
+    {
+        return ChatEndpoint::Text { convert: false };
+    }
+    ChatEndpoint::Chat
+}
+
+// The model a text endpoint receives for a chat request: the provider tag comes off the prefix,
+// and the stripped OpenAI name goes as the provider resolved it.
+#[must_use]
+pub fn text_endpoint_model(deployment: &ChatDeployment) -> Option<String> {
+    match chat_endpoint(deployment) {
+        ChatEndpoint::Chat => None,
+        ChatEndpoint::Text { .. } => Some(match &deployment.provider {
+            Provider::Unsupported { model } => model
+                .strip_prefix("text-completion-openai/")
+                .or_else(|| model.strip_prefix("openai/"))
+                .map_or_else(|| model.clone(), str::to_owned),
+            Provider::OpenAi { model } => model.clone(),
+        }),
+    }
+}
+
+// A chat request reaching the text endpoint: the messages become the prompt and the chat kwargs the
+// body's optional params, with the usage option the proxy injects for every stream.
+pub fn text_request(
+    deployment: &ChatDeployment,
+    request: &ChatRequest,
+    model: &str,
+) -> Result<TransportRequest, CompletionFailure> {
+    let messages = serde_json::to_value(&request.messages)
+        .ok()
+        .and_then(|value| value.as_array().cloned())
+        .ok_or_else(|| {
+            failure(
+                500,
+                Some(INTERNAL_ERROR),
+                "the chat messages could not be written for the text endpoint",
+            )
+        })?;
+    let mut params = serde_json::to_value(request)
+        .ok()
+        .and_then(|value| match value {
+            Value::Object(fields) => Some(fields),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            failure(
+                500,
+                Some(INTERNAL_ERROR),
+                "the chat request could not be written for the text endpoint",
+            )
+        })?;
+    params.remove("model");
+    params.remove("messages");
+    params.retain(|name, _| !CONTROL_PARAMS.contains(&name.as_str()) && !name.starts_with('_'));
+    if request.stream {
+        params.insert(String::from("stream"), Value::Bool(true));
+        // the proxy asks every streamed text provider for usage, whatever the client sent
+        let include_usage = request
+            .stream_options
+            .as_ref()
+            .is_none_or(|options| options.include_usage);
+        let mut options = Map::new();
+        options.insert(String::from("include_usage"), Value::Bool(include_usage));
+        params.insert(String::from("stream_options"), Value::Object(options));
+    } else {
+        // main.py sends the chat dispatch's own stream flag, so the provider reads an explicit false
+        params.insert(String::from("stream"), Value::Bool(false));
+        params.remove("stream_options");
+    }
+    Ok(TransportRequest {
+        model: Some(model.to_owned()),
+        messages: Some(messages),
+        api_key: deployment.api_key.clone(),
+        api_base: Some(deployment.api_base.clone()),
+        // the deployment timeout is the text call's deadline; the chat request names none
+        timeout: deployment.timeout_seconds,
+        // the text dispatch leaves the handler's organization at None
+        organization: None,
+        optional_params: params,
+        headers: None,
+        acompletion: true,
+    })
+}
+
+// The client's text prompt rebuilt as chat messages; main.py keeps one message per string and one
+// message holding the prompt for the token branch, which typed messages cannot carry.
+pub fn chat_request(request: &CompletionRequest) -> Result<ChatRequest, CompletionFailure> {
+    let mut messages = Vec::new();
+    match &request.prompt {
+        CompletionPrompt::Text(text) => messages.push(text.clone()),
+        CompletionPrompt::Texts(texts) => messages.extend(texts.iter().cloned()),
+        CompletionPrompt::Tokens(_) | CompletionPrompt::TokenLists(_) => {
+            return Err(failure(
+                400,
+                Some("invalid_request_error"),
+                "a token-id prompt cannot be sent to this deployment's chat endpoint",
+            ));
+        }
+        CompletionPrompt::Empty
+        | CompletionPrompt::Unmapped(_)
+        | CompletionPrompt::Unreadable(_) => {
+            return Err(failure(500, None, UNMAPPED_PROMPT));
+        }
+    }
+    let mut passthrough = IndexMap::new();
+    if let Some(functions) = &request.functions
+        && let Ok(value) = serde_json::to_value(functions)
+    {
+        passthrough.insert(String::from("functions"), value);
+    }
+    if let Some(choice) = &request.function_call
+        && let Ok(value) = serde_json::to_value(choice)
+    {
+        passthrough.insert(String::from("function_call"), value);
+    }
+    Ok(ChatRequest {
+        model: request.model.clone(),
+        messages: messages
+            .into_iter()
+            .map(|text| ChatMessage {
+                role: Role::User,
+                content: Some(MessageContent::Text(text)),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+                passthrough: IndexMap::new(),
+            })
+            .collect(),
+        stream: request.stream == Some(true),
+        stream_options: request.stream_options.clone(),
+        temperature: request.temperature.clone(),
+        top_p: request.top_p.clone(),
+        presence_penalty: request.presence_penalty.clone(),
+        frequency_penalty: request.frequency_penalty.clone(),
+        choice_count: request.count.and_then(|count| u32::try_from(count).ok()),
+        max_tokens: request
+            .max_tokens
+            .and_then(|tokens| u32::try_from(tokens).ok()),
+        max_completion_tokens: None,
+        seed: request.seed,
+        stop: request.stop.clone(),
+        // a chat logprobs flag is a boolean, so the text request's depth cannot be carried
+        logprobs: None,
+        top_logprobs: None,
+        user: request.user.clone(),
+        service_tier: None,
+        reasoning_effort: None,
+        tools: request.tools.clone(),
+        tool_choice: request.tool_choice.clone(),
+        parallel_tool_calls: None,
+        response_format: request.response_format.clone(),
+        fallbacks: None,
+        context_window_fallbacks: None,
+        content_policy_fallbacks: None,
+        disable_fallbacks: None,
+        passthrough,
+    })
+}
+
+pub(super) fn failure(status: u16, error_type: Option<&str>, message: &str) -> CompletionFailure {
+    CompletionFailure {
+        status,
+        error_type: error_type.map(str::to_owned),
+        param: None,
+        message: message.to_owned(),
+    }
+}
+
+pub mod answer;
+mod tests;

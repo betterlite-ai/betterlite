@@ -1,0 +1,4 @@
+data: {"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"ÿ"}}]}
+
+data: [DONE]
+

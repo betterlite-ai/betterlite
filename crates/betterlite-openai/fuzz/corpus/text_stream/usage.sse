@@ -1,0 +1,6 @@
+data: {"id":"cmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"m","choices":[{"index":0,"delta":{"content":"hi"}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}
+
+data: {"id":"cmpl-1","object":"chat.completion.chunk","created":1700000000,"model":"m","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}
+
+data: [DONE]
+
