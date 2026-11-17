@@ -90,11 +90,13 @@ fn assert_isolation(
 
 fn assert_isolated_requests(first: &Outcome, second: &Outcome) {
     let first_state = first.transport.state();
-    let second_state = second.transport.state();
     assert_eq!(first_state.requests().len(), 4);
+    let first_request = first_state.requests()[0].clone();
+    drop(first_state);
+    let second_state = second.transport.state();
     assert_eq!(second_state.requests().len(), 4);
-    let first_request = &first_state.requests()[0];
-    let second_request = &second_state.requests()[0];
+    let second_request = second_state.requests()[0].clone();
+    drop(second_state);
     assert_eq!(
         first_request
             .headers

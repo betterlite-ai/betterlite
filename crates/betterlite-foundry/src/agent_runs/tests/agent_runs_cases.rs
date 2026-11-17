@@ -288,6 +288,7 @@ fn assert_thread_message_posts(outcome: &Outcome) {
 fn assert_thread_run_and_reads(outcome: &Outcome) {
     let state = outcome.transport.state();
     let requests = state.requests();
+    assert!(requests.len() > 7);
     assert_request(
         &requests[5],
         AgentRunMethod::Post,
