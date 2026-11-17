@@ -51,28 +51,23 @@ fn decimal(text: &str, field: &str) -> Result<Decimal, OperationError> {
         })
 }
 
-impl From<BanditMathError> for OperationError {
-    fn from(error: BanditMathError) -> Self {
-        let message = error.to_string();
-        match error {
-            BanditMathError::SamplesExhausted => Self::SamplesExhausted { message },
-            BanditMathError::NonFinite { .. }
-            | BanditMathError::UnsupportedTier { .. }
-            | BanditMathError::NoModels
-            | BanditMathError::Distribution { .. } => Self::InvalidRequest { message },
-        }
-    }
-}
-
 impl From<AdaptiveSelectionError> for OperationError {
     fn from(error: AdaptiveSelectionError) -> Self {
-        let message = error.to_string();
         match error {
-            AdaptiveSelectionError::Bandit(inner) => Self::from(inner),
-            AdaptiveSelectionError::Classification(_)
+            AdaptiveSelectionError::Bandit(BanditMathError::SamplesExhausted) => {
+                Self::SamplesExhausted {
+                    message: BanditMathError::SamplesExhausted.to_string(),
+                }
+            }
+            AdaptiveSelectionError::Bandit(other) => Self::InvalidRequest {
+                message: other.to_string(),
+            },
+            refused @ (AdaptiveSelectionError::Classification(_)
             | AdaptiveSelectionError::CostNormalization
             | AdaptiveSelectionError::NoEligibleModels { .. }
-            | AdaptiveSelectionError::MissingCell { .. } => Self::InvalidRequest { message },
+            | AdaptiveSelectionError::MissingCell { .. }) => Self::InvalidRequest {
+                message: refused.to_string(),
+            },
         }
     }
 }
@@ -137,7 +132,11 @@ fn sample_values(payload: &Payload) -> Result<Vec<f64>, OperationError> {
 fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {
     let preferences = preference_map(payload);
     let costs = cost_map(payload)?;
-    Ok(AdaptiveSelection::new(
+    let sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
+        samples: sample_values(payload)?,
+        position: 0,
+    }));
+    AdaptiveSelection::new(
         "probe".to_owned(),
         &AdaptiveRouterConfig {
             available_models: payload.available_models.clone(),
@@ -145,9 +144,7 @@ fn service(payload: &Payload) -> Result<AdaptiveSelection, OperationError> {
         },
         &preferences,
         &costs,
-        QualitySampler::Scripted(Box::new(ScriptedSampler {
-            samples: sample_values(payload)?,
-            position: 0,
-        })),
-    )?)
+        sampler,
+    )
+    .map_err(OperationError::from)
 }

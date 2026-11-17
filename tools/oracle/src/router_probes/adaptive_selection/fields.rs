@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_router::adaptive_classification::minimum_quality::minimum_quality_tier;
 use betterlite_router::adaptive_classification::request_type::RequestType;
 use betterlite_router::adaptive_selection::costs::normalized_cost;
+use betterlite_router::adaptive_selection::error::AdaptiveSelectionError;
 use betterlite_router::adaptive_selection::pre_routing::PreRoutingRequest;
 use betterlite_router::bandit_math::sampler::{QualitySampler, ScriptedSampler};
 use betterlite_router::bandit_math::{BanditCell, Candidate, apply_delta, pick_best};
@@ -38,12 +39,14 @@ pub(super) fn fields_for(payload: &Payload) -> Result<Fields, OperationError> {
 fn updated_cells(deltas: &[DeltaInput]) -> Result<Vec<CellOutput>, OperationError> {
     let mut cells = Vec::with_capacity(deltas.len());
     for input in deltas {
-        let cell = BanditCell::new(number(&input.alpha, "alpha")?, number(&input.beta, "beta")?)?;
+        let cell = BanditCell::new(number(&input.alpha, "alpha")?, number(&input.beta, "beta")?)
+            .map_err(AdaptiveSelectionError::Bandit)?;
         let updated = apply_delta(
             cell,
             number(&input.delta_alpha, "delta_alpha")?,
             number(&input.delta_beta, "delta_beta")?,
-        )?;
+        )
+        .map_err(AdaptiveSelectionError::Bandit)?;
         cells.push(CellOutput {
             request_type: input.request_type,
             model: input.model.clone(),
@@ -92,7 +95,8 @@ fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
     let mut candidates = Vec::with_capacity(payload.cells.len());
     for (cell, cost) in payload.cells.iter().zip(&all_costs) {
         let bandit_cell =
-            BanditCell::new(number(&cell.alpha, "alpha")?, number(&cell.beta, "beta")?)?;
+            BanditCell::new(number(&cell.alpha, "alpha")?, number(&cell.beta, "beta")?)
+                .map_err(AdaptiveSelectionError::Bandit)?;
         candidates.push(Candidate {
             model: &cell.model,
             cell: bandit_cell,
@@ -103,7 +107,7 @@ fn selected_candidate(payload: &Payload) -> Result<String, OperationError> {
         samples: sample_values(payload)?,
         position: 0,
     }));
-    Ok(pick_best(&candidates, weights, &mut sampler)?)
+    Ok(pick_best(&candidates, weights, &mut sampler).map_err(AdaptiveSelectionError::Bandit)?)
 }
 
 fn selected_model(payload: &Payload) -> Result<String, OperationError> {
