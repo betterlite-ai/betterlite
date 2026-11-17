@@ -22,7 +22,7 @@ use betterlite_provider::self_hosted_dispatch::context::{
 };
 use betterlite_provider::self_hosted_dispatch::error::DispatchError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::fixtures::{ORACLE_UPSTREAM, Recorder, environment, logging, section_settings};
@@ -155,8 +155,7 @@ fn ollama_base(passed_base: Option<&str>, env: &BTreeMap<String, String>) -> Str
         .into_iter()
         .flatten()
         .find(|value| !value.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| String::from(OLLAMA_DEFAULT_API_BASE))
+        .map_or_else(|| String::from(OLLAMA_DEFAULT_API_BASE), str::to_owned)
 }
 
 fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N]) -> Option<SecretString> {
