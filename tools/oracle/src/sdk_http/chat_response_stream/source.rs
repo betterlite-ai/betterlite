@@ -10,9 +10,9 @@ use betterlite_streaming::provider_chunk_decode::chunk::{
     DecodeState, ProviderChunk, ProviderKind, RequestOptions,
 };
 use betterlite_streaming::provider_chunk_decode::creator::chunk_creator;
-use betterlite_streaming::stream_chunk_shaping::ChunkShaper;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue};
+use betterlite_streaming::stream_chunk_shaping::{ChunkShaper, tokens::finish_reason_handler};
 use uuid::Uuid;
 
 const DONE: &[u8] = b"[DONE]";
@@ -62,11 +62,11 @@ impl Payloads {
     fn decode_next(&mut self) -> Result<Option<Json>, StreamFailure> {
         loop {
             let Some(payload) = self.payloads.pop_front() else {
-                return Ok(None);
+                break;
             };
             if payload == DONE {
                 self.payloads.clear();
-                return Ok(None);
+                break;
             }
             let value: JsonValue = serde_json::from_slice(&payload).map_err(failure)?;
             if value == JsonValue::Null {
@@ -83,6 +83,13 @@ impl Payloads {
             };
             return wrapper_view(&chunk).map(Some).map_err(failure);
         }
+        // The wrapper invents a finish chunk when the provider's stream ends without one
+        if !self.shaper.progress.sent_last_chunk {
+            self.shaper.progress.sent_last_chunk = true;
+            let chunk = finish_reason_handler(&mut self.shaper);
+            return wrapper_view(&chunk).map(Some).map_err(failure);
+        }
+        Ok(None)
     }
 }
 
