@@ -54,11 +54,11 @@ fn choice_content(record: &StandardLoggingPayload) -> String {
 }
 
 fn headers(pairs: &[(&str, bool)]) -> Json {
-    let pairs: Vec<(&str, Json)> = pairs
+    let converted: Vec<(&str, Json)> = pairs
         .iter()
         .map(|(name, value)| (*name, Json::Bool(*value)))
         .collect();
-    Json::Object(fields(&pairs))
+    Json::Object(fields(&converted))
 }
 
 #[test]
