@@ -235,7 +235,9 @@ async fn drive(
             TextCompletionFailure::Raw(SdkError::Status(status)) => {
                 status_failure(&status, redactor)
             }
-            other => transport_failure(other, redactor),
+            other @ (TextCompletionFailure::Wrapped(_) | TextCompletionFailure::Raw(_)) => {
+                transport_failure(other, redactor)
+            }
         })?;
     transport
         .finish(&begun, sent, &mut *logger)
