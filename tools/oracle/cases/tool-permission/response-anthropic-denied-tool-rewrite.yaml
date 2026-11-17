@@ -1,0 +1,27 @@
+kind: helper
+name: response-anthropic-denied-tool-rewrite
+call:
+  b3813:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: post_call
+    default_on: true
+    mode: success
+    format: anthropic
+    data: {}
+    chunks: []
+    raw_chunks: []
+    response:
+      id: msg_3
+      type: message
+      role: assistant
+      model: claude-test
+      content:
+        - {type: tool_use, id: toolu_3, name: Bash, input: {cmd: ls}}
+      stop_reason: tool_use
+      usage: {input_tokens: 10, output_tokens: 5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,4 @@
+[default.extend-words]
+# LiteLLM calls a stream it cannot read unparseable, and the streaming-error-cases check names the test module after
+# that word, so this folder keeps the spelling the root typos.toml would correct.
+unparseable = "unparseable"

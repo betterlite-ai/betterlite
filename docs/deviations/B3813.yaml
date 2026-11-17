@@ -1,0 +1,25 @@
+task: B3813
+deviations:
+  - what: >-
+      A streamed response is buffered up to 10,000 chunks and 16 MiB of encoded chunk bytes by default. The
+      chunk that would exceed either limit is refused with a GuardrailRaisedException (status 400,
+      blocked_content false), so the stream fails instead of being relayed unchecked.
+    why: >-
+      LiteLLM appends every chunk to a list with no bound. A public gateway that buffers a provider
+      stream on behalf of a client needs a ceiling on untrusted input, so betterlite refuses past it.
+      The limits live in StreamBufferLimits, the byte ceiling is ApiLimits' max_json_bytes, and the
+      caller of the hook can lower either one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L912-L915
+kept_bugs:
+  - what: >-
+      When a tool denial makes the streaming hook re-encode an Anthropic stream, a thinking block that
+      arrived as a thinking_delta followed by a signature_delta comes back with its text twice: the
+      single thinking delta repeats the accumulated thinking.
+    why: >-
+      LiteLLM's Anthropic chunk conversion puts the accumulated thinking in the thinking block of the
+      signature delta, and stream_chunk_builder appends every chunk's thinking text, so the signature
+      delta's copy repeats the deltas that already carried it. betterlite's B2227 assembly and the
+      shared frame encoder reproduce that output, so a client sees the same stream either way.
+      Deduplicating it would need B2227's assembler or the shared SSE re-encoder, both outside this
+      task's scope, and would make betterlite's wire output differ from LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L703-L716
