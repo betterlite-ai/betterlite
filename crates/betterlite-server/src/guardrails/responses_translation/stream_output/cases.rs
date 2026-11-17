@@ -29,9 +29,7 @@ fn deliver_terminal_rewrites(
             rewrites.insert(*mapping, rewritten_text.clone());
         }
     }
-    if !rewrites.is_empty() {
-        stream_sync::sync_stream_events_with_rewrites(earlier, &rewrites);
-    }
+    stream_sync::sync_stream_events_with_rewrites(earlier, &rewrites);
     let mut empty: [Value; 0] = [];
     let output = match response.get_mut("output") {
         Some(Value::Array(items)) => items.as_mut_slice(),
