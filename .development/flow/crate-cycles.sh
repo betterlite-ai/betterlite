@@ -4,11 +4,11 @@ P=${self%/*}
 main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}
 worktrees=${BETTERLITE_WORKTREES:-$(dirname "${main}")/betterlite-worktrees}
 # Prints the crate loop this branch closes with main and the other running branches, what needs each edge and where the code can go, and exits 1; prints nothing and exits 0 when there is none.
-# Usage: crate-cycles.sh <worktree>. cargo metadata --no-deps still reads manifests that form a loop, and tsort finds it. Dev-dependencies don't count, since cargo allows loops through them.
+# Usage: crate-cycles.sh <worktree>. cargo metadata --no-deps still reads manifests that form a loop, and tsort finds it. A dev-dependency counts only when it closes a loop by itself: cargo allows that, but the tests then build a second copy of the lower crate.
 # manifests cargo can't read give no edges, so they never send a task down the crate cycle path
 edges() {
   metadata=$(cargo metadata --no-deps --format-version 1 --manifest-path "$1/Cargo.toml" 2> /dev/null) || return 0
-  pairs=$(jq -r '.workspace_root as $root | .packages[] as $p | $p.dependencies[] | select(.path != null and (.kind == null or .kind == "build")) | "\($p.name) \(.name) \($p.manifest_path | ltrimstr($root + "/") | rtrimstr("/Cargo.toml"))"' <<< "${metadata}")
+  pairs=$(jq -r --arg kind "$2" '.workspace_root as $root | .packages[] as $p | $p.dependencies[] | select(.path != null and (if $kind == "dev" then .kind == "dev" else (.kind == null or .kind == "build") end)) | "\($p.name) \(.name) \($p.manifest_path | ltrimstr($root + "/") | rtrimstr("/Cargo.toml"))"' <<< "${metadata}")
   [[ -z "${pairs}" ]] || sort -u <<< "${pairs}"
 }
 
@@ -17,25 +17,41 @@ added() {
   base=$(git -C "$1" merge-base HEAD origin/main) || return 0
   changed=$(git -C "$1" diff --name-only "${base}" -- '*Cargo.toml')
   [[ -n "${changed}" ]] || return 0
-  list=$(edges "$1")
+  list=$(edges "$1" "$3")
   [[ -n "${list}" ]] || return 0
   while read -r from to dir; do
     grep -q -x -F "${dir}/Cargo.toml" <<< "${changed}" || continue
     # a manifest missing at the base is new on this branch, so every edge in it counts as added
     manifest=$(git -C "$1" show "${base}:${dir}/Cargo.toml" 2> /dev/null)
-    manifest=$(sed '/dev-dependencies\]/,/^\[/d' <<< "${manifest}")
+    if [[ "$3" = dev ]]; then
+      manifest=$(sed -n '/dev-dependencies\]/,/^\[/p' <<< "${manifest}")
+    else
+      manifest=$(sed '/dev-dependencies\]/,/^\[/d' <<< "${manifest}")
+    fi
     grep -q -E "^${to}( |\.|=)" <<< "${manifest}" || echo "${from} ${to} ${dir} $2"
   done <<< "${list}"
 }
 
 cd "$1" || exit 1
 id=$(basename "${PWD}")
-mine=$(added "${PWD}" "this-branch")
+dev=$(added "${PWD}" "this-branch" dev)
+mine=$(added "${PWD}" "this-branch" normal)
+[[ -n "${dev}${mine}" ]] || exit 0
+tree=$(edges "${PWD}" normal)
+plain=$(cut -d' ' -f1,2 <<< "${tree}")
+# a loop through normal edges alone is the case below, so only a loop the dev edge closes counts here
+LC_ALL=C tsort <<< "${plain}" > /dev/null 2>&1 || dev=
+while read -r from to _; do
+  [[ -n "${from}" ]] || continue
+  LC_ALL=C tsort <<< "${plain}"$'\n'"${from} ${to}" > /dev/null 2>&1 && continue
+  echo "test-only crate loop: ${from} now dev-depends on ${to}, and ${to} already depends on ${from}. Cargo allows it, but those tests build a second copy of ${from}, so its types are not the ones ${to} uses. Move the tests that need ${to} into ${to}, next to the code that already uses both, and drop the dev-dependency. Don't copy code."
+  [[ -d "crates/${to}" ]] && echo "Scope now covers: crates/${to}/**"
+  exit 1
+done <<< "${dev}"
 [[ -n "${mine}" ]] || exit 0
-tree=$(edges "${PWD}")
 others=$(for args in "${worktrees}"/logs/flows/*.args; do
   other=$(basename "${args}" .args)
-  [[ "${other}" = "${id}" ]] || [[ ! -d "${worktrees}/${other}" ]] || added "${worktrees}/${other}" "${other}"
+  [[ "${other}" = "${id}" ]] || [[ ! -d "${worktrees}/${other}" ]] || added "${worktrees}/${other}" "${other}" normal
 done)
 all=$(cut -d' ' -f1,2 <<< "${tree}"$'\n'"${others}")
 all=$(sort -u <<< "${all}")

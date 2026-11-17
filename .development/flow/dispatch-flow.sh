@@ -52,10 +52,13 @@ args=${L}/flows/${id}.args
 jq -n --arg run "${run}" --arg note "${note}" --arg grant "${grant}" --arg ci_rounds "${CI_ROUNDS:-0}" --arg conflicts "${CONFLICTS:-0}" --arg land_only "${LAND_ONLY:-}" '$ARGS.named' > "${args}"
 trap 'rm -f -- "$args"' EXIT
 worktree=${worktrees}/${id}
+rm -f -- "${main}/.git/betterlite/${id}/parked"
 events=${L}/flow-events.log
 say() { printf '%(%H:%M)T %s\n' -1 "${id} $*" >> "${events}"; }
 park() {
   say "blocked: $*"
+  # the gate does not count a parked task as running, so tasks it blocks can go first; the flow clears the mark when it starts again
+  [[ -d "${main}/.git/betterlite/${id}" ]] && : > "${main}/.git/betterlite/${id}/parked"
   # the reason column ends with a space, as every earlier parked.tsv row does
   printf '%(%F %H:%M)T\t%s\t%s\t%s\t%s \n' -1 "${id}" "${run}" "${main}/.git/betterlite/${id}" "${*//[$'\t\n']/ }" >> "${L}/parked.tsv"
 }
@@ -372,6 +375,14 @@ case "${result}" in
     lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
     # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
     [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
+    # deny failing alone on a branch that changes neither Cargo.lock nor deny.toml means new advisories on main, and no fix round can help (B9653 spent five on 11-17, Max)
+    failed_checks=$(grep -E '^FAIL ' <<< "${lines}")
+    other_checks=$(grep -v -E '^FAIL deny ' <<< "${failed_checks}")
+    base=$(git -C "${worktree}" merge-base HEAD origin/main)
+    if [[ -n "${failed_checks}" ]] && [[ -z "${other_checks}" ]] && [[ -n "${base}" ]] && git -C "${worktree}" diff --quiet "${base}" -- Cargo.lock deny.toml; then
+      park "CI failed on PR #${pr} (run ${run_id}) only on deny, and the branch changes neither Cargo.lock nor deny.toml, so the cause is on main; land it again once main passes deny"
+      exit 5
+    fi
     missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
     missed=$(sort -u <<< "${missed}")
     missed=$(head -n 40 <<< "${missed}")
