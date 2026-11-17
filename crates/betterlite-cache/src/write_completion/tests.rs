@@ -14,7 +14,7 @@ use tokio::sync::Notify;
 use tokio::time::Instant;
 use tracing::subscriber::set_default;
 
-use crate::backend::CacheBackend;
+use crate::backend::CacheBackend as _;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::dual_cache::DualCache;
 use crate::handler::call_types::call_type_name;
@@ -437,7 +437,7 @@ async fn store_other_result_writes_raw_without_dual_cache() {
 
 #[test]
 fn store_resolves_the_parent_span_from_the_request() {
-    let parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0be902b7-01";
     let stored = Some(KeyValue::String(parent.to_owned()));
     let mut plain = chat_kwargs();
     add_parent_otel_span(&mut plain);
@@ -504,6 +504,55 @@ fn sync_store_writes_directly() {
         write.response,
         CacheValue::Text(expected),
         "the sync write stores the JSON string"
+    );
+}
+
+#[test]
+fn sync_store_skips_without_cache() {
+    let recorder = Arc::new(Recorder::default());
+    let context: CacheContext<SilentLogger, SilentConsole> = CacheContext {
+        cache: None,
+        supported_call_types: Some(vec![CachingSupportedCallType::Acompletion]),
+    };
+    let result = chat_result();
+    let function = original("acompletion", &["model", "messages"]);
+    let kwargs = chat_kwargs();
+    store_response_sync(
+        &context,
+        &StoreRequest {
+            result: &result,
+            original_function: &function,
+            kwargs: &kwargs,
+            args: &[],
+        },
+    )
+    .expect("a skipped write is not an error");
+    assert!(recorder.writes().is_empty(), "no cache means no write");
+}
+
+#[test]
+fn sync_store_skips_unsupported_call_type() {
+    let recorder = Arc::new(Recorder::default());
+    let context: CacheContext<SilentLogger, SilentConsole> = CacheContext {
+        cache: Some(cache(&recorder, LiteLlmCacheType::Local)),
+        supported_call_types: Some(vec![CachingSupportedCallType::Acompletion]),
+    };
+    let result = chat_result();
+    let function = original("aembedding", &["model", "input"]);
+    let kwargs = embedding_kwargs(&["text"]);
+    store_response_sync(
+        &context,
+        &StoreRequest {
+            result: &result,
+            original_function: &function,
+            kwargs: &kwargs,
+            args: &[],
+        },
+    )
+    .expect("a skipped write is not an error");
+    assert!(
+        recorder.writes().is_empty(),
+        "an unlisted call type means no write"
     );
 }
 
@@ -610,7 +659,13 @@ async fn stream_writes_assembled_response_once() {
     assert_eq!(writes.len(), 1, "the whole stream is stored once");
     let expected = serde_json::to_string(&chat_json()).expect("the chat fixture serializes");
     assert_eq!(writes[0].response, CacheValue::Text(expected));
-    assert_eq!(assembler.calls().len(), 1);
+    let calls = assembler.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].chunks.len(),
+        3,
+        "the assembler sees every buffered chunk"
+    );
     assert_eq!(handler.async_streaming_chunks.len(), 3);
 }
 

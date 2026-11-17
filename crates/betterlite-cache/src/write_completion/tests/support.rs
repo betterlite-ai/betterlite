@@ -166,20 +166,28 @@ impl MemoryCacheOps for RecordingMemory {
 
     fn set_cache(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
         self.recorder.record(Sink::Dual, key, &value);
-        let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
-        stored.insert(key.to_owned(), value);
+        let _replaced = self
+            .stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
         Ok(())
     }
 
     fn delete_cache(&self, key: &str) -> CacheResult<()> {
-        let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
-        stored.remove(key);
+        let _removed = self
+            .stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key);
         Ok(())
     }
 
     fn flush_cache(&self) -> CacheResult<()> {
-        let mut stored = self.stored.lock().unwrap_or_else(PoisonError::into_inner);
-        stored.clear();
+        self.stored
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         Ok(())
     }
 
@@ -366,7 +374,7 @@ pub(crate) fn embedding_kwargs(inputs: &[&str]) -> KeyObject {
         ("model", text("text-embedding-3-small")),
         (
             "input",
-            KeyValue::Array(inputs.iter().map(|value| text(*value)).collect()),
+            KeyValue::Array(inputs.iter().map(|value| text(value)).collect()),
         ),
     ])
 }
@@ -425,10 +433,7 @@ pub(crate) fn embedding_result(count: usize) -> CacheableResult {
 }
 
 pub(crate) fn chunk(content: &str, finish_reason: Option<&str>) -> SuccessResult {
-    let finish = match finish_reason {
-        Some(reason) => Json::Text(reason.to_owned()),
-        None => Json::Null,
-    };
+    let finish = finish_reason.map_or_else(|| Json::Null, |reason| Json::Text(reason.to_owned()));
     let delta = Json::Object(IndexMap::from([(
         "content".to_owned(),
         Json::Text(content.to_owned()),
