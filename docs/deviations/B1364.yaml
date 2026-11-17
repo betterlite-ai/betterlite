@@ -21,6 +21,16 @@ deviations:
       The task's content preparation resolves the provider download target itself, and a URI that cannot name a host is
       not a video any working setup downloads. docs/compatibility.md keeps our error text and class our own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L458-L471
+  - what: >-
+      The Studio create usage is built by the shared duration, resolution and sample-count builder B1362 added, so a
+      boolean duration or resolution, or a container resolution, is omitted here where LiteLLM renders it through
+      float() or str(), and a parameters block that is not an object is a typed error where LiteLLM raises an
+      AttributeError. docs/deviations/B1362.yaml lists the same departures with their Vertex AI lines.
+    why: >-
+      One usage builder serves both video configs, and a working setup sends a number of seconds and a resolution
+      name. float(True) and str(True) are the duck typing and str text that docs/compatibility.md says betterlite
+      does not port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L65-L72
 kept_bugs:
   - what: >-
       A completed operation that also carries an error object is reported as completed with no error, and its
