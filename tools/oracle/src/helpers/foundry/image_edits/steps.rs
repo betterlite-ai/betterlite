@@ -227,7 +227,8 @@ fn mai_images(step: &TransformStep) -> Option<Vec<Option<ImageEditFile>>> {
     let Some(list) = &step.images else {
         return step.image.as_ref().map(|image| vec![Some(mai_file(image))]);
     };
-    Some(list.iter().map(Option::as_ref).map(mai_file).collect())
+    let files = list.iter().map(|field| field.as_ref().map(mai_file));
+    Some(files.collect())
 }
 
 fn projected(kind: &str, form: ImageEditForm) -> Value {
