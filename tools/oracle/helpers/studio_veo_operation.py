@@ -5,7 +5,7 @@ import httpx
 import litellm
 from litellm.constants import DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS
 from litellm.llms.gemini.videos.transformation import GeminiVideoConfig
-from litellm.types.llms.gemini import GeminiLongRunningOperationResponse
+from litellm.types.llms.gemini import GeminiLongRunningOperationResponse as PinnedOperation
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.main import VideoObject
 from pydantic import ConfigDict, JsonValue, TypeAdapter
@@ -103,7 +103,7 @@ def status_request_answer(call: StatusRequestCall) -> JsonValue:
 
 
 def content_target_answer(call: ContentTargetCall) -> JsonValue:
-    operation = GeminiLongRunningOperationResponse.model_validate(call["body"])
+    operation = PinnedOperation.model_validate(call["body"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L338
     if not operation.done:
         raise ValueError("the operation is not done")
     response = operation.response

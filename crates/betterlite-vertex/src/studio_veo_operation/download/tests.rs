@@ -375,7 +375,9 @@ async fn cancel_closes_status() {
         content_request(&lookup(&headers), &transport),
     )
     .await;
-    assert!(outcome.is_err());
+    let Err(_elapsed) = outcome else {
+        panic!("the stalled status lookup must time out");
+    };
     assert!(transport.dropped.load(Ordering::SeqCst));
 }
 
@@ -396,6 +398,8 @@ async fn cancel_closes_download() {
         download_content(request, &transport),
     )
     .await;
-    assert!(outcome.is_err());
+    let Err(_elapsed) = outcome else {
+        panic!("the stalled artifact download must time out");
+    };
     assert!(transport.dropped.load(Ordering::SeqCst));
 }

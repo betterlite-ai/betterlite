@@ -67,7 +67,7 @@ where
     }
     let target = download_target(&reply.body)?;
     let target_url = match Url::parse(&target) {
-        Ok(url) => url,
+        Ok(parsed) => parsed,
         Err(source) => {
             return Err(StudioVeoOperationError::Url {
                 url: target,
