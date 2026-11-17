@@ -6,26 +6,31 @@ mod data;
 mod hooks;
 mod tests;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::presidio_runtime::Settings as RuntimeSettings;
 use reqwest::Client;
 use tokio::sync::mpsc::{Receiver, Sender};
 
+use self::data::{store_request_data, to_request_data};
 use self::error::{INTERNAL_STATUS, PresidioRuntimeError};
-use self::hooks::{AsyncHook, Data};
+use self::hooks::{Data, context, mask_request};
 use crate::cato::error::ModelStreamError;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_initializers::presidio::{PresidioArgs, PresidioRole};
+use crate::guardrail_selection::gate::GuardrailSelection as _;
 use crate::presidio_actions::PresidioAnonymizer;
 use crate::presidio_analysis::PresidioAnalyzer;
 use crate::presidio_response::wire::ResponseBody;
+use crate::presidio_response::{logging, post_call};
 use crate::presidio_streams::StreamEvent;
 use crate::presidio_streams::assembly::StreamAssembly;
 use crate::presidio_streams::error::PresidioStreamError;
+use crate::presidio_streams::{StreamRun, hook};
 
 type Body = ResponseBody;
 type Outcome = Result<(), GuardrailFailure>;
@@ -55,6 +60,38 @@ pub struct PresidioGuard {
     callback_role: Option<PresidioRole>,
 }
 
+// The response hooks all convert the request data, run one B3806 function and write the data back, so the class defines them through one skeleton
+macro_rules! response_hook {
+    (sync $name:ident, $call:path) => {
+        pub fn $name(&self, data: &mut Data, response: &mut Body, call_type: &str) -> Outcome {
+            let dynamic_params = self.base.dynamic_request_body_params(data)?;
+            let mut request = to_request_data(data)?;
+            $call(context(self, &dynamic_params), &mut request, response, call_type)?;
+            store_request_data(data, &request)?;
+            Ok(())
+        }
+    };
+    ($name:ident $(+ $call_type:ident)?, $call:path) => {
+        pub async fn $name(
+            &self,
+            data: &mut Data,
+            response: &mut Body,
+            $($call_type: &str)?
+        ) -> Outcome {
+            let dynamic_params = self.base.dynamic_request_body_params(data)?;
+            let mut request = to_request_data(data)?;
+            $call(
+                context(self, &dynamic_params),
+                &mut request,
+                response $(, $call_type)?,
+            )
+            .await?;
+            store_request_data(data, &request)?;
+            Ok(())
+        }
+    };
+}
+
 impl PresidioGuard {
     pub fn new(
         args: &PresidioArgs,
@@ -73,34 +110,24 @@ impl PresidioGuard {
         })
     }
 
-    pub async fn pre_call(&self, data: &mut Data, call_type: &str) -> Outcome {
-        hooks::pre_call(self, data, call_type).await
+    pub async fn pre_call(&self, data: &mut Data, _call_type: &str) -> Outcome {
+        if !self
+            .base
+            .should_run_guardrail(data, GuardrailEventHooks::PreCall, &BTreeSet::new())?
+        {
+            return Ok(());
+        }
+        let dynamic_params = self.base.dynamic_request_body_params(data)?;
+        let mut request = to_request_data(data)?;
+        let outcome = mask_request(self, &mut request, &dynamic_params).await;
+        // LiteLLM keeps the record a failed check appended, so the converted data goes back either way
+        store_request_data(data, &request)?;
+        outcome.map_err(GuardrailFailure::from)
     }
 
-    pub async fn post_call_success(&self, data: &mut Data, response: &mut Body) -> Outcome {
-        hooks::run_async(self, data, AsyncHook::PostCall(response)).await
-    }
-
-    pub fn logging_hook(&self, data: &mut Data, response: &mut Body, call_type: &str) -> Outcome {
-        hooks::logging_hook(self, data, response, call_type)
-    }
-
-    pub async fn async_logging_hook(
-        &self,
-        data: &mut Data,
-        response: &mut Body,
-        call_type: &str,
-    ) -> Outcome {
-        hooks::run_async(
-            self,
-            data,
-            AsyncHook::AsyncLogging {
-                response,
-                call_type,
-            },
-        )
-        .await
-    }
+    response_hook!(post_call_success, post_call::async_post_call_success_hook);
+    response_hook!(async_logging_hook + call_type, logging::async_logging_hook);
+    response_hook!(sync logging_hook, logging::logging_hook);
 
     pub async fn streaming_iterator<Assembly>(
         &self,
@@ -112,7 +139,20 @@ impl PresidioGuard {
     where
         Assembly: StreamAssembly,
     {
-        hooks::streaming_iterator(self, data, assembly, input, out).await
+        let dynamic_params = self.base.dynamic_request_body_params(data)?;
+        let mut request = to_request_data(data)?;
+        let outcome = hook::streaming_iterator_hook(
+            &mut StreamRun {
+                context: context(self, &dynamic_params),
+                request_data: &mut request,
+                assembly,
+                out,
+            },
+            input,
+        )
+        .await;
+        store_request_data(data, &request)?;
+        outcome.map_err(GuardrailFailure::from)
     }
 }
 
