@@ -1,6 +1,6 @@
 pub(crate) mod headers;
 pub(crate) mod prompt_execution;
-mod streaming;
+pub(crate) mod streaming;
 
 use streaming::{ChatCalls, render_stream};
 
