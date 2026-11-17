@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::mem::take;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_anthropic::api::messages_errors::decode::WireDecodeLimits;
@@ -40,6 +41,14 @@ struct StepEvents {
     frames: Vec<String>,
     end: bool,
     failure: Option<ChatStreamFailure>,
+}
+
+// What one pull of the chosen iterator left: an event, a frame, the end, or the wrapper's failure
+enum Pulled {
+    Event(Value),
+    Frame(Vec<u8>),
+    End,
+    Failure(StreamFailure),
 }
 
 // One case run: the chosen view over one mock stream, driven step by step
@@ -110,16 +119,13 @@ fn driver_for(
 }
 
 impl RunStream {
-    // One call of the case's chosen iterator, then what it left behind
+    // One call of whichever __anext__ the case drives, then what it left behind
     async fn step(
         &mut self,
         step: ChatStep,
         diagnostics: &Diagnostics,
     ) -> Result<ChatStreamStepOutcome, SdkHttpError> {
-        let left = match self {
-            Self::Wrapper(stream) => wrapper_step(stream, step).await?,
-            Self::View { view, .. } => view_step(view, step).await?,
-        };
+        let left = self.drive(step).await?;
         let observed = match self {
             Self::View {
                 view,
@@ -133,7 +139,7 @@ impl RunStream {
             end: left.end,
             failure: left.failure,
             pulls: self.pulls(),
-            diagnostics: std::mem::take(
+            diagnostics: take(
                 &mut *diagnostics
                     .entries
                     .lock()
@@ -141,6 +147,57 @@ impl RunStream {
             ),
             view: observed,
         })
+    }
+
+    // One pull of the chosen iterator, in the shape that side reports it
+    async fn pull(&mut self) -> Result<Pulled, SdkHttpError> {
+        match self {
+            Self::Wrapper(stream) => match stream.next_event().await {
+                Ok(Some(event)) => Ok(Pulled::Event(normalized(&event, &stream.state.message_id)?)),
+                Ok(None) => Ok(Pulled::End),
+                Err(error) => Ok(Pulled::Failure(error.into_stream_failure())),
+            },
+            Self::View { view, .. } => match view.next_frame().await {
+                Some(frame) => Ok(Pulled::Frame(frame)),
+                None => Ok(Pulled::End),
+            },
+        }
+    }
+
+    // One call of the case's chosen __anext__: the wrapper hands a failure over, the view writes it as one error frame
+    async fn drive(&mut self, step: ChatStep) -> Result<StepEvents, SdkHttpError> {
+        let mut left = StepEvents {
+            events: Vec::new(),
+            frames: Vec::new(),
+            end: false,
+            failure: None,
+        };
+        if step == ChatStep::Close {
+            if let Self::View { view, .. } = self {
+                view.aclose();
+            }
+            return Ok(left);
+        }
+        loop {
+            match self.pull().await? {
+                Pulled::Event(event) => left.events.push(event),
+                Pulled::Frame(frame) => left
+                    .frames
+                    .push(String::from_utf8(frame).map_err(SdkHttpError::FrameUtf8)?),
+                Pulled::End => {
+                    left.end = true;
+                    break;
+                }
+                Pulled::Failure(raised) => {
+                    left.failure = Some(failure_of(&raised));
+                    break;
+                }
+            }
+            if step == ChatStep::Next {
+                break;
+            }
+        }
+        Ok(left)
     }
 
     // Every source pull the run made, the last one that ended the stream included
@@ -151,71 +208,6 @@ impl RunStream {
             Self::View { view, .. } => view.stream.state.completion_stream.source.source.pulls,
         }
     }
-}
-
-// One call of the wrapper's own __anext__, with the failure handed to the caller as LiteLLM lets it reach one
-async fn wrapper_step(
-    stream: &mut ChatStreamDriver<Prefetched, UuidV4>,
-    step: ChatStep,
-) -> Result<StepEvents, SdkHttpError> {
-    let mut events = Vec::new();
-    let mut failure = None;
-    let mut end = false;
-    match step {
-        ChatStep::Next => match stream.next_event().await {
-            Ok(Some(event)) => events.push(normalized(&event, &stream.state.message_id)?),
-            Ok(None) => end = true,
-            Err(error) => failure = Some(failure_of(&error.into_stream_failure())),
-        },
-        ChatStep::Drain => loop {
-            match stream.next_event().await {
-                Ok(Some(event)) => events.push(normalized(&event, &stream.state.message_id)?),
-                Ok(None) => {
-                    end = true;
-                    break;
-                }
-                Err(error) => {
-                    failure = Some(failure_of(&error.into_stream_failure()));
-                    break;
-                }
-            }
-        },
-        ChatStep::Close => {}
-    }
-    Ok(StepEvents {
-        events,
-        frames: Vec::new(),
-        end,
-        failure,
-    })
-}
-
-// One call of the byte view's __anext__, where a failure arrives as the one error frame instead of an error
-async fn view_step(
-    view: &mut AnthropicSseStream<Prefetched, UuidV4>,
-    step: ChatStep,
-) -> Result<StepEvents, SdkHttpError> {
-    let mut frames = Vec::new();
-    let mut end = false;
-    match step {
-        ChatStep::Next => match view.next_frame().await {
-            Some(frame) => frames.push(String::from_utf8(frame).map_err(SdkHttpError::FrameUtf8)?),
-            None => end = true,
-        },
-        ChatStep::Drain => {
-            while let Some(frame) = view.next_frame().await {
-                frames.push(String::from_utf8(frame).map_err(SdkHttpError::FrameUtf8)?);
-            }
-            end = true;
-        }
-        ChatStep::Close => view.aclose(),
-    }
-    Ok(StepEvents {
-        events: Vec::new(),
-        frames,
-        end,
-        failure: None,
-    })
 }
 
 // The held buffers only exist through a seed, applied before the first call on either side
@@ -249,7 +241,7 @@ fn failure_of(failure: &StreamFailure) -> ChatStreamFailure {
 fn view_metadata(view: &AnthropicSseStream<Prefetched, UuidV4>) -> ChatStreamView {
     let chunks = view
         .chunks()
-        .map(|chunks| chunks.iter().map(|chunk| chunk.id.clone()).collect());
+        .map(|recorded| recorded.iter().map(|chunk| chunk.id.clone()).collect());
     ChatStreamView {
         model: view.model().to_owned(),
         chunks,

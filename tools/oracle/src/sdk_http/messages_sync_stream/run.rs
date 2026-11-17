@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::mem::take;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_anthropic::stream_state::state::UuidV4;
@@ -78,7 +79,7 @@ fn run_step(
         events,
         end,
         state: observed(&stream.state),
-        diagnostics: std::mem::take(
+        diagnostics: take(
             &mut *diagnostics
                 .entries
                 .lock()
