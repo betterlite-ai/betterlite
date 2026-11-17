@@ -45,12 +45,6 @@ MapParams = Callable[
     ],
     Params,
 ]
-ValidateEnvironment = Callable[
-    [dict[str, str], str, str | None, Params | None, Params | None],
-    dict[str, str],
-]
-
-
 class Config(Protocol):
     @property
     def map_cohere_rerank_params(self) -> MapParams: ...
@@ -59,8 +53,14 @@ class Config(Protocol):
         self, api_base: str | None, model: str, optional_params: Params
     ) -> str: ...
 
-    @property
-    def validate_environment(self) -> ValidateEnvironment: ...
+    def validate_environment(
+        self,
+        headers: dict[str, str],
+        model: str,
+        api_key: str | None,
+        optional_params: Params | None = None,
+        litellm_params: Params | None = None,
+    ) -> dict[str, str]: ...
 
     def transform_rerank_request(
         self, model: str, optional_rerank_params: Params, headers: dict[str, str]
