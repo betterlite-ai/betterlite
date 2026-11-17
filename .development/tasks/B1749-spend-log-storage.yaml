@@ -38,7 +38,7 @@ description: >-
   Transient writes retry with 2^attempt seconds; after the final attempt requeue and
   propagate. Other database errors requeue once then propagate; unrelated exceptions
   propagate without that database-specific replay. Preserve caller-owned batches.
-  Failure reporting submits an owned B012 failure event with call_type update_spend,
+  Failure reporting submits an owned B8395 failure event with call_type update_spend,
   elapsed duration and the [Non-Blocking] diagnostic prefix, then rethrows the original
   error. About 370 source lines fit an 800-line budget with PostgreSQL poison/claim races,
   fake writer HTTP statuses, queue-budget/config tests and pure batch_claim_row cases.
