@@ -95,7 +95,8 @@ where
     )
     .await;
     let mut clamped_params = non_default_params.clone();
-    thinking::clamp_reasoning_effort(original_model, &mut clamped_params, request, environment)
+    request
+        .clamp_reasoning_effort(&mut clamped_params, environment)
         .await?;
     let params_request = ParamsRequest {
         model: mapped_model,
@@ -112,7 +113,9 @@ where
         environment,
     )
     .await?;
-    thinking::translate_thinking(original_model, optional_params, request, environment).await?;
+    request
+        .translate_thinking(optional_params, environment)
+        .await?;
     thinking::apply_display_updates(display_updates, optional_params);
     remove_forced_tool_choice(
         has_response_format,
