@@ -1,0 +1,56 @@
+kind: helper
+name: foundry-agent-runs-new-thread-run-flow
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/agent-1
+        messages:
+          - {role: system, content: "you are an agent"}
+          - {role: user, content: hi}
+          - {role: assistant, content: ignored}
+        optional_params: {}
+        litellm_params: {ssl_verify: false}
+        headers: {X-Test: kept}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo/"
+        api_key: token-1
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "thread-1"}'}
+          - {status: 200, body: '{"id": "message-1"}'}
+          - {status: 201, body: '{"id": "message-2"}'}
+          - {status: 200, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "queued"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "hello"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: ""}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-2
+        mode: async
+        supplied: false
+        steps:
+          - {status: 200, body: '{"id": "thread-2"}'}
+          - {status: 201, body: '{"id": "run-2"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "async"}}]}]}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: null}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-3
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "thread-3"}'}
+          - {status: 201, body: '{"id": "run-3"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "sync-null"}}]}]}'}
+env: {}
+compare: {ignore: []}

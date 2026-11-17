@@ -1,0 +1,72 @@
+kind: helper
+name: foundry-agent-runs-failed-cancelled-expired-run
+call:
+  foundry_agent_runs:
+    runs:
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-1"}'}
+          - {status: 200, body: '{"status": "failed", "last_error": {"message": "boom"}}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-2"}'}
+          - {status: 200, body: '{"status": "cancelled", "last_error": {"message": "boom"}}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-3"}'}
+          - {status: 200, body: '{"status": "expired", "last_error": {"message": "boom"}}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-4"}'}
+          - {status: 200, body: '{"status": "failed", "last_error": {}}'}
+      - model: azure_ai/agents/agent-1
+        messages: []
+        optional_params: {thread_id: "thread-9"}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://example.services.ai.azure.com/api/projects/demo"
+        api_key: token-9
+        mode: sync
+        supplied: false
+        steps:
+          - {status: 201, body: '{"id": "run-5"}'}
+          - {status: 200, body: '{"status": "in_progress"}'}
+          - {status: 200, body: '{"status": null}'}
+          - {status: 200, body: '{}'}
+          - {status: 200, body: '{"status": "queued"}'}
+          - {status: 200, body: '{"status": "completed"}'}
+          - {status: 200, body: '{"data": [{"role": "assistant", "content": [{"type": "text", "text": {"value": "hello"}}]}]}'}
+env: {}
+compare: {ignore: []}
