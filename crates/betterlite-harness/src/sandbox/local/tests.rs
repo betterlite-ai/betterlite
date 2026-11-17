@@ -11,8 +11,11 @@ use secrecy::SecretString;
 
 use super::LocalSandbox;
 use super::environment::{filtered_environ, is_secret_env_name};
+use super::process::PROCESS_KILL_GRACE;
 use crate::sandbox::{Process as _, Sandbox as _, SandboxCommand};
 use secrecy::ExposeSecret;
+
+const SHORT_GRACE: Duration = Duration::from_millis(500);
 
 fn tempdir() -> TempDir {
     tempfile::Builder::new()
@@ -39,8 +42,13 @@ fn filters_provider_credentials_but_extra_values_win() {
 #[tokio::test]
 async fn executes_commands_and_confines_paths() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let command = SandboxCommand {
         argv: vec!["printf".to_owned(), "hello".to_owned()],
         env: BTreeMap::new(),
@@ -57,8 +65,13 @@ async fn executes_commands_and_confines_paths() {
 #[tokio::test]
 async fn reads_writes_and_cleans_tempdirs() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     sandbox.write("nested/file", b"hello\xff").await.unwrap();
     assert_eq!(
         sandbox.read("nested/file", 100).await.unwrap(),
@@ -75,8 +88,13 @@ async fn reads_writes_and_cleans_tempdirs() {
 #[tokio::test]
 async fn rejects_empty_commands_and_file_cwds() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let empty = SandboxCommand::default();
     assert!(sandbox.exec(&empty).await.is_err());
     fs::write(root.path().join("file"), b"x").unwrap();
@@ -99,8 +117,13 @@ fn filters_claudecode_prefix() {
 #[tokio::test]
 async fn replaces_truncated_utf8_once() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let output = sandbox
         .run(
             &command(&["/bin/sh", "-c", r"printf '\342\202'"]),
@@ -115,8 +138,13 @@ async fn replaces_truncated_utf8_once() {
 #[tokio::test]
 async fn snapshot_rejects_closed() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     sandbox.close().await.unwrap();
     sandbox.snapshot().await.unwrap_err();
 }
@@ -154,7 +182,13 @@ async fn child_environment_is_filtered(#[case] name: &str) {
         (name.to_owned(), SecretString::from("must-not-escape")),
         ("VISIBLE".to_owned(), SecretString::from("kept")),
     ]);
-    let sandbox = LocalSandbox::new(root.path(), &environment, root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &environment,
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let output = sandbox
         .run(&command(&["/usr/bin/env"]), Duration::from_secs(2), 4096)
         .await
@@ -174,8 +208,13 @@ async fn child_environment_is_filtered(#[case] name: &str) {
 #[tokio::test]
 async fn nonzero_and_binary_output() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let output = sandbox
         .run(
             &command(&["/bin/sh", "-c", r"printf '\377'; printf 'err' >&2; exit 7"]),
@@ -195,8 +234,13 @@ async fn nonzero_and_binary_output() {
 #[tokio::test]
 async fn closes_stdin_and_caps_output() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let output = sandbox
         .run(&command(&["/bin/cat"]), Duration::from_secs(2), 100)
         .await
@@ -209,11 +253,16 @@ async fn closes_stdin_and_caps_output() {
     assert!(error.to_string().contains("10-byte"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn timeout_names_duration_and_cmd() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let error = sandbox
         .run(&command(&["/bin/sleep", "30"]), Duration::from_secs(1), 100)
         .await
@@ -226,8 +275,13 @@ async fn timeout_names_duration_and_cmd() {
 #[tokio::test]
 async fn close_kills_and_is_idempotent() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let mut child = sandbox.exec(&command(&["/bin/sleep", "30"])).await.unwrap();
     let temporary = sandbox.tempdir().await.unwrap();
     sandbox.close().await.unwrap();
@@ -244,8 +298,13 @@ async fn close_kills_term_ignoring_children_concurrently() {
     use tokio::io::AsyncReadExt as _;
 
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        SHORT_GRACE,
+    )
+    .unwrap();
     let mut first = sandbox
         .exec(&command(&[
             "/bin/sh",
@@ -268,7 +327,8 @@ async fn close_kills_term_ignoring_children_concurrently() {
     second.stdout().read_exact(&mut second_ready).await.unwrap();
     let started = Instant::now();
     sandbox.close().await.unwrap();
-    assert!(started.elapsed() < Duration::from_secs(8));
+    let waited = started.elapsed();
+    assert!(waited < Duration::from_millis(800), "{waited:?}");
     assert_eq!(first.wait().await.unwrap(), -9_i32);
     assert_eq!(second.wait().await.unwrap(), -9_i32);
 }
@@ -276,8 +336,13 @@ async fn close_kills_term_ignoring_children_concurrently() {
 #[tokio::test]
 async fn drop_kills_owned_process() {
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let mut child = sandbox.exec(&command(&["/bin/sleep", "30"])).await.unwrap();
     drop(sandbox);
     let status = timeout(Duration::from_secs(2), child.wait())
@@ -291,8 +356,13 @@ async fn drop_kills_owned_process() {
 async fn escalates_after_grace_period() {
     use tokio::io::AsyncReadExt as _;
     let root = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        SHORT_GRACE,
+    )
+    .unwrap();
     let mut child = sandbox
         .exec(&command(&[
             "/bin/sh",
@@ -305,7 +375,7 @@ async fn escalates_after_grace_period() {
     child.stdout().read_exact(&mut ready).await.unwrap();
     let started = Instant::now();
     child.kill().await.unwrap();
-    assert!(started.elapsed() >= Duration::from_secs(5));
+    assert!(started.elapsed() >= SHORT_GRACE);
     assert_eq!(child.wait().await.unwrap(), -9_i32);
     child.kill().await.unwrap();
 }
@@ -315,8 +385,13 @@ async fn confines_symlinks_and_parents() {
     use std::os::unix::fs::symlink;
     let root = tempdir();
     let outside = tempdir();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     symlink(outside.path().join("absent"), root.path().join("escape")).unwrap();
     let error = sandbox.write("escape/child", b"bad").await.unwrap_err();
     assert!(error.to_string().contains("escape"));
@@ -353,7 +428,13 @@ async fn which_uses_injected_path() {
         "PATH".to_owned(),
         SecretString::from(root.path().to_str().unwrap()),
     )]);
-    let sandbox = LocalSandbox::new(root.path(), &environment, root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &environment,
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     assert_eq!(
         sandbox.which("chosen").await.unwrap(),
         Some(root.path().join("chosen").to_str().unwrap().to_owned())

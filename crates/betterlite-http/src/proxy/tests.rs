@@ -124,7 +124,7 @@ async fn reply_after(listener: TcpListener, delay: Duration) -> String {
 #[case::body_at_the_limit(5, Duration::ZERO, "201 hello")]
 #[case::body_over_the_limit(4, Duration::ZERO, "the response body is larger than 4 bytes")]
 #[case::slower_than_the_timeout(5, Duration::from_secs(2), "the request timed out")]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn posts_json_with_a_bearer_key_and_bounded_answer(
     #[case] body_limit: usize,
     #[case] delay: Duration,

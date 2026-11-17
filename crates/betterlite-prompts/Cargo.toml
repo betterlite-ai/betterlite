@@ -41,7 +41,7 @@ uuid.workspace = true
 betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["rt", "macros", "time"] }
+tokio = { workspace = true, features = ["rt", "macros", "test-util", "time"] }
 tracing-subscriber = { workspace = true, features = ["registry"] }
 
 [lints]

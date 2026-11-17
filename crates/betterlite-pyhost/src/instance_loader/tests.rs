@@ -326,7 +326,7 @@ async fn a_load_past_its_deadline_returns_a_timeout() {
     let folder = tempfile::tempdir().unwrap();
     fs::write(
         folder.path().join("b8042_slow.py"),
-        "import time\ntime.sleep(1)\ninstance = 1\n",
+        "import time\ntime.sleep(0.2)\ninstance = 1\n",
     )
     .unwrap();
     let (_, loader) = host_and_loader(vec![]);
