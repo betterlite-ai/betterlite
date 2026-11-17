@@ -82,8 +82,7 @@ fn resolved(context: &DispatchContext<'_>, config: SelfHostedConfig) -> Completi
     }
 }
 
-// _complete_hosted_vllm: get_llm_provider resolves HOSTED_VLLM_API_BASE before the arm's own chain runs, so the
-// environment base wins over litellm.api_base; the key chain is the passed key, then HOSTED_VLLM_API_KEY
+// _complete_hosted_vllm: get_llm_provider resolves HOSTED_VLLM_API_BASE before the arm's chain, so the environment base wins over litellm.api_base; the key is the passed key, then HOSTED_VLLM_API_KEY
 pub fn complete_hosted_vllm<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
@@ -171,8 +170,7 @@ pub fn complete_triton<R>(
     handler.complete(&call).map_err(DispatchError::Handler)
 }
 
-// _complete_petals: the passed base, then litellm.api_base, with stream popped out of optional_params and neither
-// the caller's headers nor a key in the call
+// _complete_petals: the passed base, then litellm.api_base, with stream popped out of optional_params and neither the caller's headers nor a key in the call
 pub fn complete_petals<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
@@ -197,8 +195,7 @@ pub fn complete_petals<R>(
     }
 }
 
-// _complete_lemonade: get_llm_provider settles the key against the passed base first, so an explicit base without a
-// key sends the default sentinel; otherwise the passed key, litellm.lemonade_key and LEMONADE_API_KEY decide
+// _complete_lemonade: get_llm_provider settles the key against the passed base first, so an explicit base without a key sends the default sentinel; otherwise the passed key, litellm.lemonade_key and LEMONADE_API_KEY decide
 pub fn complete_lemonade<R>(
     context: &DispatchContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
