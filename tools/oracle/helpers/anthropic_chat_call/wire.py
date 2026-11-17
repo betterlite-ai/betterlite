@@ -3,15 +3,11 @@ from collections.abc import Awaitable, Callable
 from typing import Final, Literal, Protocol, TypedDict, Unpack, runtime_checkable
 
 import httpx
-import litellm
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.anthropic.chat.handler import AnthropicChatCompletion
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import ModelResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
-
-# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
-litellm.suppress_debug_info = True
 
 TIMEOUT: Final[float] = 1.5
 SUCCESS: Final[int] = 200
@@ -136,6 +132,11 @@ class SyncChatHandler(Protocol):
     def completion(self, **kwargs: Unpack[CompletionArguments]) -> ChatResult: ...
 
 
+@runtime_checkable
+class EmbeddingHandler(Protocol):
+    def embedding(self) -> None: ...
+
+
 class SilentVerbose:
     def __call__(self, text: str) -> None:
         del text
@@ -147,6 +148,9 @@ ASYNC_HANDLER: Final[AsyncChatHandler] = TypeAdapter(
 ).validate_python(AnthropicChatCompletion())
 SYNC_HANDLER: Final[SyncChatHandler] = TypeAdapter(
     SyncChatHandler, config=CALLS
+).validate_python(AnthropicChatCompletion())
+EMBEDDING_HANDLER: Final[EmbeddingHandler] = TypeAdapter(
+    EmbeddingHandler, config=CALLS
 ).validate_python(AnthropicChatCompletion())
 
 

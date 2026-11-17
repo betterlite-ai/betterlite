@@ -55,7 +55,7 @@ def request_body(content: bytes) -> JsonValue:
 def selected(headers: httpx.Headers, names: list[str]) -> JsonValue:
     answer: JsonObject = {}
     for name in names:
-        answer[name] = headers.get(name) if name in headers else None
+        answer[name] = headers[name] if name in headers else None
     return answer
 
 
@@ -120,15 +120,19 @@ def reply_answer(attempt: Attempt) -> JsonValue:
 
 def stream_value(wrapper: StreamView) -> JsonObject:
     options = OptionsView.model_validate(wrapper.completion_stream)
-    reverse = options.tool_name_reverse_map
+    reverse: JsonObject = {}
+    if options.tool_name_reverse_map is not None:
+        for name, target in options.tool_name_reverse_map.items():
+            reverse[name] = target
+    settings: JsonObject = {
+        "json_mode": options.json_mode,
+        "speed": options.speed,
+        "tool_name_reverse_map": reverse,
+    }
     answer: JsonObject = {
         "model": wrapper.model,
         "provider": wrapper.custom_llm_provider,
-        "options": {
-            "json_mode": options.json_mode,
-            "speed": options.speed,
-            "tool_name_reverse_map": {} if reverse is None else reverse,
-        },
+        "options": settings,
     }
     return answer
 

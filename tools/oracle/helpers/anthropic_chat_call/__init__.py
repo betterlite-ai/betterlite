@@ -1,11 +1,14 @@
 from collections.abc import Callable
 from typing import Final
 
-from litellm.llms.anthropic.chat.handler import AnthropicChatCompletion
+import litellm
 from pydantic import JsonValue
 
-from .answers import pre_call_value, reply_answer, request_value, stream_answer
-from .wire import Attempt, Input, JsonObject
+from .answers import JSON, pre_call_value, reply_answer, request_value, stream_answer
+from .wire import EMBEDDING_HANDLER, Attempt, Input, JsonObject
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 
 def _request_of(input_value: Input, attempt: Attempt) -> JsonValue:
@@ -63,7 +66,7 @@ def _chat_failure_projection(input_value: Input) -> JsonValue:
 
 
 def _unsupported_embedding(_input_value: Input) -> JsonValue:
-    AnthropicChatCompletion().embedding()
+    EMBEDDING_HANDLER.embedding()
     answer: JsonObject = {"reply": None, "posted": 0}
     return answer
 
@@ -80,4 +83,5 @@ SCENARIOS: Final[dict[str, Callable[[Input], JsonValue]]] = {
 
 
 def run(input_value: Input) -> JsonValue:
-    return SCENARIOS[input_value["scenario"]](input_value)
+    scenario = SCENARIOS[input_value["scenario"]]
+    return JSON.validate_python(scenario(input_value))
