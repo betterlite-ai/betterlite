@@ -80,7 +80,7 @@ fn route_scores<'a>(scored: &[Scored<'a>]) -> Vec<RouteScore<'a>> {
     }
     let mut totals: Vec<RouteScore<'_>> = Vec::with_capacity(routes.len());
     for (route, threshold) in routes {
-        let scores: Vec<f64> = scored
+        let group_scores: Vec<f64> = scored
             .iter()
             .filter(|row| row.route == route)
             .map(|row| row.score)
@@ -88,7 +88,7 @@ fn route_scores<'a>(scored: &[Scored<'a>]) -> Vec<RouteScore<'a>> {
         totals.push(RouteScore {
             route,
             threshold,
-            mean: mean(&scores),
+            mean: mean(&group_scores),
         });
     }
     // a stable descending sort keeps the first-appearance order of equal means

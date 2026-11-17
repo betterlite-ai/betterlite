@@ -207,7 +207,7 @@ fn a_misspelled_inline_config_key_is_rejected(#[case] source: &str, #[case] key:
     "routse"
 )]
 fn a_misspelled_file_config_key_is_rejected(#[case] source: &str, #[case] key: &str) {
-    let directory = temporary_directory("misspelled");
+    let directory = temporary_directory(key);
     let path = directory.join("routes.json");
     fs::write(&path, source).unwrap();
     let Err(error) = load_file(&path) else {
