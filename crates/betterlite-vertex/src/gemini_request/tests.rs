@@ -781,15 +781,24 @@ fn gcs_request_resolves_metadata(#[case] asynchronous: bool) {
 #[case::vertex_ai_beta(VertexCapabilityProvider::VertexAiBeta)]
 #[case::studio(VertexCapabilityProvider::Gemini)]
 fn gcs_request_resolves_metadata_on_every_provider(#[case] provider: VertexCapabilityProvider) {
-    let harness = Harness::new().with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY);
-    let input = media_input(provider, &gcs_messages(GCS_PHOTO));
+    let raw = gcs_metadata_url("raw");
+    let harness = Harness::new()
+        .with_metadata(GCS_PHOTO_METADATA, 200, GCS_PNG_REPLY)
+        .with_metadata(&raw, 200, r#"{"contentType":"application/pdf"}"#);
+    let input = media_input(
+        provider,
+        r#"[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image_url","image_url":{"url":"gs://my-bucket/folder/my photo"}},{"type":"file","file":{"file_id":"gs://my-bucket/raw"}}]}]"#,
+    );
     let transformed = harness
         .run(&input)
-        .expect("the object answers its content type");
-    assert_body(&transformed, GCS_PHOTO_CONTENTS);
+        .expect("both objects answer their content type");
+    assert_body(
+        &transformed,
+        r#"{"contents":[{"role":"user","parts":[{"text":"look"},{"file_data":{"mime_type":"image/png","file_uri":"gs://my-bucket/folder/my photo"}},{"file_data":{"mime_type":"application/pdf","file_uri":"gs://my-bucket/raw"}}]}]}"#,
+    );
     assert_eq!(
         harness.gcs.requested(),
-        vec![(GCS_PHOTO_METADATA.to_owned(), None)]
+        vec![(GCS_PHOTO_METADATA.to_owned(), None), (raw, None)]
     );
     assert_no_io(&harness);
 }
