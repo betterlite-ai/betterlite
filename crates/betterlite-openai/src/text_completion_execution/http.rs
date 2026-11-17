@@ -103,7 +103,7 @@ impl HttpCompletionSdk {
         })?;
         let headers = self.request_headers(extra)?;
         let body =
-            serde_json::to_vec(Value::Object(payload)).map_err(|source| SdkError::Other {
+            serde_json::to_vec(&Value::Object(payload)).map_err(|source| SdkError::Other {
                 message: format!("the completion request could not be written as JSON: {source}"),
             })?;
         Ok(Prepared { url, headers, body })
@@ -165,9 +165,9 @@ impl TextCompletionSdk for HttpCompletionSdk {
                 deadline,
             };
             if streamed {
-                streamed_completion(client, request, &facts).await
+                streamed_completion(&client, request, &facts).await
             } else {
-                buffered_completion(client, request, &facts).await
+                buffered_completion(&client, request, &facts).await
             }
         }
     }
@@ -175,7 +175,7 @@ impl TextCompletionSdk for HttpCompletionSdk {
 
 // The SDK's chunk iterator: the response headers are recorded before the bytes stream in.
 async fn streamed_completion(
-    client: ProxiedClient,
+    client: &ProxiedClient,
     request: OutboundRequest,
     facts: &Mutex<Option<UpstreamFacts>>,
 ) -> Result<RawCompletion, SdkError> {
@@ -195,7 +195,7 @@ async fn streamed_completion(
 
 // The buffered model the SDK parses once the whole body arrived.
 async fn buffered_completion(
-    client: ProxiedClient,
+    client: &ProxiedClient,
     request: OutboundRequest,
     facts: &Mutex<Option<UpstreamFacts>>,
 ) -> Result<RawCompletion, SdkError> {

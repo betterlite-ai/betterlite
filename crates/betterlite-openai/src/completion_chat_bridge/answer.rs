@@ -35,7 +35,7 @@ pub fn chat_completion_body(
         "choices": chat_choices(response),
         "usage": response.usage.as_ref().map(usage_value),
     });
-    serde_json::to_vec(without_nulls(body)).map_err(|source| encode_failure(&source))
+    serde_json::to_vec(&without_nulls(body)).map_err(|source| encode_failure(&source))
 }
 
 fn chat_choices(response: &CompletionResponse) -> Vec<Value> {

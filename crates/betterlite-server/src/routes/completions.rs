@@ -92,7 +92,7 @@ impl TextCompletionCall for CompletionCalls {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextCompletionResult, TextCompletionFailure> {
-        text_answer(self, call).await
+        text_answer(self, &call).await
     }
 
     async fn endpoint(&self, deployment: &ChatDeployment) -> CompletionEndpoint {
@@ -103,7 +103,7 @@ impl TextCompletionCall for CompletionCalls {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-        text_stream(self, call).await
+        text_stream(self, &call).await
     }
 
     // a chat-catalog deployment answers or streams on the chat endpoint and converts back

@@ -32,9 +32,9 @@ const MISMATCHED: &str = "the provider answered a different operation";
 
 pub(super) async fn text_answer(
     calls: &CompletionCalls,
-    call: TextCompletionCallInput<'_>,
+    call: &TextCompletionCallInput<'_>,
 ) -> Result<TextCompletionResult, TextCompletionFailure> {
-    match text_send(calls, &call, false).await? {
+    match text_send(calls, call, false).await? {
         CompletionCallAnswer::Buffered(answer) => Ok(text_result(answer)),
         CompletionCallAnswer::Streamed(_) => Err(internal_failure(MISMATCHED)),
     }
@@ -58,9 +58,9 @@ pub(super) fn converted(
 
 pub(super) async fn text_stream(
     calls: &CompletionCalls,
-    call: TextCompletionCallInput<'_>,
+    call: &TextCompletionCallInput<'_>,
 ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-    let CompletionCallAnswer::Streamed(answer) = text_send(calls, &call, true).await? else {
+    let CompletionCallAnswer::Streamed(answer) = text_send(calls, call, true).await? else {
         return Err(internal_failure(MISMATCHED));
     };
     let model = call.request.model.as_deref();
