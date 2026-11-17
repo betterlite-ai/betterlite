@@ -27,51 +27,51 @@ fn dec(text: &str) -> Decimal {
     text.parse().unwrap()
 }
 
-fn args(low: Option<&str>, medium: Option<&str>, high: Option<&str>) -> Option<Args> {
-    Some(Args {
+fn args(low: Option<&str>, medium: Option<&str>, high: Option<&str>) -> Args {
+    Args {
         low: low.map(dec),
         medium: medium.map(dec),
         high: high.map(dec),
-    })
+    }
 }
 
 #[rstest]
 #[case::absent("model_list: []\n", None)]
 #[case::empty_args(
     "router_settings:\n  routing_strategy_args: {}\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 #[case::float_args(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: 0.35\n    confidence_threshold_medium: 0.45\n    confidence_threshold_high: 0.85\n",
-    args(Some("0.35"), Some("0.45"), Some("0.85"))
+    Some(args(Some("0.35"), Some("0.45"), Some("0.85")))
 )]
 #[case::one_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: 0.9\n",
-    args(None, None, Some("0.9"))
+    Some(args(None, None, Some("0.9")))
 )]
 #[case::integer_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: 1\n",
-    args(None, None, Some("1"))
+    Some(args(None, None, Some("1")))
 )]
 #[case::null_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: null\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 #[case::text_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: low\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 #[case::numeric_text_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: \"0.2\"\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 #[case::boolean_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_medium: true\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 #[case::list_arg(
     "router_settings:\n  routing_strategy_args:\n    confidence_threshold_high: [0.9]\n",
-    args(None, None, None)
+    Some(args(None, None, None))
 )]
 fn lar1_routing_args_load(#[case] source: &str, #[case] expected: Option<Args>) {
     assert_eq!(load(source).args, expected);
@@ -105,14 +105,14 @@ fn lar1_routing_rejects_a_non_finite_threshold() {
 fn lar1_routing_reads_an_environment_reference() {
     let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let settings = load_with(source, &[("LAR1_LOW", "0.35")]).unwrap();
-    assert_eq!(settings.args, args(Some("0.35"), None, None));
+    assert_eq!(settings.args, Some(args(Some("0.35"), None, None)));
 }
 
 #[test]
 fn lar1_routing_treats_an_empty_environment_value_as_unset() {
     let source = "router_settings:\n  routing_strategy_args:\n    confidence_threshold_low: os.environ/LAR1_LOW\n";
     let settings = load_with(source, &[("LAR1_LOW", "")]).unwrap();
-    assert_eq!(settings.args, args(None, None, None));
+    assert_eq!(settings.args, Some(args(None, None, None)));
 }
 
 #[test]
@@ -161,6 +161,6 @@ fn lar1_routing_loads_beside_the_routing_strategy() {
     );
     assert_eq!(
         config.sections.lar1_routing.args,
-        args(Some("0.35"), None, None)
+        Some(args(Some("0.35"), None, None))
     );
 }

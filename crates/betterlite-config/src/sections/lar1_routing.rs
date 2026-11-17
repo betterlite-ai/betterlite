@@ -22,14 +22,15 @@ struct RawRouter {
     routing_strategy_args: Option<RawArgs>,
 }
 
+// the three keys keep their LiteLLM names in the YAML while the fields say which threshold they hold
 #[derive(Debug, Default, Deserialize)]
 struct RawArgs {
-    #[serde(default)]
-    confidence_threshold_low: Option<RawThreshold>,
-    #[serde(default)]
-    confidence_threshold_medium: Option<RawThreshold>,
-    #[serde(default)]
-    confidence_threshold_high: Option<RawThreshold>,
+    #[serde(default, rename = "confidence_threshold_low")]
+    low: Option<RawThreshold>,
+    #[serde(default, rename = "confidence_threshold_medium")]
+    medium: Option<RawThreshold>,
+    #[serde(default, rename = "confidence_threshold_high")]
+    high: Option<RawThreshold>,
 }
 
 // _coerce_threshold: a number is the threshold and every other argument keeps the declared default
@@ -66,17 +67,17 @@ impl Section for Raw {
         Ok(Settings {
             args: Some(Args {
                 low: threshold(
-                    args.confidence_threshold_low,
+                    args.low,
                     "router_settings.routing_strategy_args.confidence_threshold_low",
                     lookup,
                 )?,
                 medium: threshold(
-                    args.confidence_threshold_medium,
+                    args.medium,
                     "router_settings.routing_strategy_args.confidence_threshold_medium",
                     lookup,
                 )?,
                 high: threshold(
-                    args.confidence_threshold_high,
+                    args.high,
                     "router_settings.routing_strategy_args.confidence_threshold_high",
                     lookup,
                 )?,
@@ -91,16 +92,19 @@ fn threshold(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<Decimal>, ConfigError> {
     match value {
-        None | Some(RawThreshold::Other(_)) => Ok(None),
-        Some(RawThreshold::Number(RawNumber::Boolean(_))) => Ok(None),
-        Some(RawThreshold::Number(RawNumber::Integer(integer))) => Ok(Some(Decimal::from(integer))),
-        Some(RawThreshold::Number(RawNumber::Float(float))) => {
-            parse_money(&float.to_string(), path).map(Some)
-        }
         // _coerce_threshold defaults every string; an os.environ/ reference resolves here instead
         Some(RawThreshold::Number(RawNumber::Text(text))) if text.starts_with("os.environ/") => {
             resolve_number(Some(RawNumber::Text(text)), path, lookup, parse_money)
         }
-        Some(RawThreshold::Number(RawNumber::Text(_))) => Ok(None),
+        Some(RawThreshold::Number(RawNumber::Integer(integer))) => Ok(Some(Decimal::from(integer))),
+        Some(RawThreshold::Number(RawNumber::Float(float))) => {
+            parse_money(&float.to_string(), path).map(Some)
+        }
+        None
+        | Some(
+            RawThreshold::Other(_)
+            | RawThreshold::Number(RawNumber::Boolean(_))
+            | RawThreshold::Number(RawNumber::Text(_)),
+        ) => Ok(None),
     }
 }
