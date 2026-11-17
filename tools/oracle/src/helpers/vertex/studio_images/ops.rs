@@ -259,9 +259,8 @@ fn cost_usage(usage: &CostUsage) -> ImageGenerationUsage {
 
 fn cost_failure(error: &StudioImageError) -> Box<HelperError> {
     let class = match error {
-        StudioImageError::Cost(ImageCostError::NotImageResponse) => "ValueError",
-        StudioImageError::Cost(_) => "ImageCostError",
-        StudioImageError::Encode(_)
+        StudioImageError::Cost(ImageCostError::NotImageResponse)
+        | StudioImageError::Encode(_)
         | StudioImageError::FieldType { .. }
         | StudioImageError::MissingApiKey
         | StudioImageError::NotJson { .. }
@@ -270,6 +269,7 @@ fn cost_failure(error: &StudioImageError) -> Box<HelperError> {
         | StudioImageError::TokenOverflow { .. }
         | StudioImageError::TooLarge { .. }
         | StudioImageError::UsageShape => "ValueError",
+        StudioImageError::Cost(_) => "ImageCostError",
     };
     Box::new(HelperError {
         class: class.to_owned(),
