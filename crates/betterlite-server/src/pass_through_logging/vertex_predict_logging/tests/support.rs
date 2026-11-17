@@ -26,7 +26,7 @@ use http::{HeaderMap, StatusCode};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use super::super::{VertexEmbedContentInput, VertexPredictInput};
+use super::super::{VertexEmbedContentInput, VertexPredictInput, VertexPredictLogger};
 
 pub(super) struct Fixture {
     pub(super) logging_obj: StreamLoggingObject,
@@ -204,6 +204,11 @@ pub(super) fn priced() -> Arc<FixedCost> {
 
 pub(super) fn unpriced() -> Arc<FixedCost> {
     Arc::new(FixedCost::new(None))
+}
+
+pub(super) fn logger_for(cost: &Arc<FixedCost>) -> VertexPredictLogger {
+    let shared = Arc::clone(cost);
+    VertexPredictLogger::new(shared)
 }
 
 pub(super) fn result_json(outcome: &HandlerOutcome) -> Json {

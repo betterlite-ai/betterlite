@@ -82,7 +82,8 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let cost = Arc::new(RecordingCost::new(Decimal::new(7, 4)));
-        let logger = VertexPredictLogger::new(Arc::clone(&cost));
+        let shared = Arc::clone(&cost);
+        let logger = VertexPredictLogger::new(shared);
         let logging_obj = fixture::logging_object()?;
         let bytes = serde_json::to_vec(&input.body).or_value_error()?;
         let request_body = request_body(input.request_body.as_ref())?;

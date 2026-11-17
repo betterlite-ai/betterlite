@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::sync::Arc;
-
 use betterlite_models::decisions::Json;
 use betterlite_vertex::gemini_embedding_records::error::GeminiEmbeddingError;
 use betterlite_vertex::vertex_image_policy::error::PredictionError;
@@ -13,8 +11,8 @@ use super::input::extract_input;
 use super::{VertexPredictError, VertexPredictLogger};
 use support::{
     details, embed_input, field, fixture, integer, json, kwargs, list, logged_call_type,
-    logged_model, logged_provider, number_text, predict_input, priced, raw_fixture, result_json,
-    text, unpriced,
+    logged_model, logged_provider, logger_for, number_text, predict_input, priced, raw_fixture,
+    result_json, text, unpriced,
 };
 
 mod support;
@@ -46,7 +44,7 @@ fn kwarg<'outcome>(
 fn audio_prices_lyria_predictions_by_their_count() {
     let fixture = fixture(AUDIO_ROUTE, AUDIO_BODY);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the audio reply is logged");
@@ -84,7 +82,7 @@ fn audio_zero_counts_fall_through_to_the_text_step() {
     let body = r#"{"predictions":[{"audioContent":"","embeddings":{"values":[0.5],"statistics":{"token_count":2}}}]}"#;
     let fixture = fixture(AUDIO_ROUTE, body);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the fall-through reply is logged");
@@ -101,7 +99,7 @@ fn audio_model_without_price_falls_through_to_text() {
     let body = r#"{"predictions":[{"audioContent":"AAA","embeddings":{"values":[0.5],"statistics":{"token_count":2}}}]}"#;
     let fixture = fixture(PREDICT_ROUTE, body);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the fall-through reply is logged");
@@ -141,7 +139,7 @@ fn audio_count_uses_python_truthiness(#[case] body: &str, #[case] expected: usiz
 fn predict_text_embedding_builds_the_response_and_prices_it() {
     let fixture = fixture(PREDICT_ROUTE, TEXT_BODY);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the embedding reply is logged");
@@ -160,7 +158,7 @@ fn predict_text_embedding_builds_the_response_and_prices_it() {
 fn predict_text_embedding_sums_the_token_counts() {
     let fixture = fixture(PREDICT_ROUTE, TEXT_BODY);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the embedding reply is logged");
@@ -221,7 +219,7 @@ fn predict_image_generation_sets_the_call_type() {
     let body = r#"{"predictions":[{"bytesBase64Encoded":"AAA"},{"bytesBase64Encoded":"BBB"}]}"#;
     let fixture = fixture(IMAGE_ROUTE, body);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_predict_response(predict_input(&fixture))
         .expect("the image reply is logged");
@@ -383,7 +381,7 @@ fn multimodal_body_fails_in_the_shared_step() {
         r#"{"predictions":[{"textEmbedding":[0.5]}]}"#,
     );
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let Err(error) = logger.handle_predict_response(predict_input(&fixture)) else {
         panic!("the multimodal step rejects the empty request");
     };
@@ -418,7 +416,7 @@ fn embed_single_joins_the_parts_and_prices_it() {
         r#"{"content":{"parts":[{"text":"hello"},{"inlineData":{"data":"x"}},{"text":"world"}]}}"#,
     );
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, Some(&request)))
         .expect("the embedContent reply is logged");
@@ -461,7 +459,7 @@ fn embed_batch_joins_every_request_part() {
         r#"{"requests":[{"content":{"parts":[{"text":"ab"}]}},{"content":{"parts":[{"text":"c"},{"text":"d"}]}}]}"#,
     );
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, Some(&request)))
         .expect("the batchEmbedContents reply is logged");
@@ -477,7 +475,7 @@ fn embed_batch_joins_every_request_part() {
 fn embed_gemini_host_prices_as_gemini() {
     let fixture = fixture(GEMINI_ROUTE, r#"{"embedding":{"values":[0.5]}}"#);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, None))
         .expect("the gemini reply is logged");
@@ -512,7 +510,7 @@ fn embed_gemini_host_prices_as_gemini() {
 fn embed_absent_request_body_counts_nothing() {
     let fixture = fixture(EMBED_ROUTE, r#"{"embedding":{"values":[0.5]}}"#);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, None))
         .expect("the reply without a request body is logged");
@@ -528,7 +526,7 @@ fn embed_non_object_request_body_counts_nothing() {
     let fixture = fixture(EMBED_ROUTE, r#"{"embedding":{"values":[0.5]}}"#);
     let request = json("[1]");
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, Some(&request)))
         .expect("a non-object request body is an empty input");
@@ -544,7 +542,7 @@ fn embed_usage_metadata_details_are_kept() {
     );
     let request = json(r#"{"content":{"parts":[{"text":"hi"}]}}"#);
     let cost = priced();
-    let logger = VertexPredictLogger::new(Arc::clone(&cost));
+    let logger = logger_for(&cost);
     let outcome = logger
         .handle_embed_content_response(embed_input(&fixture, Some(&request)))
         .expect("the reply with usage metadata is logged");
