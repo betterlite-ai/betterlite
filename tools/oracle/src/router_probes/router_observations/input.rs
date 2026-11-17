@@ -25,7 +25,7 @@ pub(super) struct Catalog {
     pub model_group: String,
     pub model: String,
     pub target_id: String,
-    #[serde(default = "one_group_entry")]
+    #[serde(default = "default_group_size")]
     pub group_size: u32,
     #[serde(default)]
     pub alternatives: u32,
@@ -108,7 +108,7 @@ pub(super) struct FailureInput {
 pub(super) enum Step {
     Success {
         call_type: Option<String>,
-        #[serde(default = "logging_object_present")]
+        #[serde(default = "default_logging_object")]
         standard_logging_object: bool,
         #[serde(default)]
         total_tokens: i64,
@@ -124,11 +124,11 @@ pub(super) enum Step {
     },
 }
 
-const fn one_group_entry() -> u32 {
+const fn default_group_size() -> u32 {
     1
 }
 
-const fn logging_object_present() -> bool {
+const fn default_logging_object() -> bool {
     true
 }
 

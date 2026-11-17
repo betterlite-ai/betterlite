@@ -19,13 +19,11 @@ pub(super) struct ProbeCounters {
 
 impl ProbeCounters {
     pub(super) fn value(&self, key: &str) -> Option<i64> {
-        let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-        values.get(key).copied()
-    }
-
-    fn store(&self, key: &str, value: i64) {
-        let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-        values.insert(key.to_owned(), value);
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .copied()
     }
 }
 
@@ -49,7 +47,10 @@ impl CounterSink for ProbeCounters {
     }
 
     fn write(&self, key: &str, value: i64, _ttl: Option<Duration>) {
-        self.store(key, value);
+        self.values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
     }
 }
 
