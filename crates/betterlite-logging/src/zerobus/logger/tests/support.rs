@@ -108,17 +108,17 @@ pub(super) fn params(
 
 pub(super) fn connection(table_name: &str) -> ZerobusConnection {
     let secrets = connection_secrets();
-    let secret = |name: &str| {
+    let lookup = |name: &str| {
         secrets
             .get_secret_str(name)
             .expect("the fixture carries the connection settings")
     };
     ZerobusConnection {
-        workspace_url: secret("ZEROBUS_WORKSPACE_URL").expose_secret().to_owned(),
+        workspace_url: lookup("ZEROBUS_WORKSPACE_URL").expose_secret().to_owned(),
         workspace_id: "1234567890123456".to_owned(),
-        server_endpoint: secret("ZEROBUS_SERVER_ENDPOINT").expose_secret().to_owned(),
-        client_id: secret("ZEROBUS_CLIENT_ID").expose_secret().to_owned(),
-        client_secret: secret("ZEROBUS_CLIENT_SECRET"),
+        server_endpoint: lookup("ZEROBUS_SERVER_ENDPOINT").expose_secret().to_owned(),
+        client_id: lookup("ZEROBUS_CLIENT_ID").expose_secret().to_owned(),
+        client_secret: lookup("ZEROBUS_CLIENT_SECRET"),
         table_name: table_name.to_owned(),
     }
 }
@@ -228,12 +228,12 @@ pub(super) struct MapSecrets {
 
 impl MapSecrets {
     pub(super) fn new(values: &[(&str, &str)]) -> Self {
-        let values: BTreeMap<String, String> = values
+        let stored: BTreeMap<String, String> = values
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
         Self {
-            values: Arc::new(Mutex::new(values)),
+            values: Arc::new(Mutex::new(stored)),
         }
     }
 

@@ -82,10 +82,10 @@ pub(super) fn setting(
     variable: &str,
     secrets: &dyn SecretSource,
 ) -> Result<SecretString, ConnectionError> {
-    let configured = configured
+    let from_config = configured
         .and_then(|value| resolved_secret(value, secrets))
         .filter(|value| !value.expose_secret().is_empty());
-    if let Some(value) = configured {
+    if let Some(value) = from_config {
         return Ok(value);
     }
     let from_environment = secrets
