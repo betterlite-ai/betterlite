@@ -48,6 +48,7 @@ pub enum Query {
     },
     Provider {
         model: String,
+        #[serde(default)]
         exact: Option<String>,
     },
 }
