@@ -14,7 +14,6 @@ use crate::strategy_dispatch::service::StrategyDispatch;
 #[derive(Clone, Debug, Default)]
 pub struct RoutingGroupIndex {
     groups: IndexMap<String, RoutingGroup>,
-    model_to_group: BTreeMap<String, String>,
     shadowing: BTreeSet<String>,
     aliases: BTreeMap<String, String>,
 }
@@ -35,7 +34,6 @@ impl RoutingGroupIndex {
     ) -> Result<Built, RoutingGroupError> {
         let mut index = Self {
             groups: IndexMap::new(),
-            model_to_group: BTreeMap::new(),
             shadowing: aliases.keys().chain(known_model_names).cloned().collect(),
             aliases: aliases.clone(),
         };
@@ -55,15 +53,6 @@ impl RoutingGroupIndex {
                     "routing_groups: group_name '{}' is shadowed by an existing model_name or model_group_alias; the group's strategy still applies to its members, but the name is not callable until renamed.",
                     group.group_name
                 ));
-            }
-            let mapped_models: &[String] = match group.routing_strategy {
-                GroupStrategy::Priority => &[],
-                GroupStrategy::Routing(_) => &group.models,
-            };
-            for model in mapped_models {
-                index
-                    .model_to_group
-                    .insert(model.clone(), group.group_name.clone());
             }
             index.groups.insert(group.group_name.clone(), group);
         }
@@ -85,13 +74,6 @@ impl RoutingGroupIndex {
         let resolved = self.aliases.get(name).map_or(name, String::as_str);
         self.callable_group(resolved)
             .is_some_and(|group| matches!(group.routing_strategy, GroupStrategy::Priority))
-    }
-
-    // _model_to_group: the group a member model belongs to for strategy dispatch.
-    #[must_use]
-    pub fn claiming_group(&self, model: &str) -> Option<&RoutingGroup> {
-        let group = self.model_to_group.get(model)?;
-        self.groups.get(group)
     }
 
     // _replace_routing_groups: each group's own selector with the args its owner decoded, then B019's routes over the same names and members.
@@ -149,11 +131,10 @@ impl RoutingGroupIndex {
             },
             |name| self.callable_group(name).into_iter().collect(),
         );
-        let mut rows = Vec::new();
-        for group in groups {
-            rows.extend(group_rows(group, deployments_of));
-        }
-        rows
+        groups
+            .into_iter()
+            .flat_map(|group| group_rows(group, deployments_of))
+            .collect()
     }
 }
 

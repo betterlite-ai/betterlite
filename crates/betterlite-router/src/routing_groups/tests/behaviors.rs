@@ -218,13 +218,16 @@ fn model_membership_feeds_the_selector_scope() {
         &["a", "b"],
         &[],
     );
+    let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
+    let groups: RoutingGroups = index.dispatch_groups(&mut dispatch, &|_| None).unwrap();
+    let shadowing = BTreeSet::new();
     assert_eq!(
-        index
-            .claiming_group("a")
-            .map(|group| group.group_name.as_str()),
+        groups
+            .route("a", &shadowing)
+            .map(|route| route.name.as_str()),
         Some("cheap")
     );
-    assert_eq!(index.claiming_group("b"), None);
+    assert_eq!(groups.route("b", &shadowing), None);
     assert!(index.is_priority_group("tiers"));
     assert!(!index.is_priority_group("cheap"));
 }

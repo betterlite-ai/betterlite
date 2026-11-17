@@ -23,8 +23,9 @@ use crate::routing_groups::params::{
     drop_classifier_effort, is_classifier_internal_call, params_with_reasoning_override,
     tier_params_the_target_accepts,
 };
-use crate::strategy_dispatch::groups::GroupStrategy;
-use crate::strategy_dispatch::strategy::VALID_ROUTING_STRATEGIES;
+use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroups};
+use crate::strategy_dispatch::service::StrategyDispatch;
+use crate::strategy_dispatch::strategy::{RoutingStrategy, VALID_ROUTING_STRATEGIES};
 
 fn settled(case: fn()) -> Ready<()> {
     case();
@@ -345,11 +346,15 @@ fn a_shadowing_strategy_group_warns_and_keeps_its_members() {
         )]
     );
     assert!(built.index.callable_group("cheap").is_none());
+    let mut dispatch = StrategyDispatch::new(RoutingStrategy::SimpleShuffle, None).unwrap();
+    let groups: RoutingGroups = built
+        .index
+        .dispatch_groups(&mut dispatch, &|_| None)
+        .unwrap();
     assert_eq!(
-        built
-            .index
-            .claiming_group("a")
-            .map(|group| group.group_name.as_str()),
+        groups
+            .route("a", &BTreeSet::new())
+            .map(|route| route.name.as_str()),
         Some("cheap")
     );
 }
