@@ -171,7 +171,7 @@ impl CooldownCache {
         now: f64,
     ) -> Option<ActiveCooldown> {
         let deadline = record.cooldown_time.mul_add(1.0_f64, record.timestamp);
-        let remaining = (-now).mul_add(1.0_f64, deadline);
+        let remaining = now.mul_add(-1.0_f64, deadline);
         let tier = &self.tier;
         let mut state = tier.state.lock().unwrap_or_else(PoisonError::into_inner);
         if remaining <= 0.0 {
@@ -195,7 +195,7 @@ impl CooldownCache {
         }
         drop(state);
         Some(ActiveCooldown {
-            model_id: model_id.clone(),
+            model_id: model_id.to_owned(),
             remaining_seconds: remaining,
             record,
         })

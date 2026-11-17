@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
+use std::iter::once;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 
 use super::support::{
     MemoryCooldowns, MemoryHealth, TestClock, Written, active_at, cache, deployment, flagged,
-    health, ids, kept, key, pool, read_at, record, settings, snapshot, unhealthy, unhealthy_ids,
+    health, healthy, ids, kept, key, pool, read_at, record, settings, snapshot, unhealthy,
+    unhealthy_ids,
 };
 use crate::cooldown_state::cooldown::ActiveCooldown;
 use crate::cooldown_state::filter::{
@@ -460,7 +462,7 @@ fn an_unhealthy_deployment_leaves() {
 
 fn unlisted_groups_keep_theirs() {
     let deployments = pool(&[("gpt-4o", "a"), ("claude", "b")]);
-    let groups: BTreeSet<String> = std::iter::once(String::from("gpt-4o")).collect();
+    let groups: BTreeSet<String> = once(String::from("gpt-4o")).collect();
     let routing = HealthRouting {
         enabled: true,
         has_allowed_fails_policy: true,

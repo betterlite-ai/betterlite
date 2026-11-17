@@ -102,14 +102,14 @@ fn an_explicit_null_takes_the_default(#[case] source: &str) {
 }
 
 #[rstest]
-#[case::unset("{}", &[], 600.0)]
-#[case::reads_the_environment("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "42")], 84.0)]
-#[case::empty_is_unset("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "")], 600.0)]
-#[case::blank_is_unset("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "  ")], 600.0)]
+#[case::unset("{}", &[], 600.0_f64)]
+#[case::reads_the_environment("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "42")], 84.0_f64)]
+#[case::empty_is_unset("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "")], 600.0_f64)]
+#[case::blank_is_unset("{}", &[("DEFAULT_HEALTH_CHECK_INTERVAL", "  ")], 600.0_f64)]
 #[case::a_configured_threshold_wins(
     "general_settings: {health_check_staleness_threshold: 5}",
     &[("DEFAULT_HEALTH_CHECK_INTERVAL", "10")],
-    5.0
+    5.0_f64
 )]
 fn the_staleness_threshold_defaults_to_twice_the_health_check_interval(
     #[case] source: &str,
@@ -139,10 +139,10 @@ fn a_malformed_default_health_check_interval_names_the_variable(
 }
 
 #[rstest]
-#[case::unset("{}", &[], 1.0)]
-#[case::reads_the_environment("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "0.25")], 0.25)]
-#[case::empty_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "")], 1.0)]
-#[case::blank_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "  ")], 1.0)]
+#[case::unset("{}", &[], 1.0_f64)]
+#[case::reads_the_environment("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "0.25")], 0.25_f64)]
+#[case::empty_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "")], 1.0_f64)]
+#[case::blank_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "  ")], 1.0_f64)]
 fn the_redis_read_interval_defaults_to_one_second(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],

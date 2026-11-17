@@ -256,8 +256,10 @@ fn cooldown_key(model_id: &str) -> Result<RouteKey, ScenarioError> {
 }
 
 fn seconds(millis: u64) -> Result<f64, ScenarioError> {
-    Decimal::from(millis)
+    let quotient = Decimal::from(millis)
         .checked_div(Decimal::from(1_000_i64))
-        .and_then(|quotient| quotient.to_f64())
+        .ok_or(ScenarioError::TimeOverflow { millis })?;
+    quotient
+        .to_f64()
         .ok_or(ScenarioError::TimeOverflow { millis })
 }

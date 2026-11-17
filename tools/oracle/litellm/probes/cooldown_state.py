@@ -269,10 +269,9 @@ class Scenario:
                 kind=step.kind,
                 unhealthy=sorted(self.router.health_state_cache.get_unhealthy_deployment_ids()),
             )
-        return StepOutput(kind=step.kind, kept=await self.kept(step))
+        return StepOutput(kind=step.kind, kept=await self.kept(self.router, step))
 
-    async def kept(self, step: Step) -> list[str]:
-        router: RouterView = self.router
+    async def kept(self, router: RouterView, step: Step) -> list[str]:
         surviving: set[str] = set()
         for deployment in self.spec.deployments:
             try:

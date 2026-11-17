@@ -69,7 +69,7 @@ impl MemoryCooldowns {
         self
     }
 
-    pub(crate) fn hanging(mut self) -> Self {
+    pub(crate) fn hanging(self) -> Self {
         self.hanging.store(true, Ordering::Relaxed);
         self
     }

@@ -88,7 +88,8 @@ impl Section for Raw {
         .unwrap_or(DEFAULT_READ_INTERVAL_SECONDS);
         Ok(Settings {
             enable_health_check_routing: enable,
-            staleness_threshold: configured.unwrap_or(interval.mul_add(STALENESS_MULTIPLIER, 0.0)),
+            staleness_threshold: configured
+                .unwrap_or_else(|| interval.mul_add(STALENESS_MULTIPLIER, 0.0)),
             ignore_transient_errors: ignore,
             read_interval_seconds: read_interval,
         })

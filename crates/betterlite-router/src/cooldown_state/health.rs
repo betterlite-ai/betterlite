@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice::from_ref;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use rust_decimal::prelude::ToPrimitive as _;
@@ -50,6 +51,7 @@ pub struct DeploymentHealthCache {
 }
 
 impl DeploymentHealthCache {
+    #[must_use]
     pub fn new(staleness_threshold: f64, shared: Arc<dyn SharedHealth>, clock: Clock) -> Self {
         Self {
             key: RouteKey(CACHE_KEY.to_owned()),
@@ -72,7 +74,7 @@ impl DeploymentHealthCache {
     // set_deployment_health_states: merge this writer's states into the shared snapshot and prune the expired ones
     pub fn set_states(&self, states: &HealthSnapshot) -> Result<(), HealthSnapshotError> {
         let now = (self.clock)();
-        let local = self.tier.batch_get(std::slice::from_ref(&self.key));
+        let local = self.tier.batch_get(from_ref(&self.key));
         let existing = self
             .shared
             .read_raw()
@@ -115,15 +117,14 @@ impl DeploymentHealthCache {
         };
         let mut fetched = BTreeMap::new();
         fetched.insert(self.key.clone(), snapshot.clone());
-        self.tier
-            .apply(std::slice::from_ref(&self.key), &[None], &fetched);
+        self.tier.apply(from_ref(&self.key), &[None], &fetched);
         Some(snapshot)
     }
 
     // async_get_unhealthy_deployment_ids: memory first, and the shared snapshot only when memory has none
     #[must_use]
     pub async fn unhealthy(&self) -> BTreeSet<String> {
-        let local = self.tier.batch_get(std::slice::from_ref(&self.key));
+        let local = self.tier.batch_get(from_ref(&self.key));
         let fetched = if local.first().is_some_and(Option::is_some) {
             None
         } else {
@@ -142,7 +143,7 @@ impl DeploymentHealthCache {
 
     // the memory tier's snapshot, else the raw shared one, which lands in memory when it answers
     fn stored_or_raw(&self) -> Option<HealthSnapshot> {
-        let local = self.tier.batch_get(std::slice::from_ref(&self.key));
+        let local = self.tier.batch_get(from_ref(&self.key));
         let stored = local.into_iter().next().flatten();
         stored.or_else(|| self.backfilled(self.shared.read_raw()))
     }
