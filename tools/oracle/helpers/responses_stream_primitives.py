@@ -9,14 +9,14 @@ from litellm.exceptions import Timeout
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.responses import streaming_iterator as primitives
 from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
 MOMENT: Final = "2026-01-01T00:00:00+00:00"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-# the base constructor stores logging_obj.start_time through getattr, so the declared type is lost
-START_TIME: Final[TypeAdapter[datetime]] = TypeAdapter(datetime)
+# the base constructor takes dict[str, object] maps, so the JSON-facing maps bind to that shape
+OBJECTS: Final = TypeAdapter(dict[str, object] | None)
 # the private loaders, guards and classifiers the stream iterator wraps
 LOAD_VALUE: Final = primitives._load_json_value  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L153
 IS_OBJECT: Final = primitives._is_json_object  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L80
@@ -97,6 +97,12 @@ class ErrorAttributes:
         self.code = fields.get("code")
 
 
+class StartTimeRecord(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    start_time: datetime
+
+
 class MappedRecord(BaseModel):
     status_code: int
     error_type: str | None = Field(alias="type")
@@ -124,13 +130,14 @@ class StreamProbe(BaseResponsesAPIStreamingIterator):
         self._check_max_streaming_duration()
 
     def state(self) -> dict[str, JsonValue]:
+        record = StartTimeRecord.model_validate(self)
         answer: dict[str, JsonValue] = {
             "model": self.model,
             "custom_llm_provider": self.custom_llm_provider,
             "litellm_metadata": JSON.validate_python(self.litellm_metadata),
             "request_data": JSON.validate_python(self.request_data),
             "call_type": self.call_type,
-            "start_time": START_TIME.validate_python(self.start_time).isoformat(),
+            "start_time": record.start_time.isoformat(),
             "created_timestamp": self._stream_created_time,
             "finished": self.finished,
             "failure_handled": self._failure_handled,
@@ -177,9 +184,9 @@ def stream_probe(row: ProbeSpec, clock: Clock, limit: float | None) -> StreamPro
         model=row["model"],
         responses_api_provider_config=None,
         logging_obj=logging_object,
-        litellm_metadata=row["litellm_metadata"],
+        litellm_metadata=OBJECTS.validate_python(row["litellm_metadata"]),
         custom_llm_provider=row["provider"],
-        request_data=row["request_data"],
+        request_data=OBJECTS.validate_python(row["request_data"]),
         call_type=row["call_type"],
     )
 
