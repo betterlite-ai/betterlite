@@ -479,19 +479,6 @@ async fn serve_text_completion(listener: TcpListener) -> String {
     serve(&listener, &text_completion_response()).await
 }
 
-// the provider's streamed answer, ended by the [DONE] event the SDK stops at
-fn streamed_text_completion_response() -> String {
-    let events = concat!(
-        "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"upstream\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}]}\n\n",
-        "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"upstream\",\"choices\":[{\"text\":\" there\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n",
-        "data: [DONE]\n\n"
-    );
-    format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nx-upstream: kept\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{events}",
-        events.len()
-    )
-}
-
 const REFUSED_PROMPT: &str = r#"{"error":{"message":"invalid prompt","type":"invalid_request_error","param":"prompt","code":"invalid"}}"#;
 
 const REFUSED_SERVER: &str = r#"{"error":{"message":"the server failed","type":"server_error","param":"model","code":null}}"#;
@@ -764,13 +751,18 @@ async fn a_buffered_completion_keeps_the_provider_headers() {
 // a streamed send takes the provider's byte stream, with the headers the answer arrived with
 #[tokio::test]
 async fn a_streamed_send_answers_the_provider_stream() {
-    let answer = crossed_send(
-        Shape::Streamed,
-        Shape::Streamed,
-        &streamed_text_completion_response(),
-    )
-    .await
-    .expect("stream answer");
+    let events = concat!(
+        "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"upstream\",\"choices\":[{\"text\":\" hello\",\"index\":0,\"logprobs\":null,\"finish_reason\":null}]}\n\n",
+        "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"upstream\",\"choices\":[{\"text\":\" there\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let served = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{events}",
+        events.len()
+    );
+    let answer = crossed_send(Shape::Streamed, Shape::Streamed, &served)
+        .await
+        .expect("stream answer");
     let CompletionCallAnswer::Streamed(streamed) = answer else {
         panic!("a streamed request never buffers");
     };
