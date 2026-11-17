@@ -424,7 +424,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Contr
             .unwrap();
             let mut state = state(None);
             state.model_call_details.insert(
-                "response_cost_failure_debug_info".to_owned(),
+                "response_cost_failure_debug_information".to_owned(),
                 Json::Text("cost-debug".to_owned()),
             );
             state.model_call_details.insert(

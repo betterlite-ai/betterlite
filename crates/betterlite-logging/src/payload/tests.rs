@@ -404,7 +404,7 @@ async fn logging_payloads_logging_payload_tests_behavior(#[case] behavior: Behav
                 redacted_response(Json::Text("secret".to_owned())),
                 Some(Json::Text(REDACTED_TEXT.to_owned()))
             );
-            assert_eq!(redacted_response(Json::Null), Some(placeholder.clone()));
+            assert_eq!(redacted_response(Json::Null), Some(Json::Null));
             assert_eq!(
                 redacted_response(Json::Bool(true)),
                 Some(placeholder.clone())
