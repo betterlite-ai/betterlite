@@ -113,6 +113,39 @@ fn an_upload_that_is_not_audio_bills_nothing() {
     );
 }
 
+// A FLAC, OGG or MP3 upload is not a WAV the native decoder reads, so it adds no uploaded seconds.
+#[test]
+fn a_foreign_container_upload_bills_nothing() {
+    let unrecognized = br#"{"RecognitionStatus":"Success"}"#;
+    assert_eq!(
+        billed_audio_seconds(
+            SpeechRoute::ShortAudio,
+            Some(b"fLaC\x00\x00\x00\x22".as_slice()),
+            unrecognized
+        )
+        .expect("a FLAC upload is no duration"),
+        Decimal::ZERO
+    );
+    assert_eq!(
+        billed_audio_seconds(
+            SpeechRoute::ShortAudio,
+            Some(b"OggS\x00\x02\x00\x00".as_slice()),
+            unrecognized
+        )
+        .expect("an OGG upload is no duration"),
+        Decimal::ZERO
+    );
+    assert_eq!(
+        billed_audio_seconds(
+            SpeechRoute::ShortAudio,
+            Some(b"ID3\x04\x00\x00\x00\x00\x00\x00".as_slice()),
+            unrecognized
+        )
+        .expect("an MP3 upload is no duration"),
+        Decimal::ZERO
+    );
+}
+
 #[test]
 fn a_negative_recognition_result_never_subtracts_from_the_upload() {
     let negative = br#"{"Offset": -25000000, "Duration": 5000000}"#;
