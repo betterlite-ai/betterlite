@@ -9,15 +9,19 @@ use serde_json::{Value, json};
 use super::types::Case;
 
 pub(super) fn error_view(error: &HttpStreamError, case: &Case) -> Value {
-    let HttpStreamError::Provider { status, error } = error else {
+    let HttpStreamError::Provider {
+        status,
+        error: cause,
+    } = error
+    else {
         return raised_view(raised_category(error));
     };
-    let mut headers = error.response_headers.clone();
+    let mut headers = cause.response_headers.clone();
     headers.sort();
     json!({
         "kind": "provider",
         "status": status,
-        "message": if case.compare.message { json!(error.error.message) } else { Value::Null },
+        "message": if case.compare.message { json!(cause.error.message) } else { Value::Null },
         "headers": if case.compare.headers { json!(headers) } else { Value::Null },
         "category": Value::Null,
     })

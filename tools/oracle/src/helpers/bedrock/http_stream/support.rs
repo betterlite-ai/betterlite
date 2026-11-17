@@ -98,10 +98,7 @@ pub(super) fn pre_post_env<'env>(
 }
 
 // One handler answers both the supplied and the default slot, with fixed ids and the case's fixed time.
-pub(super) fn stream_deps<'deps>(
-    handler: Arc<dyn StreamHandler>,
-    redactor: &'deps Redactor,
-) -> StreamDeps<'deps> {
+pub(super) fn stream_deps(handler: Arc<dyn StreamHandler>, redactor: &Redactor) -> StreamDeps<'_> {
     StreamDeps {
         supplied: Some(Arc::clone(&handler)),
         default: handler,
@@ -112,11 +109,16 @@ pub(super) fn stream_deps<'deps>(
         },
         redactor,
         timeout: TIMEOUT,
-        now: UNIX_EPOCH + Duration::from_secs(SECONDS),
+        now: UNIX_EPOCH
+            .checked_add(Duration::from_secs(SECONDS))
+            .unwrap_or(UNIX_EPOCH),
     }
 }
 
-pub(super) fn failure<E: Display>(error: E) -> Box<HelperError> {
+pub(super) fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: Display,
+{
     Box::new(HelperError {
         class: String::from("BedrockHttpStream"),
         status: None,

@@ -61,7 +61,7 @@ fn one(case: &Case, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     };
     let env = pre_post_env(&redactor, &sink, &logger)?;
     let mut state = logging_state(&redactor)?;
-    let shared: Arc<dyn StreamHandler> = handler.clone();
+    let shared: Arc<dyn StreamHandler> = Arc::<Fixture>::clone(&handler);
     let deps = stream_deps(shared, &redactor);
     let result = collect(case, &deps, runtime, &mut state, &env)?;
     let logs = mem::take(&mut *recorded.lock().unwrap_or_else(PoisonError::into_inner));
@@ -126,10 +126,10 @@ fn finish_route<'deps>(
     pending: Result<PendingOpen, HttpStreamError<Infallible>>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
-    let pending = pending?;
+    let opened = pending?;
     match case_call(case, headers, matches!(case.path, Route::InvokeSync)) {
-        Call::Converse(call) => make_sync_call(&call, deps, pending, log),
-        Call::Invoke(call) => make_call(&call, deps, pending, log),
+        Call::Converse(call) => make_sync_call(&call, deps, opened, log),
+        Call::Invoke(call) => make_call(&call, deps, opened, log),
     }
 }
 
@@ -139,7 +139,7 @@ enum Call<'case> {
     Invoke(InvokeCall<'case>),
 }
 
-fn case_call<'case>(case: &'case Case, headers: HeaderMap, sync: bool) -> Call<'case> {
+fn case_call(case: &Case, headers: HeaderMap, sync: bool) -> Call<'_> {
     match case.path {
         Route::ConverseSync => Call::Converse(ConverseCall {
             model: &case.model,

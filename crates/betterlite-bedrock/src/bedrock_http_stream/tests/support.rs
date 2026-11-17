@@ -450,18 +450,15 @@ pub(super) fn converse(messages: &Json) -> ConverseCall<'_> {
 }
 
 pub(super) fn run(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
-    block_on(open_with(
-        call,
-        Some(Arc::clone(&handler)),
-        handler,
-        consume,
-    ))
+    let handler: Arc<dyn StreamHandler> = Arc::<Handler>::clone(&inputs.handler);
+    // The one fixture answers as both the supplied client and the default.
+    let supplied = Some(Arc::clone(&handler));
+    block_on(open_with(call, supplied, handler, consume))
 }
 
 // No supplied client: the helper must post through the default handler it was given.
 pub(super) fn run_default(call: Call<'_>, inputs: &Inputs, consume: Consume) -> Outcome {
-    let handler: Arc<dyn StreamHandler> = Arc::clone(&inputs.handler);
+    let handler: Arc<dyn StreamHandler> = Arc::<Handler>::clone(&inputs.handler);
     block_on(open_with(call, None, handler, consume))
 }
 
@@ -472,8 +469,8 @@ pub(super) fn run_supplied(
     default: &Inputs,
     consume: Consume,
 ) -> Outcome {
-    let supplied_handler: Arc<dyn StreamHandler> = Arc::clone(&supplied.handler);
-    let default_handler: Arc<dyn StreamHandler> = Arc::clone(&default.handler);
+    let supplied_handler: Arc<dyn StreamHandler> = Arc::<Handler>::clone(&supplied.handler);
+    let default_handler: Arc<dyn StreamHandler> = Arc::<Handler>::clone(&default.handler);
     block_on(open_with(
         call,
         Some(supplied_handler),
