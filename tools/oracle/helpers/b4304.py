@@ -5,11 +5,12 @@ from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import litellm
 from litellm.caching.base_cache import BaseCache
-from litellm.caching.caching import Cache, S3Cache
+from litellm.caching.caching import Cache
+from litellm.caching.s3_cache import S3Cache
 from litellm.caching.caching_handler import LLMCachingHandler
 from litellm.types.caching import CachingSupportedCallTypes, LiteLLMCacheType
-from litellm.types.utils import EmbeddingResponse, ModelResponse
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from litellm.types.utils import EmbeddingResponse, ModelResponse, TextCompletionResponse
+from pydantic import JsonValue, TypeAdapter
 from typing_extensions import Self, override
 
 FIXED_TIME = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
@@ -20,10 +21,9 @@ CHAT_BODY: dict[str, JsonValue] = {
     "model": "gpt-4",
     "choices": [],
 }
-S3_CACHE: S3Cache = object.__new__(S3Cache)
-TEXT: TypeAdapter[str] = TypeAdapter(str)
 CHAT_RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 EMBEDDING_RESPONSE: TypeAdapter[EmbeddingResponse] = TypeAdapter(EmbeddingResponse)
+TEXT_COMPLETION_RESPONSE: TypeAdapter[TextCompletionResponse] = TypeAdapter(TextCompletionResponse)
 SUPPORTED: TypeAdapter[list[CachingSupportedCallTypes] | None] = TypeAdapter(
     list[CachingSupportedCallTypes] | None
 )
@@ -64,7 +64,7 @@ class DualCacheLike(Protocol):
     ) -> None: ...
 
 
-CacheResult: TypeAlias = JsonValue | ModelResponse | EmbeddingResponse
+CacheResult: TypeAlias = JsonValue | ModelResponse | EmbeddingResponse | TextCompletionResponse
 StreamResult: TypeAlias = JsonValue | ModelResponse | AsyncStream | SyncStream
 
 
@@ -92,7 +92,7 @@ HANDLER_FACTORY: Callable[
 
 
 class StoreResult(TypedDict):
-    kind: Literal["chat", "embedding", "raw"]
+    kind: Literal["chat", "embedding", "raw", "text_completion"]
     body: dict[str, JsonValue]
 
 
@@ -132,61 +132,55 @@ class WrapInput(TypedDict):
 Input: TypeAlias = StoreInput | WrapInput
 
 
-def response_kind(response: JsonValue) -> str:
-    try:
-        _ = TEXT.validate_python(response)
-    except ValidationError:
-        return "value"
-    return "text"
-
-
 def write_record(sink: str, key: str, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    return {
-        "sink": sink,
-        "kind": response_kind(value["response"]),
-        "key": key,
-    }
+    match value["response"]:
+        case str():
+            kind = "text"
+        case bool() | int() | float() | list() | dict() | None:
+            kind = "value"
+    return {"sink": sink, "kind": kind, "key": key}
 
 
-class RecordingBackend(BaseCache):
-    def __init__(self) -> None:
+class Recorder(BaseCache):
+    def __init__(self, sink: str) -> None:
         super().__init__()
+        self.sink = sink
         self.writes: list[JsonValue] = []
 
     @override
     async def async_set_cache(
         self, key: str, value: dict[str, JsonValue], **_kwargs: JsonValue
     ) -> None:
-        self.writes.append(write_record("backend", key, value))
+        self.writes.append(write_record(self.sink, key, value))
 
     @override
     async def async_set_cache_pipeline(
         self, cache_list: list[tuple[str, dict[str, JsonValue]]], **_kwargs: JsonValue
     ) -> None:
-        self.writes.extend(write_record("backend", key, value) for key, value in cache_list)
+        self.writes.extend(write_record(self.sink, key, value) for key, value in cache_list)
 
 
-class RecordingDual(DualCacheLike):
-    def __init__(self) -> None:
-        self.writes: list[JsonValue] = []
+class RecordingS3(S3Cache):
+    def __init__(self, recorder: Recorder) -> None:
+        self.recorder = recorder
 
     @override
     async def async_set_cache(
         self, key: str, value: dict[str, JsonValue], **_kwargs: JsonValue
     ) -> None:
-        self.writes.append(write_record("dual", key, value))
+        await self.recorder.async_set_cache(key, value)
 
     @override
     async def async_set_cache_pipeline(
         self, cache_list: list[tuple[str, dict[str, JsonValue]]], **_kwargs: JsonValue
     ) -> None:
-        self.writes.extend(write_record("dual", key, value) for key, value in cache_list)
+        await self.recorder.async_set_cache_pipeline(cache_list)
 
 
-def scenario_cache(scenario: StoreScenario, backend: RecordingBackend) -> Cache:
+def scenario_cache(scenario: StoreScenario, backend: Recorder) -> Cache:
     supported = SUPPORTED.validate_python(scenario["supported_call_types"])
     cache = Cache(type=LiteLLMCacheType.LOCAL, supported_call_types=supported)
-    cache.cache = S3_CACHE if scenario["cache_type"] == "s3" else backend
+    cache.cache = RecordingS3(backend) if scenario["cache_type"] == "s3" else backend
     return cache
 
 
@@ -195,6 +189,8 @@ def store_result(result: StoreResult) -> CacheResult:
         return CHAT_RESPONSE.validate_python(result["body"])
     if result["kind"] == "embedding":
         return EMBEDDING_RESPONSE.validate_python(result["body"])
+    if result["kind"] == "text_completion":
+        return TEXT_COMPLETION_RESPONSE.validate_python(result["body"])
     return result["body"]
 
 
@@ -208,8 +204,8 @@ def wrap_result(kind: WrapResultKind) -> StreamResult:
 
 async def store_scenario(scenario: StoreScenario) -> dict[str, JsonValue]:
     function = NamedFunction(scenario["function_name"])
-    backend = RecordingBackend()
-    dual = RecordingDual()
+    backend = Recorder("backend")
+    dual = Recorder("dual")
     cache = scenario_cache(scenario, backend) if scenario["cache_configured"] else None
     litellm.cache = cache
     handler = HANDLER_FACTORY(function, scenario["kwargs"], FIXED_TIME)
@@ -220,8 +216,7 @@ async def store_scenario(scenario: StoreScenario) -> dict[str, JsonValue]:
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     writes: list[JsonValue] = [*dual.writes, *backend.writes]
-    record: dict[str, JsonValue] = {"writes": writes}
-    return record
+    return {"writes": writes}
 
 
 def wrap_scenario(scenario: WrapScenario) -> JsonValue:
@@ -235,8 +230,7 @@ def wrap_scenario(scenario: WrapScenario) -> JsonValue:
     handler = HANDLER_FACTORY(function, scenario["kwargs"], FIXED_TIME)
     result = wrap_result(scenario["result_kind"])
     wrapped = handler.wrap_streaming_result_for_cache(result, scenario["call_type"])
-    record: dict[str, JsonValue] = {"wrapped": wrapped is not result}
-    return record
+    return {"wrapped": wrapped is not result}
 
 
 def run(input_value: Input) -> JsonValue:

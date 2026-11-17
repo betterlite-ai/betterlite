@@ -42,13 +42,13 @@ const fn sink_name(sink: Sink) -> &'static str {
 
 // LiteLLM stores a typed response as model_dump_json's string and every other result as the value itself.
 fn stored_kind(envelope: &CacheValue) -> &'static str {
-    match envelope {
-        CacheValue::Object(fields) => match fields.get("response") {
-            Some(CacheValue::Text(_)) => "text",
-            Some(_) | None => "value",
-        },
-        _ => "value",
+    let CacheValue::Object(fields) = envelope else {
+        return "value";
+    };
+    if matches!(fields.get("response"), Some(CacheValue::Text(_))) {
+        return "text";
     }
+    "value"
 }
 
 pub(crate) struct RecordingBackend {

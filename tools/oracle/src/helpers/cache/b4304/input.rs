@@ -34,6 +34,7 @@ pub(crate) struct StoreScenario {
 pub(crate) enum StoreResult {
     Chat(Body),
     Embedding(Body),
+    TextCompletion(Body),
     Raw(Body),
 }
 

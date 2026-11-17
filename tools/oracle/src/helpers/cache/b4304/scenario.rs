@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::SystemTime;
 
 use betterlite_cache::cache_key::settings::CacheKeySettings;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
@@ -19,6 +20,7 @@ use betterlite_cache::write_completion::wrap::{
     // ast-grep-ignore: no-long-names
     wrap_streaming_result_for_cache,
 };
+use betterlite_context::call_context::{CallContext, CallInputs};
 use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -27,6 +29,7 @@ use betterlite_redact::structured::Payload;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use uuid::Uuid;
 
 use super::input::{Input, ResultKindInput, StoreResult, StoreScenario, WrapScenario};
 use super::record::{Recorder, RecordingBackend, RecordingMemory};
@@ -35,13 +38,13 @@ use crate::b4297::{HelperCache, SilentConsole, SilentLogger};
 pub(crate) async fn run(input: &Input) -> HelperResult {
     let mut records = Vec::new();
     match input {
-        Input::Store(input) => {
-            for scenario in &input.scenarios {
+        Input::Store(store) => {
+            for scenario in &store.scenarios {
                 records.push(store_scenario(scenario).await?);
             }
         }
-        Input::Wrap(input) => {
-            for scenario in &input.scenarios {
+        Input::Wrap(wrap) => {
+            for scenario in &wrap.scenarios {
                 records.push(wrap_scenario(scenario)?);
             }
         }
@@ -51,15 +54,7 @@ pub(crate) async fn run(input: &Input) -> HelperResult {
 
 async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperError>> {
     let recorder = Arc::new(Recorder::default());
-    let dual = if scenario.dual {
-        let memory = Arc::new(RecordingMemory {
-            recorder: Arc::clone(&recorder),
-            stored: Mutex::new(BTreeMap::new()),
-        });
-        Some(DualCache::new(memory, None, dual_settings()))
-    } else {
-        None
-    };
+    let dual = dual_cache(scenario.dual, &recorder);
     let result = cacheable_result(&scenario.result)?;
     let function = original_function(&scenario.function_name);
     let cache = if scenario.cache_configured {
@@ -67,16 +62,13 @@ async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperErr
     } else {
         None
     };
-    let context = WriteContext {
-        cache: CacheContext {
-            cache,
-            supported_call_types: scenario.supported_call_types.clone(),
-        },
-        tracker: Arc::new(CacheWriteTracker {
-            tasks: TaskTracker::new(),
-            cancellation: CancellationToken::new(),
-        }),
-    };
+    let call = CallContext::start(CallInputs {
+        now: SystemTime::now,
+        id: Uuid::nil,
+        deadline: None,
+        privacy: false,
+    });
+    let context = store_context(cache, scenario, &call);
     store_response(
         &context,
         dual.as_ref(),
@@ -95,6 +87,35 @@ async fn store_scenario(scenario: &StoreScenario) -> Result<Value, Box<HelperErr
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
     Ok(json!({ "writes": writes }))
+}
+
+fn dual_cache(enabled: bool, recorder: &Arc<Recorder>) -> Option<DualCache<RecordingMemory>> {
+    if !enabled {
+        return None;
+    }
+    let memory = Arc::new(RecordingMemory {
+        recorder: Arc::clone(recorder),
+        stored: Mutex::new(BTreeMap::new()),
+    });
+    Some(DualCache::new(memory, None, dual_settings()))
+}
+
+fn store_context<'call>(
+    cache: Option<Arc<HelperCache>>,
+    scenario: &StoreScenario,
+    call: &'call CallContext<'call>,
+) -> WriteContext<'call, SilentLogger, SilentConsole> {
+    WriteContext {
+        cache: CacheContext {
+            cache,
+            supported_call_types: scenario.supported_call_types.clone(),
+        },
+        tracker: Arc::new(CacheWriteTracker {
+            tasks: TaskTracker::new(),
+            cancellation: CancellationToken::new(),
+        }),
+        call,
+    }
 }
 
 fn wrap_scenario(scenario: &WrapScenario) -> Result<Value, Box<HelperError>> {
@@ -118,12 +139,11 @@ fn wrap_scenario(scenario: &WrapScenario) -> Result<Value, Box<HelperError>> {
 fn cacheable_result(result: &StoreResult) -> Result<CacheableResult, Box<HelperError>> {
     match result {
         StoreResult::Chat(body) => Ok(CacheableResult::Chat(body.body.clone())),
-        StoreResult::Embedding(body) => {
-            let value = serde_json::to_value(&body.body).or_value_error()?;
-            Ok(CacheableResult::Embedding(
-                serde_json::from_value(value).or_value_error()?,
-            ))
-        }
+        StoreResult::Embedding(body) => Ok(CacheableResult::Embedding(
+            serde_json::from_value(serde_json::to_value(&body.body).or_value_error()?)
+                .or_value_error()?,
+        )),
+        StoreResult::TextCompletion(body) => Ok(CacheableResult::TextCompletion(body.body.clone())),
         StoreResult::Raw(body) => Ok(CacheableResult::Other(body.body.clone())),
     }
 }
