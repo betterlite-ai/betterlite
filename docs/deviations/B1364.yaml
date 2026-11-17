@@ -31,6 +31,15 @@ deviations:
       name. float(True) and str(True) are the duck typing and str text that docs/compatibility.md says betterlite
       does not port.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L65-L72
+  - what: >-
+      The artifact download is buffered up to the outbound transport's body limit, 16 MiB by default, and a
+      generated video larger than that fails with the transport's body limit error, where LiteLLM returns whatever
+      bytes the CDN sends with no cap.
+    why: >-
+      ProxiedClient::send_following followed by buffered enforces TransportLimits::body_bytes on every outbound
+      body. A Veo result can exceed 16 MiB, so the cap can reject a working download until the limit is raised or
+      the artifact is streamed to the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L477-L486
 kept_bugs:
   - what: >-
       A completed operation that also carries an error object is reported as completed with no error, and its

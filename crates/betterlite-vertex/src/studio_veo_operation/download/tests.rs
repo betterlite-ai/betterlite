@@ -32,16 +32,24 @@ const RELATIVE_TARGET: &[u8] = br#"{"name":"operations/generate_1234567890","don
 
 #[derive(Clone)]
 enum Reply {
-    Status { status: u16, body: Vec<u8> },
+    Status {
+        status: u16,
+        headers: HeaderMap,
+        body: Vec<u8>,
+    },
     Failure,
 }
 
 impl Reply {
     fn answer(self) -> Result<UpstreamResponse, TransportError> {
         match self {
-            Self::Status { status, body } => Ok(UpstreamResponse {
+            Self::Status {
                 status,
-                headers: HeaderMap::new(),
+                headers,
+                body,
+            } => Ok(UpstreamResponse {
+                status,
+                headers,
                 body,
             }),
             Self::Failure => Err(TransportError::Closed),
@@ -173,10 +181,12 @@ async fn lookup_then_download() {
     let transport = Scripted::new(vec![
         Reply::Status {
             status: 200,
+            headers: HeaderMap::new(),
             body: COMPLETED.to_vec(),
         },
         Reply::Status {
             status: 200,
+            headers: HeaderMap::new(),
             body: b"video-bytes".to_vec(),
         },
     ]);
@@ -204,8 +214,14 @@ async fn lookup_then_download() {
 #[case::server_error(500)]
 #[tokio::test]
 async fn status_failure_stops_download(#[case] status: u16) {
+    let mut failing = HeaderMap::new();
+    failing.insert(
+        HeaderName::from_static("x-goog-request-id"),
+        HeaderValue::from_static("abc"),
+    );
     let transport = Scripted::new(vec![Reply::Status {
         status,
+        headers: failing,
         body: br#"{"error":{"code":400,"message":"bad"}}"#.to_vec(),
     }]);
     let headers = headers();
@@ -215,6 +231,10 @@ async fn status_failure_stops_download(#[case] status: u16) {
     };
     assert_eq!(url, STATUS_URL);
     assert_eq!(response.status, status);
+    assert_eq!(
+        response.headers.get("x-goog-request-id"),
+        Some(&HeaderValue::from_static("abc"))
+    );
     assert_eq!(transport.requests().len(), 1);
 }
 
@@ -290,6 +310,7 @@ fn the_first_generated_sample_is_the_target() {
 async fn an_invalid_artifact_uri_is_rejected() {
     let transport = Scripted::new(vec![Reply::Status {
         status: 200,
+        headers: HeaderMap::new(),
         body: RELATIVE_TARGET.to_vec(),
     }]);
     let headers = headers();
@@ -303,10 +324,12 @@ async fn a_failed_download_still_returns_its_bytes() {
     let transport = Scripted::new(vec![
         Reply::Status {
             status: 200,
+            headers: HeaderMap::new(),
             body: COMPLETED.to_vec(),
         },
         Reply::Status {
             status: 404,
+            headers: HeaderMap::new(),
             body: b"denied".to_vec(),
         },
     ]);
@@ -327,6 +350,7 @@ async fn a_transport_failure_stops_the_download() {
     let transport = Scripted::new(vec![
         Reply::Status {
             status: 200,
+            headers: HeaderMap::new(),
             body: COMPLETED.to_vec(),
         },
         Reply::Failure,
@@ -360,6 +384,7 @@ async fn cancel_closes_download() {
     let transport = Stalled::new();
     let status = Scripted::new(vec![Reply::Status {
         status: 200,
+        headers: HeaderMap::new(),
         body: COMPLETED.to_vec(),
     }]);
     let headers = headers();
