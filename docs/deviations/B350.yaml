@@ -9,4 +9,12 @@ deviations:
       limit. Existing structural field limits remain unchanged, and the defaulting path is the same one
       LiteLLM takes for metadata it cannot validate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L24-L179
+  - what: >-
+      A boolean confidence_threshold_* argument keeps the declared default, where LiteLLM's
+      isinstance(value, (int, float)) reads it as 1 or 0 and then fails startup normalization.
+    why: >-
+      docs/compatibility.md does not port Python's bool-is-an-int coercion; a boolean is not a threshold,
+      so the argument takes the default the task text names for every non-numeric value. The threshold
+      order check still refuses an unordered set of numbers at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L27-L30
 kept_bugs: []
