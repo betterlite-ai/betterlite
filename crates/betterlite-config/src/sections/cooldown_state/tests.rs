@@ -138,20 +138,22 @@ fn a_malformed_default_health_check_interval_names_the_variable(
     assert!(error.to_string().contains("DEFAULT_HEALTH_CHECK_INTERVAL"));
 }
 
-#[rstest]
-#[case::unset("{}", &[], 1.0)]
-#[case::reads_the_environment("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "0.25")], 0.25)]
-#[case::empty_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "")], 1.0)]
-#[case::blank_is_unset("{}", &[("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", "  ")], 1.0)]
-fn the_redis_read_interval_defaults_to_one_second(
-    #[case] source: &str,
-    #[case] environment: &[(&str, &str)],
-    #[case] expected: f64,
-) {
-    assert_eq!(
-        loaded(source, environment).read_interval_seconds.to_bits(),
-        expected.to_bits()
-    );
+#[test]
+fn the_redis_read_interval_defaults_to_one_second() {
+    // DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS is read as seconds and an empty or blank value counts as unset
+    let cases: [(Option<&str>, f64); 4] = [
+        (None, 1.0),
+        (Some("0.25"), 0.25),
+        (Some(""), 1.0),
+        (Some("  "), 1.0),
+    ];
+    for (value, expected) in cases {
+        let environment: Vec<(&str, &str)> = value
+            .map(|value| vec![("DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS", value)])
+            .unwrap_or_default();
+        let settings = loaded("{}", &environment);
+        assert_eq!(settings.read_interval_seconds.to_bits(), expected.to_bits());
+    }
 }
 
 #[rstest]
