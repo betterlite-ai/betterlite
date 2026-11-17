@@ -126,6 +126,8 @@ struct ChunkFrames {
 
 #[async_trait]
 impl FrameSource<io::Error> for ChunkFrames {
+    type Item = Bytes;
+
     async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, io::Error> {
         let Some(item) = self.body.next().await else {
             pending.push_back(Bytes::from_static(DONE_FRAME.as_bytes()));

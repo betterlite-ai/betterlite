@@ -6,7 +6,7 @@ use crate::text_completion_execution::failure::CompletionFailure;
 use crate::text_completion_response::{CompletionChoice, CompletionResponse, CompletionUsage};
 use crate::text_completion_stream::{field, without_nulls};
 
-// The fine-tuned branch answers the text body itself, model renamed, nulls dropped as pydantic's exclude_none does
+// The fine-tuned branch answers the text body itself, with the model renamed to the caller's
 pub fn text_completion_body(
     response: &CompletionResponse,
     model: Option<&str>,
@@ -34,8 +34,8 @@ pub fn chat_completion_body(
     fields.push(field("choices", Some(Value::Array(chat_choices(response)))));
     fields.push(field("model", model.map(Value::from)));
     fields.push(field("usage", response.usage.as_ref().map(usage_value)));
-    let body = Value::Object(Map::from_iter(fields));
-    serde_json::to_vec(&without_nulls(body)).map_err(|source| encode_failure(&source))
+    serde_json::to_vec(&without_nulls(Value::Object(Map::from_iter(fields))))
+        .map_err(|source| encode_failure(&source))
 }
 
 fn chat_choices(response: &CompletionResponse) -> Vec<Value> {

@@ -1,20 +1,21 @@
 use std::collections::VecDeque;
 
 use async_trait::async_trait;
-use axum::body::Bytes;
 
 #[async_trait]
 pub(crate) trait FrameSource<Error: Send + 'static>: Send {
-    async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, Error>;
+    type Item: Send + 'static;
+
+    async fn fill(&mut self, pending: &mut VecDeque<Self::Item>) -> Result<bool, Error>;
 }
 
-pub(crate) struct Pump<Source> {
+pub(crate) struct Pump<Source, Item> {
     source: Source,
-    pending: VecDeque<Bytes>,
+    pending: VecDeque<Item>,
     finished: bool,
 }
 
-impl<Source> Pump<Source> {
+impl<Source, Item> Pump<Source, Item> {
     pub(crate) const fn new(source: Source) -> Self {
         Self {
             source,
@@ -25,8 +26,8 @@ impl<Source> Pump<Source> {
 }
 
 pub(crate) async fn next_frame<Source, Error>(
-    mut state: Pump<Source>,
-) -> Option<(Result<Bytes, Error>, Pump<Source>)>
+    mut state: Pump<Source, Source::Item>,
+) -> Option<(Result<Source::Item, Error>, Pump<Source, Source::Item>)>
 where
     Source: FrameSource<Error> + Send,
     Error: Send + 'static,

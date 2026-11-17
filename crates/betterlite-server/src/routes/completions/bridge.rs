@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::http::HeaderMap;
 use axum::http::HeaderValue;
 use axum::http::header::CONTENT_TYPE;
@@ -26,6 +27,7 @@ use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
 use super::CompletionCalls;
+use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
 use crate::server::chat_setup::provider_call::CallError;
 
 const MISMATCHED: &str = "the provider answered a different operation";
@@ -126,83 +128,44 @@ pub(super) fn chat_stream_answer(
     upstream_time: Duration,
 ) -> TextStreamAnswer {
     let upstream_headers = upstream.response.headers().clone();
-    let state = ChatChunkState {
+    let chunks = ChatChunks {
         bytes: upstream.body_stream(),
         parser: SseParser::default(),
         model: model.unwrap_or_default().to_owned(),
         include_usage,
-        pending: VecDeque::new(),
-        finished: false,
     };
+    let pump: Pump<ChatChunks, Json> = Pump::new(chunks);
     TextStreamAnswer {
-        body: stream::unfold(state, next_chat_chunk).boxed(),
+        body: stream::unfold(pump, next_frame::<ChatChunks, TextCompletionFailure>).boxed(),
         upstream_headers,
         upstream_time,
     }
 }
 
-struct ChatChunkState {
+struct ChatChunks {
     bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     parser: SseParser,
     model: String,
     include_usage: bool,
-    pending: VecDeque<Json>,
-    finished: bool,
 }
 
-async fn next_chat_chunk(
-    mut state: ChatChunkState,
-) -> Option<(Result<Json, TextCompletionFailure>, ChatChunkState)> {
-    loop {
-        if let Some(chunk) = state.pending.pop_front() {
-            return Some((Ok(chunk), state));
-        }
-        if state.finished {
-            return None;
-        }
-        match state.bytes.next().await {
-            Some(Ok(bytes)) => {
-                let parsed = state
-                    .parser
-                    .push(&bytes)
-                    .map_err(|source| TextCompletionFailure::internal(&source.to_string()))
-                    .and_then(|events| {
-                        decode_chat_events(&events, &state.model, state.include_usage)
-                            .map_err(|error| TextCompletionFailure::internal(&error.to_string()))
-                    });
-                if let Err(error) = enqueue(&mut state, parsed) {
-                    state.finished = true;
-                    return Some((Err(error), state));
-                }
-            }
-            Some(Err(error)) => {
-                state.finished = true;
-                return Some((
-                    Err(TextCompletionFailure::internal(&error.to_string())),
-                    state,
-                ));
-            }
-            None => {
-                state.finished = true;
-                let decoded =
-                    decode_chat_events(&state.parser.finish(), &state.model, state.include_usage)
-                        .map_err(|error| TextCompletionFailure::internal(&error.to_string()));
-                if let Err(error) = enqueue(&mut state, decoded) {
-                    return Some((Err(error), state));
-                }
-            }
-        }
-    }
-}
+#[async_trait]
+impl FrameSource<TextCompletionFailure> for ChatChunks {
+    type Item = Json;
 
-fn enqueue(
-    state: &mut ChatChunkState,
-    parsed: Result<Vec<Json>, TextCompletionFailure>,
-) -> Result<(), TextCompletionFailure> {
-    for chunk in parsed? {
-        state.pending.push_back(chunk);
+    async fn fill(&mut self, pending: &mut VecDeque<Json>) -> Result<bool, TextCompletionFailure> {
+        let (events, ended) = match self.bytes.next().await {
+            Some(Ok(bytes)) => (self.parser.push(&bytes), false),
+            Some(Err(error)) => return Err(TextCompletionFailure::internal(&error.to_string())),
+            None => (Ok(self.parser.finish()), true),
+        };
+        let parsed =
+            events.map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+        let chunks = decode_chat_events(&parsed, &self.model, self.include_usage)
+            .map_err(|error| TextCompletionFailure::internal(&error.to_string()))?;
+        pending.extend(chunks);
+        Ok(ended)
     }
-    Ok(())
 }
 
 // the chat endpoint's text answer is written by the bridge, so the route adds its own content type

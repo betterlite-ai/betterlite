@@ -23,6 +23,8 @@ pub(super) struct RelaySource {
 
 #[async_trait]
 impl FrameSource<io::Error> for RelaySource {
+    type Item = Bytes;
+
     async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, io::Error> {
         let events = match self.upstream.next().await {
             Some(Ok(chunk)) => self.parser.push(&chunk).map_err(io::Error::other)?,
@@ -59,6 +61,8 @@ pub(super) struct TextSource {
 
 #[async_trait]
 impl FrameSource<HttpError> for TextSource {
+    type Item = Bytes;
+
     async fn fill(&mut self, pending: &mut VecDeque<Bytes>) -> Result<bool, HttpError> {
         text_frame(self, pending).await
     }
