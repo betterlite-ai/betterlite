@@ -88,10 +88,18 @@ impl Frame {
         let mut items = None;
         for (child, value) in results {
             match child {
-                Child::Items => items = Some(value),
-                Child::Property(name) => maps.entry("properties").or_default().insert(name, value),
-                Child::Definition { key, name } => maps.entry(key).or_default().insert(name, value),
-                Child::Union(key) => lists.entry(key).or_default().push(value),
+                Child::Items => {
+                    items = Some(value);
+                }
+                Child::Property(name) => {
+                    maps.entry("properties").or_default().insert(name, value);
+                }
+                Child::Definition { key, name } => {
+                    maps.entry(key).or_default().insert(name, value);
+                }
+                Child::Union(key) => {
+                    lists.entry(key).or_default().push(value);
+                }
             }
         }
         for (key, map) in maps {
