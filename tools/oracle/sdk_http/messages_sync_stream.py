@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Sized
 from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
@@ -22,6 +22,7 @@ from typing_extensions import override
 ADAPTER_PREFIX = "Anthropic Adapter - "
 NORMALIZED_ID = "msg_00000000-0000-0000-0000-000000000000"
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
+EVENT: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 
 
 class Message(TypedDict):
@@ -113,12 +114,8 @@ class SyncValue(TypedDict):
     runs: list[RunOutcome]
 
 
-class SyncOutcome(TypedDict):
-    value: SyncValue
-
-
 class Outcome(TypedDict):
-    messages_sync_stream: SyncOutcome
+    messages_sync_stream: dict[Literal["value"], SyncValue]
 
 
 class ProviderChunks(Iterator[ModelResponseStream]):
@@ -166,12 +163,7 @@ class Wrapper(AnthropicStreamWrapper):
         self._message_id = NORMALIZED_ID
         held = initial.holding_chunk
         if held is not None:
-            held_value: dict[str, Json] = {
-                "type": "content_block_delta",
-                "index": held["index"],
-                "delta": {"type": held["delta"]["type"], "text": held["delta"]["text"]},
-            }
-            object.__setattr__(self, "holding_chunk", held_value)
+            object.__setattr__(self, "holding_chunk", held)
         stopped = initial.holding_stop_reason_chunk
         if stopped is not None:
             stop = MessageBlockDelta(type="message_delta", delta=stopped.delta)
@@ -193,17 +185,23 @@ class AdapterErrors(logging.Handler):
             self.entries.append(Diagnostic(level=record.levelname.lower(), prefix=ADAPTER_PREFIX))
 
 
-def next_event(stream: Iterator[dict[str, Json]]) -> dict[str, Json] | None:
+class HeldState(Protocol):
+    @property
+    def holding_chunk(self) -> Sized | None: ...
+
+
+class EventStream(Protocol):
+    def __iter__(self) -> "EventStream": ...
+
+    def __next__(self) -> Sized: ...
+
+
+def next_event(stream: EventStream) -> dict[str, Json] | None:
     try:
         event = next(stream)
     except StopIteration:
         return None
-    return event
-
-
-class HeldState(Protocol):
-    @property
-    def holding_chunk(self) -> Mapping[str, Json] | None: ...
+    return EVENT.validate_python(event)
 
 
 def observe(wrapper: Wrapper, source: ProviderChunks) -> State:
@@ -231,14 +229,15 @@ def run_steps(
     source: ProviderChunks,
     errors: AdapterErrors,
 ) -> list[StepOutcome]:
+    stream: EventStream = wrapper
     steps: list[StepOutcome] = []
     for step in spec.steps:
         events: list[dict[str, Json]] = []
-        event = next_event(wrapper)
+        event = next_event(stream)
         if step != "next":
             while event is not None:
                 events.append(event)
-                event = next_event(wrapper)
+                event = next_event(stream)
         elif event is not None:
             events.append(event)
         diagnostics = errors.entries
@@ -257,13 +256,8 @@ def run_steps(
 def frames(content: bytes) -> list[bytes]:
     payloads: list[bytes] = []
     for part in content.split(b"\n\n"):
-        lines = [
-            line.removeprefix(b"data:").removeprefix(b" ")
-            for line in part.split(b"\n")
-            if line.startswith(b"data:")
-        ]
-        payload = b"\n".join(lines)
-        if payload:
+        data = [line[5:].lstrip() for line in part.splitlines() if line.startswith(b"data:")]
+        if payload := b"\n".join(data):
             payloads.append(payload)
     return payloads
 
