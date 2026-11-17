@@ -1,0 +1,46 @@
+kind: helper
+name: responses-buffered-delta-only-tool-args
+call:
+  b3735:
+    mask_response_content: true
+    fail_on_error: true
+    sanitize_error_detail: true
+    answer_status: 200
+    surface: responses
+    chunks:
+    - type: response.created
+      response:
+        id: resp_1
+        created_at: 1000
+        model: gpt-5
+        object: response
+        status: in_progress
+        output: []
+    - type: response.function_call_arguments.delta
+      item_id: fc_1
+      output_index: 2
+      delta: '{"secret":'
+    - type: response.function_call_arguments.delta
+      item_id: fc_1
+      output_index: 2
+      delta: 1}
+    - type: response.completed
+      response:
+        id: resp_1
+        created_at: 1000
+        model: gpt-5
+        object: response
+        status: completed
+        output:
+        - type: message
+          id: msg_1
+          status: completed
+          role: assistant
+          content:
+          - type: output_text
+            text: The answer
+            annotations: []
+    answer_body: '{"name": "projects/p/locations/l/templates/t", "sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND", "filterResults": {}}}'
+env: {}
+compare:
+  ignore: []
