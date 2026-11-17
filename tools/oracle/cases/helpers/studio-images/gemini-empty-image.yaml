@@ -1,0 +1,20 @@
+kind: helper
+name: studio-images-gemini-empty-image
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: gemini-2.5-flash-image
+        body:
+          candidates:
+            - content:
+                parts:
+                  - inlineData: {data: AAA}
+                  - inlineData: {mimeType: image/png}
+                  - text: no image here
+                  - inlineData: {data: BBB}
+                    thoughtSignature: sig-1
+    costs: []
+env: {}
+compare: {ignore: []}

@@ -1408,9 +1408,11 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "uuid",
 ]
 
 [[package]]
@@ -1882,7 +1884,9 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -1898,6 +1902,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1943,6 +1948,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-compression",
  "betterlite-config",
  "betterlite-context",
@@ -2767,6 +2773,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -2957,7 +2965,9 @@ dependencies = [
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-secret-managers",
+ "betterlite-tokenizer",
  "chrono",
+ "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
@@ -3046,6 +3056,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -3059,6 +3070,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-server",
  "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "indexmap 2.14.2",

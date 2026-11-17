@@ -1,0 +1,16 @@
+kind: helper
+name: studio-images-imagen-null-prediction
+call:
+  studio_images:
+    factories: []
+    requests: []
+    responses:
+      - model: imagen-3.0-generate-002
+        body:
+          predictions:
+            - bytesBase64Encoded: AAA
+            - mimeType: image/png
+            - bytesBase64Encoded: null
+    costs: []
+env: {}
+compare: {ignore: []}

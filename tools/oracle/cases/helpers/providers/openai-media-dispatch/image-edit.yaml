@@ -1,0 +1,53 @@
+kind: helper
+name: image-edit
+call:
+  openai_media_dispatch:
+    case: image_edit
+    api_base: https://mock.example/v1
+    model: gpt-image-1
+    prompt: paint it red
+    image:
+      - content: first-image-bytes
+        name: first.png
+      - content: second-image-bytes
+        name: null
+    mask: null
+    options:
+      n: '1'
+      size: 1024x1024
+calls:
+  - openai_media_dispatch:
+      case: image_edit
+      api_base: https://mock.example/v1
+      model: gpt-image-1
+      prompt: paint it red
+      image:
+        - content: first-image-bytes
+          name: first.png
+      mask:
+        - content: mask-image-bytes
+          name: null
+      options:
+        response_format: b64_json
+  - openai_media_dispatch:
+      case: image_edit
+      api_base: https://mock.example/v1
+      model: dall-e-2
+      prompt: paint it blue
+      image:
+        - content: first-image-bytes
+          name: null
+      mask: null
+      options: {}
+  - openai_media_dispatch:
+      case: image_edit
+      api_base: https://mock.example/v1
+      model: gpt-image-1
+      prompt: null
+      image:
+        - content: first-image-bytes
+          name: null
+      mask: null
+      options: {}
+env: {}
+compare: {ignore: []}

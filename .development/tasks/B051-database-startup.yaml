@@ -87,6 +87,14 @@ description: >-
   The operation adapter assembles native betterlite-db services directly.
 scope:
   paths:
+    - "crates/betterlite-config/tests/fixtures/unsupported/**"
+    - "crates/betterlite-config/tests/fixtures/litellm/disable_schema_update.yaml"
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__disable_schema_update_yaml.snap"
+    - "crates/betterlite-config/tests/config_tests/mod.rs"
+    - "crates/betterlite-config/src/sections/xecguard_runtime.rs"
+    - "crates/betterlite-config/src/sections/legacy_guardrails.rs"
+    - "crates/betterlite-config/src/sections/claude_gateway_policy/tests.rs"
+    - .config/nextest.toml
     - crates/betterlite-server/src/database_startup.rs
     - crates/betterlite-server/src/database_startup/**
     - crates/betterlite-server/Cargo.toml

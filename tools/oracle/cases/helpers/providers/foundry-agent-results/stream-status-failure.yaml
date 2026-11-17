@@ -1,0 +1,73 @@
+kind: helper
+name: foundry-agent-results-stream-status-failure
+call:
+  foundry_agent_results:
+    requests:
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 500
+        body: bad request
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 400
+        body: ""
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 401
+        body: denied
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 502
+        body: "upstream: ⚠ failed"
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 200
+        body: "data: [DONE]\n\n"
+        id: chatcmpl-00000000
+        created: 1700000000
+      - model: azure_ai/agents/asst_1
+        messages: []
+        optional_params: {}
+        litellm_params: {}
+        headers: {}
+        api_base: "https://base.example/api/projects/p"
+        api_key: fixture-key
+        status: 201
+        body: ""
+        id: chatcmpl-00000000
+        created: 1700000000
+env: {}
+compare: {ignore: []}
