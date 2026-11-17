@@ -50,7 +50,7 @@ pub struct KeyProjection {
 // A patch field serializes only what the caller supplied, so the object is the pydantic `exclude_unset` dump.
 pub(crate) fn to_object<T>(value: &T) -> Result<BTreeMap<String, JsonData>, DecodeError>
 where
-    T: Serialize,
+    T: Serialize + ?Sized,
 {
     let JsonData::Object(fields) = to_json(value)? else {
         return Err(DecodeError::NotAnObject);
@@ -60,10 +60,10 @@ where
 
 pub(crate) fn to_json<T>(value: &T) -> Result<JsonData, DecodeError>
 where
-    T: Serialize,
+    T: Serialize + ?Sized,
 {
-    let encoded = serde_json::to_value(value).map_err(DecodeError::Document)?;
-    serde_json::from_value(encoded).map_err(DecodeError::Document)
+    serde_json::from_value(serde_json::to_value(value).map_err(DecodeError::Document)?)
+        .map_err(DecodeError::Document)
 }
 
 pub(crate) fn decode_group<T>(fields: &BTreeMap<String, JsonData>) -> Result<T, DecodeError>

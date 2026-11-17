@@ -109,13 +109,16 @@ impl KeyRequestBase {
     }
 
     pub fn project(&self) -> Result<KeyProjection, DecodeError> {
-        let base = to_object(&self.base)?;
+        let mut projection = self.base.project()?;
         let key = to_object(&self.key_fields)?;
-        project(
-            &[BASE_DEFAULTS, KEY_DEFAULTS],
-            &[&base, &key],
-            self.object_permission(),
-        )
+        let mut resolved = super::decode::resolved(&[KEY_DEFAULTS], &[])?;
+        resolved.extend(projection.resolved);
+        resolved.extend(key.clone());
+        projection.supplied.extend(key);
+        Ok(KeyProjection {
+            supplied: projection.supplied,
+            resolved,
+        })
     }
 
     pub(crate) fn object_permission(&self) -> Option<&LiteLLMObjectPermissionBase> {

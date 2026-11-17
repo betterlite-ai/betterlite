@@ -1,7 +1,7 @@
 macro_rules! nullable_record {
     (($($derive:path),* $(,)?) $(#[$meta:meta])* $vis:vis struct $name:ident { $($(#[$field_meta:meta])* $field:ident: $ty:ty),* $(,)? } $(secret { $($secret:ident),* $(,)? })?) => {
-        $(#[$meta])*
         #[derive($($derive),*)]
+        $(#[$meta])*
         $vis struct $name {
             $(
                 $(#[$field_meta])*
@@ -36,5 +36,4 @@ pub mod values;
 pub mod windows;
 
 mod defaults;
-#[cfg(test)]
 mod tests;
