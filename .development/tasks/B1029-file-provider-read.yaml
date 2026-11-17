@@ -5,7 +5,7 @@ description: >-
   betterlite-core::api::file_provider_read. Their provider-selection order differs: retrieve
   tests OpenAI-compatible and Azure first, list tests the provider config first. Use B516/B694
   for compatible/Azure methods and B2462 for generic operations, with B500/B2200 credentials,
-  B176 trusted controls, B010 operation types, B2464 file registry/timeout selection and B012 logging.
+  B176 trusted controls, B010 operation types, B2464 file registry/timeout selection and B247 logging.
 
   This task does not implement proxy pagination: the SDK wrapper forwards purpose but drops
   after/limit/order. Generic provider pagination belongs to B2462, OpenAI SDK pages to B516.

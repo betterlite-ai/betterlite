@@ -1,7 +1,7 @@
 id: B333
 title: JEV classifier transport and attribution
 description: 'Add the JEV classifier adapter through B3515 Decisions dispatch or a configured B009 HTTP
-  endpoint, using typed request/response models and B012 attribution. Reuse B331 classifier outcomes and
+  endpoint, using typed request/response models and B247/B250 attribution. Reuse B331 classifier outcomes and
   timeout recovery. Preserve config-only URL/key sourcing and SecretString boundaries; B358 owns offline
   heuristic_v2 prediction. Configuration boundary keys introduced or consumed here: jev_classifier_config,
   TYPESAFE_API_KEY, TYPESAFE_API_BASE. Pinned declaration defaults: jev_classifier_config=None. Resolve

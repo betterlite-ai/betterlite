@@ -2,7 +2,7 @@ id: B1608
 title: SSO identity records and privilege ordering
 description: >-
   Define sso_types in betterlite-auth from both types/proxy ui_sso modules and
-  management_endpoints/types.py. Reuse B732's roles and B770's budget/key field types instead
+  management_endpoints/types.py. Reuse B732's roles and B720's budget/key field types instead
   of defining competing role or money representations. Own highest_privilege_role,
   is_valid_litellm_user_role, _role_from_claim_value, get_litellm_user_role, CustomOpenID and
   sso_helper_utils.py's two UI-access predicates. Keep case-insensitive role recognition,
