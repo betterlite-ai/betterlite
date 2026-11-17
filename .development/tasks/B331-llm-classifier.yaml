@@ -3,7 +3,7 @@ title: LLM, heuristic-first and hybrid complexity classifiers
 description: 'Implement ClassifierCall, ClassifierCircuit and ClassifierOutcome over B014 authorized call
   dispatch, B330 context and B375 prompt/verdict handling. Add llm, heuristic_first and hybrid routing,
   bounded timeout and half-open permit ownership. Charge Decimal classifier cost to the original caller
-  and retain redaction through B012. Select only configured model names. Configuration boundary keys introduced
+  and retain redaction through B375. Select only configured model names. Configuration boundary keys introduced
   or consumed here: classifier_type, classifier_llm_config, classifier_fallback. Pinned declaration defaults:
   classifier_type=''heuristic''; classifier_llm_config=None; classifier_fallback=''heuristic''. Resolve
   env values once in betterlite-config, never in router code. classifier_llm_config requires model; timeout_ms=3000,

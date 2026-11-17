@@ -1,0 +1,97 @@
+kind: helper
+name: anthropic-response-finish-reasons
+call:
+  anthropic_response:
+    id: chatcmpl-b580
+    status: 200
+    now: 1767225600
+    raw_text: |
+      {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":1}}
+    headers: {x-request-id: req-b580}
+    messages: [{role: user, content: hi}]
+    optional_params: {}
+    litellm_params: {}
+    request_data: {}
+    json_mode: null
+    disable_add_prefix_to_prompt: false
+calls:
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":"stop_sequence","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":"max_tokens","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}],"stop_reason":"tool_use","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":"refusal","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":"surprise","usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+  - anthropic_response:
+      id: chatcmpl-b580
+      status: 200
+      now: 1767225600
+      raw_text: |
+        {"model":"claude-sonnet-4-6","content":[{"type":"text","text":"Hello"}],"stop_reason":null,"usage":{"input_tokens":3,"output_tokens":1}}
+      headers: {x-request-id: req-b580}
+      messages: [{role: user, content: hi}]
+      optional_params: {}
+      litellm_params: {}
+      request_data: {}
+      json_mode: null
+      disable_add_prefix_to_prompt: false
+env: {}
+compare: {ignore: []}
