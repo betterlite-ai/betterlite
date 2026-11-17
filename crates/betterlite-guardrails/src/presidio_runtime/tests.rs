@@ -157,16 +157,16 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         Case::LoggingOnlySetsEventHook => construction::logging_only_sets_the_event_hook(),
         Case::MissingRecognizerFile => construction::missing_recognizer_file_reports_the_path(),
         Case::InvalidRecognizerJson => {
-            construction::invalid_recognizer_json_reports_the_decode_error()
+            construction::invalid_recognizer_json_reports_the_decode_error();
         }
         Case::UnreadableRecognizerFile => {
-            construction::unreadable_recognizer_file_reports_the_error()
+            construction::unreadable_recognizer_file_reports_the_error();
         }
         Case::RecognizerFileIsNotAList => {
             construction::recognizer_file_that_is_not_a_list_reports_the_decode_error();
         }
         Case::RecognizerFileIsReadFirst => {
-            construction::recognizer_file_is_read_before_the_api_bases()
+            construction::recognizer_file_is_read_before_the_api_bases();
         }
         Case::MissingAnalyzerBase => construction::missing_bases_report_the_analyzer_first(),
         Case::MissingAnonymizerBase => construction::a_missing_anonymizer_base_is_reported(),
@@ -212,7 +212,7 @@ async fn presidio_runtime_cases(#[case] case: Case) {
         Case::PostCallUnmasksResponse => response::post_call_unmasks_the_response().await,
         Case::LoggingHookMasksRequest => response::logging_hook_masks_the_request(),
         Case::AsyncLoggingHookMasksRequest => {
-            response::async_logging_hook_masks_the_request().await
+            response::async_logging_hook_masks_the_request().await;
         }
         Case::StreamingIteratorRelaysEvents => streaming::streaming_iterator_relays_events().await,
         Case::ZeroTimeoutUsesTheDefault => construction::zero_timeout_uses_the_default(),
@@ -220,7 +220,7 @@ async fn presidio_runtime_cases(#[case] case: Case) {
             construction::malformed_mock_redacted_text_fails_construction();
         }
         Case::EmptyBasesFallBackToTheDefault => {
-            construction::empty_bases_fall_back_to_the_default()
+            construction::empty_bases_fall_back_to_the_default();
         }
         Case::AnEmptyLanguageUsesTheDefault => construction::an_empty_language_uses_the_default(),
         Case::ReturnsWhenMessagesAreNull => masking::returns_when_messages_are_null().await,

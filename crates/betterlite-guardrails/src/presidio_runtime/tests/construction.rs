@@ -23,7 +23,7 @@ fn failing(args: &PresidioArgs) -> PresidioRuntimeError {
     build(
         args,
         PresidioDefaults::default(),
-        &RuntimeSettings::default(),
+        RuntimeSettings::default(),
         false,
         Some(args.role),
     )
@@ -41,7 +41,7 @@ fn built_with(args: &PresidioArgs, server: &Mock) -> PresidioGuard {
     build(
         args,
         defaults(&server.base, &server.base),
-        &RuntimeSettings::default(),
+        RuntimeSettings::default(),
         false,
         Some(args.role),
     )
@@ -88,23 +88,50 @@ pub(super) fn defaults_are_applied() {
     let server = quiet();
     let guard = guard(&guard_args(&server));
     let settings = &guard.analyzer.settings;
-    assert_eq!(settings.guardrail_name, GUARDRAIL_NAME);
-    assert_eq!(settings.analyzer_api_base, url(&server));
-    assert_eq!(settings.language, "en");
-    assert!(!settings.output_parse_pii);
-    assert!(!settings.apply_to_output);
-    assert!(settings.score_thresholds.is_empty());
-    assert!(settings.entities_deny_list.is_empty());
-    assert!(settings.pii_entities.is_empty());
-    assert!(settings.ad_hoc_recognizers.is_none());
-    assert!(settings.mock_redacted_text.is_none());
-    assert_eq!(settings.chunk_size_bytes, DEFAULT_CHUNK_SIZE_BYTES);
-    assert_eq!(settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
-    assert_eq!(guard.anonymizer.settings.anonymizer_api_base, url(&server));
-    assert_eq!(guard.anonymizer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
-    assert!(guard.pii_entities_config.is_empty());
-    assert!(!guard.global_output_parse_pii);
-    assert_eq!(guard.callback_role, Some(PresidioRole::Scan));
+    assert_eq!(
+        (
+            settings.guardrail_name.as_str(),
+            settings.analyzer_api_base.as_str(),
+            settings.language.as_str(),
+            settings.chunk_size_bytes,
+            settings.timeout,
+        ),
+        (
+            GUARDRAIL_NAME,
+            url(&server).as_str(),
+            "en",
+            DEFAULT_CHUNK_SIZE_BYTES,
+            DEFAULT_ANALYZE_TIMEOUT,
+        )
+    );
+    assert_eq!(
+        (
+            settings.output_parse_pii,
+            settings.apply_to_output,
+            settings.score_thresholds.is_empty(),
+            settings.entities_deny_list.is_empty(),
+            settings.pii_entities.is_empty(),
+            settings.ad_hoc_recognizers.is_none(),
+            settings.mock_redacted_text.is_none(),
+        ),
+        (false, false, true, true, true, true, true)
+    );
+    assert_eq!(
+        (
+            guard.anonymizer.settings.anonymizer_api_base.as_str(),
+            guard.anonymizer.settings.timeout,
+            guard.pii_entities_config.is_empty(),
+            guard.global_output_parse_pii,
+            guard.callback_role,
+        ),
+        (
+            url(&server).as_str(),
+            DEFAULT_ANALYZE_TIMEOUT,
+            true,
+            false,
+            Some(PresidioRole::Scan),
+        )
+    );
 }
 
 pub(super) fn configured_values_are_applied() {
@@ -113,11 +140,11 @@ pub(super) fn configured_values_are_applied() {
     args.output_parse_pii = Some(true);
     args.apply_to_output = true;
     args.presidio_language = Some("de".to_owned());
-    args.presidio_score_thresholds = Some(BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5)]));
+    args.presidio_score_thresholds = Some(BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5_f64)]));
     args.presidio_entities_deny_list = Some(vec!["US_SSN".to_owned()]);
     args.pii_entities_config = Some(BTreeMap::from([("US_SSN".to_owned(), PiiAction::Block)]));
     args.analyze_chunk_size_bytes = Some(10);
-    args.timeout = Some(12.5);
+    args.timeout = Some(12.5_f64);
     args.mock_redacted_text = Some(BTreeMap::from([(
         "text".to_owned(),
         GuardrailValue::Text("redacted".to_owned()),
@@ -125,14 +152,14 @@ pub(super) fn configured_values_are_applied() {
     let settings = RuntimeSettings {
         output_parse_pii: true,
     };
-    let guard = guard_with(&args, &settings);
+    let guard = guard_with(&args, settings);
     let analyzer = &guard.analyzer.settings;
     assert_eq!(analyzer.language, "de");
     assert!(analyzer.output_parse_pii);
     assert!(analyzer.apply_to_output);
     assert_eq!(
         analyzer.score_thresholds,
-        BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5)])
+        BTreeMap::from([("PHONE_NUMBER".to_owned(), 0.5_f64)])
     );
     assert_eq!(analyzer.entities_deny_list, vec!["US_SSN".to_owned()]);
     assert_eq!(analyzer.pii_entities, vec!["US_SSN".to_owned()]);
@@ -314,17 +341,17 @@ pub(super) fn empty_bases_fall_back_to_the_default() {
 pub(super) fn unrepresentable_timeout() {
     let server = quiet();
     let mut args = guard_args(&server);
-    args.timeout = Some(-1.0);
+    args.timeout = Some(-1.0_f64);
     assert!(matches!(
         failing(&args),
-        PresidioRuntimeError::Timeout { seconds, .. } if seconds == -1.0
+        PresidioRuntimeError::Timeout { seconds, .. } if (seconds + 1.0_f64).abs() < f64::EPSILON
     ));
 }
 
 pub(super) fn zero_timeout_uses_the_default() {
     let server = quiet();
     let mut args = guard_args(&server);
-    args.timeout = Some(0.0);
+    args.timeout = Some(0.0_f64);
     let guard = guard(&args);
     assert_eq!(guard.analyzer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);
     assert_eq!(guard.anonymizer.settings.timeout, DEFAULT_ANALYZE_TIMEOUT);

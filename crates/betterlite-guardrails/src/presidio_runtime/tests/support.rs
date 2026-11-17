@@ -207,24 +207,27 @@ pub(super) fn base_for(args: &PresidioArgs) -> GuardrailBase {
 pub(super) fn build(
     args: &PresidioArgs,
     defaults: PresidioDefaults,
-    settings: &RuntimeSettings,
+    settings: RuntimeSettings,
     logging_only: bool,
     callback_role: Option<PresidioRole>,
 ) -> Result<PresidioGuard, PresidioRuntimeError> {
     let params = PresidioGuardParams {
         defaults,
-        settings,
+        settings: &settings,
         logging_only,
         callback_role,
     };
     let base = base_for(args);
-    let client = base_builder().build().expect("the client");
-    PresidioGuard::new(args, &params, base, client)
+    PresidioGuard::new(args, &params, base, client())
+}
+
+fn client() -> reqwest::Client {
+    base_builder().build().expect("the client")
 }
 
 fn built(
     args: &PresidioArgs,
-    settings: &RuntimeSettings,
+    settings: RuntimeSettings,
     logging_only: bool,
     callback_role: Option<PresidioRole>,
 ) -> PresidioGuard {
@@ -246,19 +249,19 @@ pub(super) fn defaults(analyzer_base: &str, anonymizer_base: &str) -> PresidioDe
 }
 
 pub(super) fn guard(args: &PresidioArgs) -> PresidioGuard {
-    built(args, &RuntimeSettings::default(), false, Some(args.role))
+    built(args, RuntimeSettings::default(), false, Some(args.role))
 }
 
-pub(super) fn guard_with(args: &PresidioArgs, settings: &RuntimeSettings) -> PresidioGuard {
+pub(super) fn guard_with(args: &PresidioArgs, settings: RuntimeSettings) -> PresidioGuard {
     built(args, settings, false, Some(args.role))
 }
 
 pub(super) fn roleless(args: &PresidioArgs) -> PresidioGuard {
-    built(args, &RuntimeSettings::default(), false, None)
+    built(args, RuntimeSettings::default(), false, None)
 }
 
 pub(super) fn logging_only_guard(args: &PresidioArgs) -> PresidioGuard {
-    built(args, &RuntimeSettings::default(), true, None)
+    built(args, RuntimeSettings::default(), true, None)
 }
 
 pub(super) fn restore_guard(mock: &Mock) -> PresidioGuard {
@@ -283,7 +286,7 @@ pub(super) fn request(json: &str) -> BTreeMap<String, GuardrailValue> {
 
 pub(super) fn inputs(texts: Option<Vec<&str>>) -> GuardrailApiInputs {
     GuardrailApiInputs {
-        texts: texts.map(|texts| texts.into_iter().map(str::to_owned).collect()),
+        texts: texts.map(|listed| listed.into_iter().map(str::to_owned).collect()),
         images: None,
         tools: None,
         tool_calls: None,

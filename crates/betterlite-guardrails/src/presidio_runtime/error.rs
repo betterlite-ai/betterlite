@@ -73,22 +73,8 @@ impl From<PresidioActionsError> for GuardrailFailure {
                 status_code: 400,
                 blocked_content: false,
             },
-            other @ (PresidioActionsError::MissingAnalyzerApiBase
-            | PresidioActionsError::MissingAnonymizerApiBase
-            | PresidioActionsError::MetadataNotObject { .. }
-            | PresidioActionsError::PiiTokensNotObject { .. }
-            | PresidioActionsError::GuardrailConfigNotObject { .. }
-            | PresidioActionsError::GuardrailConfigField { .. }
-            | PresidioActionsError::AnonymizerRequest { .. }
-            | PresidioActionsError::ResponseTooLarge { .. }
-            | PresidioActionsError::AnonymizerHttpStatus { .. }
-            | PresidioActionsError::AnonymizerContentType { .. }
-            | PresidioActionsError::AnonymizerResponseJson { .. }
-            | PresidioActionsError::MissingSpan { .. }
-            | PresidioActionsError::SpanOutOfBounds { .. }
-            | PresidioActionsError::MissingEntityType
-            | PresidioActionsError::Analysis { .. }
-            | PresidioActionsError::Serialize { .. }) => Self::Http {
+            // Every remaining variant reports the same HTTP failure with its own status and text
+            other => Self::Http {
                 status: other.status(),
                 detail: other.to_string(),
             },
@@ -99,17 +85,12 @@ impl From<PresidioActionsError> for GuardrailFailure {
 impl From<PresidioRuntimeError> for GuardrailFailure {
     fn from(error: PresidioRuntimeError) -> Self {
         match error {
-            other @ (PresidioRuntimeError::FileNotFound { .. }
-            | PresidioRuntimeError::Decode { .. }
-            | PresidioRuntimeError::Read { .. }
-            | PresidioRuntimeError::Timeout { .. }
-            | PresidioRuntimeError::MockRedactedText { .. }
-            | PresidioRuntimeError::Data { .. }) => Self::Http {
+            PresidioRuntimeError::Actions(actions) => Self::from(actions),
+            PresidioRuntimeError::Response(response) => Self::from(response),
+            other => Self::Http {
                 status: INTERNAL_STATUS,
                 detail: other.to_string(),
             },
-            PresidioRuntimeError::Actions(actions) => Self::from(actions),
-            PresidioRuntimeError::Response(response) => Self::from(response),
         }
     }
 }
