@@ -52,12 +52,12 @@ mod baggage {
         let context = seed_identity_baggage(&settings, &identity, Some("gpt-4o"), Context::new());
         let bag = context.baggage();
         assert_eq!(
-            bag.get("litellm.team.id").map(|(value, _)| value.as_str()),
+            bag.get("litellm.team.id").map(|value| value.as_str()),
             Some("team-a")
         );
         assert_eq!(
             bag.get("litellm.metadata.route")
-                .map(|(value, _)| value.as_str()),
+                .map(|value| value.as_str()),
             Some("chat")
         );
         // present on the identity, but not on either allowlist
@@ -128,8 +128,8 @@ mod dispatch {
 
 mod finish {
     use crate::otel::support::{
-        PreCall, anchored, attribute, event, finished, harness, owned_http, payload_start,
-        pre_call, root_span_id, success, team_payload, with_id,
+        PreCall, anchored, attribute, event, finished, harness, inference, owned_http,
+        payload_start, pre_call, root_span_id, success, team_payload, with_id,
     };
 
     #[tokio::test]
@@ -185,8 +185,7 @@ mod llm_close {
     use crate::otel::support::{
         PreCall, anchored, attribute, creds, empty_trace, event, event_with, failure, finished,
         harness, inference, inference_failure, no_upstream, owned_http, payload_end, payload_start,
-        payloadless_call, pre_call, root_trace_id, store_carriers, success, team_payload, with_id,
-        zero_start,
+        payloadless_call, pre_call, root_trace_id, success, team_payload, with_id, zero_start,
     };
 
     #[tokio::test]
@@ -233,6 +232,7 @@ mod llm_close {
                 auth: None,
             },
         );
+        // no parent is recordable, so nothing routes before the close itself does
         assert_eq!(harness.built.builds(), 0);
         success(
             &harness.logger,
@@ -240,9 +240,18 @@ mod llm_close {
         )
         .await;
         assert_eq!(harness.built.builds(), 1);
-        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("S{index}")
-        });
+        // every later close routes its own tenant and releases it, so S0's provider drains to zero
+        for index in 1..=MAX_CACHED_PROVIDERS {
+            success(
+                &harness.logger,
+                event_with(
+                    with_id(inference(), &format!("later-{index}")),
+                    creds(&format!("S{index}")),
+                    IndexMap::new(),
+                ),
+            )
+            .await;
+        }
         // the deferred close released S0's lease, so the overflow eviction shuts its provider down at once
         assert!(harness.built.sink(0).is_shutdown_called());
     }
@@ -335,9 +344,9 @@ mod mcp_list {
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        anchored, event, failure, finished, harness, harness_for, mcp_list, mcp_list_failure,
-        mcp_list_with_auth, names, owned_http, phoenix_http, root_trace_id, route_projects,
-        success, with_id,
+        Tenant, anchored, event, failure, finished, harness, harness_for, mcp_list,
+        mcp_list_failure, mcp_list_with_auth, names, owned_http, phoenix_http, root_trace_id,
+        route_tenants, success, with_id,
     };
 
     #[tokio::test]
@@ -398,9 +407,13 @@ mod mcp_list {
         )
         .await;
         assert_eq!(harness.built.builds(), 1);
-        route_projects(&harness, 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("proj{index}")
-        });
+        route_tenants(
+            &harness,
+            "project-",
+            1,
+            MAX_CACHED_PROVIDERS,
+            Tenant::Project(|index| format!("proj{index}")),
+        );
         // the emission released the project route's lease, so the overflow eviction shuts it down at once
         assert!(harness.built.sink(0).is_shutdown_called());
     }
@@ -411,9 +424,9 @@ mod mcp_tool {
     use opentelemetry::trace::SpanId;
 
     use crate::otel::support::{
-        PreCall, anchored, creds, event, failure, finished, harness, harness_for, inference,
-        mcp_tool, mcp_tool_failure, mcp_tool_with_auth, names, owned_http, payload_start,
-        phoenix_http, pre_call, root_trace_id, route_projects, store_carriers, success, with_id,
+        PreCall, Tenant, anchored, creds, event, failure, finished, harness, harness_for,
+        inference, mcp_tool, mcp_tool_failure, mcp_tool_with_auth, names, owned_http,
+        payload_start, phoenix_http, pre_call, root_trace_id, route_tenants, success, with_id,
     };
 
     #[tokio::test]
@@ -493,9 +506,13 @@ mod mcp_tool {
         )
         .await;
         assert_eq!(harness.built.builds(), 1);
-        route_projects(&harness, 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("proj{index}")
-        });
+        route_tenants(
+            &harness,
+            "project-",
+            1,
+            MAX_CACHED_PROVIDERS,
+            Tenant::Project(|index| format!("proj{index}")),
+        );
         // the emission released the project route's lease, so the overflow eviction shuts it down at once
         assert!(harness.built.sink(0).is_shutdown_called());
     }
@@ -515,9 +532,13 @@ mod mcp_tool {
         );
         assert_eq!(harness.built.builds(), 1);
         success(&harness.logger, event(with_id(mcp_tool(), "call-mcp"))).await;
-        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("S{index}")
-        });
+        route_tenants(
+            &harness,
+            "later-",
+            1,
+            MAX_CACHED_PROVIDERS,
+            Tenant::Credentials(|index| format!("S{index}")),
+        );
         // dropping the stray carrier released S0's lease, so the overflow eviction shuts its provider down
         assert!(harness.built.sink(0).is_shutdown_called());
     }
@@ -659,11 +680,11 @@ mod open_calls {
     use indexmap::IndexMap;
 
     use crate::otel::support::{
-        PreCall, anchored, creds, event_with, finished, harness, inference, owned_http,
-        payload_start, pre_call, store_carriers, success, with_id,
+        PreCall, Tenant, anchored, creds, event_with, finished, harness, inference, owned_http,
+        payload_start, pre_call, route_tenants, success, with_id,
     };
 
-    fn store_carriers(calls: &mut OpenCalls, start: SystemTime) {
+    fn fill_open_calls(calls: &mut OpenCalls, start: SystemTime) {
         for index in 0..OPEN_CALLS_MAX {
             let at = start
                 .checked_add(Duration::from_secs(u64::try_from(index).expect("index")))
@@ -687,7 +708,7 @@ mod open_calls {
     fn open_calls_caps_the_map_and_evicts_the_oldest() {
         let mut calls = OpenCalls::default();
         let start = SystemTime::now();
-        store_carriers(&mut calls, start);
+        fill_open_calls(&mut calls, start);
         let evicted = calls
             .store(
                 "overflow".to_owned(),
@@ -719,19 +740,24 @@ mod open_calls {
                 auth: None,
             },
         );
-        store_carriers(&harness, "call-", 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("S{index}")
-        });
+        route_tenants(
+            &harness,
+            "call-",
+            1,
+            MAX_CACHED_PROVIDERS,
+            Tenant::Credentials(|index| format!("S{index}")),
+        );
         let drained = harness.built.sink(0);
         // S0's provider left the cache, but the oldest carrier still holds the route's lease
         assert!(!drained.is_shutdown_called());
         let stored = MAX_CACHED_PROVIDERS.saturating_add(1);
-        store_carriers(
+        // every filler carrier reuses the newest cached tenant, so only the carrier eviction can drain S0's retired provider
+        route_tenants(
             &harness,
             "later-",
             0,
             OPEN_CALLS_MAX.saturating_sub(stored).saturating_add(1),
-            |_| "S0".to_owned(),
+            Tenant::Credentials(|_| format!("S{}", MAX_CACHED_PROVIDERS)),
         );
         // evicting that carrier released its lease, and the drained provider shut down
         assert!(drained.is_shutdown_called());
@@ -755,9 +781,13 @@ mod open_calls {
             event_with(with_id(inference(), "call-a"), creds("S0"), IndexMap::new()),
         )
         .await;
-        store_carriers(&harness, "later-", 1, MAX_CACHED_PROVIDERS, |index| {
-            format!("S{index}")
-        });
+        route_tenants(
+            &harness,
+            "later-",
+            1,
+            MAX_CACHED_PROVIDERS,
+            Tenant::Credentials(|index| format!("S{index}")),
+        );
         // the close released S0's lease, so the overflow eviction shuts its provider down at once
         assert!(harness.built.sink(0).is_shutdown_called());
     }
@@ -765,12 +795,12 @@ mod open_calls {
     #[tokio::test]
     async fn overflow_eviction_still_emits_the_evicted_call_deferred() {
         let harness = harness(owned_http(), anchored());
-        store_carriers(
+        route_tenants(
             &harness,
             "call-",
             0,
             OPEN_CALLS_MAX.saturating_add(1),
-            |_| "S".to_owned(),
+            Tenant::Credentials(|_| "S".to_owned()),
         );
         assert_eq!(harness.built.builds(), 1);
         success(

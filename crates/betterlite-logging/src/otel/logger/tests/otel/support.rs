@@ -581,47 +581,40 @@ pub(crate) fn harness_for(
     }
 }
 
-// route one tenant per credential set, so an earlier routed provider overflows the 256-entry cache
-pub(crate) fn store_carriers(
+// the tenant a routed test provider is keyed by: a request's dynamic credentials, or the key/team auth a project header comes from
+#[derive(Clone, Copy)]
+pub(crate) enum Tenant {
+    Credentials(fn(usize) -> String),
+    Project(fn(usize) -> String),
+}
+
+// one routed pre_call per index, so an earlier routed provider overflows the 256-entry cache
+pub(crate) fn route_tenants(
     harness: &Harness,
     prefix: &str,
     from: usize,
     count: usize,
-    space: fn(usize) -> String,
+    tenant: Tenant,
 ) {
     for index in from..from.saturating_add(count) {
+        let (dynamic, auth) = match tenant {
+            Tenant::Credentials(space) => (Some(creds(&space(index))), None),
+            Tenant::Project(project) => (
+                None,
+                Some(Json::Object(IndexMap::from([(
+                    "phoenix_project_name".to_owned(),
+                    Json::Text(project(index)),
+                )]))),
+            ),
+        };
         pre_call(
             &harness.logger,
             PreCall {
                 call_id: &format!("{prefix}{index}"),
                 model: "gpt-4o",
                 no_upstream: false,
-                dynamic: Some(creds(&space(index))),
-                auth: None,
-            },
-        );
-    }
-}
-
-// route one tenant per key/team project, so an earlier project-routed provider overflows the cache
-pub(crate) fn route_projects(
-    harness: &Harness,
-    from: usize,
-    count: usize,
-    project: fn(usize) -> String,
-) {
-    for index in from..from.saturating_add(count) {
-        pre_call(
-            &harness.logger,
-            PreCall {
-                call_id: &format!("project-{index}"),
-                model: "gpt-4o",
-                no_upstream: false,
-                dynamic: None,
-                auth: Some(Json::Object(IndexMap::from([(
-                    "phoenix_project_name".to_owned(),
-                    Json::Text(project(index)),
-                )]))),
+                dynamic,
+                auth,
             },
         );
     }
@@ -708,13 +701,11 @@ pub(crate) fn owned_http() -> Settings {
     )])
 }
 
+// the Phoenix preset also names its own collector endpoint, so the spec takes the URL after the shared shape
 pub(crate) fn phoenix_http() -> Settings {
-    with_exporters(vec![spec(
-        "otlp_http",
-        Some(ExporterOwner::ArizePhoenix),
-        None,
-        Some("http://phoenix:6006"),
-    )])
+    let mut exporter = spec("otlp_http", Some(ExporterOwner::ArizePhoenix), None, None);
+    exporter.endpoint = Some("http://phoenix:6006".to_owned());
+    with_exporters(vec![exporter])
 }
 
 pub(crate) fn payload_start() -> SystemTime {
