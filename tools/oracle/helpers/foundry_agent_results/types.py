@@ -77,9 +77,9 @@ class Input(TypedDict, total=False):
 
 
 class FieldsJson(TypedDict):
-    role: JsonValue
-    content: JsonValue
-    annotations: JsonValue
+    role: NotRequired[JsonValue]
+    content: NotRequired[JsonValue]
+    annotations: NotRequired[JsonValue]
 
 
 class StreamingChoiceJson(TypedDict):
