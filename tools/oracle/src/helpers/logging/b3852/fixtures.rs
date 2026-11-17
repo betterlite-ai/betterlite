@@ -53,10 +53,6 @@ pub(super) fn text_object(params: &BTreeMap<String, String>) -> Json {
     )
 }
 
-pub(super) fn dynamic_params(params: Option<&BTreeMap<String, String>>) -> Json {
-    params.map_or(Json::Null, text_object)
-}
-
 pub(super) fn space_params(space: &str) -> Json {
     Json::Object(IndexMap::from([(
         "arize_space_id".to_owned(),

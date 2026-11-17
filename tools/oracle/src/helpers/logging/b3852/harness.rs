@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_logging::otel::config::destination::SpanScope;
 use betterlite_logging::otel::config::{CaptureMessageContent, Settings};
 use betterlite_logging::otel::emitter::span_emission::{DedupCache, SpanEmitter};
@@ -31,7 +32,7 @@ use opentelemetry::trace::{
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracer};
 
-use super::exporters::{Built, ExporterInput, exporter_spec, factories, hosts};
+use super::exporters::{Built, ExporterInput, exporter_spec, factories};
 
 // the same anchored request root the pin's OTel tests use
 const ROOT_TRACE: u128 = 0x0af7_6519_16cd_43dd_8448_eb21_1c80_319c;
@@ -119,7 +120,7 @@ pub(super) fn make_harness(
     let sources = TenantSources {
         factories,
         scope_source: Arc::clone(&scope),
-        allowed_hosts: hosts(),
+        allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
     };
     let tenants = TenantTracerCache::new(settings.clone(), callback.clone(), "litellm", sources);
     Ok(Harness {
@@ -149,7 +150,7 @@ pub(super) fn make_cache(
     let sources = TenantSources {
         factories,
         scope_source: scope,
-        allowed_hosts: hosts(),
+        allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
     };
     Ok(CacheHarness {
         cache: TenantTracerCache::new(settings, callback, "litellm", sources),

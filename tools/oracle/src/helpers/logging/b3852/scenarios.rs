@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::slice::from_ref;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
+use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::json;
@@ -29,7 +31,10 @@ pub(super) fn pre_call(input: &Input) -> HelperResult {
     let builds_after_pre_call = harness.built.builds();
     let metadata = fixtures::payload_metadata(input.auth_metadata.as_ref(), None);
     let payload = fixtures::payload_document("completion", "success", metadata)?;
-    let dynamic = fixtures::dynamic_params(input.credentials.as_ref());
+    let dynamic = input
+        .credentials
+        .as_ref()
+        .map_or(Json::Null, fixtures::text_object);
     fixtures::deliver(&harness.logger, fixtures::event(payload, dynamic), false)?;
     let routed = spans::span_records(&harness.built.sinks())?;
     let default = spans::span_records(from_ref(&harness.default))?;
@@ -56,7 +61,10 @@ pub(super) fn mcp_tool_call(input: &Input) -> HelperResult {
         &harness.logger,
         fixtures::event(
             payload,
-            fixtures::dynamic_params(input.credentials.as_ref()),
+            input
+                .credentials
+                .as_ref()
+                .map_or(Json::Null, fixtures::text_object),
         ),
         false,
     )?;
@@ -82,7 +90,7 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
     )?;
     let metadata = fixtures::payload_metadata(None, None);
     let payload = fixtures::payload_document("completion", "success", metadata)?;
-    let event = fixtures::event(payload, fixtures::dynamic_params(None));
+    let event = fixtures::event(payload, Json::Null);
     let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let outcome: Result<(), Box<HelperError>> =
@@ -92,7 +100,7 @@ pub(super) fn metric_error(input: &Input) -> HelperResult {
         });
     outcome?;
     drop(meter_provider);
-    let error_logs = captured.count();
+    let error_logs = captured.0.load(Ordering::Relaxed);
     Ok(json!({"error_logs": error_logs}))
 }
 
@@ -108,17 +116,9 @@ pub(super) fn close_dedup(input: &Input) -> HelperResult {
     fixtures::boundary(&harness.logger, None, None)?;
     let metadata = fixtures::payload_metadata(None, None);
     let success = fixtures::payload_document("completion", "success", metadata.clone())?;
-    fixtures::deliver(
-        &harness.logger,
-        fixtures::event(success, fixtures::dynamic_params(None)),
-        false,
-    )?;
+    fixtures::deliver(&harness.logger, fixtures::event(success, Json::Null), false)?;
     let failure = fixtures::payload_document("completion", "failure", metadata)?;
-    fixtures::deliver(
-        &harness.logger,
-        fixtures::event(failure, fixtures::dynamic_params(None)),
-        true,
-    )?;
+    fixtures::deliver(&harness.logger, fixtures::event(failure, Json::Null), true)?;
     let names = spans::span_names(from_ref(&harness.default))?;
     let count = names.len();
     Ok(json!({"names": names, "count": count}))

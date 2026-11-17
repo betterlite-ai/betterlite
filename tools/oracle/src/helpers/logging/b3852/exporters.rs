@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_logging::otel::config::{ExporterOwner, ExporterSpec, OTelConfigError};
 use betterlite_logging::otel::plumbing::exporters::{
     ExportResult, ExporterFactories, ExporterFactory, HttpClients,
@@ -77,13 +76,7 @@ impl Built {
 
 // counts the ERROR records the once-only metric filter log emits
 #[derive(Clone, Default)]
-pub(super) struct Captured(Arc<AtomicUsize>);
-
-impl Captured {
-    pub(super) fn count(&self) -> usize {
-        self.0.load(Ordering::Relaxed)
-    }
-}
+pub(super) struct Captured(pub(super) Arc<AtomicUsize>);
 
 impl<Inner: Subscriber> Layer<Inner> for Captured {
     fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
@@ -142,10 +135,6 @@ pub(super) fn factories(built: &Built) -> Arc<ExporterFactories> {
         },
         BTreeMap::from([(KIND.to_owned(), factory)]),
     ))
-}
-
-pub(super) fn hosts() -> Arc<[AllowedDestination]> {
-    Arc::from(Vec::<AllowedDestination>::new())
 }
 
 #[derive(Debug)]

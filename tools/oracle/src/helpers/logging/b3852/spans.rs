@@ -15,20 +15,24 @@ fn finished(sinks: &[InMemorySpanExporter]) -> Result<Vec<SpanData>, Box<HelperE
 pub(super) fn span_records(sinks: &[InMemorySpanExporter]) -> Result<Vec<Json>, Box<HelperError>> {
     let mut records = Vec::new();
     for span in finished(sinks)? {
-        records.push(json!({
-            "name": span.name,
-            "rooted": span.parent_span_id == SpanId::INVALID,
-            "links": span.links.links.len(),
-        }));
+        records.push(record(span));
     }
     Ok(records)
 }
 
+fn record(span: SpanData) -> Json {
+    json!({
+        "name": span.name,
+        "rooted": span.parent_span_id == SpanId::INVALID,
+        "links": span.links.links.len(),
+    })
+}
+
 pub(super) fn span_names(sinks: &[InMemorySpanExporter]) -> Result<Vec<String>, Box<HelperError>> {
-    let mut names = Vec::new();
-    for span in finished(sinks)? {
-        names.push(span.name.to_string());
-    }
+    let mut names: Vec<String> = finished(sinks)?
+        .iter()
+        .map(|span| span.name.to_string())
+        .collect();
     names.sort();
     Ok(names)
 }
