@@ -54,10 +54,10 @@ fn prepare_parts(
     image: Option<&mut EditImages<'_>>,
     mime_of: &dyn Fn(&[u8]) -> &'static str,
 ) -> Result<Vec<Json>, StudioImageEditError> {
-    let Some(image) = image else {
+    let Some(given) = image else {
         return Ok(Vec::new());
     };
-    let records = match image {
+    let records = match given {
         // LiteLLM tests a single image for truthiness, so empty bytes carry no image at all
         EditImages::One(GeminiEditFile::Bytes([])) => Vec::new(),
         EditImages::One(record) => vec![record],
