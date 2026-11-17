@@ -67,7 +67,13 @@ pub(super) async fn masks_list_content() {
         content_of(&messages[1]),
         GuardrailValue::Text("<PHONE_NUMBER>".to_owned())
     );
-    assert_eq!(analyzer_requests(&server).len(), 3);
+    let requests = analyzer_requests(&server);
+    let texts: Vec<&str> = requests
+        .iter()
+        .map(|request| text(field(request, "text")))
+        .collect();
+    assert_eq!(texts, vec!["call 555-0100", "or 555-0199", "nothing"]);
+    assert_eq!(requests.len(), 3);
 }
 
 pub(super) async fn skips_other_content() {
