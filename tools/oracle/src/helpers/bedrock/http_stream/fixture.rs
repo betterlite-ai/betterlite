@@ -66,7 +66,7 @@ impl StreamHandler for Fixture {
             status: self.status,
             headers: self.headers.clone(),
             // One transport read of the whole fixture body, the way a buffered HTTP client delivers it.
-            chunks: stream::iter(vec![Ok(self.body.clone())]).boxed(),
+            chunks: stream::iter([Ok(self.body.clone())]).boxed(),
         })
     }
 }

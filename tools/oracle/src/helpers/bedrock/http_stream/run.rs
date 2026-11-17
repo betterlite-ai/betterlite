@@ -1,19 +1,28 @@
 use std::convert::Infallible;
+use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_bedrock::agentcore_stream::transport::StreamHandler;
+use betterlite_bedrock::bedrock_http_stream::PendingOpen;
 use betterlite_bedrock::bedrock_http_stream::StreamDeps;
-use betterlite_bedrock::bedrock_http_stream::converse::{ConverseCall, make_sync_call};
+use betterlite_bedrock::bedrock_http_stream::converse::{
+    ConverseCall, make_sync_call, open_call as open_converse,
+};
 use betterlite_bedrock::bedrock_http_stream::error::HttpStreamError;
-use betterlite_bedrock::bedrock_http_stream::invoke::{InvokeCall, make_call};
+use betterlite_bedrock::bedrock_http_stream::invoke::{
+    InvokeCall, make_call, open_call as open_invoke,
+};
 use betterlite_bedrock::bedrock_http_stream::stream::{ChunkStream, OpenedStream};
 use betterlite_bedrock::image_call::plan::LogContext;
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
 use serde_json::{Value, json};
+use tokio::runtime::Runtime;
 
 use super::fixture::Fixture;
 use super::support::{
@@ -30,36 +39,32 @@ struct Collected {
     error: Option<HttpStreamError<Infallible>>,
 }
 
-pub(super) async fn execute(input: &Input) -> Result<Value, Box<HelperError>> {
+pub(super) fn execute(input: &Input, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let mut views = Vec::with_capacity(input.cases.len());
     for case in &input.cases {
-        views.push(one(case).await?);
+        views.push(one(case, runtime)?);
     }
     Ok(json!({ "cases": views }))
 }
 
-async fn one(case: &Case) -> Result<Value, Box<HelperError>> {
+fn one(case: &Case, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     let handler = Arc::new(Fixture::new(case)?);
-    let mut state = logging_state(&redactor)?;
     let sink = Quiet;
-    let logged = Mutex::new(Vec::new());
+    let recorded = Mutex::new(Vec::new());
     let logger = |details: &Json| -> Result<(), PrePostError> {
-        logged
+        recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
         Ok(())
     };
     let env = pre_post_env(&redactor, &sink, &logger)?;
-    let shared: Arc<dyn StreamHandler> = Arc::clone(&handler);
+    let mut state = logging_state(&redactor)?;
+    let shared: Arc<dyn StreamHandler> = handler.clone();
     let deps = stream_deps(shared, &redactor);
-    let mut log = LogContext {
-        state: &mut state,
-        env: &env,
-    };
-    let result = collected(case, &deps, &mut log).await?;
-    let logs = std::mem::take(&mut *logged.lock().unwrap_or_else(PoisonError::into_inner));
+    let result = collect(case, &deps, runtime, &mut state, &env)?;
+    let logs = mem::take(&mut *recorded.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({
         "post": handler.first_post(),
         "error": result.error.as_ref().map_or(Value::Null, |failure| error_view(failure, case)),
@@ -70,63 +75,76 @@ async fn one(case: &Case) -> Result<Value, Box<HelperError>> {
     }))
 }
 
-// The helper call the case names, at the seam its route reaches.
-async fn open_route<'deps>(
-    case: &Case,
-    headers: HeaderMap,
-    deps: &StreamDeps<'deps>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
-    match case.path {
-        Route::ConverseSync => {
-            make_sync_call(
-                ConverseCall {
-                    model: &case.model,
-                    api_base: &case.api_base,
-                    headers,
-                    data: &case.data,
-                    messages: &case.messages,
-                    json_mode: case.json_mode,
-                    fake_stream: case.fake_stream,
-                },
-                deps,
-                log,
-            )
-            .await
-        }
-        Route::InvokeSync => make_call(invoke_case(case, headers, true), deps, log).await,
-        Route::InvokeAsync => make_call(invoke_case(case, headers, false), deps, log).await,
-    }
-}
-
-// The opened stream read exactly as far as the case asks.
-async fn collected(
+// The POST phase runs on the caller's runtime; the conversion, its log entry and the reads stay on this thread.
+fn collect(
     case: &Case,
     deps: &StreamDeps<'_>,
-    log: &mut LogContext<'_, '_>,
+    runtime: &Runtime,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
 ) -> Result<Collected, Box<HelperError>> {
     let headers = header_map(&case.headers)?;
-    let opened = open_route(case, headers, deps, log).await;
+    let pending = runtime.block_on(open_route(case, headers.clone(), deps));
     let mut result = Collected {
         response_headers: Value::Null,
         chunks: Vec::new(),
         failures: Vec::new(),
         error: None,
     };
-    match opened {
+    match finish_route(case, headers, deps, pending, &mut LogContext { state, env }) {
         Ok(mut stream) => {
             result.response_headers = json!(sorted_pairs(&stream.headers));
-            drain(
+            runtime.block_on(drain(
                 &mut stream.chunks,
                 case.consume,
                 &mut result.chunks,
                 &mut result.failures,
-            )
-            .await;
+            ));
         }
         Err(failure) => result.error = Some(failure),
     }
     Ok(result)
+}
+
+// The helper call the case names, at the seam its route reaches.
+async fn open_route(
+    case: &Case,
+    headers: HeaderMap,
+    deps: &StreamDeps<'_>,
+) -> Result<PendingOpen, HttpStreamError<Infallible>> {
+    match case.path {
+        Route::ConverseSync => open_converse(&converse_case(case, headers), deps).await,
+        Route::InvokeSync => open_invoke(&invoke_case(case, headers, true), deps).await,
+        Route::InvokeAsync => open_invoke(&invoke_case(case, headers, false), deps).await,
+    }
+}
+
+// make_sync_call finishes the Converse stream, make_call both Invoke ones; the sync flag picks the signed body.
+fn finish_route<'deps>(
+    case: &Case,
+    headers: HeaderMap,
+    deps: &StreamDeps<'deps>,
+    pending: Result<PendingOpen, HttpStreamError<Infallible>>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<OpenedStream<'deps>, HttpStreamError<Infallible>> {
+    let pending = pending?;
+    match case.path {
+        Route::ConverseSync => make_sync_call(&converse_case(case, headers), deps, pending, log),
+        Route::InvokeSync => make_call(&invoke_case(case, headers, true), deps, pending, log),
+        Route::InvokeAsync => make_call(&invoke_case(case, headers, false), deps, pending, log),
+    }
+}
+
+fn converse_case<'case>(case: &'case Case, headers: HeaderMap) -> ConverseCall<'case> {
+    ConverseCall {
+        model: &case.model,
+        api_base: &case.api_base,
+        headers,
+        data: &case.data,
+        messages: &case.messages,
+        json_mode: case.json_mode,
+        fake_stream: case.fake_stream,
+    }
 }
 
 fn invoke_case<'case>(case: &'case Case, headers: HeaderMap, sync: bool) -> InvokeCall<'case> {
@@ -159,8 +177,8 @@ async fn drain(
     }
     while let Some(item) = chunks.next().await {
         match item {
-            Ok(chunk) => views.push(chunk_view(chunk)),
-            Err(failure) => failures.push(json!({ "status": failure.status() })),
+            Ok(parsed) => views.push(chunk_view(parsed)),
+            Err(error) => failures.push(json!({ "status": error.status() })),
         }
         if consume == Consume::First {
             return;

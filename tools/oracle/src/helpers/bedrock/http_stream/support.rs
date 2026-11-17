@@ -104,7 +104,7 @@ pub(super) fn stream_deps<'deps>(
 ) -> StreamDeps<'deps> {
     StreamDeps {
         supplied: Some(Arc::clone(&handler)),
-        default: Arc::clone(&handler),
+        default: handler,
         ids: Arc::new(Counter(Mutex::new(0))),
         clock: DecoderClock {
             next_id: || Uuid::from_u128(0x5EED_0000_u128),

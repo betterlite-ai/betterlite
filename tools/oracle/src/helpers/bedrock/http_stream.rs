@@ -18,10 +18,10 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(failure)?
-            .block_on(execute(input))
+            .map_err(failure)?;
+        execute(input, &runtime)
     }
 }
