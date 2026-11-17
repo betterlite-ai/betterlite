@@ -166,16 +166,8 @@ pub fn parse_inline(config: &str) -> Result<RouteIndex, RouteIndexError> {
     assemble(routes)
 }
 
-pub fn load_file(path: &Path) -> Result<RouteIndex, RouteIndexError> {
-    let yaml = match path.extension().and_then(OsStr::to_str) {
-        Some("json") => false,
-        Some("yaml" | "yml") => true,
-        _ => {
-            return Err(RouteIndexError::UnsupportedExtension {
-                path: path.to_owned(),
-            });
-        }
-    };
+// one read past the bound proves TooLarge without allocating a longer input
+fn read_bounded(path: &Path) -> Result<Vec<u8>, RouteIndexError> {
     let file = std::fs::File::open(path).map_err(|source| RouteIndexError::Read {
         path: path.to_owned(),
         source,
@@ -192,6 +184,20 @@ pub fn load_file(path: &Path) -> Result<RouteIndex, RouteIndexError> {
             limit: ROUTE_INDEX_MAX_BYTES,
         });
     }
+    Ok(bytes)
+}
+
+pub fn load_file(path: &Path) -> Result<RouteIndex, RouteIndexError> {
+    let yaml = match path.extension().and_then(OsStr::to_str) {
+        Some("json") => false,
+        Some("yaml" | "yml") => true,
+        _ => {
+            return Err(RouteIndexError::UnsupportedExtension {
+                path: path.to_owned(),
+            });
+        }
+    };
+    let bytes = read_bounded(path)?;
     let raw: RawFile = if yaml {
         serde_saphyr::from_slice(&bytes).map_err(RouteIndexError::Yaml)?
     } else {

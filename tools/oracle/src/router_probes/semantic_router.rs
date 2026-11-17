@@ -151,43 +151,56 @@ async fn run_rounds(
     router: &AutoRouter<Recorder>,
     recorder: &Recorder,
 ) -> Result<Output, String> {
-    let request = CallerRequest {
-        metadata: input.metadata.as_ref(),
-        litellm_metadata: input.litellm_metadata.as_ref(),
-        litellm_params_metadata: input.litellm_params_metadata.as_ref(),
-        litellm_session_id: input.litellm_session_id.as_ref(),
-        litellm_trace_id: input.litellm_trace_id.as_ref(),
-        turn_off_message_logging: input.turn_off_message_logging.as_ref(),
-    };
+    let request = caller_request(input);
     let mut rounds = Vec::new();
     for _round in 0..input.rounds {
-        let (documents, queries) = call_counts(recorder);
-        let calls = (0..input.concurrent).map(|_caller| {
-            decide(
-                router,
-                Some(&input.messages),
-                &request,
-                PrivacyContext::default(),
-            )
-        });
-        let outcomes = join_all(calls).await;
-        let failed = outcomes.iter().any(|outcome| outcome.is_err());
-        let model = outcomes
-            .iter()
-            .find_map(|outcome| outcome.as_ref().ok()?.as_ref())
-            .map(|decision| decision.model.clone());
-        rounds.push(Round {
-            failed,
-            model: if failed { None } else { model },
-            documents: delta(&recorder.documents, documents),
-            queries: delta(&recorder.queries, queries),
-        });
+        rounds.push(run_round(input, router, recorder, &request).await);
     }
     Ok(Output {
         accepted: true,
         code: None,
         rounds,
     })
+}
+
+fn caller_request(input: &Input) -> CallerRequest<'_> {
+    CallerRequest {
+        metadata: input.metadata.as_ref(),
+        litellm_metadata: input.litellm_metadata.as_ref(),
+        litellm_params_metadata: input.litellm_params_metadata.as_ref(),
+        litellm_session_id: input.litellm_session_id.as_ref(),
+        litellm_trace_id: input.litellm_trace_id.as_ref(),
+        turn_off_message_logging: input.turn_off_message_logging.as_ref(),
+    }
+}
+
+async fn run_round(
+    input: &Input,
+    router: &AutoRouter<Recorder>,
+    recorder: &Recorder,
+    request: &CallerRequest<'_>,
+) -> Round {
+    let (documents, queries) = call_counts(recorder);
+    let calls = (0..input.concurrent).map(|_caller| {
+        decide(
+            router,
+            Some(&input.messages),
+            request,
+            PrivacyContext::default(),
+        )
+    });
+    let outcomes = join_all(calls).await;
+    let failed = outcomes.iter().any(|outcome| outcome.is_err());
+    let model = outcomes
+        .iter()
+        .find_map(|outcome| outcome.as_ref().ok()?.as_ref())
+        .map(|decision| decision.model.clone());
+    Round {
+        failed,
+        model: if failed { None } else { model },
+        documents: delta(&recorder.documents, documents),
+        queries: delta(&recorder.queries, queries),
+    }
 }
 
 fn invalid(message: &str) -> OperationError {

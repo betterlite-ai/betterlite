@@ -15,6 +15,20 @@ pub fn select(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, M
     if entries.is_empty() {
         return Ok(None);
     }
+    for (route, threshold, total) in route_totals(top_scores(entries, query)?) {
+        // the source reads a zero threshold as falsy, which always passes; a nonzero one compares normally
+        let comparable = threshold > 0.0 || threshold < 0.0;
+        if !comparable || total >= threshold {
+            return Ok(Some(route.to_owned()));
+        }
+    }
+    Ok(None)
+}
+
+fn top_scores<'a>(
+    entries: &'a [BuiltEntry],
+    query: &[f64],
+) -> Result<Vec<(&'a str, f64, f64, usize)>, MathError> {
     let mut scored: Vec<(&str, f64, f64, usize)> = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
         let score = cosine_similarity(query, &entry.vector, index)?;
@@ -33,6 +47,10 @@ pub fn select(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, M
             .total_cmp(&right.1)
             .then_with(|| left.3.cmp(&right.3))
     });
+    Ok(scored)
+}
+
+fn route_totals(scored: Vec<(&str, f64, f64, usize)>) -> Vec<(&str, f64, f64)> {
     let mut grouped: Vec<(&str, f64, Vec<f64>)> = Vec::new();
     for (route, score, threshold, _index) in scored {
         match grouped.iter_mut().find(|(name, _, _)| *name == route) {
@@ -46,12 +64,5 @@ pub fn select(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>, M
     }
     // a stable descending sort keeps the first-appearance order of equal totals
     totals.sort_by(|left, right| right.2.total_cmp(&left.2));
-    for (route, threshold, total) in totals {
-        // the source reads a zero threshold as falsy, which always passes; a nonzero one compares normally
-        let comparable = threshold > 0.0 || threshold < 0.0;
-        if !comparable || total >= threshold {
-            return Ok(Some(route.to_owned()));
-        }
-    }
-    Ok(None)
+    totals
 }

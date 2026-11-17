@@ -79,6 +79,17 @@ where
     {
         return Ok(None);
     }
+    resolve_deployment(params, index, lookup).map(Some)
+}
+
+fn resolve_deployment<L>(
+    params: RawParams,
+    index: usize,
+    lookup: &L,
+) -> Result<Deployment, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let path = |key: &str| format!("model_list.{index}.{PATH_ROOT}.{key}");
     let config_path = resolve_optional(
         params.auto_router_config_path,
@@ -101,19 +112,26 @@ where
         &path("auto_router_embedding_model"),
         lookup,
     )?;
-    let max_input_chars = resolve_number(
-        params.auto_router_max_input_chars,
-        &path("auto_router_max_input_chars"),
-        lookup,
-        parse_input_chars,
-    )?;
-    Ok(Some(Deployment {
+    Ok(Deployment {
         config_path,
         config_json,
         default_model,
         embedding_model,
-        max_input_chars,
-    }))
+        max_input_chars: resolve_limit(params.auto_router_max_input_chars, index, lookup)?,
+    })
+}
+
+fn resolve_limit(
+    value: Option<RawNumber>,
+    index: usize,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Option<i64>, ConfigError> {
+    resolve_number(
+        value,
+        &format!("model_list.{index}.{PATH_ROOT}.auto_router_max_input_chars"),
+        lookup,
+        parse_input_chars,
+    )
 }
 
 fn resolve_optional<L>(

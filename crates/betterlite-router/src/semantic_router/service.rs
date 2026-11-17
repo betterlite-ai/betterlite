@@ -138,10 +138,31 @@ where
         text: &str,
         caller: &CallerContext,
     ) -> RouteDecision {
-        let fallback = RouteDecision {
-            route: None,
-            model: self.settings.default_model.clone(),
+        let Some(query) = self.query_vector(text, caller).await else {
+            return self.default_decision();
         };
+        match select(built, &query) {
+            Ok(Some(route)) => {
+                let model = if route.is_empty() {
+                    self.settings.default_model.clone()
+                } else {
+                    route.clone()
+                };
+                RouteDecision {
+                    route: Some(route),
+                    model,
+                }
+            }
+            Ok(None) => self.default_decision(),
+            Err(error) => {
+                tracing::warn!(%error, "semantic routing failed, falling back to the default model");
+                self.default_decision()
+            }
+        }
+    }
+
+    // any query-embedding failure warns and takes the default model; only a build failure reaches the caller
+    async fn query_vector(&self, text: &str, caller: &CallerContext) -> Option<Vec<f64>> {
         let limit = self
             .settings
             .max_input_chars
@@ -160,31 +181,14 @@ where
             Ok(vectors) => vectors,
             Err(error) => {
                 tracing::warn!(%error, "semantic routing failed, falling back to the default model");
-                return fallback;
+                return None;
             }
         };
         let Some(query) = vectors.into_iter().next() else {
             tracing::warn!("semantic routing failed: the query embedding call returned no vector");
-            return fallback;
+            return None;
         };
-        match select(built, &query) {
-            Ok(Some(route)) => {
-                let model = if route.is_empty() {
-                    self.settings.default_model.clone()
-                } else {
-                    route.clone()
-                };
-                RouteDecision {
-                    route: Some(route),
-                    model,
-                }
-            }
-            Ok(None) => fallback,
-            Err(error) => {
-                tracing::warn!(%error, "semantic routing failed, falling back to the default model");
-                fallback
-            }
-        }
+        Some(query)
     }
 
     async fn built_index(&self) -> Result<Arc<Vec<BuiltEntry>>, Arc<RouterError<E::Error>>> {

@@ -89,13 +89,8 @@ fn the_caller_identity_is_forwarded_with_the_classifier_origin() {
         ("user_api_key_budget_reservation", text("reservation")),
         ("user_api_key_auth", auth),
     ]);
-    let litellm_metadata = object(&[("user_api_key", text("key-1"))]);
-    let request = CallerRequest {
-        litellm_metadata: Some(&litellm_metadata),
-        ..requested(Some(&metadata))
-    };
-    let context =
-        caller_context(&request, PrivacyContext::default()).expect("the metadata is usable");
+    let context = caller_context(&requested(Some(&metadata)), PrivacyContext::default())
+        .expect("the metadata is usable");
     assert_eq!(
         context.metadata.get("user_api_key_team_id"),
         Some(&text("team-1"))
@@ -113,6 +108,17 @@ fn the_caller_identity_is_forwarded_with_the_classifier_origin() {
         context.metadata.get("user_api_key_auth"),
         Some(&object(&[("team_id", text("team-1"))]))
     );
+}
+
+#[test]
+fn the_litellm_metadata_is_forwarded_with_the_classifier_origin() {
+    let litellm_metadata = object(&[("user_api_key", text("key-1"))]);
+    let request = CallerRequest {
+        litellm_metadata: Some(&litellm_metadata),
+        ..requested(None)
+    };
+    let context =
+        caller_context(&request, PrivacyContext::default()).expect("the metadata is usable");
     assert_eq!(
         context.litellm_metadata.get("user_api_key"),
         Some(&text("key-1"))

@@ -67,51 +67,52 @@ pub(super) async fn build_entries<E>(
 where
     E: RouteEmbedder,
 {
-    let probe = embedder
-        .embed_documents(
-            model,
-            vec![clamp(DIMENSION_PROBE_TEXT, max_input_chars).to_owned()],
-        )
+    let probe = clamp(DIMENSION_PROBE_TEXT, max_input_chars).to_owned();
+    let _probe = embed_batch(embedder, model, vec![probe]).await?;
+    let texts = index
+        .rows
+        .iter()
+        .map(|row| clamp(&row.text, max_input_chars).to_owned())
+        .collect::<Vec<String>>();
+    if texts.is_empty() {
+        return Ok(Arc::new(Vec::new()));
+    }
+    let vectors = embed_batch(embedder, model, texts).await?;
+    validate_documents(&vectors).map_err(|source| RouterError::Vectors {
+        stage: EmbeddingStage::Documents,
+        source,
+    })?;
+    Ok(Arc::new(zip_entries(index, vectors)))
+}
+
+// one embedding call per batch, refused when the provider answers with a different number of vectors
+async fn embed_batch<E>(
+    embedder: &E,
+    model: &str,
+    texts: Vec<String>,
+) -> Result<Vec<Vec<f64>>, RouterError<E::Error>>
+where
+    E: RouteEmbedder,
+{
+    let expected = texts.len();
+    let vectors = embedder
+        .embed_documents(model, texts)
         .await
         .map_err(|source| RouterError::Embedding {
             stage: EmbeddingStage::Documents,
             source,
         })?;
-    if probe.len() != 1 {
+    if vectors.len() != expected {
         return Err(RouterError::VectorCount {
             stage: EmbeddingStage::Documents,
-            expected: 1,
-            found: probe.len(),
+            expected,
+            found: vectors.len(),
         });
     }
-    let mut texts = Vec::with_capacity(index.rows.len());
-    for row in &index.rows {
-        texts.push(clamp(&row.text, max_input_chars).to_owned());
-    }
-    let vectors = if texts.is_empty() {
-        Vec::new()
-    } else {
-        let expected = texts.len();
-        let vectors = embedder
-            .embed_documents(model, texts)
-            .await
-            .map_err(|source| RouterError::Embedding {
-                stage: EmbeddingStage::Documents,
-                source,
-            })?;
-        if vectors.len() != expected {
-            return Err(RouterError::VectorCount {
-                stage: EmbeddingStage::Documents,
-                expected,
-                found: vectors.len(),
-            });
-        }
-        validate_documents(&vectors).map_err(|source| RouterError::Vectors {
-            stage: EmbeddingStage::Documents,
-            source,
-        })?;
-        vectors
-    };
+    Ok(vectors)
+}
+
+fn zip_entries(index: &RouteIndex, vectors: Vec<Vec<f64>>) -> Vec<BuiltEntry> {
     let mut entries = Vec::with_capacity(index.rows.len());
     for (row, vector) in index.rows.iter().zip(vectors) {
         entries.push(BuiltEntry {
@@ -120,5 +121,5 @@ where
             vector,
         });
     }
-    Ok(Arc::new(entries))
+    entries
 }
