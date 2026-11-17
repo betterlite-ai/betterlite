@@ -47,17 +47,18 @@ deviations:
       stores None, so the reasoning override keeps tracking tier_boundaries.simple_medium and a
       tier with no model falls back to MEDIUM.
     why: >-
-      Every betterlite field resolves references through the same rule, so a mistyped variable
-      can't quietly move the reasoning override floor or route to a fallback model the operator
-      did not name. Both fields are declared optional, so leaving either key out of the file
-      still means unset.
+      betterlite resolves a reference in either key with the same rule as every other scalar
+      setting, so a mistyped variable can't quietly move the reasoning override floor or route
+      to a fallback model the operator did not name. Both fields are declared optional, so
+      leaving either key out of the file still means unset.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
   - what: >-
       A token threshold outside the i64 range is refused with an error naming the key, where
       LiteLLM's token_thresholds holds unbounded Python ints and the value loads.
     why: >-
-      betterlite stores each threshold as an i64 and saturates its token estimate at i64::MAX,
-      so a threshold beyond the range can never be crossed by a larger count. Refusing the value
-      names the key instead of silently saturating the comparison.
+      betterlite stores each threshold as an i64, while its token estimate saturates at
+      i64::MAX, so a threshold beyond the range always or never fires instead of comparing
+      exactly. Refusing the value names the key instead of accepting a number the estimator
+      cannot reach.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L957-L961
 kept_bugs: []
