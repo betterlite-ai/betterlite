@@ -21,7 +21,7 @@ deviations:
   - what: An ollama embedding input that is not a string or a list of strings fails with "Invalid input for ollama embeddings. input must be a string or a list of strings".
     why: LiteLLM raises BadRequestError with the same intent but interpolates the whole input list into the message. The status, type and param match; the text names the accepted shapes instead of echoing the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6941-L6960
-  - what: A lemonade listing answer with a status other than 200 whose body is not UTF-8 fails with "the {status} Lemonade models answer is not UTF-8 text: ..." rather than naming the status and the decoded body.
+  - what: 'A lemonade listing answer with a status other than 200 whose body is not UTF-8 fails with "the {status} Lemonade models answer is not UTF-8 text: ..." rather than naming the status and the decoded body.'
     why: LiteLLM interpolates httpx's response.text, which decodes invalid bytes with replacement characters, into the status message. betterlite refuses bytes that are not UTF-8 instead of mangling them, so the error names the encoding; the status a caller reads from it is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L102-L105
   - what: OllamaModelInfo's validate_environment and get_base_model have no betterlite equivalent; the listing prepares the bearer header itself and a model stands as its own base model.
