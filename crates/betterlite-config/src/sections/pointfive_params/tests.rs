@@ -30,7 +30,7 @@ fn loaded(source: &str) -> Settings {
 }
 
 fn params(source: &str) -> PointFiveInitParams {
-    loaded(source).params.expect("the params are set")
+    *loaded(source).params.expect("the params are set")
 }
 
 fn defaults() -> PointFiveInitParams {

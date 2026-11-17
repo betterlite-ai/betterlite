@@ -14,7 +14,7 @@ mod tests;
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
     let config = &inputs.config;
     let section = &config.sections.pointfive_params;
-    let params = section.params.clone().unwrap_or_default();
+    let params = section.params.as_deref().cloned().unwrap_or_default();
     let policy = &config.sections.user_url_policy;
     let source = PointFiveService::new(
         Arc::new(PointFiveHttp {

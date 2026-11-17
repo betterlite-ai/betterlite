@@ -111,9 +111,10 @@ struct RawSettings {
     pointfive_params: Option<PointFiveInitParams>,
 }
 
+// Boxed: Sections holds each Settings by value, and config snapshots live inside futures
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
-    pub params: Option<PointFiveInitParams>,
+    pub params: Option<Box<PointFiveInitParams>>,
 }
 
 impl Section for Raw {
@@ -124,7 +125,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            params: self.litellm_settings.pointfive_params,
+            params: self.litellm_settings.pointfive_params.map(Box::new),
         })
     }
 }
