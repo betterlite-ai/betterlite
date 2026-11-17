@@ -4,8 +4,11 @@ use betterlite_config::loader::startup::process_environment;
 use rstest::rstest;
 
 use super::settings::{COST_VARIABLE, cost_per_step_from_text};
-use super::support::{capture_logs, cost_text};
+use super::support::{capture_logs, decimal, rerun_test_with_environment};
 use super::{TINYFISH_DEFAULT_STEP_COST, resolve_tinyfish_cost_per_step};
+
+const CHILD_MARKER: &str = "B3648_COST_PER_STEP_CHILD";
+const OVERRIDE: &str = "2.5";
 
 #[rstest]
 #[case::unset(None, "0.016")]
@@ -18,10 +21,17 @@ use super::{TINYFISH_DEFAULT_STEP_COST, resolve_tinyfish_cost_per_step};
 #[case::an_explicit_zero(Some("0"), "0")]
 #[case::infinity(Some("inf"), "0.016")]
 #[case::nan(Some("NaN"), "0.016")]
-#[case::an_underscored_number(Some("1_0"), "0.016")]
+#[case::an_underscored_number(Some("1_0"), "10")]
+#[case::an_underscored_fraction(Some("1_0.5"), "10.5")]
+#[case::an_underscored_exponent(Some("1e1_0"), "10000000000")]
+#[case::a_double_underscore(Some("1__0"), "0.016")]
+#[case::a_trailing_underscore(Some("1_"), "0.016")]
+#[case::a_leading_underscore(Some("_1"), "0.016")]
+#[case::an_underscore_before_a_point(Some("1_.5"), "0.016")]
+#[case::an_underscore_after_a_point(Some("1._5"), "0.016")]
 fn resolves_the_cost_per_step(#[case] configured: Option<&str>, #[case] expected: &str) {
     let rate = cost_per_step_from_text(configured);
-    assert_eq!(cost_text(Some(rate)), Some(expected.to_owned()));
+    assert_eq!(rate.normalize().to_string(), expected);
 }
 
 #[test]
@@ -41,11 +51,19 @@ fn reads_an_empty_value_as_unset() {
     assert!(!logs.contents().contains("TINYFISH_COST_PER_STEP"));
 }
 
+// The child run is the only way to prove the public resolver reads the process environment.
 #[test]
 fn the_public_rate_follows_the_process_environment() {
-    let environment = process_environment();
-    assert_eq!(
-        resolve_tinyfish_cost_per_step(),
-        cost_per_step_from_text(environment.get(COST_VARIABLE).map(String::as_str))
-    );
+    if process_environment().contains_key(CHILD_MARKER) {
+        assert_eq!(resolve_tinyfish_cost_per_step(), decimal(OVERRIDE));
+        println!("{CHILD_MARKER}");
+        return;
+    }
+    let this_test = module_path!()
+        .split_once("::")
+        .map(|(_crate_name, path)| {
+            format!("{path}::the_public_rate_follows_the_process_environment")
+        })
+        .expect("the module path has a crate prefix");
+    rerun_test_with_environment(&this_test, COST_VARIABLE, OVERRIDE, CHILD_MARKER);
 }

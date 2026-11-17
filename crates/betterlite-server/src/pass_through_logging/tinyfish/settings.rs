@@ -20,6 +20,26 @@ pub fn api_base_from_text(configured: Option<&str>) -> String {
     }
 }
 
+// Python's float() reads an underscore only between two digits, so "1_0" is 10 while "1__0" and "1_" are errors.
+fn float_number(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    for (position, byte) in bytes.iter().enumerate() {
+        if *byte != b'_' {
+            continue;
+        }
+        let before = position.checked_sub(1).and_then(|index| bytes.get(index));
+        let after = position.checked_add(1).and_then(|index| bytes.get(index));
+        let joins_digits = matches!(
+            (before, after),
+            (Some(left), Some(right)) if left.is_ascii_digit() && right.is_ascii_digit()
+        );
+        if !joins_digits {
+            return None;
+        }
+    }
+    Some(text.replace('_', ""))
+}
+
 // A rate that is not a number keeps the run billable at the published default instead of failing the request.
 #[must_use]
 pub fn cost_per_step_from_text(configured: Option<&str>) -> Decimal {
@@ -30,14 +50,12 @@ pub fn cost_per_step_from_text(configured: Option<&str>) -> Decimal {
     if trimmed.is_empty() {
         return TINYFISH_DEFAULT_STEP_COST;
     }
-    match trimmed.parse::<Decimal>() {
-        Ok(rate) => rate,
-        Err(error) => {
+    float_number(trimmed)
+        .and_then(|number| number.parse::<Decimal>().ok())
+        .unwrap_or_else(|| {
             tracing::warn!(
-                %error,
                 "TINYFISH_COST_PER_STEP={raw:?} is not a number; using the default rate 0.016"
             );
             TINYFISH_DEFAULT_STEP_COST
-        }
-    }
+        })
 }
