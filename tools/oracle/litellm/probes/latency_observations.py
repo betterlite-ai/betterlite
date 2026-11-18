@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from typing import ClassVar, Final, Literal, Protocol, Self, final
 from unittest.mock import patch
 
-import litellm
 from litellm import ModelResponse
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
+from litellm.exceptions import Timeout
 from litellm.router_strategy import lowest_latency
 from litellm.router_strategy.lowest_latency import LowestLatencyLoggingHandler
 from litellm.types.utils import Usage
@@ -168,7 +168,7 @@ def response(step: Step) -> ModelResponse:
 
 def failure_exception(kind: Literal["timeout", "other"]) -> BaseException:
     if kind == "timeout":
-        return litellm.Timeout("the probe timed out", "probe", "openai")
+        return Timeout(message="the probe timed out", model="probe", llm_provider="openai")
     return ValueError("the probe failed")
 
 
