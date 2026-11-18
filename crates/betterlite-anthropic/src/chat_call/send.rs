@@ -15,19 +15,19 @@ use crate::usage::ReasoningTokenCounter;
 
 use super::config::{ChatConfig, TransformResponse};
 use super::error::ChatCallError;
-use super::prepare::{Options, Prepared};
+use super::prepare::Prepared;
 use super::transport::{BufferedReply, ChatTransport, ClientKind};
-use super::{CallStyle, ChatCall, ChatDeps, ChatOutcome, ChatResult};
+use super::{CallFacts, CallStyle, ChatDeps, ChatOutcome, ChatResult};
 
-pub(super) mod streams;
+pub mod streams;
 struct ReplyFacts<'call> {
-    call: ChatCall<'call>,
+    call: CallFacts<'call>,
     body: IndexMap<String, Json>,
     optional_params: IndexMap<String, Json>,
-    options: Options,
+    json_mode: bool,
 }
-pub(super) fn buffered<'call, Config, Client, Counter>(
-    call: ChatCall<'call>,
+pub fn buffered<'call, Config, Client, Counter>(
+    call: CallFacts<'call>,
     prepared: Prepared,
     deps: ChatDeps<'call, Config, Client, Counter>,
 ) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
@@ -64,7 +64,7 @@ where
             call,
             body: prepared.body,
             optional_params: prepared.optional_params,
-            options: prepared.options,
+            json_mode: prepared.json_mode,
         };
         match reply {
             Ok(answer) => reply_outcome(deps.config, facts, answer, logging, &counter),
@@ -94,7 +94,7 @@ where
         optional_params: &facts.optional_params,
         litellm_params: &facts.call.litellm_params,
         request_data: &facts.body,
-        json_mode: Some(facts.options.json_mode),
+        json_mode: Some(facts.json_mode),
         now: facts.call.now,
         disable_add_prefix_to_prompt: facts.call.disable_add_prefix_to_prompt,
     };
@@ -117,7 +117,7 @@ where
 // Both buffered paths raise the transport failure as AnthropicError; only the async path logs it first
 fn buffered_failure<ClientFailure, CounterFailure>(
     failure: PostFailure<ClientFailure>,
-    call: &ChatCall<'_>,
+    call: &CallFacts<'_>,
     body: &IndexMap<String, Json>,
     logging: Logging<'_>,
 ) -> ChatCallError<ClientFailure, CounterFailure>

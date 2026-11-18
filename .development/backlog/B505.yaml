@@ -1,6 +1,6 @@
 id: B505
 milestone: M3 providers
-title: OpenAI output-limit and rejected-field recovery
+title: OpenAI output-limit and rejected-field recovery helpers
 status: todo
 depends_on: [B004, B005, B171, B196, B190]
 file: tasks/B505-openai-output-limits.yaml
