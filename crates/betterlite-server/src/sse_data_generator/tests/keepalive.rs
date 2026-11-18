@@ -41,7 +41,11 @@ async fn router_pings_between_chunks() {
     );
     let first = body.next().await.expect("chunk").expect("frame");
     assert_eq!(first, Bytes::from(chunk_frame(&expected_chunk("x", None))));
-    let ping = body.next().await.expect("ping").expect("frame");
+    let ping = timeout(Duration::from_secs(3), body.next())
+        .await
+        .expect("ping deadline")
+        .expect("ping")
+        .expect("frame");
     assert_eq!(ping, Bytes::from_static(b": ping\n\n"));
 }
 
@@ -55,7 +59,11 @@ async fn global_interval_pings() {
         request(&[]),
         false,
     );
-    let ping = body.next().await.expect("ping").expect("frame");
+    let ping = timeout(Duration::from_secs(3), body.next())
+        .await
+        .expect("ping deadline")
+        .expect("ping")
+        .expect("frame");
     assert_eq!(ping, Bytes::from_static(b": ping\n\n"));
 }
 
@@ -85,7 +93,11 @@ async fn fallback_turns_pings_on() {
     );
     let first = body.next().await.expect("chunk");
     assert!(first.is_ok());
-    let ping = body.next().await.expect("ping").expect("frame");
+    let ping = timeout(Duration::from_secs(3), body.next())
+        .await
+        .expect("ping deadline")
+        .expect("ping")
+        .expect("frame");
     assert_eq!(ping, Bytes::from_static(b": ping\n\n"));
 }
 
@@ -123,7 +135,10 @@ async fn ping_does_not_reach_chunk_hook() {
     );
     let chunk = body.next().await.expect("chunk");
     assert!(chunk.is_ok());
-    let ping = body.next().await.expect("ping");
+    let ping = timeout(Duration::from_secs(3), body.next())
+        .await
+        .expect("ping deadline")
+        .expect("ping");
     assert!(ping.is_ok());
     assert_eq!(count_prefix(&recorded(&events), "chunk:"), 1);
 }
