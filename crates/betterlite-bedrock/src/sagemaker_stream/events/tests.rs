@@ -437,8 +437,8 @@ fn an_unfinished_value_past_the_buffer_limit_ends_the_stream(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
     let mut chunks = vec![event(br#"{"token": {"text": ""#)];
-    for _ in 0..16 {
-        chunks.push(event(&vec![b'a'; 65_536]));
+    for _ in 0_usize..16_usize {
+        chunks.push(event(&vec![b'a'; 0x0001_0000]));
     }
     chunks.push(event(br#""}}"#));
 
@@ -466,8 +466,8 @@ fn a_value_under_the_buffer_limit_still_joins(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
     let mut chunks = vec![event(br#"{"token": {"text": ""#)];
-    for _ in 0..15 {
-        chunks.push(event(&vec![b'a'; 65_536]));
+    for _ in 0_usize..15_usize {
+        chunks.push(event(&vec![b'a'; 0x0001_0000]));
     }
     chunks.push(event(br#""}}"#));
 
@@ -475,16 +475,16 @@ fn a_value_under_the_buffer_limit_still_joins(
     let asynchronous = async_items(chunks, false, policy);
 
     assert_eq!(blocking.len(), 1);
-    assert_eq!(token(&blocking[0]).text.len(), 983_040);
+    assert_eq!(token(&blocking[0]).text.len(), 0x000F_0000);
     assert_eq!(asynchronous.len(), 1);
-    assert_eq!(token(&asynchronous[0]).text.len(), 983_040);
+    assert_eq!(token(&asynchronous[0]).text.len(), 0x000F_0000);
 }
 
 #[rstest]
 fn a_complete_value_past_the_limit_in_one_event_still_parses(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
-    let text = "a".repeat(2_097_152);
+    let text = "a".repeat(0x0020_0000);
     let payload = format!(r#"{{"token": {{"text": "{text}"}}}}"#);
     let chunks = vec![event(payload.as_bytes())];
 
