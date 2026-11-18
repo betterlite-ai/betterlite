@@ -44,7 +44,7 @@ pub struct SagemakerEnvironment {
 }
 
 impl SagemakerEnvironment {
-    pub(crate) const fn inputs(&self) -> RegionInputs<'_> {
+    pub(crate) fn inputs(&self) -> RegionInputs<'_> {
         RegionInputs {
             environment_region_name: self.region_name.as_deref(),
             environment_region: self.region.as_deref(),
@@ -113,7 +113,6 @@ pub struct SagemakerRuntime<'deps, T, C> {
     pub identifier: fn() -> Uuid,
 }
 
-// the signed call as it goes on the wire, with the body kept as an object for the log
 pub struct PreparedCall {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -123,7 +122,6 @@ pub struct PreparedCall {
 }
 
 impl PreparedCall {
-    // the pre_call record LiteLLM fills for a completion: the signed url, headers and body
     #[must_use]
     pub fn additional_args(&self) -> AdditionalArgs {
         let headers = self
@@ -143,7 +141,10 @@ impl PreparedCall {
 }
 
 impl<T, C> SagemakerRuntime<'_, T, C> {
-    fn outbound(&self, prepared: &PreparedCall) -> Result<OutboundRequest, RuntimeError> {
+    pub(crate) fn outbound(
+        &self,
+        prepared: &PreparedCall,
+    ) -> Result<OutboundRequest, RuntimeError> {
         Ok(OutboundRequest {
             method: Method::POST,
             url: Url::parse(&prepared.url).map_err(|_parse| RuntimeError::Endpoint {
@@ -161,7 +162,6 @@ impl<T, C> SagemakerRuntime<'_, T, C>
 where
     C: SagemakerCredentials,
 {
-    // _load_credentials: the aws_* arguments are popped and the credential source resolves them
     pub(crate) async fn credentials_for(
         &self,
         params: &ParamMap,
@@ -192,7 +192,6 @@ fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, RuntimeError> {
     Ok(map)
 }
 
-// the wire reply LiteLLM turns into SagemakerError(status_code, message)
 #[must_use]
 pub fn wire_error(status: u16, body: &[u8]) -> SagemakerError {
     SagemakerError {
@@ -203,13 +202,14 @@ pub fn wire_error(status: u16, body: &[u8]) -> SagemakerError {
 }
 
 // a failed stream still carries its body, which LiteLLM cannot read on an unread response
+#[must_use]
 pub async fn stream_error(status: u16, mut chunks: ChunkStream) -> SagemakerError {
     let mut body = Vec::new();
     while body.len() < ERROR_BODY_BYTES {
         match chunks.next().await {
             Some(Ok(chunk)) => {
-                let remaining = ERROR_BODY_BYTES - body.len();
-                body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+                let remaining = ERROR_BODY_BYTES.saturating_sub(body.len());
+                body.extend(chunk.iter().copied().take(remaining));
             }
             Some(Err(_)) | None => break,
         }
@@ -217,7 +217,6 @@ pub async fn stream_error(status: u16, mut chunks: ChunkStream) -> SagemakerErro
     wire_error(status, &body)
 }
 
-// dict(response.headers) for the chat error class
 #[must_use]
 pub fn reply_headers(headers: &HeaderMap) -> Headers {
     headers
@@ -231,16 +230,6 @@ pub fn reply_headers(headers: &HeaderMap) -> Headers {
         .collect()
 }
 
-// the transform_response json() call that runs before any field is read
-pub fn unreadable_reply(body: &[u8], source: &serde_json::Error) -> SagemakerError {
-    SagemakerError {
-        status_code: 500,
-        message: format!("the reply is not JSON: {source}: {}", body_text(body)),
-        headers: None,
-    }
-}
-
-// LiteLLM reads response.text, which decodes any bytes; betterlite refuses bytes that are not UTF-8
 #[must_use]
 pub fn body_text(body: &[u8]) -> String {
     std::str::from_utf8(body).map_or_else(

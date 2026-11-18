@@ -1,4 +1,5 @@
 use betterlite_logging::python_json::dumps_object;
+use betterlite_models::decisions::Json as Plain;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::embedding::EmbeddingInput;
@@ -6,7 +7,6 @@ use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_openai::voyage_embedding::project_response;
 use betterlite_prompts::arguments::json::{Json, Object as Body};
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::sagemaker_embedding::hf::{self, HfEmbeddingResponse};
 use crate::sagemaker_embedding::{self, EmbeddingConfig, cohere};
@@ -14,17 +14,15 @@ use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 
 use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
-use super::error::RuntimeError;
+use super::error::{RuntimeError, RuntimeFailure};
 use super::runtime::{
-    PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport, unreadable_reply,
-    wire_error,
+    PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport, wire_error,
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
 const SERVICE: &str = "sagemaker";
 const CUSTOM_ATTRIBUTES: &str = "X-Amzn-SageMaker-Custom-Attributes";
 const ACCEPT_EULA: &str = "accept_eula=true";
-// the transform runs against the 200 mock response the handler builds after a successful call
 const MOCK_STATUS: u16 = 200;
 
 pub struct EmbeddingCall<'call> {
@@ -44,7 +42,7 @@ pub struct PreparedEmbedding {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum EmbeddingReply {
-    Voyage(Value),
+    Voyage(Plain),
     HuggingFace(HfEmbeddingResponse),
     Cohere(LegacyEmbeddingResponse),
 }
@@ -62,7 +60,6 @@ where
         let body = embedding_body(call.model, call.input, call.optional_params)?;
         let body_json = convert::prompt_body(&body);
         let text = dumps_object(&body_json);
-        // boto3's invoke_endpoint takes the endpoint name and content type; the url is the plain invocations path
         let url = endpoint::runtime_url(&EndpointRequest {
             model: call.model,
             region: &region,
@@ -102,16 +99,24 @@ where
     pub async fn embedding(
         &self,
         call: &EmbeddingCall<'_>,
-    ) -> Result<EmbeddingReply, SagemakerError> {
+    ) -> Result<EmbeddingReply, RuntimeFailure> {
         let prepared = self.prepare_embedding(call).await?;
-        let response = self.transport.send(self.outbound(&prepared.call)?).await?;
+        let response = self
+            .transport
+            .send(self.outbound(&prepared.call)?)
+            .await
+            .map_err(RuntimeError::from)?;
         if !(200..300).contains(&response.status) {
-            return Err(wire_error(response.status, &response.body));
+            return Err(RuntimeFailure::from(wire_error(
+                response.status,
+                &response.body,
+            )));
         }
-        let reply: Value = serde_json::from_slice(&response.body)
-            .map_err(|source| unreadable_reply(&response.body, &source))?;
+        let reply = serde_json::from_slice(&response.body)?;
         match sagemaker_embedding::get_model_config(call.model) {
-            EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(project_response(&reply))),
+            EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(serde_json::from_value(
+                project_response(&reply),
+            )?)),
             EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
                 hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)
                     .map_err(SagemakerError::from)?,

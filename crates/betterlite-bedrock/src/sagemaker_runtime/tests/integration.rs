@@ -4,18 +4,21 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use aws_credential_types::provider::error::CredentialsError;
 use aws_smithy_eventstream::frame::write_message_to;
-use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
+use aws_smithy_types::event_stream::{Header, HeaderValue, Message as EventMessage};
 use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
+use betterlite_error::error::ErrorClass;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_openai::sagemaker_completion::params::Options;
 use betterlite_openai::sagemaker_completion::request::CustomPromptEntry;
 use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
@@ -23,12 +26,14 @@ use betterlite_prompts::arguments::json::Object as Body;
 use betterlite_prompts::builtin::Message;
 use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::Hub;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
-use secrecy::ExposeSecret;
+use rstest::rstest;
+use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
-use serde_json::Value;
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::aws_settings::sources::{Credentials, SourceError};
@@ -37,10 +42,13 @@ use crate::sagemaker_runtime::chat::{ChatCall, ChatVariant};
 use crate::sagemaker_runtime::completion::CompletionCall;
 use crate::sagemaker_runtime::embedding::{EmbeddingCall, EmbeddingReply};
 use crate::sagemaker_runtime::endpoint::ParamMap;
+use crate::sagemaker_runtime::error::RuntimeFailure;
 use crate::sagemaker_runtime::runtime::{
     ChunkStream, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime, SagemakerTransport,
 };
 use crate::sagemaker_stream::SagemakerChunk;
+use crate::signing::headers::{filter_for_signature, without_computed};
+use crate::signing::sigv4::{Signable, sign_request};
 
 const IDENTIFIER: u128 = 7;
 
@@ -63,42 +71,47 @@ impl TextEncoding for Encoding {
     }
 }
 
-struct FakeCredentials;
-
-impl SagemakerCredentials for FakeCredentials {
-    async fn resolve(
-        &self,
-        _settings: AwsSettings,
-        _region: String,
-    ) -> Result<Credentials, CredentialError> {
-        Ok(Credentials {
-            access_key_id: SecretString::from("access".to_owned()),
-            secret_access_key: SecretString::from("secret".to_owned()),
-            session_token: None,
-        })
+fn credentials() -> Credentials {
+    Credentials {
+        access_key_id: SecretString::from("access".to_owned()),
+        secret_access_key: SecretString::from("secret".to_owned()),
+        session_token: None,
     }
 }
 
-struct RejectingCredentials {
+struct TestCredentials {
     failure: Mutex<Option<CredentialError>>,
+    regions: Mutex<Vec<String>>,
 }
 
-impl RejectingCredentials {
-    fn new(failure: CredentialError) -> Self {
+impl TestCredentials {
+    fn working() -> Self {
+        Self {
+            failure: Mutex::new(None),
+            regions: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn failing(failure: CredentialError) -> Self {
         Self {
             failure: Mutex::new(Some(failure)),
+            regions: Mutex::new(Vec::new()),
         }
     }
 }
 
-impl SagemakerCredentials for RejectingCredentials {
+impl SagemakerCredentials for TestCredentials {
     async fn resolve(
         &self,
         _settings: AwsSettings,
-        _region: String,
+        region: String,
     ) -> Result<Credentials, CredentialError> {
+        self.regions.lock().expect("regions lock").push(region);
         let failure = self.failure.lock().expect("failure lock").take();
-        Err(failure.expect("the runtime resolves credentials once"))
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(credentials()),
+        }
     }
 }
 
@@ -266,6 +279,7 @@ impl Workspace {
                 identifier: NEW_ID,
                 clock: system_clock,
             },
+            configured_bearer: None,
         }
     }
 
@@ -295,30 +309,56 @@ fn frame(headers: &[(&str, HeaderValue)], payload: &[u8]) -> Vec<u8> {
         .iter()
         .map(|(name, value)| Header::new((*name).to_owned(), value.clone()))
         .collect();
-    let message = Message::new_from_parts(parts, payload.to_vec());
+    let message = EventMessage::new_from_parts(parts, payload.to_vec());
     let mut out = Vec::new();
     write_message_to(&message, &mut out).expect("frame");
     out
 }
 
-fn event(payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":message-type", text_header("event")),
-            (":event-type", text_header("PayloadPart")),
-        ],
-        payload,
-    )
+fn upstream(failure: RuntimeFailure) -> SagemakerError {
+    match failure {
+        RuntimeFailure::Sagemaker(error) => error,
+        RuntimeFailure::Reply(error) => panic!("a wire error is expected: {error}"),
+    }
 }
 
-fn exception(payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":message-type", text_header("exception")),
-            (":exception-type", text_header("ModelStreamError")),
-        ],
-        payload,
-    )
+// the class B239 gives the failure the runtime reports, read through the same RawException the dispatch takes
+fn classify(failure: &RuntimeFailure) -> &'static str {
+    let raw = RawException {
+        model: String::from("sagemaker/endpoint"),
+        custom_llm_provider: String::from("sagemaker"),
+        error_str: failure.to_string(),
+        status_code: failure.status_code(),
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        exception_type: String::new(),
+    };
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+        .expect("built-in redaction patterns always compile");
+    match dispatch(&DispatchInput::Raw(Box::new(raw)), &redactor) {
+        ErrorClass::ApiConnection(_) => "api_connection",
+        ErrorClass::ServiceUnavailable(_) => "service_unavailable",
+        _other => "other",
+    }
+}
+
+async fn timeout_failure() -> TransportError {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("loopback listener");
+    let address = listener.local_addr().expect("listener address");
+    let client = reqwest::ClientBuilder::new()
+        .no_proxy()
+        .read_timeout(Duration::from_millis(100))
+        .build()
+        .expect("timeout client");
+    let failure = client
+        .get(format!("http://{address}/invocations"))
+        .send()
+        .await
+        .expect_err("the listener never answers");
+    TransportError::sending(failure)
 }
 
 #[tokio::test]
@@ -326,7 +366,7 @@ async fn credentials_are_resolved_for_the_selected_region() {
     let counter = Counter;
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let credentials = runtime
@@ -335,18 +375,22 @@ async fn credentials_are_resolved_for_the_selected_region() {
         .expect("test credentials");
     assert_eq!(credentials.access_key_id.expose_secret(), "access");
     assert_eq!(credentials.secret_access_key.expose_secret(), "secret");
+    assert_eq!(
+        *runtime.credentials.regions.lock().expect("regions lock"),
+        ["eu-west-1"]
+    );
 }
 
 #[tokio::test]
 async fn prepare_calls_build_sigv4_signed_completion_chat_and_embedding_requests() {
     let counter = Counter;
     let mut workspace = Workspace::new();
-    workspace.options = Options::from([(String::from("stream"), Value::Bool(true))]);
+    workspace.options = Options::from([(String::from("stream"), json!(true))]);
     workspace.chat_options =
         serde_json::from_str(r#"{"model_id":"component"}"#).expect("chat options");
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let prepared = runtime
@@ -374,13 +418,78 @@ async fn prepare_calls_build_sigv4_signed_completion_chat_and_embedding_requests
     assert!(signed_with_sigv4(&prepared.call.headers));
 }
 
+#[rstest]
+#[case::completion(false)]
+#[case::chat(true)]
+#[tokio::test]
+async fn transmitted_sigv4_signature_covers_the_sent_request(#[case] chat: bool) {
+    let counter = Counter;
+    let workspace = Workspace::new();
+    let reply = if chat {
+        r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}"#
+    } else {
+        r#"{"generated_text":"hello"}"#
+    };
+    let runtime = runtime(
+        FakeTransport::new(200, reply, &[]),
+        TestCredentials::working(),
+        &counter,
+    );
+    if chat {
+        runtime
+            .chat(&workspace.chat(false))
+            .await
+            .expect("chat reply");
+    } else {
+        runtime
+            .completion(&workspace.completion())
+            .await
+            .expect("completion reply");
+    }
+    let mut requests = runtime.transport.requests.lock().expect("request lock");
+    let sent = requests.pop().expect("the runtime sent one request");
+    drop(requests);
+    let RequestBody::Json(body) = &sent.body else {
+        panic!("a JSON body is expected");
+    };
+    let mut headers = Vec::new();
+    for (name, value) in &sent.headers {
+        headers.push((
+            name.as_str().to_owned(),
+            Some(value.to_str().expect("a text header").to_owned()),
+        ));
+    }
+    let credentials = credentials();
+    let signed = sign_request(&Signable {
+        method: "POST",
+        url: sent.url.as_str(),
+        headers: &without_computed(filter_for_signature(&headers), false),
+        body,
+        service: "sagemaker",
+        region: "us-west-2",
+        credentials: &credentials,
+        now: UNIX_EPOCH,
+    })
+    .expect("the transmitted request signs");
+    let computed = signed
+        .iter()
+        .find_map(|(name, value)| (name == "Authorization").then_some(value.as_str()))
+        .expect("a computed signature");
+    let transmitted = sent
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .expect("a transmitted signature");
+    assert_eq!(transmitted, computed);
+}
+
 #[tokio::test]
 async fn completion_and_embedding_take_aws_region_before_aws_region_name() {
     let counter = Counter;
     let workspace = Workspace::new();
     let mut runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     runtime.environment = SagemakerEnvironment {
@@ -406,7 +515,7 @@ async fn chat_region_comes_from_the_model_arn_before_the_environment() {
     let workspace = Workspace::new();
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let mut chat = workspace.chat(false);
@@ -426,7 +535,7 @@ async fn sagemaker_nova_chat_drops_the_model_field() {
     let workspace = Workspace::new();
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let mut chat = workspace.chat(false);
@@ -450,14 +559,14 @@ async fn completion_and_chat_honor_sagemaker_base_url() {
     let mut workspace = Workspace::new();
     workspace.options = Options::from([(
         String::from("sagemaker_base_url"),
-        Value::String(String::from("https://custom.example/completion")),
+        json!("https://custom.example/completion"),
     )]);
     workspace.chat_options =
         serde_json::from_str(r#"{"sagemaker_base_url":"https://custom.example/chat"}"#)
             .expect("chat options");
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let completion = runtime
@@ -476,13 +585,10 @@ async fn completion_and_chat_honor_sagemaker_base_url() {
 async fn completion_component_header_is_added_after_signing() {
     let counter = Counter;
     let mut workspace = Workspace::new();
-    workspace.options = Options::from([(
-        String::from("model_id"),
-        Value::String(String::from("component")),
-    )]);
+    workspace.options = Options::from([(String::from("model_id"), json!("component"))]);
     let runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let prepared = runtime
@@ -516,6 +622,30 @@ async fn completion_component_header_is_added_after_signing() {
 }
 
 #[tokio::test]
+async fn chat_signing_uses_the_configured_bearer_before_resolving_credentials() {
+    let counter = Counter;
+    let workspace = Workspace::new();
+    let bearer = SecretString::from("test-bearer-token".to_owned());
+    let mut call = workspace.chat(false);
+    call.configured_bearer = Some(&bearer);
+    let prepared = runtime(
+        FakeTransport::new(200, "{}", &[]),
+        TestCredentials::failing(CredentialError::MissingCredentials),
+        &counter,
+    )
+    .prepare_chat(&call)
+    .await
+    .expect("the bearer skips credential resolution");
+    assert!(
+        prepared
+            .headers
+            .iter()
+            .any(|(name, value)| name == "Authorization" && value == "Bearer test-bearer-token")
+    );
+    assert!(!signed_with_sigv4(&prepared.headers));
+}
+
+#[tokio::test]
 async fn chat_reads_a_compatible_reply() {
     let counter = Counter;
     let workspace = Workspace::new();
@@ -525,7 +655,7 @@ async fn chat_reads_a_compatible_reply() {
             r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}"#,
             &[],
         ),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .chat(&workspace.chat(false))
@@ -543,7 +673,7 @@ async fn embedding_sends_the_custom_attributes_header() {
     let workspace = Workspace::new();
     let prepared = runtime(
         FakeTransport::new(200, "{}", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .prepare_embedding(&workspace.embedding("voyage-3"))
@@ -567,7 +697,7 @@ async fn chat_rejects_a_redirect_without_a_location() {
     let workspace = Workspace::new();
     let runtime = runtime(
         FakeTransport::new(302, "moved", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let error = runtime
@@ -582,14 +712,16 @@ async fn chat_rejects_a_redirect_without_a_location() {
 async fn runtime_calls_preserve_error_status_and_stream_policies() {
     let counter = Counter;
     let mut workspace = Workspace::new();
-    let completion = runtime(
-        FakeTransport::new(429, "throttled", &[]),
-        FakeCredentials,
-        &counter,
-    )
-    .completion(&workspace.completion())
-    .await
-    .expect_err("completion status");
+    let completion = upstream(
+        runtime(
+            FakeTransport::new(429, "throttled", &[]),
+            TestCredentials::working(),
+            &counter,
+        )
+        .completion(&workspace.completion())
+        .await
+        .expect_err("completion status"),
+    );
     assert_eq!(
         (completion.status_code, completion.message.as_str()),
         (429, "throttled")
@@ -597,7 +729,7 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
 
     let chat = runtime(
         FakeTransport::new(429, "chat throttled", &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .chat(&workspace.chat(false))
@@ -608,10 +740,10 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
         (429, "chat throttled")
     );
 
-    workspace.options = Options::from([(String::from("stream"), Value::Bool(true))]);
+    workspace.options = Options::from([(String::from("stream"), json!(true))]);
     let completion_stream = runtime(
         FakeTransport::new(201, "", &[b"failed"]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .completion_stream(&workspace.completion())
@@ -622,7 +754,7 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
 
     let chat_stream = runtime(
         FakeTransport::new(201, "", &[b"failed"]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .chat_stream(&workspace.chat(true))
@@ -631,14 +763,16 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
         matches!(chat_stream, Err(error) if error.status_code == 201 && error.message == "failed")
     );
 
-    let embedding = runtime(
-        FakeTransport::new(503, "embedding failed", &[]),
-        FakeCredentials,
-        &counter,
-    )
-    .embedding(&workspace.embedding("voyage-3"))
-    .await
-    .expect_err("embedding status");
+    let embedding = upstream(
+        runtime(
+            FakeTransport::new(503, "embedding failed", &[]),
+            TestCredentials::working(),
+            &counter,
+        )
+        .embedding(&workspace.embedding("voyage-3"))
+        .await
+        .expect_err("embedding status"),
+    );
     assert_eq!(
         (embedding.status_code, embedding.message.as_str()),
         (503, "embedding failed")
@@ -646,25 +780,81 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
 }
 
 #[tokio::test]
+async fn unreadable_replies_classify_as_connection_errors() {
+    let counter = Counter;
+    let workspace = Workspace::new();
+    let completion = runtime(
+        FakeTransport::new(200, "not-json", &[]),
+        TestCredentials::working(),
+        &counter,
+    )
+    .completion(&workspace.completion())
+    .await
+    .expect_err("completion reply");
+    assert_eq!(completion.status_code(), None);
+    assert_eq!(classify(&completion), "api_connection");
+    let embedding = runtime(
+        FakeTransport::new(200, "not-json", &[]),
+        TestCredentials::working(),
+        &counter,
+    )
+    .embedding(&workspace.embedding("voyage-3"))
+    .await
+    .expect_err("embedding reply");
+    assert_eq!(embedding.status_code(), None);
+    assert_eq!(classify(&embedding), "api_connection");
+    let wire = runtime(
+        FakeTransport::new(500, "boom", &[]),
+        TestCredentials::working(),
+        &counter,
+    )
+    .completion(&workspace.completion())
+    .await
+    .expect_err("wire status");
+    assert_eq!(wire.status_code(), Some(500));
+    assert_eq!(classify(&wire), "service_unavailable");
+}
+
+#[tokio::test]
 async fn completion_stream_skips_a_failed_frame_and_keeps_reading() {
     let counter = Counter;
     let mut workspace = Workspace::new();
-    workspace.options = Options::from([(String::from("stream"), Value::Bool(true))]);
+    workspace.options = Options::from([(String::from("stream"), json!(true))]);
     let frames = [
-        event(br#"{"token": {"text": "first"}}"#),
-        exception(br#"{"message": "boom"}"#),
-        event(br#"{"token": {"text": "third"}}"#),
+        frame(
+            &[
+                (":message-type", text_header("event")),
+                (":event-type", text_header("PayloadPart")),
+            ],
+            br#"{"token": {"text": "first"}}"#,
+        ),
+        frame(
+            &[
+                (":message-type", text_header("exception")),
+                (":exception-type", text_header("ModelStreamError")),
+            ],
+            br#"{"message": "boom"}"#,
+        ),
+        frame(
+            &[
+                (":message-type", text_header("event")),
+                (":event-type", text_header("PayloadPart")),
+            ],
+            br#"{"token": {"text": "third"}}"#,
+        ),
     ];
     let chunks: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
     let runtime = runtime(
         FakeTransport::new(200, "", &chunks),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let mut events = runtime
         .completion_stream(&workspace.completion())
         .await
         .expect("completion stream");
+    assert!(!events.state.is_messages_api);
+    assert!(events.state.model.is_empty());
     let mut texts = Vec::new();
     while let Some(item) = events.next().await {
         let chunk = item.expect("the failed frame is skipped").expect("a chunk");
@@ -681,20 +871,40 @@ async fn chat_stream_skips_a_failed_frame_and_keeps_reading() {
     let counter = Counter;
     let workspace = Workspace::new();
     let frames = [
-        event(br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "first"}}]}"#),
-        exception(br#"{"message": "boom"}"#),
-        event(br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "third"}}]}"#),
+        frame(
+            &[
+                (":message-type", text_header("event")),
+                (":event-type", text_header("PayloadPart")),
+            ],
+            br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "first"}}]}"#,
+        ),
+        frame(
+            &[
+                (":message-type", text_header("exception")),
+                (":exception-type", text_header("ModelStreamError")),
+            ],
+            br#"{"message": "boom"}"#,
+        ),
+        frame(
+            &[
+                (":message-type", text_header("event")),
+                (":event-type", text_header("PayloadPart")),
+            ],
+            br#"{"id": "1", "created": 2, "choices": [{"index": 0, "delta": {"content": "third"}}]}"#,
+        ),
     ];
     let chunks: Vec<&[u8]> = frames.iter().map(Vec::as_slice).collect();
     let runtime = runtime(
         FakeTransport::new(200, "", &chunks),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     );
     let mut events = runtime
         .chat_stream(&workspace.chat(true))
         .await
         .expect("chat stream");
+    assert!(events.state.is_messages_api);
+    assert!(events.state.model.is_empty());
     let mut texts = Vec::new();
     while let Some(item) = events.next().await {
         let chunk = item.expect("the failed frame is skipped").expect("a chunk");
@@ -713,7 +923,7 @@ async fn completion_reply_uses_the_injected_identifier() {
     let workspace = Workspace::new();
     let reply = runtime(
         FakeTransport::new(200, r#"{"generated_text":"hello"}"#, &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .completion(&workspace.completion())
@@ -732,23 +942,25 @@ async fn completion_reply_uses_the_injected_identifier() {
 async fn missing_credentials_become_a_400_on_completion_and_chat() {
     let counter = Counter;
     let workspace = Workspace::new();
-    let completion = runtime(
-        FakeTransport::new(200, "{}", &[]),
-        RejectingCredentials::new(CredentialError::Source(SourceError::Provider(
-            CredentialsError::not_loaded_no_source(),
-        ))),
-        &counter,
-    )
-    .completion(&workspace.completion())
-    .await
-    .expect_err("completion credentials");
+    let completion = upstream(
+        runtime(
+            FakeTransport::new(200, "{}", &[]),
+            TestCredentials::failing(CredentialError::Source(SourceError::Provider(
+                CredentialsError::not_loaded_no_source(),
+            ))),
+            &counter,
+        )
+        .completion(&workspace.completion())
+        .await
+        .expect_err("completion credentials"),
+    );
     assert_eq!(
         (completion.status_code, completion.message.as_str()),
         (400, "Unable to locate credentials")
     );
     let chat = runtime(
         FakeTransport::new(200, "{}", &[]),
-        RejectingCredentials::new(CredentialError::Source(SourceError::Provider(
+        TestCredentials::failing(CredentialError::Source(SourceError::Provider(
             CredentialsError::not_loaded_no_source(),
         ))),
         &counter,
@@ -762,34 +974,8 @@ async fn missing_credentials_become_a_400_on_completion_and_chat() {
     );
 }
 
-#[tokio::test]
-async fn transport_timeouts_become_a_408() {
-    let counter = Counter;
-    let workspace = Workspace::new();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("loopback listener");
-    let address = listener.local_addr().expect("listener address");
-    let client = reqwest::ClientBuilder::new()
-        .no_proxy()
-        .read_timeout(Duration::from_millis(100))
-        .build()
-        .expect("timeout client");
-    let failure = client
-        .get(format!("http://{address}/invocations"))
-        .send()
-        .await
-        .expect_err("the listener never answers");
-    let timeout = runtime(
-        FakeTransport::failure(TransportError::sending(failure)),
-        FakeCredentials,
-        &counter,
-    )
-    .completion(&workspace.completion())
-    .await
-    .expect_err("timeout status");
-    assert_eq!(timeout.status_code, 408);
-}
+mod embedding_replies;
+mod timeouts;
 
 #[tokio::test]
 async fn embedding_projects_a_voyage_reply() {
@@ -797,27 +983,11 @@ async fn embedding_projects_a_voyage_reply() {
     let workspace = Workspace::new();
     let reply = runtime(
         FakeTransport::new(200, r#"{"data":[{"embedding":[1,2]}]}"#, &[]),
-        FakeCredentials,
+        TestCredentials::working(),
         &counter,
     )
     .embedding(&workspace.embedding("voyage-3"))
     .await
     .expect("voyage reply");
     assert!(matches!(reply, EmbeddingReply::Voyage(_)));
-}
-
-#[tokio::test]
-async fn embedding_rejects_an_unreadable_successful_reply() {
-    let counter = Counter;
-    let workspace = Workspace::new();
-    let error = runtime(
-        FakeTransport::new(200, "not-json", &[]),
-        FakeCredentials,
-        &counter,
-    )
-    .embedding(&workspace.embedding("voyage-3"))
-    .await
-    .expect_err("unreadable reply");
-    assert_eq!(error.status_code, 500);
-    assert!(error.message.contains("not-json"));
 }

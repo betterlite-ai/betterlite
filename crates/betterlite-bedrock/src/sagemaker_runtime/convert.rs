@@ -1,59 +1,37 @@
 use betterlite_models::decisions::Json as Plain;
+use betterlite_openai::sagemaker_completion::params::Options;
 use betterlite_prompts::arguments::json::Json as Prompted;
 use indexmap::IndexMap;
-use serde_json::Value;
 
-enum Source<'source> {
-    Completion(&'source Value),
-    Prompt(&'source Prompted),
-}
-
-pub fn completion_body(body: &IndexMap<String, Value>) -> IndexMap<String, Plain> {
+// Preserve arbitrary-precision numbers when entering the signing tree.
+pub(crate) fn completion_body(
+    body: &Options,
+) -> Result<IndexMap<String, Plain>, serde_json::Error> {
     body.iter()
-        .map(|(name, value)| (name.clone(), convert(Source::Completion(value))))
+        .map(|(name, value)| {
+            let plain: Plain = serde_json::from_value(value.clone())?;
+            Ok((name.clone(), plain))
+        })
         .collect()
 }
 
-pub fn prompt_body(body: &IndexMap<String, Prompted>) -> IndexMap<String, Plain> {
+pub(crate) fn prompt_body(body: &IndexMap<String, Prompted>) -> IndexMap<String, Plain> {
     body.iter()
-        .map(|(name, value)| (name.clone(), convert(Source::Prompt(value))))
+        .map(|(name, value)| (name.clone(), prompt_value(value)))
         .collect()
 }
 
-fn convert(source: Source<'_>) -> Plain {
-    match source {
-        Source::Completion(Value::Null) | Source::Prompt(Prompted::Null) => Plain::Null,
-        Source::Completion(Value::Bool(flag)) | Source::Prompt(Prompted::Bool(flag)) => {
-            Plain::Bool(*flag)
-        }
-        Source::Completion(Value::Number(number)) | Source::Prompt(Prompted::Number(number)) => {
-            Plain::Number(number.clone())
-        }
-        Source::Completion(Value::String(text)) | Source::Prompt(Prompted::Text(text)) => {
-            Plain::Text(text.clone())
-        }
-        Source::Completion(Value::Array(items)) => Plain::List(
-            items
-                .iter()
-                .map(|item| convert(Source::Completion(item)))
-                .collect(),
-        ),
-        Source::Prompt(Prompted::List(items)) => Plain::List(
-            items
-                .iter()
-                .map(|item| convert(Source::Prompt(item)))
-                .collect(),
-        ),
-        Source::Completion(Value::Object(fields)) => Plain::Object(
+fn prompt_value(value: &Prompted) -> Plain {
+    match value {
+        Prompted::Null => Plain::Null,
+        Prompted::Bool(flag) => Plain::Bool(*flag),
+        Prompted::Number(number) => Plain::Number(number.clone()),
+        Prompted::Text(text) => Plain::Text(text.clone()),
+        Prompted::List(items) => Plain::List(items.iter().map(prompt_value).collect()),
+        Prompted::Object(fields) => Plain::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), convert(Source::Completion(value))))
-                .collect(),
-        ),
-        Source::Prompt(Prompted::Object(fields)) => Plain::Object(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), convert(Source::Prompt(value))))
+                .map(|(name, value)| (name.clone(), prompt_value(value)))
                 .collect(),
         ),
     }

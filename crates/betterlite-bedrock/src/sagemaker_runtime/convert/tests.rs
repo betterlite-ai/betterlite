@@ -1,23 +1,26 @@
 #![cfg(test)]
 
-use super::{Source, completion_body, convert, prompt_body};
+use super::{completion_body, prompt_body};
 use betterlite_models::decisions::Json as Plain;
+use betterlite_openai::sagemaker_completion::params::Options;
 use betterlite_prompts::arguments::json::Json as Prompted;
 use indexmap::IndexMap;
-use serde_json::{Number, json};
+use serde_json::Number;
 
 #[test]
 fn converts_nested_completion_json_values() {
-    let source: IndexMap<String, serde_json::Value> = serde_json::from_value(json!({
-        "null": null,
-        "bool": true,
-        "number": 2,
-        "text": "hi",
-        "list": [false, {"nested": "value"}],
-        "object": {"key": "value"}
-    }))
+    let source: Options = serde_json::from_str(
+        r#"{
+            "null": null,
+            "bool": true,
+            "number": 2,
+            "text": "hi",
+            "list": [false, {"nested": "value"}],
+            "object": {"key": "value"}
+        }"#,
+    )
     .expect("a JSON object");
-    let converted = completion_body(&source);
+    let converted = completion_body(&source).expect("a convertible body");
     assert_eq!(converted.get("null"), Some(&Plain::Null));
     assert_eq!(converted.get("bool"), Some(&Plain::Bool(true)));
     assert_eq!(
@@ -45,6 +48,15 @@ fn converts_nested_completion_json_values() {
             Plain::Text(String::from("value")),
         )])))
     );
+}
+
+#[test]
+fn completion_body_keeps_a_number_that_fits_no_primitive() {
+    let source: Options =
+        serde_json::from_str(r#"{"big": 123456789012345678901234567890}"#).expect("a JSON object");
+    let converted = completion_body(&source).expect("a convertible body");
+    let big: Number = serde_json::from_str("123456789012345678901234567890").expect("a big number");
+    assert_eq!(converted.get("big"), Some(&Plain::Number(big)));
 }
 
 #[test]
@@ -87,16 +99,5 @@ fn converts_all_prompt_json_variants() {
             String::from("inner"),
             Plain::Bool(true),
         )])))
-    );
-}
-
-#[test]
-fn converts_individual_nested_values() {
-    assert_eq!(
-        convert(Source::Completion(&json!({"nested": [1, null]}))),
-        Plain::Object(IndexMap::from([(
-            String::from("nested"),
-            Plain::List(vec![Plain::Number(Number::from(1)), Plain::Null]),
-        )]))
     );
 }

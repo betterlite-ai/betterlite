@@ -1,25 +1,33 @@
 use std::collections::BTreeMap;
-use std::future::ready;
+use std::fmt::Display;
 use std::time::{Duration, UNIX_EPOCH};
 
+use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_bedrock::aws_settings::sources::Credentials;
+use betterlite_bedrock::credentials::error::CredentialError;
+use betterlite_bedrock::sagemaker_runtime::chat::{ChatCall, ChatVariant};
 use betterlite_bedrock::sagemaker_runtime::endpoint::{EndpointRequest, ParamMap, runtime_url};
-use betterlite_bedrock::signing::request::AwsSignedRequest;
-use betterlite_bedrock::signing::service::{ServiceName, ServiceRequest, sign_service_request};
-use betterlite_bedrock::signing::target::RegionInputs;
-use betterlite_models::decisions::Json;
+use betterlite_bedrock::sagemaker_runtime::runtime::{
+    PreparedCall, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime,
+};
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::sagemaker_chat::request;
+use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::arguments::json::Object;
-use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
+use uuid::Uuid;
+
+const REGION_FIELD: &str = "aws_region_name";
 
 pub(crate) struct Op;
 
@@ -62,21 +70,22 @@ pub(crate) struct ComponentHeaderInput {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SignedRequestInput {
-    api_base: String,
     model: String,
+    region: String,
     headers: Headers,
-    optional_params: IndexMap<String, Json>,
-    request_data: IndexMap<String, Json>,
+    optional_params: Object,
+    messages: Vec<ChatMessage>,
     credentials: CredentialInput,
+    bearer: Option<SecretString>,
     now: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CredentialInput {
-    access_key_id: String,
-    secret_access_key: String,
-    session_token: Option<String>,
+    access_key_id: SecretString,
+    secret_access_key: SecretString,
+    session_token: Option<SecretString>,
 }
 
 fn url_result(case: &UrlInput) -> Value {
@@ -101,68 +110,108 @@ fn component_result(case: &ComponentHeaderInput) -> Value {
     json!({"headers": request::validate_environment(case.headers.clone(), &optional_params)})
 }
 
-// SagemakerChatConfig.sign_request drops the api_key it is handed and always signs with SigV4
+struct FixedCredentials(Credentials);
+
+impl SagemakerCredentials for FixedCredentials {
+    async fn resolve(
+        &self,
+        _settings: AwsSettings,
+        _region: String,
+    ) -> Result<Credentials, CredentialError> {
+        Ok(self.0.clone())
+    }
+}
+
+struct ZeroCounter;
+
+impl TextTokenCounter for ZeroCounter {
+    fn count_response_tokens(&self, _text: &str) -> u64 {
+        0
+    }
+}
+
+// Compare the runtime preparation with the public LiteLLM chat configuration.
 fn signed_result(case: &SignedRequestInput) -> HelperResult {
-    let keys = &case.credentials;
     let credentials = Credentials {
-        access_key_id: SecretString::from(keys.access_key_id.clone()),
-        secret_access_key: SecretString::from(keys.secret_access_key.clone()),
-        session_token: keys.session_token.clone().map(SecretString::from),
+        access_key_id: case.credentials.access_key_id.clone(),
+        secret_access_key: case.credentials.secret_access_key.clone(),
+        session_token: case.credentials.session_token.clone(),
     };
-    let pairs: Vec<(String, Option<String>)> = case
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Some(value.clone())))
-        .collect();
-    let params = raw_params(&case.optional_params)?;
     let stamp = UNIX_EPOCH
         .checked_add(Duration::from_secs(case.now))
         .unwrap_or(UNIX_EPOCH);
-    let runtime = match Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(error) => return Ok(json!({"ok": false, "error": error.to_string()})),
+    let mut signing = ParamMap::new();
+    signing.insert(
+        String::from(REGION_FIELD),
+        to_raw_value(&PromptJson::Text(case.region.clone())).or_value_error()?,
+    );
+    let counter = ZeroCounter;
+    let sagemaker = SagemakerRuntime {
+        transport: (),
+        credentials: FixedCredentials(credentials),
+        environment: SagemakerEnvironment::default(),
+        clock: SharedTimeSource::new(StaticTimeSource::new(stamp)),
+        counter: &counter,
+        timeout: Duration::from_secs(5),
+        identifier: Uuid::nil,
     };
-    let signed = runtime.block_on(sign_service_request(
-        ServiceRequest {
-            service: ServiceName::Sagemaker,
-            headers: &pairs,
-            optional_params: &params,
-            request_data: &case.request_data,
-            api_base: &case.api_base,
-            model: Some(&case.model),
-            api_key: None,
-            configured_bearer: None,
-            region_inputs: RegionInputs::default(),
-            now: stamp,
-        },
-        move |_settings, _region| ready(Ok(credentials)),
-    ));
-    Ok(signed.map_or_else(
-        |error| json!({"ok": false, "error": error.to_string()}),
-        |request| signed_json(&request),
-    ))
-}
-
-fn raw_params(params: &IndexMap<String, Json>) -> Result<ParamMap, Box<HelperError>> {
-    params
-        .iter()
-        .map(|(name, value)| {
-            to_raw_value(value)
-                .map(|raw| (name.clone(), raw))
-                .or_value_error()
-        })
-        .collect()
-}
-
-fn signed_json(request: &AwsSignedRequest) -> Value {
-    let Ok(body) = String::from_utf8(request.body.clone()) else {
-        return json!({"ok": false, "error": "the signed body is not UTF-8"});
-    };
-    json!({
+    let prepared = prepare_call(&sagemaker, case, &signing)?;
+    let headers: BTreeMap<String, String> = prepared
+        .headers
+        .into_iter()
+        .map(|(name, value)| (name.to_ascii_lowercase(), value))
+        .collect();
+    Ok(json!({
         "ok": true,
-        "method": request.method,
-        "url": request.url,
-        "headers": request.headers.iter().cloned().collect::<BTreeMap<_, _>>(),
-        "body": body,
+        "method": "POST",
+        "url": prepared.url,
+        "headers": headers,
+        "body": serde_json::from_slice::<Value>(&prepared.body).map_err(failure)?,
+    }))
+}
+
+fn prepare_call(
+    sagemaker: &SagemakerRuntime<'_, (), FixedCredentials>,
+    case: &SignedRequestInput,
+    signing: &ParamMap,
+) -> Result<PreparedCall, Box<HelperError>> {
+    let call = ChatCall {
+        model: &case.model,
+        messages: &case.messages,
+        optional_params: &case.optional_params,
+        signing,
+        headers: case.headers.clone(),
+        hf_model_name: None,
+        variant: ChatVariant::Chat,
+        stream: false,
+        reply: ReplyOptions {
+            json_mode: false,
+            provider: None,
+            base_model: None,
+            identifier: NEW_ID,
+            clock: system_clock,
+        },
+        configured_bearer: case.bearer.as_ref(),
+    };
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(failure)?;
+    runtime
+        .block_on(sagemaker.prepare_chat(&call))
+        .map_err(failure)
+}
+
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: Display,
+{
+    Box::new(HelperError {
+        class: "SagemakerRuntimeError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
     })
 }

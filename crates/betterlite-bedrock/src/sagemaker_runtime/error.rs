@@ -11,7 +11,6 @@ use crate::sagemaker_embedding::cohere::{CohereReplyError, CohereRequestError};
 use crate::sagemaker_embedding::hf::HfReplyError;
 use crate::signing::error::SigningError;
 
-// every way the runtime call can fail before a reply arrives; the wire failures carry their own SagemakerError
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error(transparent)]
@@ -32,6 +31,8 @@ pub enum RuntimeError {
     Transport(#[from] TransportError),
     #[error(transparent)]
     Sagemaker(#[from] SagemakerError),
+    #[error("the request body cannot be read as JSON: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("the {field} parameter must be a string")]
     Field { field: &'static str },
     #[error("the {name} header is not a valid HTTP header")]
@@ -46,23 +47,22 @@ impl From<RuntimeError> for SagemakerError {
             return inner;
         }
         // botocore raises NoCredentialsError, which LiteLLM's exception mapping turns into a 400 BadRequest
-        let missing = match &error {
-            RuntimeError::Credential(inner) => not_loaded(inner),
-            RuntimeError::Signing(SigningError::NoCredentials) => true,
-            RuntimeError::Signing(SigningError::Credential(inner)) => not_loaded(inner),
-            _ => false,
+        let missing = if let RuntimeError::Credential(inner) = &error {
+            not_loaded(inner)
+        } else if let RuntimeError::Signing(SigningError::NoCredentials) = &error {
+            true
+        } else if let RuntimeError::Signing(SigningError::Credential(inner)) = &error {
+            not_loaded(inner)
+        } else {
+            false
         };
-        // LiteLLM reports a failed call that never reached HTTP with a synthesized 500, and a timeout with a 408
+        // LiteLLM reports a failed call that never reached HTTP with a synthesized 500
         let status_code = if missing {
             400
+        } else if let RuntimeError::HfReply(inner) = &error {
+            inner.status_code()
         } else {
-            match &error {
-                RuntimeError::HfReply(inner) => inner.status_code(),
-                RuntimeError::Transport(
-                    TransportError::ConnectTimeout(_) | TransportError::Deadline(_),
-                ) => 408,
-                _ => 500,
-            }
+            500
         };
         let message = if missing {
             String::from("Unable to locate credentials")
@@ -77,7 +77,48 @@ impl From<RuntimeError> for SagemakerError {
     }
 }
 
-fn not_loaded(error: &CredentialError) -> bool {
+// make_async_call reports its own timeout as a 408 and lets every other transport failure become a 500
+#[must_use]
+pub fn timeout_error(error: TransportError) -> SagemakerError {
+    if matches!(
+        error,
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_)
+    ) {
+        return SagemakerError {
+            status_code: 408,
+            message: String::from("Timeout error occurred."),
+            headers: None,
+        };
+    }
+    SagemakerError::from(RuntimeError::from(error))
+}
+
+// the reply parser runs outside LiteLLM's SagemakerError catch, so its failure carries no HTTP status
+#[derive(Debug, Error)]
+pub enum RuntimeFailure {
+    #[error(transparent)]
+    Sagemaker(#[from] SagemakerError),
+    #[error("the reply is not JSON: {0}")]
+    Reply(#[from] serde_json::Error),
+}
+
+impl RuntimeFailure {
+    #[must_use]
+    pub const fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::Sagemaker(error) => Some(error.status_code),
+            Self::Reply(_) => None,
+        }
+    }
+}
+
+impl From<RuntimeError> for RuntimeFailure {
+    fn from(error: RuntimeError) -> Self {
+        Self::Sagemaker(SagemakerError::from(error))
+    }
+}
+
+const fn not_loaded(error: &CredentialError) -> bool {
     matches!(
         error,
         CredentialError::MissingCredentials

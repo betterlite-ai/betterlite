@@ -6,9 +6,7 @@ use secrecy::SecretString;
 
 use super::endpoint::{EndpointRequest, runtime_url};
 use super::endpoint::{ParamMap, call_region, endpoint_name};
-use super::runtime::{
-    PreparedCall, body_text, epoch_seconds, reply_headers, stream_error, wire_error,
-};
+use super::runtime::{PreparedCall, epoch_seconds, reply_headers, stream_error, wire_error};
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_settings::sources::Credentials;
 use crate::signing::error::SigningError;
@@ -133,15 +131,17 @@ fn completion_region_prefers_aws_region_over_aws_region_name() {
     assert_eq!(call_region(&params, both).expect("both"), "us-east-1");
     let name_only = RegionInputs {
         environment_region_name: Some("eu-west-1"),
-        ..RegionInputs::default()
+        environment_region: None,
+        session_region: None,
     };
     assert_eq!(
         call_region(&params, name_only).expect("name only"),
         "eu-west-1"
     );
     let session_only = RegionInputs {
+        environment_region_name: None,
+        environment_region: None,
         session_region: Some("ap-south-1"),
-        ..RegionInputs::default()
     };
     assert_eq!(
         call_region(&params, session_only).expect("session only"),
@@ -203,7 +203,10 @@ fn wire_errors_and_body_text_keep_status_and_utf8_body() {
     let error = wire_error(429, b"throttled");
     assert_eq!(error.status_code, 429);
     assert_eq!(error.message, "throttled");
-    assert_eq!(body_text(&[0xff, 0xfe]), "2 bytes that are not UTF-8");
+    assert_eq!(
+        wire_error(500, &[0xff, 0xfe]).message,
+        "2 bytes that are not UTF-8"
+    );
     assert_eq!(epoch_seconds(UNIX_EPOCH - Duration::from_secs(1)), 0);
     assert_eq!(epoch_seconds(UNIX_EPOCH + Duration::from_secs(12)), 12);
 }
@@ -231,8 +234,8 @@ async fn stream_error_reads_only_the_bounded_error_body() {
 
 #[tokio::test]
 async fn stream_error_truncates_the_chunk_crossing_the_body_limit() {
-    let chunks = stream::iter(vec![Ok(vec![b'a'; 32_768]), Ok(vec![b'b'; 40_960])]);
-    let chunks: super::runtime::ChunkStream = Box::pin(chunks);
+    let items = stream::iter(vec![Ok(vec![b'a'; 32_768]), Ok(vec![b'b'; 40_960])]);
+    let chunks: super::runtime::ChunkStream = Box::pin(items);
     let error = stream_error(503, chunks).await;
     assert_eq!(error.message.len(), 65_536);
     assert_eq!(

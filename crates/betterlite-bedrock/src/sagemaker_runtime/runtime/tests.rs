@@ -165,11 +165,11 @@ async fn stream_error_stops_reading_at_the_body_limit() {
 
     let polls = std::sync::Arc::new(AtomicUsize::new(0));
     let source = std::sync::Arc::clone(&polls);
-    let chunks = futures_util::stream::unfold(source, |polls| async move {
+    let items = futures_util::stream::unfold(source, |polls| async move {
         let index = polls.fetch_add(1, Ordering::SeqCst);
         (index < 2).then(|| (Ok(vec![b'x'; 65_536]), polls))
     });
-    let chunks: super::ChunkStream = Box::pin(chunks);
+    let chunks: super::ChunkStream = Box::pin(items);
     let error = super::stream_error(503, chunks).await;
     assert_eq!(error.message.len(), 65_536);
     assert_eq!(polls.load(Ordering::SeqCst), 1);
