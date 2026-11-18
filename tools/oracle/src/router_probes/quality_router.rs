@@ -66,7 +66,7 @@ pub(crate) fn run(
         decision,
         headers: headers(metadata.as_ref())?,
         metadata,
-        warnings: service.warnings().to_vec(),
+        warnings: service.warnings(),
     }))))
 }
 
