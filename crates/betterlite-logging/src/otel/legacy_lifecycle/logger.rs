@@ -2,19 +2,41 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::fields::payload::StandardLoggingPayload;
+use crate::fields::payload::records::StandardLoggingMetadata;
 use crate::otel::legacy_policy::capture::LoggingFlags;
 use crate::otel::legacy_policy::span_time::SpanTime;
 use crate::otel::model::metadata::wire::MetadataMap;
-use crate::otel::model::utils::coercion::OtelModelValue;
 
 use super::lifecycle::{DEFAULT_CALLBACK_NAME, LegacyLifecycle, LifecycleCall};
+
+#[derive(Serialize)]
+struct EventKwargs<'event> {
+    standard_logging_object: &'event StandardLoggingPayload,
+    litellm_params: RequestParams<'event>,
+    optional_params: IndexMap<String, Json>,
+    #[serde(rename = "standard_callback_dynamic_params")]
+    dynamic_params: &'event Json,
+    model: &'event str,
+    call_type: &'event str,
+}
+
+#[derive(Serialize)]
+struct RequestParams<'event> {
+    metadata: &'event StandardLoggingMetadata,
+    litellm_metadata: &'event IndexMap<String, Json>,
+    litellm_session_id: &'event str,
+    custom_llm_provider: Option<&'event str>,
+}
 
 // the legacy OpenTelemetry logger as the callback trait sees it: one event payload per lifecycle call
 pub struct LegacyOtelLogger {
@@ -66,64 +88,28 @@ impl LegacyOtelLogger {
 
     // LiteLLM hands its callbacks the request kwargs; the typed event carries the same fields
     fn event_kwargs(&self, event: &LoggerEvent) -> Result<MetadataMap, LoggerError> {
-        Ok(MetadataMap::from([
-            (
-                "standard_logging_object".to_owned(),
-                self.encoded(&*event.payload)?,
-            ),
-            ("litellm_params".to_owned(), self.event_params(event)?),
-            ("optional_params".to_owned(), self.optional_params(event)?),
-            (
-                "standard_callback_dynamic_params".to_owned(),
-                self.encoded(&*event.dynamic_params)?,
-            ),
-            (
-                "model".to_owned(),
-                OtelModelValue::String(event.payload.model.clone()),
-            ),
-            (
-                "call_type".to_owned(),
-                OtelModelValue::String(event.payload.call_type.clone()),
-            ),
-        ]))
-    }
-
-    fn event_params(&self, event: &LoggerEvent) -> Result<OtelModelValue, LoggerError> {
-        Ok(OtelModelValue::Object(MetadataMap::from([
-            (
-                "metadata".to_owned(),
-                self.encoded(&event.payload.metadata)?,
-            ),
-            (
-                "litellm_metadata".to_owned(),
-                self.encoded(&*event.litellm_metadata)?,
-            ),
-            (
-                "litellm_session_id".to_owned(),
-                OtelModelValue::String(event.payload.session_id.clone()),
-            ),
-            (
-                "custom_llm_provider".to_owned(),
-                self.encoded(&event.payload.custom_llm_provider)?,
-            ),
-        ])))
-    }
-
-    fn optional_params(&self, event: &LoggerEvent) -> Result<OtelModelValue, LoggerError> {
-        let mut params = event
-            .payload
-            .model_parameters
-            .iter()
-            .map(|(key, value)| self.encoded(value).map(|encoded| (key.clone(), encoded)))
-            .collect::<Result<MetadataMap, LoggerError>>()?;
+        let mut optional_params = event.payload.model_parameters.clone();
         // The event's stream flag is authoritative even if the parameter snapshot carries a stale value.
-        params.insert("stream".to_owned(), OtelModelValue::Bool(event.stream));
-        Ok(OtelModelValue::Object(params))
+        optional_params.insert("stream".to_owned(), Json::Bool(event.stream));
+        self.encoded(&EventKwargs {
+            standard_logging_object: &event.payload,
+            litellm_params: RequestParams {
+                metadata: &event.payload.metadata,
+                litellm_metadata: &event.litellm_metadata,
+                litellm_session_id: &event.payload.session_id,
+                custom_llm_provider: event.payload.custom_llm_provider.as_deref(),
+            },
+            optional_params,
+            dynamic_params: &event.dynamic_params,
+            model: &event.payload.model,
+            call_type: &event.payload.call_type,
+        })
     }
 
-    fn encoded<T>(&self, value: &T) -> Result<OtelModelValue, LoggerError>
+    fn encoded<T, V>(&self, value: &T) -> Result<V, LoggerError>
     where
         T: Serialize,
+        V: DeserializeOwned,
     {
         serde_json::to_value(value)
             .and_then(serde_json::from_value)
