@@ -8,7 +8,7 @@ use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::chatgpt_responses::ChatGptResponsesError;
 use crate::api::responses_sse_recovery::ResponsesSseRecoveryError;
 
-use super::{Fixture, JSON_TYPE, SSE_TYPE, done, expect_error, headers, item, text};
+use super::{Fixture, JSON_TYPE, SSE_TYPE, done, expect_error, headers, item, text, typed};
 
 fn limits(max_event_bytes: usize, max_items: usize) -> ApiLimits {
     ApiLimits {
@@ -80,6 +80,20 @@ fn a_body_over_the_total_boundary_is_rejected() {
         ChatGptResponsesError::ReplyTooLarge { observed, limit }
             if observed == json.len() && limit == 32
     ));
+}
+
+#[test]
+fn a_body_exactly_at_the_total_boundary_is_accepted() {
+    let streamed = vec![text(0, "first"), done()].join("\n");
+    let budget = ApiLimits {
+        max_json_bytes: streamed.len(),
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
+    };
+    let reply = Fixture::new()
+        .transform(200, &headers(SSE_TYPE), &streamed, &budget)
+        .expect("a body exactly at the boundary is accepted");
+    assert_eq!(typed(&reply).id, "resp_1");
 }
 
 #[test]
