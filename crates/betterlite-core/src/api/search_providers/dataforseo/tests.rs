@@ -397,6 +397,20 @@ fn dataforseo_url_is_the_resolved_endpoint_unchanged(
     assert_eq!(url, expected);
 }
 
+#[test]
+fn dataforseo_url_ignores_the_parameters_and_the_body() {
+    let config = config(&[]);
+    let text = SearchQuery::Single(String::from("rust"));
+    let body = config
+        .transform_search_request(&text, &Object::new())
+        .unwrap();
+    let options: Object = serde_json::from_str(r#"{"max_results": 5}"#).unwrap();
+    let url = config
+        .complete_url(Some("https://proxy.test/v3"), &options, Some(&body))
+        .unwrap();
+    assert_eq!(url, "https://proxy.test/v3");
+}
+
 fn request_tasks(text: &str, options: &str) -> Vec<IndexMap<String, Json>> {
     let optional_params: Object = serde_json::from_str(options).unwrap();
     let query: SearchQuery = serde_json::from_str(text).unwrap();
