@@ -121,28 +121,31 @@ fn provider_reply(
     provider: BedrockEmbeddingProvider,
     batch_data: Option<&[Object]>,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let response = match provider {
+    match provider {
         BedrockEmbeddingProvider::Twelvelabs => {
             let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
             let batch = batch_data
                 .map(parse_list::<MarengoBilledRequest>)
                 .transpose()?;
-            ProviderResponse::Marengo(marengo::transform_response(
+            provider_embedding_reply(ProviderResponse::Marengo(marengo::transform_response(
                 &replies,
                 model,
                 batch.as_deref(),
-            )?)
+            )?))
         }
         BedrockEmbeddingProvider::Nova => {
             let replies = parse_list::<Params>(response_list)?;
             let batch = batch_data.map(parse_list::<Params>).transpose()?;
-            ProviderResponse::Nova(nova::transform_response(&replies, model, batch.as_deref())?)
+            provider_embedding_reply(ProviderResponse::Nova(nova::transform_response(
+                &replies,
+                model,
+                batch.as_deref(),
+            )?))
         }
         BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
-            return Err(EmbeddingIoError::Unmapped {
+            Err(EmbeddingIoError::Unmapped {
                 model: model.to_owned(),
-            });
+            })
         }
-    };
-    provider_embedding_reply(response)
+    }
 }
