@@ -76,3 +76,14 @@ tests:
     asserts:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: PROMETHEUS_METRICS_PORT, value: "9090" } }
       - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: PROMETHEUS_METRICS_PORT }, any: true }
+
+  - it: leaves the unported billing metrics settings off both containers
+    template: deployment.yaml
+    set:
+      collector: { enabled: true }
+      billingMetrics: { enabled: true, endpoint: https://metering.example.com, secretName: billing-mtls }
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_BILLING_METRICS_ENDPOINT }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_BILLING_METRICS_ENDPOINT }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: billing-metrics-mtls }, any: true }
+      - notContains: { path: spec.template.spec.volumes, content: { name: billing-metrics-mtls }, any: true }
