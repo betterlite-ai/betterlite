@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use super::super::linked_rows::{KeyRow, LinkedKeys};
+use crate::key_hash::KeyHash;
 
 fn row() -> KeyRow {
     KeyRow {
-        token: "sk-token-a".to_owned(),
+        token: KeyHash::from("sk-token-a"),
         budget_id: Some("budget-a".to_owned()),
         spend: None,
     }

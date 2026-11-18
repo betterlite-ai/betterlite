@@ -14,6 +14,7 @@ use crate::budget_cascade::tests::{
 use crate::budget_cascade::{BudgetCascade, BudgetReset};
 use crate::budget_reset_policy::entity_reset::ResetSchedule;
 use crate::budget_reset_policy::rollover::RolloverPolicy;
+use crate::key_hash::KeyHash;
 
 fn at() -> DateTime<Utc> {
     DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("timestamp is valid")
@@ -116,7 +117,7 @@ async fn collect_reports_the_carried_spend_of_every_linked_row() {
         spend: Some(Decimal::from(30_i32)),
     }]);
     rows.keys = Ok(vec![KeyRow {
-        token: "token-a".to_owned(),
+        token: KeyHash::from("token-a"),
         budget_id: Some("budget-a".to_owned()),
         spend: Some(Decimal::from(10_i32)),
     }]);

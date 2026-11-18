@@ -4,6 +4,7 @@ use std::future::Future;
 use rust_decimal::Decimal;
 use tokio_postgres::Row;
 
+use crate::key_hash::KeyHash;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
@@ -20,10 +21,10 @@ pub trait LinkedKeys {
 }
 
 macro_rules! linked_row {
-    ($name:ident, $($field:ident),+ $(,)?) => {
+    ($name:ident, $($field:ident: $ty:ty),+ $(,)?) => {
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct $name {
-            $(pub $field: String,)+
+            $(pub $field: $ty,)+
             pub budget_id: Option<String>,
             pub spend: Option<Decimal>,
         }
@@ -40,13 +41,13 @@ macro_rules! linked_row {
     };
 }
 
-linked_row!(TeamMembershipRow, user_id, team_id);
-linked_row!(KeyRow, token);
-linked_row!(OrganizationRow, organization_id);
-linked_row!(TagRow, tag_name);
-linked_row!(ModelAccessGroupRow, access_group_name);
-linked_row!(ProjectRow, project_id);
-linked_row!(EndUserRow, user_id);
+linked_row!(TeamMembershipRow, user_id: String, team_id: String);
+linked_row!(KeyRow, token: KeyHash);
+linked_row!(OrganizationRow, organization_id: String);
+linked_row!(TagRow, tag_name: String);
+linked_row!(ModelAccessGroupRow, access_group_name: String);
+linked_row!(ProjectRow, project_id: String);
+linked_row!(EndUserRow, user_id: String);
 
 // The rows the cascade reads before the write, so their counters and cache entries can be dropped once the transaction commits.
 pub trait LinkedRows {
@@ -153,7 +154,7 @@ fn decode_team_membership(row: &Row) -> Result<TeamMembershipRow, DbError> {
 
 fn decode_key(row: &Row) -> Result<KeyRow, DbError> {
     Ok(KeyRow {
-        token: row.try_get("token").map_err(backend)?,
+        token: KeyHash::from(row.try_get::<_, String>("token").map_err(backend)?),
         budget_id: row.try_get("budget_id").map_err(backend)?,
         spend: row.try_get("spend").map_err(backend)?,
     })

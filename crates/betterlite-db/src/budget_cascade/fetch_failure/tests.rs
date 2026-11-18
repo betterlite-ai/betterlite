@@ -13,6 +13,7 @@ use crate::budget_cascade::tests::{
 };
 use crate::budget_cascade::{CounterReset, transaction::commit_budget_cascade};
 use crate::budget_reset_policy::rollover::RolloverPolicy;
+use crate::key_hash::KeyHash;
 
 fn at() -> DateTime<Utc> {
     DateTime::<Utc>::from_timestamp(1_700_000_000, 0).expect("timestamp is valid")
@@ -42,7 +43,7 @@ async fn a_successful_fetch_returns_its_rows_without_a_warning() {
     let guard = set_default(subscriber(logs.clone()));
     let rows = fetched_or_empty("keys", || async {
         Ok::<Vec<KeyRow>, String>(vec![KeyRow {
-            token: "token-a".to_owned(),
+            token: KeyHash::from("token-a"),
             budget_id: Some("budget-a".to_owned()),
             spend: Some(Decimal::from(7_i32)),
         }])
@@ -50,7 +51,7 @@ async fn a_successful_fetch_returns_its_rows_without_a_warning() {
     .await;
     drop(guard);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].token, "token-a");
+    assert_eq!(rows[0].token, KeyHash::from("token-a"));
     assert!(!logs.text().contains("Failed to fetch"));
 }
 
