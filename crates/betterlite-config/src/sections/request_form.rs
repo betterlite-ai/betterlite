@@ -1,8 +1,9 @@
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
-use crate::sections::settings::JsonValue;
 
 mod tests;
 
@@ -20,56 +21,35 @@ struct RawDeployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
-    max_file_size_mb: Option<JsonValue>,
+    max_file_size_mb: Option<RawNumber>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+// index-aligned with model_list; the cap in MiB, as LiteLLM declares it (float | None)
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Settings {
-    pub deployments: Box<[Option<i64>]>,
-}
-
-impl Settings {
-    #[must_use]
-    pub fn limit_for_index(&self, index: usize) -> Option<i64> {
-        self.deployments.get(index).copied().flatten()
-    }
+    pub deployments: Box<[Option<f64>]>,
 }
 
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, _lookup: &L) -> Result<Settings, ConfigError>
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
-        let deployments = self
-            .model_list
-            .into_iter()
-            .enumerate()
-            .map(|(index, deployment)| {
-                let value = deployment.litellm_params.max_file_size_mb;
-                strict_integer(
-                    value.as_ref(),
-                    &format!("model_list.{index}.litellm_params.max_file_size_mb"),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            let path = format!("model_list.{index}.litellm_params.max_file_size_mb");
+            let limit = resolve_number(
+                deployment.litellm_params.max_file_size_mb,
+                &path,
+                lookup,
+                parse_float,
+            )?;
+            deployments.push(limit);
+        }
         Ok(Settings {
             deployments: deployments.into_boxed_slice(),
         })
     }
-}
-
-fn strict_integer(value: Option<&JsonValue>, path: &str) -> Result<Option<i64>, ConfigError> {
-    let Some(value) = value else { return Ok(None) };
-    if value.is_null() {
-        return Ok(None);
-    }
-    value
-        .as_i64()
-        .map(Some)
-        .ok_or_else(|| ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: value.as_bool().unwrap_or(false),
-        })
 }
