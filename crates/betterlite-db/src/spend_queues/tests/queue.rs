@@ -124,11 +124,9 @@ async fn a_cancelled_producer_leaves_the_queue_unchanged() {
     let queue = BoundedUpdateQueue::new(1, 100, 10).unwrap();
     let observer = NoEnqueueObserver;
     queue.add("first", &observer).await;
-    assert!(
-        timeout(Duration::from_millis(20), queue.add("second", &observer))
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), queue.add("second", &observer))
+        .await
+        .unwrap_err();
     assert_eq!(queue.drain(), vec!["first"]);
     queue.add("second", &observer).await;
     assert_eq!(queue.drain(), vec!["second"]);
