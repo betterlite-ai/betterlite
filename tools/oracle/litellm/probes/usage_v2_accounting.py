@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Final, Literal, TypeVar, overload
 
-from litellm.caching.caching import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
 from litellm.exceptions import RateLimitError
@@ -21,6 +21,7 @@ from probes.protocol import Millis, Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 # pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnusedCallResult=false
+# pyright: reportUnreachable=false
 
 MILLIS_PER_SECOND: Final = 1000
 
@@ -217,12 +218,16 @@ def success_kwargs(step: Step) -> dict[str, JsonValue]:
 
 
 def rejected(index: int, error: RateLimitError) -> ObservedRejected:
+    try:
+        retry_after: str | None = error.response.headers["retry-after"]
+    except KeyError:
+        retry_after = None
     return ObservedRejected(
         step=index,
         status_code=error.status_code,
         code=error.code or "",
         error_type=error.type or "",
-        retry_after=error.response.headers.get("retry-after"),
+        retry_after=retry_after,
         num_retries=error.num_retries,
     )
 
@@ -234,9 +239,9 @@ async def pre_call(index: int, step: Step, context: Context) -> Observation:
     payload = deployment_dict(deployment)
     try:
         if step.sync:
-            _ = context.strategy.pre_call_check(payload)
+            context.strategy.pre_call_check(payload)
         else:
-            _ = await context.strategy.async_pre_call_check(payload, None)
+            await context.strategy.async_pre_call_check(payload, None)
     except RateLimitError as error:
         return rejected(index, error)
     return ObservedAllowed(step=index)
