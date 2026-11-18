@@ -5,11 +5,12 @@ use betterlite_bedrock::bedrock_embedding_io::transport::{
     EmbeddingCall, SuppliedClient, post_embedding,
 };
 use betterlite_bedrock::bedrock_settings::{BedrockError, ErrorHeaders};
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
 
 use super::failure::Failure;
-use super::input::HttpRequest;
+use super::input::{Failure as ReplyFailure, HttpRequest};
 use super::runtime;
 use super::signed;
 use super::transport::{self, Factory};
@@ -37,7 +38,7 @@ pub(crate) fn provider_json_response(case: &HttpRequest) -> Result<Value, Failur
     }))
 }
 
-pub(crate) fn http_error(case: &HttpRequest) -> Result<Value, Failure> {
+pub(crate) fn http_error(case: &HttpRequest) -> Result<Value, Box<HelperError>> {
     let headers = signed::pairs(&case.headers);
     let names = transport::reply_headers(case);
     let supplied = transport::supplied_client(case);
@@ -49,8 +50,13 @@ pub(crate) fn http_error(case: &HttpRequest) -> Result<Value, Failure> {
     });
     match runtime::block_on(post_embedding(&embedding_call, supplied_view, &factory))? {
         Ok(value) => Ok(json!({"kind": "ok", "value": value})),
-        Err(EmbeddingIoError::Provider { error, .. }) => provider_detail(&error, &names),
-        Err(error) => Err(Failure::Embedding(error)),
+        Err(EmbeddingIoError::Provider { error, .. }) => {
+            if matches!(case.reply.failure, Some(ReplyFailure::Timeout)) {
+                return Err(super::failure::timeout(case.asynchronous));
+            }
+            provider_detail(&error, &names).map_err(Into::into)
+        }
+        Err(error) => Err(Failure::Embedding(error).into()),
     }
 }
 
