@@ -84,12 +84,6 @@ pub(super) struct LocalWindows {
 }
 
 impl LocalWindows {
-    pub(super) fn seeded(key: &str, entries: &[(&str, i64)]) -> Self {
-        let windows = Self::default();
-        windows.seed(key, entries);
-        windows
-    }
-
     pub(super) fn seed(&self, key: &str, entries: &[(&str, i64)]) {
         self.counts
             .lock()
