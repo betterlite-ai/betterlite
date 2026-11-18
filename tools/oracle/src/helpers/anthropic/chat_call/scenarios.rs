@@ -43,6 +43,7 @@ type FixtureStream = WrappedStream<FixtureFailure, FixtureCounter>;
 enum RunOutcome {
     Reply(Box<ResponseEnvelope>),
     Stream(Box<FixtureStream>),
+    Embedding(Option<ResponseEnvelope>),
     Failed,
 }
 pub(super) struct Run {
@@ -57,7 +58,7 @@ impl Run {
     fn reply(&self) -> Result<&ResponseEnvelope, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Reply(envelope) => Ok(envelope),
-            RunOutcome::Stream(_) | RunOutcome::Failed => {
+            RunOutcome::Stream(_) | RunOutcome::Embedding(_) | RunOutcome::Failed => {
                 Err("the buffered call did not return a reply").or_value_error()
             }
         }
@@ -66,7 +67,7 @@ impl Run {
     fn stream(&self) -> Result<&FixtureStream, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Stream(wrapper) => Ok(wrapper),
-            RunOutcome::Reply(_) | RunOutcome::Failed => {
+            RunOutcome::Reply(_) | RunOutcome::Embedding(_) | RunOutcome::Failed => {
                 Err("the stream call did not open a stream").or_value_error()
             }
         }
@@ -135,6 +136,7 @@ fn run_of(
     let (outcome, failure) = match result {
         Ok(ChatOutcome::Reply(envelope)) => (RunOutcome::Reply(envelope), None),
         Ok(ChatOutcome::Stream(wrapper)) => (RunOutcome::Stream(wrapper), None),
+        Ok(ChatOutcome::Embedding(reply)) => (RunOutcome::Embedding(reply), None),
         Err(error) => {
             let shape = FailureShape::of(&error);
             (RunOutcome::Failed, Some(shape))
@@ -203,6 +205,14 @@ fn both(input: &Input) -> Result<(Run, Run), Box<HelperError>> {
     let asynchronous = execute(input, CallStyle::Async, ClientKind::Async)?;
     let synchronous = execute(input, CallStyle::Sync, ClientKind::Sync)?;
     Ok((asynchronous, synchronous))
+}
+
+pub(super) fn unsupported_embedding(input: &Input) -> HelperResult {
+    let run = execute(input, CallStyle::Embedding, ClientKind::Sync)?;
+    let RunOutcome::Embedding(reply) = run.outcome else {
+        return Err("the embedding call did not return its no-op result").or_value_error();
+    };
+    Ok(json!({"reply": reply.as_ref().map(reply_value)}))
 }
 
 fn request_of(input: &Input, run: &Run) -> Value {

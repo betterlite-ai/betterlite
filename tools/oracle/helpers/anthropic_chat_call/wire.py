@@ -139,7 +139,7 @@ class SyncChatHandler(Protocol):
 
 @runtime_checkable
 class EmbeddingHandler(Protocol):
-    def embedding(self) -> None: ...
+    def embedding(self) -> JsonValue: ...
 
 
 class SilentVerbose:

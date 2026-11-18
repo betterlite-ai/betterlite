@@ -8,7 +8,6 @@ use crate::chat_call::CallStyle;
 use crate::chat_call::error::ChatCallError;
 use crate::chat_call::transport::ClientKind;
 use crate::headers::request::{SKILLS_BETA, TOOL_SEARCH_BETA};
-use crate::response::wire::ResponseEnvelope;
 
 use super::fixture::{API_BASE, CALLER_KEY, FixtureReply, MODEL, Trip, messages, text_body};
 use super::harness::{Run, Setup, execute};
@@ -398,8 +397,16 @@ fn native_error_body() {
 }
 
 fn unsupported_embedding() {
-    let reply: Option<ResponseEnvelope> = crate::chat_call::embedding();
-    assert!(reply.is_none());
+    let run = execute(&Setup {
+        style: CallStyle::Embedding,
+        ..Setup::chat()
+    });
+    assert!(matches!(
+        run.outcome,
+        Ok(super::harness::Outcome::Embedding(None))
+    ));
+    assert_eq!(run.posts_supplied, 0);
+    assert_eq!(run.posts_pooled, 0);
 }
 
 fn failed_call(style: CallStyle) -> Run {

@@ -26,15 +26,12 @@ use error::ChatCallError;
 use prepare::Prepared;
 use send::streams::{StreamFacts, open_stream};
 use transport::{ChatTransport, SuppliedChatClient};
-// embedding() is an empty pass body: it builds no request, sends none and returns None
-pub fn embedding() -> Option<ResponseEnvelope> {
-    None
-}
 // LiteLLM runs acompletion for an async call and completion for a sync one, and each branch takes its own clients
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
     Async,
     Sync,
+    Embedding,
 }
 pub struct ChatCall<'call> {
     pub model: &'call str,
@@ -71,6 +68,7 @@ pub struct ChatDeps<'deps, Config, Client, Counter> {
 pub enum ChatOutcome<ClientFailure, Counter> {
     Reply(Box<ResponseEnvelope>),
     Stream(Box<WrappedStream<ClientFailure, Counter>>),
+    Embedding(Option<ResponseEnvelope>),
 }
 // Every branch answers this outcome or raises this error, carrying the client's and counter's own failures
 pub type ChatResult<Client, Counter> = Result<
@@ -94,6 +92,9 @@ where
     Counter: ReasoningTokenCounter + Unpin + Send,
 {
     Box::pin(async move {
+        if call.style == CallStyle::Embedding {
+            return Ok(ChatOutcome::Embedding(None));
+        }
         let prepared = prepare::prepare(&call, &mut deps).await?;
         if prepared.options.stream {
             return send_stream(call, prepared, deps).await;
