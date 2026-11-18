@@ -50,7 +50,7 @@ fn explicit_values_override() {
     assert_eq!(concurrency(" 12 ").unwrap(), 12);
     assert_eq!(concurrency("+25").unwrap(), 25);
     assert_eq!(deadline("2.5").unwrap().to_bits(), 2.5_f64.to_bits());
-    assert_eq!(deadline("0.05").unwrap().to_bits(), 0.05_f64.to_bits());
+    assert_eq!(deadline("0.5").unwrap().to_bits(), 0.5_f64.to_bits());
 }
 
 #[test]
@@ -65,6 +65,7 @@ fn deadline_floor_point_one() {
     assert_eq!(deadline("0").unwrap().to_bits(), 0.1_f64.to_bits());
     assert_eq!(deadline("-3").unwrap().to_bits(), 0.1_f64.to_bits());
     assert_eq!(deadline("-0.0").unwrap().to_bits(), 0.1_f64.to_bits());
+    assert_eq!(deadline("0.05").unwrap().to_bits(), 0.1_f64.to_bits());
 }
 
 #[test]

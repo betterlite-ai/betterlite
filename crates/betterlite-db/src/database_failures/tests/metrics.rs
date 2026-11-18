@@ -8,6 +8,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use rstest::rstest;
+use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 
 use crate::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
@@ -35,9 +36,15 @@ async fn ordinary_success_scheduled() {
         table_name: Some(&table),
         second_positional: None,
     };
-    let output = run_metric(async { Ok(7) }, &call, &sink, &resolver, &tasks)
-        .await
-        .expect("the metric does not change the result");
+    let output = run_metric(
+        async { Ok::<i32, DbLookupError>(7) },
+        &call,
+        &sink,
+        &resolver,
+        &tasks,
+    )
+    .await
+    .expect("the metric does not change the result");
     assert_eq!(output, 7);
     assert!(successes(&sink).is_empty());
     drain(&tasks).await;
@@ -85,7 +92,7 @@ async fn exact_keyword_parent_span() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &present,
         &sink,
         &resolver,
@@ -100,7 +107,7 @@ async fn exact_keyword_parent_span() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(2) },
+        async { Ok::<i32, DbLookupError>(2) },
         &missing,
         &sink,
         &resolver,
@@ -135,7 +142,7 @@ async fn table_only_metadata() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &call,
         &sink,
         &resolver,
@@ -166,7 +173,7 @@ async fn empty_table_name_retained() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &call,
         &sink,
         &resolver,
@@ -215,7 +222,7 @@ async fn proxy_substring_case_sensitive() {
         second_positional: Some(&kwargs),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &lowercase,
         &sink,
         &resolver,
@@ -230,7 +237,7 @@ async fn proxy_substring_case_sensitive() {
         second_positional: Some(&kwargs),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(2) },
+        async { Ok::<i32, DbLookupError>(2) },
         &uppercase,
         &sink,
         &resolver,
@@ -274,7 +281,7 @@ async fn proxy_args_second_dictionary() {
         second_positional: Some(&kwargs),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &present,
         &sink,
         &resolver,
@@ -284,7 +291,7 @@ async fn proxy_args_second_dictionary() {
     .expect("the successful call returns");
     let absent = metric_call("PROXY_batch_write");
     run_metric(
-        async { Ok::<_, DbLookupError>(2) },
+        async { Ok::<i32, DbLookupError>(2) },
         &absent,
         &sink,
         &resolver,
@@ -300,7 +307,7 @@ async fn proxy_args_second_dictionary() {
         second_positional: Some(&boolean),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(3) },
+        async { Ok::<i32, DbLookupError>(3) },
         &not_a_dictionary,
         &sink,
         &resolver,
@@ -385,7 +392,7 @@ async fn proxy_span_uses_shared_resolver() {
         second_positional: Some(&top_level_only),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &from_metadata,
         &sink,
         &resolver,
@@ -394,7 +401,7 @@ async fn proxy_span_uses_shared_resolver() {
     .await
     .expect("the successful call returns");
     run_metric(
-        async { Ok::<_, DbLookupError>(2) },
+        async { Ok::<i32, DbLookupError>(2) },
         &from_params,
         &sink,
         &resolver,
@@ -403,7 +410,7 @@ async fn proxy_span_uses_shared_resolver() {
     .await
     .expect("the successful call returns");
     run_metric(
-        async { Ok::<_, DbLookupError>(3) },
+        async { Ok::<i32, DbLookupError>(3) },
         &from_top_level,
         &sink,
         &resolver,
@@ -459,8 +466,8 @@ async fn proxy_success_zero_duration() {
         second_positional: Some(&kwargs),
     };
     let operation = async {
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        Ok::<_, DbLookupError>(1)
+        sleep(Duration::from_millis(250)).await;
+        Ok::<i32, DbLookupError>(1)
     };
     run_metric(operation, &call, &sink, &resolver, &tasks)
         .await
@@ -480,7 +487,7 @@ async fn success_hook_failure_logged() {
     let resolver = RecordingResolver::default();
     let call = metric_call("query_raw");
     let output = run_metric(
-        async { Ok::<_, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7) },
         &call,
         &sink,
         &resolver,
@@ -511,7 +518,7 @@ async fn success_duration_uses_wall_clock_window() {
     let clock = RecordingWallClock::new(vec![start, end]);
     let call = metric_call("query_raw");
     let output = log_db_metrics(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &call,
         DbMetricContext {
             sink: Arc::clone(&sink),
@@ -588,7 +595,7 @@ async fn proxy_missing_span_drops_success() {
         second_positional: Some(&kwargs),
     };
     let output = run_metric(
-        async { Ok::<_, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7) },
         &call,
         &sink,
         &resolver,
@@ -762,13 +769,13 @@ async fn cancellation_no_failure_metric() {
     let resolver = RecordingResolver::default();
     let call = metric_call("query_raw");
     let operation = async {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(50)).await;
         Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
             ErrorType::Connect,
             "down",
         )))
     };
-    let cancelled = tokio::time::timeout(
+    let cancelled = timeout(
         Duration::from_millis(1),
         run_metric(operation, &call, &sink, &resolver, &tasks),
     )
@@ -898,7 +905,7 @@ async fn sensitive_metadata_absent() {
         second_positional: Some(&secrets),
     };
     run_metric(
-        async { Ok::<_, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1) },
         &success,
         &sink,
         &resolver,

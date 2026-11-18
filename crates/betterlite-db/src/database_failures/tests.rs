@@ -1,7 +1,8 @@
 #![cfg(test)]
 
-use std::future::Pending;
+use std::future::{Pending, pending};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -10,9 +11,11 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
 use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{sleep, timeout};
 use tokio_postgres::{Config, NoTls};
 use tokio_util::task::TaskTracker;
 
@@ -47,12 +50,12 @@ fn fake_tracker() -> DbLookupStallTracker<FakeClock> {
     }
 }
 
-const fn pending_lookup() -> Pending<Result<i32, DbLookupError>> {
-    std::future::pending()
+fn pending_lookup() -> Pending<Result<i32, DbLookupError>> {
+    pending()
 }
 
 async fn delayed_lookup() -> Result<i32, DbLookupError> {
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    sleep(Duration::from_millis(50)).await;
     Ok(7)
 }
 
@@ -99,7 +102,7 @@ fn semaphore_runtime_recreation() {
         slot: Mutex::new(None),
     };
     assert!(gate.current().is_none());
-    let first_runtime = tokio::runtime::Builder::new_current_thread()
+    let first_runtime = Builder::new_current_thread()
         .build()
         .expect("the first runtime builds");
     let first = first_runtime.block_on(async { gate.current().expect("a runtime is running") });
@@ -110,7 +113,7 @@ fn semaphore_runtime_recreation() {
         .expect("the gate has two permits");
     assert_eq!(first.available_permits(), 1);
     drop(first_runtime);
-    let second_runtime = tokio::runtime::Builder::new_current_thread()
+    let second_runtime = Builder::new_current_thread()
         .build()
         .expect("the second runtime builds");
     let second = second_runtime.block_on(async { gate.current().expect("a runtime is running") });
@@ -131,9 +134,13 @@ async fn bounded_lookup_does_not_acquire_gate() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let lookup_request = request("policy", Some(0.1), 10.0, &tracker);
-    let output = bounded_db_lookup(async { Ok(7) }, lookup_request, &tasks)
-        .await
-        .expect("the lookup never takes the gate");
+    let output = bounded_db_lookup(
+        async { Ok::<i32, DbLookupError>(7) },
+        lookup_request,
+        &tasks,
+    )
+    .await
+    .expect("the lookup never takes the gate");
     assert_eq!(output, 7);
     assert_eq!(semaphore.available_permits(), 0);
 }
@@ -141,7 +148,7 @@ async fn bounded_lookup_does_not_acquire_gate() {
 #[tokio::test]
 async fn system_clock_advances() {
     let first = SystemClock.now();
-    tokio::time::sleep(Duration::from_millis(1)).await;
+    sleep(Duration::from_millis(1)).await;
     assert!(SystemClock.now() > first);
 }
 
@@ -173,9 +180,13 @@ async fn success_does_not_clear_stall() {
     let tracker = fake_tracker();
     tracker.record_hit();
     let lookup_request = request("cache", Some(0.1), 10.0, &tracker);
-    let output = bounded_db_lookup(async { Ok(7) }, lookup_request, &tasks)
-        .await
-        .expect("the lookup succeeds");
+    let output = bounded_db_lookup(
+        async { Ok::<i32, DbLookupError>(7) },
+        lookup_request,
+        &tasks,
+    )
+    .await
+    .expect("the lookup succeeds");
     assert_eq!(output, 7);
     assert!(tracker.stalled_within(WINDOW));
     tracker.clock.advance(Duration::from_secs(30));
@@ -218,7 +229,7 @@ async fn zero_negative_explicit_deadline() {
         "zero lookup did not answer within 0s"
     );
     let negative = request("negative", Some(-1.0), 10.0, &tracker);
-    let expired_negative = tokio::time::timeout(
+    let expired_negative = timeout(
         Duration::from_secs(2),
         bounded_db_lookup(pending_lookup(), negative, &tasks),
     )
@@ -243,9 +254,13 @@ async fn nonfinite_explicit_deadline_never_expires(#[case] deadline_seconds: f64
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let lookup_request = request("work", Some(deadline_seconds), 0.0, &tracker);
-    let output = bounded_db_lookup(async { Ok(7) }, lookup_request, &tasks)
-        .await
-        .expect("an unrepresentable deadline waits for the lookup");
+    let output = bounded_db_lookup(
+        async { Ok::<i32, DbLookupError>(7) },
+        lookup_request,
+        &tasks,
+    )
+    .await
+    .expect("an unrepresentable deadline waits for the lookup");
     assert_eq!(output, 7);
     assert!(!tracker.stalled_within(f64::INFINITY));
 }
@@ -302,7 +317,7 @@ async fn cancellation_resistant_lookup_returns_deadline() {
     let tasks = TaskTracker::new();
     let blocking = TaskTracker::new();
     let tracker = stall_tracker();
-    let (release, blocker) = std::sync::mpsc::sync_channel::<()>(1);
+    let (release, blocker) = sync_channel::<()>(1);
     let finished = Arc::new(AtomicBool::new(false));
     let lookup_finished = Arc::clone(&finished);
     let join = blocking.spawn_blocking(move || {
@@ -311,7 +326,7 @@ async fn cancellation_resistant_lookup_returns_deadline() {
     });
     let lookup = async move {
         join.await.expect("the blocking lookup joins");
-        Ok::<_, DbLookupError>(7)
+        Ok::<i32, DbLookupError>(7)
     };
     let lookup_request = request("slow", Some(0.02), 10.0, &tracker);
     let result = bounded_db_lookup(lookup, lookup_request, &tasks).await;
@@ -331,7 +346,7 @@ async fn abandoned_failure_consumed() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     let blocking = TaskTracker::new();
-    let (release, blocker) = std::sync::mpsc::sync_channel::<()>(1);
+    let (release, blocker) = sync_channel::<()>(1);
     let produced = Arc::new(AtomicBool::new(false));
     let lookup_produced = Arc::clone(&produced);
     let join = blocking.spawn_blocking(move || {
@@ -364,9 +379,9 @@ async fn cancelled_child_not_queried_for_exception() {
     let completed = Arc::new(AtomicBool::new(false));
     let lookup_completed = Arc::clone(&completed);
     let lookup = async move {
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
         lookup_completed.store(true, Ordering::SeqCst);
-        Ok::<_, DbLookupError>(7)
+        Ok::<i32, DbLookupError>(7)
     };
     let lookup_request = request("cancelled", Some(0.02), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
@@ -393,7 +408,7 @@ async fn abandoned_panic_logged() {
 async fn abandoned_cancellation_silent() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
-    let handle: JoinHandle<Result<(), DbLookupError>> = tasks.spawn(std::future::pending());
+    let handle: JoinHandle<Result<(), DbLookupError>> = tasks.spawn(pending());
     handle.abort();
     consume_abandoned_lookup(handle).await;
     drain(&tasks).await;
@@ -410,7 +425,7 @@ async fn caller_cancel_no_stall_hit() {
         async move {
             let _guard = guard;
             assert!(started.send(()).is_ok());
-            std::future::pending::<Result<i32, DbLookupError>>().await
+            pending::<Result<i32, DbLookupError>>().await
         }
     };
     let caller_tracker = Arc::clone(&tracker);
@@ -435,7 +450,7 @@ async fn caller_cancel_no_stall_hit() {
         .expect("the caller task is tracked")
         .expect_err("the caller was cancelled");
     assert!(joined.is_cancelled());
-    tokio::time::timeout(Duration::from_secs(5), signal.notified())
+    timeout(Duration::from_secs(5), signal.notified())
         .await
         .expect("the child lookup is cancelled");
     assert!(!tracker.stalled_within(f64::INFINITY));
@@ -464,7 +479,7 @@ async fn existing_deadline_exception_unchanged() {
 async fn timeout_cause_preserved() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
-    let elapsed = tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
+    let elapsed = timeout(Duration::ZERO, pending::<()>())
         .await
         .expect_err("the zero timer fires before the pending future");
     let lookup = async move { Err::<i32, DbLookupError>(DbLookupError::Elapsed(elapsed)) };
