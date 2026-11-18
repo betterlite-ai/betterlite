@@ -229,28 +229,26 @@ where
     }
 }
 
-fn settle<'driver>(
-    receiver: &'driver mut Receiver<Recorded>,
-    received: &'driver mut Vec<Recorded>,
+async fn settle(
+    receiver: &mut Receiver<Recorded>,
+    received: &mut Vec<Recorded>,
     delivered: usize,
-) -> DriverFuture<'driver, ()> {
-    Box::pin(async move {
-        while received.len() < delivered {
-            if received.len() >= MAX_FRAMES {
-                return Err(failure(
-                    "InvalidInput",
-                    String::from("the upstream capture is full"),
-                ));
-            }
-            let next = timeout(SETTLE, receiver.recv()).await.map_err(|_elapsed| {
-                failure("TimeoutError", String::from("no upstream frame arrived"))
-            })?;
-            let frame =
-                next.ok_or_else(|| failure("TransportError", String::from("upstream ended")))?;
-            received.push(frame);
+) -> Result<(), Failure> {
+    while received.len() < delivered {
+        if received.len() >= MAX_FRAMES {
+            return Err(failure(
+                "InvalidInput",
+                String::from("the upstream capture is full"),
+            ));
         }
-        Ok(())
-    })
+        let next = timeout(SETTLE, receiver.recv()).await.map_err(|_elapsed| {
+            failure("TimeoutError", String::from("no upstream frame arrived"))
+        })?;
+        let frame =
+            next.ok_or_else(|| failure("TransportError", String::from("upstream ended")))?;
+        received.push(frame);
+    }
+    Ok(())
 }
 
 fn snapshot(session: &Session, results: Vec<Value>, upstream: Vec<Recorded>) -> Value {

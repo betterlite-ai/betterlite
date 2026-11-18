@@ -11,6 +11,7 @@ use crate::api::realtime_guardrail_policy::{
     inject_auto_response_disable,
 };
 use betterlite_models::decisions::Json;
+use futures_util::FutureExt as _;
 use std::error::Error;
 
 impl<Config, CallbackError> RealtimeSender<'_, Config, CallbackError>
@@ -23,8 +24,8 @@ where
     pub fn send_to_backend<'call>(
         &'call mut self,
         message: &'call str,
-    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
+        async move {
             let enforced = self.enforce_session_model(message)?;
             let Some(provider) = self.provider else {
                 self.send_frame(RealtimeMessage::Text(enforced)).await?;
@@ -42,35 +43,35 @@ where
                 sent |= self.deliver_frame(provider, frame).await?;
             }
             Ok(sent)
-        })
+        }
+        .boxed_local()
     }
 
     fn deliver_frame<'call>(
         &'call mut self,
         provider: &'call Config,
         frame: RealtimeMessage,
-    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
-            match frame {
-                RealtimeMessage::Binary(payload) => {
-                    provider.pace_backend_send(&payload).await;
-                    self.send_frame(RealtimeMessage::Binary(payload)).await?;
-                    self.state.setup.content_sent_after_setup.0 = true;
-                    Ok(true)
-                }
-                RealtimeMessage::Text(text) => {
-                    let kind = classify_text(provider, &text);
-                    self.deliver_text(text, kind).await
-                }
+    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
+        match frame {
+            RealtimeMessage::Binary(payload) => async move {
+                provider.pace_backend_send(&payload).await;
+                self.send_frame(RealtimeMessage::Binary(payload)).await?;
+                self.state.setup.content_sent_after_setup.0 = true;
+                Ok(true)
             }
-        })
+            .boxed_local(),
+            RealtimeMessage::Text(text) => {
+                let kind = classify_text(provider, &text);
+                self.deliver_text(text, kind)
+            }
+        }
     }
 
     fn send_frame(
         &mut self,
         frame: RealtimeMessage,
-    ) -> SenderFuture<'_, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'_, (), Config::Error, CallbackError> {
+        async move {
             self.state
                 .backend
                 .as_mut()
@@ -78,15 +79,16 @@ where
                 .send(frame)
                 .await
                 .map_err(|source| RealtimeSenderError::Backend { source })
-        })
+        }
+        .boxed_local()
     }
 
     fn deliver_text(
         &mut self,
-        text: String,
+        mut text: String,
         kind: FrameKind,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'_, bool, Config::Error, CallbackError> {
+        async move {
             if kind == FrameKind::Setup {
                 if self.state.setup.content_sent_after_setup.0 {
                     tracing::debug!(
@@ -102,11 +104,7 @@ where
                     &self.state.request_data,
                 )
                 .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
-                let message = injected.unwrap_or(text);
-                self.send_frame(RealtimeMessage::Text(message.clone()))
-                    .await?;
-                self.cache_session_configuration(&message);
-                return Ok(true);
+                text = injected.unwrap_or(text);
             }
             self.send_frame(RealtimeMessage::Text(text.clone())).await?;
             self.cache_session_configuration(&text);
@@ -114,7 +112,8 @@ where
                 self.state.setup.content_sent_after_setup.0 = true;
             }
             Ok(true)
-        })
+        }
+        .boxed_local()
     }
 
     // A provider normalizer that rejects an event keeps it off the client socket
@@ -148,8 +147,8 @@ where
         &'call mut self,
         event: &'call Json,
         event_str: &'call str,
-    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
+        async move {
             if self.should_drop_event_from_client(event) {
                 return Ok(false);
             }
@@ -174,14 +173,15 @@ where
             }
             self.send_client_text(&encoded).await?;
             Ok(true)
-        })
+        }
+        .boxed_local()
     }
 
     fn send_translated<'call>(
         &'call mut self,
         event: &'call Json,
-    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
+        async move {
             let outcome = translate_event_to_beta(event.clone())
                 .map_err(|source| RealtimeSenderError::Beta { source })?;
             let Some(translated) = outcome else {
@@ -191,14 +191,15 @@ where
                 .map_err(|source| RealtimeSenderError::Encode { source })?;
             self.send_client_text(&encoded).await?;
             Ok(true)
-        })
+        }
+        .boxed_local()
     }
 
     fn send_client_text<'call>(
         &'call mut self,
         text: &'call str,
-    ) -> SenderFuture<'call, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'call, (), Config::Error, CallbackError> {
+        async move {
             self.state
                 .client
                 .as_mut()
@@ -206,7 +207,8 @@ where
                 .send_text(text)
                 .await
                 .map_err(|source| RealtimeSenderError::Client { source })
-        })
+        }
+        .boxed_local()
     }
 
     // LiteLLM caches the exact frame it sent whenever the sent JSON object carries a setup key, even a null one
@@ -223,8 +225,8 @@ where
     #[must_use]
     pub fn maybe_disable_auto_response(
         &mut self,
-    ) -> SenderFuture<'_, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
-        Box::pin(async move {
+    ) -> SenderFuture<'_, (), Config::Error, CallbackError> {
+        async move {
             if self.state.setup.turn_detection_update_sent.0 || !self.transcription_guardrails()? {
                 return Ok(());
             }
@@ -234,7 +236,8 @@ where
                 self.state.setup.turn_detection_update_sent.0 = true;
             }
             Ok(())
-        })
+        }
+        .boxed_local()
     }
 
     fn transcription_guardrails(
