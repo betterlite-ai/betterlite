@@ -52,8 +52,9 @@ fn unended_failure(
         &failure,
         GuardrailFailure::ModifyResponse(response) if response.original_response.is_none()
     );
-    let fallback =
-        needs_usage.then(|| build_streaming_usage_response(responses_so_far, request_data));
+    let fallback = needs_usage
+        .then(|| build_streaming_usage_response(responses_so_far, request_data))
+        .flatten();
     ProcessStreamError::from(keep_original_response(failure, fallback))
 }
 

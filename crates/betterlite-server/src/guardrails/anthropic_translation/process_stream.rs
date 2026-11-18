@@ -38,7 +38,7 @@ pub async fn process_output_streaming_response<G>(
     responses_so_far: &mut Vec<SseChunk>,
     guardrail: &G,
     guardrail_name: Option<&str>,
-    mut logging_obj: Option<&mut GuardrailLogTarget>,
+    logging_obj: Option<&mut GuardrailLogTarget>,
     user_api_key_dict: Option<&Object>,
     request_data: Option<&mut Object>,
     deliver_ended_stream_rewrites: bool,
@@ -56,7 +56,7 @@ where
             responses_so_far,
             guardrail,
             &context,
-            logging_obj.as_deref_mut(),
+            logging_obj,
             request_data,
         )
         .await;
@@ -65,7 +65,7 @@ where
         responses_so_far,
         guardrail,
         &context,
-        logging_obj.as_deref_mut(),
+        logging_obj,
         request_data,
     )
     .await
