@@ -3,14 +3,29 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::cohere_legacy_embedding::SdkMode;
+use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
+use betterlite_openai::cohere_legacy_embedding::execute::ExecuteInput;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
+use betterlite_openai::cohere_legacy_embedding::execute::execute as cohere_execute;
+use betterlite_openai::cohere_legacy_embedding::plan::{
+    LegacyEmbeddingPlan, PlanInput, plan as cohere_plan,
+};
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::arguments::json::Object;
+use futures_util::future::LocalBoxFuture;
 use http::{HeaderMap, HeaderName, HeaderValue};
 
+use super::{Item, cohere_timeout};
 use crate::bedrock_embedding_io::transport::{
     ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport,
     SuppliedClient, Timeout, TransferError,
 };
+use crate::embedding_call::error::EmbeddingCallError;
+use crate::embedding_call::hooks::{Event, Input, Recorder, log_event, replay};
+use crate::embedding_call::plan::remaining_options;
+use crate::embedding_call::sign::{SigningInput, sign_item};
+use crate::embedding_call::{Clock, CredentialSource, Dependencies, LogContext};
 
 // LiteLLM builds the async cohere client with litellm.LlmProviders.COHERE
 const COHERE_CLIENT_PROVIDER: &str = "cohere";
@@ -117,4 +132,91 @@ fn upstream(reply: EmbeddingReply) -> UpstreamResponse {
         headers,
         body: reply.body,
     }
+}
+
+pub(super) fn cohere<'run, Source, Factory, Transport>(
+    item: &'run Item<'_, '_, '_>,
+    data: &'run Object,
+    dependencies: &'run Dependencies<'_, Source, Factory, Transport>,
+    supplied: Option<SuppliedClient<'run, Factory::Client>>,
+    log: &'run mut LogContext<'_, '_>,
+) -> LocalBoxFuture<'run, Result<LegacyEmbeddingResponse, EmbeddingCallError>>
+where
+    Source: CredentialSource + Sync,
+    Factory: ClientFactory + Sync,
+    Factory::Client: LegacyEmbeddingTransport,
+    Transport: LegacyEmbeddingTransport,
+{
+    Box::pin(async move {
+        let legacy = prepare(item, data, dependencies.clock.as_ref(), log)?;
+        let sender = CohereSender {
+            supplied,
+            factory: dependencies.factory,
+            fallback: dependencies.transport,
+            asynchronous: item.call.aembedding,
+            timeout: item.call.timeout.clone(),
+            headers: &legacy.headers,
+            timed_out: Mutex::new(None),
+        };
+        let input = ExecuteInput {
+            plan: &legacy,
+            input: item.call.input,
+            api_key: None,
+            encoding: dependencies.encoding,
+        };
+        let mut recorder = Recorder::default();
+        let outcome = cohere_execute(&sender, input, &mut recorder).await;
+        replay(recorder, log)?;
+        if let Some(source) = sender.take_timeout() {
+            return Err(EmbeddingCallError::CohereTimeout { source });
+        }
+        Ok(outcome?)
+    })
+}
+
+// LiteLLM logs the prepared request before the handler builds a client and sends it
+fn prepare(
+    item: &Item<'_, '_, '_>,
+    data: &Object,
+    clock: &dyn Clock,
+    log: &mut LogContext<'_, '_>,
+) -> Result<LegacyEmbeddingPlan, EmbeddingCallError> {
+    let signed = sign_item(
+        &serde_json::to_vec(data)?,
+        &SigningInput {
+            endpoint_url: &item.plan.endpoint_url,
+            credentials: item.plan.credentials.as_ref(),
+            region: &item.plan.region,
+            extra_headers: item.call.extra_headers.unwrap_or_default(),
+            api_key: item.call.api_key,
+            configured_bearer: item.call.environment.bearer_token,
+            now: clock.now(),
+        },
+    )
+    .map_err(EmbeddingCallError::from)?;
+    let legacy = cohere_plan(&PlanInput {
+        mode: if item.call.aembedding {
+            SdkMode::Async
+        } else {
+            SdkMode::Sync
+        },
+        model: &item.plan.model,
+        input: item.call.input,
+        optional_params: &remaining_options(&item.call.optional_params)?,
+        supplied_data: Some(data),
+        complete_api_base: Some(&signed.url),
+        api_key: None,
+        headers: &signed.headers.iter().cloned().collect(),
+        timeout: cohere_timeout(item.call)?,
+    });
+    log_event(
+        Event::Pre {
+            input: Input::Texts(item.call.input.to_vec()),
+            body: legacy.data.clone(),
+            headers: item.call.aembedding.then(|| legacy.headers.clone()),
+            api_base: item.call.aembedding.then(|| legacy.url.clone()),
+        },
+        log,
+    )?;
+    Ok(legacy)
 }
