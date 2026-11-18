@@ -7,7 +7,7 @@ use betterlite_pyhost::call_error::CallError;
 use betterlite_pyhost::json_values::{JsonObject, JsonValue};
 use pyo3::types::PyAnyMethods as _;
 
-use super::HOOK_DEADLINE;
+use super::{HOOK_DEADLINE, LOAD_DEADLINE};
 use crate::python_hooks::PythonHooks;
 use crate::python_hooks::slots::HookSlot;
 use crate::python_hooks::test_support;
@@ -26,6 +26,11 @@ fn release(service: &PythonHooks, module: &str) {
 #[test]
 fn the_default_hook_deadline_is_thirty_seconds() {
     assert_eq!(HOOK_DEADLINE, Duration::from_secs(30));
+}
+
+#[test]
+fn the_load_deadline_is_sixty_seconds() {
+    assert_eq!(LOAD_DEADLINE, Duration::from_secs(60));
 }
 
 #[tokio::test]
