@@ -36,6 +36,16 @@ deviations:
       set resolves identically on both sides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5767-L5787
   - what: >-
+      a tier entry's request parameters stay attached to the entry in `tier_models`, and a
+      configuration file that writes LiteLLM's `tier_model_configs` map has that key ignored,
+      where LiteLLM merges those parameters onto the matching tier entry.
+    why: >-
+      The task's configuration boundary names `tier_models` as the tier map, and the object entry
+      form already carries each entry's `litellm_params`, so the router reads parameters from one
+      place. A configuration that writes its parameters on the object entries keeps them; one that
+      relies only on the separate `tier_model_configs` map does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1523-L1568
+  - what: >-
       Classifier replies, display labels and duplicate tier names are compared after Unicode
       simple lowercasing, where LiteLLM compares them with `casefold`.
     why: >-

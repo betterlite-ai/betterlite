@@ -394,6 +394,21 @@ fn an_unknown_field_inside_a_parameter_entry_is_ignored() {
 }
 
 #[test]
+fn the_separate_tier_model_configs_map_is_not_read() {
+    let keys = "        tiers:
+          REASONING: opus
+        tier_model_configs:
+          REASONING:
+            - {model_name: opus, litellm_params: {reasoning_effort: xhigh}}
+";
+    let config = only(keys, &[]).unwrap().unwrap();
+    assert_eq!(
+        &config.tier_models.unwrap()["REASONING"],
+        &TierPool::Single(model("opus"))
+    );
+}
+
+#[test]
 fn a_number_parameter_survives_as_a_number() {
     let keys = "        tier_models:
           SIMPLE:
