@@ -173,7 +173,7 @@ async fn import_request_carries_the_chunking_config() {
     let WireChunkingConfig::FixedLengthChunking(fixed) = wire_chunking else {
         panic!("the chunking config is fixed length");
     };
-    assert_eq!((fixed.chunk_size, fixed.chunk_overlap), (512, 16));
+    assert_eq!((fixed.chunk_size, fixed.chunk_overlap), (512_i32, 16_i32));
 }
 
 #[rstest]
