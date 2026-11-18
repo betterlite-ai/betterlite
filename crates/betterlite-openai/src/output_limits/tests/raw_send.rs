@@ -8,8 +8,8 @@ use serde_json::{Map, Value, json};
 
 use super::super::OUTPUT_TOKEN_LIMIT_MARKER;
 use super::super::raw_send::{
-    AsyncRawChatTransport, BadRequestReply, RawChatError, RawChatResponse, SyncRawChatTransport,
-    send_raw_chat_async, send_raw_chat_sync,
+    AsyncRawChatTransport, BadRequestReply, RawChatError, RawChatResponse, StatusReply,
+    SyncRawChatTransport, send_raw_chat_async, send_raw_chat_sync,
 };
 use super::{COMPLETION, Recorder, fields, header_map, recovery};
 
@@ -124,6 +124,18 @@ pub(super) async fn azure_output_limit_recovery() {
     let recovered = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
         .await
         .expect("the sync wrapper recovers");
+    assert_recovered_completion(&recovered);
+    let background =
+        ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(error.clone()))));
+    let recovered = send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder))
+        .await
+        .expect("the async wrapper recovers");
+    assert_recovered_completion(&recovered);
+    stream_recovers_a_chunk(&recorder, error).await;
+    unrelated_failures_propagate(&data, &recorder).await;
+}
+
+fn assert_recovered_completion(recovered: &RawChatResponse) {
     assert_eq!(recovered.headers, header_map(&[("x-ms-request-id", "e1")]));
     assert_eq!(
         recovered.body.get("object"),
@@ -137,16 +149,9 @@ pub(super) async fn azure_output_limit_recovery() {
         recovered.body.pointer("/usage/prompt_tokens"),
         Some(&json!(3_i32))
     );
-    let background =
-        ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(error.clone()))));
-    let recovered = send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder))
-        .await
-        .expect("the async wrapper recovers");
-    assert_eq!(recovered.headers, header_map(&[("x-ms-request-id", "e1")]));
-    assert_eq!(
-        recovered.body.get("object"),
-        Some(&json!("chat.completion"))
-    );
+}
+
+async fn stream_recovers_a_chunk(recorder: &Recorder, error: BadRequestReply) {
     let streamed = fields(&[
         ("model", json!("gpt-3.5-turbo")),
         ("messages", json!([{"role": "user", "content": "hi"}])),
@@ -154,14 +159,52 @@ pub(super) async fn azure_output_limit_recovery() {
     ]);
     let background = ScriptedTransport::from(Err(RawChatError::BadRequest(Box::new(error))));
     let recovered =
-        send_raw_chat_async(&background, &streamed, 2.5, fixed_now, &recovery(&recorder))
+        send_raw_chat_async(&background, &streamed, 2.5, fixed_now, &recovery(recorder))
             .await
             .expect("the async wrapper recovers a chunk");
     assert_eq!(
         recovered.body.get("object"),
         Some(&json!("chat.completion.chunk"))
     );
-    unrelated_failures_propagate(&data, &recorder).await;
+}
+
+fn rate_limited() -> RawChatError {
+    RawChatError::Status(Box::new(StatusReply {
+        status: 429,
+        message: String::from("Rate limit reached for requests"),
+        headers: header_map(&[("x-ms-request-id", "e3")]),
+        body: json!({"message": "Rate limit reached for requests", "type": "rate_limit_error", "param": null, "code": "rate_limit_exceeded"}),
+    }))
+}
+
+#[tokio::test]
+async fn provider_status_error_keeps_its_response() {
+    let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
+    let recorder = Recorder::new(0);
+    let sync = ScriptedTransport::from(Err(rate_limited()));
+    let failure = send_raw_chat_sync(&sync, &data, 2.5, &recovery(&recorder))
+        .await
+        .expect_err("the status error travels on");
+    assert_status_failure(&failure);
+    let background = ScriptedTransport::from(Err(rate_limited()));
+    let failure = send_raw_chat_async(&background, &data, 2.5, fixed_now, &recovery(&recorder))
+        .await
+        .expect_err("the status error travels on");
+    assert_status_failure(&failure);
+    assert!(recorder.calls().is_empty());
+}
+
+fn assert_status_failure(failure: &RawChatError) {
+    let RawChatError::Status(reply) = failure else {
+        panic!("a non-400 provider error must propagate: {failure:?}");
+    };
+    assert_eq!(reply.status, 429);
+    assert_eq!(reply.message, "Rate limit reached for requests");
+    assert_eq!(reply.headers, header_map(&[("x-ms-request-id", "e3")]));
+    assert_eq!(
+        reply.body,
+        json!({"message": "Rate limit reached for requests", "type": "rate_limit_error", "param": null, "code": "rate_limit_exceeded"})
+    );
 }
 
 async fn unrelated_failures_propagate(data: &Map<String, Value>, recorder: &Recorder) {

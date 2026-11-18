@@ -61,6 +61,12 @@ pub(crate) enum AzureOutcome {
         headers: BTreeMap<String, String>,
         body: Value,
     },
+    // any other APIStatusError, which the wrappers rethrow with its status and response intact
+    Status {
+        status: u16,
+        headers: BTreeMap<String, String>,
+        body: Value,
+    },
     Timeout,
 }
 

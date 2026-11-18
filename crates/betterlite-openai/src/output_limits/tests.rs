@@ -19,6 +19,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -202,8 +203,19 @@ async fn empty_length_completion() {
     let RecoveredBody::Completion(completion) = answer.body else {
         panic!("a buffered request recovers a completion");
     };
+    assert_empty_completion(&serde_json::to_value(&completion).expect("completion json"));
     assert_eq!(
-        serde_json::to_value(&completion).expect("completion json"),
+        recorder.calls(),
+        vec![(
+            String::from("gpt-3.5-turbo"),
+            vec![json!({"role": "user", "content": "hello world"})],
+        )]
+    );
+}
+
+fn assert_empty_completion(completion: &Value) {
+    assert_eq!(
+        *completion,
         json!({
             "id": "chatcmpl-00000000-0000-0000-0000-000000000007",
             "object": "chat.completion",
@@ -221,13 +233,6 @@ async fn empty_length_completion() {
             }],
             "usage": {"prompt_tokens": 7_i32, "completion_tokens": 0_i32, "total_tokens": 7_i32},
         })
-    );
-    assert_eq!(
-        recorder.calls(),
-        vec![(
-            String::from("gpt-3.5-turbo"),
-            vec![json!({"role": "user", "content": "hello world"})],
-        )]
     );
 }
 
@@ -290,8 +295,13 @@ async fn prompt_token_count() {
             messages.as_array().expect("messages").clone()
         )]
     );
+    absent_or_unlisted_messages(&recorder).await;
+    count_with_runtime_tokenizer().await;
+}
+
+async fn absent_or_unlisted_messages(recorder: &Recorder) {
     let unmodelled = fields(&[("messages", json!([]))]);
-    build_limit_response(&unmodelled, HeaderMap::new(), &recovery(&recorder))
+    build_limit_response(&unmodelled, HeaderMap::new(), &recovery(recorder))
         .await
         .expect("empty model");
     assert_eq!(
@@ -299,13 +309,12 @@ async fn prompt_token_count() {
         Some("")
     );
     let uncounted = Recorder::new(7);
-    for data in [
-        fields(&[("model", json!("gpt-3.5-turbo"))]),
-        fields(&[
-            ("model", json!("gpt-3.5-turbo")),
-            ("messages", json!("not a list")),
-        ]),
-    ] {
+    let absent = fields(&[("model", json!("gpt-3.5-turbo"))]);
+    let unlisted = fields(&[
+        ("model", json!("gpt-3.5-turbo")),
+        ("messages", json!("not a list")),
+    ]);
+    for data in [absent, unlisted] {
         let answer = build_limit_response(&data, HeaderMap::new(), &recovery(&uncounted))
             .await
             .expect("uncounted reply");
@@ -316,7 +325,6 @@ async fn prompt_token_count() {
         assert_eq!(completion.usage.total_tokens, 0);
     }
     assert!(uncounted.calls().is_empty());
-    Box::pin(count_with_runtime_tokenizer()).await;
 }
 
 async fn count_with_runtime_tokenizer() {
@@ -350,15 +358,19 @@ async fn count_with_runtime_tokenizer() {
     };
     assert_eq!(completion.usage.prompt_tokens, 9);
     assert_eq!(completion.usage.total_tokens, 9);
+    counts_tokens_through_the_counter(&tokens).await;
+}
+
+async fn counts_tokens_through_the_counter(tokens: &Counter) {
     assert_eq!(
-        PromptTokens::count(&tokens, "gpt-3.5-turbo", &[])
+        PromptTokens::count(tokens, "gpt-3.5-turbo", &[])
             .await
             .unwrap(),
         3
     );
     assert!(matches!(
         PromptTokens::count(
-            &tokens,
+            tokens,
             "gpt-3.5-turbo",
             &[json!({"content": "missing role"})]
         )

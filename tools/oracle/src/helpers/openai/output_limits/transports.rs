@@ -2,7 +2,8 @@ use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_openai::output_limits::raw_send::{
-    AsyncRawChatTransport, BadRequestReply, RawChatError, RawChatResponse, SyncRawChatTransport,
+    AsyncRawChatTransport, BadRequestReply, RawChatError, RawChatResponse, StatusReply,
+    SyncRawChatTransport,
 };
 use serde_json::{Map, Value};
 
@@ -32,6 +33,17 @@ impl Scripted {
                     body: body.clone(),
                 })))
             }
+            AzureOutcome::Status {
+                status,
+                headers,
+                body,
+            } => Err(RawChatError::Status(Box::new(StatusReply {
+                status: *status,
+                message: error_message(body),
+                headers: header_map(headers),
+                // the SDK's exception body is the response's error member, or the whole body when it has none
+                body: body.get("error").cloned().unwrap_or_else(|| body.clone()),
+            }))),
             AzureOutcome::Timeout => Err(RawChatError::Timeout {
                 message: String::from("Request timed out."),
             }),

@@ -24,11 +24,22 @@ pub struct BadRequestReply {
     pub body: Value,
 }
 
+// the SDK's other APIStatusError payloads keep their status and response, which LiteLLM's bare `raise e` preserves
+#[derive(Debug, Clone)]
+pub struct StatusReply {
+    pub status: u16,
+    pub message: String,
+    pub headers: HeaderMap,
+    pub body: Value,
+}
+
 #[derive(Debug, Error)]
 pub enum RawChatError {
-    // boxed so the two word-sized failures stay within 3x of it, the limit variant_size_differences enforces
+    // boxed so the word-sized failures stay within 3x of each other, the limit variant_size_differences enforces
     #[error("{}", .0.message)]
     BadRequest(Box<BadRequestReply>),
+    #[error("{}", .0.message)]
+    Status(Box<StatusReply>),
     // the SDK's APITimeoutError, which carries no response
     #[error("{message}")]
     Timeout { message: String },

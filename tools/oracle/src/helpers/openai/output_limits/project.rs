@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::output_limits::raw_send::{BadRequestReply, RawChatError};
+use betterlite_openai::output_limits::raw_send::{BadRequestReply, RawChatError, StatusReply};
 use betterlite_oracle_helper_api::error::HelperError;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Serialize;
@@ -23,6 +23,12 @@ pub(crate) fn raw_failure(error: RawChatError) -> Box<HelperError> {
         RawChatError::BadRequest(rejected) => {
             let BadRequestReply { message, .. } = *rejected;
             failure("BadRequestError", Some(400), message)
+        }
+        RawChatError::Status(reply) => {
+            let StatusReply {
+                status, message, ..
+            } = *reply;
+            failure("APIStatusError", Some(status), message)
         }
         RawChatError::Timeout { message } => failure("APITimeoutError", None, message),
         RawChatError::Other { message } => failure("RawChatError", None, message),

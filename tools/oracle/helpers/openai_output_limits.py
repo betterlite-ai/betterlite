@@ -38,7 +38,8 @@ class BuildFields(TypedDict):
 
 
 class Outcome(TypedDict):
-    kind: Literal["reply", "bad_request", "timeout"]
+    kind: Literal["reply", "bad_request", "status", "timeout"]
+    status: NotRequired[int]
     headers: NotRequired[dict[str, str]]
     body: NotRequired[JsonValue]
 
@@ -74,6 +75,13 @@ class Scripted:
             case "bad_request":
                 return httpx.Response(
                     400,
+                    headers=self.outcome.get("headers"),
+                    json=self.outcome.get("body"),
+                    request=request,
+                )
+            case "status":
+                return httpx.Response(
+                    self.outcome["status"],
                     headers=self.outcome.get("headers"),
                     json=self.outcome.get("body"),
                     request=request,
