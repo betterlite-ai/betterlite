@@ -82,7 +82,7 @@ fn scaled_threshold(capacity: i64) -> Result<i64, SpendQueueError> {
     let scaled = capacity.checked_mul(THRESHOLD_PERCENT).ok_or(overflow)?;
     scaled
         .checked_div(PERCENT_SCALE)
-        .ok_or(SpendQueueError::Overflow {
+        .ok_or_else(|| SpendQueueError::Overflow {
             name: QUEUE_CAPACITY_ENV.to_owned(),
         })
 }
