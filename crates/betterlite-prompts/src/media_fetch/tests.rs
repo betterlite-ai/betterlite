@@ -764,7 +764,7 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
 #[rstest]
 #[case::at_most_twenty_in_flight("bounded")]
 #[case::first_failure_cancels_the_rest("cancelled")]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
     match scenario {
         "bounded" => {

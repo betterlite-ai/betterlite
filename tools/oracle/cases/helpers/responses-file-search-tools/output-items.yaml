@@ -1,0 +1,48 @@
+kind: helper
+name: responses-file-search-output-items
+call:
+  responses_file_search_tools:
+    function: output_items
+    call_id: fs_0123456789abcdef01234567
+    queries: ["q1"]
+    include_search_results: false
+    results: null
+    text: answer
+calls:
+  - responses_file_search_tools:
+      function: output_items
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: false
+      results:
+        - {file_id: file_1, filename: report.txt, score: 0.87654, content: [{text: hello}]}
+      text: answer
+  - responses_file_search_tools:
+      function: output_items
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: true
+      results: []
+      text: answer
+  - responses_file_search_tools:
+      function: output_items
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: true
+      results:
+        - {file_id: file_1, filename: report.txt, score: 0.87654, content: [{text: hello}, {text: world}]}
+        - {file_id: file_2, filename: "", score: 0, content: [{text: other}]}
+      text: answer
+  - responses_file_search_tools:
+      function: output_items
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: true
+      results:
+        - {filename: a.txt}
+        - {file_id: file_1, filename: b.txt}
+        - {file_id: file_1, filename: c.txt}
+        - {file_id: file_2}
+      text: answer
+env: {}
+compare: {ignore: []}

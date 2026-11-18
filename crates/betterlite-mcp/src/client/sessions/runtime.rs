@@ -11,7 +11,7 @@ use crate::client::sdk_runtime::handler::ServerRequestHandlers;
 use super::error::ExitFailure;
 use super::factory::{HttpClientConfig, SseRequest};
 use super::negotiate::{Callbacks, ClientSession};
-use super::stdio::{StdioServer, StdioTransport};
+use super::stdio::{StdioServer, StdioShutdown, StdioTransport};
 use super::stream::MessageHandler;
 use super::transport::{StdioServerParameters, TransportContext};
 
@@ -26,9 +26,13 @@ where
 }
 
 #[must_use]
-pub fn stdio_transport(parameters: StdioServerParameters) -> StdioTransport {
+pub fn stdio_transport(
+    parameters: StdioServerParameters,
+    shutdown: StdioShutdown,
+) -> StdioTransport {
     StdioTransport::Server(Box::new(StdioServer {
         parameters,
+        shutdown,
         child: None,
         stdin: None,
         stdout: None,

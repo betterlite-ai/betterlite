@@ -18,6 +18,17 @@ pub const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 pub const FORCE_KILL_TIMEOUT: Duration = Duration::from_secs(2);
 const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+#[derive(Clone, Copy, Debug)]
+pub struct StdioShutdown {
+    pub termination: Duration,
+    pub force_kill: Duration,
+}
+
+pub const SDK_SHUTDOWN: StdioShutdown = StdioShutdown {
+    termination: PROCESS_TERMINATION_TIMEOUT,
+    force_kill: FORCE_KILL_TIMEOUT,
+};
+
 pub struct StdioStreams {
     pub pid: u32,
     pub stdin: ChildStdin,
@@ -26,6 +37,7 @@ pub struct StdioStreams {
 
 pub struct StdioServer {
     pub(super) parameters: StdioServerParameters,
+    pub(super) shutdown: StdioShutdown,
     pub(super) child: Option<Child>,
     pub(super) stdin: Option<ChildStdin>,
     pub(super) stdout: Option<ChildStdout>,
@@ -84,10 +96,10 @@ impl StdioServer {
             return Ok(());
         };
         let leader = child.id();
-        let leader_reaped = timeout(PROCESS_TERMINATION_TIMEOUT, child.wait())
+        let leader_reaped = timeout(self.shutdown.termination, child.wait())
             .await
             .is_ok();
-        terminate_group(leader, &mut child, leader_reaped).await
+        terminate_group(leader, &mut child, leader_reaped, self.shutdown.force_kill).await
     }
 }
 
@@ -96,12 +108,13 @@ async fn terminate_group(
     leader: Option<u32>,
     child: &mut Child,
     mut leader_reaped: bool,
+    force_kill: Duration,
 ) -> Result<(), ExitFailure<io::Error>> {
     if signal_group(leader, Signal::TERM)? == GroupState::Gone {
         return Ok(());
     }
     let deadline = Instant::now()
-        .checked_add(FORCE_KILL_TIMEOUT)
+        .checked_add(force_kill)
         .unwrap_or_else(Instant::now);
     while Instant::now() < deadline {
         if !leader_reaped {

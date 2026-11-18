@@ -1,0 +1,33 @@
+kind: helper
+name: anthropic-batches-retrieve-seed
+call:
+  anthropic_batches:
+    retrieve:
+      now: 1700000000
+      scenarios:
+        - environment: {ANTHROPIC_API_KEY: seed-key}
+          batch_id: msgbatch_seed
+          api_base: null
+          api_key: null
+          sync: false
+          status: 200
+          headers: []
+          body: '{"id":"msgbatch_seed","processing_status":"ended","request_counts":{"succeeded":1}}'
+        - environment: {ANTHROPIC_API_KEY: seed-key}
+          batch_id: "seed path"
+          api_base: ""
+          api_key: ""
+          sync: false
+          status: 429
+          headers: [[retry-after, "2"]]
+          body: '{"error":{"message":"seed"}}'
+        - environment: {}
+          batch_id: seed
+          api_base: null
+          api_key: null
+          sync: true
+          status: 200
+          headers: []
+          body: '{}'
+env: {}
+compare: {ignore: []}

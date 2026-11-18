@@ -1067,6 +1067,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",
@@ -1104,6 +1105,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-paths",
@@ -1117,6 +1119,7 @@ dependencies = [
  "deadpool-postgres",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "lru",
  "pcre2",
@@ -1138,6 +1141,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
+ "url",
  "uuid",
 ]
 

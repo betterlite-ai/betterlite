@@ -1,0 +1,136 @@
+kind: helper
+name: bedrock-converse-messages-system-around-tool-result
+call:
+  bedrock_converse_messages:
+    function: transform_system
+    messages:
+      - {role: user, content: question}
+      - role: assistant
+        content: calling
+        tool_calls:
+          - {id: call_1, type: function, function: {name: lookup, arguments: '{}'}}
+      - {role: system, content: hold}
+      - {role: tool, tool_call_id: call_1, content: r1}
+      - {role: tool, tool_call_id: call_1, content: r2}
+      - {role: user, content: next}
+    model: null
+    model_cost: {}
+calls:
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+        - {role: user, content: next}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: hold}
+        - role: user
+          content:
+            - {type: tool_result, tool_use_id: call_1, content: r}
+        - {role: user, content: next}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: first}
+        - {role: system, content: second}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: hold}
+        - role: user
+          content:
+            - {type: tool_result, tool_use_id: call_1, content: r}
+        - {role: tool, tool_call_id: call_1, content: r2}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: a, tool_calls: []}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: hold}
+        - role: user
+          content:
+            - {type: text, text: x}
+            - {type: tool_result, tool_use_id: call_1, content: r}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: hold}
+        - {role: function, name: f, content: r}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: function, name: f, content: r}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: top}
+        - {role: user, content: question}
+        - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+        - {role: system, content: mid}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: user, content: again}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: tool, tool_call_id: call_1, content: r1}
+        - {role: user, content: next}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: 'x', tool_calls: [{id: c, type: function, function: {name: 'n', arguments: ''}}]}
+        - {role: system, content: hold}
+        - {role: tool, tool_call_id: call_1, content: r1}
+      model: null
+      model_cost: {}
+env: {}
+compare: {ignore: []}

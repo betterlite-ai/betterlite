@@ -1,0 +1,97 @@
+kind: helper
+name: bedrock-converse-messages-system-role-as-user
+call:
+  bedrock_converse_messages:
+    function: transform_system
+    messages:
+      - {role: system, content: rules}
+      - role: system
+        content:
+          - {type: text, text: a}
+          - {type: image, source: {bytes: AA==}}
+          - {type: text, text: ''}
+          - {type: text, text: ' '}
+      - {role: user, content: question}
+    model: null
+    model_cost: {}
+calls:
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: hoisted}
+        - {role: developer, content: policy}
+        - {role: system, content: later}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: ''}
+        - role: system
+          content:
+            - {type: image, source: {bytes: AA==}}
+        - {role: system}
+        - {role: user, content: question}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: system, content: hold}
+        - {role: user, content: again}
+        - {role: system, content: ''}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - role: system
+          content:
+            - {type: text, text: a, cache_control: {type: ephemeral, ttl: 5m}, extra: 1}
+            - {type: image, source: {bytes: AA==}}
+            - {type: text, text: b}
+        - {role: assistant, content: reply}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: system, content: a, name: bot, cache_control: {type: ephemeral}, extra: 1}
+        - {role: assistant, content: reply}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: question}
+        - {role: system, content: ' '}
+        - {role: assistant, content: reply}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: user, content: q1}
+        - {role: system, content: null}
+        - {role: user, content: q2}
+        - {role: system, content: []}
+        - {role: user, content: q3}
+        - role: system
+          content:
+            - {type: image, source: {bytes: AA==}}
+        - {role: user, content: q4}
+        - role: system
+          content:
+            - {type: text}
+        - {role: user, content: q5}
+        - role: system
+          content:
+            - {type: text, text: null}
+            - {type: text, text: ''}
+      model: null
+      model_cost: {}
+env: {}
+compare: {ignore: []}

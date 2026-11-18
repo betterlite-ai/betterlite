@@ -10,6 +10,7 @@ use crate::events::Event;
 use crate::options::{ClaudeCodeOptions, CodexOptions, HarnessOptions, ReasoningEffort};
 use crate::payloads::DEFAULT_MAX_RECURSE_DEPTH;
 use crate::sandbox::local::LocalSandbox;
+use crate::sandbox::local::process::PROCESS_KILL_GRACE;
 use crate::transformation::{BaseCLIHarnessConfig as _, BaseHarnessConfig as _};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
 
@@ -426,8 +427,13 @@ fn capabilities_match_litellm() {
 
 fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     let root = tempfile::tempdir().unwrap();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let settings = SessionSettings {
         model: Some("gpt-test".to_owned()),
         gateway: Some(GatewayTarget {

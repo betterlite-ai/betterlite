@@ -30,6 +30,7 @@ pub struct LocalSandbox {
     environment: BTreeMap<String, SecretString>,
     temp_root: PathBuf,
     state: Arc<Mutex<State>>,
+    kill_grace: Duration,
 }
 
 impl LocalSandbox {
@@ -37,6 +38,7 @@ impl LocalSandbox {
         path: &Path,
         environment: &BTreeMap<String, SecretString>,
         temp_root: PathBuf,
+        kill_grace: Duration,
     ) -> Result<Self, HarnessError> {
         let resolved = fs::canonicalize(path).map_err(|source| SandboxError::Root {
             path: path.to_path_buf(),
@@ -54,6 +56,7 @@ impl LocalSandbox {
             temp_root: fs::canonicalize(temp_root)
                 .map_err(|source| HarnessError::Sandbox { source })?,
             state: Arc::new(Mutex::new(State::default())),
+            kill_grace,
         })
     }
 
@@ -103,6 +106,7 @@ impl Sandbox for LocalSandbox {
     async fn exec(&self, command: &SandboxCommand) -> Result<Self::Process, HarnessError> {
         let request = command.clone();
         let environment = self.child_env(&command.env);
+        let kill_grace = self.kill_grace;
         self.access(move |state, root| {
             if state.closed {
                 return Err(HarnessError::from(SandboxError::Closed));
@@ -114,7 +118,7 @@ impl Sandbox for LocalSandbox {
             if !cwd.is_dir() {
                 return Err(HarnessError::from(SandboxError::Cwd(cwd)));
             }
-            let handle = process::start(&request, &path_string(&cwd)?, &environment)?;
+            let handle = process::start(&request, &path_string(&cwd)?, &environment, kill_grace)?;
             state.processes.push(Arc::clone(&handle.child));
             Ok(handle)
         })

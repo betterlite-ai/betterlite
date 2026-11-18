@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock_converse_messages-handle-orphaned
+call:
+  bedrock_converse_messages:
+    function: handle_orphaned
+    messages:
+      - {role: assistant, content: calling, tool_calls: [{id: call_1, type: function, function: {name: lookup, arguments: '{}'}}]}
+    optional_params: {}
+    neutralize_orphaned_blocks: true
+    modify_params: false
+env: {}
+compare: {ignore: []}

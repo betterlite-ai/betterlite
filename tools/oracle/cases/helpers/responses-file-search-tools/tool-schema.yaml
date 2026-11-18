@@ -1,0 +1,15 @@
+kind: helper
+name: responses-file-search-tool-schema
+call:
+  responses_file_search_tools:
+    function: tool_schema
+    vector_store_ids: ["vs_a", "vs_b"]
+calls:
+  - responses_file_search_tools:
+      function: tool_schema
+      vector_store_ids: ["vs_a", "vs_a"]
+  - responses_file_search_tools:
+      function: tool_schema
+      vector_store_ids: []
+env: {}
+compare: {ignore: []}
