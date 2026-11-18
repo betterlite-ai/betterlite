@@ -1497,6 +1497,7 @@ dependencies = [
  "betterlite-secrets",
  "chrono",
  "deadpool-postgres",
+ "derive_more",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "insta",

@@ -154,7 +154,7 @@ fn default_success_definition() -> String {
 }
 
 // Number handles arbitrary_precision floats buffered inside tagged probes and untagged configs.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, derive_more::Into)]
 #[serde(try_from = "serde_json::Number")]
 struct StatisticNumber(f64);
 
@@ -166,11 +166,5 @@ impl TryFrom<serde_json::Number> for StatisticNumber {
             .as_f64()
             .map(Self)
             .ok_or("the statistic must be a finite number")
-    }
-}
-
-impl From<StatisticNumber> for f64 {
-    fn from(number: StatisticNumber) -> Self {
-        number.0
     }
 }
