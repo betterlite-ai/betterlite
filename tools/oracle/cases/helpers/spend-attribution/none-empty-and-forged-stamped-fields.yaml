@@ -1,0 +1,133 @@
+kind: helper
+name: spend-attribution-none-empty-and-forged-stamped-fields
+call:
+  spend_attribution:
+    function: project
+    metadata: null
+    store_bodies: true
+    arguments:
+      applied_guardrails: [ignored]
+      batch_models: null
+      batch_successful_requests: null
+      batch_failed_requests: null
+      mcp_tool_call_metadata: null
+      vector_store_request_metadata: null
+      guardrail_information: null
+      usage_object: null
+      model_map_information: null
+      cold_storage_object_key: cold
+      litellm_overhead_time_ms: null
+      cost_breakdown: null
+      litellm_call_id: call
+      autorouter_savings: 1.5
+      autorouter_savings_estimate: {saved: 1}
+      autorouter_baseline_observation: baseline
+      router_metadata:
+        requested_model: requested
+        selected_model: null
+        selected_provider: openai
+        router_correlation_id: null
+      azure_spillover: {from_deployment: deployment}
+      used_client_oauth_token: true
+calls:
+  - spend_attribution:
+      function: project
+      metadata: {}
+      store_bodies: true
+      arguments:
+        applied_guardrails: null
+        batch_models: null
+        batch_successful_requests: null
+        batch_failed_requests: null
+        mcp_tool_call_metadata: null
+        vector_store_request_metadata: null
+        guardrail_information: null
+        usage_object: null
+        model_map_information: null
+        cold_storage_object_key: null
+        litellm_overhead_time_ms: null
+        cost_breakdown: null
+        litellm_call_id: null
+        autorouter_savings: null
+        autorouter_savings_estimate: null
+        autorouter_baseline_observation: null
+        router_metadata: null
+        azure_spillover: null
+        used_client_oauth_token: null
+  - spend_attribution:
+      function: project
+      metadata:
+        status: failure
+        user_agent: ua
+        attempted_retries: 2
+        actor_agent_id: actor
+        routing_decision: {model: chosen}
+        router_metadata: {requested_model: forged}
+        azure_spillover: {from_deployment: forged}
+        autorouter_savings: 99.0
+        autorouter_savings_estimate: {saved: 99}
+        autorouter_baseline_observation: forged
+        used_client_oauth_token: true
+        applied_guardrails: [forged]
+        mcp_tool_call_metadata: {name: forged}
+        cold_storage_object_key: forged
+        user_api_key: sk-abc
+        user_api_key_alias: alias
+        user_api_key_hash: 1460db1b6902f8b1fc2a40d9381a24d0fd22c3bc1b2c6f999c521da73776fbe0
+      store_bodies: true
+      arguments:
+        applied_guardrails: [guard]
+        batch_models: [batch]
+        batch_successful_requests: 3
+        batch_failed_requests: 1
+        mcp_tool_call_metadata: {name: mcp}
+        vector_store_request_metadata: null
+        guardrail_information: null
+        usage_object: {total_tokens: 4}
+        model_map_information: {model_map_key: key, model_map_value: null}
+        cold_storage_object_key: cold
+        litellm_overhead_time_ms: 2.25
+        cost_breakdown: {total_cost: 0.5}
+        litellm_call_id: call
+        autorouter_savings: 0.5
+        autorouter_savings_estimate: {saved: 2}
+        autorouter_baseline_observation: baseline
+        router_metadata:
+          requested_model: requested
+          selected_model: selected
+          selected_provider: anthropic
+          router_correlation_id: correlation
+        azure_spillover: {from_deployment: deployment}
+        used_client_oauth_token: false
+  - spend_attribution:
+      function: project
+      metadata:
+        user_api_key: 1460db1b6902f8b1fc2a40d9381a24d0fd22c3bc1b2c6f999c521da73776fbe0
+        user_api_key_hash: 1460db1b6902f8b1fc2a40d9381a24d0fd22c3bc1b2c6f999c521da73776fbe0
+      store_bodies: false
+      arguments:
+        applied_guardrails: [ignored]
+        batch_models: null
+        batch_successful_requests: null
+        batch_failed_requests: null
+        mcp_tool_call_metadata: null
+        vector_store_request_metadata: null
+        guardrail_information: null
+        usage_object: null
+        model_map_information: null
+        cold_storage_object_key: cold
+        litellm_overhead_time_ms: null
+        cost_breakdown: null
+        litellm_call_id: call
+        autorouter_savings: 1.5
+        autorouter_savings_estimate: {saved: 1}
+        autorouter_baseline_observation: baseline
+        router_metadata:
+          requested_model: requested
+          selected_model: null
+          selected_provider: openai
+          router_correlation_id: null
+        azure_spillover: {from_deployment: deployment}
+        used_client_oauth_token: true
+env: {}
+compare: {ignore: []}

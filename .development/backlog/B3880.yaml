@@ -1,14 +1,14 @@
 id: B3880
 milestone: M7 observability
 title: Prometheus failure identity and cardinality checks
-status: todo
+status: done
 depends_on: [B3870, B3891, B174, B184, B367, B844]
 file: tasks/B3880-prometheus-failure-labels.yaml
 covers:
   - "litellm/integrations/prometheus.py"
 parent: B111
 split_from: B111
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2411
