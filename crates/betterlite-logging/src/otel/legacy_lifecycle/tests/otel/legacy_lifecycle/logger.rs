@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 
-use crate::support::Rig;
+use crate::support::{END, Rig, START, instant};
 
 const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -72,7 +72,10 @@ fn callback_logger_success_event_writes_primary_and_raw_spans() {
     let logger = LegacyOtelLogger::new(Arc::new(rig.in_memory(None)));
     logger.log_success_event(&event("call-1")).expect("success");
     assert_eq!(rig.names(), vec!["litellm_request", "raw_gen_ai_request"]);
-    assert_eq!(rig.span("litellm_request").status, Status::Ok);
+    let primary = rig.span("litellm_request");
+    assert_eq!(primary.status, Status::Ok);
+    assert_eq!(primary.start_time, instant(START));
+    assert_eq!(primary.end_time, instant(END));
 }
 
 #[test]
