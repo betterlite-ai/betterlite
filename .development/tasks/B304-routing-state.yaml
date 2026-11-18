@@ -5,7 +5,7 @@ description: 'Implement RouterCounters and batched delta synchronization over B3
   log a failed flush and discard its detached deltas, without replay after an ambiguous response. B382
   owns read prefetch; this task owns counter lifetime and writes. Resolve default_sync_interval with Python
   truthiness against DEFAULT_REDIS_SYNC_INTERVAL (environment variable, default 1 second). Drain at most
-  1024 queued deltas per owner; when full, flush within FLUSH_DEADLINE on the owner's task set as the first pitfall says, and if unavailable
+  1024 queued deltas per owner; when full, flush within FLUSH_DEADLINE on the owner task set as the first pitfall says, and if unavailable
   warn/drop the new observation without changing the provider result. Configuration boundary keys introduced
   or consumed here: DEFAULT_REDIS_SYNC_INTERVAL. Implement the owned native service in crates/betterlite-router/src/routing_state.rs.
   B301 registers ProbeOperation::RoutingState and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_state.rs and tools/oracle/litellm/probes/routing_state.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
