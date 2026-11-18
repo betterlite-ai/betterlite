@@ -208,9 +208,10 @@ async fn sap_embedding_reports_missing_credentials() {
     let transport = Scripted::empty();
     let env = Env::new(sap_environment(&[]));
     let call = embedding_call("text-embedding-3-small", None);
-    let error = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env)
-        .await
-        .expect_err("no credentials are set");
+    let outcome = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env).await;
+    let Err(error) = outcome else {
+        panic!("no credentials are set");
+    };
     assert!(matches!(
         error,
         EnterpriseError::SapEmbedding(SapEmbeddingError::Auth(SapAuthError::NoCredentials))
@@ -230,9 +231,10 @@ async fn sap_embedding_refuses_a_client_certificate() {
         ("AICORE_KEY_STR", "key"),
     ]));
     let call = embedding_call("text-embedding-3-small", None);
-    let error = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env)
-        .await
-        .expect_err("the pooled client holds no certificate");
+    let outcome = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env).await;
+    let Err(error) = outcome else {
+        panic!("the pooled client holds no certificate");
+    };
     assert!(
         error.to_string().contains(
             "client certificate authentication is not supported by the pooled SAP client"
@@ -249,9 +251,10 @@ async fn sap_embedding_reports_a_non_success_reply() {
     let transport = Scripted::new(replies);
     let env = Env::new(sap_credentials_environment());
     let call = embedding_call("text-embedding-3-small", None);
-    let error = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env)
-        .await
-        .expect_err("the orchestration service rejects the embedding");
+    let outcome = dispatch_embedding(&call, EmbeddingConfig::Sap, &transport, &env).await;
+    let Err(error) = outcome else {
+        panic!("the orchestration service rejects the embedding");
+    };
     assert!(matches!(error, EnterpriseError::SapOrchestration(_)));
     assert_eq!(error.status(), Some(400));
     assert_eq!(error.to_string(), r#"{"error":"bad"}"#);
@@ -330,9 +333,10 @@ async fn watsonx_embedding_without_ids_reports_401() {
     )]));
     let mut call = embedding_call("ibm/granite-embedding", Some(key("api-key")));
     call.api_base = Some(String::from("https://wx.example.com"));
-    let error = dispatch_embedding(&call, EmbeddingConfig::Watsonx, &transport, &env)
-        .await
-        .expect_err("no project or space is set");
+    let outcome = dispatch_embedding(&call, EmbeddingConfig::Watsonx, &transport, &env).await;
+    let Err(error) = outcome else {
+        panic!("no project or space is set");
+    };
     assert!(matches!(
         error,
         EnterpriseError::WatsonxEmbedding(WatsonxEmbeddingError::Watsonx(ref inner))
@@ -356,9 +360,10 @@ async fn watsonx_embedding_reports_a_non_success_reply() {
     ]));
     let mut call = embedding_call("ibm/granite-embedding", Some(key("api-key")));
     call.api_base = Some(String::from("https://wx.example.com"));
-    let error = dispatch_embedding(&call, EmbeddingConfig::Watsonx, &transport, &env)
-        .await
-        .expect_err("the embedding service rejects the request");
+    let outcome = dispatch_embedding(&call, EmbeddingConfig::Watsonx, &transport, &env).await;
+    let Err(error) = outcome else {
+        panic!("the embedding service rejects the request");
+    };
     assert_eq!(error.status(), Some(400));
     assert_eq!(error.to_string(), r#"{"errors":[{"code":"bad"}]}"#);
 }

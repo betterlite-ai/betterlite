@@ -128,14 +128,16 @@ fn sap_chat_keeps_the_caller_headers() {
 fn sap_chat_reports_the_handler_failure() {
     let chat = Chat::new("sap", "gpt-4o");
     let sagemaker = Sagemaker::new(Scripted::empty());
-    let error = dispatch(
+    let outcome = dispatch(
         ChatConfigTag::GenAiHubOrchestration,
         &chat,
         &sagemaker,
         &Recorder::failing(502),
     )
-    .expect("the sap arm runs")
-    .expect_err("the handler fails");
+    .expect("the sap arm runs");
+    let Err(error) = outcome else {
+        panic!("the handler fails");
+    };
     assert!(matches!(error, EnterpriseError::Handler(_)));
     assert_eq!(error.status(), Some(502));
 }
@@ -335,9 +337,11 @@ fn watsonx_text_rejects_a_typed_key() {
     chat.optional_params = object(r#"{"apikey":5}"#);
     let recorder = Recorder::answer("reply");
     let sagemaker = Sagemaker::new(Scripted::empty());
-    let error = dispatch(ChatConfigTag::IbmWatsonXAi, &chat, &sagemaker, &recorder)
-        .expect("the text arm runs")
-        .expect_err("the key is not a string");
+    let outcome = dispatch(ChatConfigTag::IbmWatsonXAi, &chat, &sagemaker, &recorder)
+        .expect("the text arm runs");
+    let Err(error) = outcome else {
+        panic!("the key is not a string");
+    };
     assert!(matches!(
         error,
         EnterpriseError::FieldType { field: "apikey" }
@@ -346,9 +350,11 @@ fn watsonx_text_rejects_a_typed_key() {
 
     let mut nested = Chat::new("watsonx_text", "ibm/granite");
     nested.optional_params = object(r#"{"wx_credentials":{"url":5}}"#);
-    let error = dispatch(ChatConfigTag::IbmWatsonXAi, &nested, &sagemaker, &recorder)
-        .expect("the text arm runs")
-        .expect_err("the url is not a string");
+    let outcome = dispatch(ChatConfigTag::IbmWatsonXAi, &nested, &sagemaker, &recorder)
+        .expect("the text arm runs");
+    let Err(error) = outcome else {
+        panic!("the url is not a string");
+    };
     assert!(matches!(error, EnterpriseError::FieldType { field: "url" }));
 }
 
