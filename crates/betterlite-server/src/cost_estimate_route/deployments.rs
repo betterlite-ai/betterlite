@@ -1,0 +1,293 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use betterlite_config::types::{Config, ModelDeployment};
+use betterlite_core::cost::call_price::CustomCostPerToken;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use betterlite_models::price_lookup::{PriceLookup, PriceRecord};
+use betterlite_models::resolution::inferred::inferred_provider;
+use betterlite_models::tiered_pricing::Scalar;
+use betterlite_provider::pricing::grounding::ProviderFormulas;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::deployment_identity::error::InvalidDeployment;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::alias::{self, AliasMap};
+use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+use betterlite_router::routing_groups::error::RoutingGroupError;
+use betterlite_router::routing_groups::group::RoutingGroup;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
+use betterlite_router::wildcard_catalog::error::PatternCatalogError;
+use rust_decimal::Decimal;
+
+use crate::cost_service::CostService;
+
+// The router snapshot the quote's model resolution reads, built from the same B844 indices the server serves.
+pub struct DeploymentSet {
+    catalog: DeploymentCatalog,
+    aliases: AliasMap,
+    groups: RoutingGroupIndex,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DeploymentSetError {
+    #[error(transparent)]
+    Deployment(#[from] InvalidDeployment),
+    #[error(transparent)]
+    Pattern(#[from] PatternCatalogError),
+    #[error(transparent)]
+    Group(#[from] RoutingGroupError),
+    #[error("model_list entry {index} is not an object")]
+    Record { index: usize },
+    #[error("model_list entry {index} has no model_name")]
+    Name { index: usize },
+}
+
+// The model a quote prices, its explicit provider, and the deployment prices that stand in for the cost map.
+pub struct ResolvedCostModel {
+    pub model: String,
+    pub provider: Option<String>,
+    pub custom_cost_per_token: Option<CustomCostPerToken>,
+}
+
+impl DeploymentSet {
+    pub fn from_config(config: &Config) -> Result<Self, DeploymentSetError> {
+        let mut catalog = DeploymentCatalog::default();
+        for (index, deployment) in config.model_list.iter().enumerate() {
+            let provider = config
+                .sections
+                .provider_resolution
+                .deployments
+                .get(index)
+                .and_then(Option::as_deref);
+            let spec = Self::config_spec(deployment, provider)?;
+            index_deployment(&mut catalog, spec)?;
+        }
+        let groups = routing_groups(config, &catalog.model_names)?;
+        let aliases = alias::from_config(&config.sections.deployment_catalog.model_group_alias);
+        Ok(Self {
+            catalog,
+            aliases,
+            groups,
+        })
+    }
+
+    // Deployment.__init__ over one config row: its params, its info id, and the provider the config section resolved.
+    fn config_spec(
+        deployment: &ModelDeployment,
+        provider: Option<&str>,
+    ) -> Result<DeploymentSpec, InvalidDeployment> {
+        let mut params = JsonObject::new();
+        if let Some(model) = deployment.litellm_params.model.as_ref() {
+            params.insert("model".to_owned(), Json::Text(model.clone()));
+        }
+        if let Some(provider) = provider {
+            params.insert(
+                "custom_llm_provider".to_owned(),
+                Json::Text(provider.to_owned()),
+            );
+        }
+        let mut info = JsonObject::new();
+        if let Some(id) = deployment.model_info.id.as_ref() {
+            info.insert("id".to_owned(), Json::Text(id.clone()));
+        }
+        DeploymentSpec::new(
+            deployment.model_name.clone(),
+            params,
+            info,
+            JsonObject::new(),
+            || uuid::Uuid::new_v4().to_string(),
+        )
+    }
+
+    pub fn from_records(rows: &[JsonObject]) -> Result<Self, DeploymentSetError> {
+        let mut catalog = DeploymentCatalog::default();
+        for (index, row) in rows.iter().enumerate() {
+            let Some(Json::Text(name)) = row.get("model_name") else {
+                return Err(DeploymentSetError::Name { index });
+            };
+            let params = match row.get("litellm_params") {
+                None | Some(Json::Null) => JsonObject::new(),
+                Some(Json::Object(params)) => params.clone(),
+                Some(_) => return Err(DeploymentSetError::Record { index }),
+            };
+            let info = match row.get("model_info") {
+                Some(Json::Object(info)) => info.clone(),
+                _ => JsonObject::new(),
+            };
+            let spec = DeploymentSpec::new(name.clone(), params, info, JsonObject::new(), || {
+                uuid::Uuid::new_v4().to_string()
+            })?;
+            index_deployment(&mut catalog, spec)?;
+        }
+        Ok(Self {
+            catalog,
+            aliases: AliasMap::new(),
+            groups: RoutingGroupIndex::default(),
+        })
+    }
+
+    // _resolve_model_for_cost_lookup: the first listed deployment answers, or the requested name when nothing matches.
+    pub fn resolve(
+        &self,
+        service: &CostService<ProviderFormulas>,
+        requested: &str,
+    ) -> ResolvedCostModel {
+        let resolution = service.lookup.resolution();
+        let inferred = |model: &str| {
+            inferred_provider(model, &resolution).map(|identity| identity.slug().to_owned())
+        };
+        let lookup = CatalogLookup {
+            catalog: &self.catalog,
+            model_group_alias: &self.aliases,
+            routing_groups: &self.groups,
+            inferred_provider: &inferred,
+        };
+        let Ok(rows) = lookup.get_model_list(Some(requested), None) else {
+            return unresolvable(requested);
+        };
+        let Some(first) = rows.first() else {
+            return unresolvable(requested);
+        };
+        resolved_row(service, first).unwrap_or_else(|| unresolvable(requested))
+    }
+}
+
+pub fn unresolvable(requested: &str) -> ResolvedCostModel {
+    ResolvedCostModel {
+        model: requested.to_owned(),
+        provider: None,
+        custom_cost_per_token: None,
+    }
+}
+
+fn resolved_row(
+    service: &CostService<ProviderFormulas>,
+    row: &DeploymentSpec,
+) -> Option<ResolvedCostModel> {
+    let provider = match row.litellm_params.get("custom_llm_provider") {
+        Some(Json::Text(provider)) => Some(provider.clone()),
+        _ => None,
+    };
+    let model = text_field(&row.model_info, "base_model")
+        .or_else(|| text_field(&row.litellm_params, "base_model"))
+        .or_else(|| text_field(&row.litellm_params, "model"))
+        .map(str::to_owned)?;
+    let custom = extract_custom_pricing(
+        &row.litellm_params,
+        &row.model_info,
+        service,
+        &model,
+        provider.as_deref(),
+    );
+    Some(ResolvedCostModel {
+        model,
+        provider,
+        custom_cost_per_token: custom,
+    })
+}
+
+// An empty value answers like an absent one, as the source's `or` chain reads it.
+fn text_field<'fields>(fields: &'fields JsonObject, name: &str) -> Option<&'fields str> {
+    match fields.get(name) {
+        Some(Json::Text(text)) if !text.is_empty() => Some(text.as_str()),
+        _ => None,
+    }
+}
+
+fn routing_groups(
+    config: &Config,
+    names: &BTreeSet<String>,
+) -> Result<RoutingGroupIndex, DeploymentSetError> {
+    let Some(settings) = config.sections.routing_groups.as_ref() else {
+        return Ok(RoutingGroupIndex::default());
+    };
+    let mut parsed = Vec::with_capacity(settings.groups.len());
+    for group in &settings.groups {
+        parsed.push(RoutingGroup::new(
+            group.group_name.clone(),
+            group.models.clone(),
+            &group.routing_strategy,
+            group.routing_strategy_args.clone(),
+            group.model_priorities.clone(),
+        )?);
+    }
+    let aliases: BTreeMap<String, String> = config
+        .sections
+        .deployment_catalog
+        .model_group_alias
+        .iter()
+        .map(|(name, entry)| (name.clone(), entry.model.clone()))
+        .collect();
+    Ok(RoutingGroupIndex::build(parsed, names, &aliases)?.index)
+}
+
+fn index_deployment(
+    catalog: &mut DeploymentCatalog,
+    spec: DeploymentSpec,
+) -> Result<(), DeploymentSetError> {
+    catalog.index_patterns(&spec)?;
+    catalog.model_names.insert(spec.model_name.clone());
+    catalog.push(spec);
+    Ok(())
+}
+
+// _extract_custom_pricing: deployment fields answer first, then the backend's cost-map cache rates, then the input rate.
+fn extract_custom_pricing(
+    params: &JsonObject,
+    info: &JsonObject,
+    service: &CostService<ProviderFormulas>,
+    model: &str,
+    provider: Option<&str>,
+) -> Option<CustomCostPerToken> {
+    let input_price = configured_price(params, info, "input_cost_per_token");
+    let output_price = configured_price(params, info, "output_cost_per_token");
+    if input_price.is_none() && output_price.is_none() {
+        return None;
+    }
+    let builtin = service.lookup.effective_model_info(model, provider);
+    Some(CustomCostPerToken {
+        input_cost_per_token: input_price.unwrap_or_default(),
+        output_cost_per_token: output_price.unwrap_or_default(),
+        cache_read_input_token_cost: cache_price(
+            params,
+            info,
+            builtin.as_ref(),
+            "cache_read_input_token_cost",
+        ),
+        cache_creation_cost: cache_price(
+            params,
+            info,
+            builtin.as_ref(),
+            "cache_creation_input_token_cost",
+        ),
+    })
+}
+
+fn configured_price(params: &JsonObject, info: &JsonObject, key: &str) -> Option<Decimal> {
+    for source in [params, info] {
+        if let Some(Json::Number(number)) = source.get(key)
+            && let Ok(price) = parse_decimal_lexeme(&number.to_string())
+        {
+            return Some(price);
+        }
+    }
+    None
+}
+
+fn cache_price(
+    params: &JsonObject,
+    info: &JsonObject,
+    builtin: Option<&PriceRecord>,
+    key: &str,
+) -> Option<Decimal> {
+    if let Some(price) = configured_price(params, info, key) {
+        return Some(price);
+    }
+    match builtin?.get(key)? {
+        Scalar::Number(number) => parse_decimal_lexeme(&number.to_string()).ok(),
+        Scalar::Null | Scalar::Bool(_) | Scalar::Text(_) | Scalar::Array(_) | Scalar::Object(_) => {
+            None
+        }
+    }
+}

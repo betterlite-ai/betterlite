@@ -153,6 +153,7 @@ macro_rules! stub_router {
             .merge(batch_read::routes($state))
             .merge(claude_gateway_oauth::routes($state))
             .merge(claude_plugin_write::routes($state))
+            .merge(crate::cost_estimate_route::router::routes($state))
             .merge(credentials::routes($state))
             .merge(customer_update::routes($state))
             .merge(file_upload::routes($state))
