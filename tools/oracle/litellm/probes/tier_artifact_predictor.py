@@ -16,7 +16,7 @@ from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 _ARTIFACT: Final = TypeAdapter(TrainedTierArtifact)
 _TIER: Final = TypeAdapter(ComplexityTier)
