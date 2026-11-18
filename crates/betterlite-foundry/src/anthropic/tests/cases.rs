@@ -407,7 +407,7 @@ fn derived_betas() {
         optional_params: probe_options(),
         ..Setup::chat()
     });
-    assert_eq!(run.calls[1], "filter:azure_ai");
+    assert_eq!(run.calls, ["sync".to_owned()]);
     let beta = header(&run, "anthropic-beta").unwrap();
     assert!(beta.contains("computer-use-2025-01-24"));
     assert!(beta.contains(MCP_CLIENT_BETA));
@@ -432,7 +432,7 @@ fn caller_beta_wins() {
         header(&caller_header, "anthropic-beta"),
         Some("keep,caller-beta")
     );
-    assert_eq!(caller_header.calls[1], "filter:azure_ai");
+    assert_eq!(caller_header.calls, ["sync".to_owned()]);
 }
 
 fn vertex_request_has_no_betas() {
@@ -478,7 +478,14 @@ fn chat_stream_native_events() {
         reply: stream_reply(),
         ..Setup::chat()
     });
-    assert_stream(&asynchronous, "anthropic", "lines");
+    assert_stream(
+        &asynchronous,
+        "anthropic",
+        "lines",
+        Some("fast"),
+        Some("original"),
+    );
+    assert_eq!(asynchronous.calls, ["sync".to_owned()]);
     assert_prepared_options(&asynchronous);
     assert_posted_auth(&asynchronous);
 
@@ -489,7 +496,13 @@ fn chat_stream_native_events() {
         reply: stream_reply(),
         ..Setup::chat()
     });
-    assert_stream(&synchronous, "azure_ai", "first stream response received");
+    assert_stream(
+        &synchronous,
+        "azure_ai",
+        "first stream response received",
+        None,
+        None,
+    );
     assert_prepared_options(&synchronous);
     let logged: IndexMap<String, Json> =
         serde_json::from_str(&synchronous.logger_calls[0].complete_input_dict).unwrap();
@@ -501,7 +514,13 @@ fn chat_stream_native_events() {
     buffered_projection();
 }
 
-fn assert_stream(run: &Run, provider: &'static str, original_response: &str) {
+fn assert_stream(
+    run: &Run,
+    provider: &'static str,
+    original_response: &str,
+    speed: Option<&str>,
+    original_tool_name: Option<&str>,
+) {
     let (model, actual, headers, options) = run.stream();
     assert_eq!(model, MODEL);
     assert_eq!(actual, provider);
@@ -510,13 +529,13 @@ fn assert_stream(run: &Run, provider: &'static str, original_response: &str) {
         Some("stream-1")
     );
     assert_eq!(options.json_mode, Some(true));
-    assert_eq!(options.speed.as_deref(), Some("fast"));
+    assert_eq!(options.speed.as_deref(), speed);
     assert_eq!(
         options
             .tool_name_reverse_map
             .get("sanitized")
             .map(String::as_str),
-        Some("original")
+        original_tool_name
     );
     assert_eq!(run.posted_bodies[0].get("stream"), Some(&Json::Bool(true)));
     assert_eq!(run.logger_calls.len(), 1);

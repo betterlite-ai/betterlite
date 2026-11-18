@@ -43,19 +43,6 @@ where
     Ok(body)
 }
 
-// B584 selects the parent mapper for the async style, so the same override waits on its future
-pub async fn async_transform_request<Config: ChatConfig>(
-    config: &Config,
-    request: &TransformRequest<'_>,
-) -> Result<IndexMap<String, Json>, ConfigError> {
-    let optional_params = promoted_options(request.optional_params);
-    clean_body(
-        config
-            .async_transform_request(&parent_of(request, &optional_params))
-            .await?,
-    )
-}
-
 fn parent_of<'data>(
     request: &'data TransformRequest<'data>,
     optional_params: &'data IndexMap<String, Json>,
@@ -67,11 +54,6 @@ fn parent_of<'data>(
         litellm_params: request.litellm_params,
         headers: request.headers,
     }
-}
-
-fn clean_body(mut body: IndexMap<String, Json>) -> Result<IndexMap<String, Json>, ConfigError> {
-    clean(&mut body);
-    Ok(body)
 }
 
 // Azure Anthropic rejects the three OpenAI passthrough keys after the parent produced the body

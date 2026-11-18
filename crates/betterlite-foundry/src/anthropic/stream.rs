@@ -2,13 +2,12 @@ use betterlite_anthropic::anthropic_http_stream::call::{
     StreamBuild, StreamCall, StreamClients, StreamOpening,
 };
 use betterlite_anthropic::anthropic_http_stream::completion::{
-    CompletionStream, ParameterError, WrappedStream, acompletion_stream_function,
+    CompletionStream, WrappedStream, acompletion_stream_function,
 };
 use betterlite_anthropic::chat_call::ChatDeps;
 use betterlite_anthropic::chat_call::ChatOutcome;
 use betterlite_anthropic::chat_call::transport::{ChatTransport, ClientKind};
 use betterlite_anthropic::headers::response::process_anthropic_headers;
-use betterlite_anthropic::tool_names::REVERSE_MAP_KEY;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
@@ -18,8 +17,6 @@ use indexmap::IndexMap;
 use super::CUSTOM_LLM_PROVIDER;
 use super::handler::CompletionResult;
 use super::request::{ChatRequest, Prepared, Style};
-
-const SPEED_FIELD: &str = "speed";
 
 pub(super) fn open<'call, Config, Client, Counter>(
     request: ChatRequest<'call>,
@@ -80,7 +77,7 @@ where
             return Ok(ChatOutcome::Stream(Box::new(wrapped)));
         }
         let encoded = python_json::dumps_object(&prepared.body);
-        let (speed, reverse) = stream_names(&prepared.optional_params, &request.litellm_params)?;
+        let reverse = IndexMap::new();
         let call = StreamCall {
             api_base: request.api_base,
             headers: prepared.header_map,
@@ -88,7 +85,7 @@ where
             messages: &messages,
             timeout: request.timeout,
             json_mode: prepared.json_mode,
-            speed: speed.as_deref(),
+            speed: None,
             tool_name_reverse_map: &reverse,
         };
         let opened = StreamOpening {
@@ -105,43 +102,4 @@ where
             response_headers: process_anthropic_headers(&opened.headers),
         })))
     })
-}
-
-// make_sync_call takes the speed and the reverse name map as arguments, so this branch types them before the call
-fn stream_names(
-    optional_params: &IndexMap<String, Json>,
-    litellm_params: &IndexMap<String, Json>,
-) -> Result<(Option<String>, IndexMap<String, String>), ParameterError> {
-    let speed = match optional_params.get(SPEED_FIELD) {
-        None | Some(Json::Null) => None,
-        Some(Json::Text(value)) => Some(value.clone()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(ParameterError { field: SPEED_FIELD });
-        }
-    };
-    Ok((speed, reverse_names(litellm_params)?))
-}
-
-fn reverse_names(
-    litellm_params: &IndexMap<String, Json>,
-) -> Result<IndexMap<String, String>, ParameterError> {
-    let entries = match litellm_params.get(REVERSE_MAP_KEY) {
-        None | Some(Json::Null) => return Ok(IndexMap::new()),
-        Some(Json::Object(entries)) => entries,
-        Some(_) => {
-            return Err(ParameterError {
-                field: REVERSE_MAP_KEY,
-            });
-        }
-    };
-    let mut names = IndexMap::with_capacity(entries.len());
-    for (sanitized, original) in entries {
-        let Json::Text(original) = original else {
-            return Err(ParameterError {
-                field: REVERSE_MAP_KEY,
-            });
-        };
-        names.insert(sanitized.clone(), original.clone());
-    }
-    Ok(names)
 }

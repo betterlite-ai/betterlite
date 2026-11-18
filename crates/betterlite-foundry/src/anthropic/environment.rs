@@ -28,6 +28,20 @@ const TOOLS_FIELD: &str = "tools";
 const MCP_SERVERS_FIELD: &str = "mcp_servers";
 const IS_VERTEX_REQUEST_FIELD: &str = "is_vertex_request";
 
+// This matches the B564 input-shape precedence while the shared helper remains outside this task's scope.
+fn explicit_key<'data>(
+    params_key: ParamsKey<'data>,
+    argument: Option<&'data SecretString>,
+) -> Option<&'data SecretString> {
+    let usable = argument.filter(|key| !key.expose_secret().is_empty());
+    match params_key {
+        ParamsKey::DictNull => None,
+        ParamsKey::Dict(key) => Some(key),
+        ParamsKey::Typed(Some(key)) if !key.expose_secret().is_empty() => Some(key),
+        ParamsKey::DictAbsent | ParamsKey::Typed(_) => usable,
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum EnvironmentError {
     #[error(transparent)]
@@ -57,20 +71,6 @@ pub struct EnvironmentRequest<'data> {
     pub token: &'data TokenSource<'data>,
     pub messages: &'data [Json],
     pub optional_params: &'data IndexMap<String, Json>,
-}
-
-// A dict only takes the argument when it has no api_key entry; a typed object when its field is empty
-fn explicit_key<'data>(
-    params_key: ParamsKey<'data>,
-    argument: Option<&'data SecretString>,
-) -> Option<&'data SecretString> {
-    let usable = argument.filter(|key| !key.expose_secret().is_empty());
-    match params_key {
-        ParamsKey::DictNull => None,
-        ParamsKey::Dict(key) => Some(key),
-        ParamsKey::Typed(Some(key)) if !key.expose_secret().is_empty() => Some(key),
-        ParamsKey::DictAbsent | ParamsKey::Typed(_) => usable,
-    }
 }
 
 // LiteLLM builds the Anthropic headers from the call's key, then lets Azure auth and the caller win

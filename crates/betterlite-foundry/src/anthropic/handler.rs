@@ -21,10 +21,8 @@ use indexmap::IndexMap;
 use super::CUSTOM_LLM_PROVIDER;
 use super::environment::{EnvironmentError, EnvironmentRequest, validate_environment};
 use super::error::ChatError;
-use super::request::{ChatRequest, Prepared, Style};
-use super::transform::{
-    async_transform_request, promote_extra_body, promoted_for_environment, transform_request,
-};
+use super::request::{ChatRequest, Prepared};
+use super::transform::{promote_extra_body, promoted_for_environment, transform_request};
 
 const STREAM_FIELD: &str = "stream";
 const JSON_MODE_FIELD: &str = "json_mode";
@@ -81,7 +79,7 @@ where
         litellm_params: &request.litellm_params,
         headers: &headers,
     };
-    let (mut body, header_values) = transformed(deps.config, request.style, &transform).await?;
+    let (mut body, header_values) = transformed(deps.config, &transform)?;
     // LiteLLM sets data["stream"] after filtering, and the stored pre_call body shares that dict
     if stream {
         body.insert(STREAM_FIELD.to_owned(), Json::Bool(true));
@@ -114,10 +112,9 @@ fn request_headers(
     })?)
 }
 
-// The parent mapper produces the body; the filter runs on the header set and body the caller will send
-async fn transformed<Config, ClientFailure, CounterFailure>(
+// Azure uses the parent mapper, then sends its already validated headers without the Anthropic beta filter
+fn transformed<Config, ClientFailure, CounterFailure>(
     config: &Config,
-    style: Style,
     transform: &TransformRequest<'_>,
 ) -> Result<
     (IndexMap<String, Json>, IndexMap<String, String>),
@@ -128,17 +125,9 @@ where
     ClientFailure: StdError + Send + Sync + 'static,
     CounterFailure: StdError + Send + Sync + 'static,
 {
-    let mut body = match style {
-        Style::Async => async_transform_request(config, transform)
-            .await
-            .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?,
-        Style::Sync => transform_request(config, transform)
-            .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?,
-    };
-    let mut header_values = transform.headers.values.clone();
-    config
-        .filter_request_betas(CUSTOM_LLM_PROVIDER, &mut header_values, &mut body)
-        .map_err(|source| ChatError::Call(ChatCallError::Filter { source }))?;
+    let body = transform_request(config, transform)
+        .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?;
+    let header_values = transform.headers.values.clone();
     Ok((body, header_values))
 }
 
