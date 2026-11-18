@@ -58,11 +58,10 @@ pub fn resolve_deprecation(
     .find_map(|key| cost_map_lookup(catalog, key))
 }
 
-fn cost_map_lookup(
-    catalog: &dyn DeprecationCatalog,
-    key: Option<&str>,
-) -> Option<ResolvedDeprecation> {
-    let key = key.filter(|key| !key.is_empty())?;
+fn cost_map_lookup(catalog: &dyn DeprecationCatalog, key: &str) -> Option<ResolvedDeprecation> {
+    if key.is_empty() {
+        return None;
+    }
     let entry = catalog.deprecation(key)?;
     Some(ResolvedDeprecation {
         deprecation_date: entry.deprecation_date,
