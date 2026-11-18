@@ -13,6 +13,7 @@ use secrecy::SecretString;
 pub struct Composition {
     pub credentials: OpenAiCredentialsSettings,
     pub provider: ProviderSettings,
+    pub embedding_format: Option<String>,
     pub globals: LiteLlmGlobals,
     // litellm.headers, which the dispatcher resolves beside the call's own headers
     pub globals_headers: Option<Headers>,

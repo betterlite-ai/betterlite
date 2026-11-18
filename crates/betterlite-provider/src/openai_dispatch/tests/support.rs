@@ -35,6 +35,7 @@ pub(crate) fn composition() -> Composition {
     Composition {
         credentials: CredentialsSettings::default(),
         provider: ProviderSettings::default(),
+        embedding_format: None,
         globals: LiteLlmGlobals::default(),
         globals_headers: None,
         env_api_key: None,

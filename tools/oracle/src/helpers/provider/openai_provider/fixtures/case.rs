@@ -4,6 +4,7 @@ use std::fmt::Display;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::Raw as CredentialsRaw;
 use betterlite_config::sections::openai_provider::Raw as ProviderRaw;
+use betterlite_config::sections::openai_provider::embedding_format;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers, Object};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -166,6 +167,7 @@ fn composition(case: &Case) -> Result<Composition, Box<HelperError>> {
     Ok(Composition {
         credentials,
         provider,
+        embedding_format: embedding_format(&case.environment),
         globals: LiteLlmGlobals {
             api_base: case.globals.api_base.clone(),
             api_key: case.globals.api_key.clone().map(SecretString::from),
