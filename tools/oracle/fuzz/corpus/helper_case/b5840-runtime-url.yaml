@@ -1,0 +1,11 @@
+kind: helper
+name: b5840-runtime-url-corpus-seed
+call:
+  b5840:
+    function: url
+    model: endpoint-seed
+    region: us-west-2
+    base_url: null
+    stream: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: model-deprecation-already-deprecated
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: yesterday
+        litellm_params: {model: openai/yesterday}
+        model_info: {deprecation_date: "2026-04-30"}
+      - model_name: thirty-days
+        litellm_params: {model: openai/thirty}
+        model_info: {deprecation_date: "2026-04-01"}
+      - model_name: long-ago
+        litellm_params: {model: openai/long}
+        model_info: {deprecation_date: "2026-03-31"}
+env: {}
+compare: {ignore: []}

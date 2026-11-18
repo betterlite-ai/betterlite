@@ -1,0 +1,24 @@
+kind: helper
+name: region-matching-assemblyai
+call:
+  b3602:
+    function: credentials
+    provider: assemblyai
+    region: eu
+    deployments:
+      - model_name: transcribe
+        litellm_params:
+          model: assemblyai/universal-2
+          use_in_pass_through: true
+          api_base: https://api.eu.assemblyai.com
+          api_key: eu-key
+      - model_name: transcribe-us
+        litellm_params:
+          model: assemblyai/universal-2
+          use_in_pass_through: true
+          api_base: https://api.assemblyai.com
+          api_key: us-key
+    environment: {}
+    credentials: {}
+env: {}
+compare: {ignore: []}
