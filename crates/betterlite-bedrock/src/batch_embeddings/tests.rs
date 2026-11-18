@@ -199,6 +199,10 @@ const MAPPING_CASES: &[(&str, &str)] = &[
         r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
     ),
     (
+        r#"{"model":"amazon.titan-embed-text-v2:0","input":"hello","encoding_format":null}"#,
+        r#"{"inputText":"hello","embeddingTypes":["float"]}"#,
+    ),
+    (
         r#"{"model":"amazon.titan-embed-text-v2:0","input":""}"#,
         r#"{"inputText":""}"#,
     ),
