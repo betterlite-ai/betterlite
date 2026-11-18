@@ -1,10 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::DecodedJson;
-use betterlite_core::api::request_form::annotations::{FormAnnotation, numeric_form_fields};
+use betterlite_core::api::request_form::annotations::{
+    FormAnnotation, FormAnnotations, numeric_form_fields,
+};
 use betterlite_core::api::request_form::coercion::coerce_numeric_form_fields;
 use betterlite_core::api::request_form::convert::{
     ConvertError, FileDataValue, FileTuple, convert_uploads_to_file_data,
@@ -16,7 +20,7 @@ use betterlite_core::api::request_form::metadata::{
     MetadataValue, MetadataWarning, MetadataWarningKind, extract_nested_form_metadata,
 };
 use betterlite_core::api::request_form::values::{
-    FormError, FormFields, FormValue, NonFinite, UploadFile, get_form_data,
+    FormError, FormFields, FormValue, NonFinite, PartValue, UploadFile, get_form_data,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -37,7 +41,7 @@ fn upload_part(name: &str, filename: &str, content: &str) -> String {
     )
 }
 
-fn decode_multipart_parts(body: String) -> FormFields {
+fn decode_multipart_parts(body: &str) -> FormFields {
     let terminated = format!("{body}--b--\r\n");
     let parts =
         decode_request_form(terminated.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
@@ -63,7 +67,7 @@ fn repeated_plain_last_wins() {
         Some(&FormValue::Text("last".to_owned()))
     );
 
-    let uploads = decode_multipart_parts(upload_part("a", "a.txt", "abc"));
+    let uploads = decode_multipart_parts(&upload_part("a", "a.txt", "abc"));
     let data = convert_uploads_to_file_data(&uploads).unwrap();
     assert_eq!(
         data.get("a"),
@@ -77,7 +81,7 @@ fn repeated_plain_last_wins() {
 
 #[test]
 fn a_mixed_list_is_decided_by_its_first_entry() {
-    let fields = decode_multipart_parts(format!(
+    let fields = decode_multipart_parts(&format!(
         "{}{}",
         text_part("files[]", "plain"),
         upload_part("files[]", "a.txt", "a")
@@ -91,7 +95,7 @@ fn a_mixed_list_is_decided_by_its_first_entry() {
         ])))
     );
 
-    let upload_first = decode_multipart_parts(format!(
+    let upload_first = decode_multipart_parts(&format!(
         "{}{}",
         upload_part("files[]", "a.txt", "a"),
         text_part("files[]", "plain")
@@ -141,7 +145,7 @@ fn array_form_preserves_order() {
 
 #[test]
 fn numeric_form_coercion() {
-    let annotations: betterlite_core::api::request_form::annotations::FormAnnotations = [
+    let annotations: FormAnnotations = [
         ("count".to_owned(), FormAnnotation::Int),
         ("ratio".to_owned(), FormAnnotation::Float),
         ("nan_ratio".to_owned(), FormAnnotation::Float),
@@ -215,7 +219,7 @@ fn nested_form_metadata() {
     );
     assert!(!metadata.contains_key("other"));
 
-    let conflicting = decode_multipart_parts(format!(
+    let conflicting = decode_multipart_parts(&format!(
         "{}{}{}",
         text_part("litellm_metadata[a]", "leaf"),
         text_part("litellm_metadata[a][b]", "deep"),
@@ -511,12 +515,12 @@ const BOUNDARY_MISMATCH: &str = "multipart-mismatch";
 
 #[test]
 fn replays_corpus() {
-    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_form");
-    let replayed = std::fs::read_dir(corpus)
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_form");
+    let replayed = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| {
             let path = entry.unwrap().path();
-            let seed = std::fs::read(&path).unwrap();
+            let seed = fs::read(&path).unwrap();
             let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
             let (header, body) = seed[2..].split_at(header_len);
             let result = decode_request_form(body, header, &ApiLimits::default());
@@ -552,7 +556,7 @@ fn multipart_disposition_parameters(
     assert_eq!(parts.items[0].name, name);
     assert_eq!(
         parts.items[0].value,
-        betterlite_core::api::request_form::values::PartValue::Upload(UploadFile {
+        PartValue::Upload(UploadFile {
             filename: filename.to_owned(),
             content_type: None,
             content: b"abc".to_vec(),
@@ -567,7 +571,6 @@ fn multipart_disposition_parameters(
 #[case("; charset=windows-1251", "й")]
 #[case("; charset=unknown", "é")]
 fn multipart_charset_and_fallback(#[case] charset: &str, #[case] expected: &str) {
-    use betterlite_core::api::request_form::values::PartValue;
     let body = b"--b\r\nContent-Disposition: form-data; name=\"\xe9\"\r\n\r\n\xe9\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\xe9.pdf\"\r\n\r\n\xff\r\n--b--\r\n";
     let content_type = format!("multipart/form-data; boundary=b{charset}");
     let parts = decode_request_form(body, content_type.as_bytes(), &ApiLimits::default()).unwrap();
