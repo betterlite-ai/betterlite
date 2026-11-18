@@ -173,7 +173,7 @@ fn integer_text(text: &str) -> Option<String> {
     };
     if !digits
         .chars()
-        .all(|character| character == '_' || character.to_digit(radix).is_some())
+        .all(|character| character == '_' || character.is_digit(radix))
     {
         return None;
     }

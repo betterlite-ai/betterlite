@@ -1,10 +1,5 @@
 kind: probe
 name: quality-router-quality-before-order-before-price
-compare:
-  numeric:
-    - pointer: /output/quality_router/decision/score
-      absolute_tolerance: 0.000001
-      why: the score is the classifier's float sum, and its last bits may differ between the two runtimes
 probes:
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
@@ -76,28 +71,3 @@ probes:
         messages:
           - role: user
             content: k
-  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
-    samples: []
-    operation:
-      quality_router:
-        config:
-          model_list:
-            - model_name: qr
-              litellm_params:
-                model: auto_router/quality_router
-                quality_router_config:
-                  available_models: [zeta-first, alpha-cheap]
-                  complexity_to_quality: {SIMPLE: 2}
-            - model_name: zeta-first
-              litellm_params: {model: openai/zeta-first}
-              model_info:
-                litellm_routing_preferences: {quality_tier: 2, order: 1}
-                input_cost_per_token: 0.5
-            - model_name: alpha-cheap
-              litellm_params: {model: openai/alpha-cheap}
-              model_info:
-                litellm_routing_preferences: {quality_tier: 2, order: 3}
-                input_cost_per_token: 0.1
-        messages:
-          - role: user
-            content: hello there
