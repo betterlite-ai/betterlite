@@ -36,13 +36,9 @@ impl Section for Raw {
             let prefix = format!("model_list.{index}.litellm_params");
             deployments.push(model_values(deployment.litellm_params, &prefix, lookup)?);
         }
-        Ok(values::Settings {
-            deployments: deployments.into_boxed_slice(),
-            litellm_settings: Box::new(model_values(
-                self.litellm_settings,
-                "litellm_settings",
-                lookup,
-            )?),
-        })
+        Ok(Box::new(values::SettingsValues {
+            deployments,
+            litellm_settings: model_values(self.litellm_settings, "litellm_settings", lookup)?,
+        }))
     }
 }

@@ -89,13 +89,15 @@ fn merge_request_values(merged: &mut ModelValues, deployment: &ModelValues) {
 }
 
 // boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<SettingsValues>;
+
 #[derive(Debug, Clone, Default)]
-pub struct Settings {
-    pub(super) deployments: Box<[ModelValues]>,
-    pub(super) litellm_settings: Box<ModelValues>,
+pub struct SettingsValues {
+    pub(super) deployments: Vec<ModelValues>,
+    pub(super) litellm_settings: ModelValues,
 }
 
-impl Settings {
+impl SettingsValues {
     // A deployment's value wins over litellm_settings; Claude2's field starts from litellm.max_tokens.
     #[must_use]
     pub fn resolve(&self, index: usize, default_max_tokens: i64) -> Resolved {
@@ -139,7 +141,7 @@ impl Settings {
 
     fn values_for(&self, index: usize) -> ModelValues {
         self.deployments.get(index).map_or_else(
-            || self.litellm_settings.as_ref().clone(),
+            || self.litellm_settings.clone(),
             |deployment| self.litellm_settings.merged_with(deployment),
         )
     }
