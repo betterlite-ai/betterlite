@@ -1,0 +1,19 @@
+kind: helper
+name: output-limits-azure-output-limit-recovery
+call:
+  openai_output_limits:
+    azure:
+      asynchronous: false
+      data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}]}
+      timeout: 2.5
+      outcome:
+        kind: bad_request
+        headers: {"x-ms-request-id": "azure-req-2"}
+        body:
+          error:
+            message: "Could not finish the message because max_tokens or model output limit was reached."
+            type: invalid_request_error
+            param: max_tokens
+            code: invalid_value
+env: {}
+compare: {ignore: []}

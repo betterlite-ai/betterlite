@@ -1,0 +1,12 @@
+kind: helper
+name: output-limits-azure-async-timeout
+call:
+  openai_output_limits:
+    azure:
+      asynchronous: true
+      data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}]}
+      timeout: 2.5
+      outcome:
+        kind: timeout
+compare: {ignore: []}
+env: {}
