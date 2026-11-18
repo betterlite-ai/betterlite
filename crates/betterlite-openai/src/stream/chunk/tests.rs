@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::Chunk;
+use super::{Chunk, ThinkingKind};
 
 #[test]
 fn stream_maps_model_and_omits_null_finish() {
@@ -45,6 +45,27 @@ fn stream_suppresses_inline_usage() {
     let chunk = Chunk::parse(input, "group", false).unwrap().unwrap();
     assert!(chunk.usage.is_none());
     assert_eq!(chunk.choices.len(), 1);
+}
+
+#[test]
+fn stream_parses_reasoning_delta_fields() {
+    let input = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"}]}}]}"#;
+    let chunk = Chunk::parse(input, "group", false).unwrap().unwrap();
+    let delta = &chunk.choices.first().expect("the chunk has a choice").delta;
+    assert_eq!(delta.reasoning_content.as_deref(), Some("thinking"));
+    let block = delta
+        .thinking_blocks
+        .as_ref()
+        .and_then(|blocks| blocks.first())
+        .expect("the thinking block is kept");
+    assert_eq!(block.kind, ThinkingKind::Thinking);
+    assert_eq!(block.thinking.as_deref(), Some("step"));
+    assert_eq!(block.signature.as_deref(), Some("sig"));
+    assert!(block.data.is_none());
+    assert_eq!(
+        serde_json::to_string(&chunk).unwrap(),
+        r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"}]}}]}"#
+    );
 }
 
 #[test]
