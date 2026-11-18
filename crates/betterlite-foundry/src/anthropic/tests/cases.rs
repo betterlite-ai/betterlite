@@ -8,6 +8,7 @@ use http::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 
+use crate::anthropic::environment::EnvironmentError;
 use crate::anthropic::error::ChatError;
 use crate::anthropic::request::Style;
 use crate::anthropic::{CUSTOM_LLM_PROVIDER, SHOULD_STRIP_BILLING_METADATA};
@@ -404,14 +405,22 @@ fn billing_metadata_stripped() {
 
 // a probe value of the wrong type is the environment's typed 400, before either client is used
 fn invalid_probe_types() {
-    for options in [
-        option("tools", text("not a list")),
-        option("mcp_servers", text("not a list")),
+    for (field, options) in [
+        ("tools", option("tools", text("not a list"))),
+        ("mcp_servers", option("mcp_servers", text("not a list"))),
     ] {
         let run = run(Setup {
             optional_params: options,
             ..Setup::chat()
         });
+        assert!(
+            matches!(
+                run.error(),
+                ChatError::Environment(EnvironmentError::Parameter(source)) if source.field == field
+            ),
+            "{}",
+            run.error()
+        );
         assert_eq!(run.status(), Some(400));
         assert_eq!(run.posts_supplied, 0);
         assert_eq!(run.posts_pooled, 0);
