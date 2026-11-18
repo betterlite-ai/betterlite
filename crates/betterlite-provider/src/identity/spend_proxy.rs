@@ -14,15 +14,15 @@ pub struct ProxySelection {
 
 // The LiteLLM_Params fields deployment attribution reads: the model, its declared provider and the per-deployment proxy flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DeploymentIdentity<'a> {
-    pub model: &'a str,
-    pub custom_llm_provider: Option<&'a str>,
+pub struct DeploymentIdentity<'params> {
+    pub model: &'params str,
+    pub custom_llm_provider: Option<&'params str>,
     pub use_litellm_proxy: bool,
 }
 
-impl<'a> DeploymentIdentity<'a> {
+impl<'params> DeploymentIdentity<'params> {
     #[must_use]
-    pub fn from_litellm_params(params: &'a JsonObject) -> Self {
+    pub fn from_litellm_params(params: &'params JsonObject) -> Self {
         let model = match params.get("model") {
             Some(Json::Text(text)) => text.as_str(),
             Some(

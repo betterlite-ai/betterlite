@@ -11,6 +11,7 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use rstest::rstest;
+use serde_json::Number;
 
 use super::{DeploymentIdentity, ProxySelection, deployment_provider};
 
@@ -56,7 +57,7 @@ fn identity(params: &JsonObject) -> DeploymentIdentity<'_> {
     DeploymentIdentity::from_litellm_params(params)
 }
 
-fn openai_deployment(use_litellm_proxy: bool) -> DeploymentIdentity<'static> {
+const fn openai_deployment(use_litellm_proxy: bool) -> DeploymentIdentity<'static> {
     DeploymentIdentity {
         model: "openai/gpt-4o",
         custom_llm_provider: None,
@@ -187,12 +188,12 @@ fn reads_only_typed_deployment_fields() {
     assert_eq!(deployment.custom_llm_provider, Some("azure"));
     assert!(deployment.use_litellm_proxy);
     let odd = params(&[
-        ("model", Json::Number(serde_json::Number::from(7))),
+        ("model", Json::Number(Number::from(7_i32))),
         ("custom_llm_provider", Json::Bool(false)),
         ("use_litellm_proxy", Json::Text("true".to_owned())),
     ]);
-    let deployment = DeploymentIdentity::from_litellm_params(&odd);
-    assert_eq!(deployment.model, "");
-    assert_eq!(deployment.custom_llm_provider, None);
-    assert!(!deployment.use_litellm_proxy);
+    let odd_deployment = DeploymentIdentity::from_litellm_params(&odd);
+    assert_eq!(odd_deployment.model, "");
+    assert_eq!(odd_deployment.custom_llm_provider, None);
+    assert!(!odd_deployment.use_litellm_proxy);
 }
