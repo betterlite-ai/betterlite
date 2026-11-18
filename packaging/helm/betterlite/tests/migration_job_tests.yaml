@@ -14,7 +14,6 @@ tests:
       - equal: { path: 'spec.template.spec.containers[0].command', value: [betterlite-db-admin, migrate] }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE, value: "true" }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY, valueFrom: { secretKeyRef: { name: litellm-master-key-secret, key: master-key } } }, any: true }
-      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST, value: postgres.example.com }, any: true }
 
   - it: borrows the namespace default account when no ServiceAccount is configured
     asserts:

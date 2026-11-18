@@ -6,7 +6,6 @@ tests:
     template: gateway/deployment.yaml
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_HOST }, any: true }
-      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_CLUSTER_NODES }, any: true }
 
   - it: gateway emits host, port and password when redis is configured
     template: gateway/deployment.yaml

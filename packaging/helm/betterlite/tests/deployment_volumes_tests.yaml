@@ -2,11 +2,12 @@ suite: test deployment volumes and volumeMounts
 templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml]
 values: [./values/required.yaml]
 tests:
-  - it: gateway renders only the config volume by default
+  - it: gateway mounts the config file, points CONFIG_FILE_PATH at it and renders no other volume by default
     template: gateway/deployment.yaml
     asserts:
       - equal: { path: 'spec.template.spec.volumes', value: [{ name: gateway-config, configMap: { name: RELEASE-NAME-betterlite-gateway-config } }] }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: gateway-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }] }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: CONFIG_FILE_PATH, value: /etc/betterlite/config.yaml }, any: true }
 
   - it: backend mounts the gateway ConfigMap at the same path by default
     template: backend/deployment.yaml

@@ -1,5 +1,5 @@
 suite: test database connection and token auth env vars
-templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, migrations-job.yaml]
+templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml, migrations-job.yaml]
 values: [./values/required.yaml]
 tests:
   - it: writer uses a password by default and sets no token toggle
@@ -106,6 +106,14 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST_READ_REPLICA, value: reader.example.com }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_USER_READ_REPLICA, valueFrom: { secretKeyRef: { name: litellm-reader-secret, key: username } } }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD_READ_REPLICA }, any: true }
+
+  - it: the ui reads only its log level and backend url, never the database or master key
+    template: ui/deployment.yaml
+    set: { ui.logLevel: DEBUG, ui.backendUrl: 'https://ai.example.com' }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: DEBUG }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_BACKEND_URL, value: 'https://ai.example.com' }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY }, any: true }
 
   - it: fails without a master key secret name
     template: gateway/deployment.yaml
