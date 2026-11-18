@@ -149,9 +149,12 @@ fn json_encode_failure_marker() {
 
 #[test]
 fn system_clock_reads_wall_time() {
+    let started = Instant::now();
     let clock = SystemWriteClock;
     assert!(clock.now().timestamp() > 1_600_000_000);
-    assert!(clock.instant() <= Instant::now());
+    let first = clock.instant();
+    assert!(first >= started);
+    assert!(first <= Instant::now());
 }
 
 #[test]

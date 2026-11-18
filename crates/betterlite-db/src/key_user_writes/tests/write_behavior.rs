@@ -6,11 +6,12 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use tracing::subscriber::set_default;
 
 use super::postgres::{row_count, service, user_alias, user_column_text};
 use super::support::{
-    BrokenSink, Harness, Ports, SinkBehaviour, alias_update, failing_key_write, fixed_now,
-    key_column, key_write, user_alias_update, user_write,
+    BrokenSink, Harness, Ports, SinkBehaviour, alias_update, capture_logs, failing_key_write,
+    fixed_now, key_column, key_write, user_alias_update, user_write,
 };
 use crate::budget_permission_rows::Timestamp;
 use crate::key_repository::table::TokenValue;
@@ -350,5 +351,44 @@ async fn panicking_failure_sink_keeps_original_error() {
         .unwrap_err();
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
     assert_eq!(sink.calls.load(Ordering::SeqCst), 3);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn insert_user_requires_user_id() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let error = writes.insert_user(&UserWrite::default()).await.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyUserWriteError::MissingField { field: "user_id" }
+    ));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn insert_payload_token_is_redacted() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    writes
+        .insert_key(
+            &SecretString::from("sk-secret"),
+            &key_column(
+                TokenColumn::Token,
+                TokenValue::Text(String::from("sk-raw-field")),
+            ),
+        )
+        .await
+        .unwrap();
+    drop(guard);
+    let captured = logs.contents();
+    assert!(!captured.contains("sk-raw-field"), "{captured}");
+    assert!(captured.contains(&hash_token("sk-secret")), "{captured}");
     harness.close().await;
 }
