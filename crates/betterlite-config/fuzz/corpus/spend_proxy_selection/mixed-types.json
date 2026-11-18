@@ -1,0 +1,1 @@
+{"litellm_settings":{"use_litellm_proxy":1},"model_list":[{"litellm_params":{"use_litellm_proxy":0}},{"litellm_params":"openai"},{"litellm_params":{"use_litellm_proxy":null}}],"environment":{"USE_LITELLM_PROXY":"maybe"}}
