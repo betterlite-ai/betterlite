@@ -121,7 +121,8 @@ async fn moderations(
             return render_failure(&refused, &call_id, state.include_call_id);
         }
     };
-    let Some(model) = resolve_model(request.model.as_deref(), &state.moderation_model) else {
+    let Some(model) = resolve_model(request.model.as_deref(), state.moderation_model.as_deref())
+    else {
         return render_failure(&refusal(None), &call_id, state.include_call_id);
     };
     let Ok(deployment) = pick_deployment(&state.calls.executor, &model) else {
@@ -131,11 +132,11 @@ async fn moderations(
 }
 
 // resolve_inference_model's moderation arm: the configured default overrides the body, and the launch model is unset
-fn resolve_model(body_model: Option<&str>, moderation_model: &Option<String>) -> Option<String> {
+fn resolve_model(body_model: Option<&str>, moderation_model: Option<&str>) -> Option<String> {
     let defaults = ModelDefaults {
         completion_model: None,
         image_generation_model: None,
-        moderation_model: moderation_model.clone(),
+        moderation_model: moderation_model.map(String::from),
     };
     resolve_inference_model(
         body_model,
