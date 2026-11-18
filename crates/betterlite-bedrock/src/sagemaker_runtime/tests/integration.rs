@@ -358,4 +358,23 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
         .chat_stream(&chat_stream)
         .await;
     assert!(matches!(result, Err(error) if error.status_code == 201 && error.message == "failed"));
+
+    let input = EmbeddingInput::Text(String::from("hi"));
+    let embedding_options = Body::new();
+    let encoding = Encoding;
+    let embedding = EmbeddingCall {
+        model: "voyage-3",
+        input: &input,
+        optional_params: &embedding_options,
+        signing: &signing,
+        encoding: &encoding,
+    };
+    let error = runtime(FakeTransport::new(503, "embedding failed", &[]), &counter)
+        .embedding(&embedding)
+        .await
+        .expect_err("embedding status");
+    assert_eq!(
+        (error.status_code, error.message.as_str()),
+        (503, "embedding failed")
+    );
 }

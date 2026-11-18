@@ -9,4 +9,7 @@ deviations:
   - what: Sync and async completion share one async execution path.
     why: A single transport path keeps the stream decoder and error policies consistent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L118-L560
+  - what: A failed streamed reply reports SagemakerError with the wire status and the body read up to a fixed limit.
+    why: LiteLLM reads response.text on a streamed response it never read, so httpx raises ResponseNotRead and the caller gets a 500 instead of the endpoint's status; betterlite reads the bounded body and keeps the status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L170-L171
 kept_bugs: []
