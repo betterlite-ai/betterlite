@@ -1,11 +1,9 @@
 import asyncio
-import inspect
 import os
-from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal, NotRequired, Protocol, TypedDict, cast
+from typing import Protocol
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L51-L62
 import httpx
@@ -16,70 +14,10 @@ from litellm.llms.bedrock.embed import embedding as embedding_module
 from litellm.llms.cohere.embed import handler as cohere_handler
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import EmbeddingResponse, LlmProviders
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import JsonValue
 from typing_extensions import override
 
-
-class Reply(TypedDict):
-    status: int
-    body: str
-    headers: NotRequired[dict[str, str]]
-    failure: NotRequired[Literal["timeout", "failed"]]
-
-
-class Case(TypedDict):
-    function: str
-    model: str
-    input: list[str]
-    now: int
-    optional_params: NotRequired[dict[str, JsonValue]]
-    api_base: NotRequired[str | None]
-    extra_headers: NotRequired[dict[str, str] | None]
-    api_key: NotRequired[str | None]
-    timeout: NotRequired[float | None]
-    aembedding: NotRequired[bool]
-    drop_params: NotRequired[bool]
-    environment: NotRequired[dict[str, str]]
-    replies: NotRequired[list[Reply]]
-    supplied: NotRequired[Literal["none", "sync", "async"]]
-
-
-class Record(TypedDict):
-    object: str
-    index: int
-    embedding: list[JsonValue] | str
-
-
-class Usage(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    prompt_tokens_details: dict[str, JsonValue] | None
-
-
-class Payload(TypedDict):
-    object: str
-    data: list[Record]
-    model: str | None
-    usage: Usage
-
-
-class TimeoutView(BaseModel):
-    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
-    connect: float
-    read: float
-    write: float
-    pool: float
-
-
-class Tokenizer(Protocol):
-    def encode(self, text: str, /) -> list[int]: ...
-
-
-class FixedTokenizer(Tokenizer):
-    @override
-    def encode(self, text: str, /) -> list[int]:
-        return [ord(char) for char in text]
+from .wire import CASE, Case, Reply, request_value, response_value, settle, timeout_fields
 
 
 class Calls(Protocol):
@@ -103,51 +41,14 @@ class Logger(Calls):
         self.phases.append("post_api_call")
 
 
-CASE: TypeAdapter[Case] = TypeAdapter(Case)
-PAYLOAD: TypeAdapter[Payload] = TypeAdapter(Payload)
-BODY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-TIMEOUT: TypeAdapter[httpx.Timeout | float | None] = TypeAdapter(
-    httpx.Timeout | float | None,
-    config=ConfigDict(arbitrary_types_allowed=True),
-)
+class Tokenizer(Protocol):
+    def encode(self, text: str, /) -> list[int]: ...
 
 
-SKIPPED = frozenset(
-    {"host", "content-length", "user-agent", "accept-encoding", "connection", "transfer-encoding"}
-)
-
-
-def signature_scope(value: str) -> str:
-    parts = value.split(", Signature=")
-    return parts[0]
-
-
-def request_value(request: httpx.Request) -> JsonValue:
-    headers: dict[str, JsonValue] = {}
-    for name, value in request.headers.items():
-        lowered = name.lower()
-        if lowered in SKIPPED or (lowered == "accept" and value == "*/*"):
-            continue
-        headers[lowered] = signature_scope(value)
-    return {
-        "url": str(request.url),
-        "headers": headers,
-        "body": BODY.validate_json(request.content),
-    }
-
-
-def timeout_fields(timeout: JsonValue) -> list[JsonValue] | None:
-    match TIMEOUT.validate_python(timeout):
-        case None:
-            return None
-        case httpx.Timeout() as value:
-            return timeout_values(TimeoutView.model_validate(value))
-        case float() as seconds:
-            return timeout_values(TimeoutView.model_validate(httpx.Timeout(seconds)))
-
-
-def timeout_values(view: TimeoutView) -> list[JsonValue]:
-    return [view.connect, view.read, view.write, view.pool]
+class FixedTokenizer(Tokenizer):
+    @override
+    def encode(self, text: str, /) -> list[int]:
+        return [ord(char) for char in text]
 
 
 @dataclass
@@ -222,40 +123,6 @@ def supplied(case: Case, fixture: Fixture) -> HTTPHandler | AsyncHTTPHandler | N
     if kind == "async":
         return AsyncHTTPHandler(transport=httpx.MockTransport(fixture.answer))
     return None
-
-
-# aembedding hands back a coroutine on the batch and cohere paths
-async def settle(
-    pending: EmbeddingResponse | Awaitable[EmbeddingResponse],
-) -> EmbeddingResponse:
-    if inspect.isawaitable(pending):
-        return await pending
-    return pending
-
-
-def response_value(response: EmbeddingResponse) -> JsonValue:
-    payload = PAYLOAD.validate_json(response.model_dump_json())
-    hidden = cast(dict[str, JsonValue], response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2311
-    usage = payload["usage"]
-    details = usage["prompt_tokens_details"]
-    counts: dict[str, JsonValue] | None = None
-    if details is not None:
-        counts = {name: value for name, value in details.items() if value is not None}
-    return {
-        "object": payload["object"],
-        "data": [
-            {"object": r["object"], "index": r["index"], "embedding": r["embedding"]}
-            for r in payload["data"]
-        ],
-        "model": payload["model"],
-        "usage": {
-            "prompt_tokens": usage["prompt_tokens"],
-            "completion_tokens": usage["completion_tokens"],
-            "total_tokens": usage["total_tokens"],
-            "prompt_tokens_details": counts,
-        },
-        "invocation_arn": hidden.get("_invocation_arn"),
-    }
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
