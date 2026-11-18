@@ -6,7 +6,8 @@ use secrecy::ExposeSecret as _;
 use super::deployments::RouterCatalog;
 use super::deployments::router_models;
 
-pub(super) fn public_settings(
+#[must_use]
+pub fn public_settings(
     settings: &ROISettings,
     catalog: Option<&dyn RouterCatalog>,
 ) -> ROISettingsResponse {

@@ -1,0 +1,116 @@
+kind: helper
+name: spend-attribution-unique-provider-and-forced-proxy
+call:
+  spend_attribution:
+    function: providers
+    deployments:
+      - model_name: shared
+        litellm_params:
+          model: chatgpt/gpt-5
+      - model_name: shared
+        litellm_params:
+          model: gpt-4o
+      - model_name: shared
+        litellm_params:
+          model: github_copilot/gpt-4
+    model_group: shared
+    recognized: []
+    team_public: []
+    env_proxy: false
+    global_proxy: false
+calls:
+  - spend_attribution:
+      function: providers
+      deployments:
+        - model_name: shared
+          litellm_params:
+            model: chatgpt/gpt-5
+        - model_name: shared
+          litellm_params:
+            model: zzz-unknown-model-zzz
+        - model_name: other
+          litellm_params:
+            model: gpt-4o
+      model_group: shared
+      recognized: []
+      team_public: []
+      env_proxy: false
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments:
+        - model_name: shared
+          litellm_params:
+            model: ""
+      model_group: shared
+      recognized: []
+      team_public: []
+      env_proxy: false
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments:
+        - model_name: proxy
+          litellm_params:
+            model: gpt-4o
+            use_litellm_proxy: true
+        - model_name: proxy
+          litellm_params:
+            model: ""
+            use_litellm_proxy: true
+      model_group: proxy
+      recognized: []
+      team_public: []
+      env_proxy: false
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments:
+        - model_name: proxy
+          litellm_params:
+            model: ""
+        - model_name: other
+          litellm_params:
+            model: chatgpt/gpt-5
+      model_group: proxy
+      recognized: []
+      team_public: []
+      env_proxy: true
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments:
+        - model_name: proxy
+          litellm_params:
+            model: ""
+      model_group: proxy
+      recognized: []
+      team_public: []
+      env_proxy: false
+      global_proxy: true
+  - spend_attribution:
+      function: providers
+      deployments: []
+      model_group: alias-group
+      recognized: [alias-group]
+      team_public: [team group]
+      env_proxy: false
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments: []
+      model_group: team group
+      recognized: [alias-group]
+      team_public: [team group]
+      env_proxy: false
+      global_proxy: false
+  - spend_attribution:
+      function: providers
+      deployments: []
+      model_group: ""
+      recognized: [""]
+      team_public: []
+      env_proxy: false
+      global_proxy: false
+env: {}
+compare: {ignore: []}

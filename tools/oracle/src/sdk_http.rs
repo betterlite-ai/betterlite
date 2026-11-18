@@ -57,6 +57,7 @@ pub mod messages_chat_transform_stream;
 pub mod messages_context_preparation;
 pub(crate) mod messages_header_stream;
 pub mod messages_native_execute;
+pub mod messages_stream_factory;
 pub mod messages_stream_logging;
 pub mod messages_sync_stream;
 pub(crate) mod native;

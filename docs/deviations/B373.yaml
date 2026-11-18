@@ -1,0 +1,36 @@
+task: B373
+deviations:
+  - what: A pattern naming a character by name (`\N{...}`) or a lone surrogate escape (`\uD800`, `\U0000D800`, or in a class) is accepted by LiteLLM and scored as one literal, while betterlite refuses it as an invalid regex.
+    why: Resolving a Unicode name needs the full name table, which the maintained Rust parser does not carry, and a Rust char cannot hold a surrogate; the refusal names the pattern instead of scoring an estimate betterlite cannot match on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+  - what: An octal escape above `\377` (`\400`, `\777`, and the same inside a class) is a syntax error in LiteLLM, while betterlite reads it as the character with that code point and scores it.
+    why: Python caps octal escapes at 255; the Rust parser's octal support has no cap, so the normalizer leaves these escapes to it; a working LiteLLM configuration cannot contain one because `re.compile` refuses it, so accepting it changes no valid setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: A single-digit group reference (`\1` after a group, `\1(a)` before one) is read by LiteLLM as a backreference and refused, while betterlite reads it as an octal escape and scores it.
+    why: The Rust parser has no backreferences, so the digit escape reaches its octal mode; any pattern carrying a backreference is refused by a working LiteLLM setup, so no accepted configuration scores differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758
+  - what: A class whose dash run spells `--` after its first character is read by Python's range rule and refused by betterlite as the set difference operator, so LiteLLM scores `[a-b--c]` and `[!--a]` at 4 and `[---]`, `[----]`, `[-----a]` and `[---a-]` at 3, 4, 4 and 5, while betterlite refuses all six. A leading or trailing dash that never spells `--` (`[--]`, `[--a]`, `[-a]`, `[a-]`) keeps its LiteLLM score of 2, 3, 4 and 4.
+    why: Reproducing Python's class tokenizer means porting its range bookkeeping into the normalizer; the escaped leading dash and the trailing dash already match Python, and the remaining shapes are hand-written edge cases that still fail validation rather than scoring silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758
+  - what: A lookaround (`(?=a)`, `(?<=a)`), an atomic group (`(?>a)`), a named backreference (`(?P<n>a)(?P=n)`) and a conditional (`(?(1)b|c)`) are reported by LiteLLM as an unsupported regex construct and by betterlite as an invalid regex.
+    why: The Rust parser does not parse these constructs, so they fail before the cost walk that recognizes them; both sides refuse the pattern, and only the message differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L777
+  - what: A group name carrying a combining mark (`(?P<á>a)` written decomposed) is accepted by LiteLLM and refused by betterlite as an invalid regex.
+    why: Python validates names with `str.isidentifier`, which admits combining marks, while the Rust parser accepts only letters and digits after the first character; the refused pattern names no working setup's behavior difference beyond the name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: In verbose mode a lazy quantifier written after ignored whitespace (`(?x)a* ?`) is a syntax error in LiteLLM, while betterlite drops the whitespace first and reports the repeat message.
+    why: The normalizer removes ignored whitespace the way Python's tokenizer does, but Python's parser has already committed the preceding quantifier, so the trailing `?` is a second repeat; betterlite sees one lazy quantifier, which the cost model then refuses for another reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L802
+  - what: LiteLLM emits FutureWarnings from `re.compile` and again from `sre_parse.parse` for classes it reads as possible nested sets or set operations (`[a&&b]`, `[a~~b]`, `[a-b--c]`, `[[:alpha:]]`, `[[a]]`), while betterlite validates them silently.
+    why: The warning is CPython's parser anticipating a future syntax change and changes neither the accepted pattern nor the work estimate, and betterlite has no warning channel a config load raises it through; every class that LiteLLM accepts here keeps the same characters and work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: A pattern longer than 4096 characters is read and scored by LiteLLM, while betterlite refuses it as an invalid regex before normalizing it.
+    why: The bound keeps the normalizer's and the parser's work linear in what an operator declares, so a paste of a megabyte cannot spend time before the work budget applies; padding a short verbose pattern past the bound is the one shape that loses a score it would otherwise keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+  - what: Python's inline ASCII flag (`(?a)`, `(?a:...)`, and a combined spec carrying it) is read and scored by LiteLLM, while betterlite refuses it as an unsupported regex construct.
+    why: The Rust matcher has no ASCII mode to carry the flag into, and dropping it would silently widen `\w`, `\d`, `\s` and case folding to Unicode, so the construct is refused by name instead; the kept flags (`i`, `m`, `s`, `u`, `x`) are the ones the matcher reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: A non-multiline dollar assertion followed by a newline-consuming expression can lose a match. For pattern `a$\n` against `a\n`, LiteLLM selects REASONING at score 0.700000 with the domain signal, while betterlite selects SIMPLE at -0.100000 without it.
+    why: The reused regex matcher has no lookahead assertion for Python's final-newline position. Its optional-newline normalization preserves terminal-dollar matches but consumes the newline needed by a continuation; changing the shared matcher belongs to B328.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+kept_bugs: []

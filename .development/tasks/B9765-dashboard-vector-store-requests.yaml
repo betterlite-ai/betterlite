@@ -23,7 +23,7 @@ description: >-
   info/list. Cover create-info-edit-info-delete with the same form values and permissions.
 
   Shared setup GET /credentials returns credentials[] and credential_name,
-  credential_info.provider (B1601). GET /model_group/info has no query and reads
+  credential_info.provider (B1601's handler, mounted by B9987). GET /model_group/info has no query and reads
   data[].model_group,mode and provider model metadata (B060); reuse B9735's model-group
   case, which also serves the embedding-model selector. Use configured reusable
   credentials and model_list entries for populated options, keeping raw secrets out
@@ -100,7 +100,7 @@ oracle_cases:
   - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
 deviations: []
 out_of_scope:
-  - B1067/B1069/B1070/B3465/B1601/B060 keep their entire referenced handlers; provider-specific registration, ingest and search transformations remain with their provider owners.
+  - B1067/B1069/B1070/B3465/B1601/B060 keep their entire referenced handlers, and B9987 mounts B1601's credential routes; provider-specific registration, ingest and search transformations remain with their provider owners.
   - B9090 retains all vector-store page functions, selectors, provider definitions and tests; B9735 owns the two reused catalog cases.
 pitfalls:
   - Adding page_size=100 changes the actual vectorStoreListCall request even though that default exists in its signature.

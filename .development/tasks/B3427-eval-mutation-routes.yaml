@@ -8,6 +8,8 @@ description: >-
   Decode request bodies before the try/catch block so malformed JSON is a 400 parse error, not a 500 handler exception. Hand off to authenticated common processing through
   `ProxyBaseLLMRequestProcessing.base_process_llm_request` on route_type `aupdate_eval`, `adelete_eval`, or `acancel_eval`, and catch exceptions through
   `ProxyBaseLLMRequestProcessing._handle_llm_api_exception`. Response models are `Eval` (update) and `DeleteEvalResponse`/`CancelEvalResponse` (delete/cancel) from B3420's contracts.
+
+  The route state constructor also takes B9372's `Arc<EvalCallRoute>` (betterlite-server `api::eval_call_route`) next to the pre-call step. After the pre-call step each handler calls its `prepare` with `EvalCallKind::UpdateEval`, `DeleteEval` or `CancelEval`, the request data and the key's team id, and passes the prepared data to the SDK operation, so the call carries the deployment's api_base and api_key. B8775 hands every eval router the same `app::inference::eval_deployments::eval_call_route(state)`.
 scope:
   paths:
     - crates/betterlite-server/src/api/eval_mutation_routes.rs
@@ -85,7 +87,7 @@ deviations:
     why: "LiteLLM decodes the body outside the try block, so a non-JSON or non-object body gets Starlette's plain 500; betterlite answers 400 invalid_request_error with param request_body for the whole eval family."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L352-L354"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; this task only calls it. Its pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state))."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; this task only calls it. Its pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)). The call path after pre-call (eval call routing and the deployment credential merge) is B9372's."
   - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; this task only catches and delegates to it."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (aupdate_eval, adelete_eval, acancel_eval) owned by B3422 and B3423; routes only dispatch to them."
