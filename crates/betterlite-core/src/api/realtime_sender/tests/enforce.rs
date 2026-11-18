@@ -1,5 +1,6 @@
 use super::*;
 use crate::api::realtime_sender::error::RealtimeSenderError;
+use futures_util::FutureExt as _;
 use rstest::rstest;
 use std::path::PathBuf;
 use std::{fs, str};
@@ -286,15 +287,14 @@ fn replays_the_realtime_enforcement_corpus(
 #[case::not_a_number_in_array(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[NaN]}}"#)]
 #[case::negative_infinity_after_comma(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[0,-Infinity]}}"#)]
 #[case::transcription_session(r#"{"type":"transcription_session.update","session":{"type":"transcription","input_audio_transcription":{"model":"forbidden"},"note":"\ud800"}}"#)]
-#[tokio::test]
-async fn enforce_rejects_a_frame_python_decodes(#[case] message: &str) {
+fn enforce_rejects_a_frame_python_decodes(#[case] message: &str) {
     let fixture = Fixture::new();
     let mut state = fixture.state();
     state.force_transcription_model = Some("allowed".to_owned());
     let callbacks = no_guardrails();
     let mut sender = make(&mut state, &fixture, &callbacks);
     assert!(matches!(
-        sender.send_to_backend(message).await,
+        sender.send_to_backend(message).now_or_never().unwrap(),
         Err(RealtimeSenderError::SessionUpdateUnreadable)
     ));
     assert!(!state.is_transcription_session.0);

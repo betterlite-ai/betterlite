@@ -26,29 +26,29 @@ async fn realtime_setup_cache_and_guardrail_retry() {
     let none = no_guardrails();
     {
         let mut sender = make(&mut state, &fixture, &none);
-        assert!(sender.send_to_backend("first").await.unwrap())
+        assert!(sender.send_to_backend("first").await.unwrap());
     };
     assert_eq!(cached(&state), Some(SETUP_FRAME));
     {
         let mut sender = make(&mut state, &fixture, &none);
-        assert!(sender.send_to_backend("second").await.unwrap())
+        assert!(sender.send_to_backend("second").await.unwrap());
     };
     assert_eq!(cached(&state), Some(SECOND_SETUP));
     let guardrail = AudioGuardrail;
     let callbacks: [&dyn RealtimeGuardrailCallback<Error = Infallible>; 1] = [&guardrail];
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.maybe_disable_auto_response().await.unwrap()
+        sender.maybe_disable_auto_response().await.unwrap();
     };
     assert!(!state.setup.turn_detection_update_sent.0);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.maybe_disable_auto_response().await.unwrap()
+        sender.maybe_disable_auto_response().await.unwrap();
     };
     assert!(state.setup.turn_detection_update_sent.0);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.maybe_disable_auto_response().await.unwrap()
+        sender.maybe_disable_auto_response().await.unwrap();
     };
     assert_eq!(fixture.script().seen.len(), 4);
     assert_eq!(fixture.backend_log.sent().len(), 3);
@@ -61,22 +61,22 @@ fn cache_keeps_only_sent_setup_objects() {
     let callbacks = no_guardrails();
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.cache_session_configuration(r#"{"type":"session.update"}"#)
+        sender.cache_session_configuration(r#"{"type":"session.update"}"#);
     };
     assert_eq!(cached(&state), None);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.cache_session_configuration("not json")
+        sender.cache_session_configuration("not json");
     };
     assert_eq!(cached(&state), None);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.cache_session_configuration("[1]")
+        sender.cache_session_configuration("[1]");
     };
     assert_eq!(cached(&state), None);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.cache_session_configuration(r#"{"setup":null}"#)
+        sender.cache_session_configuration(r#"{"setup":null}"#);
     };
     assert_eq!(cached(&state), Some(r#"{"setup":null}"#));
 }
@@ -93,19 +93,19 @@ async fn failed_setup_send_keeps_the_injection_flag() {
         script.setup.push(parsed(SETUP_FRAME));
         script
             .transforms
-            .push_back(vec![RealtimeMessage::Text(SETUP_FRAME.to_owned())])
+            .push_back(vec![RealtimeMessage::Text(SETUP_FRAME.to_owned())]);
     };
     fixture.backend_log.fail_on(0);
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
         let result = sender.send_to_backend(SETUP_FRAME).await;
-        assert!(matches!(result, Err(RealtimeSenderError::Backend(_))))
+        assert!(matches!(result, Err(RealtimeSenderError::Backend(_))));
     };
     assert!(state.setup.turn_detection_update_sent.0);
     assert_eq!(cached(&state), Some(SECOND_SETUP));
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.maybe_disable_auto_response().await.unwrap()
+        sender.maybe_disable_auto_response().await.unwrap();
     };
     assert_eq!(fixture.script().seen.len(), 1);
 }
@@ -194,7 +194,7 @@ async fn a_failed_guardrail_patch_is_returned() {
         script.setup.push(parsed(broken));
         script
             .transforms
-            .push_back(vec![RealtimeMessage::Text(broken.to_owned())])
+            .push_back(vec![RealtimeMessage::Text(broken.to_owned())]);
     };
     let mut sender = RealtimeSender {
         state: &mut state,

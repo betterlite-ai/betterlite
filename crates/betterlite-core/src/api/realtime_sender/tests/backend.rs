@@ -33,7 +33,7 @@ async fn realtime_backend_send_order() {
             RealtimeMessage::Text(CONTENT_FRAME.to_owned()),
             RealtimeMessage::Binary(BINARY_FRAME.to_vec()),
             RealtimeMessage::Text(SETUP_FRAME.to_owned()),
-        ])
+        ]);
     };
     let callbacks = no_guardrails();
     let mut sender = RealtimeSender {
@@ -85,7 +85,7 @@ async fn failed_setup_send_keeps_the_cache() {
         script.setup.push(parsed(SETUP_FRAME));
         script
             .transforms
-            .push_back(vec![RealtimeMessage::Text(SETUP_FRAME.to_owned())])
+            .push_back(vec![RealtimeMessage::Text(SETUP_FRAME.to_owned())]);
     };
     fixture.backend_log.fail_on(0);
     let callbacks = no_guardrails();
@@ -111,7 +111,7 @@ async fn failed_content_send_keeps_the_setup_cache() {
         script.transforms.push_back(vec![
             RealtimeMessage::Text(SETUP_FRAME.to_owned()),
             RealtimeMessage::Text(CONTENT_FRAME.to_owned()),
-        ])
+        ]);
     };
     fixture.backend_log.fail_on(1);
     let callbacks = no_guardrails();
@@ -158,7 +158,7 @@ async fn content_text_marks_content_sent() {
         script.transforms.push_back(vec![
             RealtimeMessage::Text(CONTENT_FRAME.to_owned()),
             RealtimeMessage::Text(SETUP_FRAME.to_owned()),
-        ])
+        ]);
     };
     let callbacks = no_guardrails();
     let mut sender = RealtimeSender {
@@ -184,7 +184,7 @@ async fn content_after_content_is_still_sent() {
             .push_back(vec![RealtimeMessage::Text(CONTENT_FRAME.to_owned())]);
         script
             .transforms
-            .push_back(vec![RealtimeMessage::Text(CONTENT_FRAME.to_owned())])
+            .push_back(vec![RealtimeMessage::Text(CONTENT_FRAME.to_owned())]);
     };
     let callbacks = no_guardrails();
     let mut sender = RealtimeSender {
