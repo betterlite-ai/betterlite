@@ -1,14 +1,14 @@
 id: B584
 milestone: M3 providers
 title: Anthropic chat HTTP execution
-status: todo
+status: done
 depends_on: [B577, B580, B173, B570, B689, B960, B567, B190, B005, B171, B2230, B249, B2201]
 file: tasks/B584-anthropic-chat-call.yaml
 covers:
   - "litellm/llms/anthropic/chat/handler.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2337
