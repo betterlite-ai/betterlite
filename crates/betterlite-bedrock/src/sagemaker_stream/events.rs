@@ -4,6 +4,7 @@ use std::str::from_utf8;
 use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use bytes::BytesMut;
 
+use crate::agentcore_stream::line::MAX_LINE_BYTES;
 use crate::event_frames::AwsEvent;
 use crate::event_frames::decode_aws_event_frame;
 use crate::sagemaker_stream::error::SagemakerStreamError;
@@ -82,14 +83,27 @@ impl EventState {
             .unwrap_or_default()
             .replace("\n\n", "");
         self.accumulated.push_str(&message);
-        // the buffer is cleared only when the text parses and projects, as the pinned iterator clears it after the yield
+        // a rejected value leaves the buffer, or every later event is appended behind text that never parses
         match project::project(&self.model, self.is_messages_api, &self.accumulated) {
             Ok(Projection::Ready(chunk)) => {
                 self.push_chunk(*chunk, pending);
                 true
             }
-            Ok(Projection::Pending) => true,
-            Err(error) => self.failed(error, pending),
+            Ok(Projection::Pending) => {
+                // an unfinished value past the cap ends the stream instead of growing without bound
+                if self.accumulated.len() > MAX_LINE_BYTES {
+                    self.accumulated.clear();
+                    pending.push_back(Err(SagemakerStreamError::BufferLimit {
+                        limit: MAX_LINE_BYTES,
+                    }));
+                    return false;
+                }
+                true
+            }
+            Err(error) => {
+                self.accumulated.clear();
+                self.failed(error, pending)
+            }
         }
     }
 
