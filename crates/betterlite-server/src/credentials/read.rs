@@ -5,7 +5,6 @@ use axum::extract::{Path, State};
 use betterlite_db::identity_rows::Payload;
 
 use super::error::CredentialError;
-use super::lookup::DeploymentLookup;
 use super::masking::{masked_credential, masked_values};
 use super::state::CredentialState;
 use super::wire::{CredentialListResponse, CredentialView};
@@ -40,22 +39,15 @@ pub(super) async fn get_credential_by_model(
     State(state): State<CredentialState>,
     Path(model_id): Path<String>,
 ) -> Result<Json<CredentialView>, CredentialError> {
-    deployment_view(state.lookup.as_deref(), &model_id).map(Json)
-}
-
-fn deployment_view(
-    lookup: Option<&dyn DeploymentLookup>,
-    model_id: &str,
-) -> Result<CredentialView, CredentialError> {
-    let Some(source) = lookup else {
+    let Some(source) = state.lookup.as_deref() else {
         return Err(CredentialError::RouterMissing);
     };
     let deployment = source
-        .deployment_credentials(model_id)
+        .deployment_credentials(&model_id)
         .ok_or(CredentialError::ModelNotFound)?;
-    Ok(CredentialView {
+    Ok(Json(CredentialView {
         credential_name: format!("{}-credential-{model_id}", deployment.model_name),
         credential_values: masked_values(&deployment.credential_values),
         credential_info: Payload(BTreeMap::new()),
-    })
+    }))
 }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::thread;
 
 use super::super::registry::CredentialRegistry;
 use super::support::{credential, credential_values, payload, registry, text};
@@ -164,7 +165,7 @@ fn patch_worker(registry: &CredentialRegistry, worker: usize) {
 }
 
 fn run_workers(registry: &Arc<CredentialRegistry>) {
-    std::thread::scope(|scope| {
+    thread::scope(|scope| {
         for worker in 0..WORKERS {
             let shared = Arc::clone(registry);
             scope.spawn(move || patch_worker(&shared, worker));
