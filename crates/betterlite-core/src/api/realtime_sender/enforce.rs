@@ -193,10 +193,10 @@ fn nests_deeper_than(message: &str, limit: usize) -> bool {
         match byte {
             b'"' => in_string = true,
             b'{' | b'[' => {
-                depth = depth.saturating_add(1);
-                if depth > limit {
+                if depth == limit {
                     return true;
                 }
+                depth = depth.saturating_add(1);
             }
             b'}' | b']' => depth = depth.saturating_sub(1),
             _ => {}

@@ -1,5 +1,6 @@
 use super::*;
 use crate::api::realtime_sender::error::RealtimeSenderError;
+use rstest::rstest;
 
 #[test]
 fn realtime_authorized_transcription_model() {
@@ -167,4 +168,73 @@ fn enforce_rejects_session_update_past_nesting_limit() {
         result,
         Err(RealtimeSenderError::SessionUpdateTooDeep)
     ));
+}
+
+#[rstest]
+#[case::inside(61, true)]
+#[case::at_limit(62, true)]
+#[case::outside(63, false)]
+fn enforce_nesting_boundary(#[case] arrays: usize, #[case] accepted: bool) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let nested = format!("{}null{}", "[".repeat(arrays), "]".repeat(arrays));
+    let message = format!(r#"{{"type":"session.update","session":{{"extension":{nested}}}}}"#);
+    let result = sender.enforce_session_model(&message);
+    if accepted {
+        assert_eq!(result.unwrap(), message);
+    } else {
+        assert!(matches!(
+            result,
+            Err(RealtimeSenderError::SessionUpdateTooDeep)
+        ));
+    }
+}
+
+#[test]
+fn enforce_ignores_quoted_nesting() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let extension = serde_json::to_string(&"\"[{\\".repeat(70)).unwrap();
+    let message = format!(r#"{{"type":"session.update","session":{{"extension":{extension}}}}}"#);
+    assert_eq!(sender.enforce_session_model(&message).unwrap(), message);
+}
+
+#[rstest]
+#[case::escaped_quote("\"")]
+#[case::escaped_backslash("\\")]
+#[case::quote_then_backslash("\"\\")]
+fn enforce_depth_after_escapes(#[case] text: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let prefix = serde_json::to_string(text).unwrap();
+    let nested = format!("{}null{}", "[".repeat(63), "]".repeat(63));
+    let message = format!(
+        r#"{{"type":"session.update","session":{{"prefix":{prefix},"extension":{nested}}}}}"#
+    );
+    assert!(matches!(
+        sender.enforce_session_model(&message),
+        Err(RealtimeSenderError::SessionUpdateTooDeep)
+    ));
+}
+
+#[test]
+fn enforce_counts_sibling_depths() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let siblings = "[],".repeat(70);
+    let message =
+        format!(r#"{{"type":"session.update","session":{{"extension":[{siblings}null]}}}}"#);
+    assert_eq!(sender.enforce_session_model(&message).unwrap(), message);
 }
