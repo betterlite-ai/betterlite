@@ -7,7 +7,7 @@ use super::{config, dim, named, run, weights};
 use crate::complexity_scoring::dimensions::{
     CustomDimension, CustomDimensionMatcher, ScoringMode, score_custom_dimensions,
 };
-use crate::custom_dimensions::{DimensionsError, validate};
+use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
 
 #[rstest]
 #[case::absent(vec![], "heuristic", weights(&[]), Ok(0))]
@@ -107,6 +107,25 @@ fn custom_dimensions_behaviors(
     #[case] expected: Result<u64, DimensionsError>,
 ) {
     assert_eq!(run(&declared, classifier, &dimension_weights), expected);
+}
+
+#[test]
+fn every_classifier_type_parses_to_its_name() {
+    let classified = [
+        ("heuristic", ClassifierType::Heuristic),
+        ("heuristic_v2", ClassifierType::HeuristicV2),
+        ("llm", ClassifierType::Llm),
+        ("capability", ClassifierType::Capability),
+        ("llm_v2", ClassifierType::LlmV2),
+        ("custom", ClassifierType::Custom),
+        ("heuristic_first", ClassifierType::HeuristicFirst),
+        ("hybrid", ClassifierType::Hybrid),
+        ("jev", ClassifierType::Jev),
+    ];
+    for (name, expected) in classified {
+        assert_eq!(ClassifierType::parse(name), Some(expected), "{name}");
+    }
+    assert_eq!(ClassifierType::parse("bogus"), None);
 }
 
 #[test]

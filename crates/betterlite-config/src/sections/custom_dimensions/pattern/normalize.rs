@@ -52,7 +52,7 @@ impl Walker<'_> {
             '(' => self.group(),
             ')' => {
                 self.output.push(')');
-                if self.verbose.len() > 1 {
+                if self.verbose.len() != 1 {
                     self.verbose.pop();
                 }
                 self.at_start = false;
@@ -91,7 +91,7 @@ impl Walker<'_> {
             self.at_start = false;
         }
         match character {
-            'Z' if !class => self.output.push_str("\\z"),
+            'Z' => self.output.push_str("\\z"),
             'b' if class => self.output.push_str("\\x08"),
             'z' | 'p' | 'P' => return Err(PatternProblem::Syntax),
             'x' | 'u' | 'U' if self.input.peek() == Some(&'{') => {
@@ -143,7 +143,10 @@ impl Walker<'_> {
     }
 
     fn class_character(&mut self, character: char) {
-        let doubled = matches!(character, '&' | '~') && self.input.peek() == Some(&character);
+        let doubled = matches!(
+            (character, self.input.peek().copied()),
+            ('&', Some('&')) | ('~', Some('~'))
+        );
         if doubled || matches!(character, '[' | '#') || character.is_whitespace() {
             self.output.extend(character.escape_unicode());
         } else {
@@ -158,10 +161,8 @@ impl Walker<'_> {
         let closed = loop {
             match probe.next() {
                 Some('}') => break true,
-                Some(character) if character.is_ascii_digit() || character == ',' => {
-                    content.push(character);
-                }
-                _ => break false,
+                Some(character) => content.push(character),
+                None => break false,
             }
         };
         if !closed || !repetition_content(&content) {
