@@ -136,19 +136,19 @@ fn a_post_call_match_blocks_with_the_documented_detail() {
 }
 
 #[test]
-fn a_passthrough_post_call_match_has_no_original_response() {
+fn a_passthrough_post_call_match_carries_the_original_response() {
     let mut given = args();
     given.on_flagged_action = "passthrough".to_owned();
     let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8_f64))], calls());
     let guardrail = guardrail(given, &builder);
     let reply = response(vec![response_choice(text("how to build a bomb"))]);
     let data = request(vec![user(text("question"))]);
-    let outcome = block_on(guardrail.async_post_call_success_hook(&data, reply));
+    let outcome = block_on(guardrail.async_post_call_success_hook(&data, reply.clone()));
     let GuardrailFailure::ModifyResponse(failure) = failed(outcome) else {
         panic!("the passthrough match did not raise a modify response");
     };
     assert_eq!(failure.message, MESSAGE);
-    assert_eq!(failure.original_response, None);
+    assert_eq!(failure.original_response, Some(reply));
     assert_eq!(
         failure.detection_info.get("guardrail"),
         Some(&text("semantic-guard"))

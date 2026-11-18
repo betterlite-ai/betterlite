@@ -1,8 +1,6 @@
-use std::io::{Error as IoError, Read as _, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::str::{Utf8Error, from_utf8};
 use std::sync::Mutex;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
@@ -260,56 +258,4 @@ pub(super) fn caller_headers(entries: &[(&str, &str)]) -> RequestHeaders {
 
 pub(super) fn api_key_header() -> RequestHeaders {
     caller_headers(&[("x-goog-api-key", "key-1")])
-}
-
-pub(super) struct Received {
-    pub(super) head: String,
-    pub(super) body: String,
-}
-
-pub(super) struct Serving {
-    pub(super) address: SocketAddr,
-    pub(super) request: JoinHandle<Received>,
-}
-
-// the shared fixture reads only the head, and these operations have to see whether a request carried a body
-pub(super) fn serve_with_body(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let (mut stream, _peer) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
-            let received = read_request(&mut stream).unwrap();
-            if let Some(delay) = pause {
-                thread::park_timeout(delay);
-            }
-            drop(stream.write_all(&answer));
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<Received, IoError> {
-    let mut pending = Vec::new();
-    while !pending.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        pending.extend_from_slice(&byte);
-    }
-    let head = String::from_utf8(pending).map_err(IoError::other)?;
-    let length = head
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
-        .and_then(|value| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
-    let mut body = vec![0; length];
-    stream.read_exact(&mut body)?;
-    Ok(Received {
-        head,
-        body: String::from_utf8(body).map_err(IoError::other)?,
-    })
 }
