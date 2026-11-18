@@ -88,9 +88,13 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
-#[case::joined_cap_is_1024("joined_cap_is_1024", false)]
+#[case::joined_cap_is_1024("joined_cap_is_1024", true)]
 #[case::sync_past_the_deadline_drops_the_joined_deltas(
     "sync_past_the_deadline_drops_the_joined_deltas",
+    true
+)]
+#[case::periodic_sync_past_the_deadline_drops_the_joined_deltas(
+    "periodic_sync_past_the_deadline_drops_the_joined_deltas",
     true
 )]
 #[case::callback_saturation_without_a_runtime_keeps_the_delta(

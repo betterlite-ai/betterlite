@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -33,7 +34,10 @@ pub(crate) async fn run(name: &str) {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
         "joined_cap_is_1024" => joined_cap_is_1024().await,
         "sync_past_the_deadline_drops_the_joined_deltas" => {
-            sync_past_the_deadline_drops_the_joined_deltas().await;
+            sync_past_the_deadline_drops_the_joined_deltas(false).await;
+        }
+        "periodic_sync_past_the_deadline_drops_the_joined_deltas" => {
+            sync_past_the_deadline_drops_the_joined_deltas(true).await;
         }
         "callback_saturation_without_a_runtime_keeps_the_delta" => {
             callback_saturation_without_a_runtime_keeps_the_delta().await;
@@ -114,12 +118,13 @@ async fn joined_cap_is_1024() {
         .unwrap();
     let one = usage_batch(TPM_KEY, 1);
     // repeated callbacks join the flush the first one scheduled before that flush is even polled
-    for _step in 0..4 {
+    for _step in 0..MAX_PENDING_DELTAS {
         sink.increment_pipeline(&one).unwrap();
     }
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), 4);
+    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    assert_overflow_warning(&harness);
     // the flush takes the queue and the joined deltas to the store, which stalls
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
@@ -134,7 +139,7 @@ async fn joined_cap_is_1024() {
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
     assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
     // past the cap an observation is dropped, so the owner's staging stays bounded
-    sink.increment_pipeline(&one).unwrap();
+    assert_overflow_warning(&harness);
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
     assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
     // the one flush carries the queue and the capped joined set; the dropped delta is not in the store
@@ -144,22 +149,67 @@ async fn joined_cap_is_1024() {
     assert_eq!(harness.store.calls(), 2);
     assert_eq!(
         harness.store.amount(TPM_KEY),
-        Some(Decimal::from(3_076_u64))
+        Some(Decimal::from(4_096_u64))
     );
     assert_eq!(harness.pending_len(), 0);
     assert_eq!(harness.joined_len(), 0);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(3_077));
+    assert_eq!(harness.counters.read(TPM_KEY), Some(4_098));
+}
+
+#[derive(Clone)]
+struct WarningLog(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for WarningLog {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn assert_overflow_warning(harness: &Harness) {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = WarningLog(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    tracing::subscriber::with_default(subscriber, || {
+        harness
+            .counters
+            .increment_pipeline(&usage_batch(TPM_KEY, 1))
+            .unwrap();
+    });
+    let message = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        message.trim(),
+        format!(
+            "WARN the joined routing deltas are full; the observation is dropped key=\"{TPM_KEY}\""
+        )
+    );
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
 }
 
 // a sync that holds the gate past its deadline drops the deltas that joined it
-async fn sync_past_the_deadline_drops_the_joined_deltas() {
-    let harness = Harness::with_store(settings(false, None));
+async fn sync_past_the_deadline_drops_the_joined_deltas(periodic: bool) {
+    let harness = Harness::with_store(settings(periodic, None));
     harness.store.set_stalled(true);
     let sink: &dyn CounterSink = harness.counters.as_ref();
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
-    let owner = Arc::clone(&harness.counters);
-    let sync = tokio::spawn(async move { owner.sync_with_redis().await });
+    let sync = if periodic {
+        harness.counters.start();
+        None
+    } else {
+        let owner = Arc::clone(&harness.counters);
+        Some(tokio::spawn(async move { owner.sync_with_redis().await }))
+    };
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
     // the queue fills behind the stalled sync, and the delta past it joins the sync that holds the gate
@@ -170,8 +220,12 @@ async fn sync_past_the_deadline_drops_the_joined_deltas() {
     advance(FLUSH_DEADLINE).await;
     yield_now().await;
     // the store never answered, so the sync's batch and the delta that joined it are gone
-    assert!(!sync.await.unwrap());
+    if let Some(task) = sync {
+        assert!(!task.await.unwrap());
+    }
     assert_eq!(harness.joined_len(), 0);
+    assert_eq!(harness.store.calls(), 1);
+    harness.counters.cleanup().await;
     // the queue that filled behind the sync still pushes once the store answers
     harness.store.set_stalled(false);
     harness.store.release();
