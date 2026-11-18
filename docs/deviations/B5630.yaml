@@ -44,6 +44,14 @@ deviations:
       extra metadata. Adding one is B012's change, not this task's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1136-L1161
   - what: >-
+      A redis service event is dropped, with a warning line, when the 1024-event queue is
+      full or its worker is gone. LiteLLM never drops one: it runs the hook inline on the
+      caller when no event loop runs, and creates a task when one is running.
+    why: >-
+      Both hook methods must return without blocking a cache call or a Tokio worker, and an
+      unbounded queue grows with traffic. The warning line says the event was lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L139-L155
+  - what: >-
       A Redis error without a source records no failure, even though LiteLLM counts it as a
       health failure. This covers the errors redis builds from a description alone, such as
       `RedisError::from((ErrorKind::Io, "connection dropped"))` and an SSL handshake

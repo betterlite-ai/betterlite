@@ -20,8 +20,8 @@ use super::support::{
     bare_connection_error, bare_master_down_error, bare_max_clients_error, bare_no_auth_error,
     bare_timeout_error, busy_loading_error, chained_timeout_error, cluster_down_error,
     command_error, connect_timeout_error, connection_error, decode_error,
-    described_connection_error, gate_with, master_down_error, max_clients_error, no_auth_error,
-    reply_error, settings, status, timeout_error,
+    described_connection_error, extension_error, gate_with, master_down_error, max_clients_error,
+    no_auth_error, reply_error, settings, status, timeout_error,
 };
 
 struct LogLine {
@@ -121,6 +121,13 @@ fn a_refused_connection_classifies_as_a_connection_failure() {
 #[test]
 fn a_server_reply_classifies_as_a_command_failure() {
     let error = bare_command_error();
+    let (class, _causes) = classify(&error).expect("the reply classifies");
+    assert_eq!(class, FailureClass::Command);
+}
+
+#[test]
+fn an_extension_reply_classifies_as_a_command_failure() {
+    let error = extension_error();
     let (class, _causes) = classify(&error).expect("the reply classifies");
     assert_eq!(class, FailureClass::Command);
 }

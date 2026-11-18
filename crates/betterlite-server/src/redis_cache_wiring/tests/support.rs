@@ -154,6 +154,11 @@ pub(crate) fn bare_connection_error() -> RedisError {
     ))
 }
 
+// redis reports a reply code it doesn't know as an extension error
+pub(crate) fn extension_error() -> RedisError {
+    RedisError::from((ErrorKind::Extension, "the module replied with an error"))
+}
+
 // redis builds this one from a description alone, so it has no cause for the source walk to reach
 pub(crate) fn described_connection_error() -> RedisCacheError {
     wrapped(RedisError::from((ErrorKind::Io, "connection dropped")))
