@@ -12,16 +12,16 @@ pub struct ResolvedDeprecation {
     pub litellm_provider: Option<String>,
 }
 
-pub struct Deployment<'a> {
-    pub model_name: Option<&'a str>,
-    pub model_info: Option<&'a JsonObject>,
-    pub litellm_params: Option<&'a JsonObject>,
+pub struct Deployment<'deployment> {
+    pub model_name: Option<&'deployment str>,
+    pub model_info: Option<&'deployment JsonObject>,
+    pub litellm_params: Option<&'deployment JsonObject>,
     pub override_date: Option<NaiveDate>,
 }
 
-impl<'a> Deployment<'a> {
+impl<'deployment> Deployment<'deployment> {
     #[must_use]
-    pub fn from_spec(spec: &'a DeploymentSpec) -> Self {
+    pub fn from_spec(spec: &'deployment DeploymentSpec) -> Self {
         Self {
             model_name: Some(spec.model_name.as_str()),
             model_info: Some(&spec.model_info),
@@ -71,7 +71,7 @@ fn cost_map_lookup(
     })
 }
 
-fn text_field<'a>(fields: Option<&'a JsonObject>, key: &str) -> Option<&'a str> {
+fn text_field<'fields>(fields: Option<&'fields JsonObject>, key: &str) -> Option<&'fields str> {
     match fields.and_then(|fields| fields.get(key)) {
         Some(Json::Text(text)) => Some(text),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))

@@ -7,7 +7,11 @@ use crate::model_deprecation::resolve::{Deployment, resolve_deprecation};
 
 use super::support::{TestCatalog, calendar_date, object, text};
 
-fn view<'a>(name: Option<&'a str>, params: &'a JsonObject, info: &'a JsonObject) -> Deployment<'a> {
+fn view<'deployment>(
+    name: Option<&'deployment str>,
+    params: &'deployment JsonObject,
+    info: &'deployment JsonObject,
+) -> Deployment<'deployment> {
     Deployment {
         model_name: name,
         model_info: Some(info),
