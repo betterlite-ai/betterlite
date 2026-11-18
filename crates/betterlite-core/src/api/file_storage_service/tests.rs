@@ -336,6 +336,8 @@ async fn storage_factory_errors() {
         .expect("the Azure settings are missing");
     assert_eq!(settings.to_string(), MISSING_ACCOUNT);
     assert!(matches!(settings, StorageBackendError::Settings(_)));
+    let cause = std::error::Error::source(&settings).expect("the settings cause");
+    assert_eq!(cause.to_string(), MISSING_ACCOUNT);
 
     let other = refusal("other", &[], &recorder).await;
     assert_invalid_request(&other, UNSUPPORTED_OTHER, "target_storage");
