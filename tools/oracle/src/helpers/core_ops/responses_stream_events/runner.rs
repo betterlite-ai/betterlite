@@ -19,10 +19,8 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::support::{
-    Calculator, FixedTokens, Probe, ProviderTransform, TransformFailure, hooks, logging_object,
-    state,
-};
+use super::probe::{Calculator, Probe, hooks};
+use super::support::{FixedTokens, ProviderTransform, TransformFailure, logging_object, state};
 use super::{EstimateMode, Input, TransformMode};
 
 pub(super) async fn run(input: &Input) -> HelperResult {

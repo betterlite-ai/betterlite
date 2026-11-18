@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
+mod probe;
 mod runner;
 mod support;
 mod tests;
