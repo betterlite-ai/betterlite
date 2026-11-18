@@ -213,6 +213,14 @@ fn only_a_matching_client_replaces_the_handler() {
     let other_kind = run(&other_kind_probe);
     assert!(other_kind.supplied_requests.is_empty());
     assert_eq!(other_kind.cohere_requests.len(), 1);
+    let mut async_matching_probe = fixture_probe();
+    async_matching_probe.model = String::from(COHERE_MODEL);
+    async_matching_probe.aembedding = true;
+    async_matching_probe.supplied = Some(ClientKind::Async);
+    async_matching_probe.replies = vec![Reply::ok(REPLY)];
+    let async_matching = run(&async_matching_probe);
+    assert_eq!(async_matching.supplied_requests.len(), 1);
+    assert!(async_matching.cohere_requests.is_empty());
 }
 
 fn credentials() -> Vec<(&'static str, &'static str)> {

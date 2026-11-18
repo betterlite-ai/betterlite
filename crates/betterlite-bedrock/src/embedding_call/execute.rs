@@ -18,7 +18,6 @@ use crate::bedrock_embedding_io::transport::{
     ClientFactory, ClientKind, EmbeddingCall as IoCall, SuppliedClient, Timeout, post_embedding,
 };
 use crate::signing::executor::AwsSigningExecutor;
-use crate::signing::request::AwsSignedRequest;
 
 struct Item<'call, 'text, 'plan> {
     call: &'call EmbeddingCall<'text>,
@@ -83,7 +82,8 @@ where
 {
     let mut responses = Vec::with_capacity(batch.len());
     for data in batch {
-        let signed = sign(item, serde_json::to_vec(data)?, clients.signing).await?;
+        let input = async_input(item, serde_json::to_vec(data)?);
+        let signed = clients.signing.run(move || sign_owned(input)).await??;
         replay(
             [Event::Pre {
                 input: Input::Body,
@@ -118,18 +118,6 @@ where
         item.plan.asynchronous,
         Some(batch),
     )?)
-}
-
-async fn sign(
-    item: &Item<'_, '_, '_>,
-    body: Vec<u8>,
-    signing: &AwsSigningExecutor,
-) -> Result<AwsSignedRequest, EmbeddingCallError> {
-    if !item.call.aembedding {
-        return Ok(sign_item(&body, signing_input(item))?);
-    }
-    let input = async_input(item, body);
-    Ok(signing.run(move || sign_owned(input)).await??)
 }
 
 fn async_input(item: &Item<'_, '_, '_>, body: Vec<u8>) -> AsyncSigningInput {
