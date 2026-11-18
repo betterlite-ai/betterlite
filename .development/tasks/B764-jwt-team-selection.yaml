@@ -22,14 +22,18 @@ description: >-
   source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_id_jwt_field=None;
+  Pinned settings read by this component: litellm_jwtauth.team_id_jwt_field=None;
   litellm_jwtauth.team_id_upsert=False; litellm_jwtauth.team_allowed_routes=['openai_routes', 'info_routes',
   'mcp_routes', '/v1/messages', '/v1/messages/count_tokens']; litellm_jwtauth.team_alias_jwt_field=None;
   litellm_jwtauth.agent_id_jwt_field=None; litellm_jwtauth.enforce_team_based_model_access=False; litellm_jwtauth.team_claim_fallback=False;
-  litellm_jwtauth.fallback_to_db_teams=False.
+  litellm_jwtauth.fallback_to_db_teams=False. All of them are LiteLLM_JWTAuth fields, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object; read the typed values from there. This
+  task adds no config section and parses none of these keys again.
 
-  Also consume B760's team_id_default=None and team_ids_jwt_field=None, and enforce_rbac=False
-  for validate_object_id. Use B737 team/alias lookup, B742 route expansion, B886 can_team_access_model,
+  Also consume team_id_default=None and team_ids_jwt_field=None from the same section (B760's claim readers
+  take them). validate_object_id takes enforce_rbac as an argument: its caller, B877's team stage, passes
+  general_settings.enforce_rbac (handle_jwt.py L2904) from B877's jwt_team_authorization section, not
+  litellm_jwtauth.enforce_rbac. Use B737 team/alias lookup, B742 route expansion, B886 can_team_access_model,
   B871 team_model_aliases, B883 pass-through grants, B761 AgentLookup and B869 HeaderTeam.
   Move the two-line has_legacy_identity predicate from agent_endpoints/identity.py L11-L12 into
   this leaf: the B4776 registry depends on auth and cannot be called in reverse. It tests presence
@@ -87,11 +91,8 @@ description: >-
   reads proxy_server.llm_router and must not be invoked by a helper adapter. Database fixtures use
   POSTGRES_TEST_URL or testcontainers and fail rather than skip when neither can start.
 
-  Write betterlite-config::jwt_team_selection::tests::loads_settings, defaults_and_precedence and invalid_type_rejected.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, defaults and invalid values of these settings, so this task writes no
+  config tests and no config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -106,7 +107,7 @@ description: >-
 
   Sizing: the twelve original ranges total 330 source lines before excluding docstrings, plus two
   lines for has_legacy_identity. Allow 300 production, 300 parameterized behavior/Postgres tests,
-  65 helper adapters, 65 wiring and 50 config lines: 780 changed lines within an 800-line gate.
+  65 helper adapters and 65 wiring lines: 730 changed lines within an 800-line gate.
   Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
@@ -133,12 +134,8 @@ scope:
     - crates/betterlite-server/src/state/jwt_team_selection.rs
     - crates/betterlite-server/src/state/jwt_team_selection/**
     - tools/oracle/cases/auth/jwt-team-selection/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-selection-*
     - crates/betterlite-server/src/auth/jwt_team_selection.rs
     - crates/betterlite-server/src/auth/jwt_team_selection/**
-    - crates/betterlite-config/src/sections/jwt_team_selection.rs
-    - crates/betterlite-config/src/sections/jwt_team_selection/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1499-L1750
@@ -205,11 +202,6 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -233,15 +225,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-team-selection-*")"
         && grep -rlq "jwt_team_selection" tools/oracle/fuzz/corpus/helper_case/jwt-team-selection-* &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_team_selection::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-selection-*")"
-        && grep -rlq "team_id_jwt_field" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-selection-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_team_selection::tests::/)

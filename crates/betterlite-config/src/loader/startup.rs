@@ -86,7 +86,8 @@ fn log_config_error(error: &ConfigError, location: &Path) {
                 "failed to load configuration"
             );
         }
-        ConfigError::Yaml { .. }
+        ConfigError::CustomDimensions(_)
+        | ConfigError::Yaml { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidScalar { .. }

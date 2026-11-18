@@ -8,6 +8,7 @@ use super::chat_response_stream::call::ChatResponseStreamCall;
 use super::error::SdkHttpError;
 use super::file_azure_storage::FileAzureStorageCall;
 use super::messages_chat_stream::call::MessagesChatStreamCall;
+use super::messages_stream_factory::MessagesStreamFactoryCall;
 use super::messages_stream_logging::call::MessagesStreamLoggingCall;
 use super::messages_stream_logging::relay::call::MessagesNativeStreamCall;
 use super::messages_sync_stream::call;
@@ -22,8 +23,8 @@ use super::{
     file_upload_routing, fine_tuning_cancel, fine_tuning_create, fine_tuning_read, image_edit_call,
     image_edit_http, image_generation_call, image_generation_http, image_generation_plan,
     image_variations, messages_chat_call, messages_chat_stream, messages_chat_transform_stream,
-    messages_context_preparation, messages_native_execute, realtime_http_calls,
-    realtime_http_transport, rerank_call, rerank_http, rerank_provider_plan,
+    messages_context_preparation, messages_native_execute, messages_stream_factory,
+    realtime_http_calls, realtime_http_transport, rerank_call, rerank_http, rerank_provider_plan,
     response_chat_dispatch, responses_async_create, responses_chat_call, responses_compact,
     responses_compact_transport, responses_create, responses_create_transport,
     responses_lifecycle_read, responses_lifecycle_write, responses_poll_stream,
@@ -44,6 +45,7 @@ pub enum SdkHttpCall {
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
     AnthropicBetaConfig(AnthropicBetaConfigCall),
     MessagesHeaderStream(MessagesHeaderStreamCall),
+    MessagesStreamFactory(MessagesStreamFactoryCall),
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
     MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
@@ -146,6 +148,7 @@ pub(crate) fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result
                 ));
             }
         }
+        SdkHttpCall::MessagesStreamFactory(factory) => messages_stream_factory::validate(factory)?,
         SdkHttpCall::MessagesNativeStream(relay) => {
             if relay.queue_maxsize == 0 {
                 return Err(SdkHttpError::Invalid(

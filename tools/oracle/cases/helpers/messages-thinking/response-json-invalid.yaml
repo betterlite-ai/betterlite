@@ -1,0 +1,12 @@
+kind: helper
+name: response-json-invalid
+call:
+  messages_thinking:
+    model_cost: {}
+    calls:
+      - function: response
+        model: alias
+        status: 502
+        body: "broken"
+env: {}
+compare: {ignore: []}
