@@ -1,14 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read as _, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::sync::Mutex;
-use std::thread;
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
-use secrecy::ExposeSecret as _;
+use betterlite_http_fixture::request::Request;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::logging::{AgentLogging, AgentPostCall, AgentPreCall};
 use super::{AgentsApiConfig, CreateAgentRequest, body_text};
@@ -19,10 +18,6 @@ use crate::interactions::base::tests::support as base;
 use crate::interactions::base::{
     ErrorClasses, Params, PreparedRequest, RequestHeaders, ResponseHeaders, UpstreamResponse,
 };
-
-const TIMEOUT: Duration = Duration::from_secs(5);
-const ATTEMPTS: u32 = 500;
-const RETRY: Duration = Duration::from_millis(10);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FixtureError {
@@ -227,81 +222,6 @@ fn dict_text(dict: Option<&Params>) -> String {
     )
 }
 
-pub(crate) struct Serving {
-    pub(crate) address: SocketAddr,
-    pub(crate) request: thread::JoinHandle<String>,
-}
-
-pub(crate) fn serve_post(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let listener = base::listener();
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = connected(&listener);
-            stream.set_nonblocking(false).unwrap();
-            stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let received = read_request(&mut stream).unwrap();
-            if let Some(delay) = pause {
-                thread::park_timeout(delay);
-            }
-            drop(stream.write_all(&answer));
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-fn connected(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    (0..ATTEMPTS)
-        .find_map(|_| match listener.accept() {
-            Ok((stream, _peer)) => Some(stream),
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                thread::park_timeout(RETRY);
-                None
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        })
-        .expect("the client never connected to the fixture")
-}
-
-fn read_request(stream: &mut TcpStream) -> IoResult<String> {
-    let mut received = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    loop {
-        let read = stream.read(&mut chunk)?;
-        if read == 0 {
-            return Err(IoError::from(ErrorKind::UnexpectedEof));
-        }
-        received.extend_from_slice(&chunk[..read]);
-        let Some(head_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
-            continue;
-        };
-        let declared = content_length(received.get(..head_end).unwrap_or_default());
-        let body_start = head_end
-            .checked_add(4)
-            .expect("the request head fits in memory");
-        if received.len().saturating_sub(body_start) >= declared {
-            return String::from_utf8(received).map_err(IoError::other);
-        }
-    }
-}
-
-fn content_length(head: &[u8]) -> usize {
-    let Ok(text) = str::from_utf8(head) else {
-        return 0;
-    };
-    text.lines()
-        .filter_map(|line| line.split_once(':'))
-        .find_map(|(name, value)| {
-            if name.eq_ignore_ascii_case("content-length") {
-                return value.trim().parse().ok();
-            }
-            None
-        })
-        .unwrap_or(0)
-}
-
 pub(crate) fn clients() -> HttpClients {
     HttpClients::new(
         base::policy(Verification::Enabled, None),
@@ -313,6 +233,13 @@ pub(crate) fn caller_headers(entries: &[(&str, &str)]) -> BTreeMap<String, Strin
     entries
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+pub(crate) fn configured_headers(entries: &[(&str, &str)]) -> RequestHeaders {
+    entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
         .collect()
 }
 
@@ -341,9 +268,6 @@ pub(crate) fn create_request<'call>(
     }
 }
 
-pub(crate) fn sent_body(sent: &str) -> Params {
-    let (_head, body) = sent
-        .split_once("\r\n\r\n")
-        .expect("the request has a head and a body");
-    serde_json::from_str(body).expect("the request body is JSON")
+pub(crate) fn sent_body(request: &Request) -> Params {
+    serde_json::from_str(&request.body).expect("the request body is JSON")
 }

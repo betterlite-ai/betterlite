@@ -20,6 +20,7 @@ betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
+betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }

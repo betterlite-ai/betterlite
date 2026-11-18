@@ -45,7 +45,7 @@ regex.workspace = true
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_repr = "0.1.21"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
@@ -59,6 +59,7 @@ zeroize = "1.9.1"
 [dev-dependencies]
 mutants = "0.0.4"
 rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
 tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing-subscriber.workspace = true

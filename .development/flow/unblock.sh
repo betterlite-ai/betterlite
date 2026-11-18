@@ -98,7 +98,12 @@ esac
 
 # a reason that only mentions the budget, with no count over it, goes on to the scope rule
 need=
-[[ ${reason} =~ ([0-9]+)\ (changed|counted)\ lines ]] && need=${BASH_REMATCH[1]}
+rest=${reason}
+# a report may quote the overage before the total ("522 changed lines over ... 2022 changed lines"), so the largest count wins
+while [[ ${rest} =~ ([0-9]+)\ (changed|counted)\ lines(.*) ]]; do
+  [[ -z "${need}" || "${BASH_REMATCH[1]}" -gt "${need}" ]] && need=${BASH_REMATCH[1]}
+  rest=${BASH_REMATCH[3]}
+done
 # no budget line leaves old empty, and the rule below skips it
 old=$(grep -o -E 'max_changed_lines: [0-9]+' "${task}")
 old=${old%%$'\n'*}

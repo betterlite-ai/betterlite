@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 use std::future::ready;
-use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::proxy::ProxyPolicy;
@@ -38,9 +36,6 @@ use indexmap::IndexMap;
 use crate::api::agents::item::error::ProviderFailure;
 use crate::api::interactions::lifecycle::InteractionLifecycleDeps;
 use crate::api::interactions::lifecycle::request::InteractionLifecycleRequest;
-
-const TIMEOUT: Duration = Duration::from_secs(5);
-const RETRY: Duration = Duration::from_millis(10);
 
 // the provider config's own error: the status the upstream answered with and the body it carried
 #[derive(Debug, thiserror::Error)]
@@ -298,100 +293,6 @@ impl<'call> Call<'call> {
 
 pub(crate) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
-}
-
-pub(crate) struct Received {
-    pub(crate) head: String,
-    pub(crate) body: String,
-}
-
-impl Received {
-    pub(crate) fn request_line(&self) -> &str {
-        self.head.lines().next().unwrap_or_default()
-    }
-}
-
-pub(crate) struct Serving {
-    pub(crate) address: SocketAddr,
-    request: JoinHandle<Received>,
-}
-
-pub(crate) fn serve(answer: Vec<u8>) -> Serving {
-    serve_on(TcpListener::bind("127.0.0.1:0").unwrap(), answer)
-}
-
-pub(crate) fn serve_on(listener: TcpListener, answer: Vec<u8>) -> Serving {
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = accept(&listener);
-            stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let received = read_request(&mut stream).unwrap();
-            stream.write_all(&answer).unwrap();
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-pub(crate) fn received(serving: Serving) -> Received {
-    serving.request.join().unwrap()
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                stream.set_nonblocking(false).unwrap();
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                assert!(
-                    started.elapsed() < TIMEOUT,
-                    "the client never connected to the fixture"
-                );
-                thread::park_timeout(RETRY);
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        }
-    }
-}
-
-fn read_request<R>(stream: &mut R) -> IoResult<Received>
-where
-    R: Read,
-{
-    let mut raw_head = Vec::new();
-    while !raw_head.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        raw_head.extend_from_slice(&byte);
-    }
-    let head = String::from_utf8(raw_head).map_err(IoError::other)?;
-    let mut raw_body = vec![0; content_length(&head).unwrap_or(0)];
-    stream.read_exact(&mut raw_body)?;
-    let body = String::from_utf8(raw_body).map_err(IoError::other)?;
-    Ok(Received { head, body })
-}
-
-fn content_length(head: &str) -> Option<usize> {
-    head.lines().find_map(|line| {
-        let (name, value) = line.split_once(':')?;
-        if name.eq_ignore_ascii_case("content-length") {
-            return value.trim().parse().ok();
-        }
-        None
-    })
-}
-
-pub(crate) fn reply(status: u16, body: &str) -> Vec<u8> {
-    format!(
-        "HTTP/1.1 {status} fixture\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
 }
 
 pub(crate) fn base(address: SocketAddr) -> String {

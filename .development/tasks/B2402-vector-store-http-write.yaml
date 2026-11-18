@@ -31,7 +31,10 @@ description: >-
   no config exists. Mark status_code_is_synthesized=true only when the source status was not an integer.
   Response conversion and JSON decode happen outside the transport catch, so their errors are not remapped here.
 
-  Add SdkHttpCall::VectorStoreTransport to B2401's HTTP driver. Inputs name update/delete, mode, id, typed optional
+  SdkHttpCall::VectorStoreTransport is on main as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/vector_store_transport.rs (Call implements call_kind::CallKind, Outcome is the
+  value of SdkResult::VectorStoreTransport) and fill VectorStoreTransportRequest in
+  tools/oracle/sdk_http/vector_store_transport.py; the shared sdk_http files stay untouched. Inputs name update/delete, mode, id, typed optional
   params, extra_headers/body, timeout and an OpenAI config whose base is the mock. The Python adapter calls the
   actual handler with a production logging object; native calls the production service. No handler is mocked and
   no helper case represents provider I/O. Typed transport/lifecycle tests cover injected client selection and
@@ -45,9 +48,8 @@ scope:
   - crates/betterlite-core/src/api/vector_store_http_write.rs
   - crates/betterlite-core/src/api/vector_store_http_write/**
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_store_transport.rs
+  - tools/oracle/src/sdk_http/vector_store_transport/**
   - tools/oracle/sdk_http/vector_store_transport.py
   - tools/oracle/cases/sdk-http/vector-store-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-transport-*
@@ -134,7 +136,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_write::tests::write_argument_defaults($|::)/)'
   - id: python-adapter
     why: the real-handler HTTP adapter is missing or untyped
-    run: test -f tools/oracle/sdk_http/vector_store_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_store_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: no new typed vector_store_transport call reaches the SDK HTTP parser
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

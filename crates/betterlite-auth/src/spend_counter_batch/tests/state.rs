@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
+use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
 use betterlite_redis::request_batch::lock;
+use betterlite_redis::request_batch::scope::request_redis_batch_scope;
+use rstest::rstest;
 use tokio::task::JoinSet;
 
 use crate::spend_counter_batch::batch::{BatchPhase, CounterValue, SpendCounterBatch};
@@ -69,49 +72,99 @@ async fn forget_clears_even_closed() {
     assert!(batch.read("spend:key:a").await.unwrap().is_none());
 }
 
-#[tokio::test]
-async fn pending_reply_does_not_rebind_forgotten_key() {
-    let server = FakeRedis::start().await;
-    let batch = open_batch(&server).await;
-    batch.bind(&keys(&["spend:key:a"]));
-    server.script_mget(Reply::Array(vec![Reply::Bulk("6".to_owned())]));
-    let mut held = server.hold_next_mget();
-    let mut tasks = JoinSet::new();
-    let reading = Arc::clone(&batch);
-    tasks.spawn(async move { reading.read("spend:key:a").await });
-    held.wait_arrived().await;
-    batch.forget("spend:key:a");
-    held.release();
-    let value = tasks.join_next().await.unwrap().unwrap().unwrap();
-    assert_eq!(value, Some(CounterValue::Amount(decimal("6"))));
-    {
-        let state = lock(&batch.state);
-        assert_eq!(state.loaded.get("spend:key:a"), Some(&Some(decimal("6"))));
-        assert!(!state.keys.contains("spend:key:a"));
-        drop(state);
-    };
-    assert!(batch.read("spend:key:a").await.unwrap().is_none());
+#[derive(Clone, Copy, Debug)]
+enum Pipeline {
+    Direct,
+    RequestBatch,
 }
 
-#[tokio::test]
-async fn rebound_forgotten_key_keeps_loaded_merge_precedence() {
-    let server = FakeRedis::start().await;
-    let batch = open_batch(&server).await;
-    batch.bind(&keys(&["spend:key:a"]));
-    server.script_mget(Reply::Array(vec![Reply::Bulk("6".to_owned())]));
+#[derive(Clone, Copy, Debug)]
+enum DuringFetch {
+    Forget,
+    ForgetAndRebind,
+    Record,
+}
+
+struct RaceReads {
+    inflight: Option<CounterValue>,
+    next: Option<CounterValue>,
+    other: Option<CounterValue>,
+}
+
+async fn race(server: &FakeRedis, during: DuringFetch) -> RaceReads {
+    let batch = open_batch(server).await;
+    batch.bind(&keys(&["spend:key:a", "spend:key:b"]));
+    server.script_mget(Reply::Array(vec![
+        Reply::Bulk("6".to_owned()),
+        Reply::Bulk("8".to_owned()),
+    ]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk("9".to_owned())]));
     let mut held = server.hold_next_mget();
     let mut tasks = JoinSet::new();
     let reading = Arc::clone(&batch);
     tasks.spawn(async move { reading.read("spend:key:a").await });
     held.wait_arrived().await;
-    batch.forget("spend:key:a");
+    match during {
+        DuringFetch::Forget => batch.forget("spend:key:a"),
+        DuringFetch::ForgetAndRebind => {
+            batch.forget("spend:key:a");
+            batch.bind(&keys(&["spend:key:a"]));
+        }
+        DuringFetch::Record => batch.record("spend:key:a", decimal("5")),
+    }
     held.release();
-    tasks.join_next().await.unwrap().unwrap().unwrap();
-    batch.bind(&keys(&["spend:key:a"]));
-    server.script_mget(Reply::Array(vec![Reply::Bulk("9".to_owned())]));
-    assert_eq!(
-        batch.read("spend:key:a").await.unwrap(),
-        Some(CounterValue::Amount(decimal("6")))
-    );
-    assert_eq!(server.commands_named("MGET").len(), 2);
+    let inflight = tasks.join_next().await.unwrap().unwrap().unwrap();
+    let next = batch.read("spend:key:a").await.unwrap();
+    let other = batch.read("spend:key:b").await.unwrap();
+    RaceReads {
+        inflight,
+        next,
+        other,
+    }
+}
+
+#[rstest]
+#[case::forget_during_inflight_fetch_drops_the_old_reply(
+    Pipeline::Direct,
+    DuringFetch::Forget,
+    None,
+    None
+)]
+#[case::forget_during_request_batch_fetch_drops_the_old_reply(
+    Pipeline::RequestBatch,
+    DuringFetch::Forget,
+    None,
+    None
+)]
+#[case::rebound_key_takes_the_newer_reply(
+    Pipeline::Direct,
+    DuringFetch::ForgetAndRebind,
+    None,
+    Some(CounterValue::Amount(decimal("9")))
+)]
+#[case::recorded_write_outranks_an_older_reply(
+    Pipeline::RequestBatch,
+    DuringFetch::Record,
+    Some(CounterValue::Amount(decimal("5"))),
+    Some(CounterValue::Amount(decimal("5")))
+)]
+#[tokio::test]
+async fn reply_asked_before_a_forget(
+    #[case] pipeline: Pipeline,
+    #[case] during: DuringFetch,
+    #[case] inflight: Option<CounterValue>,
+    #[case] next: Option<CounterValue>,
+) {
+    let server = FakeRedis::start().await;
+    let reads = match pipeline {
+        Pipeline::Direct => race(&server, during).await,
+        Pipeline::RequestBatch => {
+            request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, race(&server, during))
+                .await
+                .1
+        }
+    };
+    assert_eq!(reads.inflight, inflight);
+    assert_eq!(reads.next, next);
+    assert_eq!(reads.other, Some(CounterValue::Amount(decimal("8"))));
 }

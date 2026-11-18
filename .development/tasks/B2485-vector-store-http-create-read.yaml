@@ -11,8 +11,12 @@ description: >-
   without timeout. Retrieve uses the create-response transform; list returns response.json() directly.
 
   Only HTTP sends enter the shared exception catch; capability checks, header/URL construction, logging
-  and response decoding retain their own errors. Implement VectorStoreCreateReadTransport in B2401 using
-  actual handlers against OpenAI mock config. Native client/capability tests cover execution seams not
+  and response decoding retain their own errors. SdkHttpCall::VectorStoreCreateReadTransport
+  uses actual handlers against OpenAI mock config. Its placeholder is on main under a shorter Rust module
+  name: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/store_create_read_transport.rs
+  (Call implements call_kind::CallKind) and fill CreateReadTransportRequest, keeping its field alias
+  vector_store_create_read_transport, in tools/oracle/sdk_http/vector_store_create_read_transport.py; the
+  shared sdk_http files and dispatch.py stay as they are. Native client/capability tests cover execution seams not
   observable through valid HTTP. These six functions contain 338 nonblank/non-comment lines. Budget 290
   implementation with shared private preparation, 175 tests, 90 adapters, 120 fixtures and 35 wiring/corpus,
   710 total under 770. B1131 owns wire decoding; no new parser or route is added.
@@ -20,9 +24,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/vector_store_http_create_read.rs
   - crates/betterlite-core/src/api/vector_store_http_create_read/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/store_create_read_transport.rs
+  - tools/oracle/src/sdk_http/store_create_read_transport/**
   - tools/oracle/sdk_http/vector_store_create_read_transport.py
   - tools/oracle/cases/sdk-http/vector-store-create-read-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-create-read-transport-*
@@ -79,7 +82,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_http_create_read::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: vector-store create/read HTTP has no independent handler execution
-    run: test -f tools/oracle/sdk_http/vector_store_create_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_store_create_read_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the new create/read transport variant has no case-parser seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-create-read-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

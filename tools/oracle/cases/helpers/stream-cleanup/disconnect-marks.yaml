@@ -1,0 +1,13 @@
+kind: helper
+name: stream-cleanup-disconnect-marks
+call:
+  b8605:
+    function: record_disconnect
+    requests:
+      - {}
+      - {litellm_call_id: call-1, model: gpt-4o}
+      - {metadata: null, litellm_params: null}
+      - {metadata: {}, litellm_params: {metadata: null}}
+      - {metadata: {user: x, client_disconnected: false, error_information: {error_code: "400"}}, litellm_params: {model: gpt-4o, metadata: {team: t}}}
+env: {}
+compare: {ignore: []}

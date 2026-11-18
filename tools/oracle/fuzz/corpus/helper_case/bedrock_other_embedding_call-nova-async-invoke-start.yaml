@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-nova-async-invoke-start-seed
+call:
+  bedrock_other_embedding_call:
+    function: nova_async_invoke_start
+    model: async_invoke/amazon.nova-2-multimodal-embeddings-v1:0
+    input: [hello]
+    now: 1700000000
+env: {}
+compare: {ignore: []}
