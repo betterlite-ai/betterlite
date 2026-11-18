@@ -23,11 +23,7 @@ pub enum UsageRowError {
     },
 }
 
-pub fn usage_records(rows: &[UsageRow]) -> Result<Vec<UsageRecord>, UsageRowError> {
-    rows.iter().map(usage_record).collect()
-}
-
-fn usage_record(row: &UsageRow) -> Result<UsageRecord, UsageRowError> {
+pub(crate) fn usage_record(row: &UsageRow) -> Result<UsageRecord, UsageRowError> {
     Ok(UsageRecord {
         date: text_field(row, "date")?.map(str::to_owned),
         custom_llm_provider: text_field(row, "custom_llm_provider")?

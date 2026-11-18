@@ -5,7 +5,7 @@ use secrecy::ExposeSecret;
 
 use crate::finops::cloudzero::schedule::CloudZeroSettings;
 
-use super::fixtures::{API_KEY, CONNECTION_ID, environment};
+use super::fixtures::environment;
 
 type Expectation = (&'static str, &'static str, &'static str, i64, i64);
 

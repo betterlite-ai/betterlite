@@ -74,30 +74,6 @@ fn lease_object(manager: PodLockManager<FakeCache>) -> Arc<dyn UsageExportLease>
     Arc::new(manager)
 }
 
-mod without_cache {
-    use super::*;
+mod without_cache;
 
-    #[tokio::test]
-    async fn cloudzero_schedule() {
-        let lease = lease_object(manager(None));
-        assert!(!lease.redis_available());
-        assert_eq!(lease.acquire_lock(JOB).await, None);
-        lease.release_lock(JOB).await;
-    }
-}
-
-mod with_cache {
-    use super::*;
-
-    #[tokio::test]
-    async fn cloudzero_schedule() {
-        let cache = Arc::new(FakeCache::default());
-        let lease = lease_object(manager(Some(Arc::clone(&cache))));
-        assert!(lease.redis_available());
-        assert_eq!(lease.acquire_lock(JOB).await, Some(true));
-        assert_eq!(lease.acquire_lock(JOB).await, Some(true));
-        lease.release_lock(JOB).await;
-        let deleted = cache.deleted.lock().expect("an unsplit lock").clone();
-        assert_eq!(deleted, vec![LEASE_KEY.to_owned()]);
-    }
-}
+mod with_cache;

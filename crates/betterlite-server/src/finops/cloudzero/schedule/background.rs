@@ -51,9 +51,6 @@ pub fn init_cloudzero_background_job<Sender, Time>(
         interval_minutes = logger.settings.interval_minutes,
         "CloudZero Logger: initializing the usage data export job"
     );
-    scheduler.add_interval_job(
-        EXPORT_JOB_NAME,
-        logger.settings.interval_minutes,
-        Arc::clone(logger),
-    );
+    let job = Arc::clone(logger);
+    scheduler.add_interval_job(EXPORT_JOB_NAME, logger.settings.interval_minutes, job);
 }

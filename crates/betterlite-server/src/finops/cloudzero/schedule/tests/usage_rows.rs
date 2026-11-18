@@ -6,7 +6,7 @@ use betterlite_logging::finops::cloudzero::records::UsageRecord;
 use rust_decimal::Decimal;
 
 use super::fixtures::{decimal, integer, row, text};
-use crate::finops::cloudzero::schedule::usage_rows::usage_records;
+use crate::finops::cloudzero::schedule::usage_rows::usage_record;
 
 fn full_row() -> UsageRow {
     row(&[
@@ -58,10 +58,13 @@ fn cloudzero_schedule() {
         spend: Decimal::new(125, 2),
     };
     let nulls = row(&[("date", JsonData::Null), ("spend", JsonData::Null)]);
-    let records =
-        usage_records(&[full_row(), UsageRow::new(), nulls]).expect("three readable rows");
-    assert_eq!(records.len(), 3);
-    assert_eq!(records[0], expected);
-    assert_eq!(records[1], UsageRecord::default());
-    assert_eq!(records[2], UsageRecord::default());
+    assert_eq!(usage_record(&full_row()).expect("a full row"), expected);
+    assert_eq!(
+        usage_record(&UsageRow::new()).expect("an empty row"),
+        UsageRecord::default()
+    );
+    assert_eq!(
+        usage_record(&nulls).expect("a row with nulls"),
+        UsageRecord::default()
+    );
 }

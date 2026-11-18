@@ -8,11 +8,11 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::finops::cloudzero::{UsageRow, get_usage_data};
 use betterlite_logging::finops::cloudzero::delivery::transport::{BillingTransport, Clock};
 use betterlite_logging::finops::cloudzero::records::cbf::CbfTransformer;
-use betterlite_logging::finops::cloudzero::records::{CbfRecord, CbfValue};
+use betterlite_logging::finops::cloudzero::records::{CbfRecord, CbfValue, UsageRecord};
 
 use super::CloudZeroLogger;
 use super::error::CloudZeroExportError;
-use super::usage_rows::{UsageRowError, decimal_field, integer_field, usage_records};
+use super::usage_rows::{UsageRowError, decimal_field, integer_field, usage_record};
 
 pub const DEFAULT_DRY_RUN_LIMIT: i64 = 10_000;
 pub const SAMPLE_LIMIT: usize = 50;
@@ -72,7 +72,10 @@ where
         });
     }
     let usage_data: Vec<UsageRow> = usage.iter().take(SAMPLE_LIMIT).cloned().collect();
-    let records = usage_records(&usage)?;
+    let records = usage
+        .iter()
+        .map(usage_record)
+        .collect::<Result<Vec<UsageRecord>, UsageRowError>>()?;
     let cbf_data = CbfTransformer::default().transform(&records);
     if cbf_data.is_empty() {
         tracing::warn!("CloudZero Dry Run: no valid data after transformation");

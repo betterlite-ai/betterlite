@@ -4,10 +4,11 @@ use secrecy::ExposeSecret as _;
 use betterlite_db::finops::cloudzero::get_usage_data;
 use betterlite_logging::finops::cloudzero::delivery::transport::{BillingTransport, Clock};
 use betterlite_logging::finops::cloudzero::delivery::{CloudZeroStreamer, Credentials};
+use betterlite_logging::finops::cloudzero::records::UsageRecord;
 use betterlite_logging::finops::cloudzero::records::cbf::CbfTransformer;
 
 use super::error::CloudZeroExportError;
-use super::usage_rows::usage_records;
+use super::usage_rows::{UsageRowError, usage_record};
 use super::{CloudZeroLogger, EXPORT_JOB_NAME, ExportOperation};
 
 pub async fn export_usage_data<Sender, Time>(
@@ -37,7 +38,10 @@ where
         tracing::debug!("CloudZero Logger: no usage data found to export");
         return Ok(());
     }
-    let records = usage_records(&usage)?;
+    let records = usage
+        .iter()
+        .map(usage_record)
+        .collect::<Result<Vec<UsageRecord>, UsageRowError>>()?;
     let cbf_data = CbfTransformer::default().transform(&records);
     if cbf_data.is_empty() {
         tracing::warn!("CloudZero Logger: no valid data after transformation");

@@ -221,7 +221,7 @@ pub(crate) fn logger(
 }
 
 pub(crate) fn leased(lease: &Arc<FakeLease>) -> Option<Arc<dyn UsageExportLease>> {
-    let held: Arc<dyn UsageExportLease> = Arc::clone(lease);
+    let held = Arc::clone(lease);
     Some(held)
 }
 
@@ -256,7 +256,7 @@ pub(crate) struct UsageSpec<'row> {
     pub updated_at: NaiveDateTime,
 }
 
-impl<'row> UsageSpec<'row> {
+impl UsageSpec<'_> {
     fn values(&self) -> [&(dyn ToSql + Sync); 10] {
         [
             &self.id,
