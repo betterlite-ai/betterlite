@@ -172,7 +172,7 @@ async fn handle_raised_failure(
     let Err(error) = maybe_raise_for_error_event(hooks, state, &probe.row.event) else {
         return;
     };
-    for _attempt in 0..2 {
+    for _attempt in 0..2_u8 {
         handle_failure(hooks, state, callback, &error.exception).await;
     }
 }
