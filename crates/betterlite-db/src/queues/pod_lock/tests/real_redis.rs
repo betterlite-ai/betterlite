@@ -25,6 +25,8 @@ use crate::queues::pod_lock::{NoPodLockEventSink, PodLockManager};
 
 const LEASE_TTL_SECONDS: i64 = 60;
 const LEASE_KEY: &str = "cronjob_lock:job";
+// The round trips before PTTL may eat into the lease, but a lease of any other size fails this bound.
+const MINIMUM_LEASE_TTL_MILLISECONDS: i64 = 59_000;
 const EXPIRY_POLL_ATTEMPTS: usize = 500;
 const EXPIRY_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
@@ -129,6 +131,10 @@ async fn a_second_pod_acquires_only_after_the_holder_releases() {
         Some(serde_json::to_string(first.pod_id.as_ref()).unwrap())
     );
     first.release_lock("job").await;
+    assert!(
+        first.script.lock().unwrap().is_some(),
+        "the release fell back to GET plus DEL instead of running the Lua script"
+    );
     assert_eq!(stored_owner(&mut connection).await, None);
     assert_eq!(second.acquire_lock("job", None, true).await, Some(true));
 }
@@ -148,7 +154,10 @@ async fn the_stored_owner_is_the_json_encoded_pod_id_with_the_lease_ttl() {
     let stored = cache.cache.async_get_cache(LEASE_KEY).await.unwrap();
     assert!(matches!(stored, Some(CachedValue::Text(text)) if text == owner));
     let ttl = lease_ttl(&mut connection).await;
-    assert!((1..=LEASE_TTL_SECONDS.saturating_mul(1000)).contains(&ttl));
+    assert!(
+        (MINIMUM_LEASE_TTL_MILLISECONDS..=LEASE_TTL_SECONDS.saturating_mul(1000)).contains(&ttl),
+        "the stored lease ttl {ttl} ms is not the requested {LEASE_TTL_SECONDS} s lease"
+    );
 }
 
 #[tokio::test]
@@ -195,6 +204,10 @@ async fn a_release_by_a_pod_that_does_not_own_the_lock_keeps_the_key() {
     let stranger = pod_lock(&cache, Uuid::new_v4());
     assert_eq!(holder.acquire_lock("job", None, true).await, Some(true));
     stranger.release_lock("job").await;
+    assert!(
+        stranger.script.lock().unwrap().is_some(),
+        "the non-owner release fell back to GET plus DEL instead of running the Lua script"
+    );
     let mut connection = raw(&fixture).await;
     assert_eq!(
         stored_owner(&mut connection).await,
