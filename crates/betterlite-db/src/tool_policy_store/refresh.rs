@@ -101,7 +101,7 @@ where
     Ok(tool_policy_maps(&tools))
 }
 
-async fn load_blocked_tools<Client>(
+pub(super) async fn load_blocked_tools<Client>(
     database: &PostgresStore,
     reconnect: Option<&mut Client>,
 ) -> Result<BTreeMap<String, Vec<String>>, ToolPolicyStoreError>
