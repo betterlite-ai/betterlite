@@ -27,8 +27,8 @@ pub struct TlsCanceller<Tls> {
 impl<Tls> StatementCanceller for TlsCanceller<Tls>
 where
     Tls: MakeTlsConnect<Socket> + Clone + Sync + Send + 'static,
-    Tls::Stream: Sync + Send,
-    Tls::TlsConnect: Sync + Send,
+    Tls::Stream: Send,
+    Tls::TlsConnect: Send,
     <Tls::TlsConnect as TlsConnect<Socket>>::Future: Send,
 {
     fn cancel<'token>(&self, token: &'token CancelToken) -> CancellationFuture<'token> {
