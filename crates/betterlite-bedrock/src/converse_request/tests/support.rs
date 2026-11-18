@@ -33,6 +33,7 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS};
 use betterlite_prompts::bedrock_processor::error::ProcessorError;
+use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use betterlite_prompts::message_content::Message;
 use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
@@ -41,8 +42,9 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::{
-    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseSettings, converse_request,
+    ConverseMedia, ConverseRequestInput, ConverseRequestOutcome, ConverseSettings, converse_request,
 };
+use crate::event_frames::beta::BetaHeader;
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::model_routes::{ParamMap, ParamValue};
 use crate::request_policy::BedrockRequestPolicy;
@@ -120,6 +122,7 @@ pub(super) struct Call<'request> {
     pub(super) messages: &'request str,
     pub(super) optional_params: &'request str,
     pub(super) litellm_params: Option<&'request str>,
+    pub(super) headers: Option<&'request str>,
     pub(super) model_cost: &'request str,
     pub(super) policy: Option<&'request [&'request str]>,
     pub(super) answers: &'request str,
@@ -133,6 +136,7 @@ impl<'request> Call<'request> {
             messages: USER_MESSAGES,
             optional_params,
             litellm_params: None,
+            headers: None,
             model_cost: MODEL_COST,
             policy: None,
             answers: "{}",
@@ -145,6 +149,7 @@ pub(super) struct Outcome {
     pub(super) body: Result<Json, ConverseRequestError>,
     pub(super) optional_params: Json,
     pub(super) litellm_params: Option<Json>,
+    pub(super) tool_name_mappings: ToolNameMap,
 }
 
 impl Outcome {
@@ -338,6 +343,7 @@ struct Session<'setup, 'request, R> {
     fixture: Fixture,
     optional_params: ParamMap,
     litellm_params: Option<Object>,
+    headers: BTreeMap<String, BetaHeader>,
     parsed_messages: Vec<Message>,
     policy: Option<BedrockRequestPolicy>,
     answers: Answers,
@@ -351,6 +357,10 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
             remote,
             optional_params: params(call.optional_params),
             litellm_params: call.litellm_params.map(object),
+            headers: call
+                .headers
+                .map(|source| serde_json::from_str(source).expect("the headers parse"))
+                .unwrap_or_default(),
             parsed_messages: messages(call.messages),
             policy: call.policy.map(|fields| BedrockRequestPolicy {
                 fields: fields.iter().map(|field| (*field).to_owned()).collect(),
@@ -361,7 +371,7 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
         }
     }
 
-    async fn assemble(&mut self) -> Result<ConverseRequestBody, ConverseRequestError> {
+    async fn assemble(&mut self) -> Result<ConverseRequestOutcome, ConverseRequestError> {
         let catalogs = self.fixture.catalogs();
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
@@ -373,7 +383,7 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
             messages: &self.parsed_messages,
             optional_params: &mut self.optional_params,
             litellm_params: self.litellm_params.as_mut(),
-            headers: None,
+            headers: Some(&self.headers),
             settings: ConverseSettings {
                 global_drop: self.call.settings.global_drop,
                 modify_params: self.call.settings.modify_params,
@@ -400,14 +410,19 @@ pub(super) fn run_on<R: Resolve>(
 ) -> (Outcome, String) {
     let mut session = Session::new(call, remote);
     let warnings = Warnings::default();
-    let body = {
+    let assembled = {
         let _captured = warnings.install();
         runtime.block_on(session.assemble())
     };
+    let (body, tool_name_mappings) = match assembled {
+        Ok(outcome) => (Ok(value(&outcome.body)), outcome.tool_name_mappings),
+        Err(error) => (Err(error), ToolNameMap::new()),
+    };
     let outcome = Outcome {
-        body: body.map(|body| value(&body)),
+        body,
         optional_params: value(&session.optional_params),
         litellm_params: session.litellm_params.as_ref().map(value),
+        tool_name_mappings,
     };
     (outcome, warnings.text())
 }

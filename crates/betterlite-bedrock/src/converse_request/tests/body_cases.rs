@@ -1,6 +1,7 @@
 use betterlite_prompts::arguments::json::Json;
 
 use super::support::{CLAUDE_3_5, CLAUDE_4_5, Call, LLAMA, expected, field, remote, run};
+use crate::model_routes::get_bedrock_tool_name;
 
 const CALLER_OPTIONS: &str = r#"{
     "_output_config_normalized": false,
@@ -18,6 +19,8 @@ const CALLER_OPTIONS: &str = r#"{
     "parallel_tool_calls": true,
     "client_metadata": {"team": "x"},
     "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "performanceConfig": {"latency": "optimized"},
+    "serviceTier": {"type": "priority"},
     "requestMetadata": {"client_key": "caller"}
 }"#;
 
@@ -29,8 +32,12 @@ const CALLER_BODY: &str = r#"{
     },
     "additionalModelRequestFields": {"custom_field": {"a": 1}, "top_k": 5},
     "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "performanceConfig": {"latency": "optimized"},
+    "serviceTier": {"type": "priority"},
     "requestMetadata": {"client_key": "caller"}
 }"#;
+
+const CLIENT_BETA_HEADERS: &str = r#"{"anthropic-beta": "interleaved-thinking-2025-05-14"}"#;
 
 const NULL_OPTIONS: &str = r#"{
     "requestMetadata": null,
@@ -93,6 +100,31 @@ const TOOL_CONFIG_UNPLACED: &str = r#"{"tools": [{"toolSpec": {
 const CACHE_POINT_ONLY: &str =
     r#"{"cache_control_injection_points": [{"location": "tool_config"}]}"#;
 
+const RENAMED_TOOLS: &str = r#"{
+    "tools": [
+        {"type": "function", "function": {
+            "name": "_lookup",
+            "description": "leading underscore",
+            "parameters": {"type": "object", "properties": {}}
+        }},
+        {"type": "function", "function": {
+            "name": "123lookup",
+            "description": "leading digits",
+            "parameters": {"type": "object", "properties": {}}
+        }}
+    ]
+}"#;
+
+const BOUNDED_TOOL: &str = r#"{
+    "tools": [{"type": "function", "function": {
+        "name": "bounded",
+        "description": "a large bound",
+        "parameters": {"type": "object", "properties": {
+            "bound": {"type": "number", "maximum": 1e30}
+        }}
+    }}]
+}"#;
+
 const CONTEXT_OPTIONS: &str = r#"{
     "custom": 1,
     "context_management": {"edits": [
@@ -118,6 +150,21 @@ const CONTEXT_FOREIGN: &str = r#"{"custom": 1, "context_management": {"edits": [
 pub(super) fn converse_body_shape() {
     caller_options_move_and_copy();
     null_options_leave_no_field();
+    client_beta_header_reaches_the_request_fields();
+}
+
+fn client_beta_header_reaches_the_request_fields() {
+    let call = Call {
+        headers: Some(CLIENT_BETA_HEADERS),
+        ..Call::new(CLAUDE_3_5, "{}")
+    };
+    let (outcome, _warnings) = run(&call, &remote(&[]));
+    assert_eq!(
+        field(outcome.body(), "additionalModelRequestFields"),
+        Some(&expected(
+            r#"{"anthropic_beta": ["interleaved-thinking-2025-05-14"]}"#
+        ))
+    );
 }
 
 fn caller_options_move_and_copy() {
@@ -135,6 +182,8 @@ fn caller_options_move_and_copy() {
             "inferenceConfig",
             "additionalModelRequestFields",
             "guardrailConfig",
+            "performanceConfig",
+            "serviceTier",
             "requestMetadata"
         ]
     );
@@ -166,6 +215,8 @@ pub(super) fn tool_config_injection() {
     uncached_model_places_no_breakpoint();
     tool_choice_without_tools_stays_inference();
     cache_points_without_tools_place_nothing();
+    tool_names_round_trip_through_the_response_mapping();
+    tool_schema_keeps_a_large_bound();
 }
 
 fn tool_config_breakpoint() {
@@ -236,6 +287,53 @@ fn cache_points_without_tools_place_nothing() {
     let (empty, _warnings) = run(&call, &remote(&[]));
     assert!(field(empty.body(), "toolConfig").is_none());
     assert_eq!(empty.litellm_params, Some(expected(TOOL_LITELLM)));
+}
+
+// Bedrock only accepts its own name pattern, and the assembly hands back what the reply restores.
+fn tool_names_round_trip_through_the_response_mapping() {
+    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, RENAMED_TOOLS), &remote(&[]));
+    let tool_config =
+        field(outcome.body(), "toolConfig").expect("the request carries a toolConfig");
+    let Json::List(tools) = field(tool_config, "tools").expect("the toolConfig carries tools")
+    else {
+        panic!("the toolConfig tools are a list");
+    };
+    let sent: Vec<&str> = tools
+        .iter()
+        .map(|tool| {
+            let spec = field(tool, "toolSpec").expect("a tool carries its spec");
+            let Json::Text(name) = field(spec, "name").expect("a tool spec carries its name")
+            else {
+                panic!("the tool name is text");
+            };
+            name.as_str()
+        })
+        .collect();
+    assert_eq!(sent, ["a_lookup", "a123lookup"]);
+    let restored: Vec<&str> = sent
+        .iter()
+        .map(|name| get_bedrock_tool_name(&outcome.tool_name_mappings, *name))
+        .collect();
+    assert_eq!(restored, ["_lookup", "123lookup"]);
+}
+
+// A schema bound beyond Decimal's range passes the record roundtrip and stays a JSON number.
+fn tool_schema_keeps_a_large_bound() {
+    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, BOUNDED_TOOL), &remote(&[]));
+    let tool = field(outcome.body(), "toolConfig")
+        .and_then(|config| field(config, "tools"))
+        .and_then(|tools| match tools {
+            Json::List(items) => items.first(),
+            _ => None,
+        })
+        .expect("the toolConfig carries a tool");
+    let maximum = field(tool, "toolSpec")
+        .and_then(|spec| field(spec, "inputSchema"))
+        .and_then(|schema| field(schema, "json"))
+        .and_then(|json| field(json, "properties"))
+        .and_then(|properties| field(properties, "bound"))
+        .and_then(|bound| field(bound, "maximum"));
+    assert_eq!(maximum, Some(&expected("1e30")));
 }
 
 // The compact-only context management filter runs inside the tools stage and its beta reaches the body.
