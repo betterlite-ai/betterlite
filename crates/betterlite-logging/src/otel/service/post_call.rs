@@ -3,7 +3,8 @@ use opentelemetry::trace::{Span as _, Status, TraceContextExt as _, Tracer as _}
 
 use crate::logging_metadata::error_info::get_error_information;
 use crate::logging_metadata::exception::ExceptionFacts;
-use crate::otel::legacy_lifecycle::context::{instant_from_ns, standard_logging_object};
+use crate::otel::legacy_lifecycle::context::instant_from_ns;
+use crate::otel::legacy_lifecycle::guardrail;
 use crate::otel::legacy_lifecycle::lifecycle::LegacyLifecycle;
 use crate::otel::legacy_lifecycle::parent;
 use crate::otel::legacy_policy::annotations::set_team_attributes;
@@ -73,13 +74,10 @@ pub fn async_post_call_success_hook(
     model_call_details: &MetadataMap,
     parent: Option<&LiveSpan>,
 ) -> Result<(), ServiceCallbackError> {
-    set_preprocessing_duration(parent, model_call_details);
-    let Some(request_data) = guardrail_request_data(model_call_details) else {
-        return Ok(());
-    };
     let resolved = parent::from_kwargs(model_call_details)?;
-    let parent_span = guardrail_parent(lifecycle, resolved.context.as_ref());
-    lifecycle.emit_request_guardrails(&request_data, parent_span.as_ref())?;
+    set_preprocessing_duration(parent, model_call_details);
+    let context = resolved.context.unwrap_or_default();
+    guardrail::create_guardrail_span(lifecycle, model_call_details, &context)?;
     Ok(())
 }
 
@@ -100,51 +98,4 @@ fn write_failed_child(lifecycle: &LegacyLifecycle, call: &PostCallFailure<'_>, p
     set_team_attributes(&mut span, call.key.team_id, call.key.team_alias);
     span.set_status(Status::error(""));
     span.end_with_timestamp(instant_from_ns(lifecycle.now_ns()));
-}
-
-// _create_guardrail_span reads the entries from standard_logging_object and the markers from litellm_params.metadata
-fn guardrail_request_data(model_call_details: &MetadataMap) -> Option<MetadataMap> {
-    let payload = standard_logging_object(model_call_details)?;
-    let information = payload.get("guardrail_information")?;
-    let logged = payload.get("metadata").and_then(OtelModelValue::as_object);
-    let mut metadata = request_metadata(model_call_details)
-        .and_then(OtelModelValue::as_object)
-        .cloned()
-        .unwrap_or_default();
-    for key in ["user_api_key_team_id", "user_api_key_team_alias"] {
-        if metadata.contains_key(key) {
-            continue;
-        }
-        if let Some(value) = logged.and_then(|fields| fields.get(key)) {
-            metadata.insert(key.to_owned(), value.clone());
-        }
-    }
-    metadata.insert(
-        "standard_logging_guardrail_information".to_owned(),
-        information.clone(),
-    );
-    Some(MetadataMap::from([(
-        "metadata".to_owned(),
-        OtelModelValue::Object(metadata),
-    )]))
-}
-
-// the proxy puts its own metadata under litellm_params.metadata, or litellm_metadata on the newer routes
-fn request_metadata(model_call_details: &MetadataMap) -> Option<&OtelModelValue> {
-    let params = model_call_details
-        .get("litellm_params")
-        .and_then(OtelModelValue::as_object)?;
-    params
-        .get("metadata")
-        .or_else(|| params.get("litellm_metadata"))
-}
-
-// _get_span_context returns a context holding the request's parent span; only a live span can parent a child here
-fn guardrail_parent(lifecycle: &LegacyLifecycle, context: Option<&Context>) -> Option<LiveSpan> {
-    let resolved = context?;
-    let span_context = resolved.span().span_context().clone();
-    span_context
-        .is_valid()
-        .then(|| lifecycle.live.get(span_context.span_id()))
-        .flatten()
 }

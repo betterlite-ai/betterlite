@@ -14,7 +14,7 @@ use crate::otel::legacy_lifecycle::context::instant_from_ns;
 use crate::otel::legacy_lifecycle::lifecycle::{
     LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
 };
-use crate::otel::legacy_lifecycle::tracer::BaseDynamicOtel;
+use crate::otel::legacy_lifecycle::tracer::{BaseDynamicOtel, DynamicOtel};
 use crate::otel::legacy_policy::capture::LoggingFlags;
 use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use crate::otel::legacy_policy::span_time::{SpanTime, to_ns};
@@ -72,6 +72,10 @@ impl Rig {
     }
 
     pub(super) fn lifecycle(&self) -> LegacyLifecycle {
+        self.lifecycle_with_dynamic(Arc::new(BaseDynamicOtel))
+    }
+
+    pub(super) fn lifecycle_with_dynamic(&self, dynamic: Arc<dyn DynamicOtel>) -> LegacyLifecycle {
         let init = LegacyOtelInit {
             config: Some(self.config()),
             callback_name: Some("opentelemetry".to_owned()),
@@ -98,7 +102,7 @@ impl Rig {
         LegacyLifecycle::from_otel(
             otel,
             LegacyLifecycleOptions {
-                dynamic: Arc::new(BaseDynamicOtel),
+                dynamic,
                 live: Arc::clone(&self.roots),
                 metrics: None,
                 events: None,
