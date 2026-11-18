@@ -9,7 +9,7 @@ use crate::agentcore_stream::transport::{Chunks, StreamHead};
 use crate::bedrock_http_stream::PendingOpen;
 
 // A caller's stream_chunk_size must not make the chunker hold a whole response body: each buffer stays this small.
-pub(super) const MAX_CHUNK_SIZE: usize = 1024 * 1024;
+const MAX_CHUNK_SIZE: usize = 1024 * 1024;
 
 // aiter_bytes(chunk_size) hands the decoder fixed-size reads whatever the transport chunked; a fake stream never reads it.
 pub(super) fn apply(pending: PendingOpen, size: Option<u64>) -> PendingOpen {
