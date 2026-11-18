@@ -57,7 +57,7 @@ fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     let body = hex::decode(&run.response_body).map_err(failure)?;
     let supplied = Fixture::make(kind, &run.response_headers, body, run.response_fails)?;
-    let shared: Arc<dyn StreamHandler> = Arc::clone(&supplied);
+    let shared: Arc<dyn StreamHandler> = supplied.clone();
     let default = handler(wrapper_kind(run.wrapper), &BTreeMap::new())?;
     let deps = stream_deps(Some(shared), default, &redactor);
     let call = call_of(run)?;
