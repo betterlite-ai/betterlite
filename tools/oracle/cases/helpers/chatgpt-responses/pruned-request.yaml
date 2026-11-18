@@ -1,0 +1,26 @@
+kind: helper
+name: chatgpt-responses-pruned-request
+call:
+  chatgpt_responses:
+    step: request
+    environment:
+      CHATGPT_DEFAULT_INSTRUCTIONS: "BASE INSTRUCTIONS"
+    model: gpt-5
+    input: hi
+    options:
+      temperature: 0.5
+      max_output_tokens: 16
+      include: [a]
+      store: true
+      stream: false
+    body: ""
+    status: 200
+    headers: {}
+    now: 1700000000
+    api_base: "https://auth.test/codex"
+    access_token: "token-1"
+    account_id: "acct-1"
+env:
+  CHATGPT_DEFAULT_INSTRUCTIONS: "BASE INSTRUCTIONS"
+compare:
+  ignore: []
