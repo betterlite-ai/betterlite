@@ -4,9 +4,7 @@ use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereReplyError, Co
 use betterlite_bedrock::sagemaker_embedding::hf::{self, HfReplyError};
 use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
 use betterlite_bedrock::sagemaker_stream::events::EventState;
-use betterlite_bedrock::sagemaker_stream::{
-    ErrorPolicy, SagemakerChunk, SagemakerEvents, SagemakerStreamDecoder,
-};
+use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerEvents};
 use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
@@ -112,16 +110,11 @@ fn decode_stream(case: &DecodeStream) -> HelperResult {
     } else {
         ErrorPolicy::Skip
     };
-    let decoder = SagemakerStreamDecoder {
-        model: case.model.clone(),
-        is_messages_api: case.is_messages_api,
-        policy,
-    };
     let events = SagemakerEvents {
         state: EventState {
-            model: decoder.model,
-            is_messages_api: decoder.is_messages_api,
-            policy: decoder.policy,
+            model: case.model.clone(),
+            is_messages_api: case.is_messages_api,
+            policy,
             frames: bytes::BytesMut::new(),
             accumulated: String::new(),
         },
