@@ -1,0 +1,9 @@
+kind: helper
+name: sql-injection-template
+call:
+  b3808:
+    function: build_routes
+    route_templates: [sql_injection]
+    global_threshold: 0.5
+env: {}
+compare: {ignore: []}
