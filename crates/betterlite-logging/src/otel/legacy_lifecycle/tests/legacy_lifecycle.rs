@@ -280,7 +280,7 @@ fn legacy_lifecycle_keeps_distinct_request_ids_independent() {
 fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
     let dedupe = RequestDedupe::new("OpenTelemetry".to_owned());
     let scope = [ScopeValue::Text("success".to_owned())];
-    assert!((0..10_000).all(|index| {
+    assert!((0_usize..10_000).all(|index| {
         let key = format!("call-{index}");
         dedupe.emit_once(Some(key.as_str()), &scope)
     }));
@@ -358,7 +358,7 @@ fn legacy_lifecycle_reports_attribute_failures_to_callback_counter() {
         None,
         LegacyLifecycleOptions {
             clock: Box::new(FixedClock(instant(START))),
-            failure_counters: vec![counter.clone()],
+            failure_counters: vec![Arc::<CountingFailureCounter>::clone(&counter)],
             dynamic: Arc::new(BaseDynamicOtel),
             live: Arc::new(RootSpans::default()),
             metrics: None,
@@ -413,6 +413,10 @@ fn legacy_lifecycle_records_metrics_for_success() {
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     provider.force_flush().expect("flush metrics");
+    assert_duration_metric(&exporter);
+}
+
+fn assert_duration_metric(exporter: &InMemoryMetricExporter) {
     let metrics = exporter.get_finished_metrics().expect("metrics");
     let duration = metrics
         .iter()
@@ -423,7 +427,11 @@ fn legacy_lifecycle_records_metrics_for_success() {
     let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = duration.data() else {
         panic!("operation duration must be a histogram");
     };
-    assert!(histogram.data_points().any(|point| point.sum() == 1.5));
+    assert!(
+        histogram
+            .data_points()
+            .any(|point| (point.sum() - 1.5_f64).abs() < f64::EPSILON)
+    );
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use betterlite_logging::otel::legacy_lifecycle::error::LegacyLifecycleError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -39,10 +40,7 @@ fn dynamic_config_is_built_from_the_dynamic_params_bucket() {
         Some(Arc::new(ConfigFromParams)),
         false,
     );
-    let kwargs = with_dynamic(
-        simple_kwargs("call-1"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-1"), r#"{"langfuse_public_key": "pk"}"#);
     let params = dynamic_params(&kwargs).expect("object bucket");
     assert!(params.is_some(), "the bucket reaches the hook");
     assert!(matches!(
@@ -77,7 +75,7 @@ fn dynamic_config_treats_an_empty_bucket_as_unset() {
         Some(Arc::new(ConfigFromParams)),
         false,
     );
-    let kwargs = with_dynamic(simple_kwargs("call-3"), serde_json::json!({}));
+    let kwargs = with_dynamic(simple_kwargs("call-3"), "{}");
     assert!(
         dynamic_params(&kwargs).expect("empty bucket").is_none(),
         "an empty object is unset"
@@ -90,7 +88,7 @@ fn dynamic_config_treats_an_empty_bucket_as_unset() {
 
 #[test]
 fn dynamic_config_treats_null_as_unset() {
-    let kwargs = with_dynamic(simple_kwargs("call-4"), serde_json::json!(null));
+    let kwargs = with_dynamic(simple_kwargs("call-4"), "null");
     assert!(dynamic_params(&kwargs).expect("null bucket").is_none());
 }
 
@@ -108,6 +106,12 @@ fn dynamic_config_rejects_a_non_object_bucket() {
         "standard_callback_dynamic_params".to_owned(),
         OtelModelValue::String("pk".to_owned()),
     );
-    assert!(dynamic_params(&kwargs).is_err());
-    assert!(lifecycle.tracer_choice(&kwargs).is_err());
+    assert!(matches!(
+        dynamic_params(&kwargs),
+        Err(LegacyLifecycleError::DynamicParams)
+    ));
+    assert!(matches!(
+        lifecycle.tracer_choice(&kwargs),
+        Err(LegacyLifecycleError::DynamicParams)
+    ));
 }

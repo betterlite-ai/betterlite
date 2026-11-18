@@ -117,7 +117,7 @@ fn proxy_span_success_dedupe_skip_still_closes_the_proxy() {
         .handle(&call(&first), LifecycleEvent::Success)
         .expect("first success");
     assert!(proxy.lock().is_recording(), "no carrier closes nothing");
-    let mut second = first.clone();
+    let mut second = first;
     carry_in(&mut second, "metadata", &proxy);
     lifecycle
         .handle(&call(&second), LifecycleEvent::Success)

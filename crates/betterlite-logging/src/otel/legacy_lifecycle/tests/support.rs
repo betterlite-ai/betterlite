@@ -4,7 +4,10 @@ use betterlite_logging::otel::legacy_policy::config::Exporter;
 use betterlite_logging::otel::legacy_policy::config::Signals;
 use betterlite_logging::otel::legacy_policy::span_time::to_ns;
 use betterlite_logging::otel::plumbing::events::SystemClock;
-use std::collections::{BTreeMap, HashMap};
+use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
+    InjectedProviders, MetadataKeyOverrides,
+};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -113,8 +116,8 @@ impl Rig {
         let init = LegacyOtelInit {
             config: Some(config),
             callback_name: callback_name.map(str::to_owned),
-            overrides: Default::default(),
-            injected: Default::default(),
+            overrides: MetadataKeyOverrides::default(),
+            injected: InjectedProviders::default(),
             max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
         };
         let otel = init_legacy_otel(
@@ -146,7 +149,7 @@ impl Rig {
     pub(super) fn span(&self, name: &str) -> SpanData {
         self.spans()
             .into_iter()
-            .find(|span| span.name.to_string() == name)
+            .find(|span| span.name == name)
             .unwrap_or_else(|| panic!("span {name} was not exported"))
     }
 
@@ -194,10 +197,10 @@ impl DynamicOtel for ProbeDynamic {
     }
 }
 
-pub(super) fn with_dynamic(mut kwargs: MetadataMap, params: serde_json::Value) -> MetadataMap {
+pub(super) fn with_dynamic(mut kwargs: MetadataMap, params: &str) -> MetadataMap {
     kwargs.insert(
         "standard_callback_dynamic_params".to_owned(),
-        serde_json::from_value(params).expect("dynamic params fixture"),
+        serde_json::from_str(params).expect("dynamic params fixture"),
     );
     kwargs
 }
@@ -235,7 +238,7 @@ pub(super) fn in_memory_config() -> OpenTelemetryConfig {
         ignore_context_propagation: false,
         skip_set_global: false,
         capture_message_content: None,
-        semconv_stability_opt_in: Default::default(),
+        semconv_stability_opt_in: BTreeSet::new(),
         baggage_team_metadata_keys: Vec::new(),
         baggage_metadata_keys: Vec::new(),
         attributes: None,
@@ -286,7 +289,7 @@ pub(super) fn with_team(kwargs: &mut MetadataMap) {
     );
 }
 
-pub(super) fn call<'call>(kwargs: &'call MetadataMap) -> LifecycleCall<'call> {
+pub(super) fn call(kwargs: &MetadataMap) -> LifecycleCall<'_> {
     LifecycleCall {
         kwargs,
         response: None,
@@ -339,8 +342,9 @@ pub(super) fn attribute<'span>(
 }
 
 pub(super) fn text_attribute(span: &SpanData, key: &str) -> String {
-    match attribute(span, key).unwrap_or_else(|| panic!("attribute {key} is missing")) {
-        opentelemetry::Value::String(text) => text.as_str().to_owned(),
-        other => panic!("attribute {key} is not text: {other:?}"),
-    }
+    let value = attribute(span, key).unwrap_or_else(|| panic!("attribute {key} is missing"));
+    let opentelemetry::Value::String(text) = value else {
+        panic!("attribute {key} is not text: {value:?}");
+    };
+    text.as_str().to_owned()
 }

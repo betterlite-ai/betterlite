@@ -26,6 +26,7 @@ struct EventKwargs<'event> {
     optional_params: IndexMap<String, Json>,
     #[serde(rename = "standard_callback_dynamic_params")]
     dynamic_params: &'event Json,
+    messages: &'event Option<Json>,
     model: &'event str,
     call_type: &'event str,
 }
@@ -111,6 +112,7 @@ impl LegacyOtelLogger {
             },
             optional_params,
             dynamic_params: &event.dynamic_params,
+            messages: &event.payload.messages,
             model: &event.payload.model,
             call_type: &event.payload.call_type,
         })

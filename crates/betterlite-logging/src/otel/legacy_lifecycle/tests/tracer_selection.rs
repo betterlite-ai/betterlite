@@ -22,10 +22,7 @@ fn tracer_selection_prefers_the_dynamic_config_over_headers() {
         headers: Some(BTreeMap::from([("x-key".to_owned(), "pk".to_owned())])),
     });
     let lifecycle = rig.with_options(in_memory_config(), None, Some(dynamic), false);
-    let kwargs = with_dynamic(
-        simple_kwargs("call-1"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-1"), r#"{"langfuse_public_key": "pk"}"#);
     assert!(matches!(
         choose(&lifecycle, &kwargs),
         TracerChoice::DynamicConfig(_)
@@ -40,10 +37,7 @@ fn tracer_selection_uses_dynamic_headers_when_the_config_is_absent() {
         headers: Some(BTreeMap::from([("x-key".to_owned(), "pk".to_owned())])),
     });
     let lifecycle = rig.with_options(in_memory_config(), None, Some(dynamic), false);
-    let kwargs = with_dynamic(
-        simple_kwargs("call-2"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-2"), r#"{"langfuse_public_key": "pk"}"#);
     assert!(matches!(
         choose(&lifecycle, &kwargs),
         TracerChoice::DynamicHeaders(_)
@@ -72,7 +66,7 @@ fn tracer_selection_ignores_an_empty_dynamic_bucket() {
         headers: None,
     });
     let lifecycle = rig.with_options(in_memory_config(), None, Some(dynamic), false);
-    let kwargs = with_dynamic(simple_kwargs("call-4"), serde_json::json!({}));
+    let kwargs = with_dynamic(simple_kwargs("call-4"), "{}");
     assert!(matches!(choose(&lifecycle, &kwargs), TracerChoice::Global));
 }
 

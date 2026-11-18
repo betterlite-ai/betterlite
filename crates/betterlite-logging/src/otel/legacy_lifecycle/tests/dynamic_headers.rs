@@ -38,10 +38,7 @@ fn dynamic_headers_are_built_from_the_dynamic_params_bucket() {
         Some(Arc::new(HeadersFromParams)),
         false,
     );
-    let kwargs = with_dynamic(
-        simple_kwargs("call-1"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-1"), r#"{"langfuse_public_key": "pk"}"#);
     let TracerChoice::DynamicHeaders(headers) =
         lifecycle.tracer_choice(&kwargs).expect("tracer choice")
     else {
@@ -61,10 +58,7 @@ fn dynamic_headers_empty_map_falls_back_to_the_global_tracer() {
         headers: Some(BTreeMap::new()),
     });
     let lifecycle = rig.with_options(in_memory_config(), None, Some(dynamic), false);
-    let kwargs = with_dynamic(
-        simple_kwargs("call-2"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-2"), r#"{"langfuse_public_key": "pk"}"#);
     assert!(matches!(
         lifecycle.tracer_choice(&kwargs).expect("tracer choice"),
         TracerChoice::Global
@@ -84,10 +78,7 @@ fn dynamic_headers_win_over_the_langfuse_environment_headers() {
         Some(Arc::new(HeadersFromParams)),
         false,
     );
-    let kwargs = with_dynamic(
-        simple_kwargs("call-3"),
-        serde_json::json!({"langfuse_public_key": "pk"}),
-    );
+    let kwargs = with_dynamic(simple_kwargs("call-3"), r#"{"langfuse_public_key": "pk"}"#);
     let TracerChoice::DynamicHeaders(headers) =
         lifecycle.tracer_choice(&kwargs).expect("tracer choice")
     else {

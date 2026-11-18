@@ -1,22 +1,22 @@
 use crate::support::instant;
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
-use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_models::decisions::Json;
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
-use serde_json::{Value, json};
 use std::time::Duration;
 
 use crate::support::{Rig, attribute, call, simple_kwargs, text_attribute, with_team};
 
-fn entry() -> Value {
-    json!({
+fn entry() -> OtelModelValue {
+    serde_json::from_str(
+        r#"{
         "guardrail_name": "pii",
         "guardrail_mode": "pre_call",
         "guardrail_status": "guardrail_intervened",
-        "start_time": 1_704_067_200.5,
-        "end_time": 1_704_067_200.75,
+        "start_time": 1704067200.5,
+        "end_time": 1704067200.75,
         "masked_entity_count": {"EMAIL": 2},
         "guardrail_response": {"blocked": true, "reason": "pii"},
         "violation_categories": ["pii", "hate"],
@@ -24,23 +24,25 @@ fn entry() -> Value {
         "guardrail_usage": {"units": 3},
         "guardrail_cost": 0.25,
         "guardrail_cost_in_spend": true
-    })
+    }"#,
+    )
+    .expect("guardrail entry")
 }
 
-fn with_guardrails(kwargs: &mut MetadataMap, entries: Value) {
+fn with_guardrails(kwargs: &mut MetadataMap, entries: Vec<OtelModelValue>) {
     let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object") else {
         panic!("standard_logging_object must be an object");
     };
     payload.insert(
         "guardrail_information".to_owned(),
-        serde_json::from_value(entries).expect("guardrail entries"),
+        OtelModelValue::Array(entries),
     );
 }
 
 fn guardrails(rig: &Rig) -> Vec<SpanData> {
     rig.spans()
         .into_iter()
-        .filter(|span| span.name.to_string() == "guardrail")
+        .filter(|span| span.name == "guardrail")
         .collect()
 }
 
@@ -49,7 +51,7 @@ fn guardrail_spans_are_named_and_stamped_with_their_identity() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-1");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
@@ -79,13 +81,16 @@ fn guardrail_spans_dedupe_each_entry_and_keep_distinct_ones() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-2");
-    let other = json!({
+    let other = serde_json::from_str(
+        r#"{
         "guardrail_name": "toxicity",
         "guardrail_mode": "pre_call",
-        "start_time": 1_704_067_200.5,
+        "start_time": 1704067200.5,
         "violation_categories": []
-    });
-    with_guardrails(&mut kwargs, json!([entry(), other, entry()]));
+    }"#,
+    )
+    .expect("second guardrail");
+    with_guardrails(&mut kwargs, vec![entry(), other, entry()]);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
@@ -104,7 +109,7 @@ fn guardrail_spans_record_the_execution_window() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-3");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
@@ -119,11 +124,12 @@ fn guardrail_spans_record_the_execution_window() {
         instant(1_704_067_200.75),
         "end comes from the entry, not the request"
     );
+    // Epoch seconds become nanoseconds through the same f64 conversion as LiteLLM.
     assert_eq!(
         span.end_time
             .duration_since(span.start_time)
             .expect("ordered"),
-        Duration::from_nanos(u64::try_from(to_ns(SpanTime::Seconds(0.25), 0)).expect("positive"))
+        Duration::from_nanos(250_000_128)
     );
 }
 
@@ -132,24 +138,19 @@ fn guardrail_spans_serialize_the_payload_attributes() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-4");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
-    let masked: Value =
-        serde_json::from_str(&text_attribute(span, "masked_entity_count")).expect("json");
-    assert_eq!(masked, json!({"EMAIL": 2}));
-    let response: Value =
-        serde_json::from_str(&text_attribute(span, "guardrail_response")).expect("json");
-    assert_eq!(response, json!({"blocked": true, "reason": "pii"}));
-    let categories: Value =
-        serde_json::from_str(&text_attribute(span, "guardrail_violation_categories"))
-            .expect("json");
-    assert_eq!(categories, json!(["pii", "hate"]));
-    let usage: Value =
-        serde_json::from_str(&text_attribute(span, "guardrail_usage")).expect("json");
-    assert_eq!(usage, json!({"units": 3}));
+    assert_json_attribute(span, "masked_entity_count", r#"{"EMAIL":2}"#);
+    assert_json_attribute(
+        span,
+        "guardrail_response",
+        r#"{"blocked":true,"reason":"pii"}"#,
+    );
+    assert_json_attribute(span, "guardrail_violation_categories", r#"["pii","hate"]"#);
+    assert_json_attribute(span, "guardrail_usage", r#"{"units":3}"#);
     assert_eq!(
         attribute(span, "guardrail_cost"),
         Some(&opentelemetry::Value::F64(0.25))
@@ -160,12 +161,18 @@ fn guardrail_spans_serialize_the_payload_attributes() {
     );
 }
 
+fn assert_json_attribute(span: &SpanData, key: &str, expected: &str) {
+    let actual: Json = serde_json::from_str(&text_attribute(span, key)).expect("JSON attribute");
+    let expected_value: Json = serde_json::from_str(expected).expect("expected JSON");
+    assert_eq!(actual, expected_value, "attribute {key}");
+}
+
 #[test]
 fn guardrail_spans_carry_the_team_attributes() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-5");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
     with_team(&mut kwargs);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
@@ -186,17 +193,11 @@ fn guardrail_spans_from_request_data_share_the_lifecycle_dedupe_state() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-6");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
-    let request_data: MetadataMap = serde_json::from_value(json!({
-        "metadata": {
-            "litellm_call_id": "call-6",
-            "standard_logging_guardrail_information": [entry()]
-        }
-    }))
-    .expect("request data");
+    let request_data = request_data("call-6");
     lifecycle
         .emit_request_guardrails(&request_data, None)
         .expect("request data guardrails");
@@ -221,13 +222,7 @@ fn guardrail_spans_are_skipped_without_guardrail_information() {
 fn guardrail_spans_come_from_the_request_data_bucket() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
-    let request_data: MetadataMap = serde_json::from_value(json!({
-        "metadata": {
-            "litellm_call_id": "call-8",
-            "standard_logging_guardrail_information": [entry()]
-        }
-    }))
-    .expect("request data");
+    let request_data = request_data("call-8");
     lifecycle
         .emit_request_guardrails(&request_data, None)
         .expect("request data guardrails");
@@ -247,16 +242,21 @@ fn guardrail_spans_skip_null_payload_attributes(#[case] key: &str) {
     let mut kwargs = simple_kwargs("call-null");
     with_guardrails(
         &mut kwargs,
-        json!([{
+        vec![
+            serde_json::from_str(
+                r#"{
             "guardrail_name": "pii-null",
             "guardrail_mode": "pre_call",
-            "start_time": 1_704_067_200.5,
-            "end_time": 1_704_067_200.75,
+            "start_time": 1704067200.5,
+            "end_time": 1704067200.75,
             "masked_entity_count": null,
             "guardrail_response": null,
             "guardrail_usage": null,
             "guardrail_cost": null
-        }]),
+        }"#,
+            )
+            .expect("null fields"),
+        ],
     );
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
@@ -270,7 +270,7 @@ fn guardrail_spans_on_failure_are_children_of_the_error_span() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("failed-guardrail");
-    with_guardrails(&mut kwargs, json!([entry()]));
+    with_guardrails(&mut kwargs, vec![entry()]);
 
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Failure)
@@ -282,4 +282,18 @@ fn guardrail_spans_on_failure_are_children_of_the_error_span() {
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].parent_span_id, primary.span_context.span_id());
     assert_eq!(text_attribute(&spans[0], "guardrail_name"), "pii");
+}
+
+fn request_data(call_id: &str) -> MetadataMap {
+    let metadata = MetadataMap::from([
+        (
+            "litellm_call_id".to_owned(),
+            OtelModelValue::String(call_id.to_owned()),
+        ),
+        (
+            "standard_logging_guardrail_information".to_owned(),
+            OtelModelValue::Array(vec![entry()]),
+        ),
+    ]);
+    MetadataMap::from([("metadata".to_owned(), OtelModelValue::Object(metadata))])
 }

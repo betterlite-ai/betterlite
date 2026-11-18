@@ -20,8 +20,8 @@ pub(super) fn observed(choice: &str, exporter: &InMemorySpanExporter) -> Result<
     lines.sort_by(|left, right| {
         (&left.0, &left.1, &left.2, &left.3).cmp(&(&right.0, &right.1, &right.2, &right.3))
     });
-    let spans: Vec<Value> = lines.into_iter().map(|row| row.4).collect();
-    Ok(json!({"choice": choice, "spans": spans}))
+    let observed_spans: Vec<Value> = lines.into_iter().map(|row| row.4).collect();
+    Ok(json!({"choice": choice, "spans": observed_spans}))
 }
 
 fn line(span: &SpanData, names: &[(SpanId, String)]) -> (i64, i64, String, String, Value) {
@@ -33,8 +33,8 @@ fn line(span: &SpanData, names: &[(SpanId, String)]) -> (i64, i64, String, Strin
     let start = system_ns(span.start_time);
     let end = system_ns(span.end_time);
     let value = json!({
-        "name": name.clone(),
-        "parent": parent.clone(),
+        "name": name,
+        "parent": parent,
         "kind": format!("{:?}", span.span_kind).to_uppercase(),
         "status": status_name(&span.status),
         "start": start.to_string(),
@@ -50,7 +50,7 @@ fn system_ns(time: SystemTime) -> i64 {
     })
 }
 
-fn status_name(status: &Status) -> &'static str {
+const fn status_name(status: &Status) -> &'static str {
     match status {
         Status::Unset => "UNSET",
         Status::Ok => "OK",
@@ -71,7 +71,7 @@ fn value_text(value: &opentelemetry::Value) -> String {
         opentelemetry::Value::I64(number) => number.to_string(),
         opentelemetry::Value::F64(number) => format!("{number:?}"),
         opentelemetry::Value::String(text) => json_text(text.as_str()),
-        _ => String::new(),
+        opentelemetry::Value::Array(_) | _ => String::new(),
     }
 }
 

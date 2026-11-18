@@ -1,3 +1,6 @@
+use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
+    InjectedProviders, MetadataKeyOverrides,
+};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -33,7 +36,7 @@ pub(super) fn config(input: &Input) -> OpenTelemetryConfig {
     OpenTelemetryConfig {
         exporter: Exporter::InMemory,
         endpoint: None,
-        headers: input.config_headers.clone(),
+        headers: input.dynamic.config_headers.clone(),
         signals: Signals {
             enable_metrics: false,
             enable_events: false,
@@ -66,8 +69,8 @@ pub(super) fn prepare(
         LegacyOtelInit {
             config: Some(config(input)),
             callback_name: input.callback_name.clone(),
-            overrides: Default::default(),
-            injected: Default::default(),
+            overrides: MetadataKeyOverrides::default(),
+            injected: InjectedProviders::default(),
             max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
         },
         &LegacyOtelEnvironment {

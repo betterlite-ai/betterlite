@@ -40,11 +40,18 @@ pub(crate) struct Input {
     end_time: f64,
     callback_name: Option<String>,
     parent: Option<ParentInput>,
+    semconv: bool,
+    repeat: bool,
+    #[serde(flatten)]
+    dynamic: DynamicInput,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct DynamicInput {
     dynamic_config: bool,
     dynamic_headers: Option<BTreeMap<String, String>>,
     config_headers: Option<String>,
-    semconv: bool,
-    repeat: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -88,8 +95,8 @@ impl Helper for Op {
             otel,
             LegacyLifecycleOptions {
                 dynamic: Arc::new(ProbeDynamic {
-                    config: input.dynamic_config.then(|| config(input)),
-                    headers: input.dynamic_headers.clone(),
+                    config: input.dynamic.dynamic_config.then(|| config(input)),
+                    headers: input.dynamic.dynamic_headers.clone(),
                 }),
                 live: Arc::clone(&roots),
                 metrics: None,
@@ -168,7 +175,7 @@ fn end_parent(input: &Input, parent: Option<&LiveSpan>) {
         .end_with_timestamp(instant_from_ns(to_ns(SpanTime::Seconds(end), 0)));
 }
 
-fn call_of<'call>(input: &Input, kwargs: &'call MetadataMap) -> LifecycleCall<'call> {
+const fn call_of<'call>(input: &Input, kwargs: &'call MetadataMap) -> LifecycleCall<'call> {
     LifecycleCall {
         kwargs,
         response: None,
