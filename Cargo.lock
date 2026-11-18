@@ -1591,6 +1591,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
@@ -2058,6 +2059,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-models",
  "bytes",
@@ -2095,6 +2097,14 @@ dependencies = [
  "uuid",
  "webpki-roots",
  "zip",
+]
+
+[[package]]
+name = "betterlite-http-fixture"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]
@@ -2847,6 +2857,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",

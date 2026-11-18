@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
@@ -35,8 +33,6 @@ use crate::api::agents::item::error::ProviderFailure;
 
 use super::super::{InteractionGetDeps, InteractionGetRequest};
 
-const TIMEOUT: Duration = Duration::from_secs(5);
-const RETRY: Duration = Duration::from_millis(10);
 pub(super) const GET_BODY: &str = r#"{"id": "int_1", "model": "gemini-2.5-flash"}"#;
 
 #[derive(Clone, Debug)]
@@ -328,75 +324,6 @@ impl<'call> Call<'call> {
             kwargs: &self.kwargs,
         }
     }
-}
-
-pub(super) struct Serving {
-    pub(super) address: SocketAddr,
-    pub(super) request: JoinHandle<String>,
-}
-
-pub(super) fn serve(answer: Vec<u8>) -> Serving {
-    serve_on(TcpListener::bind("127.0.0.1:0").unwrap(), answer)
-}
-
-fn serve_on(listener: TcpListener, answer: Vec<u8>) -> Serving {
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = accept(&listener);
-            stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let received = read_head(&mut stream).unwrap();
-            stream.write_all(&answer).unwrap();
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                stream.set_nonblocking(false).unwrap();
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                assert!(
-                    started.elapsed() < TIMEOUT,
-                    "the client never connected to the fixture"
-                );
-                thread::park_timeout(RETRY);
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        }
-    }
-}
-
-fn read_head<R>(stream: &mut R) -> IoResult<String>
-where
-    R: Read,
-{
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        received.extend_from_slice(&byte);
-    }
-    String::from_utf8(received).map_err(IoError::other)
-}
-
-pub(super) fn reply(status: u16, body: &str) -> Vec<u8> {
-    format!(
-        "HTTP/1.1 {status} fixture\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
-}
-
-pub(super) fn head_of(serving: Serving) -> String {
-    serving.request.join().unwrap()
 }
 
 pub(super) fn request_line(head: &str) -> &str {

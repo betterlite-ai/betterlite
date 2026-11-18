@@ -2,7 +2,11 @@
 
 mod support;
 
+use std::time::Duration;
+
 use betterlite_error::error::ErrorClass;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -15,12 +19,12 @@ use super::error::InteractionGetError;
 use super::{aget, get};
 use support::{
     Call, FixtureError, GET_BODY, Harness, base, environment_headers, environment_params, fixture,
-    head_of, number, reply, request_line, request_of, response_of, serve, text,
+    number, request_line, request_of, response_of, text,
 };
 
 #[test]
 fn get_defaults_to_gemini_when_no_provider_is_named() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
@@ -33,7 +37,7 @@ fn get_defaults_to_gemini_when_no_provider_is_named() {
         Some(&JsonValue::Text("gemini".to_owned()))
     );
     assert_eq!(
-        request_line(&head_of(serving)),
+        request_line(&serving.finish().unwrap().head),
         "GET /v1beta/interactions/int_1 HTTP/1.1"
     );
 }
@@ -43,7 +47,7 @@ fn get_defaults_to_gemini_when_no_provider_is_named() {
 #[case::vertex("vertex_ai")]
 #[case::vertex_beta("vertex_ai_beta")]
 fn get_accepts_every_provider_with_an_interactions_config(#[case] provider: &str) {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1")
@@ -55,7 +59,7 @@ fn get_accepts_every_provider_with_an_interactions_config(#[case] provider: &str
         environment_params(&config).get("custom_llm_provider"),
         Some(&JsonValue::Text(provider.to_owned()))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[rstest]
@@ -75,7 +79,7 @@ fn prepare_keys_each_provider_with_its_own_client(
 
 #[test]
 fn get_takes_the_provider_from_the_kwargs() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1")
@@ -86,12 +90,12 @@ fn get_takes_the_provider_from_the_kwargs() {
         harness.state.custom_llm_provider.as_deref(),
         Some("vertex_ai")
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_prefers_the_argument_provider_over_the_kwargs() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1")
@@ -100,12 +104,12 @@ fn get_prefers_the_argument_provider_over_the_kwargs() {
         .kwarg("custom_llm_provider", text("vertex_ai"));
     get(&config, harness.deps(), &call.request()).expect("the argument provider is gemini");
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn a_null_kwargs_provider_keeps_the_null_in_the_parameters() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1")
@@ -117,7 +121,7 @@ fn a_null_kwargs_provider_keeps_the_null_in_the_parameters() {
         environment_params(&config).get("custom_llm_provider"),
         Some(&JsonValue::Null)
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
@@ -190,7 +194,7 @@ fn get_leaves_the_logging_object_alone_for_an_unsupported_provider() {
 
 #[test]
 fn get_records_the_interaction_id_and_the_call_id_before_the_request() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_7")
@@ -215,12 +219,12 @@ fn get_records_the_interaction_id_and_the_call_id_before_the_request() {
         harness.state.model_call_details.get("custom_llm_provider"),
         Some(&text("gemini"))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_records_a_null_call_id_when_the_caller_names_none() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_7").kwarg("api_base", text(&base(serving.address)));
@@ -229,12 +233,12 @@ fn get_records_a_null_call_id_when_the_caller_names_none() {
         harness.state.litellm_params.get("litellm_call_id"),
         Some(&Json::Null)
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_records_the_caller_metadata_on_the_logging_state() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let metadata = Json::Object(IndexMap::from([("user_api_key".to_owned(), text("k"))]));
@@ -255,12 +259,12 @@ fn get_records_the_caller_metadata_on_the_logging_state() {
         harness.state.litellm_params.get("litellm_metadata"),
         Some(&litellm_metadata)
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_drops_the_async_flag_from_the_transport_parameters() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1")
@@ -274,12 +278,12 @@ fn get_drops_the_async_flag_from_the_transport_parameters() {
         params.get("api_version"),
         Some(&JsonValue::Text("v1".to_owned()))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_forwards_the_extra_headers_and_the_interaction_id_to_the_provider() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_9")
@@ -292,12 +296,12 @@ fn get_forwards_the_extra_headers_and_the_interaction_id_to_the_provider() {
     );
     let (interaction_id, _headers) = request_of(&config);
     assert_eq!(interaction_id, "int_9");
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_returns_the_transformed_response_and_records_the_pre_call() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
@@ -317,15 +321,20 @@ fn get_returns_the_transformed_response_and_records_the_pre_call() {
         pre_call.api_base,
         format!("{}/v1beta/interactions/int_1", base(serving.address))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
 fn get_maps_a_provider_status_to_its_error_class() {
-    let serving = serve(reply(
-        404,
-        r#"{"error": {"message": "no such interaction"}}"#,
-    ));
+    let serving = serve(
+        reply(
+            "404 fixture",
+            &[],
+            r#"{"error": {"message": "no such interaction"}}"#,
+        ),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
@@ -345,7 +354,7 @@ fn get_maps_a_provider_status_to_its_error_class() {
         harness.state.model_call_details.get("custom_llm_provider"),
         Some(&text("gemini"))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[test]
@@ -363,7 +372,7 @@ fn get_reports_a_request_that_cannot_be_built_as_an_api_connection_error() {
 
 #[tokio::test]
 async fn aget_answers_through_the_async_transport() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
@@ -373,14 +382,14 @@ async fn aget_answers_through_the_async_transport() {
     assert_eq!(answer.id.as_deref(), Some("int_1"));
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
-        request_line(&head_of(serving)),
+        request_line(&serving.finish().unwrap().head),
         "GET /v1beta/interactions/int_1 HTTP/1.1"
     );
 }
 
 #[tokio::test]
 async fn aget_carries_the_call_context_into_the_async_path() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_5")
@@ -409,12 +418,12 @@ async fn aget_carries_the_call_context_into_the_async_path() {
         environment_headers(&config),
         vec![("x-extra".to_owned(), "yes".to_owned())]
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[tokio::test]
 async fn aget_records_the_caller_metadata_on_the_logging_state() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let metadata = Json::Object(IndexMap::from([("user_api_key".to_owned(), text("k"))]));
@@ -428,7 +437,7 @@ async fn aget_records_the_caller_metadata_on_the_logging_state() {
         harness.state.litellm_params.get("metadata"),
         Some(&metadata)
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
 
 #[tokio::test]
@@ -448,7 +457,7 @@ async fn aget_reports_an_unsupported_provider_as_a_value_error() {
 
 #[tokio::test]
 async fn aget_reports_a_provider_status_to_its_error_class() {
-    let serving = serve(reply(500, r#"{"error": {"message": "broken"}}"#));
+    let serving = serve(reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
@@ -467,5 +476,5 @@ async fn aget_reports_a_provider_status_to_its_error_class() {
         harness.state.model_call_details.get("custom_llm_provider"),
         Some(&text("gemini"))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap().head);
 }
