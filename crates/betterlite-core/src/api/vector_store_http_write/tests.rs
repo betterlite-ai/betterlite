@@ -273,6 +273,7 @@ enum FailureCase {
     NoStatus,
     StringStatus,
     IntegerStatus,
+    OutOfRangeStatus,
     EmptyHeaders,
     ResponseText,
     ResponseWithoutText,
@@ -292,6 +293,7 @@ enum FailureCase {
 #[case::no_status(FailureCase::NoStatus)]
 #[case::string_status(FailureCase::StringStatus)]
 #[case::integer_status(FailureCase::IntegerStatus)]
+#[case::out_of_range_status(FailureCase::OutOfRangeStatus)]
 #[case::empty_headers(FailureCase::EmptyHeaders)]
 #[case::response_text(FailureCase::ResponseText)]
 #[case::response_without_text(FailureCase::ResponseWithoutText)]
@@ -446,6 +448,27 @@ async fn transport_failure(#[case] case: FailureCase) {
             assert!(!error.status_code_is_synthesized);
             assert_eq!(error.message, "service unavailable");
         }
+        FailureCase::OutOfRangeStatus => {
+            let config = RecordingConfig::new("http://unused.test");
+            let error = handle_error(
+                &FailureFacts {
+                    response_status: None,
+                    status: Some(Json::Number(Number::from(70_000_u32))),
+                    text: Some("too high".to_owned()),
+                    headers: None,
+                    response: None,
+                    display: "boom".to_owned(),
+                },
+                Some(&config),
+            );
+            assert_eq!(error.status_code, 500);
+            assert!(error.status_code_is_synthesized);
+            assert_eq!(error.message, "too high");
+            assert_eq!(
+                config.errors(),
+                vec![("too high".to_owned(), 500_u16, HeaderMap::new())]
+            );
+        }
         FailureCase::EmptyHeaders => {
             let config = RecordingConfig::new("http://unused.test");
             let error = handle_error(
@@ -585,6 +608,13 @@ async fn transport_failure(#[case] case: FailureCase) {
             ));
             assert!(error.message.ends_with(" seconds"));
             assert!(!error.message.contains("time taken=0.000"));
+            let elapsed = error
+                .message
+                .split("time taken=")
+                .nth(1)
+                .expect("the message carries the elapsed time")
+                .trim_end_matches(" seconds");
+            assert_eq!(elapsed.split('.').nth(1).map(str::len), Some(3));
             assert!(error.headers.is_empty());
         }
         FailureCase::TimeoutSyncUpdate => {
