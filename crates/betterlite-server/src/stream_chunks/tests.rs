@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -663,14 +664,82 @@ fn serialize_plain_keeps_nulls() {
 }
 
 #[test]
-fn serialize_event_drops_nulls() {
+fn serialize_event_keeps_dictionary_nulls() {
+    // the carrier model drops its own null field and keeps the extra's dictionary as it came
     let chunk = typed_chunk(
         ChunkKind::Event,
-        r#"{"type": "response.created", "response": {"id": null, "status": "in_progress"}}"#,
+        r#"{"type": "response.created", "nullable": null, "response": {"id": null, "status": "in_progress"}}"#,
     );
     assert_eq!(
         serialize_chunk(&chunk),
-        r#"{"type":"response.created","response":{"status":"in_progress"}}"#
+        r#"{"type":"response.created","response":{"id":null,"status":"in_progress"}}"#
+    );
+}
+
+#[test]
+fn serialize_keeps_provider_field_nulls() {
+    let stream = typed_chunk(
+        ChunkKind::ModelStream,
+        r#"{"id": "chunk", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "hi", "provider_specific_fields": {"nullable": null, "nested": {"a": null, "b": 1}}}}], "provider_specific_fields": {"nullable": null, "nested": [null, {"c": null}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&stream),
+        r#"{"id":"chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"content":"hi","provider_specific_fields":{"nullable":null,"nested":{"a":null,"b":1}}}}],"provider_specific_fields":{"nullable":null,"nested":[null,{"c":null}]}}"#
+    );
+    let full = typed_chunk(
+        ChunkKind::ModelFull,
+        r#"{"choices": [{"index": 0, "provider_specific_fields": {"nullable": null}, "message": {"content": "hi", "provider_specific_fields": {"nested": {"a": null}}}}]}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&full),
+        r#"{"choices":[{"index":0,"provider_specific_fields":{"nullable":null},"message":{"content":"hi","provider_specific_fields":{"nested":{"a":null}}}}]}"#
+    );
+}
+
+#[test]
+fn serialize_drops_nested_model_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::ModelStream,
+        r#"{"id": "chunk", "choices": [{"index": 0, "delta": {"content": "hi", "tool_calls": [{"index": 0, "type": "function", "function": {"name": null, "arguments": "{}"}}], "thinking_blocks": [{"type": "thinking", "thinking": "t", "signature": null}]}, "logprobs": {"content": [{"token": "hi", "bytes": null, "logprob": -0.1, "top_logprobs": [{"token": "hi", "bytes": null, "logprob": -0.1}]}]}}]}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        r#"{"id":"chunk","choices":[{"index":0,"delta":{"content":"hi","tool_calls":[{"index":0,"type":"function","function":{"arguments":"{}"}}],"thinking_blocks":[{"type":"thinking","thinking":"t"}]},"logprobs":{"content":[{"token":"hi","logprob":-0.1,"top_logprobs":[{"token":"hi","logprob":-0.1}]}]}}]}"#
+    );
+}
+
+#[test]
+fn serialize_keeps_stream_reasoning_items() {
+    let chunk = typed_chunk(
+        ChunkKind::ModelStream,
+        r#"{"id": "chunk", "model": "gpt-4o",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "",
+                "reasoning_items": [{"type": "reasoning", "id": "rs-1", "encrypted_content": "cipher",
+                    "summary": [{"type": "summary_text", "text": "thought"}]}]}}]}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"id":"chunk","model":"gpt-4o","choices":[{"index":0,"#,
+            r#""delta":{"role":"assistant","content":"","reasoning_items":[{"type":"reasoning","#,
+            r#""id":"rs-1","encrypted_content":"cipher","summary":[{"type":"summary_text","text":"thought"}]}]}}]}"#
+        )
+    );
+}
+
+#[test]
+fn serialize_full_reasoning_items_drop_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::ModelFull,
+        r#"{"choices": [{"index": 0, "message": {"role": "assistant", "content": "hi",
+            "reasoning_items": [{"type": "reasoning", "id": "rs-1", "encrypted_content": null, "summary": []}]}}]}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi","#,
+            r#""reasoning_items":[{"type":"reasoning","id":"rs-1","summary":[]}]}}]}"#
+        )
     );
 }
 
@@ -874,6 +943,30 @@ fn pop_frame_picks_earliest_delimiter() {
         pop_sse_frame("ab\r\n\r\ncd\n\nef"),
         (Some("ab\r\n\r\n".to_owned()), "cd\n\nef".to_owned())
     );
+}
+
+#[rstest]
+fn replays_the_sse_frame_corpus(#[files("fuzz/corpus/sse_frame/*")] path: PathBuf) {
+    let bytes = fs::read(&path).expect("corpus seed is readable");
+    let buffer = String::from_utf8_lossy(&bytes);
+    let (frame, rest) = pop_sse_frame(&buffer);
+    if let Some(frame) = frame {
+        assert!(
+            SSE_FRAME_DELIMITERS
+                .iter()
+                .any(|delimiter| frame.ends_with(*delimiter)),
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            format!("{frame}{rest}"),
+            buffer.to_string(),
+            "{}",
+            path.display()
+        );
+    } else {
+        assert_eq!(rest, buffer.to_string(), "{}", path.display());
+    }
 }
 
 #[test]
