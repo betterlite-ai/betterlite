@@ -1,9 +1,9 @@
 import json
 from typing import Annotated, Final, Literal, TypeVar
 
-import litellm
-from litellm.litellm_core_utils.core_helpers import get_metadata_variable_name_from_kwargs
 from litellm.litellm_core_utils.internal_call_metadata import effective_turn_off_message_logging
+from litellm.litellm_core_utils.redact_messages import should_redact_message_logging
+from litellm.llms.base_llm.base_utils import type_to_response_format_param
 from litellm.router_strategy.complexity_router.capability_classifier import extract_classifier_json
 from litellm.router_strategy.complexity_router.classification_rubrics import calibration_examples_section
 from litellm.router_strategy.complexity_router.complexity_router import (
@@ -26,6 +26,8 @@ from typing_extensions import override
 from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
+# LiteLLM's helpers take and return a bare dict, which strict mode types as partially unknown
+# pyright: reportUnknownVariableType=false
 
 Mode = Literal[
     "heuristic", "heuristic_v2", "llm", "capability", "llm_v2", "custom", "heuristic_first", "hybrid", "jev"
@@ -187,23 +189,18 @@ def reply_content(reply: Reply) -> str:
 
 
 def reply_private(request_kwargs: dict[str, JsonValue] | None) -> bool:
-    # the disable header wins, then the dynamic flag, then the enable headers, then the global switch
     kwargs: dict[str, JsonValue] = {} if request_kwargs is None else request_kwargs
-    dynamic = effective_turn_off_message_logging(kwargs)
-    chosen = kwargs.get(get_metadata_variable_name_from_kwargs(kwargs))
-    metadata = chosen if isinstance(chosen, dict) else kwargs.get("metadata")
-    headers: JsonValue = metadata.get("headers", {}) if isinstance(metadata, dict) else {}
-    # anything but a dict here raises AttributeError in LiteLLM, whose caller reads that as private
-    if not isinstance(headers, dict):
+    try:
+        flag = effective_turn_off_message_logging(kwargs)
+        return should_redact_message_logging(
+            {
+                "litellm_params": kwargs,
+                "standard_callback_dynamic_params": {} if flag is None else {"turn_off_message_logging": flag},
+            }
+        )
+    except AttributeError:
+        # a non-dict headers value raises here, and LiteLLM's own classifier caller reads that as private
         return True
-    if bool(headers.get("litellm-disable-message-redaction", False)):
-        return False
-    if dynamic is not None:
-        return dynamic
-    enabled = bool(headers.get("litellm-enable-message-redaction", False)) or bool(
-        headers.get("x-litellm-enable-message-redaction", False)
-    )
-    return enabled or litellm.turn_off_message_logging is True
 
 
 def parse_outcome(
@@ -222,11 +219,7 @@ def parse_outcome(
 
 
 def rendered_format() -> str:
-    # the strict wrapper keeps the model's schema key order and appends additionalProperties at the root
-    schema: dict[str, object] = TierClassification.model_json_schema()
-    schema["additionalProperties"] = False
-    wrapped: dict[str, object] = {"schema": schema, "name": TierClassification.__name__, "strict": True}
-    body: dict[str, object] = {"type": "json_schema", "json_schema": wrapped}
+    body: object = type_to_response_format_param(TierClassification)
     return json.dumps(body, separators=(",", ":"))
 
 
