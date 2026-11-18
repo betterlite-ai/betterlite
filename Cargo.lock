@@ -4487,6 +4487,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-models",
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
