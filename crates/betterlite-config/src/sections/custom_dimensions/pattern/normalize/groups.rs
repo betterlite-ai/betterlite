@@ -91,6 +91,8 @@ fn apply_flags(
     let _terminator = walker.input.nth(spec.chars().count().saturating_add(1));
     let verbose = added.contains('x')
         || (!removed.contains('x') && matches!(walker.verbose.last(), Some(true)));
+    let multiline = added.contains('m')
+        || (!removed.contains('m') && matches!(walker.multiline.last(), Some(true)));
     if terminator == ')' {
         if !walker.at_start || spec.contains('-') {
             return Err(PatternProblem::Syntax);
@@ -113,8 +115,6 @@ fn apply_flags(
     };
     let _ignored = write!(walker.output, "(?{scoped}:");
     walker.verbose.push(verbose);
-    let multiline = added.contains('m')
-        || (!removed.contains('m') && matches!(walker.multiline.last(), Some(true)));
     walker.multiline.push(multiline);
     walker.at_start = false;
     Ok(())
