@@ -220,8 +220,8 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::class_negated_duplicates("[^aa]", 2)]
 #[case::class_after_range_dash("[a-a-z]", 5)]
 #[case::class_three_dashes("[---a]", 4)]
-#[case::class_five_dashes("[-----a]", 4)]
-#[case::class_six_dashes("[------a]", 4)]
+#[case::class_five_dashes("[-----a]", 5)]
+#[case::class_six_dashes("[------a]", 5)]
 #[case::escaped_angle_open("\\<a", 3)]
 #[case::escaped_angle_close("\\>a", 3)]
 #[case::escaped_non_ascii("\\é", 2)]
@@ -267,6 +267,7 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::caret_after_negation("[^^]", 2)]
 #[case::negated_dash_run("[^--a]", 4)]
 #[case::invalid_brace_content("a{2x}", 6)]
+#[case::multiple_repeat_commas("a{2,,3}", 8)]
 #[case::invalid_bounded_content("a{2,3,4}", 9)]
 fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] expected: u64) {
     assert_eq!(
@@ -306,6 +307,7 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::ascii_unicode_flags("(?au:a)", PatternProblem::Syntax)]
 #[case::local_ascii_flag("(?a:a)", PatternProblem::Unsupported)]
 #[case::ascii_removal_pair("(?a-i:a)", PatternProblem::Unsupported)]
+#[case::double_flag_separator("(?a-i-:a)", PatternProblem::Syntax)]
 #[case::global_ascii_flag("(?a)", PatternProblem::Unsupported)]
 #[case::global_then_local("(?a)(?a:a)", PatternProblem::Unsupported)]
 #[case::ascii_and_multiline_flags("(?am:a)", PatternProblem::Unsupported)]
@@ -494,6 +496,15 @@ fn the_pattern_input_limit_is_inclusive() {
     assert_eq!(
         pattern_work(&refused).map(|(_matcher, steps)| steps),
         Err(PatternProblem::Syntax)
+    );
+}
+
+#[test]
+fn repeated_opening_braces_are_bounded_before_normalization() {
+    assert_eq!(pattern_work(&"{".repeat(4097)), Err(PatternProblem::Syntax));
+    assert_eq!(
+        pattern_work(&"{".repeat(256)).map(|(_, steps)| steps),
+        Ok(257)
     );
 }
 

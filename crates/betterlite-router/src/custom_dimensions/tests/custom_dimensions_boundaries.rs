@@ -69,9 +69,9 @@ fn fifteen_then(last: usize) -> Vec<usize> {
     vec![filled("d1", vec![241; 17])],
     Err(DimensionsError::Dimension(section::DimensionProblem::MatcherLimits))
 )]
-#[case::sixteen_dimensions(vec![many(16)], Ok(0))]
+#[case::sixteen_dimensions(many(16), Ok(0))]
 #[case::seventeen_dimensions(
-    vec![many(17)],
+    many(17),
     Err(DimensionsError::Count {
         count: 17,
         limit: MAX_CUSTOM_DIMENSIONS,

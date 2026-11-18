@@ -73,7 +73,7 @@ impl Walker<'_> {
                 let space = matches!(character, ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r');
                 if verbose && character.is_whitespace() && !space {
                     self.output.extend(character.escape_unicode());
-                } else {
+                } else if !(verbose && space) {
                     self.output.push(character);
                 }
                 if !(verbose && space) {
@@ -173,12 +173,13 @@ impl Walker<'_> {
         let mut content = String::new();
         let closed = loop {
             match probe.next() {
-                Some(character @ ('0'..='9' | ',')) => content.push(character),
+                Some(character @ '0'..='9') => content.push(character),
+                Some(',') if !content.contains(',') => content.push(','),
                 Some('}') => break true,
                 _ => break false,
             }
         };
-        if !closed || !repetition_content(&content) {
+        if !closed || content.is_empty() {
             self.output.push_str("\\{");
             return Ok(());
         }
@@ -193,11 +194,4 @@ impl Walker<'_> {
         self.output.push('}');
         Ok(())
     }
-}
-
-fn repetition_content(content: &str) -> bool {
-    let (before, after) = content.split_once(',').unwrap_or((content, ""));
-    before.chars().all(|character| character.is_ascii_digit())
-        && after.chars().all(|character| character.is_ascii_digit())
-        && (!before.is_empty() || content.contains(','))
 }

@@ -8,13 +8,27 @@ from litellm.router_strategy.complexity_router.config import (
     ComplexityTier,
     custom_pattern_work,
 )
-from pydantic import JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
+from pydantic import TypeAdapter, ValidationError
+from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
 _CONFIG: Final = TypeAdapter(ComplexityRouterConfig)
 _TIER: Final = TypeAdapter(ComplexityTier)
+
+
+class DimensionInput(TypedDict, total=False):
+    name: str
+    weight: float
+    keywords: list[str]
+    patterns: list[str]
+    scoring_mode: str
+
+
+class ConfigInput(TypedDict, total=False):
+    dimension_weights: dict[str, float] | None
+    custom_dimensions: list[DimensionInput]
+    classifier_type: str
 
 
 class Entry(Strict):
@@ -46,7 +60,7 @@ def _entry(pattern: str) -> Entry:
 
 class CustomDimensions(Operation):
     function: Literal["pattern_work", "validate", "classify"]
-    config: dict[str, JsonValue] | None = None
+    config: ConfigInput | None = None
     patterns: list[str] = []
     prompt: str = ""
     system_prompt: str | None = None
@@ -56,13 +70,14 @@ class CustomDimensions(Operation):
         if self.function == "pattern_work":
             return Output(results=[_entry(pattern) for pattern in self.patterns])
         # the case spells betterlite's key names for the shared complexity keys; LiteLLM reads the same names for these
-        raw: dict[str, JsonValue] = {} if self.config is None else self.config
+        raw: ConfigInput = {} if self.config is None else self.config
         if self.function == "validate":
             try:
                 configured = _CONFIG.validate_python(raw)
             except ValidationError:
                 return Output(accepted=False)
-            return Output(accepted=True, work=sum(dimension.pattern_work() for dimension in configured.custom_dimensions))
+            work = sum(dimension.pattern_work() for dimension in configured.custom_dimensions)
+            return Output(accepted=True, work=work)
         try:
             router = ComplexityRouter(
                 model_name="probe",
