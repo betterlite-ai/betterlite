@@ -15,6 +15,12 @@ deviations:
   - what: A failure event's traceback is LiteLLM's error line followed by the Rust error source chain, not CPython's traceback.format_exc frames.
     why: A Rust service has no Python frames to render; the event keeps LiteLLM's error line, exception text and duration for the failure handler to read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5407-L5414
+  - what: A get_data failure line is LiteLLM's heading with the error text and not its "Args passed in" assignment, which would carry the key token or the config row into the failure event.
+    why: LiteLLM logs locals() at the failure line, including a plaintext token passed to the key branch; betterlite keeps the heading and the error, so no secret reaches the sink.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5246-L5254
+  - what: A LiteLLM_Config row whose param_value is JSON text, which is what insert_data writes, is decoded to the value that text encodes before it reaches the cache or the caller; LiteLLM caches and returns the raw string and its callers run json.loads on it.
+    why: betterlite's ConfigRepository::get_param already hands callers the decoded value, so the config cache and its prefetch return the same shape and one stored value means one type; a text value that is not valid JSON, over the 1 MiB limit or 64 levels deep fails the read instead of reaching the caller as a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4287-L4297
   - what: The unfiltered team list reads its take from the table settings, whose default is 20, instead of reading MAX_TEAM_LIST_LIMIT from the environment inside the query.
     why: betterlite resolves that value once through its config section rather than reading the environment on a query path; the injected default equals LiteLLM's constant, so the row count is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5113-L5115
