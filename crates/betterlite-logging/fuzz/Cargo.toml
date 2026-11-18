@@ -157,3 +157,10 @@ path = "fuzz_targets/spend_event.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "agentops_token_response"
+path = "fuzz_targets/agentops_token_response.rs"
+test = false
+doc = false
+bench = false

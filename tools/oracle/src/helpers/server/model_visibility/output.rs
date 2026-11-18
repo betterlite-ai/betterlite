@@ -1,0 +1,75 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use betterlite_config::sections::model_visibility::Settings;
+use betterlite_server::model_visibility::discoverable::{
+    discoverable_rows, undiscoverable_model_names,
+};
+use betterlite_server::model_visibility::healthy::hidden_unhealthy_model_names;
+use betterlite_server::model_visibility::testing::{FixtureError, Snapshot};
+use serde_json::{Value, json};
+use tokio::runtime::Builder;
+
+use super::error::Failure;
+use super::fakes::{HealthReport, captured, user};
+use super::input::{Function, Input, RouterCall};
+use super::snapshot::{declared_rows, snapshot};
+
+pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
+    match input.function {
+        Function::UndiscoverableModelNames => {
+            let fixture = snapshot(input)?;
+            let router = fixture.as_ref().map(Snapshot::lookup);
+            let hidden = undiscoverable_model_names(
+                &input.arguments.model_names,
+                router.as_ref(),
+                &user(input.arguments.user_role.as_deref())?,
+                input.arguments.team_id.as_deref(),
+            )
+            .map_err(FixtureError::from)?;
+            Ok(json!({ "hidden": hidden }))
+        }
+        Function::DiscoverableRows => {
+            let fixture = Snapshot::build(&declared_rows(input), &input.model_group_alias)?;
+            let kept = discoverable_rows(
+                &fixture.catalog.models,
+                &user(input.arguments.user_role.as_deref())?,
+            );
+            let names: Vec<&str> = kept.iter().map(|row| row.model_name.as_str()).collect();
+            Ok(json!({ "rows": names }))
+        }
+        Function::HiddenUnhealthyModelNames => healthy(input),
+    }
+}
+
+fn healthy(input: &Input) -> Result<Value, Failure> {
+    let arguments = &input.arguments;
+    let runtime = Builder::new_current_thread().build()?;
+    let reads = Arc::new(AtomicUsize::new(0));
+    let report = HealthReport {
+        names: arguments.health.unhealthy_names.iter().cloned().collect(),
+        fails: arguments.health.fails,
+        reads: Arc::clone(&reads),
+    };
+    let settings = Settings {
+        model_list_healthy_only: arguments.model_list_healthy_only,
+    };
+    let router = matches!(
+        arguments.router,
+        RouterCall::Ready | RouterCall::BrokenPattern
+    )
+    .then_some(&report);
+    let (result, debug) = captured(&|| {
+        runtime.block_on(hidden_unhealthy_model_names(
+            arguments.healthy_only,
+            settings,
+            router,
+        ))
+    });
+    let hidden = result?;
+    Ok(json!({
+        "hidden": hidden,
+        "health_reads": reads.load(Ordering::Relaxed),
+        "debug": debug,
+    }))
+}
