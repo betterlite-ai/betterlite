@@ -1,5 +1,7 @@
+import io
 import os
 from collections.abc import Callable
+from contextlib import redirect_stdout
 from types import SimpleNamespace
 from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
@@ -209,12 +211,14 @@ def providers(input_value: ProvidersInput) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    if input_value["function"] == "redact":
-        return redact(input_value)
-    if input_value["function"] == "project":
-        return project(input_value)
-    if input_value["function"] == "access_groups":
-        return access_groups(input_value)
-    if input_value["function"] == "ocr_usage":
-        return ocr_usage(input_value)
-    return providers(input_value)
+    # resolving an unknown model prints the provider list to sys.stdout, which carries the oracle's JSON line
+    with redirect_stdout(io.StringIO()):
+        if input_value["function"] == "redact":
+            return redact(input_value)
+        if input_value["function"] == "project":
+            return project(input_value)
+        if input_value["function"] == "access_groups":
+            return access_groups(input_value)
+        if input_value["function"] == "ocr_usage":
+            return ocr_usage(input_value)
+        return providers(input_value)
