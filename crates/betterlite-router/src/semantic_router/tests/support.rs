@@ -57,6 +57,8 @@ pub(crate) struct FakeEmbedder {
     query_answers: BTreeMap<String, Vec<Vec<f64>>>,
     document_failures: AtomicUsize,
     query_failures: AtomicUsize,
+    document_stalls: AtomicUsize,
+    query_stalls: AtomicUsize,
     delay: Duration,
 }
 
@@ -74,6 +76,8 @@ impl FakeEmbedder {
             query_answers: BTreeMap::new(),
             document_failures: AtomicUsize::new(0),
             query_failures: AtomicUsize::new(0),
+            document_stalls: AtomicUsize::new(0),
+            query_stalls: AtomicUsize::new(0),
             delay: Duration::ZERO,
         }
     }
@@ -101,6 +105,19 @@ impl FakeEmbedder {
     #[must_use]
     pub(crate) fn failing_queries(mut self, count: usize) -> Self {
         self.query_failures = AtomicUsize::new(count);
+        self
+    }
+
+    // a stalling call records its request and then never answers, so a caller's deadline is what ends it
+    #[must_use]
+    pub(crate) fn stalling_documents(mut self, count: usize) -> Self {
+        self.document_stalls = AtomicUsize::new(count);
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn stalling_queries(mut self, count: usize) -> Self {
+        self.query_stalls = AtomicUsize::new(count);
         self
     }
 
@@ -160,6 +177,9 @@ impl FakeEmbedder {
                 texts: texts.clone(),
             },
         );
+        if take_failure(&self.document_stalls) {
+            std::future::pending::<()>().await;
+        }
         self.wait_and_fail(&self.document_failures).await?;
         let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
         if let Some(vectors) = self.document_answers.get(&batch_signature(&borrowed)) {
@@ -188,6 +208,9 @@ impl FakeEmbedder {
                 caller: caller.clone(),
             },
         );
+        if take_failure(&self.query_stalls) {
+            std::future::pending::<()>().await;
+        }
         self.wait_and_fail(&self.query_failures).await?;
         if let Some(vectors) = self.query_answers.get(&text) {
             return Ok(vectors.clone());

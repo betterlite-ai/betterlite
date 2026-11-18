@@ -7,14 +7,14 @@ use tokio::sync::watch;
 use tokio::task::{JoinSet, yield_now};
 use tokio_util::task::TaskTracker;
 
-use crate::semantic_math::MathError;
+use crate::semantic_math::{MathError, cosine_similarity};
 use crate::semantic_router::build::{BuildState, wait_for_build};
 use crate::semantic_router::error::{EmbeddingStage, RouterError};
 use crate::semantic_router::index::{
     ROUTE_INDEX_MAX_BYTES, RouteIndexError, load_file, parse_inline,
 };
 use crate::semantic_router::select::BuiltEntry;
-use crate::semantic_router::service::AutoRouter;
+use crate::semantic_router::service::{AutoRouter, EMBEDDING_TIMEOUT};
 use crate::semantic_router::tests::support::{
     FakeEmbedder, FakeError, TWO_ROUTES, caller, decisions, router, settings, temporary_directory,
     user_text, with_limit,
@@ -23,6 +23,9 @@ use crate::semantic_router::tests::support::{
 // the smallest config each parser accepts, padded to an exact byte length with trailing whitespace
 const INLINE_SKELETON: &str = r#"{"routes":[]}"#;
 const FILE_SKELETON: &str = r#"{"encoder_type":"openai","encoder_name":"e","routes":[]}"#;
+
+// the pinned semantic router's two norms round this self-similarity just below one
+const EIGHT_DIMENSIONS: [f64; 8] = [1.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
 fn padded_config(skeleton: &str, len: usize) -> String {
     assert!(
@@ -172,7 +175,7 @@ fn a_file_route_keeps_the_fields_the_encoder_ignores() {
     .unwrap();
     let index = load_file(&path).expect("the extra route fields are accepted");
     assert_eq!(index.rows.len(), 1);
-    assert_eq!(index.rows[0].route, "r");
+    assert_eq!(&*index.rows[0].route, "r");
     assert_eq!(index.rows[0].text, "a");
     fs::remove_dir_all(&directory).unwrap();
 }
@@ -241,7 +244,7 @@ fn an_inline_route_keeps_the_fields_the_encoder_ignores() {
     )
     .expect("the dynamic route fields are accepted");
     assert_eq!(index.rows.len(), 1);
-    assert_eq!(index.rows[0].route, "r");
+    assert_eq!(&*index.rows[0].route, "r");
 }
 
 #[tokio::test]
@@ -643,7 +646,7 @@ async fn a_failed_build_reaches_the_waiter() {
 #[tokio::test]
 async fn a_done_build_reaches_the_waiter() {
     let entries: Arc<[BuiltEntry]> = Arc::from(vec![BuiltEntry {
-        route: "r".to_owned(),
+        route: Arc::from("r"),
         threshold: 0.5,
         vector: vec![1.0_f64, 0.0_f64],
     }]);
@@ -692,4 +695,165 @@ async fn a_cancelled_waiter_does_not_cancel_the_shared_build() {
     );
     assert_eq!(embedder.document_calls().len(), 2);
     assert_eq!(embedder.query_calls().len(), 1);
+}
+
+#[test]
+fn the_embedding_deadline_is_litellms_request_timeout() {
+    assert_eq!(
+        EMBEDDING_TIMEOUT,
+        Duration::from_secs(6000),
+        "a stalled embedding call ends at litellm's default request timeout"
+    );
+}
+
+#[test]
+fn a_self_similar_document_scores_just_below_one() {
+    let score =
+        cosine_similarity(&EIGHT_DIMENSIONS, &EIGHT_DIMENSIONS, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&0.999_999_999_999_999_9_f64).is_eq());
+}
+
+#[rstest]
+#[case::sequential_tail(3, 0.940_720_868_383_597_3_f64)]
+#[case::block_of_eight(8, 0.574_484_989_621_426_f64)]
+#[case::one_full_block(128, 0.143_621_247_405_356_5_f64)]
+#[case::split_with_a_tail(129, 0.142_162_533_509_045_87_f64)]
+#[case::remainder_of_two(130, 0.142_105_105_700_801_15_f64)]
+#[case::split_into_two_blocks(200, 0.114_896_997_924_285_2_f64)]
+fn a_document_norm_reduces_like_the_pinned_numpy_pairwise_sum(
+    #[case] length: usize,
+    #[case] expected: f64,
+) {
+    let document: Vec<f64> = EIGHT_DIMENSIONS
+        .iter()
+        .copied()
+        .cycle()
+        .take(length)
+        .collect();
+    let mut query = vec![0.0_f64; length];
+    query[0] = 1.0;
+    let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&expected).is_eq());
+}
+
+#[tokio::test]
+async fn a_self_similar_document_at_threshold_one_selects_the_default_model() {
+    let config =
+        r#"{"routes": [{"name": "exact", "utterances": ["same"], "score_threshold": 1.0}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", EIGHT_DIMENSIONS.to_vec()),
+        ("same", EIGHT_DIMENSIONS.to_vec()),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("same")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(None, "fallback")),
+        "the pinned pairwise index norm scores this just below the 1.0 threshold"
+    );
+}
+
+#[rstest]
+#[case::at_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_7], Some("default"))]
+#[case::just_below_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_9], None)]
+#[tokio::test]
+async fn a_route_without_a_threshold_compares_at_litellms_three_tenths(
+    #[case] utterance: Vec<f64>,
+    #[case] route: Option<&str>,
+) {
+    let config = r#"{"routes": [{"name": "default", "utterances": ["utterance"]}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("utterance", utterance),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(route, route.unwrap_or("fallback")))
+    );
+}
+
+#[test]
+fn a_large_route_name_and_a_repeated_utterance_stay_one_allocation_and_one_row() {
+    let name = "n".repeat(500_000);
+    let mut texts = vec!["\"u\""; 100_000];
+    texts.push("\"v\"");
+    let config = format!(
+        r#"{{"routes": [{{"name": "{name}", "utterances": [{}]}}]}}"#,
+        texts.join(",")
+    );
+    assert!(config.len() < ROUTE_INDEX_MAX_BYTES);
+    let index = parse_inline(&config).expect("the config is inside the byte bound");
+    assert_eq!(index.groups.len(), 1);
+    assert_eq!(index.rows.len(), 2, "the repeated utterance expands once");
+    assert!(Arc::ptr_eq(&index.rows[0].route, &index.groups[0].name));
+    assert!(Arc::ptr_eq(&index.rows[1].route, &index.groups[0].name));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_build_clears_its_slot_and_releases_the_tracker() {
+    let tracker = TaskTracker::new();
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+        ])
+        .stalling_documents(1),
+    );
+    let router = AutoRouter::new(settings(TWO_ROUTES), Arc::clone(&embedder), tracker.clone())
+        .expect("the route config parses");
+    let error = router
+        .decide_with(Some(&[user_text("write code")]), || Some(caller()))
+        .await
+        .expect_err("a build that never answers hits the deadline");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::Timeout {
+            stage: EmbeddingStage::Documents,
+            seconds: 6000
+        }
+    ));
+    tracker.close();
+    tracker.wait().await;
+    let decision = router
+        .decide_with(Some(&[user_text("write code")]), || Some(caller()))
+        .await
+        .expect("the cleared slot lets the next caller build");
+    assert_eq!(decision, Some(decisions(Some("code"), "code")));
+    assert_eq!(embedder.document_calls().len(), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_query_falls_back_to_the_default_model() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+            ("ask", vec![1.0_f64, 0.0_f64]),
+        ])
+        .stalling_queries(1),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let timed_out = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(timed_out, Some(decisions(None, "fallback")));
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, Some(decisions(Some("code"), "code")));
+    assert_eq!(embedder.document_calls().len(), 2);
+    assert_eq!(embedder.query_calls().len(), 2);
 }
