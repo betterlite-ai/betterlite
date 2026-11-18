@@ -387,6 +387,34 @@ async fn failure_hook_carries_the_original_failure() {
     assert!(hooks[0].failure.source().is_some());
 }
 
+#[tokio::test]
+async fn failure_traceback_keeps_the_cause_chain() {
+    let harness = Harness::new(Duration::ZERO);
+    let cause = fault(ErrorType::RawQuery, "the connection dropped");
+    let mut outer = fault(ErrorType::RawQuery, "the lookup failed");
+    outer.cause = Some(Box::new(cause));
+    for _ in 0..3 {
+        harness.database.push_row(Err(outer.clone()));
+    }
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-cause")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: true,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    let returned = harness.read(&request).await.unwrap_err();
+    let hooks = harness.hook.hooks();
+    assert!(hooks[0].message.ends_with("the lookup failed"));
+    assert!(!hooks[0].message.contains("the connection dropped"));
+    assert!(
+        hooks[0]
+            .traceback
+            .contains("Caused by: the connection dropped")
+    );
+    assert!(returned.source().is_some());
+}
+
 #[test]
 fn deprecated_ttl60_revoke_equality_and_capacity1000() {
     let now = fixed_now();
