@@ -6,7 +6,6 @@ from typing import Literal, cast
 
 import httpx
 from aiohttp import ClientSession
-from litellm.exceptions import Timeout
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
@@ -207,13 +206,15 @@ def http_error(case: HttpRequest) -> JsonValue:
     configure(fixture)
     try:
         value = run_call(case, fixture)
-    except Timeout as error:
-        if case["asynchronous"]:
-            message, separator, _elapsed = str(error).partition(", time taken=")
-            if separator:
-                error.message = f"{message}, time taken=<seconds> seconds"
-        raise
-    except BedrockError as error:
+    except Exception as error:
+        if type(error).__name__ == "Timeout":
+            if case["asynchronous"]:
+                message, separator, _elapsed = str(error).partition(", time taken=")
+                if separator:
+                    setattr(error, "message", f"{message}, time taken=<seconds> seconds")
+            raise
+        if not isinstance(error, BedrockError):
+            raise
         names = {name.lower() for name in case["reply"]["headers"]}
         redirect = case["reply"].get("redirect")
         if redirect is not None:
