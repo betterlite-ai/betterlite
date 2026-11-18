@@ -1,11 +1,11 @@
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use serde_json::Number;
 use tokio_util::task::TaskTracker;
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::super::cleanup::DisconnectCleanup;
@@ -84,6 +84,16 @@ struct LogState {
     assembled: Option<(usize, Option<Vec<Json>>, bool)>,
 }
 
+impl LogState {
+    fn record_event<T, F>(&mut self, event: &str, record: F) -> T
+    where
+        F: FnOnce(&mut Self) -> T,
+    {
+        self.events.push(event.to_owned());
+        record(self)
+    }
+}
+
 pub(super) struct FakeLogging {
     state: Mutex<LogState>,
 }
@@ -107,20 +117,14 @@ impl FakeLogging {
         }
     }
 
-    fn with_event<T, F>(&self, event: &str, record: F) -> T
-    where
-        F: FnOnce(&mut LogState) -> T,
-    {
-        let mut state = self.state.lock().unwrap();
-        state.events.push(event.to_owned());
-        record(&mut state)
-    }
-
     fn record_dispatch(&self, response: JsonObject) -> Result<(), CleanupError> {
-        self.with_event("dispatch", |state| {
-            state.dispatched.push(response);
-            state.dispatch.clone().unwrap_or(Ok(()))
-        })
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .record_event("dispatch", |state| {
+                state.dispatched.push(response);
+                state.dispatch.clone().unwrap_or(Ok(()))
+            })
     }
 
     pub(super) fn with_armed(self, armed: bool) -> Self {
@@ -175,7 +179,10 @@ impl FakeLogging {
 
 impl RequestLogging for FakeLogging {
     fn call_details(&self, _request_data: &JsonObject) -> Option<JsonObject> {
-        self.with_event("details", |state| state.details.clone())
+        self.state
+            .lock()
+            .unwrap()
+            .record_event("details", |state| state.details.clone())
     }
 
     fn edit_call_details(&self, _request_data: &JsonObject, edit: fn(&mut JsonObject)) {
@@ -190,6 +197,7 @@ impl RequestLogging for FakeLogging {
         let mut state = self.state.lock().unwrap();
         let armed = state.armed;
         state.events.push(format!("armed:{armed}"));
+        drop(state);
         armed
     }
 
@@ -203,7 +211,10 @@ impl RequestLogging for FakeLogging {
     }
 
     fn baseline_cache_active(&self, _request_data: &JsonObject) -> bool {
-        self.with_event("baseline", |state| state.baseline_active)
+        self.state
+            .lock()
+            .unwrap()
+            .record_event("baseline", |state| state.baseline_active)
     }
 
     fn invalidate_baseline<'call>(
@@ -227,14 +238,18 @@ impl RequestLogging for FakeLogging {
         chunks: &'call [JsonObject],
         messages: Option<&'call [Json]>,
     ) -> CleanupFuture<'call, Result<Option<JsonObject>, CleanupError>> {
-        let outcome = self.with_event("assemble", |state| {
-            state.assembled = Some((
-                chunks.len(),
-                messages.map(<[Json]>::to_vec),
-                disconnect_marked(request_data),
-            ));
-            state.assemble.clone().unwrap_or(Ok(None))
-        });
+        let outcome = self
+            .state
+            .lock()
+            .unwrap()
+            .record_event("assemble", |state| {
+                state.assembled = Some((
+                    chunks.len(),
+                    messages.map(<[Json]>::to_vec),
+                    disconnect_marked(request_data),
+                ));
+                state.assemble.clone().unwrap_or(Ok(None))
+            });
         Box::pin(async move { outcome })
     }
 
@@ -381,9 +396,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -399,7 +417,7 @@ impl MakeWriter<'_> for LogBuffer {
     }
 }
 
-pub(super) fn capture_logs() -> (LogBuffer, tracing::subscriber::DefaultGuard) {
+pub(super) fn capture_logs() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();
     let subscriber = fmt()
         .with_ansi(false)
