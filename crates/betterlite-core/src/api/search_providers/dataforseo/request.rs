@@ -30,11 +30,7 @@ pub(super) fn build(
     optional_params: &Object,
     location_code: i64,
 ) -> Result<DataForSeoSearchRequest, DataForSeoSearchError> {
-    let mapped = Mapped {
-        depth: depth(optional_params)?,
-        location_name: location_name(optional_params)?,
-        domain: domain(optional_params)?,
-    };
+    let mapped = map_options(optional_params)?;
     let default_location = mapped.location_name.is_none().then_some(location_code);
     let mut extra = Object::new();
     for (name, value) in optional_params {
@@ -55,61 +51,49 @@ pub(super) fn build(
     Ok(DataForSeoSearchRequest(vec![task]))
 }
 
+// the unified options LiteLLM maps into the task, read only when present and not null
+fn map_options(optional_params: &Object) -> Result<Mapped, DataForSeoSearchError> {
+    let mut mapped = Mapped {
+        depth: None,
+        location_name: None,
+        domain: None,
+    };
+    if let Some(value) = optional_params
+        .get("max_results")
+        .filter(|value| !value.is_null())
+    {
+        let number: i64 = serde_json::from_value(value.clone()).map_err(|_source| {
+            DataForSeoSearchError::OptionInteger {
+                field: "max_results",
+            }
+        })?;
+        mapped.depth = (number != 0).then_some(number.min(MAX_DEPTH));
+    }
+    if let Some(value) = optional_params
+        .get("country")
+        .filter(|value| !value.is_null())
+    {
+        let country: String = serde_json::from_value(value.clone())
+            .map_err(|_source| DataForSeoSearchError::OptionText { field: "country" })?;
+        mapped.location_name = (!country.is_empty()).then_some(country);
+    }
+    if let Some(value) = optional_params
+        .get("search_domain_filter")
+        .filter(|value| !value.is_null())
+    {
+        let domains: Vec<String> = serde_json::from_value(value.clone()).map_err(|_source| {
+            DataForSeoSearchError::OptionList {
+                field: "search_domain_filter",
+            }
+        })?;
+        mapped.domain = (!domains.is_empty()).then_some(domains);
+    }
+    Ok(mapped)
+}
+
 fn keyword(query: &SearchQuery) -> String {
     match query {
         SearchQuery::Single(text) => text.clone(),
         SearchQuery::Multiple(parts) => parts.first().cloned().unwrap_or_default(),
     }
-}
-
-// LiteLLM tests max_results for truthiness, so a zero value contributes no depth at all
-fn depth(optional_params: &Object) -> Result<Option<i64>, DataForSeoSearchError> {
-    let Some(value) = optional_params.get("max_results") else {
-        return Ok(None);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let number: i64 = serde_json::from_value(value.clone()).map_err(|_source| {
-        DataForSeoSearchError::OptionInteger {
-            field: "max_results",
-        }
-    })?;
-    if number == 0 {
-        return Ok(None);
-    }
-    Ok(Some(number.min(MAX_DEPTH)))
-}
-
-fn location_name(optional_params: &Object) -> Result<Option<String>, DataForSeoSearchError> {
-    let Some(value) = optional_params.get("country") else {
-        return Ok(None);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let country: String = serde_json::from_value(value.clone())
-        .map_err(|_source| DataForSeoSearchError::OptionText { field: "country" })?;
-    if country.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(country))
-}
-
-fn domain(optional_params: &Object) -> Result<Option<Vec<String>>, DataForSeoSearchError> {
-    let Some(value) = optional_params.get("search_domain_filter") else {
-        return Ok(None);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let domains: Vec<String> = serde_json::from_value(value.clone()).map_err(|_source| {
-        DataForSeoSearchError::OptionList {
-            field: "search_domain_filter",
-        }
-    })?;
-    if domains.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(domains))
 }
