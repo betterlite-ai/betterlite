@@ -1,0 +1,9 @@
+task: B8604
+deviations:
+  - what: proxy_logging_obj, llm_router and general_settings reach the generator through constructor ports instead of module globals.
+    why: betterlite wires dependencies through explicit values and ports; the emitted frames have the same behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L9879
+  - what: Stream cleanup is handed to a synchronous port that the server runs on its task tracker instead of being awaited inside this generator.
+    why: Rust cannot await in Drop and detached tasks are forbidden; cleanup still receives the completion and disconnect flags exactly once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10070-L10079
+kept_bugs: []

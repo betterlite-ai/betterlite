@@ -1,12 +1,22 @@
 #![cfg(test)]
 
+use super::failure::failure_frame;
 use super::*;
 use async_trait::async_trait;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use bytes::Bytes;
 use futures_util::StreamExt as _;
-use futures_util::stream;
+use futures_util::stream::{self, BoxStream};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
 
+use crate::data_generator_select::AsyncDataGenerator;
+use crate::stream_chunks::frames::sse_data_frame;
+use crate::stream_chunks::serialize::serialize_chunk;
+use crate::stream_chunks::{
+    ChunkKind, DONE_FRAME, MAX_RAW_SSE_BUFFER_CHARS, StreamChunk, StreamItem,
+};
 struct NoHooks;
 
 #[async_trait]
@@ -50,6 +60,51 @@ impl ErrorStateSource for NoErrorState {
     }
 }
 
+struct RecordingErrorSource {
+    events: Arc<Mutex<Vec<String>>>,
+    failure_frame: Option<String>,
+}
+
+impl ErrorStateSource for RecordingErrorSource {
+    fn new_state(&self) -> Box<dyn StreamErrorState + Send> {
+        self.events
+            .lock()
+            .expect("events")
+            .push("new-state".to_owned());
+        Box::new(RecordingErrorState {
+            events: self.events.clone(),
+            failure_frame: self.failure_frame.clone(),
+        })
+    }
+}
+
+struct RecordingErrorState {
+    events: Arc<Mutex<Vec<String>>>,
+    failure_frame: Option<String>,
+}
+
+impl StreamErrorState for RecordingErrorState {
+    fn observe_chunk(&mut self, _: &StreamItem) {
+        self.events
+            .lock()
+            .expect("events")
+            .push("observe".to_owned());
+    }
+
+    fn mark_emitted(&mut self, frame: String) -> String {
+        self.events.lock().expect("events").push("mark".to_owned());
+        frame
+    }
+
+    fn format_failure(&mut self, _: &StreamFailure) -> Option<String> {
+        self.events
+            .lock()
+            .expect("events")
+            .push("format".to_owned());
+        self.failure_frame.clone()
+    }
+}
+
 impl StreamErrorState for NoErrorState {
     fn observe_chunk(&mut self, _: &StreamItem) {
         // No error state is enabled in this fixture.
@@ -70,11 +125,115 @@ impl StreamCleanup<()> for NoCleanup {
     }
 }
 
+struct RecordingCleanup(Arc<Mutex<Vec<(bool, bool, bool)>>>);
+
+impl StreamCleanup<()> for RecordingCleanup {
+    fn finalize(&self, outcome: CleanupOutcome<()>) {
+        self.0.lock().expect("cleanup").push((
+            outcome.stream_completed,
+            outcome.client_disconnected,
+            outcome.response.is_some(),
+        ));
+    }
+}
+
+struct EmptySnapshot;
+
+impl StreamSnapshot for EmptySnapshot {
+    fn collected(&self) -> CollectedStream {
+        CollectedStream::default()
+    }
+}
+
+struct RecordingHooks {
+    events: Arc<Mutex<Vec<String>>>,
+    wrap: bool,
+    per_chunk: bool,
+    chunk_fails: bool,
+    failure_hook_fails: bool,
+}
+
+#[async_trait]
+impl StreamHooks<()> for RecordingHooks {
+    fn needs_iterator_wrap(&self) -> bool {
+        self.events
+            .lock()
+            .expect("events")
+            .push("needs-wrap".to_owned());
+        self.wrap
+    }
+
+    fn needs_per_chunk_hook(&self) -> bool {
+        self.events
+            .lock()
+            .expect("events")
+            .push("needs-chunk".to_owned());
+        self.per_chunk
+    }
+
+    fn wrap_iterator(&self, items: ItemStream, _: &(), _: &JsonObject) -> ItemStream {
+        self.events.lock().expect("events").push("wrap".to_owned());
+        items
+    }
+
+    async fn chunk_hook(
+        &self,
+        item: StreamItem,
+        _: &(),
+        _: &JsonObject,
+        str_so_far: Option<&str>,
+    ) -> Result<StreamItem, StreamFailure> {
+        self.events
+            .lock()
+            .expect("events")
+            .push(format!("chunk:{}", str_so_far.unwrap_or("<none>")));
+        if self.chunk_fails {
+            Err(other_failure("guardrail failed"))
+        } else {
+            Ok(item)
+        }
+    }
+
+    async fn failure_hook(
+        &self,
+        _: &(),
+        failure: &StreamFailure,
+        _: &JsonObject,
+    ) -> Result<(), StreamFailure> {
+        self.events
+            .lock()
+            .expect("events")
+            .push(format!("failure:{}", failure.message));
+        if self.failure_hook_fails {
+            Err(other_failure("failure hook failed"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn fire_deferred_stream_logging(&self, _: &JsonObject) {
+        self.events
+            .lock()
+            .expect("events")
+            .push("deferred".to_owned());
+    }
+}
+
+fn other_failure(message: &str) -> StreamFailure {
+    StreamFailure {
+        message: message.to_owned(),
+        error_type: FailureType::Missing,
+        param: FailureParam::Missing,
+        status_code: None,
+        kind: FailureKind::Other,
+    }
+}
+
 #[test]
-fn failure_frame_preserves_null_and_missing_fields() {
+fn failure_frame_fields() {
     let failure = StreamFailure {
         message: "bad request".to_owned(),
-        error_type: None,
+        error_type: FailureType::Missing,
         param: FailureParam::Null,
         status_code: Some(422),
         kind: FailureKind::Other,
@@ -84,13 +243,23 @@ fn failure_frame_preserves_null_and_missing_fields() {
     assert!(frame.contains("\"param\":null"));
     assert!(frame.contains("\"code\":\"422\""));
     assert!(!frame.contains("[DONE]"));
+    let missing_param = StreamFailure {
+        message: "missing parameter".to_owned(),
+        error_type: FailureType::Null,
+        param: FailureParam::Missing,
+        status_code: None,
+        kind: FailureKind::Other,
+    };
+    let missing_frame = failure_frame(&missing_param);
+    assert!(missing_frame.contains("\"type\":null"));
+    assert!(missing_frame.contains("\"param\":\"None\""));
 }
 
 #[test]
-fn failure_frame_applies_router_status_overrides() {
+fn failure_frame_status() {
     let mut failure = StreamFailure {
         message: "No deployments available".to_owned(),
-        error_type: Some("Unavailable".to_owned()),
+        error_type: FailureType::Text("Unavailable".to_owned()),
         param: FailureParam::Missing,
         status_code: Some(500),
         kind: FailureKind::Other,
@@ -101,81 +270,7 @@ fn failure_frame_applies_router_status_overrides() {
 }
 
 #[test]
-fn unix_timestamp_uses_seconds_since_epoch() {
-    let before = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_secs();
-    let actual = unix_timestamp();
-    let after = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_secs();
-    let actual = u64::try_from(actual).expect("timestamp is nonnegative");
-    assert!((before..=after).contains(&actual));
-}
-
-#[test]
-fn cleanup_guard_finalizes_once_and_marks_incomplete_drop() {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    struct RecordingCleanup(Arc<AtomicBool>);
-    impl StreamCleanup<()> for RecordingCleanup {
-        fn finalize(&self, outcome: CleanupOutcome<()>) {
-            assert!(outcome.client_disconnected);
-            assert!(!outcome.stream_completed);
-            self.0.store(true, Ordering::SeqCst);
-        }
-    }
-
-    let called = Arc::new(AtomicBool::new(false));
-    let guard = CleanupGuard {
-        cleanup: Arc::new(RecordingCleanup(called.clone())),
-        outcome: Some(CleanupOutcome {
-            request: None,
-            request_data: JsonObject::new(),
-            key: (),
-            response: None,
-            stream_completed: false,
-            client_disconnected: false,
-        }),
-    };
-    drop(guard);
-    assert!(called.load(Ordering::SeqCst));
-}
-
-#[test]
-fn cleanup_guard_complete_marks_a_finished_stream_once() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    struct RecordingCleanup(Arc<AtomicUsize>);
-    impl StreamCleanup<()> for RecordingCleanup {
-        fn finalize(&self, outcome: CleanupOutcome<()>) {
-            assert!(outcome.stream_completed);
-            assert!(!outcome.client_disconnected);
-            self.0.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    let calls = Arc::new(AtomicUsize::new(0));
-    let mut guard = CleanupGuard {
-        cleanup: Arc::new(RecordingCleanup(calls.clone())),
-        outcome: Some(CleanupOutcome {
-            request: None,
-            request_data: JsonObject::new(),
-            key: (),
-            response: None,
-            stream_completed: false,
-            client_disconnected: false,
-        }),
-    };
-    guard.complete(true);
-    drop(guard);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn keepalive_source_exposes_item_hidden_params_and_skips_failures() {
+fn keepalive_source_hidden() {
     let hidden = [("model_id".to_owned(), Json::Text("deployment".to_owned()))]
         .into_iter()
         .collect::<JsonObject>();
@@ -187,7 +282,7 @@ fn keepalive_source_exposes_item_hidden_params_and_skips_failures() {
     assert_eq!(item.hidden_params(), Some(&hidden));
     let failure: Result<StreamItem, StreamFailure> = Err(StreamFailure {
         message: "failure".to_owned(),
-        error_type: None,
+        error_type: FailureType::Missing,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,
@@ -199,20 +294,19 @@ fn collect_frames(
     items: Vec<Result<StreamItem, StreamFailure>>,
     request_data: JsonObject,
 ) -> Vec<String> {
+    collect_with_generator(test_generator(None), items, request_data)
+}
+
+fn collect_with_generator(
+    generator: SseDataGenerator<()>,
+    items: Vec<Result<StreamItem, StreamFailure>>,
+    request_data: JsonObject,
+) -> Vec<String> {
     let source = StreamSource {
         items: stream::iter(items).boxed(),
         hidden: JsonObject::new(),
         snapshot: None,
     };
-    let generator = SseDataGenerator::new(
-        Arc::new(NoHooks),
-        Arc::new(NoErrorState),
-        Arc::new(NoCleanup),
-        None,
-        None,
-        false,
-        |_| false,
-    );
     let body = generator.generate(GeneratorInput {
         response: source,
         key: (),
@@ -228,134 +322,98 @@ fn collect_frames(
         .collect()
 }
 
-#[test]
-fn relays_raw_sse_frames_and_flushes_a_partial_frame() {
-    let data = [("_litellm_raw_sse_stream".to_owned(), Json::Bool(true))]
+fn model_chunk(text: &str) -> StreamItem {
+    let delta = [("content".to_owned(), Json::Text(text.to_owned()))]
         .into_iter()
         .collect();
-    let frames = collect_frames(
-        vec![
-            Ok(StreamItem::Bytes(bytes::Bytes::from_static(
-                b"data: one\n\n",
-            ))),
-            Ok(StreamItem::Text("data: two".to_owned())),
-        ],
-        data,
-    );
-    assert_eq!(frames, ["data: one\n\n", "data: two\n\n", DONE_FRAME]);
-}
-
-#[test]
-fn relays_non_raw_sse_bytes_and_omits_done_when_requested() {
-    let data = [(
-        "_litellm_skip_openai_stream_done".to_owned(),
-        Json::Bool(true),
-    )]
-    .into_iter()
-    .collect();
-    let frames = collect_frames(
-        vec![Ok(StreamItem::Bytes(bytes::Bytes::from_static(
-            b"event: update\n\n",
-        )))],
-        data,
-    );
-    assert_eq!(frames, ["event: update\n\n"]);
-}
-
-#[test]
-fn text_error_message_is_emitted_before_done() {
-    let frames = collect_frames(
-        vec![Ok(StreamItem::Text("data: failed".to_owned()))],
-        JsonObject::new(),
-    );
-    assert_eq!(frames, ["data: failed", DONE_FRAME]);
-}
-
-#[test]
-fn plain_failure_writes_an_error_frame_without_done() {
-    let failure = StreamFailure {
-        message: "upstream failed".to_owned(),
-        error_type: None,
-        param: FailureParam::Missing,
-        status_code: None,
-        kind: FailureKind::Other,
-    };
-    let frames = collect_frames(vec![Err(failure)], JsonObject::new());
-    assert_eq!(frames.len(), 1);
-    assert!(frames[0].contains("upstream failed"));
-    assert!(!frames[0].contains("[DONE]"));
-}
-
-#[tokio::test(start_paused = true)]
-async fn quiet_stream_emits_a_keepalive_ping() {
-    let generator = SseDataGenerator::new(
-        Arc::new(NoHooks),
-        Arc::new(NoErrorState),
-        Arc::new(NoCleanup),
-        None,
-        Some(crate::keepalive_interval::PingSetting::Seconds(1.0)),
-        false,
-        |_| false,
-    );
-    let source = StreamSource {
-        items: stream::pending().boxed(),
-        hidden: JsonObject::new(),
-        snapshot: None,
-    };
-    let mut body = generator.generate(GeneratorInput {
-        response: source,
-        key: (),
-        request_data: JsonObject::new(),
-        request: None,
-        responses_stream_errors: false,
-    });
-    let ping = body.next().await.expect("ping").expect("body frame");
-    assert_eq!(ping, bytes::Bytes::from_static(b": ping\n\n"));
-}
-
-#[test]
-fn emits_data_chunks_then_done() {
-    let chunk = StreamChunk {
-        body: [
-            ("id".to_owned(), Json::Text("1".to_owned())),
-            ("model".to_owned(), Json::Text("wrong".to_owned())),
-            ("choices".to_owned(), Json::List(Vec::new())),
-        ]
+    let choice = [("delta".to_owned(), Json::Object(delta))]
         .into_iter()
-        .collect(),
+        .collect();
+    let body = [("choices".to_owned(), Json::List(vec![Json::Object(choice)]))]
+        .into_iter()
+        .collect();
+    StreamItem::Chunk(StreamChunk {
+        body,
         kind: ChunkKind::ModelStream,
         hidden: JsonObject::new(),
-    };
-    let source = StreamSource {
-        items: stream::iter([Ok(StreamItem::Chunk(chunk))]).boxed(),
-        hidden: JsonObject::new(),
-        snapshot: None,
-    };
-    let generator = SseDataGenerator::new(
+    })
+}
+
+fn fallback_hidden() -> JsonObject {
+    let error = [("message".to_owned(), Json::Text("failed".to_owned()))]
+        .into_iter()
+        .collect();
+    let headers = [
+        (
+            "x-litellm-attempted-fallbacks".to_owned(),
+            Json::Number(1.into()),
+        ),
+        (
+            "x-litellm-model-group".to_owned(),
+            Json::Text("fallback-model".to_owned()),
+        ),
+        (
+            "x-litellm-fallback-errors".to_owned(),
+            Json::List(vec![Json::Object(error)]),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    [("additional_headers".to_owned(), Json::Object(headers))]
+        .into_iter()
+        .collect()
+}
+
+fn test_generator(
+    global_keepalive: Option<crate::keepalive_interval::PingSetting>,
+) -> SseDataGenerator<()> {
+    let mut generator = generator_with(
         Arc::new(NoHooks),
         Arc::new(NoErrorState),
         Arc::new(NoCleanup),
-        None,
-        None,
-        false,
-        |_| false,
     );
-    let body = generator.generate(GeneratorInput {
-        response: source,
-        key: (),
-        request_data: [("model".to_owned(), Json::Text("requested".to_owned()))]
-            .into_iter()
-            .collect(),
-        request: None,
-        responses_stream_errors: false,
-    });
-    let result = tokio::runtime::Runtime::new()
+    generator.global_keepalive = global_keepalive;
+    generator
+}
+
+fn generator_with(
+    hooks: Arc<dyn StreamHooks<()>>,
+    error_state: Arc<dyn ErrorStateSource>,
+    cleanup: Arc<dyn StreamCleanup<()>>,
+) -> SseDataGenerator<()> {
+    SseDataGenerator {
+        hooks,
+        error_state,
+        cleanup,
+        router: None,
+        global_keepalive: None,
+        expose_fallback_errors: false,
+        is_model_router: |_| false,
+    }
+}
+
+fn collect_body(body: BoxStream<'static, Result<Bytes, std::io::Error>>) -> Vec<String> {
+    tokio::runtime::Runtime::new()
         .expect("runtime")
-        .block_on(body.collect::<Vec<_>>());
-    let text = result
+        .block_on(body.collect::<Vec<_>>())
         .into_iter()
         .map(|frame| String::from_utf8(frame.expect("frame").to_vec()).expect("utf8"))
-        .collect::<String>();
-    assert!(text.contains("\"model\":\"requested\""));
-    assert!(text.ends_with(DONE_FRAME));
+        .collect()
 }
+
+fn run_generator(
+    generator: SseDataGenerator<()>,
+    response: StreamSource,
+    request_data: JsonObject,
+    responses_stream_errors: bool,
+) -> Vec<String> {
+    collect_body(generator.generate(GeneratorInput {
+        response,
+        key: (),
+        request_data,
+        request: None,
+        responses_stream_errors,
+    }))
+}
+
+mod behavior;
