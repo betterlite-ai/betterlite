@@ -536,13 +536,14 @@ mod ptu_job {
     async fn cost_of(client: &Client, day: &str, model: &str) -> Option<Decimal> {
         let row = client
             .query_opt(
-                "SELECT \"ptu_flat_cost\" FROM \"LiteLLM_DailyTeamSpend\" \
+                "SELECT \"ptu_flat_cost\"::text FROM \"LiteLLM_DailyTeamSpend\" \
                  WHERE \"date\" = $1 AND \"model\" = $2",
                 &[&day, &model],
             )
             .await
             .unwrap()?;
-        Some(row.get(0))
+        let text: String = row.get(0);
+        Some(text.parse().unwrap())
     }
 
     // Every attempt for one model fails, or every attempt stalls, so a run can be failed or cancelled mid-write.
