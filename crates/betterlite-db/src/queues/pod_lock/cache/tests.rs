@@ -9,32 +9,31 @@ use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_client_reuse::breaker::BreakerOpen;
 use redis::Value;
+use rstest::rstest;
 
-use super::{deleted_one, owner_bytes, with_cache_error};
+use super::{LockCacheError, deleted_one, owner_bytes, with_cache_error};
+
+#[rstest]
+#[case::read(with_cache_error::<u8, _>(
+    "lease",
+    Err(RedisCacheError::Breaker(BreakerOpen { name: "sensitive" })),
+))]
+#[case::write(with_cache_error::<u8, _>(
+    "lease",
+    Err(RedisCacheValuesError::BreakerOpen(BreakerOpen { name: "sensitive" })),
+))]
+#[case::delete(with_cache_error::<u8, _>(
+    "lease",
+    Err(RedisAdminError::Breaker(BreakerOpen { name: "sensitive" })),
+))]
+fn preserves_cache_failures_without_logging_the_cause(#[case] outcome: Result<u8, LockCacheError>) {
+    let error = outcome.unwrap_err();
+    assert_eq!(error.to_string(), "the redis cache lease failed");
+    assert!(error.source().unwrap().to_string().contains("sensitive"));
+}
 
 #[test]
-fn preserves_cache_failures_without_logging_the_cause() {
-    let outcomes = [
-        with_cache_error::<u8, _>(
-            "lease",
-            Err(RedisCacheError::Breaker(BreakerOpen { name: "sensitive" })),
-        ),
-        with_cache_error::<u8, _>(
-            "lease",
-            Err(RedisCacheValuesError::BreakerOpen(BreakerOpen {
-                name: "sensitive",
-            })),
-        ),
-        with_cache_error::<u8, _>(
-            "lease",
-            Err(RedisAdminError::Breaker(BreakerOpen { name: "sensitive" })),
-        ),
-    ];
-    for outcome in outcomes {
-        let error = outcome.unwrap_err();
-        assert_eq!(error.to_string(), "the redis cache lease failed");
-        assert!(error.source().unwrap().to_string().contains("sensitive"));
-    }
+fn preserves_successful_cache_results() {
     assert_eq!(
         with_cache_error::<_, RedisCacheError>("lease", Ok(7)).unwrap(),
         7
