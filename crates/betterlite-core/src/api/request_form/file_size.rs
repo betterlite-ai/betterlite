@@ -173,6 +173,5 @@ fn cap_mebibytes(limits: &ApiLimits) -> Result<f64, UploadSizeError> {
 }
 
 fn mebibytes(bytes: u64) -> Option<f64> {
-    let size = bytes.to_f64()?;
-    Some(size / MEBIBYTE)
+    Some(bytes.to_f64()? / MEBIBYTE)
 }

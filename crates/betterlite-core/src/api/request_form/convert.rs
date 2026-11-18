@@ -28,7 +28,7 @@ pub enum ConvertError {
 }
 
 // convert_upload_files_to_file_data: a list counts as uploads only when its first entry has read, so a mixed list is decided by that first entry alone.
-pub fn convert_upload_files_to_file_data(fields: &FormFields) -> Result<FileData, ConvertError> {
+pub fn convert_uploads_to_file_data(fields: &FormFields) -> Result<FileData, ConvertError> {
     let mut data = FileData::new();
     for (name, value) in fields {
         let converted = match value {

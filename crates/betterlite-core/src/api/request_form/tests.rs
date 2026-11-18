@@ -14,7 +14,7 @@ use crate::api::request_form::annotations::{
 };
 use crate::api::request_form::coercion::{coerce_numeric_form_fields, float_value};
 use crate::api::request_form::convert::{
-    ConvertError, FileDataValue, FileTuple, convert_upload_files_to_file_data,
+    ConvertError, FileDataValue, FileTuple, convert_uploads_to_file_data,
 };
 use crate::api::request_form::file_size::{
     ModelUploadLimits, UploadLimit, UploadSizeCheck, UploadSizeError, check_file_size_under_limit,
@@ -420,7 +420,7 @@ fn every_non_finite_value_has_its_wire_token() {
     assert_eq!(NonFinite::NegativeInfinity.token(), "negative_infinity");
 }
 
-fn uploaded(name: &str, filename: &str, content: &str) -> FormValue {
+fn uploaded(filename: &str, content: &str) -> FormValue {
     FormValue::Upload(UploadFile {
         filename: filename.to_owned(),
         content_type: Some("text/plain".to_owned()),
@@ -431,11 +431,8 @@ fn uploaded(name: &str, filename: &str, content: &str) -> FormValue {
 
 #[test]
 fn a_single_upload_becomes_a_one_element_list() {
-    let data = convert_upload_files_to_file_data(&fields(vec![(
-        "file",
-        uploaded("file", "a.txt", "abc"),
-    )]))
-    .unwrap();
+    let data =
+        convert_uploads_to_file_data(&fields(vec![("file", uploaded("a.txt", "abc"))])).unwrap();
     assert_eq!(
         data.get("file"),
         Some(&FileDataValue::Files(vec![FileTuple {
@@ -448,12 +445,9 @@ fn a_single_upload_becomes_a_one_element_list() {
 
 #[test]
 fn an_upload_list_is_read_in_order() {
-    let data = convert_upload_files_to_file_data(&fields(vec![(
+    let data = convert_uploads_to_file_data(&fields(vec![(
         "files",
-        FormValue::List(vec![
-            uploaded("files", "a.txt", "a"),
-            uploaded("files", "b.txt", "b"),
-        ]),
+        FormValue::List(vec![uploaded("a.txt", "a"), uploaded("b.txt", "b")]),
     )]))
     .unwrap();
     let Some(FileDataValue::Files(files)) = data.get("files") else {
@@ -472,18 +466,18 @@ fn an_upload_list_is_read_in_order() {
 fn a_list_starting_with_text_is_unchanged() {
     let source = FormValue::List(vec![
         FormValue::Text("plain".to_owned()),
-        uploaded("files", "a.txt", "a"),
+        uploaded("a.txt", "a"),
     ]);
-    let data = convert_upload_files_to_file_data(&fields(vec![("files", source.clone())])).unwrap();
+    let data = convert_uploads_to_file_data(&fields(vec![("files", source.clone())])).unwrap();
     assert_eq!(data.get("files"), Some(&FileDataValue::Unchanged(source)));
 }
 
 #[test]
 fn a_list_starting_with_an_upload_fails_at_the_text_entry() {
-    let error = convert_upload_files_to_file_data(&fields(vec![(
+    let error = convert_uploads_to_file_data(&fields(vec![(
         "files",
         FormValue::List(vec![
-            uploaded("files", "a.txt", "a"),
+            uploaded("a.txt", "a"),
             FormValue::Text("plain".to_owned()),
         ]),
     )]))
@@ -499,9 +493,8 @@ fn a_list_starting_with_an_upload_fails_at_the_text_entry() {
 
 #[test]
 fn an_empty_list_stays_empty() {
-    let data =
-        convert_upload_files_to_file_data(&fields(vec![("files", FormValue::List(Vec::new()))]))
-            .unwrap();
+    let data = convert_uploads_to_file_data(&fields(vec![("files", FormValue::List(Vec::new()))]))
+        .unwrap();
     assert_eq!(
         data.get("files"),
         Some(&FileDataValue::Unchanged(FormValue::List(Vec::new())))
@@ -511,7 +504,7 @@ fn an_empty_list_stays_empty() {
 #[test]
 fn plain_fields_are_unchanged() {
     let source = FormValue::Text("1".to_owned());
-    let data = convert_upload_files_to_file_data(&fields(vec![("x", source.clone())])).unwrap();
+    let data = convert_uploads_to_file_data(&fields(vec![("x", source.clone())])).unwrap();
     assert_eq!(data.get("x"), Some(&FileDataValue::Unchanged(source)));
 }
 
@@ -642,10 +635,7 @@ fn an_empty_path_warns_and_drops() {
 
 #[test]
 fn an_upload_value_is_skipped_with_a_warning() {
-    let source = fields(vec![(
-        "litellm_metadata[a]",
-        uploaded("litellm_metadata[a]", "a.txt", "abc"),
-    )]);
+    let source = fields(vec![("litellm_metadata[a]", uploaded("a.txt", "abc"))]);
     let (metadata, warnings) = extract_nested_form_metadata(&source, "litellm_metadata[");
     assert!(metadata.is_empty());
     assert_eq!(
@@ -871,38 +861,30 @@ fn a_failed_lookup_proceeds_and_reports_the_failure() {
     assert!(outcome.lookup_failed);
 }
 
-#[test]
-fn model_limit_handles_configured_failed_absent_and_unmatched_lookups() {
-    let limits = ApiLimits::default();
-    let matched_names = names(&["whisper"]);
-    let configured = FixedRouter {
-        limit: UploadLimit::Configured(1.0),
-    };
-    let failed = FixedRouter {
-        limit: UploadLimit::Failed,
-    };
-    let absent = FixedRouter {
-        limit: UploadLimit::Absent,
-    };
-
-    for (router, router_names, bytes, expect_failure) in [
-        (&configured, &matched_names, 1_048_577, true),
-        (&failed, &matched_names, 2_097_152, false),
-        (&absent, &matched_names, 2_097_152, false),
-        (&configured, &names(&["other"]), 2_097_152, false),
-    ] {
-        let mut data = request_with_model();
-        let result = check_file_size_under_limit(UploadSizeCheck {
-            request_data: &mut data,
-            file_size: Some(bytes),
-            router_names,
-            router: Some(router),
-            limits: &limits,
-        });
-        assert_eq!(result.is_err(), expect_failure);
-        if matches!(router.limit, UploadLimit::Failed) {
-            assert!(result.unwrap().lookup_failed);
-        }
+#[rstest]
+#[case::configured(UploadLimit::Configured(1.0), &["whisper"], 1_048_577, true, false)]
+#[case::failed(UploadLimit::Failed, &["whisper"], 2_097_152, false, true)]
+#[case::absent(UploadLimit::Absent, &["whisper"], 2_097_152, false, false)]
+#[case::unmatched(UploadLimit::Configured(1.0), &["other"], 2_097_152, false, false)]
+fn model_limit_handles_configured_failed_absent_and_unmatched_lookups(
+    #[case] limit: UploadLimit,
+    #[case] router_names: &[&str],
+    #[case] bytes: u64,
+    #[case] expect_failure: bool,
+    #[case] expect_lookup_failure: bool,
+) {
+    let router = FixedRouter { limit };
+    let mut data = request_with_model();
+    let result = check_file_size_under_limit(UploadSizeCheck {
+        request_data: &mut data,
+        file_size: Some(bytes),
+        router_names: &names(router_names),
+        router: Some(&router),
+        limits: &ApiLimits::default(),
+    });
+    assert_eq!(result.is_err(), expect_failure);
+    if let Ok(outcome) = result {
+        assert_eq!(outcome.lookup_failed, expect_lookup_failure);
     }
 }
 

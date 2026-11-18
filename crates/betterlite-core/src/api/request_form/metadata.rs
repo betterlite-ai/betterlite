@@ -59,10 +59,6 @@ fn warning(kind: MetadataWarningKind, subject: &str) -> MetadataWarning {
     }
 }
 
-fn empty_object() -> MetadataValue {
-    MetadataValue::Object(MetadataTree::new())
-}
-
 fn place(
     tree: &mut MetadataTree,
     parts: &[&str],
@@ -77,7 +73,9 @@ fn place(
         tree.insert((*head).to_owned(), MetadataValue::Leaf(value.clone()));
         return;
     }
-    let child = tree.entry((*head).to_owned()).or_insert_with(empty_object);
+    let child = tree
+        .entry((*head).to_owned())
+        .or_insert_with(|| MetadataValue::Object(MetadataTree::new()));
     match child {
         MetadataValue::Object(map) => place(map, tail, key, value, warnings),
         MetadataValue::Leaf(_) => {

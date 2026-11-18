@@ -27,7 +27,9 @@ pub fn scalar_float(text: &str) -> Option<f64> {
 }
 
 fn normalized_digits(text: &str) -> Option<String> {
-    let trimmed = text.trim_matches(is_python_space);
+    let trimmed = text.trim_matches(|character: char| {
+        character.is_whitespace() || PYTHON_SEPARATORS.contains(&character)
+    });
     if trimmed.is_empty() {
         return None;
     }
@@ -102,8 +104,4 @@ fn split_sign(text: &str) -> (bool, &str) {
         return (true, rest);
     }
     (false, text.strip_prefix('+').unwrap_or(text))
-}
-
-fn is_python_space(character: char) -> bool {
-    character.is_whitespace() || PYTHON_SEPARATORS.contains(&character)
 }
