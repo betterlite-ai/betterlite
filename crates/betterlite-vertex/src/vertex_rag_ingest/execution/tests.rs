@@ -101,6 +101,17 @@ fn an_empty_project_environment_counts_as_unset() {
 }
 
 #[test]
+fn an_empty_location_environment_counts_as_unset() {
+    let settings = RagIngestSettings::resolve(
+        &options(corpus_record(), None),
+        &vertex_settings(Some(PROJECT), Some("")),
+        Some(BUCKET),
+    )
+    .unwrap();
+    assert_eq!(settings.location, DEFAULT_LOCATION);
+}
+
+#[test]
 fn settings_fall_back_to_the_vertex_environment() {
     let settings = RagIngestSettings::resolve(
         &options(corpus_record(), None),
@@ -267,6 +278,7 @@ async fn upload_then_import() {
 
 #[tokio::test]
 async fn an_empty_content_type_takes_the_default() {
+    assert_eq!(DEFAULT_CONTENT_TYPE, "application/octet-stream");
     let (ingest, recorder) = provider(
         corpus_record(),
         None,
@@ -568,6 +580,16 @@ async fn a_slow_submission_leaves_the_wait_to_the_import_timeout() {
         logs.infos()
             .contains(&"Import complete: 3 files imported".to_owned())
     );
+}
+
+#[test]
+fn the_write_bounds_match_the_documented_values() {
+    // files/main.py defaults an untimed file request to ten minutes, and google-api-core bounds one RPC at sixty seconds
+    assert_eq!(DEFAULT_UPLOAD_TIMEOUT, Duration::from_secs(600));
+    assert_eq!(DEFAULT_IMPORT_SUBMIT_TIMEOUT, Duration::from_secs(60));
+    assert_eq!(MAX_FILENAME_BYTES, 1024);
+    assert_eq!(MAX_CONTENT_TYPE_BYTES, 255);
+    assert_eq!(StoreLimits::default().max_file_bytes, 512 * 1024 * 1024);
 }
 
 #[tokio::test]
