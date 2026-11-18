@@ -64,43 +64,8 @@ impl OracleRedis {
         &self,
         namespace: Option<&str>,
     ) -> Result<Arc<RedisCache>, RedisFixtureError> {
-        let overrides = RedisOverrides {
-            host: None,
-            port: None,
-            db: None,
-            username: None,
-            password: None,
-            url: Some(Some(SecretString::from(format!(
-                "redis://{}/0",
-                self.address
-            )))),
-            ssl: None,
-            socket_timeout: None,
-            socket_connect_timeout: None,
-            socket_keepalive: None,
-            max_connections: None,
-            health_check_interval: None,
-            credential_provider: false,
-            startup_nodes: None,
-            sentinel_nodes: None,
-            sentinel_password: None,
-            service_name: None,
-            ssl_password: None,
-            gcp_service_account: None,
-            gcp_ssl_ca_certs: None,
-            azure_redis_ad_token: None,
-            azure_client_id: None,
-            azure_tenant_id: None,
-            azure_client_secret: None,
-            aws_iam_auth: None,
-            aws_iam_user_name: None,
-            aws_iam_cache_name: None,
-            aws_iam_region: None,
-            aws_iam_serverless: None,
-            passthrough: BTreeMap::new(),
-        };
         let options = RedisCacheOptions {
-            overrides,
+            overrides: overrides(self.address),
             family: RedisCacheFamily::Standalone,
             namespace: namespace.map(str::to_owned),
             default_ttl: DEFAULT_TTL,
@@ -121,6 +86,41 @@ impl OracleRedis {
     pub fn shutdown(&mut self) {
         let _server = self.server.take();
         let _directory = self.directory.take();
+    }
+}
+
+fn overrides(address: SocketAddr) -> RedisOverrides {
+    RedisOverrides {
+        host: None,
+        port: None,
+        db: None,
+        username: None,
+        password: None,
+        url: Some(Some(SecretString::from(format!("redis://{address}/0")))),
+        ssl: None,
+        socket_timeout: None,
+        socket_connect_timeout: None,
+        socket_keepalive: None,
+        max_connections: None,
+        health_check_interval: None,
+        credential_provider: false,
+        startup_nodes: None,
+        sentinel_nodes: None,
+        sentinel_password: None,
+        service_name: None,
+        ssl_password: None,
+        gcp_service_account: None,
+        gcp_ssl_ca_certs: None,
+        azure_redis_ad_token: None,
+        azure_client_id: None,
+        azure_tenant_id: None,
+        azure_client_secret: None,
+        aws_iam_auth: None,
+        aws_iam_user_name: None,
+        aws_iam_cache_name: None,
+        aws_iam_region: None,
+        aws_iam_serverless: None,
+        passthrough: BTreeMap::new(),
     }
 }
 

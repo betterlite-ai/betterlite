@@ -60,7 +60,7 @@ impl CommandHandler for PollingCommands {
     fn answer(&self, command: &Command) -> Option<Vec<u8>> {
         match command.name.as_str() {
             "SET" => set_answer(&self.entries, command),
-            "GET" => get_answer(&self.entries, command),
+            "GET" => Some(get_answer(&self.entries, command)),
             _ => connection_answer(command),
         }
     }
@@ -86,8 +86,8 @@ fn set_answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
     Some(b"+OK\r\n".to_vec())
 }
 
-fn get_answer(entries: &Entries, command: &Command) -> Option<Vec<u8>> {
+fn get_answer(entries: &Entries, command: &Command) -> Vec<u8> {
     let key = command.args.get(1);
     let stored = key.and_then(|key| live_entry(entries, key));
-    Some(stored.map_or_else(|| NIL_REPLY.to_vec(), |entry| encode_bulk(&entry.value)))
+    stored.map_or_else(|| NIL_REPLY.to_vec(), |entry| encode_bulk(&entry.value))
 }

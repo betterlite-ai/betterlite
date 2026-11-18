@@ -32,14 +32,18 @@ pub(crate) trait CommandHandler: Send + Sync {
     fn answer(&self, command: &Command) -> Option<Vec<u8>>;
 }
 
+struct Shared {
+    connections: Arc<Mutex<Vec<TcpStream>>>,
+    served: Arc<Mutex<Vec<JoinHandle<()>>>>,
+}
+
 // No redis-server binary exists in the gate image, so the oracle's Redis listens in process on a loopback port.
 pub(crate) struct RespServer {
     pub(crate) addr: SocketAddr,
     pub(crate) unsupported: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
     accept: Option<JoinHandle<()>>,
-    connections: Arc<Mutex<Vec<TcpStream>>>,
-    served: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    shared: Shared,
 }
 
 impl RespServer {
@@ -51,18 +55,23 @@ impl RespServer {
         let served = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let slot = Arc::clone(&unsupported);
-        let peers = Arc::clone(&connections);
-        let threads = Arc::clone(&served);
         let stopping = Arc::clone(&stop);
+        let shared = Shared {
+            connections: Arc::clone(&connections),
+            served: Arc::clone(&served),
+        };
+        let threads = Shared {
+            connections,
+            served,
+        };
         let accept = thread::Builder::new()
-            .spawn(move || accept_loop(&listener, &handler, &slot, &peers, &threads, &stopping))?;
+            .spawn(move || accept_loop(&listener, &handler, &slot, &threads, &stopping))?;
         Ok(Self {
             addr,
             unsupported,
             stop,
             accept: Some(accept),
-            connections,
-            served,
+            shared,
         })
     }
 }
@@ -74,8 +83,8 @@ impl Drop for RespServer {
         if let Some(accept) = self.accept.take() {
             let _joined = accept.join();
         }
-        close_connections(&self.connections);
-        let served = mem::take(&mut *locked(&self.served));
+        close_connections(&self.shared.connections);
+        let served = mem::take(&mut *locked(&self.shared.served));
         for handle in served {
             let _joined = handle.join();
         }
@@ -94,8 +103,7 @@ fn accept_loop(
     listener: &TcpListener,
     handler: &Arc<dyn CommandHandler>,
     unsupported: &Arc<Mutex<Option<String>>>,
-    connections: &Arc<Mutex<Vec<TcpStream>>>,
-    served: &Arc<Mutex<Vec<JoinHandle<()>>>>,
+    shared: &Shared,
     stop: &Arc<AtomicBool>,
 ) {
     while let Ok((stream, _peer)) = listener.accept() {
@@ -106,14 +114,16 @@ fn accept_loop(
             continue;
         }
         if let Ok(tracked) = stream.try_clone() {
-            locked(connections).push(tracked);
+            locked(&shared.connections).push(tracked);
         }
-        let shared = Arc::clone(handler);
+        let connection_handler = Arc::clone(handler);
         let slot = Arc::clone(unsupported);
-        let Ok(handle) = thread::Builder::new().spawn(move || serve(stream, &shared, &slot)) else {
+        let Ok(handle) =
+            thread::Builder::new().spawn(move || serve(stream, &connection_handler, &slot))
+        else {
             continue;
         };
-        locked(served).push(handle);
+        locked(&shared.served).push(handle);
     }
 }
 
