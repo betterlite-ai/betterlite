@@ -68,6 +68,69 @@ fn serialize_tools_shape_known_type_with_bad_values() {
 }
 
 #[test]
+fn serialize_tools_drop_image_mask_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_mask", "created_at": 27, "output": [], "tools": [{"type": "image_generation", "size": null, "input_image_mask": {"image_url": null, "file_id": "file_1", "extra_null": null, "nested": {"a": null}}, "extra_null": null}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_mask","created_at":27,"output":[],"#,
+            r#""tools":[{"type":"image_generation","input_image_mask":{"file_id":"file_1","nested":{"a":null}}}]}}"#
+        )
+    );
+}
+
+#[test]
+fn serialize_tools_drop_custom_format_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_custom", "created_at": 28, "output": [], "tools": [{"type": "custom", "name": "c", "description": null, "format": {"type": "grammar", "definition": "d", "syntax": null, "extra_null": null}, "extra_null": null}, {"type": "custom", "name": "c2", "format": {"type": "text", "extra_null": null}}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_custom","created_at":28,"output":[],"#,
+            r#""tools":[{"type":"custom","name":"c","format":{"type":"grammar","definition":"d"}},"#,
+            r#"{"type":"custom","name":"c2","format":{"type":"text"}}]}}"#
+        )
+    );
+}
+
+#[test]
+fn serialize_tools_drop_namespace_tool_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_namespace", "created_at": 29, "output": [], "tools": [{"type": "namespace", "name": "n", "description": null, "tools": [{"type": "function", "name": "f", "description": null, "strict": null, "parameters": {"a": null}, "extra_null": null}, {"type": "custom", "name": "c2", "format": {"type": "text", "extra_null": null}}], "extra_null": null}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_namespace","created_at":29,"output":[],"#,
+            r#""tools":[{"type":"namespace","name":"n","tools":[{"type":"function","name":"f","parameters":{"a":null}},"#,
+            r#"{"type":"custom","name":"c2","format":{"type":"text"}}]}]}}"#
+        )
+    );
+}
+
+#[test]
+fn serialize_tools_drop_shell_skill_nulls() {
+    let chunk = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_shell", "created_at": 30, "output": [], "tools": [{"type": "shell", "name": "s", "environment": {"type": "container_auto", "file_ids": null, "network_policy": {"type": "disabled", "extra_null": null}, "skills": [{"type": "skill_reference", "skill_id": "sk", "version": null, "extra_null": null}, {"type": "inline", "name": "i", "description": null, "source": {"type": "base64", "data": "eA==", "media_type": null, "extra_null": null}, "extra_null": null}], "extra_null": null}, "extra_null": null}]}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&chunk),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_shell","created_at":30,"output":[],"#,
+            r#""tools":[{"type":"shell","name":"s","environment":{"type":"container_auto","network_policy":{"type":"disabled"},"#,
+            r#""skills":[{"type":"skill_reference","skill_id":"sk"},{"type":"inline","name":"i","source":{"type":"base64","data":"eA=="}}]}}]}}"#
+        )
+    );
+}
+
+#[test]
 fn serialize_tools_keep_unmatched_list() {
     let chunk = typed_chunk(
         ChunkKind::Event,
