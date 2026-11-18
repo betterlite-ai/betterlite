@@ -173,7 +173,8 @@ where
     T: Serialize + ?Sized,
 {
     let text = serde_json::to_string(value)?;
-    Ok(serde_json::from_str(&text)?)
+    let document: Json = serde_json::from_str(&text)?;
+    Ok(document)
 }
 
 // an absent metadata is created and an existing object takes the new decision; any other value is left alone
