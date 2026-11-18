@@ -127,10 +127,10 @@ impl UsageWindows for LocalWindows {
         if self.read_failures.load(Ordering::Relaxed) || failing {
             return Err(WindowError::Unavailable);
         }
-        self.counts
-            .lock()
-            .map(|counts| counts.get(key).cloned())
-            .map_err(|_| WindowError::Unavailable)
+        let Ok(counts) = self.counts.lock() else {
+            return Err(WindowError::Unavailable);
+        };
+        Ok(counts.get(key).cloned())
     }
 
     fn write(&self, key: &str, counts: &Counts, ttl_seconds: i64) -> Result<(), WindowError> {
@@ -141,14 +141,15 @@ impl UsageWindows for LocalWindows {
         if self.write_failures.load(Ordering::Relaxed) || failing {
             return Err(WindowError::Unavailable);
         }
-        self.counts
-            .lock()
-            .map_err(|_| WindowError::Unavailable)?
-            .insert(key.to_owned(), counts.clone());
-        self.ttls
-            .lock()
-            .map_err(|_| WindowError::Unavailable)?
-            .insert(key.to_owned(), ttl_seconds);
+        let Ok(mut stored) = self.counts.lock() else {
+            return Err(WindowError::Unavailable);
+        };
+        stored.insert(key.to_owned(), counts.clone());
+        drop(stored);
+        let Ok(mut ttls) = self.ttls.lock() else {
+            return Err(WindowError::Unavailable);
+        };
+        ttls.insert(key.to_owned(), ttl_seconds);
         Ok(())
     }
 }
