@@ -28,15 +28,20 @@ pub struct Route<'messages> {
 }
 
 pub struct QualityRouter {
-    pub router_name: String,
-    pub config: Config,
-    pub index: Index,
-    pub scorer: Scorer,
+    router_name: String,
+    config: Config,
+    index: Index,
+    scorer: Scorer,
     // unknown configuration keys LiteLLM accepts and ignores
-    pub warnings: Vec<String>,
+    warnings: Vec<String>,
 }
 
 impl QualityRouter {
+    #[must_use]
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
     pub fn new(
         router_name: &str,
         configured: Option<&section::RouterConfig>,
