@@ -23,7 +23,7 @@ fn detail_message(violation: &GuardrailViolation) -> Json {
     match &violation.detail {
         Json::Object(fields) => fields
             .get("error")
-            .filter(|error| is_truthy(error))
+            .filter(|error| error_message_wins(error))
             .cloned()
             .unwrap_or_else(|| Json::Text(violation.message.clone())),
         Json::Null => exception_message(&violation.message),
@@ -40,8 +40,8 @@ fn exception_message(message: &str) -> Json {
     }
 }
 
-// Python's truthiness for the values a detail dict can hold
-fn is_truthy(value: &Json) -> bool {
+// The detail error wins unless it is null, false, zero or empty, which is how LiteLLM's `if detail_error:` behaves
+fn error_message_wins(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,

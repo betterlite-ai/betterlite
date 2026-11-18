@@ -203,10 +203,16 @@ where
         if let Some(frames) = pre_block_backend_message {
             self.send_backend_text(frames).await?;
         }
-        self.send_backend(&cancel).await?;
+        let cancel_text =
+            serde_json::to_string(&cancel).map_err(RealtimeGuardrailsError::Encode)?;
+        self.send_backend_text(&cancel_text).await?;
         self.send_client_notice(message).await?;
-        self.send_backend(&message::spoken_message(message)).await?;
-        self.send_backend(&response_create).await
+        let spoken_text = serde_json::to_string(&message::spoken_message(message))
+            .map_err(RealtimeGuardrailsError::Encode)?;
+        self.send_backend_text(&spoken_text).await?;
+        let create_text =
+            serde_json::to_string(&response_create).map_err(RealtimeGuardrailsError::Encode)?;
+        self.send_backend_text(&create_text).await
     }
 
     async fn finish_block(
@@ -226,14 +232,6 @@ where
         let logged: String = transcript.chars().take(LOGGED_TRANSCRIPT_CHARS).collect();
         tracing::warn!("[realtime guardrail] BLOCKED transcript (violation {count}): {logged:?}");
         Ok(())
-    }
-
-    async fn send_backend(
-        &mut self,
-        value: &Json,
-    ) -> Result<(), RealtimeGuardrailsError<Config::Error, CallbackError>> {
-        let text = serde_json::to_string(value).map_err(RealtimeGuardrailsError::Encode)?;
-        self.send_backend_text(&text).await
     }
 
     // B1110's send boundary: a guardrail frame gets the same provider transform as a client frame
