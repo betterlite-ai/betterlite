@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-converse-request-tools-metadata
+call:
+  bedrock_converse_request:
+    model: anthropic.claude-4-5-test
+    messages:
+      - {role: system, content: be brief}
+      - {role: user, content: hi}
+    model_cost:
+      anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+    optional_params:
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: finds things
+            parameters: {type: object, properties: {}}
+      tool_choice: {auto: {}}
+      cache_control_injection_points:
+        - {location: tool_config, control: {ttl: 1h}}
+    litellm_params:
+      metadata: {user_api_key_alias: alias-1}
+      model_info: {id: deployment-1}
+      user_continue_message: {role: user, content: continue}
+    global_drop: false
+    modify_params: false
+    neutralize_orphaned_blocks: true
+    request_metadata_fields: [user_api_key_alias]
+env: {}
+compare: {ignore: []}

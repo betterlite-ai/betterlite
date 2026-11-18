@@ -90,4 +90,6 @@ pub enum HelperRunError {
     CacheMode,
     #[error("HOME is not set, so the shared LiteLLM answer cache has no folder")]
     CacheHome,
+    #[error("helper file name is not UTF-8 at {path}")]
+    HelperFileName { path: PathBuf },
 }
