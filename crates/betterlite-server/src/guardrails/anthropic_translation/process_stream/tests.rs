@@ -410,7 +410,7 @@ async fn unended_writes_the_first_of_several_texts() {
 #[tokio::test]
 async fn unended_writes_the_first_when_more_texts_follow() {
     let guardrail = FakeGuardrail::replying(json!({"texts": ["Hello", "extra"]}));
-    let stream = vec![bytes(&[START, TEXT_1, TEXT_2, STOP_TEXT])];
+    let stream = vec![bytes(&[START, TEXT_1, TEXT_2])];
     let (result, responses, _) = process(stream, &guardrail, None, None, true).await;
     result.unwrap();
     let rewritten = text_of(&responses);
