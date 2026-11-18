@@ -50,83 +50,81 @@ pub fn cache_request_kwargs(
         copied.shift_remove("metadata");
     }
     let request_key = copied.shift_remove("cache_key");
-    let selected_key = match preset_cache_key {
-        Some(preset) => Some(Json::Text(preset.to_owned())),
-        None => request_key.filter(|key| !matches!(key, Json::Null)),
-    };
+    let selected_key = preset_cache_key.map_or_else(
+        || request_key.filter(|key| !matches!(key, Json::Null)),
+        |preset| Some(Json::Text(preset.to_owned())),
+    );
     if let Some(key) = selected_key {
         copied.insert("cache_key".to_owned(), key);
     }
     copied
 }
 
-impl ResponsesStreamHooks<'_> {
-    pub fn persist_cache(
-        &self,
-        state: &mut ResponsesStreamBaseState,
-        dispatch: Dispatch,
-    ) -> Result<(), PortFailure> {
-        let Some(prepared) = self.prepare_cache_write(state)? else {
-            return Ok(());
-        };
-        let Some(cache) = self.cache.as_ref().map(Arc::clone) else {
-            return Ok(());
-        };
-        match dispatch {
-            Dispatch::Inline => {
-                cache.add_cache(prepared)?;
-                state.completed_response_cached = true;
-            }
-            Dispatch::Spawned => {
-                let work = async move { cache.async_add_cache(prepared).await };
-                state.completed_response_cached =
-                    spawn_logging_task(&state.pending_tasks, CACHE_WRITE_TASK, work).is_some();
-            }
+pub fn persist_cache(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &mut ResponsesStreamBaseState,
+    dispatch: Dispatch,
+) -> Result<(), PortFailure> {
+    let Some(prepared) = prepare_cache_write(hooks, state)? else {
+        return Ok(());
+    };
+    let Some(cache) = hooks.cache.as_ref().map(Arc::clone) else {
+        return Ok(());
+    };
+    match dispatch {
+        Dispatch::Inline => {
+            cache.add_cache(prepared)?;
+            state.completed_response_cached = true;
         }
-        Ok(())
+        Dispatch::Spawned => {
+            let work = async move { cache.async_add_cache(prepared).await };
+            state.completed_response_cached =
+                spawn_logging_task(&state.pending_tasks, CACHE_WRITE_TASK, work).is_some();
+        }
     }
+    Ok(())
+}
 
-    fn prepare_cache_write(
-        &self,
-        state: &ResponsesStreamBaseState,
-    ) -> Result<Option<CacheWrite>, PortFailure> {
-        if state.completed_response_cached {
-            return Ok(None);
-        }
-        let Some(event) = state.completed_response.as_ref() else {
-            return Ok(None);
-        };
-        let ResponsesAPIStreamingResponse::Known(known) = event else {
-            return Ok(None);
-        };
-        let KnownResponseEvent::ResponseCompleted(record) = known.as_ref() else {
-            return Ok(None);
-        };
-        let Some(handler) = self.cache_handler.as_ref() else {
-            return Ok(None);
-        };
-        let Some(request_kwargs) = handler.request_kwargs() else {
-            return Ok(None);
-        };
-        if !matches!(request_kwargs.get("stream"), Some(Json::Bool(true)))
-            && !converted_stream_requested(request_kwargs)
-        {
-            return Ok(None);
-        }
-        let prepared_kwargs = cache_request_kwargs(request_kwargs, handler.preset_cache_key());
-        if !handler.should_store_result_in_cache(handler.original_function(), &prepared_kwargs)? {
-            return Ok(None);
-        }
-        if self.cache.is_none() {
-            return Ok(None);
-        }
-        let Some(payload) = dump_json_safely(&record.response) else {
-            return Ok(None);
-        };
-        Ok(Some(CacheWrite {
-            payload,
-            request_kwargs: prepared_kwargs,
-            dynamic_cache: handler.dual_cache(),
-        }))
+fn prepare_cache_write(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &ResponsesStreamBaseState,
+) -> Result<Option<CacheWrite>, PortFailure> {
+    if state.completed_response_cached {
+        return Ok(None);
     }
+    let Some(event) = state.completed_response.as_ref() else {
+        return Ok(None);
+    };
+    let ResponsesAPIStreamingResponse::Known(known) = event else {
+        return Ok(None);
+    };
+    let KnownResponseEvent::ResponseCompleted(record) = known.as_ref() else {
+        return Ok(None);
+    };
+    let Some(handler) = hooks.cache_handler.as_ref() else {
+        return Ok(None);
+    };
+    let Some(request_kwargs) = handler.request_kwargs() else {
+        return Ok(None);
+    };
+    if !matches!(request_kwargs.get("stream"), Some(Json::Bool(true)))
+        && !converted_stream_requested(request_kwargs)
+    {
+        return Ok(None);
+    }
+    let prepared_kwargs = cache_request_kwargs(request_kwargs, handler.preset_cache_key());
+    if !handler.should_store_result_in_cache(handler.original_function(), &prepared_kwargs)? {
+        return Ok(None);
+    }
+    if hooks.cache.is_none() {
+        return Ok(None);
+    }
+    let Some(payload) = dump_json_safely(&record.response) else {
+        return Ok(None);
+    };
+    Ok(Some(CacheWrite {
+        payload,
+        request_kwargs: prepared_kwargs,
+        dynamic_cache: handler.dual_cache(),
+    }))
 }

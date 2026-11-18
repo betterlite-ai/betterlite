@@ -1,3 +1,5 @@
+use super::cache::persist_cache;
+use super::post_success::run_post_success_hooks;
 use std::sync::Arc;
 
 use betterlite_logging::logging_success::types::{SuccessRequest, SuccessResult};
@@ -55,8 +57,8 @@ pub fn restore_headers(
     let mut restored = IndexMap::new();
     restored.insert("additional_headers".to_owned(), Json::Object(headers));
     restored.insert("headers".to_owned(), Json::Object(raw_headers));
-    if let Some(existing) = existing {
-        restored.extend(existing);
+    if let Some(target_fields) = existing {
+        restored.extend(target_fields);
     }
     response
         .extra
@@ -107,66 +109,63 @@ fn completed_logging_json(state: &ResponsesStreamBaseState) -> Json {
         })
 }
 
-impl ResponsesStreamHooks<'_> {
-    pub async fn log_completed_response(
-        &self,
-        state: &mut ResponsesStreamBaseState,
-        callback: &mut ResponsesStreamHookState,
-        details: &IndexMap<String, Json>,
-        dispatch: Dispatch,
-    ) -> Result<(), PortFailure> {
-        if state.completed_response_logged {
-            return Ok(());
-        }
-        state.completed_response_logged = true;
-        if state.persist_before_logging {
-            self.persist_cache(state, dispatch)?;
-        }
-        let end_time = self.clock.now();
-        let request = SuccessRequest {
-            result: SuccessResult::Other(completed_logging_json(state)),
-            start_time: Some(state.start_time),
-            end_time: Some(end_time),
-            cache_hit: state.completed_response_cache_hit,
-            prefer_async_handlers: matches!(dispatch, Dispatch::Spawned),
-            standard_logging_object: None,
-            guardrail_snapshot: None,
-        };
-        if let Some(success) = self.success.as_ref() {
-            match dispatch {
-                Dispatch::Inline => {
-                    success.async_success_handler(&request).await;
-                    success.success_handler(&request);
-                }
-                Dispatch::Spawned => self.dispatch_success(state, callback, request).await,
-            }
-        }
-        self.run_post_success_hooks(state, callback, details, end_time)
-            .await;
-        Ok(())
+pub async fn log_completed_response(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &mut ResponsesStreamBaseState,
+    callback: &mut ResponsesStreamHookState,
+    details: &IndexMap<String, Json>,
+    dispatch: Dispatch,
+) -> Result<(), PortFailure> {
+    if state.completed_response_logged {
+        return Ok(());
     }
+    state.completed_response_logged = true;
+    if state.persist_before_logging {
+        persist_cache(hooks, state, dispatch)?;
+    }
+    let end_time = hooks.clock.now();
+    let request = SuccessRequest {
+        result: SuccessResult::Other(completed_logging_json(state)),
+        start_time: Some(state.start_time),
+        end_time: Some(end_time),
+        cache_hit: state.completed_response_cache_hit,
+        prefer_async_handlers: matches!(dispatch, Dispatch::Spawned),
+        standard_logging_object: None,
+        guardrail_snapshot: None,
+    };
+    if let Some(success) = hooks.success.as_ref() {
+        match dispatch {
+            Dispatch::Inline => {
+                success.async_success_handler(&request).await;
+                success.success_handler(&request);
+            }
+            Dispatch::Spawned => dispatch_success(hooks, state, callback, request).await,
+        }
+    }
+    run_post_success_hooks(hooks, state, callback, details, end_time).await;
+    Ok(())
+}
 
-    async fn dispatch_success(
-        &self,
-        state: &ResponsesStreamBaseState,
-        callback: &mut ResponsesStreamHookState,
-        request: SuccessRequest,
-    ) {
-        let Some(success) = self.success.as_ref().map(Arc::clone) else {
-            return;
-        };
-        if success.deferred_armed() {
-            callback.deferred_stream_complete_args = Some(request);
-            return;
-        }
-        let dispatch = request.clone();
-        let port = Arc::clone(&success);
-        let work = async move {
-            port.dispatch_success_handlers(dispatch).await;
-            Ok::<(), PortFailure>(())
-        };
-        if spawn_logging_task(&state.pending_tasks, SUCCESS_DISPATCH_TASK, work).is_none() {
-            success.dispatch_success_handlers(request).await;
-        }
+async fn dispatch_success(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &ResponsesStreamBaseState,
+    callback: &mut ResponsesStreamHookState,
+    request: SuccessRequest,
+) {
+    let Some(success) = hooks.success.as_ref().map(Arc::clone) else {
+        return;
+    };
+    if success.deferred_armed() {
+        callback.deferred_stream_complete_args = Some(request);
+        return;
+    }
+    let dispatch = request.clone();
+    let port = Arc::clone(&success);
+    let work = async move {
+        port.dispatch_success_handlers(dispatch).await;
+        Ok::<(), PortFailure>(())
+    };
+    if spawn_logging_task(&state.pending_tasks, SUCCESS_DISPATCH_TASK, work).is_none() {
+        success.dispatch_success_handlers(request).await;
     }
 }

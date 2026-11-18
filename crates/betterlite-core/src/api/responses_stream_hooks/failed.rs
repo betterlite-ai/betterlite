@@ -1,3 +1,4 @@
+use super::failure::handle_failure;
 use std::str::FromStr as _;
 
 use betterlite_error::error::details::{MidStreamFallbackDetails, MidStreamStatus};
@@ -32,79 +33,77 @@ pub struct StreamFailure {
     pub original_exception: Option<ErrorClass>,
 }
 
-impl ResponsesStreamHooks<'_> {
-    pub async fn handle_logging_failed_response<C>(
-        &self,
-        state: &mut ResponsesStreamBaseState,
-        callback: &mut ResponsesStreamHookState,
-        details: &mut IndexMap<String, Json>,
-        calculator: Option<&C>,
-    ) where
-        C: FailurePrice,
-    {
-        let response = state.completed_response.as_ref().and_then(nested_response);
-        let error = response.and_then(|response| response.error.as_ref());
-        record_failed_response_usage(response, details, calculator).await;
-        let mapped = map_response_error(
-            &error,
-            &state.model,
-            state.custom_llm_provider.as_deref().unwrap_or_default(),
-            self.redactor,
-        );
-        self.handle_failure(state, callback, &mapped).await;
-    }
-
-    pub fn maybe_raise_for_error_event(
-        &self,
-        state: &ResponsesStreamBaseState,
-        event: &ResponsesAPIStreamingResponse,
-    ) -> Result<(), StreamFailure> {
-        let Some(mapped) = mapped_event_error(
-            event,
-            &state.model,
-            state.custom_llm_provider.as_deref().unwrap_or_default(),
-            self.redactor,
-        ) else {
-            return Ok(());
-        };
-        let status = mapped.metadata().status_code;
-        if !mid_stream_fallback_eligible(&mapped, Some(status)) {
-            return Err(StreamFailure {
-                exception: mapped,
-                original_exception: None,
-            });
-        }
-        let context = ErrorContext {
-            message: exception_message(&mapped),
-            model: Some(state.model.clone()),
-            provider: Some(state.custom_llm_provider.clone().unwrap_or_default()),
-            max_retries: None,
-            num_retries: None,
-            body_type: None,
-            body_param: None,
-            body_code: None,
-        };
-        let exception = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
-            context,
-            original_status: MidStreamStatus(status),
-            generated_content: state.generated_content.clone(),
-            is_pre_first_chunk: !state.yielded_first_chunk,
-        }));
-        Err(StreamFailure {
-            exception,
-            original_exception: Some(mapped),
-        })
-    }
-}
-
-async fn record_failed_response_usage<C>(
-    response: Option<&ResponsesApiResponse>,
+pub async fn handle_logging_failed_response<C>(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &mut ResponsesStreamBaseState,
+    callback: &mut ResponsesStreamHookState,
     details: &mut IndexMap<String, Json>,
     calculator: Option<&C>,
 ) where
     C: FailurePrice,
 {
-    let Some(response) = response else {
+    let response = state.completed_response.as_ref().and_then(nested_response);
+    let error = response.and_then(|terminal| terminal.error.as_ref());
+    record_failed_response_usage(response, details, calculator).await;
+    let mapped = map_response_error(
+        &error,
+        &state.model,
+        state.custom_llm_provider.as_deref().unwrap_or_default(),
+        hooks.redactor,
+    );
+    handle_failure(hooks, state, callback, &mapped).await;
+}
+
+pub fn maybe_raise_for_error_event(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &ResponsesStreamBaseState,
+    event: &ResponsesAPIStreamingResponse,
+) -> Result<(), StreamFailure> {
+    let Some(mapped) = mapped_event_error(
+        event,
+        &state.model,
+        state.custom_llm_provider.as_deref().unwrap_or_default(),
+        hooks.redactor,
+    ) else {
+        return Ok(());
+    };
+    let status = mapped.metadata().status_code;
+    if !mid_stream_fallback_eligible(&mapped, Some(status)) {
+        return Err(StreamFailure {
+            exception: mapped,
+            original_exception: None,
+        });
+    }
+    let context = ErrorContext {
+        message: exception_message(&mapped),
+        model: Some(state.model.clone()),
+        provider: Some(state.custom_llm_provider.clone().unwrap_or_default()),
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    };
+    let exception = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
+        context,
+        original_status: MidStreamStatus(status),
+        generated_content: state.generated_content.clone(),
+        is_pre_first_chunk: !state.yielded_first_chunk,
+    }));
+    Err(StreamFailure {
+        exception,
+        original_exception: Some(mapped),
+    })
+}
+
+async fn record_failed_response_usage<C>(
+    terminal: Option<&ResponsesApiResponse>,
+    details: &mut IndexMap<String, Json>,
+    calculator: Option<&C>,
+) where
+    C: FailurePrice,
+{
+    let Some(response) = terminal else {
         return;
     };
     let Some(usage) = usage_as_model(response.usage.as_ref().map(UsageSource::Model)) else {
@@ -122,7 +121,7 @@ async fn record_failed_response_usage<C>(
         }
     }
     let cost = match calculator {
-        Some(calculator) => calculator.cost(response).await.unwrap_or(Decimal::ZERO),
+        Some(pricer) => pricer.cost(response).await.unwrap_or(Decimal::ZERO),
         None => Decimal::ZERO,
     };
     if let Some(recorded) = decimal_json(cost) {
@@ -131,18 +130,15 @@ async fn record_failed_response_usage<C>(
 }
 
 fn decimal_json(cost: Decimal) -> Option<Json> {
-    match serde_json::Number::from_str(&cost.to_string()) {
-        Ok(number) => Some(Json::Number(number)),
-        Err(_) => None,
-    }
+    serde_json::Number::from_str(&cost.to_string())
+        .ok()
+        .map(Json::Number)
 }
 
-fn map_response_error<T: Serialize>(
-    error: &T,
-    model: &str,
-    provider: &str,
-    redactor: &Redactor,
-) -> ErrorClass {
+fn map_response_error<T>(error: &T, model: &str, provider: &str, redactor: &Redactor) -> ErrorClass
+where
+    T: Serialize,
+{
     let fields = serde_json::to_value(error)
         .and_then(serde_json::from_value::<IndexMap<String, Json>>)
         .unwrap_or_default();

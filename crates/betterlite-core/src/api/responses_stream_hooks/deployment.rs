@@ -24,36 +24,34 @@ pub fn resolve_call_type(explicit: Option<&str>, logging: Option<&str>) -> Optio
         .find_map(|name| CallType::deserialize(StrDeserializer::<ValueError>::new(name)).ok())
 }
 
-impl ResponsesStreamHooks<'_> {
-    pub async fn chunk_hook(
-        &self,
-        callback: &mut ResponsesStreamHookState,
-        context: ChunkHookContext<'_>,
-        mut chunk: ResponsesAPIStreamingResponse,
-    ) -> ResponsesAPIStreamingResponse {
-        callback.post_streaming_hooks_ran = false;
-        let call_type = resolve_call_type(context.explicit_call_type, context.logging_call_type);
-        let request_data = match context.request_data {
-            Some(data) if !data.is_empty() => data,
-            Some(_) | None => context.model_call_details,
+pub async fn chunk_hook(
+    hooks: &ResponsesStreamHooks<'_>,
+    callback: &mut ResponsesStreamHookState,
+    context: ChunkHookContext<'_>,
+    mut chunk: ResponsesAPIStreamingResponse,
+) -> ResponsesAPIStreamingResponse {
+    callback.post_streaming_hooks_ran = false;
+    let call_type = resolve_call_type(context.explicit_call_type, context.logging_call_type);
+    let request_data = match context.request_data {
+        Some(data) if !data.is_empty() => data,
+        Some(_) | None => context.model_call_details,
+    };
+    let mut hooks_ran = false;
+    for hook in &hooks.chunk_hooks {
+        hooks_ran = true;
+        let call = ChunkHookCall {
+            request_data,
+            chunk: &chunk,
+            call_type,
         };
-        let mut hooks_ran = false;
-        for hook in &self.chunk_hooks {
-            hooks_ran = true;
-            let call = ChunkHookCall {
-                request_data,
-                chunk: &chunk,
-                call_type,
-            };
-            match hook.post_streaming_deployment_hook(call).await {
-                Ok(Some(replacement)) => chunk = replacement,
-                Ok(None) => {}
-                Err(_) => return chunk,
-            }
+        match hook.post_streaming_deployment_hook(call).await {
+            Ok(Some(replacement)) => chunk = replacement,
+            Ok(None) => {}
+            Err(_) => return chunk,
         }
-        if hooks_ran {
-            callback.post_streaming_hooks_ran = true;
-        }
-        chunk
     }
+    if hooks_ran {
+        callback.post_streaming_hooks_ran = true;
+    }
+    chunk
 }
