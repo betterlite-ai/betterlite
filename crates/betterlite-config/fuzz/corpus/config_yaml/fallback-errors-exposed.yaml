@@ -1,0 +1,8 @@
+general_settings:
+  expose_fallback_errors_to_caller: true
+
+model_list:
+  - model_name: fallback-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-fallback

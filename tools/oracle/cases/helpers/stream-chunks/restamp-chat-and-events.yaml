@@ -1,0 +1,71 @@
+kind: helper
+name: stream-chunks-restamp-chat-and-events
+call:
+  b8602:
+    function: restamp
+    restamps:
+      - kind: stream
+        body: {id: chatcmpl-1, object: chat.completion.chunk, created: 1, model: openai/gpt-4o-mini, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: full
+        body: {id: chatcmpl-2, object: chat.completion, created: 2, model: openai/gpt-4o-mini, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: event
+        body: {type: response.created, model: openai/gpt-4o-mini}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: plain
+        body: {model: openai/gpt-4o-mini, other: 1}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: chatcmpl-3, object: chat.completion.chunk, created: 3, model: gpt-4o, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: chatcmpl-4, object: chat.completion.chunk, created: 4, model: openai/backup, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: true
+        fallback_model: gpt-4o-mini-fallback
+        mismatch_logged: false
+      - kind: stream
+        body: {id: chatcmpl-5, object: chat.completion.chunk, created: 5, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: chatcmpl-6, object: chat.completion.chunk, created: 6, model: openai/other, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: true
+      - kind: stream
+        body: {id: chatcmpl-7, object: chat.completion.chunk, created: 7, model: gpt-4o, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: true
+        fallback_model: gpt-4o-mini-fallback
+        mismatch_logged: false
+env: {}
+compare: {ignore: []}

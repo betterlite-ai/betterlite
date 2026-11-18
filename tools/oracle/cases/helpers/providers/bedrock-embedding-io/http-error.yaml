@@ -1,0 +1,135 @@
+kind: helper
+name: http-error
+call:
+  bedrock_embedding_io:
+    function: http_error
+    asynchronous: false
+    supplied: none
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers:
+      Content-Type: application/json
+    data:
+      inputText: hello
+    reply:
+      status: 400
+      headers:
+        Content-Type: application/json
+        X-Amzn-Errortype: ValidationException
+        X-Amzn-Requestid: req-1
+      body: '{"message":"bad input"}'
+calls:
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: true
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: server-error
+      timeout: 3.5
+      reply:
+        status: 500
+        headers: {}
+        body: '{}'
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: false
+      supplied: sync
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/cohere.embed-english-v3/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        texts:
+          - redirected
+      reply:
+        status: 303
+        headers:
+          Location: /final
+        body: moved
+        redirect:
+          method: GET
+          url: https://bedrock-runtime.us-west-2.amazonaws.com/final
+          status: 404
+          headers:
+            Content-Type: application/json
+            X-Amzn-Errortype: ResourceNotFoundException
+          body: '{"message":"no such model"}'
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: false
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: weird
+      reply:
+        status: 600
+        headers: {}
+        body: weird
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: false
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: fine
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embedding":[0.5],"inputTextTokenCount":1}'
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: false
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: slow
+      timeout: 1.5
+      reply:
+        status: 200
+        headers: {}
+        body: ''
+        failure: timeout
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: true
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: slow-async
+      timeout_record:
+        connect: 0.5
+        read: 0.5
+        write: 0.5
+        pool: 0.5
+      reply:
+        status: 200
+        headers: {}
+        body: ''
+        failure: timeout
+  - bedrock_embedding_io:
+      function: http_error
+      asynchronous: false
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: malformed
+      reply:
+        status: 200
+        headers:
+          Content-Type: text/plain
+        body: not json
+env: {}
+compare:
+  ignore: []
