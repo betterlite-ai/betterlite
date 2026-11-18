@@ -411,6 +411,20 @@ async fn agentops_callback_otel_config_points_at_the_traces_endpoint_with_the_be
     assert_eq!(config.service_name, "gateway");
 }
 
+#[test]
+fn agentops_callback_otel_config_leaves_both_signal_switches_off() {
+    let callback = AgentOpsCallback {
+        config: AgentOpsConfig::default(),
+        auth: None,
+    };
+    let config = callback.otel_config(&environment(&[
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "true"),
+        ("LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS", "true"),
+    ]));
+    assert!(!config.signals.enable_metrics);
+    assert!(!config.signals.enable_events);
+}
+
 #[tokio::test]
 async fn agentops_callback_leaves_the_pooled_client_usable_after_the_token_request() {
     let (endpoint, served) = serve_once(200, r#"{"token": "jwt-1"}"#).await;
