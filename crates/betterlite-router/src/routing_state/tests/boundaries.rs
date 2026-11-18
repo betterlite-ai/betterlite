@@ -14,7 +14,7 @@ use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
-use crate::routing_state::{MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
+use crate::routing_state::{FLUSH_DEADLINE, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
 use crate::routing_value_store::{
     MAX_KEY_BYTES, PinValue, RouteValue, RoutingValueStore, StoreRead,
 };
@@ -31,6 +31,10 @@ const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 pub(crate) async fn run(name: &str) {
     match name {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
+        "joined_cap_is_1024" => joined_cap_is_1024().await,
+        "sync_past_the_deadline_drops_the_joined_deltas" => {
+            sync_past_the_deadline_drops_the_joined_deltas().await;
+        }
         "callback_saturation_without_a_runtime_keeps_the_delta" => {
             callback_saturation_without_a_runtime_keeps_the_delta().await;
         }
@@ -99,6 +103,85 @@ async fn queue_cap_is_1024() {
     assert!(down.counters.sync_with_redis().await);
     assert_eq!(down.store.amount(RPM_KEY), Some(Decimal::ONE));
     assert_eq!(down.pending_len(), 0);
+}
+
+// memory stays at twice the queue cap: the delta past a full joined set is dropped and never reaches the store
+async fn joined_cap_is_1024() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    let one = usage_batch(TPM_KEY, 1);
+    // repeated callbacks join the flush the first one scheduled before that flush is even polled
+    for _step in 0..4 {
+        sink.increment_pipeline(&one).unwrap();
+    }
+    assert_eq!(harness.store.calls(), 0);
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 4);
+    // the flush takes the queue and the joined deltas to the store, which stalls
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+    // the queue fills again behind the stalled flush, then the joined set fills to its cap
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    for _step in 0..MAX_PENDING_DELTAS {
+        sink.increment_pipeline(&one).unwrap();
+    }
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    // past the cap an observation is dropped, so the owner's staging stays bounded
+    sink.increment_pipeline(&one).unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    // the one flush carries the queue and the capped joined set; the dropped delta is not in the store
+    harness.store.set_stalled(false);
+    harness.store.release();
+    harness.drain_flushes().await;
+    assert_eq!(harness.store.calls(), 2);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(3_076_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(3_077));
+}
+
+// a sync that holds the gate past its deadline drops the deltas that joined it
+async fn sync_past_the_deadline_drops_the_joined_deltas() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    let owner = Arc::clone(&harness.counters);
+    let sync = tokio::spawn(async move { owner.sync_with_redis().await });
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    // the queue fills behind the stalled sync, and the delta past it joins the sync that holds the gate
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
+    advance(FLUSH_DEADLINE).await;
+    yield_now().await;
+    // the store never answered, so the sync's batch and the delta that joined it are gone
+    assert!(!sync.await.unwrap());
+    assert_eq!(harness.joined_len(), 0);
+    // the queue that filled behind the sync still pushes once the store answers
+    harness.store.set_stalled(false);
+    harness.store.release();
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_024_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
 }
 
 // a sink call on a thread outside every runtime cannot hand the flush off, so the delta waits for the next sync

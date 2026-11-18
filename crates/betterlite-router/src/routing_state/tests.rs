@@ -59,6 +59,11 @@ fn runtime(paused: bool) -> Runtime {
     false
 )]
 #[case::full_queue_callback_flushes_both_entries("full_queue_callback_flushes_both_entries", false)]
+#[case::sync_holding_the_gate_drains_the_joined_deltas(
+    "sync_holding_the_gate_drains_the_joined_deltas",
+    false
+)]
+#[case::periodic_sync_drains_the_joined_deltas("periodic_sync_drains_the_joined_deltas", true)]
 #[case::scheduled_flush_past_the_deadline_drops_the_joined_deltas(
     "scheduled_flush_past_the_deadline_drops_the_joined_deltas",
     true
@@ -83,6 +88,11 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
+#[case::joined_cap_is_1024("joined_cap_is_1024", false)]
+#[case::sync_past_the_deadline_drops_the_joined_deltas(
+    "sync_past_the_deadline_drops_the_joined_deltas",
+    true
+)]
 #[case::callback_saturation_without_a_runtime_keeps_the_delta(
     "callback_saturation_without_a_runtime_keeps_the_delta",
     false

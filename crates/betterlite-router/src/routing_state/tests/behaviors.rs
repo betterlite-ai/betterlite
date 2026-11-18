@@ -79,6 +79,12 @@ pub(crate) async fn run(name: &str) {
         "full_queue_callback_flushes_both_entries" => {
             full_queue_callback_flushes_both_entries().await;
         }
+        "sync_holding_the_gate_drains_the_joined_deltas" => {
+            sync_holding_the_gate_drains_the_joined_deltas().await;
+        }
+        "periodic_sync_drains_the_joined_deltas" => {
+            periodic_sync_drains_the_joined_deltas().await;
+        }
         "scheduled_flush_past_the_deadline_drops_the_joined_deltas" => {
             scheduled_flush_past_the_deadline_drops_the_joined_deltas().await;
         }
@@ -514,6 +520,91 @@ async fn full_queue_callback_flushes_both_entries() {
     assert_eq!(harness.counters.read(RPM_KEY), Some(1));
     assert_eq!(harness.pending_len(), 0);
     assert_eq!(harness.joined_len(), 0);
+}
+
+// a sync that holds the gate pushes the deltas that joined it once the store answers
+async fn sync_holding_the_gate_drains_the_joined_deltas() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    let owner = Arc::clone(&harness.counters);
+    let sync = tokio::spawn(async move { owner.sync_with_redis().await });
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    // the queue fills behind the sync, and the delta past it joins the flush the sync holds
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
+    harness.store.set_stalled(false);
+    harness.store.release();
+    assert!(sync.await.unwrap());
+    assert_eq!(harness.store.calls(), 2);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(2_049_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
+}
+
+// the periodic tick that holds the gate pushes the deltas that joined it once the store answers
+async fn periodic_sync_drains_the_joined_deltas() {
+    let harness = Harness::with_store(settings(true, Some(Duration::from_millis(250))));
+    harness.store.set_stalled(true);
+    harness.counters.start();
+    yield_now().await;
+    // the first tick finds an empty queue and sleeps, while the queue fills behind it
+    for _step in 0..MAX_PENDING_DELTAS {
+        harness
+            .counters
+            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
+            .await
+            .unwrap();
+    }
+    advance(Duration::from_millis(250)).await;
+    yield_now().await;
+    // the tick takes the queue to the stalled store, and the next batch and its joined entries wait
+    assert_eq!(harness.store.calls(), 1);
+    harness
+        .counters
+        .increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    let both = [
+        Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        },
+        Increment {
+            key: RPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        },
+    ];
+    harness.counters.increment_pipeline(&both).unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 2);
+    harness.store.set_stalled(false);
+    harness.store.release();
+    yield_now().await;
+    // the tick pushes the queue and both joined entries once the store answers
+    assert_eq!(harness.store.calls(), 2);
+    assert_eq!(
+        harness.store.amount(RPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    harness.counters.cleanup().await;
 }
 
 // a scheduled flush past its deadline drops the deltas that joined it, and the queue behind it still pushes
