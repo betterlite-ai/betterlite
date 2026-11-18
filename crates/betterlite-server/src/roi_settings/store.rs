@@ -134,10 +134,11 @@ async fn stored_param(
         .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))
 }
 
-fn decode_parameter<T: DeserializeOwned>(
-    parameter: &JsonData,
-    invalid: impl FnOnce(serde_json::Error) -> RoiSettingsError,
-) -> Result<T, RoiSettingsError> {
+fn decode_parameter<T, F>(parameter: &JsonData, invalid: F) -> Result<T, RoiSettingsError>
+where
+    T: DeserializeOwned,
+    F: FnOnce(serde_json::Error) -> RoiSettingsError,
+{
     let bytes = serde_json::to_vec(parameter).map_err(InternalError::Encode)?;
     serde_json::from_slice(&bytes).map_err(invalid)
 }
