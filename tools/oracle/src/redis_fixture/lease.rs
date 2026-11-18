@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use betterlite_db::queues::pod_lock::owner::COMPARE_AND_DELETE_LOCK_SCRIPT;
+use mlua::{Lua, Value};
 use redis::Script;
 
 use super::resp::{
@@ -87,15 +87,15 @@ impl LeaseCommands {
         let Some(source) = loaded else {
             return Some(b"-NOSCRIPT No matching script. Please use EVAL.\r\n".to_vec());
         };
-        let single_key = command.args.get(2).is_some_and(|count| count == "1");
-        if !single_key || source != COMPARE_AND_DELETE_LOCK_SCRIPT {
-            return None;
-        }
-        Some(integer(deleted_if_owned(
-            &self.entries,
-            command.args.get(3)?,
-            command.args.get(4)?,
-        )))
+        let key_count = command.args.get(2)?.parse::<usize>().ok()?;
+        let first_argument = key_count.checked_add(3)?;
+        let keys = command.args.get(3..first_argument)?.to_vec();
+        let arguments = command
+            .args
+            .get(first_argument..)
+            .unwrap_or_default()
+            .to_vec();
+        Some(run_script(&source, &keys, &arguments, &self.entries))
     }
 }
 
@@ -120,15 +120,65 @@ fn remaining_seconds(entries: &Entries, key: &str) -> i64 {
     i64::try_from(seconds).unwrap_or(i64::MAX)
 }
 
-// the source script compares the stored JSON owner before deleting, so a failed comparison leaves the lease in place
-fn deleted_if_owned(entries: &Entries, key: &str, owner: &str) -> i64 {
-    let Some(entry) = live_entry(entries, key) else {
-        return 0;
-    };
-    if entry.value != owner {
-        return 0;
+// Redis runs the loaded script itself, so the production Lua decides; redis.call reaches the same in-process store.
+fn run_script(source: &str, keys: &[String], arguments: &[String], entries: &Entries) -> Vec<u8> {
+    match execute(source, keys, arguments, entries) {
+        Ok(reply) => reply,
+        Err(error) => resp_error(&error.to_string()),
     }
-    deleted(entries, key)
+}
+
+fn execute(
+    source: &str,
+    keys: &[String],
+    arguments: &[String],
+    entries: &Entries,
+) -> Result<Vec<u8>, mlua::Error> {
+    // Redis scripts run without the standard libraries; the fixture's scripts get only redis.call, KEYS and ARGV.
+    let lua = Lua::new_with(mlua::StdLib::NONE, mlua::LuaOptions::default())?;
+    let redis = lua.create_table()?;
+    let store = Arc::clone(entries);
+    let call = lua.create_function(move |lua, (name, key): (String, String)| {
+        redis_call(lua, &store, &name, &key)
+    })?;
+    redis.set("call", call)?;
+    lua.globals().set("redis", redis)?;
+    lua.globals()
+        .set("KEYS", lua.create_sequence_from(keys.iter().cloned())?)?;
+    lua.globals()
+        .set("ARGV", lua.create_sequence_from(arguments.iter().cloned())?)?;
+    script_reply(lua.load(source).eval::<Value>()?)
+}
+
+// The source script calls only get and del; another command is outside the fixture's supported subset.
+fn redis_call(lua: &Lua, store: &Entries, name: &str, key: &str) -> Result<Value, mlua::Error> {
+    match name.to_ascii_lowercase().as_str() {
+        "get" => match live_entry(store, key) {
+            Some(entry) => Ok(Value::String(lua.create_string(&entry.value)?)),
+            None => Ok(Value::Boolean(false)),
+        },
+        "del" => Ok(Value::Integer(deleted(store, key))),
+        other => Err(mlua::Error::RuntimeError(format!(
+            "unknown redis command '{other}'"
+        ))),
+    }
+}
+
+fn script_reply(value: Value) -> Result<Vec<u8>, mlua::Error> {
+    match value {
+        Value::Integer(count) => Ok(integer(count)),
+        Value::Nil | Value::Boolean(false) => Ok(NIL_REPLY.to_vec()),
+        Value::Boolean(true) => Ok(integer(1)),
+        other => Err(mlua::Error::RuntimeError(format!(
+            "the script returned an unsupported value: {other:?}"
+        ))),
+    }
+}
+
+// A RESP error is one line, so the Lua message's line breaks become spaces.
+fn resp_error(message: &str) -> Vec<u8> {
+    let flattened = message.replace(['\r', '\n'], " ");
+    format!("-ERR {flattened}\r\n").into_bytes()
 }
 
 impl CommandHandler for LeaseCommands {

@@ -21,6 +21,7 @@ use betterlite_logging::worker::{
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use chrono::Utc;
+use redis::Value;
 use uuid::Uuid;
 
 use super::OracleRedis;
@@ -59,6 +60,7 @@ fn manager(
         })),
         60,
         sink,
+        Uuid::new_v4(),
     )
 }
 
@@ -173,6 +175,25 @@ async fn a_stale_owner_cannot_release_a_reacquired_lease() {
             duration_seconds: 60.0,
         }]
     );
+}
+
+#[tokio::test]
+async fn the_fixture_runs_the_loaded_source_not_a_rust_copy() {
+    let fixture = OracleRedis::start().unwrap();
+    let cache = fixture.cache(None).await.unwrap();
+    let events = Arc::new(RecordingEvents::default());
+    let holder = manager(&cache, &events);
+    assert_eq!(holder.acquire_lock("job", None, true).await, Some(true));
+    // EVALSHA runs the source SCRIPT LOAD received, so a script that deletes unconditionally deletes the live lease.
+    let script = cache
+        .counters
+        .async_register_script("return redis.call(\"del\", KEYS[1])");
+    let deleted = cache
+        .run_script(&script, &[LEASE_KEY.to_owned()], &[])
+        .await
+        .unwrap();
+    assert_eq!(deleted, Value::Int(1));
+    assert_eq!(cache.async_get_cache(LEASE_KEY).await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -316,6 +337,7 @@ async fn lease_events_reach_the_owned_logging_delivery() {
         })),
         60,
         Arc::clone(&delivery.sink),
+        Uuid::new_v4(),
     );
     assert_eq!(
         manager.acquire_lock("spend:reset", Some(120), true).await,

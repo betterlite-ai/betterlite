@@ -49,6 +49,7 @@ hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+mlua = { version = "0.12.2", features = ["lua54", "vendored"] }
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 redis = { workspace = true, features = ["script"] }
