@@ -293,76 +293,44 @@ call:
                 allowed_tools: {read_only: true, tool_names: [read]}
                 require_approval:
                   always: {read_only: false, tool_names: [write]}
-                authorization: null
-                headers: null
-                server_url: null
-                extra_null: null
               - type: code_interpreter
                 container:
                   type: auto
-                  file_ids: null
-                  memory_limit: null
                   network_policy:
                     type: allowlist
                     allowed_domains: [a.example]
                     domain_secrets:
-                      - {domain: d.example, name: n, value: v, extra_null: null}
-                    extra_null: null
-                  extra_null: null
-                allowed_callers: null
-                extra_null: null
+                      - {domain: d.example, name: n, value: v}
               - type: image_generation
-                action: null
-                background: null
-                input_image_mask: {file_id: null, image_url: "data:x", extra_null: null}
-                model: null
-                output_format: null
-                partial_images: null
-                quality: null
-                size: null
-                extra_null: null
+                input_image_mask: {image_url: "data:x"}
               - type: custom
                 name: c
-                description: null
-                format: {type: grammar, definition: d, syntax: lark, extra_null: null}
-                extra_null: null
+                format: {type: grammar, definition: d, syntax: lark}
               - type: namespace
                 description: d
                 name: n
                 tools:
-                  - {type: function, name: f, description: null, parameters: {a: null}, strict: null, extra_null: null}
-                  - {type: custom, name: c2, description: null, format: {type: text, extra_null: null}, extra_null: null}
-                extra_null: null
+                  - {type: function, name: f, parameters: {a: null}}
+                  - {type: custom, name: c2, format: {type: text}}
               - type: shell
-                allowed_callers: null
                 environment:
                   type: container_auto
-                  file_ids: null
-                  network_policy: {type: disabled, extra_null: null}
+                  network_policy: {type: disabled}
                   skills:
-                    - {type: skill_reference, skill_id: s, version: null, extra_null: null}
+                    - {type: skill_reference, skill_id: s}
                     - type: inline
                       name: i
                       description: id
-                      source: {type: base64, data: eA==, media_type: application/zip, extra_null: null}
-                      extra_null: null
-                  extra_null: null
-                extra_null: null
+                      source: {type: base64, data: eA==, media_type: application/zip}
               - type: web_search_preview
-                search_content_types: null
-                search_context_size: null
-                user_location: {type: approximate, city: null, country: US, extra_null: null}
-                extra_null: null
+                user_location: {type: approximate, country: US}
               - type: tool_search
-                description: null
-                execution: null
                 parameters: {a: null}
-                extra_null: null
-              - {type: local_shell, extra_null: null}
-              - {type: computer, extra_null: null}
-              - {type: computer_use_preview, display_height: 10, display_width: 20, environment: browser, extra_null: null}
-              - {type: apply_patch, allowed_callers: null, extra_null: null}
-              - {type: programmatic_tool_calling, extra_null: null}
+              - {type: local_shell}
+              - {type: computer}
+              - {type: computer_use_preview, display_height: 10, display_width: 20, environment: browser}
+              - {type: apply_patch}
+              - {type: programmatic_tool_calling}
       - kind: event
         body:
           type: response.created
@@ -375,17 +343,11 @@ call:
                 arguments: "{}"
                 call_id: call_1
                 name: f
-                id: null
-                status: null
-                namespace: null
-                caller: {type: program, caller_id: p, extra_null: null}
-                extra_null: null
+                caller: {type: program, caller_id: p}
               - type: function_call
                 arguments: "{}"
                 call_id: call_2
                 name: g
-                id: null
-                status: null
       - kind: event
         body:
           type: response.created
