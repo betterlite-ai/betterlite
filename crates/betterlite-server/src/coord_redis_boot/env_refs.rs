@@ -33,11 +33,13 @@ impl CoordSecretLookup for Arc<SecretLookup> {
         env: &BTreeMap<String, String>,
         name: &str,
     ) -> Result<Option<SecretValue>, CoordRedisError> {
-        let lookup = Arc::clone(self);
-        let env = env.clone();
-        let name = name.to_owned();
+        let lookup = Self::clone(self);
+        let environment = env.clone();
+        let secret_name = name.to_owned();
         let mut tasks = JoinSet::new();
-        tasks.spawn_blocking(move || SecretLookup::get_secret(&lookup, &env, &name, None));
+        tasks.spawn_blocking(move || {
+            SecretLookup::get_secret(&lookup, &environment, &secret_name, None)
+        });
         Ok(tasks
             .join_next()
             .await

@@ -1,6 +1,7 @@
 use betterlite_env::EnvError;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::proxy_request_contracts::ContractError;
 use crate::redis_cache_wiring::build::RedisCacheWiringError;
@@ -37,7 +38,7 @@ pub enum CoordRedisError {
     #[error("the coordination Redis secret lookup task failed: {source}")]
     LookupTask {
         #[from]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
     #[error("the coordination Redis secret lookup task ended without a result")]
     LookupMissing,

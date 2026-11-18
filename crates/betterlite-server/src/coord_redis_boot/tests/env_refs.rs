@@ -13,7 +13,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::{JoinSet, yield_now};
 
-use super::support::{FakeSecrets, NoopOidc, block, environment, secret_lookup};
+use super::support::{FakeSecrets, NoopOidc, block, environment, no_environment, secret_lookup};
 use crate::coord_redis_boot::env_refs::{ResolveContext, resolve_params};
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::proxy_request_contracts::coordination_redis::BoolOrText;
