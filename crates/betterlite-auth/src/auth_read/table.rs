@@ -29,7 +29,7 @@ pub enum Presence<T> {
 
 impl<T> Presence<T> {
     #[must_use]
-    pub fn value(&self) -> Option<&T> {
+    pub const fn value(&self) -> Option<&T> {
         match self {
             Self::Omitted | Self::Null => None,
             Self::Value(value) => Some(value),
@@ -147,7 +147,15 @@ where
             tracker: self.context.tracker.as_ref(),
         };
         let outcome = bounded_db_lookup(
-            async move { Ok::<_, DbLookupError>(lookup.await) },
+            async move {
+                match lookup.await {
+                    Ok(answer) => Ok(Ok::<Answer, AuthReadError<T::Failure>>(answer)),
+                    Err(AuthReadError::Lookup(failure)) => Err(failure),
+                    Err(AuthReadError::Repository(fault)) => {
+                        Ok(Err(AuthReadError::Repository(fault)))
+                    }
+                }
+            },
             request,
             &self.context.tasks,
         )
