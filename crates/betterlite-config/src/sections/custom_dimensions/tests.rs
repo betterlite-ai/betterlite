@@ -264,6 +264,8 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::scoped_verbose_group_then_hash("(?x:a)#b", 5)]
 #[case::global_flag_then_space("(?i) a", 3)]
 #[case::scoped_verbose_space("(?x:a b)", 4)]
+#[case::inherited_verbose_space("(?x)(?i:a b)", 4)]
+#[case::disabled_verbose_space("(?x)(?-x:a b)", 5)]
 #[case::caret_after_negation("[^^]", 2)]
 #[case::negated_dash_run("[^--a]", 4)]
 #[case::invalid_brace_content("a{2x}", 6)]
