@@ -1,3 +1,4 @@
+use betterlite_openai::search::records::SearchResponse;
 use rstest::rstest;
 
 use crate::agentcore_search_reply::body::parse_mcp_body;
@@ -22,6 +23,12 @@ fn agentcore_search_reply_cases(#[case] case: fn()) {
 }
 
 fn mcp_json_results() {
+    check_text_items();
+    check_block_shapes();
+    check_body_errors();
+}
+
+fn check_text_items() {
     let sse_content_type = [(
         String::from("content-type"),
         String::from("text/event-stream"),
@@ -44,7 +51,9 @@ fn mcp_json_results() {
     let nonstandard =
         r#"{"result":{"content":[{"type":"text","text":"[NaN,{\"title\":\"x\"}]"}]}}"#;
     assert!(decode(nonstandard, 200).unwrap().results.is_empty());
+}
 
+fn check_block_shapes() {
     let blocks = r#"{"result":{"content":[7,"x",{"type":"image","text":"[{\"title\":\"no\"}]"},{"type":"text","text":"no json"},{"type":"text","text":9}]}}"#;
     assert!(decode(blocks, 200).unwrap().results.is_empty());
 
@@ -56,7 +65,9 @@ fn mcp_json_results() {
 
     let leading = " \n\t{\"result\":{}}";
     assert!(decode(leading, 200).unwrap().results.is_empty());
+}
 
+fn check_body_errors() {
     assert!(matches!(
         decode(r#"{"result":"#, 200),
         Err(SearchReplyError::Json { .. })
@@ -106,44 +117,45 @@ fn search_result_fields() {
     let body = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"T\",\"url\":\"U\",\"text\":\"snippet text\",\"publishedDate\":\"2024-01-02\",\"last_updated\":\"ignored\"},{\"title\":\"\",\"snippet\":\"from snippet\",\"date\":\"2024-02-03\"},{\"title\":\"  \",\"text\":\"  \",\"publishedDate\":\"\",\"date\":\"fallback\"},{\"title\":7,\"url\":null,\"snippet\":5,\"date\":false},{\"text\":\"\",\"snippet\":\"fallback snippet\"}]"}]}}"#;
     let response = decode(body, 200).unwrap();
     assert_eq!(response.object.0, "search");
-    assert_eq!(response.results.len(), 5);
+    check_result_fields(&response);
+    check_field_precedence();
+}
 
-    assert_eq!(response.results[0].title, "T");
-    assert_eq!(response.results[0].url, "U");
-    assert_eq!(response.results[0].snippet, "snippet text");
-    assert_eq!(response.results[0].date.as_deref(), Some("2024-01-02"));
-    assert_eq!(response.results[0].last_updated, None);
-    assert!(response.results[0].extra.is_empty());
+fn check_result_fields(response: &SearchResponse) {
+    let expected = [
+        ("T", "U", "snippet text", Some("2024-01-02")),
+        ("", "", "from snippet", Some("2024-02-03")),
+        ("  ", "", "  ", Some("fallback")),
+        ("", "", "", None),
+        ("", "", "fallback snippet", None),
+    ];
+    assert_eq!(response.results.len(), expected.len());
+    for (result, (title, url, snippet, date)) in response.results.iter().zip(expected) {
+        assert_eq!(result.title, title);
+        assert_eq!(result.url, url);
+        assert_eq!(result.snippet, snippet);
+        assert_eq!(result.date.as_deref(), date);
+        assert_eq!(result.last_updated, None);
+        assert!(result.extra.is_empty());
+    }
+}
 
-    assert_eq!(response.results[1].title, "");
-    assert_eq!(response.results[1].url, "");
-    assert_eq!(response.results[1].snippet, "from snippet");
-    assert_eq!(response.results[1].date.as_deref(), Some("2024-02-03"));
-
-    assert_eq!(response.results[2].title, "  ");
-    assert_eq!(response.results[2].snippet, "  ");
-    assert_eq!(response.results[2].date.as_deref(), Some("fallback"));
-
-    assert_eq!(response.results[3].title, "");
-    assert_eq!(response.results[3].url, "");
-    assert_eq!(response.results[3].snippet, "");
-    assert_eq!(response.results[3].date, None);
-    assert_eq!(response.results[3].last_updated, None);
-
-    assert_eq!(response.results[4].title, "");
-    assert_eq!(response.results[4].snippet, "fallback snippet");
-
+fn check_field_precedence() {
     let precedence = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"p\",\"text\":\"from text\",\"snippet\":\"from snippet\",\"publishedDate\":\"2024-01-01\",\"date\":\"2024-02-02\"}]"}]}}"#;
-    let precedence_response = decode(precedence, 200).unwrap();
-    assert_eq!(precedence_response.results.len(), 1);
-    assert_eq!(precedence_response.results[0].snippet, "from text");
-    assert_eq!(
-        precedence_response.results[0].date.as_deref(),
-        Some("2024-01-01")
-    );
+    let response = decode(precedence, 200).unwrap();
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(response.results[0].snippet, "from text");
+    assert_eq!(response.results[0].date.as_deref(), Some("2024-01-01"));
 }
 
 fn mcp_sse_results() {
+    check_sse_payloads();
+    check_sse_selection();
+    check_sse_prefixes();
+    check_sse_boundaries();
+}
+
+fn check_sse_payloads() {
     let single = r#"event: message
 data: {"result":{"content":[{"type":"text","text":"[{\"title\":\"sse\"}]"}]}}
 
@@ -156,13 +168,6 @@ data: {"content":[{"type":"text","text":"[{\"title\":\"joined\"}]"}]}}
 "#;
     assert_eq!(titles(&decode(multiline, 200).unwrap()), vec!["joined"]);
 
-    let first = r#"data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[{\"title\":\"first\"}]"}]}}
-
-data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"[{\"title\":\"second\"}]"}]}}
-
-"#;
-    assert_eq!(titles(&decode(first, 200).unwrap()), vec!["first"]);
-
     let junk = r#"event: ping
 
 data: not json
@@ -173,6 +178,15 @@ data:    {"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}]}
 
 "#;
     assert_eq!(titles(&decode(junk, 200).unwrap()), vec!["kept"]);
+}
+
+fn check_sse_selection() {
+    let first = r#"data: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"[{\"title\":\"first\"}]"}]}}
+
+data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"[{\"title\":\"second\"}]"}]}}
+
+"#;
+    assert_eq!(titles(&decode(first, 200).unwrap()), vec!["first"]);
 
     let notifications = r#"data: {"jsonrpc":"2.0","method":"notifications/progress"}
 
@@ -184,35 +198,8 @@ data: {"jsonrpc":"2.0","method":"notifications/message"}
         json(r#"{"jsonrpc":"2.0","method":"notifications/message"}"#)
     );
 
-    let indented = r#"  data: {"result":{}}
-
-"#;
-    assert_eq!(provider_status(&decode(indented, 200).unwrap_err()), 502);
-
-    let comment =
-        ": keepalive\n\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"c\"}]}}\n\n";
-    assert_eq!(titles(&decode(comment, 200).unwrap()), vec!["c"]);
-
-    let identified = "id: 7\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"i\"}]}}\n\n";
-    assert_eq!(titles(&decode(identified, 200).unwrap()), vec!["i"]);
-
-    let retried = "retry: 1000\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"r\"}]}}\n\n";
-    assert_eq!(titles(&decode(retried, 200).unwrap()), vec!["r"]);
-
     let padded = " data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"padded\"}]}}\n\n";
     assert_eq!(titles(&decode(padded, 200).unwrap()), vec!["padded"]);
-
-    let separated = "\u{1c}data: {\"result\":{\"structuredContent\":[{\"title\":\"sep\"}]}}";
-    assert_eq!(titles(&decode(separated, 200).unwrap()), vec!["sep"]);
-
-    let unit = "\u{1f}data: {\"result\":{}}";
-    assert_eq!(provider_status(&decode(unit, 200).unwrap_err()), 502);
-
-    let spaced = "data: {\"result\":{\"structuredContent\":[{\"title\":\"first\"}]}}\n \t\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"second\"}]}}\n\n";
-    assert_eq!(titles(&decode(spaced, 200).unwrap()), vec!["first"]);
-
-    let crlf = "data: {\"result\":{\"structuredContent\":[{\"title\":\"crlf\"}]}}\r\n\r\n";
-    assert_eq!(titles(&decode(crlf, 200).unwrap()), vec!["crlf"]);
 
     let error_first = r#"data: {"error":{}}
 
@@ -232,7 +219,38 @@ data: {"result":{"structuredContent":[{"title":"later"}]}}
 
 "#;
     assert!(decode(null_error_first, 200).unwrap().results.is_empty());
+}
 
+fn check_sse_prefixes() {
+    let indented = r#"  data: {"result":{}}
+
+"#;
+    assert_eq!(provider_status(&decode(indented, 200).unwrap_err()), 502);
+
+    let comment =
+        ": keepalive\n\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"c\"}]}}\n\n";
+    assert_eq!(titles(&decode(comment, 200).unwrap()), vec!["c"]);
+
+    let identified = "id: 7\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"i\"}]}}\n\n";
+    assert_eq!(titles(&decode(identified, 200).unwrap()), vec!["i"]);
+
+    let retried = "retry: 1000\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"r\"}]}}\n\n";
+    assert_eq!(titles(&decode(retried, 200).unwrap()), vec!["r"]);
+
+    let separated = "\u{1c}data: {\"result\":{\"structuredContent\":[{\"title\":\"sep\"}]}}";
+    assert_eq!(titles(&decode(separated, 200).unwrap()), vec!["sep"]);
+
+    let unit = "\u{1f}data: {\"result\":{}}";
+    assert_eq!(provider_status(&decode(unit, 200).unwrap_err()), 502);
+
+    let spaced = "data: {\"result\":{\"structuredContent\":[{\"title\":\"first\"}]}}\n \t\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"second\"}]}}\n\n";
+    assert_eq!(titles(&decode(spaced, 200).unwrap()), vec!["first"]);
+
+    let crlf = "data: {\"result\":{\"structuredContent\":[{\"title\":\"crlf\"}]}}\r\n\r\n";
+    assert_eq!(titles(&decode(crlf, 200).unwrap()), vec!["crlf"]);
+}
+
+fn check_sse_boundaries() {
     for boundary in [
         '\u{0b}', '\u{0c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
     ] {
@@ -245,6 +263,12 @@ data: {"result":{"structuredContent":[{"title":"later"}]}}
 }
 
 fn mcp_sse_no_frame() {
+    check_no_frame_error();
+    check_preview_cut();
+    check_plain_json_errors();
+}
+
+fn check_no_frame_error() {
     let no_frame = "data: not json\n\ndata: [1]\n\n";
     let error = decode(no_frame, 200).unwrap_err();
     assert_eq!(
@@ -256,7 +280,9 @@ fn mcp_sse_no_frame() {
         provider_headers(&error),
         Some(&ErrorHeaders::Http(headers()))
     );
+}
 
+fn check_preview_cut() {
     let long = format!("data: {}", "x".repeat(300));
     let long_error = decode(&long, 500).unwrap_err();
     assert_eq!(provider_status(&long_error), 502);
@@ -280,7 +306,9 @@ fn mcp_sse_no_frame() {
         provider_message(&over_error),
         format!("AgentCore gateway returned SSE without a JSON data frame: {cut}")
     );
+}
 
+fn check_plain_json_errors() {
     assert!(matches!(
         decode("not json", 200),
         Err(SearchReplyError::Json { .. })
@@ -295,6 +323,14 @@ fn mcp_sse_no_frame() {
 }
 
 fn mcp_error_precedence() {
+    check_top_level_error();
+    check_tool_error_raise();
+    check_error_status();
+    check_truthiness();
+    check_success_status();
+}
+
+fn check_top_level_error() {
     let with_result =
         r#"{"error":{},"result":{"content":[{"type":"text","text":"[{\"title\":\"no\"}]"}]}}"#;
     let error = decode(with_result, 200).unwrap_err();
@@ -320,7 +356,9 @@ fn mcp_error_precedence() {
     let null_error =
         r#"{"error":null,"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}]}}"#;
     assert_eq!(titles(&decode(null_error, 200).unwrap()), vec!["kept"]);
+}
 
+fn check_tool_error_raise() {
     let tool_error =
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"no\"}]"}],"isError":true}}"#;
     let in_band_error = decode(tool_error, 200).unwrap_err();
@@ -338,13 +376,23 @@ fn mcp_error_precedence() {
     let tool_raw = r#"{"result":{"content":[{"type":"text","text":"x"}],"isError":1}}"#;
     assert_eq!(provider_status(&decode(tool_raw, 500).unwrap_err()), 500);
 
-    let falsy =
-        r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}],"isError":0}}"#;
-    assert_eq!(titles(&decode(falsy, 200).unwrap()), vec!["kept"]);
+    let tool_at_400 = decode(r#"{"result":{"isError":true,"content":[]}}"#, 400).unwrap_err();
+    assert_eq!(provider_status(&tool_at_400), 400);
 
-    let at_500 = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"ok\"}]"}]}}"#;
-    assert_eq!(titles(&decode(at_500, 500).unwrap()), vec!["ok"]);
+    let text_yes = r#"{"result":{"content":[{"type":"text","text":"x"}],"isError":"no"}}"#;
+    assert_eq!(provider_status(&decode(text_yes, 200).unwrap_err()), 502);
 
+    let nonempty_list = r#"{"result":{"content":[{"type":"text","text":"x"}],"isError":[0]}}"#;
+    assert_eq!(
+        provider_status(&decode(nonempty_list, 200).unwrap_err()),
+        502
+    );
+
+    let object_flag = r#"{"result":{"isError":{"reason":"x"},"content":[]}}"#;
+    assert_eq!(provider_status(&decode(object_flag, 200).unwrap_err()), 502);
+}
+
+fn check_error_status() {
     let error_zero = decode(r#"{"error":0}"#, 200).unwrap_err();
     assert_eq!(provider_status(&error_zero), 502);
 
@@ -356,12 +404,12 @@ fn mcp_error_precedence() {
 
     let at_399 = decode(r#"{"error":{}}"#, 399).unwrap_err();
     assert_eq!(provider_status(&at_399), 502);
+}
 
-    let tool_at_400 = decode(r#"{"result":{"isError":true,"content":[]}}"#, 400).unwrap_err();
-    assert_eq!(provider_status(&tool_at_400), 400);
-
-    let text_yes = r#"{"result":{"content":[{"type":"text","text":"x"}],"isError":"no"}}"#;
-    assert_eq!(provider_status(&decode(text_yes, 200).unwrap_err()), 502);
+fn check_truthiness() {
+    let falsy =
+        r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}],"isError":0}}"#;
+    assert_eq!(titles(&decode(falsy, 200).unwrap()), vec!["kept"]);
 
     let text_empty =
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}],"isError":""}}"#;
@@ -374,24 +422,25 @@ fn mcp_error_precedence() {
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}],"isError":[]}}"#;
     assert_eq!(titles(&decode(empty_list, 200).unwrap()), vec!["kept"]);
 
-    let nonempty_list = r#"{"result":{"content":[{"type":"text","text":"x"}],"isError":[0]}}"#;
-    assert_eq!(
-        provider_status(&decode(nonempty_list, 200).unwrap_err()),
-        502
-    );
-
     let empty_object =
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}],"isError":{}}}"#;
     assert_eq!(titles(&decode(empty_object, 200).unwrap()), vec!["kept"]);
-
-    let object_flag = r#"{"result":{"isError":{"reason":"x"},"content":[]}}"#;
-    assert_eq!(provider_status(&decode(object_flag, 200).unwrap_err()), 502);
 
     let top_level = r#"{"result":7,"isError":true}"#;
     assert!(decode(top_level, 200).unwrap().results.is_empty());
 }
 
+fn check_success_status() {
+    let at_500 = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"ok\"}]"}]}}"#;
+    assert_eq!(titles(&decode(at_500, 500).unwrap()), vec!["ok"]);
+}
+
 fn mcp_tool_error() {
+    check_joined_texts();
+    check_json_fallback();
+}
+
+fn check_joined_texts() {
     let joined = r#"{"result":{"content":[{"type":"text","text":"first"},{"type":"text","text":"second"}],"isError":true}}"#;
     assert_eq!(
         provider_message(&decode(joined, 200).unwrap_err()),
@@ -422,7 +471,9 @@ fn mcp_tool_error() {
         provider_message(&decode(non_string, 200).unwrap_err()),
         "AgentCore web search tool error: kept"
     );
+}
 
+fn check_json_fallback() {
     let no_blocks = r#"{"result":{"isError":true,"content":[{"type":"image","text":"x"}]}}"#;
     assert_eq!(
         provider_message(&decode(no_blocks, 200).unwrap_err()),
@@ -442,6 +493,12 @@ fn mcp_tool_error() {
 }
 
 fn agentcore_search_reply_error() {
+    check_parse_errors();
+    check_standard_json_limits();
+    check_encoding();
+}
+
+fn check_parse_errors() {
     let truncated = r#"{"result":"#;
     let error = decode(truncated, 200).unwrap_err();
     assert!(matches!(&error, SearchReplyError::Json { .. }));
@@ -458,7 +515,9 @@ fn agentcore_search_reply_error() {
     let not_utf8 = decode_bytes(&[0xff, 0xfe], 200).unwrap_err();
     assert!(matches!(&not_utf8, SearchReplyError::NotUtf8 { .. }));
     assert_eq!(not_utf8.status(), None);
+}
 
+fn check_standard_json_limits() {
     for nonstandard in [
         r#"{"result":NaN}"#,
         r#"{"result":Infinity}"#,
@@ -474,7 +533,9 @@ fn agentcore_search_reply_error() {
         decode(&deep, 200),
         Err(SearchReplyError::Json { .. })
     ));
+}
 
+fn check_encoding() {
     let valid = r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"kept\"}]"}]}}"#;
     assert_eq!(titles(&decode(valid, 200).unwrap()), vec!["kept"]);
     assert_eq!(titles(&decode(valid, 500).unwrap()), vec!["kept"]);
