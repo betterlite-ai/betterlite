@@ -20,12 +20,12 @@ from .fakes import (
     scope_of,
 )
 from .models import (
+    MODEL,
     AckStep,
     ClientMessagesStep,
     DispatchStep,
     JsonAdapter,
     JsonObject,
-    MODEL,
     ParseClientStep,
     PendingStep,
     ProviderStep,
