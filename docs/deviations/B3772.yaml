@@ -60,7 +60,8 @@ deviations:
   - what: >-
       GraySwanGuardrailAPIError's message is a typed description of the failure. LiteLLM's message is
       str(exc) of the httpx or parsing exception it wrapped. status_code is carried the same way on both
-      sides: the HTTP status, 400 for a block, and None for transport, header and JSON failures.
+      sides: the HTTP status, 400 for a block, 408 for a timeout, and None for connect, header and JSON
+      failures.
     why: >-
       docs/compatibility.md does not port Python's str() text. The message still names what failed, and the
       status code, which the failure log and callers read, matches.

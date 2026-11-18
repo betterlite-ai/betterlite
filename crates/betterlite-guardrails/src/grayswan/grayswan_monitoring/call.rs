@@ -24,8 +24,8 @@ pub async fn call_grayswan_api(
         .await
         .map_err(request_failure)?;
     let status = response.status();
-    // LiteLLM's raise_for_status(): only a 4xx or 5xx response is an error, a 3xx body is parsed
-    if status.is_client_error() || status.is_server_error() {
+    // LiteLLM's raise_for_status(): every non-2xx response is an error, a 3xx included
+    if !status.is_success() {
         return Err(GraySwanGuardrailAPIError::from_failure(
             GraySwanFailure::HttpStatus { status },
         ));

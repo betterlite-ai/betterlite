@@ -37,7 +37,10 @@ impl GraySwanFailure {
     #[must_use]
     pub const fn statuses(&self) -> (StatusCode, Option<u16>) {
         match self {
-            Self::Timeout { .. } => (StatusCode::REQUEST_TIMEOUT, None),
+            Self::Timeout { .. } => (
+                StatusCode::REQUEST_TIMEOUT,
+                Some(StatusCode::REQUEST_TIMEOUT.as_u16()),
+            ),
             Self::HttpStatus { status } => {
                 if matches!(status.as_u16(), 400..=599) {
                     (*status, Some(status.as_u16()))
@@ -68,15 +71,6 @@ pub struct GraySwanGuardrailAPIError {
 }
 
 impl GraySwanGuardrailAPIError {
-    #[must_use]
-    pub const fn new(message: String, status_code: Option<u16>) -> Self {
-        Self {
-            message,
-            status_code,
-            cause: None,
-        }
-    }
-
     #[must_use]
     pub fn from_failure(failure: GraySwanFailure) -> Self {
         let status_code = failure.statuses().1;

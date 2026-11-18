@@ -50,14 +50,31 @@ async fn call_grayswan_api_rejects_a_client_error_status() {
 }
 
 #[tokio::test]
-async fn call_grayswan_api_parses_a_redirect_response() {
+async fn call_grayswan_api_rejects_a_server_error_status() {
+    let (_capture, base, _server) =
+        capture_server(answer(AxumStatus::INTERNAL_SERVER_ERROR, "{}")).await;
+    let settings = configured(&base, OnFlaggedAction::Monitor, true);
+    let error = call_grayswan_api(&reqwest::Client::default(), &settings, &payload())
+        .await
+        .expect_err("a server error status is an error");
+    assert_eq!(error.status_code, Some(500));
+    assert_eq!(error.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn call_grayswan_api_rejects_a_redirect_response() {
     let (_capture, base, _server) =
         capture_server(answer(AxumStatus::FOUND, r#"{"violation": 0.3}"#)).await;
     let settings = configured(&base, OnFlaggedAction::Monitor, true);
-    let response = call_grayswan_api(&reqwest::Client::default(), &settings, &payload())
+    let error = call_grayswan_api(&reqwest::Client::default(), &settings, &payload())
         .await
-        .expect("a 3xx response is parsed like LiteLLM's raise_for_status");
-    assert!((response.violation - 0.3).abs() < f64::EPSILON);
+        .expect_err("a 3xx response is an error like every non-2xx");
+    assert!(matches!(
+        error.cause,
+        Some(GraySwanFailure::HttpStatus { .. })
+    ));
+    assert_eq!(error.status_code, Some(302));
+    assert_eq!(error.http_status(), StatusCode::INTERNAL_SERVER_ERROR);
 }
 
 #[tokio::test]
@@ -154,7 +171,7 @@ async fn call_grayswan_api_times_out() {
         .await
         .expect_err("a slow server times out");
     assert!(matches!(error.cause, Some(GraySwanFailure::Timeout { .. })));
-    assert_eq!(error.status_code, None);
+    assert_eq!(error.status_code, Some(408));
     assert_eq!(error.http_status(), StatusCode::REQUEST_TIMEOUT);
 }
 

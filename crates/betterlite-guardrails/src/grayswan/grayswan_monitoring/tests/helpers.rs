@@ -98,7 +98,11 @@ fn is_grayswan_exception_accepts_a_blocked_api_error() {
 
 #[test]
 fn is_grayswan_exception_rejects_an_api_error_without_a_block() {
-    let bare = GraySwanGuardrailAPIError::new("boom".to_owned(), Some(500));
+    let bare = GraySwanGuardrailAPIError {
+        message: "boom".to_owned(),
+        status_code: Some(500),
+        cause: None,
+    };
     assert!(!is_grayswan_exception(GuardrailException::Api(&bare)));
     let status = GraySwanGuardrailAPIError::from_failure(GraySwanFailure::HttpStatus {
         status: StatusCode::INTERNAL_SERVER_ERROR,

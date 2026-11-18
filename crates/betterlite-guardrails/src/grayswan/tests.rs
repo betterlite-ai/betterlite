@@ -68,23 +68,23 @@ fn guardrail(action: OnFlaggedAction) -> GraySwanGuardrail {
 }
 
 fn message(role: &str, content: &str) -> GuardrailMessage {
+    let mut extra = BTreeMap::new();
+    extra.insert(
+        "content".to_owned(),
+        GuardrailExtraValue::Text(content.to_owned()),
+    );
     GuardrailMessage {
         role: role.to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailExtraValue::Text(content.to_owned()),
-        )]),
+        extra,
     }
 }
 
 fn plain_message(role: &str, content: &str) -> GuardrailValue {
-    GuardrailValue::Object(BTreeMap::from([
-        ("role".to_owned(), GuardrailValue::Text(role.to_owned())),
-        (
-            "content".to_owned(),
-            GuardrailValue::Text(content.to_owned()),
-        ),
-    ]))
+    let mut fields = BTreeMap::new();
+    for (name, value) in [("role", role), ("content", content)] {
+        fields.insert(name.to_owned(), GuardrailValue::Text(value.to_owned()));
+    }
+    GuardrailValue::Object(fields)
 }
 
 fn field<'row>(row: &'row GuardrailValue, key: &str) -> Option<&'row GuardrailValue> {
@@ -262,7 +262,7 @@ fn connection_refused() -> reqwest::Error {
 #[case::timeout(
     GraySwanFailure::Timeout { source: connection_refused() },
     StatusCode::REQUEST_TIMEOUT,
-    None
+    Some(408)
 )]
 #[case::http_status_in_range(
     GraySwanFailure::HttpStatus { status: StatusCode::NOT_FOUND },
@@ -332,8 +332,12 @@ fn grayswan_error_status_follows_litellm(
 }
 
 #[test]
-fn grayswan_api_error_constructor_stores_the_status_code() {
-    let error = GraySwanGuardrailAPIError::new("boom".to_owned(), Some(429));
+fn grayswan_api_error_literal_stores_the_status_code() {
+    let error = GraySwanGuardrailAPIError {
+        message: "boom".to_owned(),
+        status_code: Some(429),
+        cause: None,
+    };
     assert_eq!(error.message, "boom");
     assert_eq!(error.status_code, Some(429));
     assert!(error.cause.is_none());
