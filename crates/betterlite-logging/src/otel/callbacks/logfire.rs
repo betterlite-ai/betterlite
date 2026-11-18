@@ -141,7 +141,7 @@ fn header_fields(
     let id = response
         .get("id")
         .and_then(as_text)
-        .map_or_else(ids, |id| id.to_owned());
+        .map_or_else(ids, ToOwned::to_owned);
     IndexMap::from([
         ("id".to_owned(), Json::Text(id)),
         (
