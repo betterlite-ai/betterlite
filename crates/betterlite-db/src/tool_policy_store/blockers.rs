@@ -18,33 +18,21 @@ impl BlockedChange {
     }
 }
 
-// ast-grep-ignore: no-long-names
-pub async fn add_tool_to_object_permission_blocked<Client>(
+// ast-grep-ignore: no-long-names, no-one-line-functions
+pub async fn add_tool_to_object_permission_blocked<Client: GenericClient + Sync>(
     client: Option<&Client>,
     object_permission_id: &str,
     tool_name: &str,
-) -> bool
-where
-    Client: GenericClient + Sync,
-{
-    if object_permission_id.is_empty() || tool_name.is_empty() {
-        return false;
-    }
+) -> bool {
     change_blocked_tools(client, object_permission_id, tool_name, BlockedChange::Add).await
 }
 
 // ast-grep-ignore: no-long-names
-pub async fn remove_tool_from_object_permission_blocked<Client>(
+pub async fn remove_tool_from_object_permission_blocked<Client: GenericClient + Sync>(
     client: Option<&Client>,
     object_permission_id: &str,
     tool_name: &str,
-) -> bool
-where
-    Client: GenericClient + Sync,
-{
-    if object_permission_id.is_empty() || tool_name.is_empty() {
-        return false;
-    }
+) -> bool {
     change_blocked_tools(
         client,
         object_permission_id,
@@ -54,15 +42,15 @@ where
     .await
 }
 
-async fn change_blocked_tools<Client>(
+async fn change_blocked_tools<Client: GenericClient + Sync>(
     client: Option<&Client>,
     object_permission_id: &str,
     tool_name: &str,
     change: BlockedChange,
-) -> bool
-where
-    Client: GenericClient + Sync,
-{
+) -> bool {
+    if object_permission_id.is_empty() || tool_name.is_empty() {
+        return false;
+    }
     let Some(connected) = client else {
         tracing::error!(
             "tool_registry_writer {} error: no database connection",
@@ -99,13 +87,10 @@ where
     }
 }
 
-async fn blocked_tools_of<Client>(
+async fn blocked_tools_of<Client: GenericClient + Sync>(
     client: &Client,
     object_permission_id: &str,
-) -> Result<Option<Vec<String>>, tokio_postgres::Error>
-where
-    Client: GenericClient + Sync,
-{
+) -> Result<Option<Vec<String>>, tokio_postgres::Error> {
     let row = client.query_opt(FIND_SQL, &[&object_permission_id]).await?;
     let Some(row) = row else {
         return Ok(None);

@@ -123,48 +123,50 @@ where
     Ok(blocked_tools_map(&rows))
 }
 
-async fn read_tool_rows(database: &PostgresStore) -> Result<Vec<String>, DbError> {
+async fn read_rows(
+    database: &PostgresStore,
+    sql: &str,
+) -> Result<Vec<tokio_postgres::Row>, DbError> {
     let client = database
         .session()
         .await
         .map_err(|source| read_fault(&source))?;
-    let rows = client
-        .query(TOOLS_SQL, &[])
+    client
+        .query(sql, &[])
         .await
-        .map_err(|source| read_fault(&backend(source)))?;
-    let mut texts = Vec::with_capacity(rows.len());
-    for row in &rows {
-        texts.push(
+        .map_err(|source| read_fault(&backend(source)))
+}
+
+async fn read_tool_rows(database: &PostgresStore) -> Result<Vec<String>, DbError> {
+    read_rows(database, TOOLS_SQL)
+        .await?
+        .iter()
+        .map(|row| {
             row.try_get::<_, String>("row_text")
-                .map_err(|source| read_fault(&backend(source)))?,
-        );
-    }
-    Ok(texts)
+                .map_err(|source| read_fault(&backend(source)))
+        })
+        .collect()
 }
 
 async fn read_blocked_rows(database: &PostgresStore) -> Result<Vec<BlockedToolRow>, DbError> {
-    let client = database
-        .session()
-        .await
-        .map_err(|source| read_fault(&source))?;
-    let rows = client
-        .query(PERMISSIONS_SQL, &[])
-        .await
+    read_rows(database, PERMISSIONS_SQL)
+        .await?
+        .iter()
+        .map(blocked_tool_row)
+        .collect()
+}
+
+fn blocked_tool_row(row: &tokio_postgres::Row) -> Result<BlockedToolRow, DbError> {
+    let object_permission_id = row
+        .try_get::<_, String>("object_permission_id")
         .map_err(|source| read_fault(&backend(source)))?;
-    let mut permissions = Vec::with_capacity(rows.len());
-    for row in &rows {
-        let object_permission_id = row
-            .try_get::<_, String>("object_permission_id")
-            .map_err(|source| read_fault(&backend(source)))?;
-        let blocked_tools = row
-            .try_get::<_, Option<Vec<String>>>("blocked_tools")
-            .map_err(|source| read_fault(&backend(source)))?;
-        permissions.push(BlockedToolRow {
-            object_permission_id,
-            blocked_tools,
-        });
-    }
-    Ok(permissions)
+    let blocked_tools = row
+        .try_get::<_, Option<Vec<String>>>("blocked_tools")
+        .map_err(|source| read_fault(&backend(source)))?;
+    Ok(BlockedToolRow {
+        object_permission_id,
+        blocked_tools,
+    })
 }
 
 // The retry helper replays only transport faults, so a lost connection has to arrive as Connect.
