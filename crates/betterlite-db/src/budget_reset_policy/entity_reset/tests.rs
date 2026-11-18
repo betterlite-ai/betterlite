@@ -28,7 +28,7 @@ impl ResetSchedule for FixedSchedule {
 
     fn next_reset_at(&self, budget_duration: &str) -> Result<DateTime<Utc>, ScheduleFault> {
         self.invocations.fetch_add(1, Ordering::SeqCst);
-        if budget_duration == "unparseable" {
+        if budget_duration == "not-a-duration" {
             return Err(ScheduleFault);
         }
         Ok(self.next)
@@ -148,7 +148,12 @@ fn entity_reset_advances_the_reset_time_from_the_schedule() {
 fn entity_reset_propagates_a_schedule_failure() {
     let schedule = schedule();
     let result = reset_budget_values(
-        input(Some(Decimal::from(5_i32)), None, Some("unparseable"), None),
+        input(
+            Some(Decimal::from(5_i32)),
+            None,
+            Some("not-a-duration"),
+            None,
+        ),
         RolloverPolicy::default(),
         &schedule,
     );

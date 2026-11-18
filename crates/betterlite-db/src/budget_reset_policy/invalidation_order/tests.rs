@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use super::commit_then_invalidate;
-use crate::budget_reset_policy::cache_invalidation::{CacheDeleteFuture, ResetCache};
+use crate::budget_reset_policy::cache_invalidation::{
+    CacheDeleteFuture, InvalidatedCache, ResetCache,
+};
 use std::future::{Ready, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -34,6 +36,16 @@ struct EventCache {
     fail_spend: bool,
 }
 
+impl EventCache {
+    fn note(&self, sink: InvalidatedCache, keys: &[String]) {
+        self.events.push(&format!(
+            "{name} {count}",
+            name = sink.as_str(),
+            count = keys.len()
+        ));
+    }
+}
+
 impl ResetCache for EventCache {
     type Failure = OrderFault;
 
@@ -41,20 +53,21 @@ impl ResetCache for EventCache {
         &'cache self,
         keys: &'cache [String],
     ) -> CacheDeleteFuture<'cache, OrderFault> {
-        self.events
-            .push(&format!("spend counter {count}", count = keys.len()));
-        let failed = self.fail_spend;
-        Box::pin(async move { if failed { Err(OrderFault) } else { Ok(()) } })
+        self.note(InvalidatedCache::SpendCounter, keys);
+        settle(self.fail_spend)
     }
 
     fn delete_user_api_keys<'cache>(
         &'cache self,
         keys: &'cache [String],
     ) -> CacheDeleteFuture<'cache, OrderFault> {
-        self.events
-            .push(&format!("user_api_key_cache {count}", count = keys.len()));
+        self.note(InvalidatedCache::UserApiKeyCache, keys);
         Box::pin(async { Ok(()) })
     }
+}
+
+fn settle(failed: bool) -> CacheDeleteFuture<'static, OrderFault> {
+    Box::pin(async move { if failed { Err(OrderFault) } else { Ok(()) } })
 }
 
 fn event_cache(events: &Events, fail_spend: bool) -> EventCache {

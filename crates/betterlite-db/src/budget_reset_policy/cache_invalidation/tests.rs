@@ -39,6 +39,31 @@ impl FakeCache {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn refuses(&self, sink: InvalidatedCache) -> bool {
+        matches!(
+            (self.failures, sink),
+            (Failures::SpendCounter, InvalidatedCache::SpendCounter)
+                | (Failures::UserApiKeyCache, InvalidatedCache::UserApiKeyCache)
+        )
+    }
+
+    fn deletion(
+        &self,
+        sink: InvalidatedCache,
+        keys: &[String],
+    ) -> CacheDeleteFuture<'_, CacheFault> {
+        let failed = self.refuses(sink);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CacheCall {
+                sink,
+                keys: keys.to_vec(),
+                failed,
+            });
+        Box::pin(async move { if failed { Err(CacheFault) } else { Ok(()) } })
+    }
 }
 
 fn fake_cache(failures: Failures) -> FakeCache {
@@ -55,32 +80,14 @@ impl ResetCache for FakeCache {
         &'cache self,
         keys: &'cache [String],
     ) -> CacheDeleteFuture<'cache, CacheFault> {
-        let failed = matches!(self.failures, Failures::SpendCounter);
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CacheCall {
-                sink: InvalidatedCache::SpendCounter,
-                keys: keys.to_vec(),
-                failed,
-            });
-        Box::pin(async move { if failed { Err(CacheFault) } else { Ok(()) } })
+        self.deletion(InvalidatedCache::SpendCounter, keys)
     }
 
     fn delete_user_api_keys<'cache>(
         &'cache self,
         keys: &'cache [String],
     ) -> CacheDeleteFuture<'cache, CacheFault> {
-        let failed = matches!(self.failures, Failures::UserApiKeyCache);
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(CacheCall {
-                sink: InvalidatedCache::UserApiKeyCache,
-                keys: keys.to_vec(),
-                failed,
-            });
-        Box::pin(async move { if failed { Err(CacheFault) } else { Ok(()) } })
+        self.deletion(InvalidatedCache::UserApiKeyCache, keys)
     }
 }
 
