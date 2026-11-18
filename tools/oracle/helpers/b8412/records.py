@@ -1,6 +1,9 @@
 from typing import TypeAlias, TypedDict
 
+import litellm
 from pydantic import JsonValue
+
+litellm.suppress_debug_info = True
 
 Amount: TypeAlias = int | float
 
