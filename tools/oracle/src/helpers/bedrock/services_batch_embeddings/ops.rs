@@ -121,5 +121,6 @@ const fn embedding_class(error: &BatchEmbeddingError) -> &'static str {
         BatchEmbeddingError::TokenizedInput { .. }
         | BatchEmbeddingError::UnsupportedModel { .. } => "NotImplementedError",
         BatchEmbeddingError::Titan(_) => "TypeError",
+        BatchEmbeddingError::Wire(_) => "ValidationError",
     }
 }

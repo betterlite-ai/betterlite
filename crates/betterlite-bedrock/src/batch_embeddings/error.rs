@@ -24,4 +24,6 @@ pub enum BatchEmbeddingError {
     UnsupportedModel { model: String },
     #[error(transparent)]
     Titan(#[from] TitanEmbeddingsError),
+    #[error("the shared Titan v2 request does not fit the InvokeModel body: {0}")]
+    Wire(#[source] serde_json::Error),
 }
