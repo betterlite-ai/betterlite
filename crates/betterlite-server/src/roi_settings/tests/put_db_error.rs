@@ -170,6 +170,26 @@ async fn put_db_error_keeps_a_syntax_error_at_internal_server_error() {
 }
 
 #[tokio::test]
+async fn put_db_error_keeps_a_unique_violation_at_internal_server_error() {
+    let reply = call(
+        settings_app(
+            Some(outage_repository(
+                "23505",
+                "duplicate key value violates unique constraint \"pkey\"",
+            )),
+            None,
+        ),
+        put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        reply.text(),
+        r#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#
+    );
+}
+
+#[tokio::test]
 async fn put_db_error_maps_other_failures_to_internal_server_error() {
     let reply = call(
         settings_app(Some(Arc::new(MissingRowRepository)), None),
