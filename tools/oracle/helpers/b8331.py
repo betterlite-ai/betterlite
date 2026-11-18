@@ -1,13 +1,13 @@
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Literal, NotRequired, Protocol, TypedDict
+from typing import ClassVar, Final, Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 
 import httpx
 import litellm
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
@@ -71,8 +71,14 @@ class Case(TypedDict):
     upstream: NotRequired[list[Reply]]
 
 
+@runtime_checkable
 class ClientCache(Protocol):
     def set_cache(self, key: str, value: HTTPHandler) -> None: ...
+
+
+CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
+    ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
+)
 
 
 class Scripted:
@@ -169,16 +175,11 @@ def replace_environment(case: Case, upstream: str) -> None:
     )
 
 
-def substituted(value: str | None, upstream: str) -> str | None:
-    if value is None:
-        return None
-    return value.replace(PLACEHOLDER, upstream)
-
-
 def call_provider(case: Case, client: HTTPHandler, upstream: str) -> None:
     model = case["model"]
     messages = case.get("messages")
-    api_base = substituted(case.get("api_base"), upstream)
+    raw_base = case.get("api_base")
+    api_base = None if raw_base is None else raw_base.replace(PLACEHOLDER, upstream)
     api_key = case.get("api_key")
     match case["op"]:
         case "sap_chat":
@@ -285,9 +286,9 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     upstream = scripted.base
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(scripted.handle)))
     litellm.module_level_client = client
-    litellm.in_memory_llm_clients_cache = LLMClientCache()
-    cache: ClientCache = litellm.in_memory_llm_clients_cache
-    cache.set_cache(key="httpx_client", value=client)
+    holder = LLMClientCache()
+    litellm.in_memory_llm_clients_cache = holder
+    CLIENT_CACHE.validate_python(holder).set_cache(key="httpx_client", value=client)
     replace_environment(case, upstream)
     try:
         call_provider(case, client, upstream)
