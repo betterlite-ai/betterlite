@@ -25,8 +25,11 @@ description: >-
   Afterwards resolve full provider, map supplied file IDs, invoke MCP, check encrypted support,
   overlay locals with kwargs, map reasoning, invoke file search and choose chat/native.
 
-  Register SdkHttpCall::ResponsesCreate with real provider calls through B2401 and a pure
-  HelperCall::ResponsesCreateLiterals for the mock builder/predicate via B171. The latter alone
+  SdkHttpCall::ResponsesCreate, already on main as a placeholder, makes real provider calls: replace the
+  Call and Outcome aliases in tools/oracle/src/sdk_http/responses_create.rs (Call implements
+  call_kind::CallKind, Outcome is the value of SdkResult::ResponsesCreate) and fill ResponsesCreateRequest
+  in tools/oracle/sdk_http/responses_create.py, leaving the shared sdk_http files and dispatch.py alone. A
+  pure HelperCall::ResponsesCreateLiterals covers the mock builder/predicate via B171. The latter alone
   is a helper; HTTP tests must record actual requests. Keep input decoding in B902/B1087 and
   transport decoding below B2414. Owned source count 335 nonblank/non-comment lines. Estimate
   285 implementation, 160 tests, 115 fixtures, 130 adapters and 35 wiring, 725 total under 790.
@@ -35,9 +38,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_create.rs
   - crates/betterlite-core/src/api/responses_create/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_create.rs
+  - tools/oracle/src/sdk_http/responses_create/**
   - tools/oracle/sdk_http/responses_create.py
   - tools/oracle/cases/sdk-http/responses-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-create-*
@@ -134,7 +136,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create::tests::mock_response_literals($|::)/)'
   - id: python-sdk
     why: create parity lacks real decorated SDK calls against the provider mock
-    run: test -f tools/oracle/sdk_http/responses_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_create.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: python-helper
     why: literal helper results are copied rather than independently executed
     run: test -f tools/oracle/helpers/responses_create_literals.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

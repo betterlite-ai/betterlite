@@ -25,7 +25,8 @@ use uuid::Uuid;
 use super::VectorQueryEmbeddingCall;
 use super::error::SdkHttpError;
 use super::native::openai_defaults;
-use super::result::{Failure, QueryVectors, SdkResult};
+use super::result::kinds::SdkResult;
+use super::result::{Failure, QueryVectors};
 
 // LiteLLM's embed_query runs first, and its aembed_query only runs when the first call returned
 pub(crate) async fn send(

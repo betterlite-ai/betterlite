@@ -12,9 +12,12 @@ description: >-
   before checking either for truthiness. The convenience wrapper discards only the name map, not options.
   Default is_async=true returns an async AnthropicSSEStream; false returns the synchronous SSE iterator.
 
-  Keep input/output record cases in HelperCall::MessagesChatTransform. The messages_chat_transform_stream
-  B2401 variant calls B004 against the mock Chat provider, then the production output wrapper, capturing actual
-  HTTP and events. No later B974 execution handler is needed. There is no new byte parser: B004/B005 decode
+  Keep input/output record cases in HelperCall::MessagesChatTransform. SdkHttpCall::MessagesChatTransformStream
+  calls B004 against the mock Chat provider, then the production output wrapper, capturing actual HTTP and
+  events. It is on main as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/messages_chat_transform_stream.rs (Call implements call_kind::CallKind) and fill
+  ChatTransformStreamRequest, under that name, in tools/oracle/sdk_http/messages_chat_transform_stream.py,
+  leaving the shared sdk_http files alone. No later B974 execution handler is needed. There is no new byte parser: B004/B005 decode
   provider data. Count 158 nonblank/non-comment source lines; budget 145 implementation, 140 tests, 130 fixtures,
   120 dual adapters and 40 wiring, 575 lines.
 scope:
@@ -28,9 +31,8 @@ scope:
   - tools/oracle/helpers/messages_chat_transform.py
   - tools/oracle/helpers/messages_chat_transform/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/messages_chat_transform_stream.rs
+  - tools/oracle/src/sdk_http/messages_chat_transform_stream/**
   - tools/oracle/sdk_http/messages_chat_transform_stream.py
   - tools/oracle/cases/helpers/messages-chat-transform/**
   - tools/oracle/cases/sdk-http/messages-chat-transform/**
@@ -85,7 +87,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_transform::/)'
   - id: adapters
     why: either record or HTTP stream comparison lacks a strict Python implementation
-    run: test -f tools/oracle/helpers/messages_chat_transform.py && test -f tools/oracle/sdk_http/messages_chat_transform_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/messages_chat_transform.py && ! grep -q not_built tools/oracle/sdk_http/messages_chat_transform_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: helper-corpus
     why: the pure composition call has no parser seed
     run: grep -qE '^[[:space:]]+messages_chat_transform:' tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'

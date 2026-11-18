@@ -24,7 +24,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::error::SdkHttpError;
-use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
+use super::result::kinds::SdkResult;
+use super::result::{ChatCompletion, Choice, Failure, Nullable};
 use super::{ChatMessage, OpenaiChat};
 
 #[derive(Serialize)]

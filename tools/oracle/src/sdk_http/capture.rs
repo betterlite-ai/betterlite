@@ -8,17 +8,11 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
-use super::chat_response_stream;
 use super::error::SdkHttpError;
+use super::native_dispatch;
 use super::python::PythonSdk;
-use super::responses_agentic_continuation as agentic;
-use super::result::SdkResult;
+use super::result::kinds::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
-use super::{
-    anthropic_beta_config, embedding_executor, file_azure_storage, messages_chat_stream,
-    messages_header_stream, messages_stream_logging, messages_sync_stream, native,
-    vector_query_embedding,
-};
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
@@ -48,45 +42,9 @@ impl<'sdk> Sdk<'sdk> {
         env: &BTreeMap<String, String>,
         stop: &Stop<'_>,
     ) -> Execution {
-        match (self, call) {
-            (Self::Python(python), _) => python.execute(call, api_base, stop),
-            (Self::Native, SdkHttpCall::OpenaiChat(chat)) => {
-                run_until_stopped(native::send(chat, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::VectorStoreEmbeddingExecutor(embedding)) => {
-                run_until_stopped(embedding_executor::send(embedding, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::VectorQueryEmbedding(query)) => {
-                run_until_stopped(vector_query_embedding::send(query, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::AnthropicBetaConfig(beta)) => {
-                run_until_stopped(anthropic_beta_config::send(beta, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::MessagesHeaderStream(stream)) => {
-                run_until_stopped(messages_header_stream::send(stream, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::MessagesStreamLogging(logging)) => {
-                run_until_stopped(messages_stream_logging::send(logging, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::MessagesNativeStream(relay)) => run_until_stopped(
-                messages_stream_logging::relay::send(relay, api_base, env),
-                stop,
-            ),
-            (Self::Native, SdkHttpCall::MessagesSyncStream(stream)) => {
-                run_until_stopped(messages_sync_stream::send(stream, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::MessagesChatStream(stream)) => {
-                run_until_stopped(messages_chat_stream::send(stream, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::ChatResponseStream(stream)) => {
-                run_until_stopped(chat_response_stream::send(stream, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::ResponsesAgenticContinuation(continuation)) => {
-                run_until_stopped(agentic::send(continuation, api_base, env), stop)
-            }
-            (Self::Native, SdkHttpCall::FileAzureStorage(storage)) => {
-                run_until_stopped(file_azure_storage::send(storage, api_base, env), stop)
-            }
+        match self {
+            Self::Python(python) => python.execute(call, api_base, stop),
+            Self::Native => native_dispatch::execute(call, api_base, env, stop),
         }
     }
 }

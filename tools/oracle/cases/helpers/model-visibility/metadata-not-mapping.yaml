@@ -1,0 +1,33 @@
+kind: helper
+name: model-visibility-metadata-not-mapping
+call:
+  model_visibility:
+    function: discoverable_rows
+    model_list:
+      - model_name: text-info
+        litellm_params:
+          model: openai/gpt-4o
+        model_info: "false"
+      - model_name: list-info
+        litellm_params:
+          model: openai/gpt-4o
+        model_info: [false]
+      - model_name: null-info
+        litellm_params:
+          model: openai/gpt-4o
+        model_info: null
+      - model_name: number-info
+        litellm_params:
+          model: openai/gpt-4o
+        model_info: 0
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      user_role: internal_user
+env: {}
+compare: {ignore: []}
