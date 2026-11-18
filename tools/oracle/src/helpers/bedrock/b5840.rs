@@ -5,7 +5,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::sagemaker_runtime::chat::{ChatCall, ChatVariant};
+use betterlite_bedrock::sagemaker_runtime::chat::{self, ChatCall, ChatVariant};
 use betterlite_bedrock::sagemaker_runtime::endpoint::{EndpointRequest, ParamMap, runtime_url};
 use betterlite_bedrock::sagemaker_runtime::runtime::{
     PreparedCall, SagemakerCredentials, SagemakerEnvironment, SagemakerRuntime,
@@ -198,7 +198,7 @@ fn prepare_call(
         .build()
         .map_err(failure)?;
     runtime
-        .block_on(sagemaker.prepare_chat(&call))
+        .block_on(chat::prepare_chat(sagemaker, &call))
         .map_err(failure)
 }
 

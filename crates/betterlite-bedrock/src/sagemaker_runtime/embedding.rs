@@ -30,7 +30,7 @@ pub struct EmbeddingCall<'call> {
     pub input: &'call EmbeddingInput,
     pub optional_params: &'call Body,
     pub signing: &'call ParamMap,
-    pub encoding: &'call dyn TextEncoding,
+    pub encoding: &'call (dyn TextEncoding + Sync),
 }
 
 pub struct PreparedEmbedding {
@@ -38,7 +38,7 @@ pub struct PreparedEmbedding {
     pub body: Body,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum EmbeddingReply {
     Voyage(Plain),
@@ -46,91 +46,80 @@ pub enum EmbeddingReply {
     Cohere(LegacyEmbeddingResponse),
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    C: SagemakerCredentials,
-{
-    pub async fn prepare_embedding(
-        &self,
-        call: &EmbeddingCall<'_>,
-    ) -> Result<PreparedEmbedding, RuntimeError> {
-        let region = endpoint::call_region(call.signing, self.environment.inputs())?;
-        let credentials = self.credentials_for(call.signing, &region).await?;
-        let body = embedding_body(call.model, call.input, call.optional_params)?;
-        let body_json = convert::prompt_body(&body);
-        let text = dumps_object(&body_json);
-        let url = endpoint::runtime_url(&EndpointRequest {
-            model: call.model,
-            region: &region,
-            base_url: None,
-            stream: false,
-        });
-        let signed = sign_aws_json_post(JsonPost {
-            service_name: SERVICE,
-            region: Some(&region),
-            url: &url,
-            body: &text,
-            headers: &[
-                (CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned()),
-                (CUSTOM_ATTRIBUTES.to_owned(), ACCEPT_EULA.to_owned()),
-            ],
-            credentials: &credentials,
-            now: self.clock.now(),
-        })?;
-        Ok(PreparedEmbedding {
-            call: PreparedCall {
-                url: signed.url,
-                headers: signed.headers,
-                body: signed.body,
-                body_json,
-                region,
-            },
-            body,
-        })
-    }
+pub async fn prepare_embedding<T: Sync, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &EmbeddingCall<'_>,
+) -> Result<PreparedEmbedding, RuntimeError> {
+    let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
+    let credentials = runtime.credentials_for(call.signing, &region).await?;
+    let body = embedding_body(call.model, call.input, call.optional_params)?;
+    let body_json = convert::prompt_body(&body);
+    let text = dumps_object(&body_json);
+    let url = endpoint::runtime_url(&EndpointRequest {
+        model: call.model,
+        region: &region,
+        base_url: None,
+        stream: false,
+    });
+    let signed = sign_aws_json_post(JsonPost {
+        service_name: SERVICE,
+        region: Some(&region),
+        url: &url,
+        body: &text,
+        headers: &[
+            (CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned()),
+            (CUSTOM_ATTRIBUTES.to_owned(), ACCEPT_EULA.to_owned()),
+        ],
+        credentials: &credentials,
+        now: runtime.clock.now(),
+    })?;
+    Ok(PreparedEmbedding {
+        call: PreparedCall {
+            url: signed.url,
+            headers: signed.headers,
+            body: signed.body,
+            body_json,
+            region,
+        },
+        body,
+    })
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    T: SagemakerTransport,
-    C: SagemakerCredentials,
-{
-    pub async fn embedding(
-        &self,
-        call: &EmbeddingCall<'_>,
-    ) -> Result<EmbeddingReply, RuntimeFailure> {
-        let prepared = self.prepare_embedding(call).await?;
-        let response = self
-            .transport
-            .send(self.outbound(&prepared.call)?)
-            .await
-            .map_err(RuntimeError::from)?;
-        if !(200..300).contains(&response.status) {
-            return Err(RuntimeFailure::from(wire_error(
-                response.status,
+pub async fn embedding<T: SagemakerTransport, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &EmbeddingCall<'_>,
+) -> Result<EmbeddingReply, RuntimeFailure> {
+    let prepared = prepare_embedding(runtime, call).await?;
+    let response = runtime
+        .transport
+        .send(runtime.outbound(&prepared.call)?)
+        .await
+        .map_err(RuntimeError::from)?;
+    if !(200..300).contains(&response.status) {
+        return Err(RuntimeFailure::from(wire_error(
+            response.status,
+            &response.body,
+        )));
+    }
+    let reply = serde_json::from_slice(&response.body)?;
+    match sagemaker_embedding::get_model_config(call.model) {
+        EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(serde_json::from_value(
+            project_response(&reply),
+        )?)),
+        EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
+            hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)
+                .map_err(SagemakerError::from)?,
+        )),
+        EmbeddingConfig::Cohere => Ok(EmbeddingReply::Cohere(
+            cohere::transform_response(
                 &response.body,
-            )));
-        }
-        let reply = serde_json::from_slice(&response.body)?;
-        match sagemaker_embedding::get_model_config(call.model) {
-            EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(serde_json::from_value(
-                project_response(&reply),
-            )?)),
-            EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
-                hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)
-                    .map_err(SagemakerError::from)?,
-            )),
-            EmbeddingConfig::Cohere => Ok(EmbeddingReply::Cohere(
-                cohere::transform_response(
-                    &response.body,
-                    call.model,
-                    Some(call.input),
-                    &prepared.body,
-                    call.encoding,
-                )
-                .map_err(|source| SagemakerError::from(RuntimeError::from(source)))?,
-            )),
-        }
+                call.model,
+                Some(call.input),
+                &prepared.body,
+                call.encoding,
+            )
+            .map_err(|source| SagemakerError::from(RuntimeError::from(source)))?,
+        )),
     }
 }
 

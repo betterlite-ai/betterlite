@@ -98,7 +98,7 @@ fn signed_post_preserves_the_final_body_bytes() -> Result<(), SigningError> {
             String::from("application/json"),
         )],
         credentials: &credentials,
-        now: UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000),
+        now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
     })?;
 
     assert_eq!(signed.body, body.as_bytes());
@@ -229,21 +229,21 @@ async fn stream_error_reads_only_the_bounded_error_body() {
     let chunks: super::runtime::ChunkStream = Box::pin(stream);
     let error = stream_error(503, chunks).await;
     assert_eq!(error.status_code, 503);
-    assert_eq!(error.message.len(), 65_536);
+    assert_eq!(error.message.len(), 0x0001_0000);
 }
 
 #[tokio::test]
 async fn stream_error_truncates_the_chunk_crossing_the_body_limit() {
-    let items = stream::iter(vec![Ok(vec![b'a'; 32_768]), Ok(vec![b'b'; 40_960])]);
+    let items = stream::iter(vec![Ok(vec![b'a'; 0x8000]), Ok(vec![b'b'; 40_960])]);
     let chunks: super::runtime::ChunkStream = Box::pin(items);
     let error = stream_error(503, chunks).await;
-    assert_eq!(error.message.len(), 65_536);
+    assert_eq!(error.message.len(), 0x0001_0000);
     assert_eq!(
         error.message.bytes().filter(|byte| *byte == b'b').count(),
-        32_768
+        0x8000
     );
     assert_eq!(
         error.message.bytes().filter(|byte| *byte == b'a').count(),
-        32_768
+        0x8000
     );
 }

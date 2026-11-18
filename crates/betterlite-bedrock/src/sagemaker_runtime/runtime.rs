@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::str::from_utf8;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_smithy_async::time::SharedTimeSource;
@@ -159,6 +160,7 @@ impl<T, C> SagemakerRuntime<'_, T, C> {
 
 impl<T, C> SagemakerRuntime<'_, T, C>
 where
+    T: Sync,
     C: SagemakerCredentials,
 {
     pub(crate) async fn credentials_for(
@@ -231,7 +233,7 @@ pub fn reply_headers(headers: &HeaderMap) -> Headers {
 
 #[must_use]
 pub fn body_text(body: &[u8]) -> String {
-    std::str::from_utf8(body).map_or_else(
+    from_utf8(body).map_or_else(
         |_invalid| format!("{} bytes that are not UTF-8", body.len()),
         str::to_owned,
     )

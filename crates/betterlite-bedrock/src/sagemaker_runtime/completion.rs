@@ -44,116 +44,105 @@ pub struct CompletionCall<'call> {
     pub prompts: &'call PromptFactory,
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    C: SagemakerCredentials,
-{
-    pub async fn prepare_completion(
-        &self,
-        call: &CompletionCall<'_>,
-    ) -> Result<PreparedCall, RuntimeError> {
-        let region = endpoint::call_region(call.signing, self.environment.inputs())?;
-        let credentials = self.credentials_for(call.signing, &region).await?;
-        let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
-        let model_id = text_option(call.optional_params, MODEL_ID_FIELD)?;
-        let stream = call
-            .optional_params
-            .get("stream")
-            .is_some_and(|flag| flag.as_bool() == Some(true));
-        let body = completion_body(call, DateTime::<Utc>::from(self.clock.now())).await?;
-        let body_json = convert::completion_body(&body)?;
-        let text = dumps_object(&body_json);
-        let url = endpoint::runtime_url(&EndpointRequest {
-            model: call.model,
-            region: &region,
-            base_url,
-            stream,
-        });
-        let signed = sign_aws_json_post(JsonPost {
-            service_name: SERVICE,
-            region: Some(&region),
-            url: &url,
-            body: &text,
-            headers: &[(CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned())],
-            credentials: &credentials,
-            now: self.clock.now(),
-        })?;
-        // the component header is added after signing, so it stays outside SignedHeaders as it does there
-        let mut headers = signed.headers;
-        if let Some(model_id) = model_id {
-            headers.retain(|(name, _)| !name.eq_ignore_ascii_case(COMPONENT_HEADER));
-            headers.push((COMPONENT_HEADER.to_owned(), model_id.to_owned()));
-        }
-        Ok(PreparedCall {
-            url: signed.url,
-            headers,
-            body: signed.body,
-            body_json,
-            region,
-        })
+pub async fn prepare_completion<T: Sync, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &CompletionCall<'_>,
+) -> Result<PreparedCall, RuntimeError> {
+    let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
+    let credentials = runtime.credentials_for(call.signing, &region).await?;
+    let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
+    let model_id = text_option(call.optional_params, MODEL_ID_FIELD)?;
+    let stream = call
+        .optional_params
+        .get("stream")
+        .is_some_and(|flag| flag.as_bool() == Some(true));
+    let body = completion_body(call, DateTime::<Utc>::from(runtime.clock.now())).await?;
+    let body_json = convert::completion_body(&body)?;
+    let text = dumps_object(&body_json);
+    let url = endpoint::runtime_url(&EndpointRequest {
+        model: call.model,
+        region: &region,
+        base_url,
+        stream,
+    });
+    let signed = sign_aws_json_post(JsonPost {
+        service_name: SERVICE,
+        region: Some(&region),
+        url: &url,
+        body: &text,
+        headers: &[(CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned())],
+        credentials: &credentials,
+        now: runtime.clock.now(),
+    })?;
+    // the component header is added after signing, so it stays outside SignedHeaders as it does there
+    let mut headers = signed.headers;
+    if let Some(component) = model_id {
+        headers.retain(|(name, _)| !name.eq_ignore_ascii_case(COMPONENT_HEADER));
+        headers.push((COMPONENT_HEADER.to_owned(), component.to_owned()));
     }
+    Ok(PreparedCall {
+        url: signed.url,
+        headers,
+        body: signed.body,
+        body_json,
+        region,
+    })
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    T: SagemakerTransport,
-    C: SagemakerCredentials,
-{
-    pub async fn completion(
-        &self,
-        call: &CompletionCall<'_>,
-    ) -> Result<ChatResponse, RuntimeFailure> {
-        let prepared = self.prepare_completion(call).await?;
-        let response = self
-            .transport
-            .send(self.outbound(&prepared)?)
-            .await
-            .map_err(RuntimeError::from)?;
-        if response.status != 200 {
-            return Err(RuntimeFailure::from(wire_error(
-                response.status,
-                &response.body,
-            )));
-        }
-        let reply = serde_json::from_slice(&response.body)?;
-        let prompt = inputs(&prepared.body_json);
-        let input = ReplyInput {
-            reply: &reply,
-            model: call.model,
-            prompt: &prompt,
-            id: format!("chatcmpl-{}", (self.identifier)()),
-            created: epoch_seconds(self.clock.now()),
-        };
-        Ok(transform_response(&input, self.counter)?)
+pub async fn completion<T: SagemakerTransport, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &CompletionCall<'_>,
+) -> Result<ChatResponse, RuntimeFailure> {
+    let prepared = prepare_completion(runtime, call).await?;
+    let response = runtime
+        .transport
+        .send(runtime.outbound(&prepared)?)
+        .await
+        .map_err(RuntimeError::from)?;
+    if response.status != 200 {
+        return Err(RuntimeFailure::from(wire_error(
+            response.status,
+            &response.body,
+        )));
     }
+    let reply = serde_json::from_slice(&response.body)?;
+    let prompt = inputs(&prepared.body_json);
+    let input = ReplyInput {
+        reply: &reply,
+        model: call.model,
+        prompt: &prompt,
+        id: format!("chatcmpl-{}", (runtime.identifier)()),
+        created: epoch_seconds(runtime.clock.now()),
+    };
+    Ok(transform_response(&input, runtime.counter)?)
+}
 
-    pub async fn completion_stream(
-        &self,
-        call: &CompletionCall<'_>,
-    ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
-        let prepared = self.prepare_completion(call).await?;
-        let (status, chunks) = self
-            .transport
-            .open_stream(self.outbound(&prepared)?)
-            .await
-            .map_err(timeout_error)?;
-        if status != 200 {
-            return Err(stream_error(status, chunks).await);
-        }
-        Ok(SagemakerEvents {
-            state: EventState {
-                // AWSEventStreamDecoder(model="") leaves the chunks' model empty
-                model: String::new(),
-                is_messages_api: false,
-                policy: ErrorPolicy::Skip,
-                frames: BytesMut::new(),
-                accumulated: String::new(),
-            },
-            chunks,
-            pending: VecDeque::new(),
-            done: false,
-        })
+pub async fn completion_stream<T: SagemakerTransport, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &CompletionCall<'_>,
+) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
+    let prepared = prepare_completion(runtime, call).await?;
+    let (status, chunks) = runtime
+        .transport
+        .open_stream(runtime.outbound(&prepared)?)
+        .await
+        .map_err(timeout_error)?;
+    if status != 200 {
+        return Err(stream_error(status, chunks).await);
     }
+    Ok(SagemakerEvents {
+        state: EventState {
+            // AWSEventStreamDecoder(model="") leaves the chunks' model empty
+            model: String::new(),
+            is_messages_api: false,
+            policy: ErrorPolicy::Skip,
+            frames: BytesMut::new(),
+            accumulated: String::new(),
+        },
+        chunks,
+        pending: VecDeque::new(),
+        done: false,
+    })
 }
 
 async fn completion_body(

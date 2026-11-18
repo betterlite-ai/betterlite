@@ -21,8 +21,8 @@ pub(crate) fn prompt_body(body: &IndexMap<String, Prompted>) -> IndexMap<String,
         .collect()
 }
 
-fn prompt_value(value: &Prompted) -> Plain {
-    match value {
+fn prompt_value(input: &Prompted) -> Plain {
+    match input {
         Prompted::Null => Plain::Null,
         Prompted::Bool(flag) => Plain::Bool(*flag),
         Prompted::Number(number) => Plain::Number(number.clone()),

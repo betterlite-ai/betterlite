@@ -49,7 +49,7 @@ impl From<RuntimeError> for SagemakerError {
         // botocore raises NoCredentialsError, which LiteLLM's exception mapping turns into a 400 BadRequest
         let missing = if let RuntimeError::Credential(inner) = &error {
             not_loaded(inner)
-        } else if let RuntimeError::Signing(SigningError::NoCredentials) = &error {
+        } else if matches!(&error, RuntimeError::Signing(SigningError::NoCredentials)) {
             true
         } else if let RuntimeError::Signing(SigningError::Credential(inner)) = &error {
             not_loaded(inner)

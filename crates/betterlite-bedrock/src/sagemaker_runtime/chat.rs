@@ -51,63 +51,61 @@ pub struct ChatCall<'call> {
     pub configured_bearer: Option<&'call SecretString>,
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    C: SagemakerCredentials,
-{
-    pub async fn prepare_chat(&self, call: &ChatCall<'_>) -> Result<PreparedCall, RuntimeError> {
-        let base_url = text_field(call.optional_params, BASE_URL_FIELD)?;
-        let region = resolve_region(call.signing, Some(call.model), self.environment.inputs())?;
-        let url = endpoint::runtime_url(&EndpointRequest {
-            model: call.model,
-            region: &region,
-            base_url,
-            stream: call.stream,
-        });
-        let body_json = chat_body_json(call)?;
-        let signed = self.sign_chat(call, &url, &body_json).await?;
-        Ok(PreparedCall {
-            url: signed.url,
-            headers: signed.headers,
-            body: signed.body,
-            body_json,
-            region,
-        })
-    }
+pub async fn prepare_chat<T: Sync, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &ChatCall<'_>,
+) -> Result<PreparedCall, RuntimeError> {
+    let base_url = text_field(call.optional_params, BASE_URL_FIELD)?;
+    let region = resolve_region(call.signing, Some(call.model), runtime.environment.inputs())?;
+    let url = endpoint::runtime_url(&EndpointRequest {
+        model: call.model,
+        region: &region,
+        base_url,
+        stream: call.stream,
+    });
+    let body_json = chat_body_json(call)?;
+    let signed = sign_chat(runtime, call, &url, &body_json).await?;
+    Ok(PreparedCall {
+        url: signed.url,
+        headers: signed.headers,
+        body: signed.body,
+        body_json,
+        region,
+    })
+}
 
-    async fn sign_chat(
-        &self,
-        call: &ChatCall<'_>,
-        url: &str,
-        body_json: &IndexMap<String, Plain>,
-    ) -> Result<AwsSignedRequest, RuntimeError> {
-        let headers =
-            chat_request::validate_environment(call.headers.clone(), call.optional_params);
-        let pairs: Vec<(String, Option<String>)> = headers
-            .into_iter()
-            .map(|(name, value)| (name, Some(value)))
-            .collect();
-        sign_service_request(
-            ServiceRequest {
-                service: ServiceName::Sagemaker,
-                headers: &pairs,
-                optional_params: call.signing,
-                request_data: body_json,
-                api_base: url,
-                model: Some(call.model),
-                api_key: None,
-                configured_bearer: call.configured_bearer,
-                region_inputs: self.environment.inputs(),
-                now: self.clock.now(),
-            },
-            |settings, region| {
-                self.credentials
-                    .resolve(settings.clone(), region.to_owned())
-            },
-        )
-        .await
-        .map_err(RuntimeError::from)
-    }
+async fn sign_chat<T: Sync, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &ChatCall<'_>,
+    url: &str,
+    body_json: &IndexMap<String, Plain>,
+) -> Result<AwsSignedRequest, RuntimeError> {
+    let headers = chat_request::validate_environment(call.headers.clone(), call.optional_params);
+    let pairs: Vec<(String, Option<String>)> = headers
+        .into_iter()
+        .map(|(name, value)| (name, Some(value)))
+        .collect();
+    sign_service_request(
+        ServiceRequest {
+            service: ServiceName::Sagemaker,
+            headers: &pairs,
+            optional_params: call.signing,
+            request_data: body_json,
+            api_base: url,
+            model: Some(call.model),
+            api_key: None,
+            configured_bearer: call.configured_bearer,
+            region_inputs: runtime.environment.inputs(),
+            now: runtime.clock.now(),
+        },
+        |settings, region| {
+            runtime
+                .credentials
+                .resolve(settings.clone(), region.to_owned())
+        },
+    )
+    .await
+    .map_err(RuntimeError::from)
 }
 
 fn chat_body_json(call: &ChatCall<'_>) -> Result<IndexMap<String, Plain>, RuntimeError> {
@@ -124,51 +122,48 @@ fn chat_body_json(call: &ChatCall<'_>) -> Result<IndexMap<String, Plain>, Runtim
     Ok(convert::prompt_body(&body))
 }
 
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    T: SagemakerTransport,
-    C: SagemakerCredentials,
-{
-    pub async fn chat(&self, call: &ChatCall<'_>) -> Result<CompatibleReply, SagemakerError> {
-        let response = self
-            .transport
-            .send(self.outbound(&self.prepare_chat(call).await?)?)
-            .await
-            .map_err(timeout_error)?;
-        read_chat_response(
-            response.status,
-            &response.body,
-            &response.headers,
-            &call.reply,
-        )
-    }
+pub async fn chat<T: SagemakerTransport, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &ChatCall<'_>,
+) -> Result<CompatibleReply, SagemakerError> {
+    let response = runtime
+        .transport
+        .send(runtime.outbound(&prepare_chat(runtime, call).await?)?)
+        .await
+        .map_err(timeout_error)?;
+    read_chat_response(
+        response.status,
+        &response.body,
+        &response.headers,
+        &call.reply,
+    )
+}
 
-    pub async fn chat_stream(
-        &self,
-        call: &ChatCall<'_>,
-    ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
-        let (status, chunks) = self
-            .transport
-            .open_stream(self.outbound(&self.prepare_chat(call).await?)?)
-            .await
-            .map_err(timeout_error)?;
-        if status != 200 {
-            return Err(stream_error(status, chunks).await);
-        }
-        Ok(SagemakerEvents {
-            state: EventState {
-                // the chat stream wrapper builds AWSEventStreamDecoder(model="", is_messages_api=True)
-                model: String::new(),
-                is_messages_api: true,
-                policy: ErrorPolicy::Skip,
-                frames: BytesMut::new(),
-                accumulated: String::new(),
-            },
-            chunks,
-            pending: VecDeque::new(),
-            done: false,
-        })
+pub async fn chat_stream<T: SagemakerTransport, C: SagemakerCredentials>(
+    runtime: &SagemakerRuntime<'_, T, C>,
+    call: &ChatCall<'_>,
+) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
+    let (status, chunks) = runtime
+        .transport
+        .open_stream(runtime.outbound(&prepare_chat(runtime, call).await?)?)
+        .await
+        .map_err(timeout_error)?;
+    if status != 200 {
+        return Err(stream_error(status, chunks).await);
     }
+    Ok(SagemakerEvents {
+        state: EventState {
+            // the chat stream wrapper builds AWSEventStreamDecoder(model="", is_messages_api=True)
+            model: String::new(),
+            is_messages_api: true,
+            policy: ErrorPolicy::Skip,
+            frames: BytesMut::new(),
+            accumulated: String::new(),
+        },
+        chunks,
+        pending: VecDeque::new(),
+        done: false,
+    })
 }
 
 fn read_chat_response(

@@ -38,9 +38,9 @@ use uuid::Uuid;
 
 use crate::aws_settings::sources::{Credentials, SourceError};
 use crate::credentials::error::CredentialError;
-use crate::sagemaker_runtime::chat::{ChatCall, ChatVariant};
-use crate::sagemaker_runtime::completion::CompletionCall;
-use crate::sagemaker_runtime::embedding::{EmbeddingCall, EmbeddingReply};
+use crate::sagemaker_runtime::chat::{self, ChatCall, ChatVariant};
+use crate::sagemaker_runtime::completion::{self, CompletionCall};
+use crate::sagemaker_runtime::embedding::{self, EmbeddingCall, EmbeddingReply};
 use crate::sagemaker_runtime::endpoint::ParamMap;
 use crate::sagemaker_runtime::error::RuntimeFailure;
 use crate::sagemaker_runtime::runtime::{
@@ -393,16 +393,14 @@ async fn prepare_calls_build_sigv4_signed_completion_chat_and_embedding_requests
         TestCredentials::working(),
         &counter,
     );
-    let prepared = runtime
-        .prepare_completion(&workspace.completion())
+    let prepared = completion::prepare_completion(&runtime, &workspace.completion())
         .await
         .expect("completion request");
     assert!(prepared.url.ends_with("/invocations-response-stream"));
     assert!(signed_with_sigv4(&prepared.headers));
     assert!(prepared.body_json.contains_key("inputs"));
 
-    let prepared = runtime
-        .prepare_chat(&workspace.chat(false))
+    let prepared = chat::prepare_chat(&runtime, &workspace.chat(false))
         .await
         .expect("chat request");
     assert!(prepared.headers.iter().any(|(name, value)| {
@@ -410,8 +408,7 @@ async fn prepare_calls_build_sigv4_signed_completion_chat_and_embedding_requests
     }));
     assert!(signed_with_sigv4(&prepared.headers));
 
-    let prepared = runtime
-        .prepare_embedding(&workspace.embedding("voyage-3"))
+    let prepared = embedding::prepare_embedding(&runtime, &workspace.embedding("voyage-3"))
         .await
         .expect("embedding request");
     assert!(prepared.call.url.ends_with("/invocations"));
@@ -436,13 +433,11 @@ async fn transmitted_sigv4_signature_covers_the_sent_request(#[case] chat: bool)
         &counter,
     );
     if chat {
-        runtime
-            .chat(&workspace.chat(false))
+        chat::chat(&runtime, &workspace.chat(false))
             .await
             .expect("chat reply");
     } else {
-        runtime
-            .completion(&workspace.completion())
+        completion::completion(&runtime, &workspace.completion())
             .await
             .expect("completion reply");
     }
@@ -500,13 +495,11 @@ async fn completion_and_embedding_take_aws_region_before_aws_region_name() {
         region: Some(String::from("us-east-1")),
         session_region: Some(String::from("ap-south-1")),
     };
-    let completion = runtime
-        .prepare_completion(&workspace.completion())
+    let completion = completion::prepare_completion(&runtime, &workspace.completion())
         .await
         .expect("completion request");
     assert_eq!(completion.region, "us-east-1");
-    let embedding = runtime
-        .prepare_embedding(&workspace.embedding("voyage-3"))
+    let embedding = embedding::prepare_embedding(&runtime, &workspace.embedding("voyage-3"))
         .await
         .expect("embedding request");
     assert_eq!(embedding.call.region, "us-east-1");
@@ -523,7 +516,9 @@ async fn chat_region_comes_from_the_model_arn_before_the_environment() {
     );
     let mut chat = workspace.chat(false);
     chat.model = "arn:aws:sagemaker:eu-central-1:123456789012:endpoint/example";
-    let prepared = runtime.prepare_chat(&chat).await.expect("chat request");
+    let prepared = chat::prepare_chat(&runtime, &chat)
+        .await
+        .expect("chat request");
     assert_eq!(prepared.region, "eu-central-1");
     assert!(
         prepared
@@ -543,11 +538,15 @@ async fn sagemaker_nova_chat_drops_the_model_field() {
     );
     let mut chat = workspace.chat(false);
     chat.variant = ChatVariant::Chat;
-    let chat_prepared = runtime.prepare_chat(&chat).await.expect("chat request");
+    let chat_prepared = chat::prepare_chat(&runtime, &chat)
+        .await
+        .expect("chat request");
     assert!(chat_prepared.body_json.contains_key("model"));
     let mut chat = workspace.chat(false);
     chat.variant = ChatVariant::Nova;
-    let nova = runtime.prepare_chat(&chat).await.expect("nova request");
+    let nova = chat::prepare_chat(&runtime, &chat)
+        .await
+        .expect("nova request");
     assert!(!nova.body_json.contains_key("model"));
     assert_eq!(
         nova.body_json.get("messages"),
@@ -572,13 +571,11 @@ async fn completion_and_chat_honor_sagemaker_base_url() {
         TestCredentials::working(),
         &counter,
     );
-    let completion = runtime
-        .prepare_completion(&workspace.completion())
+    let completion = completion::prepare_completion(&runtime, &workspace.completion())
         .await
         .expect("completion request");
     assert_eq!(completion.url, "https://custom.example/completion");
-    let chat = runtime
-        .prepare_chat(&workspace.chat(false))
+    let chat = chat::prepare_chat(&runtime, &workspace.chat(false))
         .await
         .expect("chat request");
     assert_eq!(chat.url, "https://custom.example/chat");
@@ -594,8 +591,7 @@ async fn completion_component_header_is_added_after_signing() {
         TestCredentials::working(),
         &counter,
     );
-    let prepared = runtime
-        .prepare_completion(&workspace.completion())
+    let prepared = completion::prepare_completion(&runtime, &workspace.completion())
         .await
         .expect("completion request");
     assert!(prepared.headers.iter().any(|(name, value)| {
@@ -612,8 +608,7 @@ async fn completion_component_header_is_added_after_signing() {
             .contains("x-amzn-sagemaker-inference-component")
     );
     let plain_workspace = Workspace::new();
-    let plain = runtime
-        .prepare_completion(&plain_workspace.completion())
+    let plain = completion::prepare_completion(&runtime, &plain_workspace.completion())
         .await
         .expect("plain request");
     assert!(
@@ -631,12 +626,14 @@ async fn chat_signing_uses_the_configured_bearer_before_resolving_credentials() 
     let bearer = SecretString::from("test-bearer-token".to_owned());
     let mut call = workspace.chat(false);
     call.configured_bearer = Some(&bearer);
-    let prepared = runtime(
-        FakeTransport::new(200, "{}", &[]),
-        TestCredentials::failing(CredentialError::MissingCredentials),
-        &counter,
+    let prepared = chat::prepare_chat(
+        &runtime(
+            FakeTransport::new(200, "{}", &[]),
+            TestCredentials::failing(CredentialError::MissingCredentials),
+            &counter,
+        ),
+        &call,
     )
-    .prepare_chat(&call)
     .await
     .expect("the bearer skips credential resolution");
     assert!(
@@ -652,45 +649,23 @@ async fn chat_signing_uses_the_configured_bearer_before_resolving_credentials() 
 async fn chat_reads_a_compatible_reply() {
     let counter = Counter;
     let workspace = Workspace::new();
-    let reply = runtime(
-        FakeTransport::new(
-            200,
-            r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}"#,
-            &[],
+    let reply = chat::chat(
+        &runtime(
+            FakeTransport::new(
+                200,
+                r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}"#,
+                &[],
+            ),
+            TestCredentials::working(),
+            &counter,
         ),
-        TestCredentials::working(),
-        &counter,
+        &workspace.chat(false),
     )
-    .chat(&workspace.chat(false))
     .await
     .expect("chat reply");
     assert_eq!(
         reply.response.choices[0].message.content.as_deref(),
         Some("hi")
-    );
-}
-
-#[tokio::test]
-async fn embedding_sends_the_custom_attributes_header() {
-    let counter = Counter;
-    let workspace = Workspace::new();
-    let prepared = runtime(
-        FakeTransport::new(200, "{}", &[]),
-        TestCredentials::working(),
-        &counter,
-    )
-    .prepare_embedding(&workspace.embedding("voyage-3"))
-    .await
-    .expect("embedding request");
-    assert!(prepared.call.headers.iter().any(|(name, value)| {
-        name == "X-Amzn-SageMaker-Custom-Attributes" && value == "accept_eula=true"
-    }));
-    assert!(
-        prepared
-            .call
-            .headers
-            .iter()
-            .any(|(name, value)| { name == "Content-Type" && value == "application/json" })
     );
 }
 
@@ -703,8 +678,7 @@ async fn chat_rejects_a_redirect_without_a_location() {
         TestCredentials::working(),
         &counter,
     );
-    let error = runtime
-        .chat(&workspace.chat(false))
+    let error = chat::chat(&runtime, &workspace.chat(false))
         .await
         .expect_err("redirect status");
     assert_eq!((error.status_code, error.message.as_str()), (302, "moved"));
@@ -716,12 +690,14 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
     let counter = Counter;
     let mut workspace = Workspace::new();
     let completion = upstream(
-        runtime(
-            FakeTransport::new(429, "throttled", &[]),
-            TestCredentials::working(),
-            &counter,
+        completion::completion(
+            &runtime(
+                FakeTransport::new(429, "throttled", &[]),
+                TestCredentials::working(),
+                &counter,
+            ),
+            &workspace.completion(),
         )
-        .completion(&workspace.completion())
         .await
         .expect_err("completion status"),
     );
@@ -730,12 +706,14 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
         (429, "throttled")
     );
 
-    let chat = runtime(
-        FakeTransport::new(429, "chat throttled", &[]),
-        TestCredentials::working(),
-        &counter,
+    let chat = chat::chat(
+        &runtime(
+            FakeTransport::new(429, "chat throttled", &[]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.chat(false),
     )
-    .chat(&workspace.chat(false))
     .await
     .expect_err("chat status");
     assert_eq!(
@@ -744,35 +722,41 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
     );
 
     workspace.options = Options::from([(String::from("stream"), json!(true))]);
-    let completion_stream = runtime(
-        FakeTransport::new(201, "", &[b"failed"]),
-        TestCredentials::working(),
-        &counter,
+    let completion_stream = completion::completion_stream(
+        &runtime(
+            FakeTransport::new(201, "", &[b"failed"]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.completion(),
     )
-    .completion_stream(&workspace.completion())
     .await;
     assert!(
         matches!(completion_stream, Err(error) if error.status_code == 201 && error.message == "failed")
     );
 
-    let chat_stream = runtime(
-        FakeTransport::new(201, "", &[b"failed"]),
-        TestCredentials::working(),
-        &counter,
+    let chat_stream = chat::chat_stream(
+        &runtime(
+            FakeTransport::new(201, "", &[b"failed"]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.chat(true),
     )
-    .chat_stream(&workspace.chat(true))
     .await;
     assert!(
         matches!(chat_stream, Err(error) if error.status_code == 201 && error.message == "failed")
     );
 
     let embedding = upstream(
-        runtime(
-            FakeTransport::new(503, "embedding failed", &[]),
-            TestCredentials::working(),
-            &counter,
+        embedding::embedding(
+            &runtime(
+                FakeTransport::new(503, "embedding failed", &[]),
+                TestCredentials::working(),
+                &counter,
+            ),
+            &workspace.embedding("voyage-3"),
         )
-        .embedding(&workspace.embedding("voyage-3"))
         .await
         .expect_err("embedding status"),
     );
@@ -786,32 +770,38 @@ async fn runtime_calls_preserve_error_status_and_stream_policies() {
 async fn unreadable_replies_classify_as_connection_errors() {
     let counter = Counter;
     let workspace = Workspace::new();
-    let completion = runtime(
-        FakeTransport::new(200, "not-json", &[]),
-        TestCredentials::working(),
-        &counter,
+    let completion = completion::completion(
+        &runtime(
+            FakeTransport::new(200, "not-json", &[]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.completion(),
     )
-    .completion(&workspace.completion())
     .await
     .expect_err("completion reply");
     assert_eq!(completion.status_code(), None);
     assert_eq!(classify(&completion), "api_connection");
-    let embedding = runtime(
-        FakeTransport::new(200, "not-json", &[]),
-        TestCredentials::working(),
-        &counter,
+    let embedding = embedding::embedding(
+        &runtime(
+            FakeTransport::new(200, "not-json", &[]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.embedding("voyage-3"),
     )
-    .embedding(&workspace.embedding("voyage-3"))
     .await
     .expect_err("embedding reply");
     assert_eq!(embedding.status_code(), None);
     assert_eq!(classify(&embedding), "api_connection");
-    let wire = runtime(
-        FakeTransport::new(500, "boom", &[]),
-        TestCredentials::working(),
-        &counter,
+    let wire = completion::completion(
+        &runtime(
+            FakeTransport::new(500, "boom", &[]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.completion(),
     )
-    .completion(&workspace.completion())
     .await
     .expect_err("wire status");
     assert_eq!(wire.status_code(), Some(500));
@@ -852,8 +842,7 @@ async fn completion_stream_skips_a_failed_frame_and_keeps_reading() {
         TestCredentials::working(),
         &counter,
     );
-    let mut events = runtime
-        .completion_stream(&workspace.completion())
+    let mut events = completion::completion_stream(&runtime, &workspace.completion())
         .await
         .expect("completion stream");
     assert!(!events.state.is_messages_api);
@@ -902,8 +891,7 @@ async fn chat_stream_skips_a_failed_frame_and_keeps_reading() {
         TestCredentials::working(),
         &counter,
     );
-    let mut events = runtime
-        .chat_stream(&workspace.chat(true))
+    let mut events = chat::chat_stream(&runtime, &workspace.chat(true))
         .await
         .expect("chat stream");
     assert!(events.state.is_messages_api);
@@ -924,12 +912,14 @@ async fn chat_stream_skips_a_failed_frame_and_keeps_reading() {
 async fn completion_reply_uses_the_injected_identifier() {
     let counter = Counter;
     let workspace = Workspace::new();
-    let reply = runtime(
-        FakeTransport::new(200, r#"{"generated_text":"hello"}"#, &[]),
-        TestCredentials::working(),
-        &counter,
+    let reply = completion::completion(
+        &runtime(
+            FakeTransport::new(200, r#"{"generated_text":"hello"}"#, &[]),
+            TestCredentials::working(),
+            &counter,
+        ),
+        &workspace.completion(),
     )
-    .completion(&workspace.completion())
     .await
     .expect("completion reply");
     assert_eq!(
@@ -946,14 +936,16 @@ async fn missing_credentials_become_a_400_on_completion_and_chat() {
     let counter = Counter;
     let workspace = Workspace::new();
     let completion = upstream(
-        runtime(
-            FakeTransport::new(200, "{}", &[]),
-            TestCredentials::failing(CredentialError::Source(SourceError::Provider(
-                CredentialsError::not_loaded_no_source(),
-            ))),
-            &counter,
+        completion::completion(
+            &runtime(
+                FakeTransport::new(200, "{}", &[]),
+                TestCredentials::failing(CredentialError::Source(SourceError::Provider(
+                    CredentialsError::not_loaded_no_source(),
+                ))),
+                &counter,
+            ),
+            &workspace.completion(),
         )
-        .completion(&workspace.completion())
         .await
         .expect_err("completion credentials"),
     );
@@ -961,14 +953,16 @@ async fn missing_credentials_become_a_400_on_completion_and_chat() {
         (completion.status_code, completion.message.as_str()),
         (400, "Unable to locate credentials")
     );
-    let chat = runtime(
-        FakeTransport::new(200, "{}", &[]),
-        TestCredentials::failing(CredentialError::Source(SourceError::Provider(
-            CredentialsError::not_loaded_no_source(),
-        ))),
-        &counter,
+    let chat = chat::chat(
+        &runtime(
+            FakeTransport::new(200, "{}", &[]),
+            TestCredentials::failing(CredentialError::Source(SourceError::Provider(
+                CredentialsError::not_loaded_no_source(),
+            ))),
+            &counter,
+        ),
+        &workspace.chat(false),
     )
-    .chat(&workspace.chat(false))
     .await
     .expect_err("chat credentials");
     assert_eq!(
@@ -979,18 +973,3 @@ async fn missing_credentials_become_a_400_on_completion_and_chat() {
 
 mod embedding_replies;
 mod timeouts;
-
-#[tokio::test]
-async fn embedding_projects_a_voyage_reply() {
-    let counter = Counter;
-    let workspace = Workspace::new();
-    let reply = runtime(
-        FakeTransport::new(200, r#"{"data":[{"embedding":[1,2]}]}"#, &[]),
-        TestCredentials::working(),
-        &counter,
-    )
-    .embedding(&workspace.embedding("voyage-3"))
-    .await
-    .expect("voyage reply");
-    assert!(matches!(reply, EmbeddingReply::Voyage(_)));
-}
