@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
@@ -118,7 +118,9 @@ impl RateLimitCache for FakeCache {
         let mut local = self.local.lock().unwrap_or_else(PoisonError::into_inner);
         let value = local.entry(key.to_owned()).or_insert(0);
         *value = value.saturating_add(by);
-        Some(*value)
+        let current = *value;
+        drop(local);
+        Some(current)
     }
 
     async fn increment(&self, key: &str, by: i64, ttl_seconds: u64) -> Option<i64> {
@@ -129,7 +131,9 @@ impl RateLimitCache for FakeCache {
         let mut remote = self.remote.lock().unwrap_or_else(PoisonError::into_inner);
         let value = remote.entry(key.to_owned()).or_insert(0);
         *value = value.saturating_add(by);
-        Some(*value)
+        let current = *value;
+        drop(remote);
+        Some(current)
     }
 }
 
@@ -170,6 +174,7 @@ impl IoTokenReservationHook for FakeIo {
             itpm: deployment.limits.itpm,
             otpm: deployment.limits.otpm,
         });
+        drop(calls);
         let reservation = IoReservation {
             itpm_reserved: 1,
             otpm_reserved: 0,
@@ -190,8 +195,14 @@ impl IoTokenReservationHook for FakeIo {
     }
 }
 
+fn now() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_millis(NOW_MILLIS))
+        .unwrap_or(UNIX_EPOCH)
+}
+
 pub(super) fn clock() -> IoClock {
-    Arc::new(|| UNIX_EPOCH + Duration::from_millis(NOW_MILLIS))
+    Arc::new(now)
 }
 
 pub(crate) fn spec(group: &str, id: &str, model: &str) -> DeploymentSpec {
@@ -281,7 +292,7 @@ pub(super) async fn coexist_warning_lines(with_id: bool) -> usize {
     let check = service(Arc::new(FakeCache::new()), None);
     let deployment = coexist_deployment(with_id);
     let (logs, _guard) = capture_logs();
-    for _request in 0..2 {
+    for _request in 0..2_u8 {
         check
             .async_pre_call_check(&deployment, &mut request())
             .await

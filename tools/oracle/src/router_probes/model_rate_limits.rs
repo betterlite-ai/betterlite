@@ -225,8 +225,8 @@ fn deployment_spec(payload: &Payload) -> DeploymentSpec {
         info.insert("id".to_owned(), Json::Text(id.clone()));
     }
     let mut extra = JsonObject::new();
-    for (field, value) in [("tpm", input.tpm), ("rpm", input.rpm), ("itpm", input.itpm)] {
-        if let Some(value) = value {
+    for (field, limit) in [("tpm", input.tpm), ("rpm", input.rpm), ("itpm", input.itpm)] {
+        if let Some(value) = limit {
             extra.insert(field.to_owned(), Json::Number(Number::from(value)));
         }
     }

@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
@@ -18,12 +18,12 @@ use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::CacheFacts;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::io_token_reservations::clock::{IoClock, minute_label};
-use betterlite_router::model_rate_limits::cache::RateLimitCache;
+use betterlite_router::model_rate_limits::cache::RateLimitCache as _;
 use betterlite_router::model_rate_limits::error::{ModelRateLimitError, RateLimitChannel};
 use betterlite_router::model_rate_limits::keys::cache_keys;
 use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
 use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
-use betterlite_router::router_core::services::RouteServices;
+use betterlite_router::router_core::services::RouteServices as _;
 use betterlite_router::routing_state_store::test_support::FakeRedis;
 use betterlite_router::routing_state_store::{
     RedisSettings, RoutingStateStore, Settings as StateSettings,
@@ -47,7 +47,8 @@ fn local() -> Arc<RoutingValueStore> {
         loaded_max_size_per_item_kib: 1024,
     };
     Arc::new(
-        RoutingValueStore::new(settings, Arc::new(|| 0.0)).expect("the store settings are valid"),
+        RoutingValueStore::new(settings, Arc::new(|| 0.0_f64))
+            .expect("the store settings are valid"),
     )
 }
 
@@ -65,8 +66,14 @@ fn cache(local: Arc<RoutingValueStore>) -> RoutingRateLimitCache {
     }
 }
 
+fn now() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_700_000_000))
+        .unwrap_or(UNIX_EPOCH)
+}
+
 fn clock() -> IoClock {
-    Arc::new(|| UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+    Arc::new(now)
 }
 
 fn remote_settings(port: u16) -> StateSettings {

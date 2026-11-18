@@ -57,7 +57,8 @@ impl RateLimitCache for FakeCache {
         if !self.has_remote {
             return RemoteRead::Value(None);
         }
-        match *self.mode.lock().unwrap_or_else(PoisonError::into_inner) {
+        let mode = *self.mode.lock().unwrap_or_else(PoisonError::into_inner);
+        match mode {
             RedisMode::Up => RemoteRead::Value(
                 self.remote
                     .lock()
@@ -79,6 +80,7 @@ impl RateLimitCache for FakeCache {
             .unwrap_or_default()
             .saturating_add(by);
         values.insert(key.to_owned(), next);
+        drop(values);
         Some(next)
     }
 
@@ -95,6 +97,7 @@ impl RateLimitCache for FakeCache {
             .unwrap_or_default()
             .saturating_add(by);
         values.insert(key.to_owned(), next);
+        drop(values);
         Some(next)
     }
 }
