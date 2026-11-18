@@ -167,6 +167,13 @@ fn iter_events_replaces_invalid_utf8_and_keeps_the_event() {
 }
 
 #[test]
+fn iter_events_replaces_each_invalid_sequence_once() {
+    let events = iter_sse_events(&SseChunk::Bytes(b"data: {\"text\":\"a\xffb\"}".to_vec()));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["text"], "a\u{fffd}b");
+}
+
+#[test]
 fn iter_events_ignores_non_object_json_and_reads_every_data_line() {
     let events = iter_sse_events(&SseChunk::Bytes(
         b"data: [1,2]\n\ndata: {\"index\":2}\ndata: not json\n\n".to_vec(),
