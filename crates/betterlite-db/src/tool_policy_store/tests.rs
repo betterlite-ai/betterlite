@@ -11,16 +11,20 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
+use tokio_postgres::NoTls;
 
-use crate::database_faults::DbError;
 use crate::database_faults::reconnect::DbReconnect;
+use crate::database_faults::{DbError, ErrorType};
+use crate::postgres_store::errors::DbError as NativeDbError;
 use crate::postgres_store::session::PostgresStore;
 use crate::tool_records::decode::decode_tool_record;
 use crate::tool_records::records::{ToolInputPolicy, ToolOutputPolicy};
 
 use self::support::captured_logs;
 use super::blockers::{BlockedChange, change_blocked_tools};
+use super::deadline::{StatementBounds, TlsCanceller};
 use super::discovery::batch_upsert_tools;
+use super::errors::ToolPolicyStoreError;
 use super::policy_update::update_tool_policy;
 use super::records::{BlockedToolRow, ToolDiscoveryItem, ToolIdGenerator, ToolPolicyUpdate};
 use super::refresh::{ToolPolicyStore, load_blocked_tools, sync_tool_policy_from_db};
@@ -39,9 +43,17 @@ impl ToolIdGenerator for FixedIds {
 #[derive(Default)]
 pub(crate) struct Reconnect {
     reasons: Mutex<Vec<String>>,
+    failure: Option<DbError>,
 }
 
 impl Reconnect {
+    pub(crate) fn failing(failure: DbError) -> Self {
+        Self {
+            reasons: Mutex::new(Vec::new()),
+            failure: Some(failure),
+        }
+    }
+
     pub(crate) fn reasons(&self) -> Vec<String> {
         self.reasons
             .lock()
@@ -69,7 +81,10 @@ impl DbReconnect for Reconnect {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(reason.to_owned());
-        Box::pin(ready(Ok(false)))
+        match self.failure.clone() {
+            Some(failure) => Box::pin(ready(Err(failure))),
+            None => Box::pin(ready(Ok(false))),
+        }
     }
 }
 
@@ -218,9 +233,12 @@ fn blocked_tools_map_skips_empty_permission_ids_and_reads_null_as_empty() {
 async fn discovery_without_a_database_logs_an_error() {
     let (logs, guard) = captured_logs();
     batch_upsert_tools(
-        None::<&Client>,
+        None::<Client>,
         &FixedIds,
-        DEADLINE,
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
         &[item(Some("search"))],
         instant(),
     )
@@ -236,9 +254,12 @@ async fn discovery_without_a_database_logs_an_error() {
 async fn discovery_skips_a_batch_that_names_no_tool() {
     let (logs, guard) = captured_logs();
     batch_upsert_tools(
-        None::<&Client>,
+        None::<Client>,
         &FixedIds,
-        DEADLINE,
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
         &[item(None), item(Some(""))],
         instant(),
     )
@@ -257,9 +278,18 @@ async fn policy_update_without_a_database_returns_none() {
         output_policy: None,
     };
     assert!(
-        update_tool_policy(None::<&Client>, &FixedIds, DEADLINE, &update, instant())
-            .await
-            .is_none()
+        update_tool_policy(
+            None::<Client>,
+            &FixedIds,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
+            &update,
+            instant(),
+        )
+        .await
+        .is_none()
     );
     drop(guard);
     assert!(
@@ -273,8 +303,11 @@ async fn blocked_list_writes_without_a_database_return_false() {
     let (logs, guard) = captured_logs();
     assert!(
         !change_blocked_tools(
-            None::<&Client>,
-            DEADLINE,
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
             "perm-1",
             "search",
             BlockedChange::Add
@@ -283,8 +316,11 @@ async fn blocked_list_writes_without_a_database_return_false() {
     );
     assert!(
         !change_blocked_tools(
-            None::<&Client>,
-            DEADLINE,
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
             "perm-1",
             "search",
             BlockedChange::Remove
@@ -303,15 +339,38 @@ async fn blocked_list_writes_without_a_database_return_false() {
 async fn blocked_list_writes_with_empty_arguments_answer_false_before_the_database() {
     let (logs, guard) = captured_logs();
     assert!(
-        !change_blocked_tools(None::<&Client>, DEADLINE, "", "search", BlockedChange::Add).await
-    );
-    assert!(
-        !change_blocked_tools(None::<&Client>, DEADLINE, "perm-1", "", BlockedChange::Add).await
+        !change_blocked_tools(
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
+            "",
+            "search",
+            BlockedChange::Add
+        )
+        .await
     );
     assert!(
         !change_blocked_tools(
-            None::<&Client>,
-            DEADLINE,
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
+            "perm-1",
+            "",
+            BlockedChange::Add
+        )
+        .await
+    );
+    assert!(
+        !change_blocked_tools(
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
             "",
             "search",
             BlockedChange::Remove
@@ -320,8 +379,11 @@ async fn blocked_list_writes_with_empty_arguments_answer_false_before_the_databa
     );
     assert!(
         !change_blocked_tools(
-            None::<&Client>,
-            DEADLINE,
+            None::<Client>,
+            StatementBounds {
+                deadline: DEADLINE,
+                canceller: &TlsCanceller { tls: NoTls },
+            },
             "perm-1",
             "",
             BlockedChange::Remove
@@ -339,7 +401,10 @@ async fn refresh_reconnects_a_missing_database_with_the_tools_reason() {
     let store = ToolPolicyStore {
         database: &database,
         registry: &registry,
-        deadline: DEADLINE,
+        bounds: StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
     };
     let mut reconnect = Reconnect::default();
     let result = sync_tool_policy_from_db(&store, Some(&mut reconnect)).await;
@@ -357,10 +422,70 @@ async fn refresh_reconnects_a_missing_database_with_the_tools_reason() {
 }
 
 #[tokio::test]
+async fn a_failed_reconnect_keeps_its_typed_cause() {
+    let database = PostgresStore { pool: None };
+    let registry = Mutex::new(ToolPolicyRegistry::default());
+    let store = ToolPolicyStore {
+        database: &database,
+        registry: &registry,
+        bounds: StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
+    };
+    let mut reconnect = Reconnect::failing(DbError {
+        error_type: ErrorType::Connect,
+        message: "the reconnect was refused".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: Some(Box::new(DbError {
+            error_type: ErrorType::Read,
+            message: "the socket closed".to_owned(),
+            code: None,
+            meta_code: None,
+            traceback_modules: Vec::new(),
+            cause: None,
+        })),
+    });
+    let error = sync_tool_policy_from_db(&store, Some(&mut reconnect))
+        .await
+        .expect_err("the failing read");
+    match error {
+        ToolPolicyStoreError::Read {
+            source,
+            reconnect: Some(cause),
+            ..
+        } => {
+            assert!(matches!(source, NativeDbError::NoDbConnected));
+            assert_eq!(cause.error_type, ErrorType::Connect);
+            assert_eq!(cause.message, "the reconnect was refused");
+            let inner = cause.cause.expect("the reconnect cause chain");
+            assert_eq!(inner.message, "the socket closed");
+        }
+        other => panic!("expected a typed read error with its reconnect cause, got {other:?}"),
+    }
+    assert!(
+        !registry
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .initialized
+    );
+}
+
+#[tokio::test]
 async fn permission_reads_reconnect_with_the_permissions_reason() {
     let database = PostgresStore { pool: None };
     let mut reconnect = Reconnect::default();
-    let result = load_blocked_tools(&database, Some(&mut reconnect), DEADLINE).await;
+    let result = load_blocked_tools(
+        &database,
+        Some(&mut reconnect),
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
+    )
+    .await;
     assert!(result.is_err());
     assert_eq!(
         reconnect.reasons(),
