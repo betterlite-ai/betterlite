@@ -44,13 +44,9 @@ struct ConfigInput {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ExporterInput {
-    #[serde(default)]
     kind: Option<String>,
-    #[serde(default)]
     endpoint: Option<String>,
-    #[serde(default)]
     traces_endpoint: Option<String>,
-    #[serde(default)]
     headers: Option<String>,
     #[serde(default)]
     requires_headers: bool,

@@ -9,7 +9,7 @@ use serde_json::Number;
 use crate::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::plumbing::context::w3c_propagation::traceparent_from_header;
-use crate::otel::span_attributes::SafeSetAttribute;
+use crate::otel::span_attributes::SafeSetAttribute as _;
 use crate::otel::v2_callback::live_span::LiveSpan;
 use crate::otel::vocabulary::constants::attribute_keys::http::{
     RESPONSE_STATUS_CODE, ROUTE, URL_PATH,
@@ -52,10 +52,7 @@ pub fn set_proxy_request_route(
 
 // litellm.integrations.opentelemetry.OpenTelemetry.set_response_status_code_attribute
 pub fn set_response_status_code(span: Option<&LiveSpan>, status_code: Option<i64>) {
-    let Some(live) = span else {
-        return;
-    };
-    let Some(code) = status_code else {
+    let (Some(live), Some(code)) = (span, status_code) else {
         return;
     };
     live.lock().safe_set_attribute(

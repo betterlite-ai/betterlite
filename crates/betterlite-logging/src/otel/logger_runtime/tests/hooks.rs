@@ -2,11 +2,14 @@
 
 use std::sync::{Arc, Mutex};
 
+use opentelemetry::Context;
 use opentelemetry::Value;
 use opentelemetry::baggage::BaggageExt as _;
-use opentelemetry::trace::Status;
+use opentelemetry::trace::{
+    Span as _, Status, TraceContextExt as _, Tracer as _, TracerProvider as _,
+};
 
-use crate::otel::logger_runtime::hooks::{RegisteredHooks, phase_span, seed_request_identity};
+use crate::otel::logger_runtime::hooks::{phase_span, seed_request_identity};
 use crate::otel::model::baggage::TEAM_ID;
 use crate::otel::model::metadata::wire::payload::Auth;
 use crate::otel::model::payloads::error::SpanError;
@@ -45,9 +48,8 @@ fn seed_identity_delegates_to_the_hook() {
     let mut config = settings(vec![]);
     config.baggage_promoted_keys = vec![TEAM_ID.to_owned()];
     register_callback(&fixture, config, "registered");
-    fixture.runtime.hooks = Some(Arc::new(RegisteredHooks {
-        registry: Arc::clone(&fixture.registered),
-    }));
+    let hooks = Arc::clone(&fixture.registered);
+    fixture.runtime.hooks = Some(hooks);
     let auth = Auth {
         team_id: Some("team-1".to_owned()),
         team_alias: None,
@@ -76,10 +78,9 @@ fn seed_identity_delegates_to_the_hook() {
 #[test]
 fn phase_error_propagates() {
     let mut fixture = fixture();
-    register_callback(&fixture, settings(vec![]), "registered");
-    fixture.runtime.hooks = Some(Arc::new(RegisteredHooks {
-        registry: Arc::clone(&fixture.registered),
-    }));
+    let callback = register_callback(&fixture, settings(vec![]), "registered");
+    let hooks = Arc::clone(&fixture.registered);
+    fixture.runtime.hooks = Some(hooks);
     let trace = RequestTraceContext::default();
     let error = SpanError {
         error_type: Some("Boom".to_owned()),
@@ -88,25 +89,44 @@ fn phase_error_propagates() {
         stack_trace: None,
         llm_provider: None,
     };
+    assert!(!Context::current().has_active_span());
     let result = phase_span(&fixture.runtime, "phase", &trace, |span| {
         let phase = span.expect("the hook opened a span");
         assert!(phase.span.context.is_valid());
+        // attach() made the phase current, so a child span starts under it
+        let current = Context::current();
+        assert_eq!(
+            current.span().span_context().span_id(),
+            phase.span.context.span_id()
+        );
+        let child = callback.tracer_provider.tracer("phase-test").start("child");
+        child.end();
         Err::<u8, SpanError>(error.clone())
     });
     assert_eq!(result, Err(error));
+    // the guard is dropped with the phase, so the caller's context is untouched
+    assert!(!Context::current().has_active_span());
     let spans = fixture.export_sinks.spans();
-    assert_eq!(spans.len(), 1);
-    let data = &spans[0];
-    assert_eq!(data.name.as_ref(), "phase");
-    assert_eq!(data.status, Status::error("kaboom"));
+    assert_eq!(spans.len(), 2);
+    let phase = spans
+        .iter()
+        .find(|data| data.name.as_ref() == "phase")
+        .expect("the phase span");
+    let child = spans
+        .iter()
+        .find(|data| data.name.as_ref() == "child")
+        .expect("the child span");
+    assert_eq!(child.parent_span_id, phase.span_context.span_id());
+    assert_eq!(child.span_context.trace_id(), phase.span_context.trace_id());
+    assert_eq!(phase.status, Status::error("kaboom"));
     assert_eq!(
-        attribute(data, error_keys::TYPE),
+        attribute(phase, error_keys::TYPE),
         Some(&Value::from("Boom"))
     );
     assert_eq!(
-        attribute(data, error_keys::MESSAGE),
+        attribute(phase, error_keys::MESSAGE),
         Some(&Value::from("kaboom"))
     );
-    assert_eq!(data.events.events.len(), 1);
-    assert_eq!(data.events.events[0].name, exception_event::NAME);
+    assert_eq!(phase.events.events.len(), 1);
+    assert_eq!(phase.events.events[0].name, exception_event::NAME);
 }

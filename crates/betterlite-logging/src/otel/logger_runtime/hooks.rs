@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use opentelemetry::Context;
 
 use crate::otel::model::payloads::error::SpanError;
@@ -23,13 +21,9 @@ pub trait RuntimeHooks: Send + Sync {
 }
 
 // runtime.py's _otel_runtime resolves to proxy_server.open_telemetry_logger, which B3853 reaches the same way
-pub struct RegisteredHooks {
-    pub registry: Arc<V2Registry>,
-}
-
-impl RuntimeHooks for RegisteredHooks {
+impl RuntimeHooks for V2Registry {
     fn phase_span(&self, name: &str, trace: &RequestTraceContext) -> Option<PhaseSpan> {
-        registered::phase_span(&self.registry, name, trace)
+        registered::phase_span(self, name, trace)
     }
 
     fn seed_request_identity(
@@ -37,7 +31,7 @@ impl RuntimeHooks for RegisteredHooks {
         seed: &IdentitySeed<'_>,
         trace: &mut RequestTraceContext,
     ) -> Option<Context> {
-        registered::seed_request_identity(&self.registry, seed, trace)
+        registered::seed_request_identity(self, seed, trace)
     }
 }
 
@@ -59,13 +53,7 @@ where
         return body(None);
     };
     let _guard = phase.attach();
-    match body(Some(&phase)) {
-        Ok(value) => Ok(value),
-        Err(error) => {
-            phase.record_error(&error);
-            Err(error)
-        }
-    }
+    body(Some(&phase)).inspect_err(|error| phase.record_error(error))
 }
 
 // runtime.py's seed_request_identity returns nothing; B3853's Context is inert when no hook is present
@@ -74,8 +62,8 @@ pub fn seed_request_identity(
     seed: &IdentitySeed<'_>,
     trace: &mut RequestTraceContext,
 ) -> Option<Context> {
-    runtime
-        .hooks
-        .as_ref()
-        .and_then(|hooks| hooks.seed_request_identity(seed, trace))
+    if let Some(hooks) = runtime.hooks.as_ref() {
+        return hooks.seed_request_identity(seed, trace);
+    }
+    None
 }

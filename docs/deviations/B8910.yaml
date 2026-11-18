@@ -6,19 +6,17 @@ deviations:
       (_published_v2_provider, _registered_v2_logger, _in_memory_loggers) and reads the proxy module.
     why: >-
       betterlite keeps no process globals. The runtime holds the same single slot for the registered
-      callback, the remembered published provider and the attach-once fan-out registry, and
-      publish_global_v2_provider takes the provider setter as a parameter, so no test replaces the
-      process-wide OTel provider. fan_out_provider's last fallback is the injected SDK provider, which
-      the proxy builds from get_tracer_provider(). The workspace denies clippy::multiple_inherent_impl,
-      so LoggerRuntime's one inherent impl holds new() and every operation is a free function in its
-      own module.
+      callback, the remembered published provider and the attach-once fan-out registry; the provider setter
+      arrives as a parameter, and fan_out_provider's last fallback is the injected SDK provider. The
+      workspace denies clippy::multiple_inherent_impl, so every operation is a free function over the
+      runtime instead of a method on it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L932
   - what: >-
       A V2 logger is recognized by the handle the factory keeps for each build, or by pointer equality
       with B3853's registered V2Callback. LiteLLM uses isinstance(callback, OpenTelemetryV2).
     why: >-
-      Rust has no isinstance, and the registry only ever holds a V2Callback, so a registered legacy
-      callback is not a V2 candidate, exactly as _registered_v2_logger filters the proxy slot.
+      Rust has no isinstance, and the registry only holds a V2Callback, so a registered legacy callback
+      is not a V2 candidate, exactly as _registered_v2_logger filters the proxy slot.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L873
   - what: >-
       The generic fallback logger is built once from B3842's resolved Settings and cached on the runtime;
@@ -28,31 +26,27 @@ deviations:
       a provider nobody publishes. The cached logger keeps the same config for the runtime's lifetime.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L867-L872
   - what: >-
-      The factory decides the callback class and forwards config, callback_name, injected tracer, meter
-      and logger providers and the content assembler to an injected V2LoggerConstructor. The runtime's
-      production implementation, CallbackConstructor, assembles one OpenTelemetryV2 through a new
-      V2Callback::assemble and gives it to B3853's V2Callback for the generic class or to B8250's
-      LangfuseOtel or LangfuseContentOtel for the Langfuse classes; the mapper chain comes from the
-      resolved config's mapper_names, and its remaining inputs are the proxy pieces B3868 passes in
-      (B3842's raw config, callback settings and utc offset, B3847's root span source, the configured
-      provider URL allowlist and error redaction). LiteLLM calls _logger_class(config)(...) to
-      instantiate the class.
+      The factory decides the callback class and forwards config, callback_name, injected providers and the
+      content assembler to an injected V2LoggerConstructor. CallbackConstructor assembles one
+      OpenTelemetryV2 through V2Callback::assemble and gives it to B3853's V2Callback for the generic
+      class or to B8250's LangfuseOtel or LangfuseContentOtel for the Langfuse classes. Its other inputs
+      are B3868's proxy pieces: B3842's raw config, callback settings and utc offset, B3847's root span
+      source, the provider URL allowlist and error redaction. LiteLLM calls _logger_class(config)(...).
     why: >-
       V2Callback::new registers the callback in B3853's proxy slot, which a logger built for the catalog
-      must not claim, so the assembly step was split out and constructor registration stays B3853's.
-      OpenTelemetryV2 exposes no tracer provider for publication, and a Langfuse wrapper owns the logger
-      that V2Callback::new would move into its Arc, so the shared assembly is the only way both B3853 and
-      B8250 can build around the same provider and tracer. The port keeps the runtime independent of the
-      proxy's config resolution, which has no production caller yet (B110/B3868).
+      must not claim, so the assembly step was split out and registration stays B3853's. A Langfuse
+      wrapper owns the logger that V2Callback::new would move into its Arc, so the shared assembly is the
+      only way both B3853 and B8250 build around one provider and tracer. The port keeps the runtime
+      independent of the proxy's config resolution, which has no production caller yet (B110/B3868).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1026
   - what: >-
       The top-level callback_settings.otel.excluded_services override is injected as Option<Vec<String>>,
-      where None means the key is absent and Some(empty) is an explicit empty list, and the list is
+      where None means the key is absent and Some(empty) an explicit empty list, and the list is
       normalized by a copy of B3842's excluded_services function in otel/logger_runtime/select.rs.
     why: >-
-      B3842 keeps that normalization private in otel/config.rs, which is outside this task's scope. The
-      copy trims and lower-cases each name, keeps the postgresql special case and warns on an unknown
-      service, so the runtime sees the same set and the same log line.
+      B3842 keeps that normalization private in otel/config.rs, outside this task's scope. The copy trims
+      and lower-cases each name, keeps the postgresql special case and warns on an unknown service, so the
+      runtime sees the same set and log line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/config.py#L392-L394
   - what: >-
       The LITELLM_OTEL_V2 gate arrives as an injected v2_enabled flag. LiteLLM calls is_otel_v2_enabled()
@@ -75,7 +69,7 @@ deviations:
       body's error after the callback stamps it, and seed_request_identity returns the Baggage Context
       for the caller to attach.
     why: >-
-      Rust has no context-manager exception hook and no contextvars; absence is a no-op, the body runs
+      Rust has no context-manager exception hook and no contextvars: absence is a no-op, the body runs
       exactly once either way, and no request failure is caught.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/runtime.py#L20-L54
   - what: >-
@@ -90,21 +84,20 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3508-L3558
   - what: >-
       The tenant fan-out processor is installed when the tracer provider is built, by
-      build_fan_out_tracer_provider, and the logger runtime's factory builds every provider it creates
-      through it. LiteLLM builds the provider without the fan-out and calls attach_tenant_fan_out on the
-      provider it publishes, or on the registered callback's provider when fan_out_provider falls back to
-      it, with one operator-sink map merged from every V2 logger config. Every runtime-built provider
-      therefore carries the fan-out, so a span emitted by a V2 logger that publication did not select
-      also reaches the request's tenant destinations; LiteLLM attaches the processor to the published
-      provider alone.
+      build_fan_out_tracer_provider, and the runtime's factory builds every provider through it. LiteLLM
+      builds the provider without the fan-out and calls attach_tenant_fan_out on the provider it publishes,
+      or on the registered callback's provider when fan_out_provider falls back to it, with one
+      operator-sink map merged from every V2 logger config. Every runtime-built provider therefore carries
+      the fan-out, so a span from a V2 logger publication did not select also reaches the request's tenant
+      destinations; LiteLLM attaches the processor to the published provider alone.
     why: >-
       opentelemetry_sdk 0.33.1 keeps a provider's processors private and only TracerProviderBuilder can
       add one, so a provider this runtime did not build cannot gain the processor: not one passed in
-      through InjectedProviders, and not one already held by a registered V2Callback. The factory cannot
-      know which logger publication will select, so it cannot narrow the attachment to that one. A
+      through InjectedProviders, and not one held by a registered V2Callback. The factory cannot know
+      which logger publication will select, so it cannot narrow the attachment to that one. A
       runtime-built provider's fan-out also sees only the config that built it, so a destination that
       another V2 logger's operator exporter already writes can be delivered twice. Publication still
-      records the same processor in the runtime's TenantFanOutRegistry and still attaches it before the
-      provider setter runs. That registry is what deliverable_destinations reads.
+      records the same processor in the runtime's TenantFanOutRegistry and attaches it before the setter
+      runs; deliverable_destinations reads that registry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L899-L908
 kept_bugs: []

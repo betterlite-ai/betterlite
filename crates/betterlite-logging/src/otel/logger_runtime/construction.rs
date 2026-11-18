@@ -6,7 +6,7 @@ use betterlite_error::normalize::Normalizer;
 use betterlite_redact::secret::Redactor;
 use chrono::FixedOffset;
 
-use crate::callback_logger::CallbackLogger;
+use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::emitter::span_emission::MapperKind;
 use crate::otel::langfuse_root::{LangfuseContentOtel, LangfuseOtel, RootSpanSource};
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
@@ -22,7 +22,9 @@ use crate::otel::v2_callback::live_span::RootSpans;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 
 use super::error::LoggerRuntimeError;
-use super::types::{BuiltLogger, LoggerBuildRequest, LoggerClass, V2LoggerConstructor};
+use super::types::{
+    BuiltLogger, CallbackHooks, LoggerBuildRequest, LoggerClass, V2LoggerConstructor,
+};
 
 const TRACER_NAME: &str = "litellm";
 
@@ -40,95 +42,169 @@ pub struct CallbackConstructor {
 
 impl V2LoggerConstructor for CallbackConstructor {
     fn build(&self, request: &LoggerBuildRequest<'_>) -> Result<BuiltLogger, LoggerRuntimeError> {
-        let callback_name = request.callback_name.map(str::to_owned);
-        let mappers = resolve_mappers(&request.config.mapper_names)
-            .map_err(|source| LoggerRuntimeError::Constructor {
-                source: CallbackError::Mapper(source),
-            })?
-            .into_iter()
-            .map(MapperKind::from)
-            .collect();
-        let parts = CallbackParts {
-            callback_name: callback_name.clone(),
-            config: request.config.clone(),
-            raw_config: self.raw_config.clone(),
-            tenants: TenantTracerCache::new(
-                request.config.clone(),
-                callback_name,
-                TRACER_NAME,
-                TenantSources {
-                    factories: Arc::clone(&request.factories),
-                    scope_source: Arc::clone(&request.scope_source),
-                    allowed_hosts: Arc::clone(&self.allowed_hosts),
-                },
-            ),
-            trace: Arc::clone(&request.trace),
-            providers: ProviderSources {
-                tracer_provider: request.providers.tracer_provider.cloned(),
-                meter_provider: request.providers.meter_provider.cloned(),
-                logger_provider: request.providers.logger_provider.cloned(),
-                meter_state: ProviderState::Unset,
-                logger_state: ProviderState::Unset,
-                metrics: None,
-                events: None,
-            },
-            build: ProviderBuild {
-                factories: Arc::clone(&request.factories),
-                scope_source: Arc::clone(&request.scope_source),
-                clients: request.factories.clients.clone(),
-            },
-            metric: MetricSettings {
-                callback_settings: Arc::clone(&self.callback_settings),
-                utc_offset: self.utc_offset,
-            },
-            emitter: EmitterParts {
-                mappers,
-                environment: Arc::clone(&request.environment),
-                attribute_limit: self.attribute_limit,
-            },
-            error_info: ErrorInformationConfig {
-                normalizer: Normalizer::new()
-                    .map_err(|source| LoggerRuntimeError::Normalizer { source })?,
-                redactor: self.redactor.clone(),
-                log_client_error_tracebacks: self.log_client_error_tracebacks,
-            },
-        };
-        let V2CallbackAssembly {
-            provider,
-            logger,
-            recorder_providers,
-            error_info,
-        } = V2Callback::assemble(parts, request.settings)
-            .map_err(|source| LoggerRuntimeError::Constructor { source })?;
-        let callback: Arc<dyn CallbackLogger> = match request.class {
-            LoggerClass::Generic => Arc::new(V2Callback {
-                tracer_provider: provider.clone(),
-                recorder_providers: recorder_providers.clone(),
-                logger,
-                roots: RootSpans::default(),
-                error_info,
-            }),
-            LoggerClass::Langfuse => Arc::new(LangfuseOtel {
-                inner: logger,
-                roots: Arc::clone(&self.roots),
-            }),
-            LoggerClass::LangfuseContent => {
-                let Some(assembler) = request.assembler else {
-                    return Err(LoggerRuntimeError::MissingAssembler);
-                };
-                Arc::new(LangfuseContentOtel {
-                    inner: LangfuseOtel {
-                        inner: logger,
-                        roots: Arc::clone(&self.roots),
-                    },
-                    stream_assembler: Arc::clone(assembler),
-                })
-            }
-        };
-        Ok(BuiltLogger {
-            callback,
-            provider,
-            recorder_providers,
-        })
+        let parts = callback_parts(self, request)?;
+        let assembly = V2Callback::assemble(parts, request.settings)?;
+        built_logger(self, request, assembly)
+    }
+}
+
+fn callback_parts(
+    constructor: &CallbackConstructor,
+    request: &LoggerBuildRequest<'_>,
+) -> Result<CallbackParts, LoggerRuntimeError> {
+    Ok(CallbackParts {
+        callback_name: request.callback_name.map(str::to_owned),
+        config: request.config.clone(),
+        raw_config: constructor.raw_config.clone(),
+        tenants: tenant_cache(constructor, request),
+        trace: Arc::clone(&request.trace),
+        // an injected provider is used as given; only the recorders a build creates start unset
+        providers: ProviderSources {
+            tracer_provider: request.providers.tracer_provider.cloned(),
+            meter_provider: request.providers.meter_provider.cloned(),
+            logger_provider: request.providers.logger_provider.cloned(),
+            meter_state: ProviderState::Unset,
+            logger_state: ProviderState::Unset,
+            metrics: None,
+            events: None,
+        },
+        build: ProviderBuild {
+            factories: Arc::clone(&request.factories),
+            scope_source: Arc::clone(&request.scope_source),
+            clients: request.factories.clients.clone(),
+        },
+        metric: MetricSettings {
+            callback_settings: Arc::clone(&constructor.callback_settings),
+            utc_offset: constructor.utc_offset,
+        },
+        emitter: emitter_parts(constructor, request)?,
+        error_info: ErrorInformationConfig {
+            normalizer: Normalizer::new()?,
+            redactor: constructor.redactor.clone(),
+            log_client_error_tracebacks: constructor.log_client_error_tracebacks,
+        },
+    })
+}
+
+// the tenant tracers a config builds share the request's factories and scope and the constructor's allowlist
+fn tenant_cache(
+    constructor: &CallbackConstructor,
+    request: &LoggerBuildRequest<'_>,
+) -> TenantTracerCache {
+    TenantTracerCache::new(
+        request.config.clone(),
+        request.callback_name.map(str::to_owned),
+        TRACER_NAME,
+        TenantSources {
+            factories: Arc::clone(&request.factories),
+            scope_source: Arc::clone(&request.scope_source),
+            allowed_hosts: Arc::clone(&constructor.allowed_hosts),
+        },
+    )
+}
+
+fn emitter_parts(
+    constructor: &CallbackConstructor,
+    request: &LoggerBuildRequest<'_>,
+) -> Result<EmitterParts, LoggerRuntimeError> {
+    let mappers = resolve_mappers(&request.config.mapper_names)
+        .map_err(|source| LoggerRuntimeError::Constructor(CallbackError::Mapper(source)))?
+        .into_iter()
+        .map(MapperKind::from)
+        .collect();
+    Ok(EmitterParts {
+        mappers,
+        environment: Arc::clone(&request.environment),
+        attribute_limit: constructor.attribute_limit,
+    })
+}
+
+fn built_logger(
+    constructor: &CallbackConstructor,
+    request: &LoggerBuildRequest<'_>,
+    assembly: V2CallbackAssembly,
+) -> Result<BuiltLogger, LoggerRuntimeError> {
+    let roots = Arc::clone(&constructor.roots);
+    match request.class {
+        LoggerClass::Generic => Ok(generic_built(assembly)),
+        LoggerClass::Langfuse => Ok(langfuse_built(assembly, roots)),
+        LoggerClass::LangfuseContent => {
+            let Some(assembler) = request.assembler else {
+                return Err(LoggerRuntimeError::MissingAssembler);
+            };
+            Ok(langfuse_content_built(assembly, roots, assembler))
+        }
+    }
+}
+
+// the generic class is B3853's V2Callback over the assembled logger
+fn generic_built(assembly: V2CallbackAssembly) -> BuiltLogger {
+    let V2CallbackAssembly {
+        provider,
+        logger,
+        recorder_providers,
+        error_info,
+    } = assembly;
+    let typed = Arc::new(V2Callback {
+        tracer_provider: provider.clone(),
+        recorder_providers: recorder_providers.clone(),
+        logger,
+        roots: RootSpans::default(),
+        error_info,
+    });
+    let hooks = Some(CallbackHooks::Generic(Arc::clone(&typed)));
+    BuiltLogger {
+        callback: typed,
+        hooks,
+        provider,
+        recorder_providers,
+    }
+}
+
+// B8250's wrapper owns the assembled logger and keeps the request root span source
+fn langfuse_built(assembly: V2CallbackAssembly, roots: Arc<dyn RootSpanSource>) -> BuiltLogger {
+    let V2CallbackAssembly {
+        provider,
+        logger,
+        recorder_providers,
+        error_info: _,
+    } = assembly;
+    let typed = Arc::new(LangfuseOtel {
+        inner: logger,
+        roots,
+    });
+    let hooks = Some(CallbackHooks::Langfuse(Arc::clone(&typed)));
+    BuiltLogger {
+        callback: typed,
+        hooks,
+        provider,
+        recorder_providers,
+    }
+}
+
+fn langfuse_content_built(
+    assembly: V2CallbackAssembly,
+    roots: Arc<dyn RootSpanSource>,
+    stream_assembler: &Arc<dyn StreamOutputAssembler>,
+) -> BuiltLogger {
+    let V2CallbackAssembly {
+        provider,
+        logger,
+        recorder_providers,
+        error_info: _,
+    } = assembly;
+    let typed = Arc::new(LangfuseContentOtel {
+        inner: LangfuseOtel {
+            inner: logger,
+            roots,
+        },
+        stream_assembler: Arc::clone(stream_assembler),
+    });
+    let hooks = Some(CallbackHooks::LangfuseContent(Arc::clone(&typed)));
+    BuiltLogger {
+        callback: typed,
+        hooks,
+        provider,
+        recorder_providers,
     }
 }

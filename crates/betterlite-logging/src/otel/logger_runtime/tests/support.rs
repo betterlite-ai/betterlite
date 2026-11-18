@@ -23,9 +23,11 @@ use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::emitter::span_emission::MapperKind;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
 use crate::otel::fan_out::scope::{RequestOtelScope, RequestScopeSource};
+use crate::otel::langfuse_root::{RootSpanSink, RootSpanSource};
 use crate::otel::legacy_metrics::filter::CallbackSettingsView;
 use crate::otel::logger::v2::RequestTraceSource;
 use crate::otel::logger_runtime::LoggerRuntime;
+use crate::otel::logger_runtime::construction::CallbackConstructor;
 use crate::otel::logger_runtime::error::LoggerRuntimeError;
 use crate::otel::logger_runtime::hooks::RuntimeHooks;
 use crate::otel::logger_runtime::types::{
@@ -218,7 +220,7 @@ impl V2LoggerConstructor for RecordingConstructor {
         });
         let failure = lock(&self.failure).take();
         if let Some(source) = failure {
-            return Err(LoggerRuntimeError::Constructor { source });
+            return Err(LoggerRuntimeError::Constructor(source));
         }
         let provider = request
             .providers
@@ -227,6 +229,7 @@ impl V2LoggerConstructor for RecordingConstructor {
             .expect("the factory injects a provider");
         Ok(BuiltLogger {
             callback: Arc::new(FakeLogger { name }),
+            hooks: None,
             provider,
             recorder_providers: (None, None),
         })
@@ -302,12 +305,12 @@ fn build_fixture_on(
     let trace = Arc::new(FixedTrace::default());
     let environment = Arc::new(TestEnvironment::default());
     let assembler: Arc<dyn StreamOutputAssembler> = Arc::new(NullAssembler);
-    let constructor_port: Arc<dyn V2LoggerConstructor> = Arc::clone(&constructor);
-    let trace_source: Arc<dyn RequestTraceSource> = Arc::clone(&trace);
-    let environment_lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::clone(&environment);
+    let constructor_port = Arc::clone(&constructor);
+    let trace_source = Arc::clone(&trace);
+    let environment_lookup = Arc::clone(&environment);
     let (factories, export_sinks, tenant_sinks) = fixture_factories();
     let scope = Arc::new(FixedScope::default());
-    let scope_source: Arc<dyn RequestScopeSource> = Arc::clone(&scope);
+    let scope_source = Arc::clone(&scope);
     let runtime = LoggerRuntime {
         registered: Arc::clone(&registered),
         loggers: Mutex::new(Vec::new()),
@@ -476,6 +479,59 @@ impl CallbackSettingsView for NoSettings {
     fn otel_attributes(&self) -> Option<OtelModelValue> {
         None
     }
+}
+
+// the production constructor, carrying the caller's root span source
+pub(crate) fn callback_constructor(roots: Arc<dyn RootSpanSource>) -> CallbackConstructor {
+    CallbackConstructor {
+        raw_config: otel_settings::Settings::default(),
+        callback_settings: Arc::new(NoSettings),
+        allowed_hosts: Arc::from(Vec::<AllowedDestination>::new()),
+        roots,
+        attribute_limit: None,
+        redactor: None,
+        log_client_error_tracebacks: false,
+        utc_offset: FixedOffset::east_opt(0).expect("utc"),
+    }
+}
+
+pub(crate) type RootLog = Arc<Mutex<Vec<String>>>;
+
+#[derive(Debug)]
+pub(crate) struct RecordingSink {
+    recording: bool,
+    log: RootLog,
+}
+
+impl RootSpanSink for RecordingSink {
+    fn is_recording(&self) -> bool {
+        self.recording
+    }
+
+    fn set_attribute(&self, key: &str, value: String) {
+        lock(&self.log).push(format!("{key}={value}"));
+    }
+}
+
+pub(crate) struct FixedRoots {
+    pub(crate) sink: Option<Arc<dyn RootSpanSink>>,
+}
+
+impl RootSpanSource for FixedRoots {
+    fn request_root_span(&self) -> Option<Arc<dyn RootSpanSink>> {
+        self.sink.clone()
+    }
+}
+
+// the recording root span the Langfuse pre-call and content hooks stamp
+pub(crate) fn recording_root() -> (RootLog, Arc<dyn RootSpanSource>) {
+    let log: RootLog = Arc::default();
+    let sink: Arc<dyn RootSpanSink> = Arc::new(RecordingSink {
+        recording: true,
+        log: Arc::clone(&log),
+    });
+    let roots: Arc<dyn RootSpanSource> = Arc::new(FixedRoots { sink: Some(sink) });
+    (log, roots)
 }
 
 // B3853's callback registered the way the proxy's first V2 construction does

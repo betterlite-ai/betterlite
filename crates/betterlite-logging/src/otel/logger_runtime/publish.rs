@@ -11,7 +11,7 @@ use crate::otel::fan_out::attach::attach_tenant_fan_out;
 use super::error::LoggerRuntimeError;
 use super::select::{excluded_db_systems, select_global_otel_v2_logger, v2_configs};
 use super::types::{FanOutProvider, V2Logger};
-use super::{LoggerRuntime, published};
+use super::{LoggerRuntime, locked};
 
 // litellm.integrations.otel.logger.publish_global_otel_v2_provider: fan-out first, then the setter
 pub fn publish_global_v2_provider(
@@ -24,14 +24,14 @@ pub fn publish_global_v2_provider(
     let excluded = excluded_db_systems(runtime, &logger.config);
     attach_fan_out(runtime, &configs, excluded);
     set_global_provider(&logger.provider);
-    *published(runtime) = Some(logger.provider.clone());
+    *locked(&runtime.published) = Some(logger.provider.clone());
     Ok(logger)
 }
 
 // litellm.integrations.otel.logger.fan_out_provider: published, then registered, then the SDK global
 #[must_use]
 pub fn fan_out_provider(runtime: &LoggerRuntime) -> FanOutProvider {
-    let remembered = published(runtime).as_ref().cloned();
+    let remembered = locked(&runtime.published).as_ref().cloned();
     if let Some(provider) = remembered {
         return FanOutProvider {
             provider,
@@ -55,10 +55,7 @@ pub fn fan_out_provider(runtime: &LoggerRuntime) -> FanOutProvider {
 
 // attach_tenant_fan_out answers false on a repeat, which is the registry's idempotence, not an error
 fn attach_fan_out(runtime: &LoggerRuntime, configs: &[Settings], excluded: BTreeSet<String>) {
-    let mut registry = match runtime.fan_out.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut registry = super::locked(&runtime.fan_out);
     let _attached = attach_tenant_fan_out(
         &mut registry,
         Arc::clone(&runtime.factories),

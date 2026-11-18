@@ -44,22 +44,8 @@ pub struct LoggerRuntime {
     pub published: Mutex<Option<SdkTracerProvider>>,
 }
 
-fn loggers(runtime: &LoggerRuntime) -> MutexGuard<'_, Vec<Arc<V2Logger>>> {
-    match runtime.loggers.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
-fn generic(runtime: &LoggerRuntime) -> MutexGuard<'_, Option<Arc<V2Logger>>> {
-    match runtime.generic.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
-fn published(runtime: &LoggerRuntime) -> MutexGuard<'_, Option<SdkTracerProvider>> {
-    match runtime.published.lock() {
+fn locked<T>(lock: &Mutex<T>) -> MutexGuard<'_, T> {
+    match lock.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }

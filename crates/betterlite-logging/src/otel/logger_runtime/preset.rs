@@ -57,17 +57,13 @@ fn reusable_logger(
     callback_name: &str,
     serves: bool,
 ) -> Option<Arc<V2Logger>> {
-    for callback in in_memory {
-        let Some(logger) = v2_logger_for(runtime, callback) else {
-            continue;
-        };
-        if logger.callback.callback_name() == callback_name
-            && (serves || !exports_nowhere(&logger.config))
-        {
-            return Some(logger);
-        }
-    }
-    None
+    in_memory
+        .iter()
+        .filter_map(|callback| v2_logger_for(runtime, callback))
+        .find(|logger| {
+            logger.callback.callback_name() == callback_name
+                && (serves || !exports_nowhere(&logger.config))
+        })
 }
 
 // only the preset sits inside the fallback: a constructor failure after this still surfaces
@@ -77,19 +73,17 @@ fn preset_config(
     carried: bool,
     callback_name: &str,
 ) -> Option<Settings> {
-    let Ok(built) = preset.build(runtime.environment.as_ref(), runtime.base.clone(), carried)
-    else {
-        return None;
-    };
+    let built = preset
+        .build(runtime.environment.as_ref(), runtime.base.clone(), carried)
+        .ok()?;
     let gated = is_credential_gated(&built);
     if gated && !carried && !has_operator_exporter(&built) {
         return None;
     }
-    let config = if gated && carried {
-        only_the_gated_exporter(&built)
-    } else {
-        built
-    };
+    let mut config = built;
+    if gated && carried {
+        config = only_the_gated_exporter(&config);
+    }
     if exports_nowhere(&config) {
         warn!(
             callback = callback_name,
@@ -111,23 +105,19 @@ pub fn is_gated(spec: &ExporterSpec) -> bool {
 // litellm.litellm_core_utils.litellm_logging._exports_nowhere: an empty exporter list exports nowhere
 #[must_use]
 pub fn exports_nowhere(config: &Settings) -> bool {
-    for spec in &config.exporters {
-        if !is_gated(spec) {
-            return false;
-        }
+    match config.exporters.as_slice() {
+        [] => true,
+        specs => specs.iter().all(is_gated),
     }
-    true
 }
 
 // litellm.litellm_core_utils.litellm_logging._is_credential_gated
 #[must_use]
 pub fn is_credential_gated(config: &Settings) -> bool {
-    for spec in &config.exporters {
-        if is_gated(spec) {
-            return true;
-        }
+    match config.exporters.as_slice() {
+        [] => false,
+        specs => specs.iter().any(is_gated),
     }
-    false
 }
 
 // litellm.litellm_core_utils.litellm_logging._has_operator_exporter

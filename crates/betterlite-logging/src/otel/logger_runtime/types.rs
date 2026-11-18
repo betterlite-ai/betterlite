@@ -10,6 +10,7 @@ use crate::otel::config::Settings;
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
 use crate::otel::fan_out::scope::RequestScopeSource;
+use crate::otel::langfuse_root::{LangfuseContentOtel, LangfuseOtel};
 use crate::otel::logger::v2::RequestTraceSource;
 use crate::otel::plumbing::exporters::ExporterFactories;
 use crate::otel::v2_callback::callback::V2Callback;
@@ -62,8 +63,17 @@ pub struct LoggerBuildRequest<'request> {
     pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
+// what the CallbackLogger trait erases: pre-call hooks, recorders and the Langfuse content hooks
+#[derive(Clone)]
+pub enum CallbackHooks {
+    Generic(Arc<V2Callback>),
+    Langfuse(Arc<LangfuseOtel>),
+    LangfuseContent(Arc<LangfuseContentOtel>),
+}
+
 pub struct BuiltLogger {
     pub callback: Arc<dyn CallbackLogger>,
+    pub hooks: Option<CallbackHooks>,
     pub provider: SdkTracerProvider,
     pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
 }
@@ -76,6 +86,8 @@ pub trait V2LoggerConstructor: Send + Sync {
 // litellm.integrations.otel.logger.OpenTelemetryV2 as the selection and publication code sees it
 pub struct V2Logger {
     pub callback: Arc<dyn CallbackLogger>,
+    // the factory's result keeps callable pre-call and Langfuse content hooks beside the trait object
+    pub hooks: Option<CallbackHooks>,
     pub provider: SdkTracerProvider,
     pub config: Settings,
     // a Langfuse wrapper keeps no V2Callback, so the catalog holds the providers its recorders read
@@ -86,12 +98,13 @@ impl V2Logger {
     // the proxy's open_telemetry_logger slot as a view over B3853's registered callback
     #[must_use]
     pub fn from_callback(callback: &Arc<V2Callback>) -> Self {
-        let concrete = Arc::clone(callback);
-        let erased: Arc<dyn CallbackLogger> = concrete;
+        let typed = Arc::clone(callback);
+        let hooks = Some(CallbackHooks::Generic(Arc::clone(&typed)));
         Self {
             config: callback.logger.config.clone(),
             provider: callback.tracer_provider.clone(),
-            callback: erased,
+            callback: typed,
+            hooks,
             recorder_providers: callback.recorder_providers.clone(),
         }
     }
@@ -104,7 +117,6 @@ pub struct FanOutProvider {
 }
 
 impl FanOutProvider {
-    #[must_use]
     pub fn registry(&self) -> MutexGuard<'_, TenantFanOutRegistry> {
         match self.fan_out.lock() {
             Ok(guard) => guard,

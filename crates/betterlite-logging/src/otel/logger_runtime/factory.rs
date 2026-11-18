@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use opentelemetry_sdk::trace::SdkTracerProvider;
+
 use crate::otel::config::Settings;
 use crate::otel::v2_callback::error::CallbackError;
 use crate::otel_provider_assembly::tracer_provider_assembly::{
@@ -9,9 +11,9 @@ use crate::otel_provider_assembly::tracer_provider_assembly::{
 use super::error::LoggerRuntimeError;
 use super::select::excluded_db_systems;
 use super::types::{
-    ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass, V2Logger,
+    BuiltLogger, ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass, V2Logger,
 };
-use super::{LoggerRuntime, loggers};
+use super::{LoggerRuntime, locked};
 
 // litellm.integrations.otel.logger.build_otel_v2_logger: class choice, then the constructor port
 pub fn build_otel_v2_logger(
@@ -23,26 +25,11 @@ pub fn build_otel_v2_logger(
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let class = logger_class(&config);
     let assembler = matches!(class, LoggerClass::LangfuseContent).then_some(&runtime.assembler);
-    let built_provider = if providers.tracer_provider.is_some() {
-        None
-    } else {
-        let provider = build_fan_out_tracer_provider(
-            &config,
-            Arc::clone(&runtime.factories),
-            &runtime.scope,
-            AssemblyOptions {
-                exporter: None,
-                baggage_processor: None,
-                use_simple_processor: None,
-                tenant_overrides: true,
-            },
-            excluded_db_systems(runtime, &config),
-        )
-        .map_err(|source| LoggerRuntimeError::Constructor {
-            source: CallbackError::Exporter(source),
-        })?;
-        Some(provider)
-    };
+    let built_provider = providers
+        .tracer_provider
+        .is_none()
+        .then(|| fan_out_provider_for(runtime, &config))
+        .transpose()?;
     let request = LoggerBuildRequest {
         class,
         config: &config,
@@ -59,14 +46,65 @@ pub fn build_otel_v2_logger(
         environment: Arc::clone(&runtime.environment),
     };
     let built = runtime.constructor.build(&request)?;
+    Ok(finish(runtime, built, config))
+}
+
+// logger.py:871: the OTEL_* fallback builds plain OpenTelemetryV2, so a config naming langfuse still gets that class
+pub(super) fn build_generic_otel_v2_logger(
+    runtime: &LoggerRuntime,
+    config: Settings,
+) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
+    let provider = fan_out_provider_for(runtime, &config)?;
+    let request = LoggerBuildRequest {
+        class: LoggerClass::Generic,
+        config: &config,
+        callback_name: None,
+        providers: InjectedProviders {
+            tracer_provider: Some(&provider),
+            logger_provider: None,
+            meter_provider: None,
+        },
+        assembler: None,
+        settings: ConstructorSettings::default(),
+        factories: Arc::clone(&runtime.factories),
+        scope_source: Arc::clone(&runtime.scope),
+        trace: Arc::clone(&runtime.trace),
+        environment: Arc::clone(&runtime.environment),
+    };
+    let built = runtime.constructor.build(&request)?;
+    Ok(finish(runtime, built, config))
+}
+
+// the provider a runtime-built logger publishes carries the tenant fan-out processor after its exporters
+fn fan_out_provider_for(
+    runtime: &LoggerRuntime,
+    config: &Settings,
+) -> Result<SdkTracerProvider, LoggerRuntimeError> {
+    build_fan_out_tracer_provider(
+        config,
+        Arc::clone(&runtime.factories),
+        &runtime.scope,
+        AssemblyOptions {
+            exporter: None,
+            baggage_processor: None,
+            use_simple_processor: None,
+            tenant_overrides: true,
+        },
+        excluded_db_systems(runtime, config),
+    )
+    .map_err(|source| LoggerRuntimeError::Constructor(CallbackError::Exporter(source)))
+}
+
+fn finish(runtime: &LoggerRuntime, built: BuiltLogger, config: Settings) -> Arc<V2Logger> {
     let logger = Arc::new(V2Logger {
         callback: built.callback,
+        hooks: built.hooks,
         provider: built.provider,
         config,
         recorder_providers: built.recorder_providers,
     });
-    loggers(runtime).push(Arc::clone(&logger));
-    Ok(logger)
+    locked(&runtime.loggers).push(Arc::clone(&logger));
+    logger
 }
 
 // litellm.integrations.otel.logger._logger_class: the exact mapper name "langfuse", never langfuse_otel

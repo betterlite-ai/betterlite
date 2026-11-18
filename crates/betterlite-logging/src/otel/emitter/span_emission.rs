@@ -78,8 +78,8 @@ pub enum MapperKind {
 }
 
 impl From<Mapper> for MapperKind {
-    fn from(mapper: Mapper) -> Self {
-        match mapper {
+    fn from(source: Mapper) -> Self {
+        match source {
             Mapper::Genai(mapper) => Self::GenAI(mapper),
             Mapper::Legacy(mapper) => Self::Legacy(mapper),
             Mapper::Langfuse(mapper) => Self::Langfuse(mapper),

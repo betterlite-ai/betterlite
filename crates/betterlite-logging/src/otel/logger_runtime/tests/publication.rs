@@ -12,11 +12,12 @@ use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_v2_p
 use crate::otel::logger_runtime::select::{
     excluded_db_systems, select_global_otel_v2_logger, v2_configs,
 };
-use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders};
+use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders, LoggerClass};
 
 use super::support::{
-    FakeLogger, finished, fixture, fixture_excluding, fixture_sink, lock, operator_exporter,
-    owned_fixture_sink, placeholder, probe, register_callback, settings, tenant_destination,
+    FakeLogger, finished, fixture, fixture_excluding, fixture_sink, fixture_with_base, lock,
+    operator_exporter, owned_fixture_sink, placeholder, probe, register_callback, settings,
+    tenant_destination,
 };
 
 #[test]
@@ -33,7 +34,7 @@ fn registered_first() {
     .expect("built");
     let in_memory = vec![Arc::clone(&other.callback)];
     let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
-    let registered_callback: Arc<dyn CallbackLogger> = Arc::clone(&registered);
+    let registered_callback: Arc<dyn CallbackLogger> = registered;
     assert!(Arc::ptr_eq(&selected.callback, &registered_callback));
 }
 
@@ -79,6 +80,19 @@ fn generic_once() {
     assert_eq!(fixture.constructor.records().len(), 1);
     assert_eq!(fixture.constructor.records()[0].callback_name, None);
     assert_eq!(first.config, settings(vec![placeholder()]));
+}
+
+// logger.py:871 builds OpenTelemetryV2() for the OTEL_* fallback, even with a langfuse mapper in the config
+#[test]
+fn the_fallback_stays_generic_with_the_langfuse_mapper() {
+    let mut base = settings(vec![placeholder()]);
+    base.mapper_names = vec!["langfuse".to_owned()];
+    let fixture = fixture_with_base(base.clone());
+    let in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    let records = fixture.constructor.records();
+    assert_eq!(records[0].class, LoggerClass::Generic);
+    assert_eq!(selected.config, base);
 }
 
 #[test]

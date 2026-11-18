@@ -152,9 +152,7 @@ fn an_unknown_mapper_name_fails_the_construction() {
     );
     assert!(matches!(
         result,
-        Err(LoggerRuntimeError::Constructor {
-            source: CallbackError::Mapper(_)
-        })
+        Err(LoggerRuntimeError::Constructor(CallbackError::Mapper(_)))
     ));
 }
 

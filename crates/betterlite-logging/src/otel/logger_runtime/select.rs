@@ -8,9 +8,9 @@ use crate::otel::config::Settings;
 use crate::otel::vocabulary::resolvers::db_system;
 
 use super::error::LoggerRuntimeError;
-use super::factory::build_otel_v2_logger;
-use super::types::{ConstructorSettings, InjectedProviders, V2Logger};
-use super::{LoggerRuntime, generic, loggers};
+use super::factory::build_generic_otel_v2_logger;
+use super::types::V2Logger;
+use super::{LoggerRuntime, locked};
 
 // litellm.integrations.otel.logger.select_global_otel_v2_logger
 pub fn select_global_otel_v2_logger(
@@ -51,10 +51,13 @@ pub fn v2_configs(
 // litellm.integrations.otel.logger._excluded_db_systems, with the explicit list injected as it was read
 #[must_use]
 pub fn excluded_db_systems(runtime: &LoggerRuntime, config: &Settings) -> BTreeSet<String> {
-    match &runtime.configured_exclusions {
-        None => config.excluded_services.clone(),
-        Some(names) => normalized_exclusions(names),
-    }
+    let Some(names) = runtime.configured_exclusions.as_ref() else {
+        return config.excluded_services.clone();
+    };
+    names
+        .iter()
+        .filter_map(|name| excluded_db_system(name))
+        .collect()
 }
 
 // a V2 logger is one this factory built, or B3853's registered callback; Rust has no isinstance
@@ -62,7 +65,7 @@ pub(super) fn v2_logger_for(
     runtime: &LoggerRuntime,
     callback: &Arc<dyn CallbackLogger>,
 ) -> Option<Arc<V2Logger>> {
-    let held = loggers(runtime);
+    let held = locked(&runtime.loggers);
     if let Some(logger) = held
         .iter()
         .find(|logger| Arc::ptr_eq(&logger.callback, callback))
@@ -78,36 +81,21 @@ pub(super) fn v2_logger_for(
 
 // the OTEL_* fallback logger, kept so a second selection cannot build a second orphan
 fn generic_logger(runtime: &LoggerRuntime) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
-    let cached = generic(runtime).as_ref().cloned();
+    let cached = locked(&runtime.generic).as_ref().cloned();
     if let Some(logger) = cached {
         return Ok(logger);
     }
-    let logger = build_otel_v2_logger(
-        runtime,
-        runtime.base.clone(),
-        None,
-        InjectedProviders::default(),
-        ConstructorSettings::default(),
-    )?;
-    *generic(runtime) = Some(Arc::clone(&logger));
+    let logger = build_generic_otel_v2_logger(runtime, runtime.base.clone())?;
+    *locked(&runtime.generic) = Some(Arc::clone(&logger));
     Ok(logger)
 }
 
 // B3842's normalization, applied to a callback_settings list that skipped the settings model
-fn normalized_exclusions(names: &[String]) -> BTreeSet<String> {
-    names
-        .iter()
-        .filter_map(|name| excluded_db_system(name))
-        .collect()
-}
-
 fn excluded_db_system(name: &str) -> Option<String> {
     let normalized = name.trim().to_ascii_lowercase();
-    let system = if normalized == "postgresql" {
-        Some("postgresql")
-    } else {
-        db_system(&normalized)
-    };
+    let system = (normalized == "postgresql")
+        .then_some("postgresql")
+        .or_else(|| db_system(&normalized));
     if system.is_none() {
         warn!(service = %name, "ignoring unknown OpenTelemetry excluded service");
     }

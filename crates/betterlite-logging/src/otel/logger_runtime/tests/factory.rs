@@ -2,26 +2,38 @@
 
 use std::sync::Arc;
 
-use opentelemetry_sdk::logs::SdkLoggerProvider;
-use opentelemetry_sdk::metrics::SdkMeterProvider;
+use betterlite_models::decisions::Json;
+use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
+use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLoggerProvider, SimpleLogProcessor};
+use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use crate::callback_logger::CallbackLogger;
-use crate::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
+use crate::logging_pre_post::hooks::{ApiCallLogger as _, PreCallEvent};
+use crate::otel::config::{CaptureMessageContent, ExporterOwner, ExporterSpec, Settings};
+use crate::otel::content_projections::OutputResponse;
+use crate::otel::logger_runtime::LoggerRuntime;
 use crate::otel::logger_runtime::error::LoggerRuntimeError;
 use crate::otel::logger_runtime::factory::{build_otel_v2_logger, logger_class};
 use crate::otel::logger_runtime::preset::{
     exports_nowhere, has_operator_exporter, is_credential_gated, is_gated, maybe_construct_otel_v2,
     only_the_gated_exporter,
 };
-use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders, LoggerClass};
+use crate::otel::logger_runtime::types::{
+    CallbackHooks, ConstructorSettings, InjectedProviders, LoggerClass,
+};
 use crate::otel::mappers::registry::MapperError;
+use crate::otel::model::metadata::wire::MetadataMap;
+use crate::otel::model::utils::coercion::OtelModelValue;
+use crate::otel::plumbing::events::OperationException;
 use crate::otel::v2_callback::error::CallbackError;
 
 use super::support::{
-    Fixture, destination, fixture, fixture_disabled, fixture_with_base, gated, operator_exporter,
-    placeholder, provider_exporting, settings, spec,
+    Fixture, callback_constructor, destination, finished, fixture, fixture_disabled,
+    fixture_with_base, gated, lock, operator_exporter, placeholder, probe, provider_exporting,
+    recording_root, settings, spec,
 };
 
 fn build(fixture: &Fixture, config: Settings, name: &str) {
@@ -48,16 +60,40 @@ fn add_carrier(fixture: &Fixture, in_memory: &mut Vec<Arc<dyn CallbackLogger>>, 
     fixture.trace.set_destinations(vec![destination(name)]);
 }
 
+fn span_context() -> SpanContext {
+    SpanContext::new(
+        TraceId::from(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128),
+        SpanId::from(0x1112_1314_1516_1718_u64),
+        TraceFlags::SAMPLED,
+        false,
+        TraceState::default(),
+    )
+}
+
 #[test]
 fn factory_provider_passthrough() {
     let fixture = fixture();
-    let sink = InMemorySpanExporter::default();
-    let tracer = provider_exporting(&sink);
-    let meter = SdkMeterProvider::default();
-    let logs = SdkLoggerProvider::builder().build();
+    let (_, roots) = recording_root();
+    let runtime = LoggerRuntime {
+        constructor: Arc::new(callback_constructor(roots)),
+        ..fixture.runtime
+    };
+    let mut config = settings(vec![]);
+    config.enable_metrics = true;
+    config.enable_events = true;
+    let tracer_sink = InMemorySpanExporter::default();
+    let tracer = provider_exporting(&tracer_sink);
+    let metric_exporter = InMemoryMetricExporter::default();
+    let meter = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(metric_exporter.clone()).build())
+        .build();
+    let log_exporter = InMemoryLogExporter::default();
+    let logs = SdkLoggerProvider::builder()
+        .with_log_processor(SimpleLogProcessor::new(log_exporter.clone()))
+        .build();
     let logger = build_otel_v2_logger(
-        &fixture.runtime,
-        settings(vec![]),
+        &runtime,
+        config,
         None,
         InjectedProviders {
             tracer_provider: Some(&tracer),
@@ -67,10 +103,43 @@ fn factory_provider_passthrough() {
         ConstructorSettings::default(),
     )
     .expect("built");
-    let records = fixture.constructor.records();
-    assert_eq!(records[0].providers, vec!["tracer", "meter", "logger"]);
-    assert_eq!(records[0].callback_name, None);
-    assert_eq!(logger.callback.callback_name(), "generic");
+    // LiteLLM keeps the caller's callback_name, None here, and betterlite's str view of it is empty
+    assert_eq!(logger.callback.callback_name(), "");
+    probe(&logger.provider);
+    assert_eq!(finished(&tracer_sink), 1);
+    let Some(CallbackHooks::Generic(callback)) = &logger.hooks else {
+        panic!("the generic class keeps its typed callback");
+    };
+    // each recorder emits through the provider the caller injected, never one the build replaces
+    callback
+        .recorders()
+        .0
+        .expect("metric recorder")
+        .record_failure(
+            &MetadataMap::new(),
+            Decimal::from(10_i64),
+            Decimal::from(13_i64),
+        )
+        .expect("record");
+    meter.force_flush().expect("meter flush");
+    assert!(
+        !metric_exporter
+            .get_finished_metrics()
+            .expect("finished metrics")
+            .is_empty()
+    );
+    callback
+        .recorders()
+        .1
+        .expect("event recorder")
+        .record_operation_exception(&OperationException {
+            span_context: &span_context(),
+            error_type: "Boom",
+            message: "kaboom",
+            stack_trace: None,
+            timestamp_ns: None,
+        });
+    assert_eq!(log_exporter.get_emitted_logs().expect("logs").len(), 1);
 }
 
 #[test]
@@ -292,9 +361,8 @@ fn constructor_failure_propagates() {
         .expect("the constructor failure surfaces");
     assert!(matches!(
         error,
-        LoggerRuntimeError::Constructor {
-            source: CallbackError::Mapper(MapperError::Unknown { ref name, .. })
-        } if name == "boom"
+        LoggerRuntimeError::Constructor(CallbackError::Mapper(MapperError::Unknown { ref name, .. }))
+            if name == "boom"
     ));
 }
 
@@ -362,8 +430,177 @@ fn gated_preset_with_carrier_drops_operator_exporters() {
         .expect("built");
     let records = fixture.constructor.records();
     let built = records.last().expect("the built logger");
-    assert_eq!(built.config.exporters, vec![gated()]);
+    // the gated New Relic exporter is retained as the preset built it, endpoint and owner included
+    let newrelic = ExporterSpec {
+        owner: Some(ExporterOwner::Newrelic),
+        ..spec("otlp_http", Some("https://otlp.nr-data.net"), None, true)
+    };
+    assert_eq!(built.config.exporters, vec![newrelic]);
+    assert_eq!(
+        built.config.exporters[0].endpoint.as_deref(),
+        Some("https://otlp.nr-data.net")
+    );
+    assert_eq!(
+        built.config.exporters[0].owner,
+        Some(ExporterOwner::Newrelic)
+    );
+    assert!(is_gated(&built.config.exporters[0]));
+    assert!(!has_operator_exporter(&built.config));
     assert_eq!(outcome.config, built.config);
+}
+
+#[test]
+fn langfuse_carrier_without_credentials_builds() {
+    let fixture = fixture();
+    let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    add_carrier(&fixture, &mut in_memory, "langfuse_otel");
+    let outcome = maybe_construct_otel_v2(&fixture.runtime, "langfuse_otel", &mut in_memory)
+        .expect("no failure")
+        .expect("built");
+    let records = fixture.constructor.records();
+    let built = records.last().expect("the built logger");
+    assert!(
+        built
+            .config
+            .mapper_names
+            .iter()
+            .any(|name| name == "langfuse")
+    );
+    assert!(is_credential_gated(&built.config));
+    assert!(exports_nowhere(&built.config));
+    assert_eq!(outcome.config, built.config);
+    assert_eq!(in_memory.len(), 2);
+}
+
+#[test]
+fn a_destination_alone_does_not_carry_langfuse_credentials() {
+    let fixture = fixture();
+    fixture
+        .trace
+        .set_destinations(vec![destination("langfuse_otel")]);
+    let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let outcome = maybe_construct_otel_v2(&fixture.runtime, "langfuse_otel", &mut in_memory)
+        .expect("no failure");
+    assert!(outcome.is_none());
+    assert!(in_memory.is_empty());
+    assert_eq!(fixture.constructor.records().len(), 0);
+}
+
+#[test]
+fn a_v2_logger_alone_does_not_carry_langfuse_credentials() {
+    let fixture = fixture();
+    let mut in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let carrier = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("carrier"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("carrier");
+    in_memory.push(Arc::clone(&carrier.callback));
+    let outcome = maybe_construct_otel_v2(&fixture.runtime, "langfuse_otel", &mut in_memory)
+        .expect("no failure");
+    assert!(outcome.is_none());
+    assert_eq!(in_memory.len(), 1);
+    assert_eq!(fixture.constructor.records().len(), 1);
+}
+
+#[test]
+fn the_factory_langfuse_handle_stamps_the_root_span() {
+    let fixture = fixture();
+    let (log, roots) = recording_root();
+    let runtime = LoggerRuntime {
+        constructor: Arc::new(callback_constructor(roots)),
+        ..fixture.runtime
+    };
+    let mut config = settings(vec![]);
+    config.mapper_names = vec!["langfuse".to_owned()];
+    let logger = build_otel_v2_logger(
+        &runtime,
+        config,
+        Some("langfuse_otel"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let Some(CallbackHooks::Langfuse(callback)) = &logger.hooks else {
+        panic!("the factory kept the Langfuse handle");
+    };
+    let details: Json = serde_json::from_str(
+        r#"{
+            "litellm_call_id": "call-1",
+            "model": "gpt-4o",
+            "litellm_params": {
+                "metadata": {
+                    "trace_name": "checkout",
+                    "trace_user_id": "user-1",
+                    "session_id": "session-1",
+                    "tags": ["env:test", "beta"]
+                }
+            }
+        }"#,
+    )
+    .expect("details");
+    callback
+        .log_pre_api_call(&PreCallEvent {
+            model: "gpt-4o",
+            messages: &Json::Null,
+            details: &details,
+        })
+        .expect("pre call");
+    assert_eq!(
+        lock(&log).clone(),
+        [
+            "langfuse.trace.name=checkout",
+            "user.id=user-1",
+            "session.id=session-1",
+            "langfuse.trace.tags=[\"env:test\",\"beta\"]",
+        ]
+    );
+}
+
+#[test]
+fn the_factory_langfuse_content_handle_stamps_the_root_io() {
+    let fixture = fixture();
+    let (log, roots) = recording_root();
+    let runtime = LoggerRuntime {
+        constructor: Arc::new(callback_constructor(roots)),
+        ..fixture.runtime
+    };
+    let mut config = settings(vec![]);
+    config.mapper_names = vec!["langfuse".to_owned()];
+    config.capture_message_content = CaptureMessageContent::SpanAndEvent;
+    let logger = build_otel_v2_logger(
+        &runtime,
+        config,
+        Some("langfuse_otel"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let Some(CallbackHooks::LangfuseContent(callback)) = &logger.hooks else {
+        panic!("the factory kept the LangfuseContent handle");
+    };
+    let data: MetadataMap =
+        serde_json::from_str(r#"{"messages": [{"role": "user", "content": "hello"}]}"#)
+            .expect("request data");
+    let response: OtelModelValue = serde_json::from_str(
+        r#"{"choices": [{"message": {"role": "assistant", "content": "done"}}]}"#,
+    )
+    .expect("response");
+    callback.async_post_call_success_hook(
+        &data,
+        &MetadataMap::new(),
+        &OutputResponse::ModelResponse(&response),
+    );
+    assert_eq!(
+        lock(&log).clone(),
+        [
+            "langfuse.observation.output=[{\"content\":\"done\",\"role\":\"assistant\"}]",
+            "langfuse.observation.input=[{\"content\":\"hello\",\"role\":\"user\"}]",
+        ]
+    );
 }
 
 #[test]
