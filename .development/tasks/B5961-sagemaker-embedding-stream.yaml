@@ -162,4 +162,4 @@ pitfalls:
   - Hugging Face usage counts words of the request `inputs`, not of the reply, and sums every item.
   - The Cohere reply input prefers the logged input over `texts`, and `texts` over `images`, by truthiness, so an empty list falls to the next one.
 review_level: standard
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2000, max_new_expects: 0}

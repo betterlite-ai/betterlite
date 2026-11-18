@@ -1,0 +1,11 @@
+kind: helper
+name: hf-request-and-reply
+call:
+  b5961: {"function": "hf_request", "input": ["a b", "c"], "optional_params": {"dimensions": 2}}
+calls:
+  - b5961: {"function": "hf_request", "input": "hello world", "optional_params": {"inputs": ["override"]}}
+  - b5961: {"function": "hf_reply", "body": "[[0.5, 1.5], [2.5]]", "status": 200, "model": "endpoint", "request": {"inputs": ["a b", "c"]}}
+  - b5961: {"function": "hf_reply", "body": "{\"embedding\": [[0.5]]}", "status": 200, "model": "endpoint", "request": {"inputs": "hello world"}}
+  - b5961: {"function": "hf_reply", "body": "[[0.25]]", "status": 200, "model": "endpoint", "request": {}}
+env: {}
+compare: {ignore: []}
