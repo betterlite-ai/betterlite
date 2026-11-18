@@ -230,6 +230,7 @@ def cost_value(recorder: Recorder) -> list[JsonValue]:
             "usage": list(call.usage) if call.usage is not None else None,
             "kind": call.kind,
             "call_type": call.call_type,
+            "vertex_location": call.vertex_location,
         }
         for call in recorder.calls
     ]

@@ -6,6 +6,7 @@ mod tests;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::routes::CallType;
+use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
 use betterlite_logging::passthrough_stream_logging::types::{
     CollectedChunksCall, CollectedChunksHandler, EndpointType,
@@ -58,6 +59,7 @@ struct RecordedCost {
     usage: Option<(i64, i64, i64)>,
     kind: &'static str,
     call_type: Option<&'static str>,
+    vertex_location: Option<String>,
 }
 
 struct RecordingCost {
@@ -94,6 +96,7 @@ impl PassthroughCompletionCost for RecordingCost {
                 usage,
                 kind,
                 call_type,
+                vertex_location: request.vertex_location.map(str::to_owned),
             });
         Ok(self.price)
     }
@@ -124,8 +127,8 @@ impl Helper for Op {
                 let bytes = serde_json::to_vec(&input.body).or_value_error()?;
                 let empty = Map::new();
                 let request_body = input.request_body.as_ref().unwrap_or(&empty);
-                GeminiPassthroughLogger::new(Arc::clone(&cost)).gemini_passthrough_handler(
-                    GeminiPassthroughInput {
+                GeminiPassthroughLogger::new(Arc::clone(&cost))
+                    .gemini_passthrough_handler(GeminiPassthroughInput {
                         logging_obj: &logging_obj,
                         url_route: &input.url_route,
                         response_headers: &http::HeaderMap::new(),
@@ -133,14 +136,16 @@ impl Helper for Op {
                         request_body,
                         start_time: fixture::timestamp()?,
                         end_time: fixture::timestamp()?,
-                        kwargs: betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs::default(),
-                    },
-                )
+                        kwargs: PassThroughLoggingKwargs::default(),
+                    })
+                    .map_err(|error| error.to_string())
             }
-            Operation::GeminiChunks => {
-                GeminiPassthroughLogger::new(Arc::clone(&cost)).handle(&call)
-            }
-            Operation::VertexChunks => VertexStreamCollector::new(Arc::clone(&cost)).handle(&call),
+            Operation::GeminiChunks => GeminiPassthroughLogger::new(Arc::clone(&cost))
+                .handle(&call)
+                .map_err(|error| error.to_string()),
+            Operation::VertexChunks => VertexStreamCollector::new(Arc::clone(&cost))
+                .handle(&call)
+                .map_err(|error| error.to_string()),
         };
         outcome.map_or_else(
             |_error| Ok(json!({ "failed": true })),

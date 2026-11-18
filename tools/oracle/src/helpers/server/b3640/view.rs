@@ -148,6 +148,7 @@ fn cost_view(cost: &RecordingCost) -> Value {
                 "usage": usage,
                 "kind": call.kind,
                 "call_type": call.call_type,
+                "vertex_location": call.vertex_location,
             })
         })
         .collect();
