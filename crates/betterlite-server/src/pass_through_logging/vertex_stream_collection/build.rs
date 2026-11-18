@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::decisions::Json;
+use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
 use betterlite_vertex::vertex_relay_metadata::types::CompletionResponse;
 use indexmap::IndexMap;
@@ -33,10 +34,7 @@ fn raw_predict_chunks(lines: &[String], now: i64) -> Result<Vec<Chunk>, Collecte
     let mut converter = event_converter();
     let mut chunks = Vec::with_capacity(lines.len());
     for line in lines {
-        let stripped = line
-            .strip_prefix("data: ")
-            .or_else(|| line.strip_prefix("data:"))
-            .unwrap_or(line);
+        let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line);
         let Ok(value) = serde_json::from_str::<Json>(stripped) else {
             continue;
         };
