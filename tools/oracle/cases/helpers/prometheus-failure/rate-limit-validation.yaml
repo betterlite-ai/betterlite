@@ -1,0 +1,48 @@
+kind: helper
+name: prometheus-failure-rate-limit-validation
+call:
+  b3880:
+    function: extract_rate_limit_labels
+    exception:
+      kind: rate_limit
+      message: "vendor limited"
+      llm_provider: "openai"
+      category: "vendor_rate_limit"
+      rate_limit_type: "requests"
+calls:
+  - b3880:
+      function: extract_rate_limit_labels
+      exception:
+        kind: rate_limit
+        message: "garbage category"
+        llm_provider: "openai"
+        category: "nonsense"
+        rate_limit_type: "widgets"
+  - b3880:
+      function: extract_rate_limit_labels
+      exception:
+        kind: budget_exceeded
+        message: "over budget"
+        llm_provider: "openai"
+  - b3880:
+      function: extract_rate_limit_labels
+      exception:
+        kind: proxy_rate_limit
+        message: "batch limited"
+        llm_provider: "litellm_proxy"
+        category: "litellm_batch_rate_limit"
+        rate_limit_type: "max_iterations"
+  - b3880:
+      function: extract_rate_limit_labels
+      exception:
+        kind: scripted
+        message: "third party"
+        status_code: null
+        code: null
+        category: "vendor_rate_limit"
+        rate_limit_type: null
+  - b3880:
+      function: extract_rate_limit_labels
+      exception: null
+env: {}
+compare: {ignore: []}
