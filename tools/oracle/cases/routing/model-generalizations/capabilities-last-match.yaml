@@ -1,0 +1,22 @@
+kind: probe
+name: capabilities-last-match
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - pattern: "^gemini"
+            model_info: {supports_vision: true, max_tokens: 100}
+          - pattern: "gemini-3"
+            model_info: {supports_vision: false, max_tokens: null}
+          - pattern: "^empty$"
+            model_info: {}
+        queries:
+          - {query: capabilities, model: gemini-3-pro}
+          - {query: capabilities, model: gemini}
+          - {query: capabilities, model: empty}
+          - {query: capabilities, model: gpt}
+compare:
+  ignore: []
+  expected_difference: []

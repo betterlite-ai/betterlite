@@ -510,27 +510,30 @@ impl EmbeddingCall for CountingVertex {
 }
 
 async fn status_with_vertex(deployment: &str) -> (StatusCode, usize) {
-    let yaml = format!("model_list:\n  - {{model_name: emb, litellm_params: {{{deployment}}}}}\n");
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(&yaml)
-    .expect("config");
-    let executor =
-        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
-    let vertex = Arc::new(CountingVertex {
-        calls: AtomicUsize::new(0),
-    });
-    let handle = Arc::clone(&vertex);
-    let installed: Arc<dyn EmbeddingCall> = handle;
-    let request = Request::post("/embeddings")
-        .header("content-type", "application/json")
-        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
-        .expect("request");
-    let response = embedding_routes(Arc::new(executor), Some(installed))
-        .oneshot(request)
-        .await
-        .expect("response");
+    // a loaded Config is large, so it drops here instead of sitting in this future across the await
+    let (call, vertex) = {
+        let yaml =
+            format!("model_list:\n  - {{model_name: emb, litellm_params: {{{deployment}}}}}\n");
+        let config = ConfigLoader {
+            lookup: BTreeMap::new(),
+        }
+        .load(&yaml)
+        .expect("config");
+        let executor =
+            chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+        let vertex = Arc::new(CountingVertex {
+            calls: AtomicUsize::new(0),
+        });
+        let handle = Arc::clone(&vertex);
+        let installed: Arc<dyn EmbeddingCall> = handle;
+        let request = Request::post("/embeddings")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+            .expect("request");
+        let call = embedding_routes(Arc::new(executor), Some(installed)).oneshot(request);
+        (call, vertex)
+    };
+    let response = call.await.expect("response");
     (response.status(), vertex.calls.load(Ordering::SeqCst))
 }
 
