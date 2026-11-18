@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_config::sections::service_callback::Settings as ServiceCallbackSettings;
+use betterlite_config::sections::service_callback::SettingsValues;
 use betterlite_db::database_diagnostics::level::LogLevel;
 
 use crate::callback_config::{CallbackVars, FeatureFlags};
@@ -23,7 +23,7 @@ pub struct LoggingWiring {
 
 impl LoggingWiring {
     pub fn start(
-        settings: &ServiceCallbackSettings,
+        settings: &SettingsValues,
         clock: Arc<dyn SuccessClock>,
         sink: Arc<dyn ServiceEventSink>,
         mut registry: CallbackRegistry,

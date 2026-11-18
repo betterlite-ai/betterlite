@@ -16,7 +16,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use betterlite_config::sections::service_callback::{
     DEFAULT_CONCURRENCY as SETTINGS_CONCURRENCY, DEFAULT_EVENT_TIMEOUT as SETTINGS_EVENT_TIMEOUT,
     DEFAULT_LOG_LEVEL, DEFAULT_MAX_QUEUE_SIZE as SETTINGS_QUEUE_SIZE, LogLevelError,
-    Settings as ServiceCallbackSettings,
+    SettingsValues as ServiceCallbackValues,
 };
 use betterlite_db::database_diagnostics::level::LogLevel;
 
@@ -549,14 +549,14 @@ async fn a_zero_queue_size_keeps_the_pipeline_from_starting() {
 
 #[tokio::test]
 async fn wiring_worker_rejects_a_zero_concurrency() {
-    let settings = ServiceCallbackSettings {
+    let settings = Box::new(ServiceCallbackValues {
         service_callbacks: Vec::new(),
         log_level: DEFAULT_LOG_LEVEL.to_owned(),
         json_logs: false,
         max_queue_size: SETTINGS_QUEUE_SIZE,
         concurrency: 0,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
-    };
+    });
     let error = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
@@ -574,14 +574,14 @@ async fn wiring_worker_rejects_a_zero_concurrency() {
 
 #[tokio::test]
 async fn wiring_rejects_an_unknown_log_level() {
-    let settings = ServiceCallbackSettings {
+    let settings = Box::new(ServiceCallbackValues {
         service_callbacks: Vec::new(),
         log_level: "verbose".to_owned(),
         json_logs: false,
         max_queue_size: SETTINGS_QUEUE_SIZE,
         concurrency: SETTINGS_CONCURRENCY,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
-    };
+    });
     let error = LoggingWiring::start(
         &settings,
         SteppingClock::new(),
@@ -635,14 +635,14 @@ impl<'writer> MakeWriter<'writer> for Captured {
 
 #[tokio::test]
 async fn wiring_applies_the_resolved_queue_limit() {
-    let settings = ServiceCallbackSettings {
+    let settings = Box::new(ServiceCallbackValues {
         service_callbacks: Vec::new(),
         log_level: DEFAULT_LOG_LEVEL.to_owned(),
         json_logs: false,
         max_queue_size: 1,
         concurrency: SETTINGS_CONCURRENCY,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
-    };
+    });
     let sink = Arc::new(RecordingSink::default());
     let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let wiring = LoggingWiring::start(
@@ -669,14 +669,14 @@ async fn wiring_reports_callbacks_that_are_not_installed() {
         .with_ansi(false)
         .with_writer(captured.clone())
         .finish();
-    let settings = ServiceCallbackSettings {
+    let settings = Box::new(ServiceCallbackValues {
         service_callbacks: vec!["datadog".to_owned()],
         log_level: DEFAULT_LOG_LEVEL.to_owned(),
         json_logs: false,
         max_queue_size: SETTINGS_QUEUE_SIZE,
         concurrency: SETTINGS_CONCURRENCY,
         event_timeout: SETTINGS_EVENT_TIMEOUT,
-    };
+    });
     let wiring = with_default(subscriber, || {
         LoggingWiring::start(
             &settings,
@@ -697,14 +697,14 @@ async fn wiring_reports_callbacks_that_are_not_installed() {
 
 #[tokio::test]
 async fn wiring_starts_the_worker_from_the_resolved_settings() {
-    let settings = ServiceCallbackSettings {
+    let settings = Box::new(ServiceCallbackValues {
         service_callbacks: vec!["datadog".to_owned()],
         log_level: "info".to_owned(),
         json_logs: true,
         max_queue_size: 8,
         concurrency: 2,
         event_timeout: Duration::from_secs(5),
-    };
+    });
     let sink = Arc::new(RecordingSink::default());
     let sink_source: Arc<dyn ServiceEventSink> = Arc::<RecordingSink>::clone(&sink);
     let wiring = LoggingWiring::start(
@@ -759,8 +759,7 @@ fn tracing_sink_logs_the_service_event() {
         start_time: base,
         end_time: base,
     };
-    let result = with_default(subscriber, || TracingSink.emit(&event));
-    assert!(result.is_ok());
+    with_default(subscriber, || TracingSink.emit(&event)).unwrap();
     let logged = captured.text();
     assert!(logged.contains("service event"), "no message: {logged}");
     assert!(logged.contains("call-1"), "no call id: {logged}");

@@ -41,7 +41,7 @@ pub enum LogLevelError {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Settings {
+pub struct SettingsValues {
     pub service_callbacks: Vec<String>,
     // the raw LITELLM_LOG text, since Python's logging module resolves the name when it is used
     pub log_level: String,
@@ -51,7 +51,7 @@ pub struct Settings {
     pub event_timeout: Duration,
 }
 
-impl Default for Settings {
+impl Default for SettingsValues {
     fn default() -> Self {
         Self {
             service_callbacks: Vec::new(),
@@ -64,7 +64,10 @@ impl Default for Settings {
     }
 }
 
-impl Settings {
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<SettingsValues>;
+
+impl SettingsValues {
     // LiteLLM's getattr(logging, log_level.upper()) fails on a name with no logging attribute
     pub fn resolve_log_level(&self) -> Result<LogLevel, LogLevelError> {
         parse_level(&self.log_level).map_err(|_source| LogLevelError::Unknown {
@@ -93,7 +96,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
+        Ok(Box::new(SettingsValues {
             service_callbacks: resolve_names(
                 self.litellm_settings.service_callback.unwrap_or_default(),
                 lookup,
@@ -108,7 +111,7 @@ impl Section for Raw {
                 .unwrap_or(DEFAULT_MAX_QUEUE_SIZE),
             concurrency: variable(lookup, CONCURRENCY_VARIABLE)?.unwrap_or(DEFAULT_CONCURRENCY),
             event_timeout: event_timeout(lookup)?,
-        })
+        }))
     }
 }
 
