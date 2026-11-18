@@ -1,0 +1,52 @@
+kind: probe
+name: complexity-scoring-custom-keywords
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          technical_keywords: [architecture, distributed]
+          custom_technical_keywords: [gizmo, Sprocket, architecture, GIZMO]
+          dimension_weights: {technicalTerms: 1.0}
+        prompt: architecture GIZMO Sprocket
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          technical_keywords: [architecture, distributed]
+          custom_technical_keywords: [gizmo, Sprocket, architecture, GIZMO]
+          dimension_weights: {technicalTerms: 1.0}
+        prompt: gizmo
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          technical_keywords: [architecture]
+          custom_technical_keywords: [gizmo, GIZMO]
+          dimension_weights: {technicalTerms: 1.0}
+        prompt: architecture gizmo
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          technical_keywords: [architecture]
+          custom_technical_keywords: [gizmo, GIZMO]
+          dimension_weights: {technicalTerms: 1.0}
+        prompt: architecture
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          custom_technical_keywords: [发票, 报销]
+          dimension_weights: {technicalTerms: 1.0}
+        prompt: 发票 报销
