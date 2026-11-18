@@ -9,6 +9,7 @@ use crate::events::Event;
 use crate::options::{HarnessOptions, OpenCodeOptions};
 use crate::sandbox::Sandbox as _;
 use crate::sandbox::local::LocalSandbox;
+use crate::sandbox::local::process::PROCESS_KILL_GRACE;
 use crate::transformation::{BaseCLIHarnessConfig as _, BaseHarnessConfig as _, TurnInput};
 use crate::types::{Capabilities, Capability, Harness, JsonObject, PermissionMode};
 use rstest::rstest;
@@ -295,8 +296,13 @@ fn opencode_config_turn_prompt_repeats_schema() {
 
 fn session_context() -> (tempfile::TempDir, SessionContext<LocalSandbox>) {
     let root = tempfile::tempdir().unwrap();
-    let sandbox =
-        LocalSandbox::new(root.path(), &BTreeMap::new(), root.path().to_path_buf()).unwrap();
+    let sandbox = LocalSandbox::new(
+        root.path(),
+        &BTreeMap::new(),
+        root.path().to_path_buf(),
+        PROCESS_KILL_GRACE,
+    )
+    .unwrap();
     let settings = SessionSettings {
         model: Some("claude-x".to_owned()),
         gateway: Some(GatewayTarget {

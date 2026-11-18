@@ -5,7 +5,7 @@ use std::net::{SocketAddr, TcpListener};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::{HealthTransport as _, MAX_HEALTH_BODY, ReqwestHealth, TransportError};
+use super::{HEALTH_TIMEOUT, HealthTransport as _, MAX_HEALTH_BODY, ReqwestHealth, TransportError};
 
 struct Serving {
     address: SocketAddr,
@@ -13,7 +13,8 @@ struct Serving {
 }
 
 const SLOW_REPLY_PAUSE: Duration = Duration::from_millis(1_200);
-const STALLED_REPLY_PAUSE: Duration = Duration::from_secs(7);
+const SHORT_TIMEOUT: Duration = Duration::from_millis(100);
+const STALLED_REPLY_PAUSE: Duration = Duration::from_millis(500);
 
 fn reply_with_body(length: usize) -> Vec<u8> {
     let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
@@ -55,7 +56,7 @@ fn reqwest_health_sends_an_unauthenticated_get_to_the_health_path() {
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
         None,
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
         .get(&format!("http://{}/health", serving.address))
@@ -73,7 +74,7 @@ fn reqwest_health_does_not_follow_redirects() {
         b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec(),
         None,
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
         .get(&format!("http://{}/health", serving.address))
@@ -89,7 +90,7 @@ fn reqwest_health_waits_for_a_slow_response_within_its_timeout() {
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
         Some(SLOW_REPLY_PAUSE),
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
         .get(&format!("http://{}/health", serving.address))
@@ -104,7 +105,7 @@ fn reqwest_health_reports_a_refused_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
         .get(&format!("http://{address}/health"))
@@ -114,12 +115,17 @@ fn reqwest_health_reports_a_refused_connection() {
 }
 
 #[test]
+fn the_health_timeout_stays_five_seconds() {
+    assert_eq!(HEALTH_TIMEOUT, Duration::from_secs(5));
+}
+
+#[test]
 fn reqwest_health_gives_up_when_the_reply_outlasts_the_timeout() {
     let serving = serve_once(
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
         Some(STALLED_REPLY_PAUSE),
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(SHORT_TIMEOUT).expect("the client builds");
     let started = Instant::now();
 
     let error = transport
@@ -131,8 +137,8 @@ fn reqwest_health_gives_up_when_the_reply_outlasts_the_timeout() {
         matches!(&error, TransportError::Request(source) if source.is_timeout()),
         "{error:?}"
     );
-    assert!(waited >= Duration::from_millis(4_500), "{waited:?}");
-    assert!(waited < Duration::from_secs(6), "{waited:?}");
+    assert!(waited >= SHORT_TIMEOUT, "{waited:?}");
+    assert!(waited < STALLED_REPLY_PAUSE, "{waited:?}");
     serving.request.join().unwrap();
 }
 
@@ -142,7 +148,7 @@ fn reqwest_health_accepts_a_body_of_exactly_the_limit() {
         reply_with_body(usize::try_from(MAX_HEALTH_BODY).unwrap()),
         None,
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
         .get(&format!("http://{}/health", serving.address))
@@ -158,7 +164,7 @@ fn reqwest_health_rejects_a_body_one_byte_over_the_limit() {
         reply_with_body(usize::try_from(MAX_HEALTH_BODY).unwrap() + 1),
         None,
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
         .get(&format!("http://{}/health", serving.address))
@@ -177,7 +183,7 @@ fn reqwest_health_refuses_a_body_that_is_not_utf8() {
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n\xff\xfe".to_vec(),
         None,
     );
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
         .get(&format!("http://{}/health", serving.address))
