@@ -43,6 +43,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 url = "2.5.8"
@@ -54,7 +55,7 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true
 rstest = "=0.27.0"
 serde_json = "1.0.154"
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "time"] }
 tokio-postgres.workspace = true
 tracing-subscriber = { workspace = true, features = ["registry"] }
 
