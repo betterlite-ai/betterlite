@@ -61,6 +61,7 @@ fn speech_media_precedence() {
 #[test]
 fn speech_media_frame_guards() {
     assert_eq!(sniffed(&[0xFF, 0xF1, 0x50]), Some("audio/aac"));
+    assert_eq!(sniffed(&[0xFF, 0x7B, 0x90]), None);
     assert_eq!(sniffed(&[0xFF, 0xF1, 0x34]), None);
     assert_eq!(sniffed(&[0xFF, 0xF1, 0x3C]), None);
     assert_eq!(sniffed(&[0xFF, 0xF9, 0x90]), Some("audio/aac"));
@@ -82,17 +83,21 @@ fn decodes_chat_audio_base64() {
     assert_eq!(decoded("QUJD="), b"ABC");
     assert_eq!(decoded("YQ=="), b"a");
     assert_eq!(decoded("Y Q==!"), b"a");
-    assert_eq!(decoded("QQ==QQ=="), [0x41]);
-    assert_eq!(decoded("ab==a"), [0x69]);
-    assert_eq!(decoded("QQ=Q="), [0x41, 0x04]);
-    assert_eq!(decoded("=QUJD"), b"ABC");
-    assert_eq!(decoded("===="), b"");
     assert_eq!(decoded("ABCD"), [0x00, 0x10, 0x83]);
     assert_eq!(decoded("QR=="), [0x41]);
     assert_eq!(decoded("aGVsbG8="), b"hello");
     assert_eq!(decoded("MDEy"), b"012");
     assert_eq!(decoded("+w=="), [0xFB]);
     assert_eq!(decoded("/w=="), [0xFF]);
+}
+
+#[test]
+fn decodes_chat_audio_pad_runs() {
+    assert_eq!(decoded("QQ==QQ=="), [0x41]);
+    assert_eq!(decoded("ab==a"), [0x69]);
+    assert_eq!(decoded("QQ=Q="), [0x41, 0x04]);
+    assert_eq!(decoded("=QUJD"), b"ABC");
+    assert_eq!(decoded("===="), b"");
 }
 
 #[test]
@@ -130,7 +135,7 @@ fn rejects_bad_base64() {
     assert_eq!(interrupted.to_string(), "Incorrect padding");
     let unpadded = decode_chat_audio_base64("QR").expect_err("two pads missing");
     assert_eq!(unpadded.to_string(), "Incorrect padding");
-    let non_ascii = decode_chat_audio_base64("é").expect_err("non-ascii");
+    let non_ascii = decode_chat_audio_base64("\u{e9}").expect_err("non-ascii");
     assert_eq!(
         non_ascii.to_string(),
         "string argument should contain only ASCII characters"
@@ -181,10 +186,10 @@ fn outcome(bytes: &[u8]) -> String {
             Err(error) => format!("base64:err:{error}"),
         };
     }
-    match sniffed(input) {
-        Some(media_type) => format!("sniff:{media_type}"),
-        None => String::from("sniff:none"),
-    }
+    sniffed(input).map_or_else(
+        || String::from("sniff:none"),
+        |media_type| format!("sniff:{media_type}"),
+    )
 }
 
 #[test]

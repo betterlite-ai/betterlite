@@ -102,7 +102,7 @@ fn frame_media_type(audio: &[u8]) -> Option<&'static str> {
         return None;
     }
     if (second & ADTS_SYNC_AND_LAYER_MASK) == ADTS_SYNC_AND_LAYER {
-        let sample_rate_index = (third >> 2) & 0x0F;
+        let sample_rate_index = (third >> 2_u32) & 0x0F;
         if sample_rate_index < ADTS_SAMPLE_RATE_INDEX_LIMIT {
             return Some(mime_from_type(FileType::Aac));
         }
@@ -112,10 +112,10 @@ fn frame_media_type(audio: &[u8]) -> Option<&'static str> {
 }
 
 fn mpeg_audio_frame_media_type(second: u8, third: u8) -> Option<&'static str> {
-    let version = (second >> 3) & 0x03;
+    let version = (second >> 3_u32) & 0x03;
     let layer = second & MPEG_LAYER_MASK;
-    let bitrate_index = third >> 4;
-    let sample_rate_index = (third >> 2) & 0x03;
+    let bitrate_index = third >> 4_u32;
+    let sample_rate_index = (third >> 2_u32) & 0x03;
     if (second & MPEG_SYNC_MASK) != MPEG_SYNC_MASK
         || version == MPEG_RESERVED_VERSION
         || layer == 0
