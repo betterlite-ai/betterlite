@@ -228,6 +228,13 @@ fn a_missing_group_or_deployment_records_nothing() {
             ..DEFAULT_SUCCESS
         },
     );
+    record_failure(
+        &observations,
+        &Failure {
+            deployment_id: None,
+            ..DEFAULT_FAILURE
+        },
+    );
     assert!(samples(&observations, GROUP).deployments.is_empty());
 }
 
