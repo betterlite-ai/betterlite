@@ -436,7 +436,7 @@ fn a_skipped_projection_failure_clears_the_buffer(#[case] rejected: &str) {
 fn an_unfinished_value_past_the_buffer_limit_ends_the_stream(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
-    let mut chunks = vec![event(br#"{"token": {"text": "#)];
+    let mut chunks = vec![event(br#"{"token": {"text": ""#)];
     for _ in 0..16 {
         chunks.push(event(&vec![b'a'; 65_536]));
     }
@@ -465,7 +465,7 @@ fn an_unfinished_value_past_the_buffer_limit_ends_the_stream(
 fn a_value_under_the_buffer_limit_still_joins(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
-    let mut chunks = vec![event(br#"{"token": {"text": "#)];
+    let mut chunks = vec![event(br#"{"token": {"text": ""#)];
     for _ in 0..15 {
         chunks.push(event(&vec![b'a'; 65_536]));
     }
@@ -502,7 +502,7 @@ fn a_complete_value_past_the_limit_in_one_event_still_parses(
 fn a_pending_buffer_at_exactly_the_limit_still_waits(
     #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
 ) {
-    let opening = br#"{"token": {"text": "#;
+    let opening = br#"{"token": {"text": ""#;
     let filler = MAX_LINE_BYTES.saturating_sub(opening.len());
     let chunks = vec![event(opening), event(&vec![b'a'; filler]), event(br#""}}"#)];
 
@@ -519,7 +519,7 @@ fn a_pending_buffer_at_exactly_the_limit_still_waits(
 #[case::propagate(ErrorPolicy::Propagate)]
 #[case::skip(ErrorPolicy::Skip)]
 fn a_buffer_past_the_limit_drops_its_text(#[case] policy: ErrorPolicy) {
-    let opening = br#"{"token": {"text": "#;
+    let opening = br#"{"token": {"text": ""#;
     let filler = MAX_LINE_BYTES
         .saturating_sub(opening.len())
         .saturating_add(1);

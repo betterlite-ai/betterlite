@@ -89,22 +89,24 @@ impl EventState {
                 self.push_chunk(*chunk, pending);
                 true
             }
-            Ok(Projection::Pending) => {
-                // an unfinished value past the cap ends the stream instead of growing without bound
-                if self.accumulated.len() > MAX_LINE_BYTES {
-                    self.accumulated.clear();
-                    pending.push_back(Err(SagemakerStreamError::BufferLimit {
-                        limit: MAX_LINE_BYTES,
-                    }));
-                    return false;
-                }
-                true
-            }
+            Ok(Projection::Pending) => self.keep_waiting(pending),
             Err(error) => {
                 self.accumulated.clear();
                 self.failed(error, pending)
             }
         }
+    }
+
+    // an unfinished value past the cap ends the stream instead of growing without bound
+    fn keep_waiting(&mut self, pending: &mut VecDeque<EventItem>) -> bool {
+        if self.accumulated.len() <= MAX_LINE_BYTES {
+            return true;
+        }
+        self.accumulated.clear();
+        pending.push_back(Err(SagemakerStreamError::BufferLimit {
+            limit: MAX_LINE_BYTES,
+        }));
+        false
     }
 
     fn push_chunk(&mut self, chunk: SagemakerChunk, pending: &mut VecDeque<EventItem>) {
