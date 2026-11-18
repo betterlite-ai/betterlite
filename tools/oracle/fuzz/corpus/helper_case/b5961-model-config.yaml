@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-model-config
+call:
+  b5961: {"function": "model_config", "model": "sagemaker-voyage-3"}
+env: {}
+compare: {ignore: []}
