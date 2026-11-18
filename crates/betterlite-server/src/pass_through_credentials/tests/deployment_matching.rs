@@ -111,7 +111,10 @@ fn provider_errors_missing_models_and_explicit_providers() {
     let mut resolver = router(
         vec![
             available("unknown", "unknown", &[("api_key", text("wrong"))]),
-            deployment("missing", obj(&[("use_in_pass_through", Json::Bool(true))])),
+            deployment(
+                "missing",
+                &obj(&[("use_in_pass_through", Json::Bool(true))]),
+            ),
         ],
         &[],
     );

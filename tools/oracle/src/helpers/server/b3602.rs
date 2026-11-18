@@ -56,56 +56,56 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let credentials = CredentialSnapshot::new(
-            input
-                .credentials
-                .iter()
-                .map(|(name, values)| CredentialEntry {
-                    credential_name: name.clone(),
-                    credential_values: values.clone(),
-                })
-                .collect(),
-        );
-        let mut router = PassthroughEndpointRouter {
-            deployments: input.deployments.clone(),
-            resolve_provider: Arc::new(resolve_provider),
-            credentials,
-            environment: Arc::new(input.environment.clone()),
-            vertex_by_deployment_key: BTreeMap::new(),
-            default_vertex_config: None,
+        let mut router = router_from(input);
+        let result = match &input.call {
+            Call::Credentials { provider, region } => {
+                json!(
+                    router
+                        .get_credentials(provider, region.as_deref())
+                        .map(|key| key.expose_secret().to_owned())
+                )
+            }
+            Call::VertexDeployments { model } => {
+                json!(router.vertex_deployment_credentials(model.as_deref()))
+            }
+            Call::VertexKey {
+                project_id,
+                location,
+                stored,
+            } => {
+                for entry in stored {
+                    router.add_vertex_credentials(
+                        &entry.project_id,
+                        &entry.location,
+                        entry.credentials.clone(),
+                    );
+                }
+                json!(router.get_vertex_credentials(project_id.as_deref(), location.as_deref()))
+            }
         };
-        call_result(&input.call, &mut router)
+        Ok(json!({"result": result}))
     }
 }
 
-fn call_result(call: &Call, router: &mut PassthroughEndpointRouter) -> HelperResult {
-    let result = match call {
-        Call::Credentials { provider, region } => {
-            json!(
-                router
-                    .get_credentials(provider, region.as_deref())
-                    .map(|key| key.expose_secret().to_owned())
-            )
-        }
-        Call::VertexDeployments { model } => {
-            json!(router.vertex_deployment_credentials(model.as_deref()))
-        }
-        Call::VertexKey {
-            project_id,
-            location,
-            stored,
-        } => {
-            for entry in stored {
-                router.add_vertex_credentials(
-                    &entry.project_id,
-                    &entry.location,
-                    entry.credentials.clone(),
-                );
-            }
-            json!(router.get_vertex_credentials(project_id.as_deref(), location.as_deref()))
-        }
-    };
-    Ok(json!({"result": result}))
+fn router_from(input: &Input) -> PassthroughEndpointRouter {
+    let credentials = CredentialSnapshot::new(
+        input
+            .credentials
+            .iter()
+            .map(|(name, values)| CredentialEntry {
+                credential_name: name.clone(),
+                credential_values: values.clone(),
+            })
+            .collect(),
+    );
+    PassthroughEndpointRouter {
+        deployments: input.deployments.clone(),
+        resolve_provider: Arc::new(resolve_provider),
+        credentials,
+        environment: Arc::new(input.environment.clone()),
+        vertex_by_deployment_key: BTreeMap::new(),
+        default_vertex_config: None,
+    }
 }
 
 fn resolve_provider(model: &str, custom_llm_provider: Option<&str>) -> Option<String> {

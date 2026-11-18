@@ -28,7 +28,7 @@ fn obj(pairs: &[(&str, Json)]) -> JsonObject {
         .collect()
 }
 
-fn deployment(model_name: &str, params: JsonObject) -> PassThroughDeployment {
+fn deployment(model_name: &str, params: &JsonObject) -> PassThroughDeployment {
     PassThroughDeployment {
         model_name: model_name.to_owned(),
         litellm_params: serde_json::from_value(serde_json::json!(params)).unwrap(),
@@ -41,7 +41,7 @@ fn available(model_name: &str, upstream: &str, extra: &[(&str, Json)]) -> PassTh
         ("use_in_pass_through", Json::Bool(true)),
     ];
     pairs.extend(extra.iter().map(|(key, value)| (*key, value.clone())));
-    deployment(model_name, obj(&pairs))
+    deployment(model_name, &obj(&pairs))
 }
 
 fn vertex(model_name: &str, project: &str, location: &str) -> PassThroughDeployment {

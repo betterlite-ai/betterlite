@@ -81,7 +81,7 @@ fn incomplete_and_disabled_vertex_deployments_never_answer(#[case] field: &str) 
         ("use_in_pass_through", Json::Bool(true)),
     ]);
     params.shift_remove(field);
-    let resolver = router(vec![deployment("only", params)], &[]);
+    let resolver = router(vec![deployment("only", &params)], &[]);
     assert!(
         resolver
             .vertex_deployment_credentials(Some("only"))
