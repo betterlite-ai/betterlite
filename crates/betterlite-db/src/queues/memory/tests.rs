@@ -99,7 +99,7 @@ async fn a_closed_queue_keeps_its_admitted_records_and_refuses_new_ones() {
 #[tokio::test]
 async fn observer_sees_the_queue_size_after_admission() {
     let observer = Arc::new(RecordingObserver::default());
-    let events: Arc<dyn EnqueueObserver> = Arc::clone(&observer);
+    let events: Arc<dyn EnqueueObserver> = Arc::<RecordingObserver>::clone(&observer);
     let queue = MemoryUpdateQueue::new(3, 2, 10, events).unwrap();
     queue.add_update("one").await.unwrap();
     queue.add_update("two").await.unwrap();

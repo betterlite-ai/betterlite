@@ -5,6 +5,7 @@ use betterlite_redis::cache_primitives::decode::DecodeError;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use futures_util::future::BoxFuture;
 use num_traits::ToPrimitive as _;
 use uuid::Uuid;
 
@@ -67,11 +68,11 @@ pub trait LockCache: Send + Sync {
 
 // async_register_script's handle: _compare_and_delete_lock compares against the JSON-encoded owner stored by async_set_cache.
 pub trait LockScript: Send + Sync {
-    fn run(
-        &self,
-        key: &str,
-        owner: &str,
-    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send;
+    fn run<'a>(
+        &'a self,
+        key: &'a str,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<bool, LockCacheError>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

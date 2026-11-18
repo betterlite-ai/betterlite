@@ -4,6 +4,7 @@ use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use futures_util::future::BoxFuture;
 use rstest::rstest;
 use uuid::Uuid;
 
@@ -192,13 +193,16 @@ struct FakeScript {
 }
 
 impl LockScript for FakeScript {
-    #[rustfmt::skip]
-    fn run(&self, _key: &str, _owner: &str) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
+    fn run<'a>(
+        &'a self,
+        _key: &'a str,
+        _owner: &'a str,
+    ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         let outcome = self
             .result
             .map_err(|()| LockCacheError::UnexpectedReply { operation: "run" });
-        ready(outcome)
+        Box::pin(ready(outcome))
     }
 }
 
@@ -224,7 +228,7 @@ impl RecordingEvents {
 }
 
 fn build(cache: &Arc<FakeCache>, events: &Arc<RecordingEvents>) -> PodLockManager<FakeCache> {
-    let sink: Arc<dyn PodLockEventSink> = Arc::clone(events);
+    let sink: Arc<dyn PodLockEventSink> = Arc::<RecordingEvents>::clone(events);
     PodLockManager::new(Some(Arc::clone(cache)), 60, sink, Uuid::new_v4())
 }
 

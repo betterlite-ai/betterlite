@@ -1,11 +1,45 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
+use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_client_reuse::breaker::BreakerOpen;
 use redis::Value;
 
-use super::{deleted_one, owner_bytes};
+use super::{deleted_one, owner_bytes, with_cache_error};
+
+#[test]
+fn preserves_cache_failures_without_logging_the_cause() {
+    let outcomes = [
+        with_cache_error::<u8, _>(
+            "lease",
+            Err(RedisCacheError::Breaker(BreakerOpen { name: "sensitive" })),
+        ),
+        with_cache_error::<u8, _>(
+            "lease",
+            Err(RedisCacheValuesError::BreakerOpen(BreakerOpen {
+                name: "sensitive",
+            })),
+        ),
+        with_cache_error::<u8, _>(
+            "lease",
+            Err(RedisAdminError::Breaker(BreakerOpen { name: "sensitive" })),
+        ),
+    ];
+    for outcome in outcomes {
+        let error = outcome.unwrap_err();
+        assert_eq!(error.to_string(), "the redis cache lease failed");
+        assert!(error.source().unwrap().to_string().contains("sensitive"));
+    }
+    assert_eq!(
+        with_cache_error::<_, RedisCacheError>("lease", Ok(7)).unwrap(),
+        7
+    );
+}
 
 #[test]
 fn counts_only_an_exact_deletion_as_one() {

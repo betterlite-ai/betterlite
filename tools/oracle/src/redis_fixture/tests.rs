@@ -53,7 +53,7 @@ fn manager(
     cache: &Arc<RedisCache>,
     events: &Arc<RecordingEvents>,
 ) -> PodLockManager<RedisLockCache> {
-    let sink: Arc<dyn PodLockEventSink> = Arc::clone(events);
+    let sink: Arc<dyn PodLockEventSink> = Arc::<RecordingEvents>::clone(events);
     PodLockManager::new(
         Some(Arc::new(RedisLockCache {
             cache: Arc::clone(cache),
@@ -289,7 +289,7 @@ struct LeaseDelivery {
 
 fn lease_delivery() -> LeaseDelivery {
     let recorder = Arc::new(RecordingServiceSink(Mutex::new(Vec::new())));
-    let recorded: Arc<dyn ServiceEventSink> = Arc::clone(&recorder);
+    let recorded: Arc<dyn ServiceEventSink> = Arc::<RecordingServiceSink>::clone(&recorder);
     let registry = Arc::new(CallbackRegistry::new(16));
     let worker = Arc::new(
         LoggingWorker::<Delivery>::start(WorkerSettings {

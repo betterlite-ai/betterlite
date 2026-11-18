@@ -29,7 +29,7 @@ impl EnqueueObserver for NoEnqueueObserver {
 pub struct MemoryUpdateQueue<T> {
     sender: mpsc::Sender<T>,
     receiver: Mutex<mpsc::Receiver<T>>,
-    aggregation_threshold: i64,
+    pub aggregation_threshold: i64,
     flush_count: i64,
     observer: Arc<dyn EnqueueObserver>,
 }

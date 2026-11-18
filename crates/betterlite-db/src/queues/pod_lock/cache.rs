@@ -8,6 +8,7 @@ use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_counters::scripts::RegisteredScript;
+use futures_util::future::BoxFuture;
 use num_traits::ToPrimitive as _;
 use redis::Value;
 
@@ -114,14 +115,20 @@ struct RedisLockScript {
 }
 
 impl LockScript for RedisLockScript {
-    #[rustfmt::skip]
-    fn run(&self, key: &str, owner: &str) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
-        async move {
+    fn run<'a>(
+        &'a self,
+        key: &'a str,
+        owner: &'a str,
+    ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
+        Box::pin(async move {
             let owner_json = serde_json::to_string(owner)?;
             let keys = [key.to_owned()];
             let args = [RedisScalar::Text(owner_json)];
-            deleted_one(with_cache_error("run_script", self.cache.run_script(&self.script, &keys, &args).await)?)
-        }
+            deleted_one(with_cache_error(
+                "run_script",
+                self.cache.run_script(&self.script, &keys, &args).await,
+            )?)
+        })
     }
 }
 
