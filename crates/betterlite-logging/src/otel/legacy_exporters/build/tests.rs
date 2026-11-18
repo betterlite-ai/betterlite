@@ -245,11 +245,10 @@ async fn an_otlp_grpc_plan_speaks_http2_to_its_endpoint() {
         None,
     )
     .expect("plan");
-    // The exporter reads this at build, so a silent collector ends the export after a second.
-    let processor = with_vars(
-        [("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", Some("1000"))],
-        || builder(&recorder).span_processor(&plan).expect("processor"),
-    );
+    // The exporter reads this at build, so a silent collector ends the export after 300 ms.
+    let processor = with_vars([("OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", Some("300"))], || {
+        builder(&recorder).span_processor(&plan).expect("processor")
+    });
     let provider = SdkTracerProvider::builder()
         .with_span_processor(processor)
         .build();

@@ -267,7 +267,7 @@ async fn overflow_and_oversize_skip_writes() {
         .unwrap_err();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn stalled_headers_time_out() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let cache = configured_cache(&listener, "", 4096);
@@ -318,7 +318,7 @@ async fn serve_pipeline(listener: &TcpListener) -> Vec<String> {
     requests
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn operation_cap_bounds_stalled_calls() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();

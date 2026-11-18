@@ -1,0 +1,131 @@
+kind: helper
+name: bedrock-converse-messages-system-text-cache-control
+call:
+  bedrock_converse_messages:
+    function: transform_system
+    messages:
+      - {role: system, content: rules, cache_control: {type: ephemeral}}
+      - {role: user, content: question}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+calls:
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: null}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: '', cache_control: {type: ephemeral}}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - role: system
+          content:
+            - {type: text, text: a, cache_control: {type: ephemeral}}
+            - {type: text, text: b}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - role: system
+          content:
+            - {type: text, text: a, cache_control: null}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - role: system
+          content:
+            - {type: text, text: a}
+          cache_control: {type: ephemeral}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - role: system
+          content:
+            - {type: image, source: {bytes: AA==}}
+          cache_control: {type: ephemeral}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: {type: ephemeral}}
+        - {role: user, content: question}
+      model: openai.gpt-5
+      model_cost:
+        openai.gpt-5: {litellm_provider: bedrock, supports_prompt_caching: true}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: {type: ephemeral}}
+        - {role: user, content: question}
+      model: anthropic.claude-no-cache
+      model_cost:
+        anthropic.claude-no-cache: {litellm_provider: bedrock, supports_prompt_caching: false}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: {type: ephemeral}}
+        - {role: user, content: question}
+      model: anthropic.claude-unknown
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: {type: ephemeral}}
+        - {role: user, content: question}
+      model: null
+      model_cost: {}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: rules, cache_control: {type: ephemeral, ttl: 1h}}
+        - {role: user, content: question}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024}
+  - bedrock_converse_messages:
+      function: transform_system
+      messages:
+        - {role: system, content: top}
+        - {role: user, content: question}
+        - role: system
+          content:
+            - {type: text, text: a, cache_control: {type: ephemeral}}
+        - {role: assistant, content: reply}
+      model: anthropic.claude-sonnet-4-5-20250929-v1:0
+      model_cost:
+        anthropic.claude-sonnet-4-5-20250929-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

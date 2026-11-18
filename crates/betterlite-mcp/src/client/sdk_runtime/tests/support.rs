@@ -18,6 +18,7 @@ use crate::client::sdk_runtime::runtime::SdkRuntime;
 use crate::client::sessions::client::{SessionClient, SessionSettings};
 use crate::client::sessions::negotiate::{Callbacks, ProtocolVersion};
 use crate::client::sessions::runtime::McpRuntime;
+use crate::client::sessions::stdio::SDK_SHUTDOWN;
 use crate::client::sessions::transport::{StdioConfig, TransportType};
 use crate::client::tools::progress::ProgressHost;
 use crate::credentials::{McpAuthType, McpClient as CredentialClient};
@@ -61,7 +62,12 @@ pub(crate) fn base() -> HttpBase {
 }
 
 pub(crate) fn runtime() -> SdkRuntime {
-    SdkRuntime::new(base(), Arc::new(NoCapture), TaskTracker::new())
+    SdkRuntime::new(
+        base(),
+        Arc::new(NoCapture),
+        TaskTracker::new(),
+        SDK_SHUTDOWN,
+    )
 }
 
 pub(crate) fn settings(transport_type: TransportType) -> SessionSettings {

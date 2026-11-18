@@ -1,0 +1,7 @@
+model_list:
+- model_name: nova
+  litellm_params:
+    model: bedrock/amazon.nova-pro-v1:0
+    bedrock_neutralize_orphaned_tool_blocks_unrelated: true
+litellm_settings:
+  bedrock_neutralize_unrelated: true
