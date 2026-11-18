@@ -97,7 +97,11 @@ impl Helper for Op {
 
 fn answer(call: &Call, model_cost: &IndexMap<String, Value>) -> HelperResult {
     match call {
-        Call::Response { status, body, .. } => response(*status, body),
+        Call::Response {
+            model,
+            status,
+            body,
+        } => response(model, *status, body),
         Call::SessionCacheKey { user_id } => session_cache_key(user_id),
         Call::LocalModelName {
             model,
@@ -123,9 +127,9 @@ fn answer(call: &Call, model_cost: &IndexMap<String, Value>) -> HelperResult {
     }
 }
 
-fn response(status: u16, body: &str) -> HelperResult {
+fn response(model: &str, status: u16, body: &str) -> HelperResult {
     match decode_messages_response(body.as_bytes(), status, &LIMITS) {
-        Ok(fields) => Ok(json!({ "response": fields })),
+        Ok(fields) => Ok(json!({ "response": fields, "model": model })),
         Err(ResponseJsonError::Anthropic(error)) => Err(helper_error(
             "AnthropicError",
             Some(error.status_code),
@@ -143,9 +147,8 @@ fn response(status: u16, body: &str) -> HelperResult {
 
 fn session_cache_key(user_id: &Json) -> HelperResult {
     let key = match user_id {
-        Json::Text(text) => {
-            decode_messages_thinking(text.as_bytes(), &LIMITS).map_err(session_error)?
-        }
+        Json::Text(text) => decode_messages_thinking(text.as_bytes(), &LIMITS)
+            .map_err(|SessionKeyError::Limit(limit)| limit_error(limit))?,
         // prompt_cache_key_from_user_id returns None for a plain person or any non-string id
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     };
@@ -185,12 +188,6 @@ fn normalize_effort(
     Ok(json!({ "effort": normalized }))
 }
 
-fn session_error(error: SessionKeyError) -> Box<HelperError> {
-    match error {
-        SessionKeyError::Limit(error) => limit_error(error),
-    }
-}
-
 fn limit_error(error: ApiLimitError) -> Box<HelperError> {
     let fields = error.fields();
     Box::new(HelperError {
@@ -214,7 +211,7 @@ fn helper_error(class: &str, status: Option<u16>, message: String) -> Box<Helper
     })
 }
 
-fn text(value: &Json) -> Option<&str> {
+const fn text(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,

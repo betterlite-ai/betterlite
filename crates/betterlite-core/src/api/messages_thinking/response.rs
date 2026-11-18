@@ -1,4 +1,4 @@
-use std::str;
+use std::str::from_utf8;
 
 use betterlite_anthropic::api::messages_errors::wire::ResponseRecord;
 use betterlite_anthropic::stream_events::error::AnthropicError;
@@ -51,8 +51,8 @@ pub fn decode_messages_response(
 
 // Python's json.loads reads the body as text, and bytes that are not UTF-8 are named by their count
 fn body_text(body: &[u8]) -> String {
-    str::from_utf8(body).map_or_else(
+    from_utf8(body).map_or_else(
         |_| format!("{} bytes that are not UTF-8", body.len()),
-        str::to_owned,
+        ToOwned::to_owned,
     )
 }

@@ -91,7 +91,7 @@ def response_answer(call: ResponseCall) -> JsonValue:
     transformed = config.transform_anthropic_messages_response(
         model=call["model"], raw_response=reply, logging_obj=LoggingFixture()
     )
-    return {"response": RESPONSE_FIELDS.validate_python(transformed)}
+    return {"response": RESPONSE_FIELDS.validate_python(transformed), "model": call["model"]}
 
 
 def logging_answer(call: LoggingCall) -> JsonValue:

@@ -3,6 +3,7 @@
 mod support;
 
 use std::fs;
+use std::iter::repeat_n;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
@@ -52,14 +53,14 @@ fn session_cache_key(#[case] body: &str, #[case] expected: Option<&str>) {
 
 #[rstest]
 #[case::ascii('a')]
-#[case::unicode('é')]
+#[case::unicode('\u{e9}')]
 fn session_cache_key_truncates_at_64_characters(#[case] character: char) {
-    let session: String = std::iter::repeat(character).take(65).collect();
+    let session: String = repeat_n(character, 65).collect();
     let body = format!(r#"{{"session_id":"{session}"}}"#);
     let key = decode_messages_thinking(body.as_bytes(), &LIMITS)
         .expect("the body fits the limit")
         .expect("the session becomes a key");
-    let expected: String = std::iter::repeat(character).take(64).collect();
+    let expected: String = repeat_n(character, 64).collect();
     assert_eq!(key, expected);
 }
 
@@ -103,7 +104,9 @@ fn response_json_reports_invalid_json_as_an_anthropic_error(#[case] body: &str) 
             assert_eq!(anthropic.status_code, 502);
             assert_eq!(anthropic.message, body);
         }
-        _ => panic!("the failure is the AnthropicError json() raises"),
+        ResponseJsonError::Limit(_) | ResponseJsonError::NotAnObject => {
+            panic!("the failure is the AnthropicError json() raises");
+        }
     }
 }
 
@@ -116,7 +119,9 @@ fn response_json_names_a_body_that_is_not_utf8() {
             assert_eq!(anthropic.status_code, 502);
             assert_eq!(anthropic.message, "2 bytes that are not UTF-8");
         }
-        _ => panic!("a body that is not JSON is the AnthropicError json() raises"),
+        ResponseJsonError::Limit(_) | ResponseJsonError::NotAnObject => {
+            panic!("a body that is not JSON is the AnthropicError json() raises");
+        }
     }
 }
 

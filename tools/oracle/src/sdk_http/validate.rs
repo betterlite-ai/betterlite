@@ -4,7 +4,9 @@ use super::call_checks::validate_timeout;
 use super::error::SdkHttpError;
 use super::messages_chat_stream;
 use super::messages_sync_stream::call;
-use super::{OracleLimits, SdkHttpCall, SdkHttpCase};
+use super::{
+    MessagesStreamFactoryCall, OracleLimits, SdkHttpCall, SdkHttpCase, VectorStoreEmbeddingCall,
+};
 
 // the harness owns the child's proxy routing, interpreter startup and loader paths, so a case never sets them
 fn reserved_environment(name: &str) -> bool {
@@ -22,37 +24,47 @@ fn reserved_environment(name: &str) -> bool {
         || upper.starts_with("UV_")
 }
 
+fn object_body(body: &Json, message: &str) -> Result<(), SdkHttpError> {
+    if matches!(body, Json::Object(_)) {
+        return Ok(());
+    }
+    Err(SdkHttpError::Invalid(message.to_owned()))
+}
+
+fn router_deployments(embedding: &VectorStoreEmbeddingCall) -> Result<(), SdkHttpError> {
+    for deployment in embedding.router.iter().flatten() {
+        if !deployment.litellm_params.model.starts_with("openai/") {
+            return Err(SdkHttpError::Invalid(
+                "every router deployment must serve an openai/ model".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn factory_call(factory: &MessagesStreamFactoryCall) -> Result<(), SdkHttpError> {
+    if factory.model.is_empty() {
+        return Err(SdkHttpError::Invalid(
+            "the Messages factory call needs a model name".to_owned(),
+        ));
+    }
+    object_body(
+        &factory.body,
+        "the Messages factory request body must be an object",
+    )
+}
+
 fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHttpError> {
     match call {
         SdkHttpCall::OpenaiChat(chat) => validate_timeout(chat.timeout_seconds, limits)?,
-        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
-            for deployment in embedding.router.iter().flatten() {
-                if !deployment.litellm_params.model.starts_with("openai/") {
-                    return Err(SdkHttpError::Invalid(
-                        "every router deployment must serve an openai/ model".to_owned(),
-                    ));
-                }
-            }
-        }
+        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => router_deployments(embedding)?,
         SdkHttpCall::MessagesHeaderStream(stream) => {
-            if !matches!(stream.body, Json::Object(_)) {
-                return Err(SdkHttpError::Invalid(
-                    "the Messages header stream body must be an object".to_owned(),
-                ));
-            }
+            object_body(
+                &stream.body,
+                "the Messages header stream body must be an object",
+            )?;
         }
-        SdkHttpCall::MessagesStreamFactory(factory) => {
-            if factory.model.is_empty() {
-                return Err(SdkHttpError::Invalid(
-                    "the Messages factory call needs a model name".to_owned(),
-                ));
-            }
-            if !matches!(factory.body, Json::Object(_)) {
-                return Err(SdkHttpError::Invalid(
-                    "the Messages factory request body must be an object".to_owned(),
-                ));
-            }
-        }
+        SdkHttpCall::MessagesStreamFactory(factory) => factory_call(factory)?,
         SdkHttpCall::MessagesNativeStream(relay) => {
             if relay.queue_maxsize == 0 {
                 return Err(SdkHttpError::Invalid(
