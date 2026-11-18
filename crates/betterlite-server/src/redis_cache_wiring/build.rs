@@ -11,9 +11,10 @@ use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings};
+use betterlite_router::routing_state_store::BreakerClock;
 use thiserror::Error;
 
-use super::gate::{GateClock, PolicyGate};
+use super::gate::PolicyGate;
 
 // The settings the server resolves once and hands to every cache it builds.
 pub struct RedisCacheWiring {
@@ -21,7 +22,7 @@ pub struct RedisCacheWiring {
     pub store: Arc<RedisClientStore>,
     pub hooks: Arc<dyn ServiceHooks>,
     pub policy: Settings,
-    pub clock: GateClock,
+    pub clock: BreakerClock,
     pub default_ttl: i64,
     pub default_major_version: u32,
 }

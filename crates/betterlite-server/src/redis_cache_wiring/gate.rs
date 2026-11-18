@@ -3,7 +3,6 @@ use std::error::Error as StdError;
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
@@ -12,13 +11,11 @@ use betterlite_router::redis_failure_policy::classify::{
     Failure, FailureClass, MAX_CAUSE_DEPTH, is_health_failure,
 };
 use betterlite_router::redis_failure_policy::{Admission, RedisFailurePolicy};
+use betterlite_router::routing_state_store::BreakerClock;
 use redis::{ErrorKind, RedisError, ServerError, ServerErrorKind};
 use tokio::time::error::Elapsed;
 
 use crate::routing::redis_failure_policy::{FailureLogLevel, log_breaker_event, log_redis_failure};
-
-// The gate reads the clock through this, so a test can move the breaker past its recovery timeout.
-pub type GateClock = Arc<dyn Fn() -> Duration + Send + Sync>;
 
 // An admission is the generation times 2^32 plus the call number, and neither reaches 2^32 in a process.
 const CALL_SPACE: u64 = 0x1_0000_0000;
@@ -28,11 +25,11 @@ pub(crate) const SWALLOWED_CALLS_KEPT: usize = 4096;
 
 // One breaker per cache, as LiteLLM gives every RedisCache instance its own RedisCircuitBreaker.
 pub struct PolicyGate {
-    pub policy: Arc<Mutex<RedisFailurePolicy>>,
-    pub next_call: AtomicU64,
-    pub swallowed_calls: Mutex<BTreeSet<u64>>,
-    probe: Mutex<Option<ProbeSlot>>,
-    pub clock: GateClock,
+    pub(crate) policy: Arc<Mutex<RedisFailurePolicy>>,
+    pub(crate) next_call: AtomicU64,
+    pub(crate) swallowed_calls: Mutex<BTreeSet<u64>>,
+    pub(crate) probe: Mutex<Option<ProbeSlot>>,
+    pub(crate) clock: BreakerClock,
 }
 
 // Releasing the half open probe on drop keeps a call that never exits from holding the only probe slot.
@@ -56,7 +53,9 @@ impl BreakerGate for PolicyGate {
         self.release_probe();
         let now = (self.clock)();
         let mut policy = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
-        let admission = policy.admit(now, name).map_err(|_| BreakerOpen { name })?;
+        let admission = policy
+            .admit(now, name)
+            .map_err(|_open| BreakerOpen { name })?;
         let is_probe = policy.status().state == State::HalfOpen;
         let generation = policy.status().generation;
         drop(policy);
@@ -144,7 +143,7 @@ impl BreakerGate for PolicyGate {
 
 impl PolicyGate {
     #[must_use]
-    pub fn new(policy: RedisFailurePolicy, clock: GateClock) -> Self {
+    pub fn new(policy: RedisFailurePolicy, clock: BreakerClock) -> Self {
         Self {
             policy: Arc::new(Mutex::new(policy)),
             next_call: AtomicU64::new(0),
@@ -191,9 +190,10 @@ impl PolicyGate {
 }
 
 pub(crate) fn classify(
-    error: &(dyn StdError + 'static),
+    error: &(dyn StdError + Send + Sync),
 ) -> Option<(FailureClass, Vec<FailureClass>)> {
-    let mut current: Option<&(dyn StdError + 'static)> = Some(error);
+    // the trait's error is not known to be static, so the walk starts at its source; every link after that is static
+    let mut current = error.source();
     let mut classes = Vec::new();
     for _ in 0..MAX_CAUSE_DEPTH {
         let Some(link) = current else {
@@ -210,14 +210,22 @@ pub(crate) fn classify(
 }
 
 fn class_of(error: &(dyn StdError + 'static)) -> Option<FailureClass> {
+    // redis keeps a chained io error in an Arc, and the Arc's own Error impl hides it from downcast_ref
+    if let Some(inner) = error.downcast_ref::<Arc<dyn StdError + Send + Sync>>() {
+        return class_of(inner.as_ref());
+    }
     if let Some(redis) = error.downcast_ref::<RedisError>() {
-        let kind = match redis.kind() {
-            ErrorKind::Server(kind) => Some(kind),
-            ErrorKind::Extension => None,
-            ErrorKind::Io => return Some(FailureClass::Connection),
-            _ => return Some(FailureClass::Other),
-        };
-        return Some(reply_class(kind, redis.code(), redis.detail()));
+        let kind = redis.kind();
+        if matches!(kind, ErrorKind::Io) {
+            return Some(FailureClass::Connection);
+        }
+        if let ErrorKind::Server(server) = kind {
+            return Some(reply_class(Some(server), redis.code(), redis.detail()));
+        }
+        if matches!(kind, ErrorKind::Extension) {
+            return Some(reply_class(None, redis.code(), redis.detail()));
+        }
+        return Some(FailureClass::Other);
     }
     if let Some(server) = error.downcast_ref::<ServerError>() {
         return Some(reply_class(
@@ -276,18 +284,24 @@ fn reply_class(
 }
 
 fn io_class(error: &io::Error) -> FailureClass {
-    match error.kind() {
-        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => FailureClass::Timeout,
+    let kind = error.kind();
+    if matches!(kind, io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) {
+        FailureClass::Timeout
+    } else if matches!(
+        kind,
         io::ErrorKind::BrokenPipe
-        | io::ErrorKind::ConnectionReset
-        | io::ErrorKind::ConnectionRefused
-        | io::ErrorKind::ConnectionAborted
-        | io::ErrorKind::UnexpectedEof
-        | io::ErrorKind::NotConnected
-        | io::ErrorKind::NotFound
-        | io::ErrorKind::HostUnreachable
-        | io::ErrorKind::NetworkUnreachable
-        | io::ErrorKind::NetworkDown => FailureClass::Connection,
-        _ => FailureClass::Os,
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::NotConnected
+            | io::ErrorKind::NotFound
+            | io::ErrorKind::HostUnreachable
+            | io::ErrorKind::NetworkUnreachable
+            | io::ErrorKind::NetworkDown
+    ) {
+        FailureClass::Connection
+    } else {
+        FailureClass::Os
     }
 }

@@ -12,12 +12,13 @@ use tracing::Level;
 use crate::redis_cache_wiring::gate::classify;
 
 use super::support::{
-    Broken, FakeClock, bare_busy_loading_error, bare_cluster_down_error, bare_command_error,
-    bare_connection_error, bare_master_down_error, bare_max_clients_error, bare_no_auth_error,
-    bare_timeout_error, busy_loading_error, capture_logs, chained_timeout_error,
-    cluster_down_error, command_error, connect_timeout_error, connection_error, decode_error,
-    described_connection_error, extension_error, gate_with, master_down_error, max_clients_error,
-    no_auth_error, reply_error, settings, status, timeout_error,
+    Broken, FakeClock, OuterIo, OuterRedis, bare_busy_loading_error, bare_cluster_down_error,
+    bare_command_error, bare_connection_error, bare_master_down_error, bare_max_clients_error,
+    bare_no_auth_error, bare_timeout_error, busy_loading_error, capture_logs,
+    chained_timeout_error, cluster_down_error, command_error, connect_timeout_error,
+    connection_error, decode_error, described_connection_error, extension_error, gate_with,
+    master_down_error, max_clients_error, no_auth_error, reply_error, settings, status,
+    timeout_error,
 };
 
 #[test]
@@ -70,7 +71,9 @@ fn a_bare_redis_connection_error_counts_as_a_hard_failure() {
 
 #[test]
 fn a_refused_connection_classifies_as_a_connection_failure() {
-    let error = io::Error::new(io::ErrorKind::ConnectionRefused, "Connection refused");
+    let error = OuterIo {
+        source: io::Error::new(io::ErrorKind::ConnectionRefused, "Connection refused"),
+    };
     let (class, causes) = classify(&error).expect("an io error classifies");
     assert_eq!(class, FailureClass::Connection);
     assert!(causes.is_empty());
@@ -85,7 +88,9 @@ fn a_server_reply_classifies_as_a_command_failure() {
 
 #[test]
 fn an_extension_reply_classifies_as_a_command_failure() {
-    let error = extension_error();
+    let error = OuterRedis {
+        source: extension_error(),
+    };
     let (class, _causes) = classify(&error).expect("the reply classifies");
     assert_eq!(class, FailureClass::Command);
 }

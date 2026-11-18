@@ -5,6 +5,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use std::net::TcpListener;
+use std::str;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -25,6 +26,7 @@ use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, I
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientError;
 use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings, Status};
+use betterlite_router::routing_state_store::BreakerClock;
 use chrono::{DateTime, FixedOffset};
 use redis::{ErrorKind, RedisError};
 use tokio::time::error::Elapsed;
@@ -33,7 +35,7 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::redis_cache_wiring::gate::{GateClock, PolicyGate};
+use crate::redis_cache_wiring::gate::PolicyGate;
 use crate::redis_cache_wiring::hooks::ServiceEventHooks;
 
 const RECOVERY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -52,7 +54,7 @@ impl FakeClock {
         }
     }
 
-    pub(crate) fn handle(self: &Arc<Self>) -> GateClock {
+    pub(crate) fn handle(self: &Arc<Self>) -> BreakerClock {
         let clock = Arc::clone(self);
         Arc::new(move || Duration::from_millis(clock.millis.load(Ordering::Relaxed)))
     }
@@ -138,7 +140,10 @@ pub(crate) fn cluster_down_error() -> RedisCacheError {
 }
 
 pub(crate) fn decode_error() -> RedisCacheError {
-    let source = std::str::from_utf8(&[0xff]).expect_err("the bytes are not utf-8");
+    // a literal invalid byte trips the invalid_from_utf8 lint, so build the bytes at run time
+    let mut bytes = vec![b'a'];
+    bytes.push(0xff);
+    let source = str::from_utf8(&bytes).expect_err("the bytes are not utf-8");
     RedisCacheError::from(DecodeError::Utf8 { source })
 }
 
@@ -248,7 +253,10 @@ impl<S: Subscriber> Layer<S> for LogCapture {
 }
 
 // A test installs this on its own thread and reads back the lines the code under test writes.
-pub(crate) fn capture_logs<F: FnOnce()>(run: F) -> Vec<LogLine> {
+pub(crate) fn capture_logs<F>(run: F) -> Vec<LogLine>
+where
+    F: FnOnce(),
+{
     let lines = Arc::new(Mutex::new(Vec::new()));
     let subscriber = tracing_subscriber::registry().with(LogCapture(Arc::clone(&lines)));
     with_default(subscriber, run);
@@ -356,6 +364,21 @@ pub(crate) fn fixed_clock() -> FixedClock {
 #[derive(Debug, thiserror::Error)]
 #[error("the cache broke")]
 pub(crate) struct Broken;
+
+// A non transparent wrapper is the only way a test hands the classifier a redis or io error as a source link.
+#[derive(Debug, thiserror::Error)]
+#[error("the outer error")]
+pub(crate) struct OuterRedis {
+    #[source]
+    pub(crate) source: RedisError,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the outer error")]
+pub(crate) struct OuterIo {
+    #[source]
+    pub(crate) source: io::Error,
+}
 
 pub(crate) struct NoopHooks;
 
