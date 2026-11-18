@@ -315,7 +315,7 @@ fn error_constants_match_litellm() {
     assert_eq!(RateLimitExceeded::RETRY_AFTER_SECONDS, 60);
     assert_eq!(RateLimitExceeded::LLM_PROVIDER, "");
     assert_eq!(
-        exceeded.error_message(),
+        format!("litellm.RateLimitError: {exceeded}"),
         "litellm.RateLimitError: Model rate limit exceeded. TPM limit=5, current usage=5"
     );
 }

@@ -15,7 +15,7 @@ use super::deployment::{ModelLimits, io_limits, model, model_id, model_limits};
 use super::error::{
     ModelRateLimitError, RATE_LIMIT_TTL_SECONDS, RateLimitChannel, RateLimitExceeded,
 };
-use super::keys::{RateKeys, cache_keys, tpm_key};
+use super::keys::{RateKeys, cache_keys};
 
 // io_token_pre_call_check and the refunds B019's ITPM/OTPM part composes ahead of the tpm/rpm checks
 #[async_trait]
@@ -212,7 +212,10 @@ impl ModelRateLimits {
         if usage.total_tokens == 0 {
             return None;
         }
-        Some(tpm_key(model_id, model, &minute_label((self.clock)())))
+        Some(format!(
+            "{model_id}:{model}:tpm:{}",
+            minute_label((self.clock)())
+        ))
     }
 
     async fn async_check_limits(

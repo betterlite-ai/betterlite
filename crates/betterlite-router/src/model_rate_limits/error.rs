@@ -1,5 +1,3 @@
-use std::fmt;
-
 use thiserror::Error;
 
 use crate::io_token_reservations::error::IoPreCallError;
@@ -34,7 +32,13 @@ impl RateLimitChannel {
 }
 
 // Everything litellm.RateLimitError receives for a model rate limit, and the response it answers with
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
+#[error(
+    "Model rate limit exceeded. {} limit={}, current usage={}",
+    .channel.message_label(),
+    .limit,
+    .current
+)]
 pub struct RateLimitExceeded {
     pub channel: RateLimitChannel,
     pub limit: i64,
@@ -67,27 +71,7 @@ impl RateLimitExceeded {
             self.model_group
         )
     }
-
-    // litellm.RateLimitError prefixes the message it is given with its own class name
-    #[must_use]
-    pub fn error_message(&self) -> String {
-        format!("litellm.RateLimitError: {self}")
-    }
 }
-
-impl fmt::Display for RateLimitExceeded {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "Model rate limit exceeded. {} limit={}, current usage={}",
-            self.channel.message_label(),
-            self.limit,
-            self.current
-        )
-    }
-}
-
-impl std::error::Error for RateLimitExceeded {}
 
 // Everything pre_call_check can refuse the request with: the model limits, its own fields, or the reservation ahead of them
 #[derive(Debug, Error)]

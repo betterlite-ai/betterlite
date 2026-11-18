@@ -169,7 +169,9 @@ impl IoTokenReservationHook for FakeIo {
         });
         let reservation = IoReservation {
             itpm_reserved: 1,
-            ..IoReservation::default()
+            otpm_reserved: 0,
+            itpm_key: None,
+            otpm_key: None,
         };
         request.insert(String::from("reserved"), Json::Bool(true));
         Ok(Some(reservation))

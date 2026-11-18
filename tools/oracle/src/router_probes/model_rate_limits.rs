@@ -242,7 +242,7 @@ fn error_fields(exceeded: &RateLimitExceeded) -> ErrorFields {
         code: RateLimitExceeded::CODE.to_owned(),
         error_type: RateLimitExceeded::ERROR_TYPE.to_owned(),
         retry_after_seconds: RateLimitExceeded::RETRY_AFTER_SECONDS,
-        message: exceeded.error_message(),
+        message: format!("litellm.RateLimitError: {exceeded}"),
         content: exceeded.content(),
         num_retries: exceeded.num_retries,
     }
