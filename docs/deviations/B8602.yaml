@@ -1,0 +1,12 @@
+task: B8602
+deviations:
+  - what: Chunks are JSON maps tagged with a ChunkKind instead of pydantic objects, so the restamp cannot fail to set a model and LiteLLM's "failed to override chunk.model" error log has no counterpart.
+    why: The objects that reach the generator either have a model field or accept extra fields, so the visible output is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9461-L9471
+  - what: A simple ModelStream chunk keeps every field LiteLLM's fast serializer does not whitelist, such as delta.reasoning_items and a top-level or delta citations list; LiteLLM copies only id, object, created, model, service_tier and choices, and each delta's role and content, so those fields never reach the client.
+    why: Dropping fields the model returned loses data, and the canonical model_dump_json path keeps the same fields, so betterlite serializes every stream chunk on the canonical path instead of LiteLLM's fast path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9503-L9551
+  - what: An output item in a Responses event keeps its own null fields even where LiteLLM's union validates it into an output item model and drops them, and a tools entry whose declared type carries a value pydantic rejects is still serialized by that model's shape while LiteLLM falls back to its dictionary member and keeps every null.
+    why: The serializer sees JSON without pydantic's union, so it treats output items as dictionaries and picks a tools entry's model shape by its type tag alone; reproducing the union's validation-failure fallback would need every tool and output item schema. The CI oracle serialized an all-declared tools list through the dictionary member while a local venv from the same lock serialized it through the models, so the union's member choice is not reproducible and the oracle cases send those lists without nulls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1397-L1412
+kept_bugs: []
