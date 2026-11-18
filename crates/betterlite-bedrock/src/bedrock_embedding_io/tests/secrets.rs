@@ -232,6 +232,12 @@ fn bedrock_embedding_io_managed_worker_drains_before_drop() {
 
 #[test]
 fn bedrock_embedding_io_secret_safe_failure() {
+    let (sent, error) = signed_failure_request();
+    assert_signed_headers_are_present(&sent);
+    assert_fixture_secrets_are_absent(&sent, &error);
+}
+
+fn signed_failure_request() -> (EmbeddingRequest, EmbeddingIoError) {
     let signed = sign_get_request(
         &credentials(ACCESS_KEY, SECRET_KEY, Some(SESSION_TOKEN)),
         URL,
@@ -258,7 +264,10 @@ fn bedrock_embedding_io_secret_safe_failure() {
         .expect_err("the fixture status fails");
     let recorded = factory.requests();
     assert_eq!(recorded.len(), 1);
-    let sent: &EmbeddingRequest = &recorded[0];
+    (recorded[0].clone(), error)
+}
+
+fn assert_signed_headers_are_present(sent: &EmbeddingRequest) {
     assert!(sent.headers.iter().any(|(name, value)| {
         name.as_str() == "X-Amz-Security-Token" && value.as_str() == SESSION_TOKEN
     }));
@@ -268,6 +277,13 @@ fn bedrock_embedding_io_secret_safe_failure() {
             .any(|(name, value)| name.as_str() == "Authorization" && value.contains(ACCESS_KEY)),
         "the signed request really carries the credential"
     );
+    assert!(
+        format!("{sent:?}").contains("Authorization"),
+        "the request Debug still names the signed headers"
+    );
+}
+
+fn assert_fixture_secrets_are_absent(sent: &EmbeddingRequest, error: &EmbeddingIoError) {
     let rendered = [
         format!("{sent:?}"),
         format!(
@@ -284,9 +300,5 @@ fn bedrock_embedding_io_secret_safe_failure() {
                 .all(|value| !text.contains(value))
         }),
         "a rendering names a fixture secret"
-    );
-    assert!(
-        rendered[0].contains("Authorization"),
-        "the request Debug still names the signed headers"
     );
 }
