@@ -1,0 +1,21 @@
+task: B3808
+deviations:
+  - what: An unknown key in a route definition, in a custom routes file or inline, is rejected with an error naming the key and the route index, where LiteLLM reads the keys it knows and drops every other one.
+    why: A dropped key changes which prompts match a route without a word, and a misspelled utterances key would leave the route with no utterances at all; the parse error names the field when the config is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L78-L114
+  - what: An utterance that is not a string is rejected when the route is loaded, where LiteLLM passes the list to semantic_router's Route and the non-string value fails later inside the encoder.
+    why: Betterlite keeps a route's utterances as strings, and the route loader is the place that knows the field is a list of texts; the load error names the route and the field instead of an embedding failure at the first request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L93-L114
+  - what: A similarity_threshold that is NaN or infinite is rejected by route name when the route is built, where LiteLLM accepts it as Route.score_threshold and compares every utterance similarity against it.
+    why: A non-finite threshold makes the comparison meaningless, and a config that carries one is malformed; the error names the route instead of silently matching everything or nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L94-L99
+  - what: A custom routes file larger than 1 MiB is refused before it is parsed, where LiteLLM reads a file of any size.
+    why: Rule bounded-inputs requires a finite limit on every read of an untrusted file; the limit is over the whole document, and a route file that large cannot be a real guardrail config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L53-L63
+  - what: A custom routes file that repeats a key inside one route mapping is refused, where PyYAML's safe_load keeps the last value of the duplicated key.
+    why: A repeated key is a config the author cannot have meant, and betterlite's YAML reader refuses it for every config file rather than keep whichever value came last.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L58
+  - what: The built-in templates are the two YAML documents embedded in the binary, so a third .yaml file a user drops into LiteLLM's route_templates directory is listed by list_builtin_templates and loadable by name there, while betterlite reports it as an unknown template.
+    why: The task requires the built-in templates as static data so the binary needs no package directory of its own; a template a setup adds to the installed package is not shipped with betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L43-L51
+kept_bugs: []
