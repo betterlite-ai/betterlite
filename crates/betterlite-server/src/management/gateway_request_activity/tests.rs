@@ -9,10 +9,12 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::gateway_requests::GatewayRequestActivityResponse;
 use betterlite_db::gateway_requests::GatewayRequestBreakdownEntry;
 use betterlite_db::gateway_requests::GatewayRequestDailyEntry;
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use crate::management::gateway_request_activity::auth::FORBIDDEN;
+use crate::management::gateway_request_activity::error::DB_UNAVAILABLE;
 use crate::management::gateway_request_activity::store::GatewayActivityRow;
 use crate::management::gateway_request_activity::store::GatewayActivityStore;
 
@@ -28,6 +30,7 @@ use self::support::gateway_database;
 use self::support::get;
 use self::support::postgres_store;
 use self::support::row;
+use self::support::startup_error;
 
 const ACTIVITY: &str = "/gateway/daily/activity";
 const DB_ERROR: &str = "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys";
@@ -328,8 +331,59 @@ async fn the_aggregation_sums_dates_in_ascending_order() {
 }
 
 #[tokio::test]
-async fn a_failed_aggregation_returns_the_internal_error_envelope() {
+async fn a_failed_aggregation_reports_a_pool_timeout_as_no_db_connection() {
     let store = Arc::new(FakeStore::failing());
+    let reply = get(
+        app(Some(FakeStore::erased(&store))),
+        Some(&admin()),
+        ACTIVITY,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    let body: ErrorEnvelope = reply.json();
+    assert_eq!(body.error.message, DB_UNAVAILABLE);
+    assert_eq!(body.error.error_type, "no_db_connection");
+    assert_eq!(body.error.param, "None");
+    assert_eq!(body.error.code, "503");
+    assert_eq!(store.calls().len(), 1);
+}
+
+#[tokio::test]
+async fn a_failed_aggregation_reports_a_cached_plan_error_as_no_db_connection() {
+    let outage = startup_error("0A000", "cached plan must not change result type").await;
+    let store = Arc::new(FakeStore::failing_with(outage));
+    let reply = get(
+        app(Some(FakeStore::erased(&store))),
+        Some(&admin()),
+        ACTIVITY,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    let body: ErrorEnvelope = reply.json();
+    assert_eq!(body.error.error_type, "no_db_connection");
+    assert_eq!(body.error.param, "None");
+    assert_eq!(body.error.code, "503");
+}
+
+#[tokio::test]
+async fn a_failed_aggregation_reports_a_data_error_as_an_internal_error() {
+    let rejected = startup_error("22P02", "invalid input syntax for type integer").await;
+    let store = Arc::new(FakeStore::failing_with(rejected));
+    let reply = get(
+        app(Some(FakeStore::erased(&store))),
+        Some(&admin()),
+        ACTIVITY,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: InternalEnvelope = reply.json();
+    assert_eq!(body.error.message, "Internal server error");
+    assert_eq!(body.error.error_type, "internal_server_error");
+}
+
+#[tokio::test]
+async fn a_failed_aggregation_returns_the_internal_error_envelope() {
+    let store = Arc::new(FakeStore::failing_with(DbError::CreateNull));
     let reply = get(
         app(Some(FakeStore::erased(&store))),
         Some(&admin()),
