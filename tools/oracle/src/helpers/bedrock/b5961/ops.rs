@@ -1,7 +1,12 @@
+use std::collections::VecDeque;
+
 use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereRequestError};
-use betterlite_bedrock::sagemaker_embedding::hf;
+use betterlite_bedrock::sagemaker_embedding::hf::{self, HfReplyError};
 use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
-use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
+use betterlite_bedrock::sagemaker_stream::events::EventState;
+use betterlite_bedrock::sagemaker_stream::{
+    ErrorPolicy, SagemakerChunk, SagemakerEvents, SagemakerStreamDecoder,
+};
 use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
@@ -72,7 +77,7 @@ fn cohere_reply(case: &CohereReply) -> HelperResult {
     let response = cohere::transform_response(
         case.body.as_bytes(),
         &case.model,
-        Some(&case.input),
+        case.input.as_ref(),
         &case.request_data,
         &Chars,
     )
@@ -99,20 +104,35 @@ fn cohere_row(row: &LegacyEmbeddingRecord) -> Value {
 }
 
 fn decode_stream(case: &DecodeStream) -> HelperResult {
-    let chunks: Vec<Result<Vec<u8>, HttpError>> = case
-        .chunks
-        .iter()
-        .map(|chunk| hex::decode(chunk).map_err(|error| Failure::Invalid(error.to_string())))
-        .collect::<Result<_, _>>()?;
+    let mut chunks: Vec<Result<Vec<u8>, HttpError>> = Vec::with_capacity(case.chunks.len());
+    for chunk in &case.chunks {
+        chunks.push(Ok(hex::decode(chunk).map_err(Failure::from)?));
+    }
     let policy = if case.sync {
         ErrorPolicy::Propagate
     } else {
         ErrorPolicy::Skip
     };
-    let decoder = SagemakerStreamDecoder::new(&case.model, case.is_messages_api, policy);
+    let decoder = SagemakerStreamDecoder {
+        model: case.model.clone(),
+        is_messages_api: case.is_messages_api,
+        policy,
+    };
+    let events = SagemakerEvents {
+        state: EventState {
+            model: decoder.model,
+            is_messages_api: decoder.is_messages_api,
+            policy: decoder.policy,
+            frames: bytes::BytesMut::new(),
+            accumulated: String::new(),
+        },
+        chunks: chunks.into_iter(),
+        pending: VecDeque::new(),
+        done: false,
+    };
     let mut items = Vec::new();
     let mut failure = Value::Null;
-    for item in decoder.events(chunks.into_iter()) {
+    for item in events {
         match item {
             Ok(Some(chunk)) => items.push(chunk_view(&chunk)),
             Ok(None) => items.push(json!({ "kind": "none" })),
@@ -138,6 +158,15 @@ fn chunk_view(chunk: &SagemakerChunk) -> Value {
                 "finish_reason": choice.finish_reason,
                 "content": choice.delta.content,
                 "role": choice.delta.role,
+                "tool_calls": choice.delta.tool_calls.as_ref().map(|calls| calls.iter().map(|call| json!({
+                    "index": call.index,
+                    "id": call.id,
+                    "type": call.kind,
+                    "function": call.function.as_ref().map(|function| json!({
+                        "name": function.name,
+                        "arguments": function.arguments,
+                    })),
+                })).collect::<Vec<_>>()),
             })).collect::<Vec<_>>(),
         }),
         SagemakerChunk::Token(token) => json!({
@@ -165,18 +194,24 @@ pub(crate) enum Failure {
     #[error(transparent)]
     Sagemaker(#[from] SagemakerError),
     #[error(transparent)]
+    HfReply(#[from] HfReplyError),
+    #[error(transparent)]
     CohereRequest(#[from] CohereRequestError),
     #[error(transparent)]
     CohereReply(#[from] CohereLegacyEmbeddingError),
-    #[error("{0}")]
-    Invalid(String),
+    #[error("the stream chunk is not hex: {source}")]
+    Hex {
+        #[source]
+        source: hex::FromHexError,
+    },
 }
 
 impl From<Failure> for Box<HelperError> {
     fn from(failure: Failure) -> Self {
         let status = match &failure {
             Failure::Sagemaker(error) => Some(error.status_code),
-            Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Invalid(_) => None,
+            Failure::HfReply(error) => Some(error.status_code()),
+            Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Hex { .. } => None,
         };
         Self::new(HelperError {
             class: error_class(&failure).to_owned(),
@@ -192,7 +227,7 @@ impl From<Failure> for Box<HelperError> {
 // only the status crosses the comparison, so the name just says which LiteLLM class raised
 const fn error_class(failure: &Failure) -> &'static str {
     match failure {
-        Failure::Sagemaker(_) => "SagemakerError",
-        Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Invalid(_) => "ValueError",
+        Failure::Sagemaker(_) | Failure::HfReply(_) => "SagemakerError",
+        Failure::CohereRequest(_) | Failure::CohereReply(_) | Failure::Hex { .. } => "ValueError",
     }
 }

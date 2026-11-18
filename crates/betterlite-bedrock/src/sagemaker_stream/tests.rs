@@ -1,27 +1,39 @@
 #![cfg(test)]
 
+use std::collections::VecDeque;
 use std::fs;
 use std::io;
 use std::path::Path;
 
 use betterlite_http::error::HttpError;
 
-use crate::sagemaker_stream::events::EventItem;
-use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
+use crate::sagemaker_stream::events::{EventItem, EventState};
+use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerEvents};
 
 const MODEL: &str = "sagemaker-model";
 
 // the fuzz target reads the first byte as the chunk size and feeds the rest as one byte stream
 fn decode(bytes: &[u8], messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
     let size = usize::from(bytes.first().copied().unwrap_or(0)).max(1);
-    let decoder = SagemakerStreamDecoder::new(MODEL, messages, policy);
     let chunks: Vec<Result<Vec<u8>, HttpError>> = bytes
         .get(1..)
         .unwrap_or_default()
         .chunks(size)
         .map(|chunk| Ok(chunk.to_vec()))
         .collect();
-    decoder.events(chunks.into_iter()).collect()
+    SagemakerEvents {
+        state: EventState {
+            model: MODEL.to_owned(),
+            is_messages_api: messages,
+            policy,
+            frames: bytes::BytesMut::new(),
+            accumulated: String::new(),
+        },
+        chunks: chunks.into_iter(),
+        pending: VecDeque::new(),
+        done: false,
+    }
+    .collect()
 }
 
 fn is_token_chunk(item: &EventItem) -> bool {

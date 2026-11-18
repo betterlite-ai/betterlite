@@ -18,7 +18,7 @@ use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as
 
 use crate::sagemaker_stream::error::SagemakerStreamError;
 use crate::sagemaker_stream::events::{EventItem, EventState};
-use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
+use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerEvents};
 
 const MODEL: &str = "sagemaker-model";
 
@@ -68,9 +68,23 @@ fn source(chunks: Vec<Vec<u8>>) -> Vec<Result<Vec<u8>, HttpError>> {
     items
 }
 
+fn stream<Chunks>(chunks: Chunks, messages: bool, policy: ErrorPolicy) -> SagemakerEvents<Chunks> {
+    SagemakerEvents {
+        state: EventState {
+            model: MODEL.to_owned(),
+            is_messages_api: messages,
+            policy,
+            frames: bytes::BytesMut::new(),
+            accumulated: String::new(),
+        },
+        chunks,
+        pending: VecDeque::new(),
+        done: false,
+    }
+}
+
 fn sync_items(chunks: Vec<Vec<u8>>, messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
-    let decoder = SagemakerStreamDecoder::new(MODEL, messages, policy);
-    decoder.events(source(chunks).into_iter()).collect()
+    stream(source(chunks).into_iter(), messages, policy).collect()
 }
 
 fn async_items(chunks: Vec<Vec<u8>>, messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
@@ -78,8 +92,7 @@ fn async_items(chunks: Vec<Vec<u8>>, messages: bool, policy: ErrorPolicy) -> Vec
         .build()
         .unwrap();
     runtime.block_on(async move {
-        let decoder = SagemakerStreamDecoder::new(MODEL, messages, policy);
-        let mut events = decoder.events(futures_util::stream::iter(source(chunks)));
+        let mut events = stream(futures_util::stream::iter(source(chunks)), messages, policy);
         let mut items = Vec::new();
         while let Some(item) = futures_util::StreamExt::next(&mut events).await {
             items.push(item);
@@ -412,7 +425,7 @@ fn a_projection_failure_keeps_the_buffer_for_the_next_event() {
 
     assert!(matches!(items.as_slice(), [Ok(None)]));
     assert!(
-        lines.text().contains("token is invalid"),
+        lines.text().contains("does not have the declared shape"),
         "{}",
         lines.text()
     );
@@ -429,7 +442,7 @@ fn a_projection_failure_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Field { field: "index" }
+        crate::sagemaker_stream::error::SagemakerStreamError::Json(_)
     ));
 }
 
@@ -453,7 +466,7 @@ fn a_final_projection_failure_is_logged_and_yields_nothing() {
     assert!(items.is_empty(), "{items:?}");
     assert!(
         lines.text().contains(
-            "ERROR Final error parsing accumulated JSON: the SageMaker stream chunk field token is invalid"
+            "ERROR Final error parsing accumulated JSON: the SageMaker stream chunk does not have the declared shape"
         ),
         "{}",
         lines.text()
@@ -463,7 +476,13 @@ fn a_final_projection_failure_is_logged_and_yields_nothing() {
 // a caller that finishes after absorb reported the failure gets the same error from the buffer
 #[test]
 fn a_final_projection_failure_ends_a_propagating_stream() {
-    let mut state = EventState::new(MODEL, false, ErrorPolicy::Propagate);
+    let mut state = EventState {
+        model: MODEL.to_owned(),
+        is_messages_api: false,
+        policy: ErrorPolicy::Propagate,
+        frames: bytes::BytesMut::new(),
+        accumulated: String::new(),
+    };
     let mut failed = VecDeque::new();
     assert!(!state.absorb(&event(br#"{"token": 5}"#), &mut failed));
     let mut pending = VecDeque::new();
@@ -471,7 +490,7 @@ fn a_final_projection_failure_ends_a_propagating_stream() {
 
     assert!(matches!(
         pending.pop_front(),
-        Some(Err(SagemakerStreamError::Field { field: "token" }))
+        Some(Err(SagemakerStreamError::Json(_)))
     ));
 }
 
@@ -531,7 +550,7 @@ fn a_non_object_chunk_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::NotObject
+        crate::sagemaker_stream::error::SagemakerStreamError::Json(_)
     ));
 }
 
@@ -570,10 +589,9 @@ fn the_async_face_skips_like_the_blocking_one() {
 #[case::propagate(ErrorPolicy::Propagate)]
 #[case::skip(ErrorPolicy::Skip)]
 fn a_source_error_ends_the_stream_in_both_policies(#[case] policy: ErrorPolicy) {
-    let decoder = SagemakerStreamDecoder::new(MODEL, false, policy);
     let mut chunks: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(event(b"{}"))];
     chunks.push(Err(HttpError::Timeout));
-    let items: Vec<EventItem> = decoder.events(chunks.into_iter()).collect();
+    let items: Vec<EventItem> = stream(chunks.into_iter(), false, policy).collect();
 
     assert_eq!(items.len(), 2);
     assert_eq!(token(&items[0]).index, Some(0));

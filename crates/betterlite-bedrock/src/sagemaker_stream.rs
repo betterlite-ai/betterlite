@@ -28,38 +28,17 @@ pub enum SagemakerChunk {
 }
 
 pub struct SagemakerStreamDecoder {
-    model: String,
-    is_messages_api: bool,
-    policy: ErrorPolicy,
-}
-
-impl SagemakerStreamDecoder {
-    #[must_use]
-    pub fn new(model: &str, is_messages_api: bool, policy: ErrorPolicy) -> Self {
-        Self {
-            model: model.to_owned(),
-            is_messages_api,
-            policy,
-        }
-    }
-
-    #[must_use]
-    pub fn events<Chunks>(&self, chunks: Chunks) -> SagemakerEvents<Chunks> {
-        SagemakerEvents {
-            state: EventState::new(&self.model, self.is_messages_api, self.policy),
-            chunks,
-            pending: VecDeque::new(),
-            done: false,
-        }
-    }
+    pub model: String,
+    pub is_messages_api: bool,
+    pub policy: ErrorPolicy,
 }
 
 // The blocking face reads chunks through Iterator and the async one through Stream, as the sync and async decoders do.
 pub struct SagemakerEvents<Chunks> {
-    state: EventState,
-    chunks: Chunks,
-    pending: VecDeque<EventItem>,
-    done: bool,
+    pub state: EventState,
+    pub chunks: Chunks,
+    pub pending: VecDeque<EventItem>,
+    pub done: bool,
 }
 
 impl<Chunks> SagemakerEvents<Chunks> {

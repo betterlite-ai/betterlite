@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
 
 // one variant per Python function of the b5961 helper; the function key selects it
@@ -37,7 +38,7 @@ pub(crate) enum ConfigKind {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HfRequest {
-    pub(crate) input: Json,
+    pub(crate) input: EmbeddingInput,
     pub(crate) optional_params: Object,
 }
 #[derive(Debug, Deserialize)]
@@ -58,7 +59,7 @@ pub(crate) struct CohereMap {
 #[serde(deny_unknown_fields)]
 pub(crate) struct CohereRequest {
     pub(crate) model: String,
-    pub(crate) input: Json,
+    pub(crate) input: EmbeddingInput,
     pub(crate) optional_params: Object,
 }
 #[derive(Debug, Deserialize)]
@@ -66,7 +67,7 @@ pub(crate) struct CohereRequest {
 pub(crate) struct CohereReply {
     pub(crate) model: String,
     pub(crate) body: String,
-    pub(crate) input: Json,
+    pub(crate) input: Option<EmbeddingInput>,
     pub(crate) request_data: Object,
 }
 #[derive(Debug, Deserialize)]
