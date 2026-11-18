@@ -40,8 +40,9 @@ impl RedisFixture {
     }
 
     pub(crate) async fn launch(options: &StartOptions) -> Result<Self, RedisFixtureError> {
+        // A unix socket path stops at 107 bytes, so the folder name stays short.
         let folder = Builder::new()
-            .prefix("betterlite-redis-")
+            .prefix("redis-")
             .tempdir()
             .map_err(|source| RedisFixtureError::Folder { source })?;
         let socket = folder.path().join("redis.sock");
