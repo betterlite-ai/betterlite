@@ -15,12 +15,15 @@ mod tests;
 
 // B020 installs the state this assembles, starts its periodic sync and calls its shutdown flush
 #[must_use]
-pub fn routing_budget_state<R: WindowRedis + SpendRedis + 'static>(
+pub fn routing_budget_state<R>(
     windows: BudgetWindows,
     memory: Arc<Mutex<LocalTtlCache>>,
     redis: R,
     clock: Clock,
-) -> Arc<RoutingBudgetState<R>> {
+) -> Arc<RoutingBudgetState<R>>
+where
+    R: WindowRedis + SpendRedis + 'static,
+{
     let cache = Arc::new(DualWindowCache {
         memory,
         redis: Some(redis),

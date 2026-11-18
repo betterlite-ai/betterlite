@@ -96,11 +96,14 @@ pub(super) fn decode_spends(
 }
 
 // the copy writes the merged value into the memory cache and leaves the shared store alone
-pub fn set_local_spend<R: WindowRedis>(
+pub fn set_local_spend<R>(
     cache: &DualWindowCache<R>,
     key: &str,
     spend: Decimal,
-) -> Result<(), IncrementError> {
+) -> Result<(), IncrementError>
+where
+    R: WindowRedis,
+{
     let encoded = CacheValue::Object(BTreeMap::from([(
         SPEND_FIELD.to_owned(),
         CacheValue::Text(spend.to_string()),

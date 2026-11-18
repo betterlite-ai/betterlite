@@ -4,13 +4,8 @@ mod behaviors;
 mod boundaries;
 mod support;
 
-use std::sync::Arc;
-
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
-use tokio::task::{JoinSet, yield_now};
-
-use support::{PROVIDER_KEY, all_windows, cost, event, harness};
 
 fn runtime(paused: bool) -> Runtime {
     Builder::new_current_thread()
@@ -75,8 +70,7 @@ fn routing_budget_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
 }
 
-// the copy holds the queue lock from its pending snapshot through the memory write, and every increment
-// logged while syncs run still reaches the store and the memory cache exactly once
+// every increment logged while syncs run still reaches the store and the memory cache exactly once
 #[test]
 fn concurrent_syncs_keep_every_increment() {
     let runtime = Builder::new_multi_thread()
@@ -84,34 +78,5 @@ fn concurrent_syncs_keep_every_increment() {
         .enable_all()
         .build()
         .unwrap();
-    runtime.block_on(async {
-        let harness = harness(all_windows());
-        let mut loggers = JoinSet::new();
-        for _worker in 0..32 {
-            let state = Arc::clone(&harness.state);
-            let _task = loggers.spawn(async move {
-                let tags: [String; 0] = [];
-                for _step in 0..8 {
-                    state
-                        .log_success(&event(Some("openai"), None, &tags, cost("0.01")))
-                        .await
-                        .unwrap();
-                }
-            });
-        }
-        let state = Arc::clone(&harness.state);
-        let mut syncs = JoinSet::new();
-        let _task = syncs.spawn(async move {
-            for _round in 0..16 {
-                let _synced = state.sync_with_redis().await;
-                yield_now().await;
-            }
-        });
-        while loggers.join_next().await.is_some() {}
-        while syncs.join_next().await.is_some() {}
-        assert!(harness.state.sync_with_redis().await);
-        assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("2.56")));
-        assert_eq!(harness.spend(PROVIDER_KEY), Some(cost("2.56")));
-        assert!(harness.queued().is_empty());
-    });
+    runtime.block_on(support::concurrent_syncs());
 }

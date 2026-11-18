@@ -15,7 +15,6 @@ use crate::budget_increment::window::{BudgetConfig, WindowRedis};
 use crate::budget_windows::budget::BudgetPeriod;
 use crate::budget_windows::keys::{WindowKeys, deployment_keys, provider_keys, tag_keys};
 use crate::budget_windows::service::BudgetWindows;
-use crate::routing_value_store::Clock;
 
 use super::DEFAULT_REDIS_SYNC_INTERVAL;
 use super::error::BudgetStateError;
@@ -25,14 +24,20 @@ use super::spend_redis::{SpendRead, SpendRedis, set_local_spend, spend_keys};
 // the flush is retried at shutdown because a rejected batch stays queued; three attempts cover a store blip
 const SHUTDOWN_FLUSH_ATTEMPTS: u8 = 3;
 
-pub struct RoutingBudgetState<R: WindowRedis + SpendRedis + 'static> {
+pub struct RoutingBudgetState<R>
+where
+    R: WindowRedis + SpendRedis + 'static,
+{
     pub increments: BudgetIncrement<DualWindowCache<R>>,
     pub windows: BudgetWindows,
     pub sync: Mutex<JoinSet<()>>,
     pub flushes: TaskTracker,
 }
 
-impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
+impl<R> RoutingBudgetState<R>
+where
+    R: WindowRedis + SpendRedis + 'static,
+{
     // async_log_success_event: the websocket wrappers spend through their inner calls, then each tier spends once
     pub async fn log_success(&self, event: &SuccessEvent<'_>) -> Result<(), BudgetStateError> {
         match event.call_type {
@@ -168,9 +173,7 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
             })
     }
 
-    // _flush_increments_then_copy_redis_spend: set the memory value to the shared spend plus what is
-    // still queued; holding the queue lock across the snapshot and the write keeps an increment that
-    // arrives meanwhile in the queue, so the next sync counts it
+    // the queue lock leaves an increment that arrives during the copy for the next sync to count
     async fn copy_redis_spend(&self, redis: &R, keys: &[String]) {
         let SpendRead::Values(values) = redis.read_spends(keys).await else {
             return;
@@ -196,7 +199,7 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
 
 // _sum_increments_by_key: the increments the queue still holds, per key
 fn pending_increments(queue: &IncrementQueue) -> BTreeMap<String, Decimal> {
-    let mut totals = BTreeMap::new();
+    let mut totals: BTreeMap<String, Decimal> = BTreeMap::new();
     for operation in &queue.queued {
         let total = totals.entry(operation.key.clone()).or_default();
         *total = total.saturating_add(operation.increment_value);
@@ -205,7 +208,10 @@ fn pending_increments(queue: &IncrementQueue) -> BTreeMap<String, Decimal> {
 }
 
 // periodic_sync_in_memory_spend_with_redis: one sync, then the fixed wait, whether or not the sync worked
-async fn run_periodic<R: WindowRedis + SpendRedis + 'static>(owner: Weak<RoutingBudgetState<R>>) {
+async fn run_periodic<R>(owner: Weak<RoutingBudgetState<R>>)
+where
+    R: WindowRedis + SpendRedis + 'static,
+{
     while let Some(state) = owner.upgrade() {
         let _synced = state.sync_with_redis().await;
         drop(state);

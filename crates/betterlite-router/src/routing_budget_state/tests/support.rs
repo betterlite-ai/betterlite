@@ -9,7 +9,7 @@ use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use tokio::sync::Notify;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 use tokio_util::task::TaskTracker;
 
 use crate::budget_increment::dual::DualWindowCache;
@@ -322,5 +322,39 @@ pub(super) fn event<'event>(
         model_id,
         custom_llm_provider: provider,
         tags,
+    }
+}
+
+// 32 loggers against 16 syncs: the final sync runs after every logger, so both tiers hold the full sum
+pub(super) async fn concurrent_syncs() {
+    let harness = harness(all_windows());
+    let mut loggers = JoinSet::new();
+    for _worker in 0..32 {
+        let _task = loggers.spawn(log_costs(Arc::clone(&harness.state)));
+    }
+    let mut syncs = JoinSet::new();
+    let _task = syncs.spawn(sync_rounds(Arc::clone(&harness.state)));
+    while loggers.join_next().await.is_some() {}
+    while syncs.join_next().await.is_some() {}
+    assert!(harness.state.sync_with_redis().await);
+    assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("2.56")));
+    assert_eq!(harness.spend(PROVIDER_KEY), Some(cost("2.56")));
+    assert!(harness.queued().is_empty());
+}
+
+async fn log_costs(state: Arc<RoutingBudgetState<FakeBudgetRedis>>) {
+    let tags: [String; 0] = [];
+    for _step in 0..8 {
+        state
+            .log_success(&event(Some("openai"), None, &tags, cost("0.01")))
+            .await
+            .unwrap();
+    }
+}
+
+async fn sync_rounds(state: Arc<RoutingBudgetState<FakeBudgetRedis>>) {
+    for _round in 0..16 {
+        let _synced = state.sync_with_redis().await;
+        yield_now().await;
     }
 }
