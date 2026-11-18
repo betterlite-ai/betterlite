@@ -60,5 +60,5 @@ pitfalls:
   - invalidate_config_param must publish after the local eviction, so other pods evict too.
 review_level: security
 budget:
-  max_changed_lines: 3200
+  max_changed_lines: 4000
   max_new_expects: 0
