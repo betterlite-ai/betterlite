@@ -153,16 +153,16 @@ fn a_newline_in_a_definition_is_rejected(#[case] name: &str, #[case] description
 #[test]
 fn a_repeated_definition_name_is_rejected_case_insensitively() {
     let config = section::Config {
-        tier_definitions: ladder(&[
+        tier_definitions: Some(ladder(&[
             ("ECO", Some("fresh asks")),
             ("eco", Some("fresh asks")),
             ("DEEP", Some("hard asks")),
-        ]),
-        tier_models: pools(&[
+        ])),
+        tier_models: Some(pools(&[
             ("ECO", single("eco-mini")),
             ("eco", single("eco-small")),
             ("DEEP", single("deep-a")),
-        ]),
+        ])),
         ..blank()
     };
     assert!(matches!(
@@ -207,7 +207,7 @@ fn a_fallback_without_a_custom_set_is_rejected() {
 #[test]
 fn every_defined_tier_needs_a_pool() {
     let config = section::Config {
-        tier_models: pools(&[("ECO", single("eco-mini"))]),
+        tier_models: Some(pools(&[("ECO", single("eco-mini"))])),
         ..custom()
     };
     assert!(matches!(
@@ -219,11 +219,11 @@ fn every_defined_tier_needs_a_pool() {
 #[test]
 fn a_pool_for_an_undefined_tier_is_rejected() {
     let config = section::Config {
-        tier_models: pools(&[
+        tier_models: Some(pools(&[
             ("ECO", single("eco-mini")),
             ("DEEP", pool(&["deep-a"])),
             ("EXTRA", single("extra")),
-        ]),
+        ])),
         ..custom()
     };
     assert!(matches!(
@@ -237,7 +237,7 @@ fn a_pool_for_an_undefined_tier_is_rejected() {
 #[case::empty_pool(pool(&[]), "ECO")]
 fn an_empty_pool_is_rejected(#[case] configured: section::TierPool, #[case] tier: &str) {
     let config = section::Config {
-        tier_models: pools(&[("ECO", configured), ("DEEP", pool(&["deep-a"]))]),
+        tier_models: Some(pools(&[("ECO", configured), ("DEEP", pool(&["deep-a"]))])),
         ..custom()
     };
     assert!(matches!(
@@ -249,7 +249,7 @@ fn an_empty_pool_is_rejected(#[case] configured: section::TierPool, #[case] tier
 #[test]
 fn empty_pools_are_reported_sorted() {
     let config = section::Config {
-        tier_models: pools(&[("ECO", single("")), ("DEEP", pool(&[]))]),
+        tier_models: Some(pools(&[("ECO", single("")), ("DEEP", pool(&[]))])),
         ..custom()
     };
     assert!(matches!(
@@ -261,7 +261,7 @@ fn empty_pools_are_reported_sorted() {
 #[test]
 fn a_non_reasoning_pool_without_the_flag_is_rejected() {
     let config = section::Config {
-        tier_models: pools(&[("NON_REASONING", pool(&[]))]),
+        tier_models: Some(pools(&[("NON_REASONING", pool(&[]))])),
         ..blank()
     };
     assert!(matches!(
@@ -274,7 +274,7 @@ fn a_non_reasoning_pool_without_the_flag_is_rejected() {
 #[case::missing_pool(None)]
 #[case::empty_pool(Some(pool(&[])))]
 fn an_enabled_non_reasoning_tier_needs_a_pool(#[case] configured: Option<section::TierPool>) {
-    let tier_models = configured.map(|pool| pools(&[("NON_REASONING", pool)]).unwrap());
+    let tier_models = configured.map(|pool| pools(&[("NON_REASONING", pool)]));
     let config = section::Config {
         tier_models,
         non_reasoning_tier: true,
@@ -293,7 +293,7 @@ fn an_enabled_non_reasoning_tier_needs_a_pool(#[case] configured: Option<section
 #[test]
 fn an_enabled_non_reasoning_tier_needs_a_classifier_that_emits_it() {
     let config = section::Config {
-        tier_models: pools(&[("NON_REASONING", single("mini"))]),
+        tier_models: Some(pools(&[("NON_REASONING", single("mini"))])),
         non_reasoning_tier: true,
         ..blank()
     };
@@ -426,7 +426,7 @@ fn the_llm_and_non_reasoning_classifier_sets_match_litellm(
 ) {
     assert_eq!(classifier.uses_llm(), uses_llm);
     let config = section::Config {
-        tier_models: pools(&[("NON_REASONING", single("mini"))]),
+        tier_models: Some(pools(&[("NON_REASONING", single("mini"))])),
         non_reasoning_tier: true,
         ..blank()
     };

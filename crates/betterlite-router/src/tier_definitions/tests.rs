@@ -35,16 +35,14 @@ pub(crate) fn base_checks() -> TierChecks<'static> {
 }
 
 // a definition list in the shape the config section resolves to
-pub(crate) fn ladder(pairs: &[(&str, Option<&str>)]) -> Option<Vec<section::TierDefinition>> {
-    Some(
-        pairs
-            .iter()
-            .map(|(name, description)| section::TierDefinition {
-                name: (*name).to_owned(),
-                description: description.map(str::to_owned),
-            })
-            .collect(),
-    )
+pub(crate) fn ladder(pairs: &[(&str, Option<&str>)]) -> Vec<section::TierDefinition> {
+    pairs
+        .iter()
+        .map(|(name, description)| section::TierDefinition {
+            name: (*name).to_owned(),
+            description: description.map(str::to_owned),
+        })
+        .collect()
 }
 
 pub(crate) fn single(model: &str) -> section::TierPool {
@@ -90,25 +88,24 @@ pub(crate) fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(crate) fn pools(
-    pairs: &[(&str, section::TierPool)],
-) -> Option<BTreeMap<String, section::TierPool>> {
-    Some(
-        pairs
-            .iter()
-            .map(|(tier, pool)| ((*tier).to_owned(), pool.clone()))
-            .collect(),
-    )
+pub(crate) fn pools(pairs: &[(&str, section::TierPool)]) -> BTreeMap<String, section::TierPool> {
+    pairs
+        .iter()
+        .map(|(tier, pool)| ((*tier).to_owned(), pool.clone()))
+        .collect()
 }
 
 // a two-tier custom set that validates, for a test that varies one setting
 pub(crate) fn custom() -> section::Config {
     section::Config {
-        tier_definitions: ladder(&[("ECO", Some("cheap asks")), ("DEEP", Some("hard asks"))]),
-        tier_models: pools(&[
+        tier_definitions: Some(ladder(&[
+            ("ECO", Some("cheap asks")),
+            ("DEEP", Some("hard asks")),
+        ])),
+        tier_models: Some(pools(&[
             ("ECO", single("eco-mini")),
             ("DEEP", pool(&["deep-a", "deep-b"])),
-        ]),
+        ])),
         ..blank()
     }
 }

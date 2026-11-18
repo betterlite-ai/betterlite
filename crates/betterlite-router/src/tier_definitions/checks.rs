@@ -84,15 +84,15 @@ const ORDER_FEATURE_ORDER: [OrderFeature; 5] = [
 
 // the rest of the router configuration these validations read; every field is a setting's presence
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TierChecks<'a> {
+pub struct TierChecks<'config> {
     pub classifier_type: ClassifierKind,
     pub classifier_fallback: ClassifierFallback,
-    pub fallback_tier: Option<&'a str>,
-    pub classification_prompt: Option<&'a str>,
-    pub classification_examples: Option<&'a str>,
-    pub llm_system_prompt: Option<&'a str>,
-    pub classification_rubric: Option<&'a str>,
-    pub order_features: &'a [OrderFeature],
+    pub fallback_tier: Option<&'config str>,
+    pub classification_prompt: Option<&'config str>,
+    pub classification_examples: Option<&'config str>,
+    pub llm_system_prompt: Option<&'config str>,
+    pub classification_rubric: Option<&'config str>,
+    pub order_features: &'config [OrderFeature],
 }
 
 impl TierChecks<'_> {

@@ -5,6 +5,9 @@ use betterlite_config::sections::tier_definitions as section;
 use indexmap::IndexMap;
 
 use crate::complexity_scoring::tier::{ComplexityTier, Tier, tier_severity_order};
+use crate::tier_definitions::checks::TierChecks;
+use crate::tier_definitions::error::TierDefinitionsError;
+use crate::tier_definitions::{definitions, labels};
 
 pub const MAX_TIER_DEFINITIONS: usize = 8;
 
@@ -37,7 +40,7 @@ impl TierPool {
 
     // the emptiness LiteLLM's truthiness sees: an empty name for a single entry, no entries for a pool
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         match self {
             Self::Single(entry) => entry.model_name.is_empty(),
             Self::Pool(entries) => entries.is_empty(),
@@ -55,18 +58,54 @@ pub struct TierSet {
 }
 
 impl TierSet {
+    pub fn resolve(
+        input: &section::Config,
+        checks: &TierChecks<'_>,
+    ) -> Result<Self, TierDefinitionsError> {
+        let pools = definitions::resolve_pools(input)?;
+        let ladder = input
+            .tier_definitions
+            .as_deref()
+            .map(|raw| {
+                raw.iter()
+                    .map(definitions::normalize_definition)
+                    .collect::<Result<Vec<_>, TierDefinitionsError>>()
+            })
+            .transpose()?;
+        let display = labels::resolve_labels(&input.tier_labels)?;
+        definitions::validate_non_reasoning(
+            input.non_reasoning_tier,
+            ladder.as_deref(),
+            checks.classifier_type,
+            &pools,
+        )?;
+        definitions::validate_definitions(ladder.as_deref(), &pools, &display, checks)?;
+        labels::validate_labels(&display, input.non_reasoning_tier)?;
+        Ok(Self {
+            definitions: ladder,
+            pools,
+            labels: display,
+            non_reasoning: input.non_reasoning_tier,
+            fallback: checks.fallback_tier.map(str::to_owned),
+        })
+    }
+
     #[must_use]
     pub fn tier_names(&self) -> Vec<&str> {
-        match &self.definitions {
-            Some(definitions) => definitions
-                .iter()
-                .map(|definition| definition.name.as_str())
-                .collect(),
-            None => tier_severity_order(self.non_reasoning)
-                .iter()
-                .map(|tier| tier.name())
-                .collect(),
-        }
+        self.definitions.as_ref().map_or_else(
+            || {
+                tier_severity_order(self.non_reasoning)
+                    .iter()
+                    .map(|tier| tier.name())
+                    .collect()
+            },
+            |definitions| {
+                definitions
+                    .iter()
+                    .map(|definition| definition.name.as_str())
+                    .collect()
+            },
+        )
     }
 
     #[must_use]

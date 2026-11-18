@@ -279,7 +279,7 @@ fn definition_conflicts(
 }
 
 // a section-shaped rubric needs an LLM classifier and the prompt slot the system prompt would fill
-fn validate_opening(checks: &TierChecks<'_>) -> Result<(), TierDefinitionsError> {
+const fn validate_opening(checks: &TierChecks<'_>) -> Result<(), TierDefinitionsError> {
     let field = if checks.classification_prompt.is_some() {
         "classification_prompt"
     } else if checks.classification_examples.is_some() {
