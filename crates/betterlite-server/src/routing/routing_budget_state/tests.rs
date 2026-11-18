@@ -12,7 +12,7 @@ use betterlite_router::budget_increment::queue::QueuedIncrement;
 use betterlite_router::budget_increment::window::WindowRedis;
 use betterlite_router::budget_windows::budget::{BudgetPeriod, ProviderBudget};
 use betterlite_router::budget_windows::service::BudgetWindows;
-use betterlite_router::routing_budget_state::event::SuccessEvent;
+use betterlite_router::routing_budget_state::event::{CallType, SuccessEvent};
 use betterlite_router::routing_budget_state::spend_redis::{SpendRead, SpendRedis};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -85,14 +85,14 @@ async fn factory_assembles_a_state_that_spends() {
     let store = RecordingStore::default();
     let state = routing_budget_state(windows(), Arc::clone(&memory), store.clone(), clock());
     let event = SuccessEvent {
-        call_type: None,
+        call_type: CallType::parse(None),
         response_cost: Decimal::from_str("0.5").unwrap(),
         model_id: None,
         custom_llm_provider: Some("openai"),
         tags: &[],
     };
     state.log_success(&event).await.unwrap();
-    assert!(state.flush().await);
+    assert!(state.increments.flush_increments(&state.flushes).await);
     let recorded = store.spends.lock().unwrap();
     assert_eq!(
         recorded.get(SPEND_KEY),

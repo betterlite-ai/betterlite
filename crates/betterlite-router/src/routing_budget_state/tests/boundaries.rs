@@ -16,8 +16,8 @@ use crate::routing_budget_state::spend_redis::{
 };
 
 use super::support::{
-    DEFAULT_TTL_SECONDS, DEPLOYMENT_KEY, PROVIDER_KEY, TAG_KEY, TestClock, all_windows, cost,
-    deployment, event, harness, harness_at, harness_without_store, providers, tags,
+    DEPLOYMENT_KEY, PROVIDER_KEY, TAG_KEY, TestClock, all_windows, cost, deployment, event,
+    harness, harness_at, harness_without_store, providers, spend_error, tags,
 };
 
 type CaseFuture = Pin<Box<dyn Future<Output = ()>>>;
@@ -28,13 +28,14 @@ const CASES: &[(&str, Case)] = &[
     ("zero_cost_still_opens_the_window", || Box::pin(zero_cost_still_opens_the_window())),
     ("spend_keys_cover_every_tier_and_the_sync_reads_them", || Box::pin(spend_keys_cover_every_tier_and_the_sync_reads_them())),
     ("shared_spend_read_decodes_values_and_failures", || Box::pin(shared_spend_read_decodes_values_and_failures())),
-    ("copy_resets_the_memory_ttl_to_the_default", || Box::pin(copy_resets_the_memory_ttl_to_the_default())),
+    ("copy_keeps_a_live_expiry_and_replaces_an_expired_one", || Box::pin(copy_keeps_a_live_expiry_and_replaces_an_expired_one())),
     ("repeated_failures_merge_the_batch_once", || Box::pin(repeated_failures_merge_the_batch_once())),
     ("increment_error_reports_the_key_and_source", || Box::pin(increment_error_reports_the_key_and_source())),
     ("invalid_clock_reports_the_key", || Box::pin(invalid_clock_reports_the_key())),
     ("start_without_a_runtime_starts_no_task", start_without_a_runtime),
     ("sync_without_a_store_returns_true", || Box::pin(sync_without_a_store_returns_true())),
     ("second_shutdown_flushes_new_increments", || Box::pin(second_shutdown_flushes_new_increments())),
+    ("shutdown_reports_the_entries_it_could_not_write", || Box::pin(shutdown_reports_the_entries_it_could_not_write())),
 ];
 
 pub(super) async fn run(name: &str) {
@@ -121,9 +122,10 @@ async fn shared_spend_read_decodes_values_and_failures() {
     );
 }
 
-// the copy sets the memory entry without a ttl, so it takes the cache default instead of the window's
-async fn copy_resets_the_memory_ttl_to_the_default() {
-    let harness = harness(all_windows());
+// async_set_cache keeps a live expiry and gives an entry that already expired the cache default
+async fn copy_keeps_a_live_expiry_and_replaces_an_expired_one() {
+    let clock = TestClock::new(0.0);
+    let harness = harness_at(all_windows(), clock.clone());
     harness
         .state
         .log_success(&event(Some("openai"), None, &[], cost("0.5")))
@@ -131,7 +133,10 @@ async fn copy_resets_the_memory_ttl_to_the_default() {
         .unwrap();
     assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0));
     assert!(harness.state.sync_with_redis().await);
-    assert_eq!(harness.expiry(PROVIDER_KEY), Some(DEFAULT_TTL_SECONDS));
+    assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0));
+    clock.set(90_000.0);
+    assert!(harness.state.sync_with_redis().await);
+    assert_eq!(harness.expiry(PROVIDER_KEY), Some(90_600.0));
 }
 
 // each failed flush requeues its batch, and the retry writes the merged total exactly once
@@ -168,30 +173,28 @@ async fn increment_error_reports_the_key_and_source() {
         Decimal::MAX,
     )
     .unwrap();
-    let error = harness
-        .state
-        .log_success(&event(Some("openai"), None, &[], cost("1")))
-        .await
-        .unwrap_err();
-    let BudgetStateError::Increment { key, source } = error else {
+    let error = spend_error(&harness).await;
+    assert_eq!(
+        error.to_string(),
+        format!("the budget spend increment for {PROVIDER_KEY} failed")
+    );
+    let BudgetStateError::Increment { source, .. } = error else {
         panic!("the spend overflowed");
     };
-    assert_eq!(key, PROVIDER_KEY);
     assert!(matches!(source, IncrementError::SpendOverflow { .. }));
 }
 
 // a clock that is not a finite number fails before any window is read
 async fn invalid_clock_reports_the_key() {
     let harness = harness_at(all_windows(), TestClock::new(f64::NAN));
-    let error = harness
-        .state
-        .log_success(&event(Some("openai"), None, &[], cost("1")))
-        .await
-        .unwrap_err();
-    let BudgetStateError::Increment { key, source } = error else {
-        panic!("the clock is not finite");
-    };
-    assert_eq!(key, PROVIDER_KEY);
+    let error = spend_error(&harness).await;
+    assert_eq!(
+        error.to_string(),
+        format!("the budget spend increment for {PROVIDER_KEY} failed")
+    );
+    let source = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<IncrementError>())
+        .expect("the increment kept its source");
     assert!(matches!(source, IncrementError::InvalidSeconds { .. }));
 }
 
@@ -220,13 +223,36 @@ async fn second_shutdown_flushes_new_increments() {
         .log_success(&event(Some("openai"), None, &[], cost("0.5")))
         .await
         .unwrap();
-    harness.state.shutdown().await;
+    harness.state.shutdown().await.unwrap();
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
     harness
         .state
         .log_success(&event(Some("openai"), None, &[], cost("0.25")))
         .await
         .unwrap();
-    harness.state.shutdown().await;
+    harness.state.shutdown().await.unwrap();
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.75")));
+}
+
+// a store that keeps rejecting the flush makes shutdown fail with the queue it could not write
+async fn shutdown_reports_the_entries_it_could_not_write() {
+    let harness = harness(all_windows());
+    harness
+        .state
+        .log_success(&event(Some("openai"), None, &[], cost("0.5")))
+        .await
+        .unwrap();
+    harness.store().fail(true);
+    let error = harness.state.shutdown().await.unwrap_err();
+    let BudgetStateError::Shutdown { entries } = error else {
+        panic!("the store rejected the flush");
+    };
+    assert_eq!(entries, 1);
+    assert_eq!(
+        harness.queued(),
+        vec![(PROVIDER_KEY.to_owned(), cost("0.5"))]
+    );
+    harness.store().fail(false);
+    harness.state.shutdown().await.unwrap();
+    assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
 }

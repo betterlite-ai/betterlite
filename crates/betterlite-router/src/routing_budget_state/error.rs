@@ -10,4 +10,6 @@ pub enum BudgetStateError {
         #[source]
         source: IncrementError,
     },
+    #[error("the budget spend queue could not be written at shutdown; {entries} left")]
+    Shutdown { entries: usize },
 }

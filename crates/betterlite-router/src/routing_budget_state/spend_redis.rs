@@ -106,8 +106,7 @@ pub fn set_local_spend<R: WindowRedis>(
         CacheValue::Text(spend.to_string()),
     )]));
     let mut memory = cache.memory.lock().unwrap_or_else(PoisonError::into_inner);
-    // a set without a ttl takes the cache default only on an entry without a live expiry
-    memory.delete(key);
+    // as in_memory_cache.async_set_cache does, a set without a ttl keeps a live window expiry
     memory.set(key, encoded, None)?;
     drop(memory);
     Ok(())

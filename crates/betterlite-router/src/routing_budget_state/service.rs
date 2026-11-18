@@ -17,56 +17,54 @@ use crate::budget_windows::keys::{WindowKeys, deployment_keys, provider_keys, ta
 use crate::budget_windows::service::BudgetWindows;
 use crate::routing_value_store::Clock;
 
+use super::DEFAULT_REDIS_SYNC_INTERVAL;
 use super::error::BudgetStateError;
-use super::event::SuccessEvent;
+use super::event::{CallType, SuccessEvent};
 use super::spend_redis::{SpendRead, SpendRedis, set_local_spend, spend_keys};
-use super::{DEFAULT_REDIS_SYNC_INTERVAL, SKIPPED_CALL_TYPES};
+
+// the flush is retried at shutdown because a rejected batch stays queued; three attempts cover a store blip
+const SHUTDOWN_FLUSH_ATTEMPTS: u8 = 3;
 
 pub struct RoutingBudgetState<R: WindowRedis + SpendRedis + 'static> {
     pub increments: BudgetIncrement<DualWindowCache<R>>,
     pub windows: BudgetWindows,
-    pub(super) sync: Mutex<JoinSet<()>>,
-    flushes: TaskTracker,
+    pub sync: Mutex<JoinSet<()>>,
+    pub flushes: TaskTracker,
 }
 
 impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
-    #[must_use]
-    pub fn new(windows: BudgetWindows, cache: Arc<DualWindowCache<R>>, clock: Clock) -> Self {
-        Self {
-            increments: BudgetIncrement {
-                cache,
-                clock,
-                queue: Arc::default(),
-                flush_lock: Arc::default(),
-            },
-            windows,
-            sync: Mutex::new(JoinSet::new()),
-            flushes: TaskTracker::new(),
-        }
-    }
-
     // async_log_success_event: the websocket wrappers spend through their inner calls, then each tier spends once
     pub async fn log_success(&self, event: &SuccessEvent<'_>) -> Result<(), BudgetStateError> {
-        if event
-            .call_type
-            .is_some_and(|call_type| SKIPPED_CALL_TYPES.contains(&call_type))
-        {
-            return Ok(());
+        match event.call_type {
+            CallType::ResponsesWebsocket | CallType::Realtime => return Ok(()),
+            CallType::Absent | CallType::Other(_) => {}
         }
         let cost = event.response_cost;
-        if let Some(provider) = event.custom_llm_provider {
-            self.increment_provider(provider, cost).await?;
+        // only a provider in the configuration opens a window
+        if let Some(provider) = event.custom_llm_provider
+            && let Some(budget) = self
+                .windows
+                .provider
+                .as_ref()
+                .and_then(|configs| configs.get(provider))
+        {
+            let keys = provider_keys(provider, &budget.period);
+            self.increment(keys, budget.budget_limit, budget.period.as_ref(), cost)
+                .await?;
         }
         // str(standard_logging_payload.get("model_id", "")): an absent id names no deployment
-        self.increment_deployment(event.model_id.unwrap_or_default(), cost)
-            .await?;
+        let model_id = event.model_id.unwrap_or_default();
+        if let Some(budget) = self
+            .windows
+            .deployment
+            .as_ref()
+            .and_then(|configs| configs.get(model_id))
+        {
+            let keys = deployment_keys(model_id, &budget.period);
+            self.increment(keys, Some(budget.max_budget), Some(&budget.period), cost)
+                .await?;
+        }
         self.increment_tags(event.tags, cost).await
-    }
-
-    // _push_in_memory_increments_to_redis: write what the queue holds without copying the shared spends back
-    #[must_use]
-    pub async fn flush(&self) -> bool {
-        self.increments.flush_increments(&self.flushes).await
     }
 
     // _sync_in_memory_spend_with_redis: flush first, so the read already holds everything this instance spent
@@ -74,9 +72,9 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
     pub async fn sync_with_redis(&self) -> bool {
         let Some(redis) = &self.increments.cache.redis else {
             // no shared store to write to: the flush only clears the queue LiteLLM would leave growing
-            return self.flush().await;
+            return self.increments.flush_increments(&self.flushes).await;
         };
-        if !self.flush().await {
+        if !self.increments.flush_increments(&self.flushes).await {
             return false;
         }
         // the flush lock keeps another flush from writing between the read and the copy
@@ -107,51 +105,30 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
     }
 
     // no LiteLLM counterpart: the server stops the periodic task, then spends what the queue still holds
-    pub async fn shutdown(&self) {
+    pub async fn shutdown(&self) -> Result<(), BudgetStateError> {
         self.cancel_sync_task();
         let mut sync = mem::take(&mut *self.sync.lock().unwrap_or_else(PoisonError::into_inner));
         while sync.join_next().await.is_some() {}
-        let _flushed = self.flush().await;
-        self.flushes.close();
-        self.flushes.wait().await;
-    }
-
-    // async_log_success_event's provider tier: only a provider in the configuration opens a window
-    async fn increment_provider(
-        &self,
-        provider: &str,
-        cost: Decimal,
-    ) -> Result<(), BudgetStateError> {
-        let Some(budget) = self
-            .windows
-            .provider
-            .as_ref()
-            .and_then(|configs| configs.get(provider))
-        else {
-            return Ok(());
+        for _attempt in 0..SHUTDOWN_FLUSH_ATTEMPTS {
+            if self.increments.flush_increments(&self.flushes).await {
+                self.flushes.close();
+                self.flushes.wait().await;
+                return Ok(());
+            }
+        }
+        // the batch is still queued, so a later shutdown can retry it
+        let entries = {
+            let queue = self
+                .increments
+                .queue
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            queue
+                .queued
+                .len()
+                .saturating_add(queue.detached.as_ref().map_or(0, Vec::len))
         };
-        let keys = provider_keys(provider, &budget.period);
-        self.increment(keys, budget.budget_limit, budget.period.as_ref(), cost)
-            .await
-    }
-
-    // _get_budget_config_for_deployment: the payload's model id names the deployment window
-    async fn increment_deployment(
-        &self,
-        model_id: &str,
-        cost: Decimal,
-    ) -> Result<(), BudgetStateError> {
-        let Some(budget) = self
-            .windows
-            .deployment
-            .as_ref()
-            .and_then(|configs| configs.get(model_id))
-        else {
-            return Ok(());
-        };
-        let keys = deployment_keys(model_id, &budget.period);
-        self.increment(keys, Some(budget.max_budget), Some(&budget.period), cost)
-            .await
+        Err(BudgetStateError::Shutdown { entries })
     }
 
     // the tag tier spends once per entry of the request's tags, so a tag named twice is counted twice
@@ -191,12 +168,19 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
             })
     }
 
-    // _flush_increments_then_copy_redis_spend: set the memory value to the shared spend plus what is still queued
+    // _flush_increments_then_copy_redis_spend: set the memory value to the shared spend plus what is
+    // still queued; holding the queue lock across the snapshot and the write keeps an increment that
+    // arrives meanwhile in the queue, so the next sync counts it
     async fn copy_redis_spend(&self, redis: &R, keys: &[String]) {
         let SpendRead::Values(values) = redis.read_spends(keys).await else {
             return;
         };
-        let pending = pending_increments(self.increments.queue.as_ref());
+        let queue = self
+            .increments
+            .queue
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let pending = pending_increments(&queue);
         for (key, value) in values {
             let Some(redis_spend) = value else {
                 continue;
@@ -206,12 +190,12 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
                 tracing::warn!(%key, %source, "the budget spend copy to the memory cache failed");
             }
         }
+        drop(queue);
     }
 }
 
 // _sum_increments_by_key: the increments the queue still holds, per key
-fn pending_increments(queue: &Mutex<IncrementQueue>) -> BTreeMap<String, Decimal> {
-    let queue = queue.lock().unwrap_or_else(PoisonError::into_inner);
+fn pending_increments(queue: &IncrementQueue) -> BTreeMap<String, Decimal> {
     let mut totals = BTreeMap::new();
     for operation in &queue.queued {
         let total = totals.entry(operation.key.clone()).or_default();

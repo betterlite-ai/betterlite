@@ -4,8 +4,13 @@ mod behaviors;
 mod boundaries;
 mod support;
 
+use std::sync::Arc;
+
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
+use tokio::task::{JoinSet, yield_now};
+
+use support::{PROVIDER_KEY, all_windows, cost, event, harness};
 
 fn runtime(paused: bool) -> Runtime {
     Builder::new_current_thread()
@@ -49,8 +54,8 @@ fn routing_budget_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     "shared_spend_read_decodes_values_and_failures",
     false
 )]
-#[case::copy_resets_the_memory_ttl_to_the_default(
-    "copy_resets_the_memory_ttl_to_the_default",
+#[case::copy_keeps_a_live_expiry_and_replaces_an_expired_one(
+    "copy_keeps_a_live_expiry_and_replaces_an_expired_one",
     false
 )]
 #[case::repeated_failures_merge_the_batch_once("repeated_failures_merge_the_batch_once", false)]
@@ -62,6 +67,51 @@ fn routing_budget_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 #[case::start_without_a_runtime_starts_no_task("start_without_a_runtime_starts_no_task", false)]
 #[case::sync_without_a_store_returns_true("sync_without_a_store_returns_true", false)]
 #[case::second_shutdown_flushes_new_increments("second_shutdown_flushes_new_increments", false)]
+#[case::shutdown_reports_the_entries_it_could_not_write(
+    "shutdown_reports_the_entries_it_could_not_write",
+    false
+)]
 fn routing_budget_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
+}
+
+// the copy holds the queue lock from its pending snapshot through the memory write, and every increment
+// logged while syncs run still reaches the store and the memory cache exactly once
+#[test]
+fn concurrent_syncs_keep_every_increment() {
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let harness = harness(all_windows());
+        let mut loggers = JoinSet::new();
+        for _worker in 0..32 {
+            let state = Arc::clone(&harness.state);
+            let _task = loggers.spawn(async move {
+                let tags: [String; 0] = [];
+                for _step in 0..8 {
+                    state
+                        .log_success(&event(Some("openai"), None, &tags, cost("0.01")))
+                        .await
+                        .unwrap();
+                }
+            });
+        }
+        let state = Arc::clone(&harness.state);
+        let mut syncs = JoinSet::new();
+        let _task = syncs.spawn(async move {
+            for _round in 0..16 {
+                let _synced = state.sync_with_redis().await;
+                yield_now().await;
+            }
+        });
+        while loggers.join_next().await.is_some() {}
+        while syncs.join_next().await.is_some() {}
+        assert!(harness.state.sync_with_redis().await);
+        assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("2.56")));
+        assert_eq!(harness.spend(PROVIDER_KEY), Some(cost("2.56")));
+        assert!(harness.queued().is_empty());
+    });
 }

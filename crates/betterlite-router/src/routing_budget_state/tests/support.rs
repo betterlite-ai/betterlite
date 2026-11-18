@@ -8,16 +8,19 @@ use async_trait::async_trait;
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::Number;
 use tokio::sync::Notify;
+use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 
 use crate::budget_increment::dual::DualWindowCache;
 use crate::budget_increment::error::IncrementError;
+use crate::budget_increment::increment::BudgetIncrement;
 use crate::budget_increment::queue::QueuedIncrement;
 use crate::budget_increment::window::WindowRedis;
 use crate::budget_windows::budget::{BudgetPeriod, DeploymentLimits, ProviderBudget, TagBudget};
 use crate::budget_windows::service::BudgetWindows;
-use crate::routing_budget_state::event::SuccessEvent;
+use crate::routing_budget_state::error::BudgetStateError;
+use crate::routing_budget_state::event::{CallType, SuccessEvent};
 use crate::routing_budget_state::service::RoutingBudgetState;
 use crate::routing_budget_state::spend_redis::{SpendRead, SpendRedis};
 use crate::routing_value_store::Clock;
@@ -36,16 +39,20 @@ impl TestClock {
         Self(Arc::new(Mutex::new(now)))
     }
 
+    pub(super) fn set(&self, now: f64) {
+        *self.0.lock().unwrap() = now;
+    }
+
     pub(super) fn clock(&self) -> Clock {
         let source = Arc::clone(&self.0);
         Arc::new(move || *source.lock().unwrap())
     }
 }
 
-// the Redis INCRBYFLOAT contract the limiter writes: one float per key, added in order
+// the shared store the limiter writes to; it keeps the decimal a test sent, so a sum reads back exactly
 #[derive(Clone, Default)]
 pub(super) struct FakeBudgetRedis {
-    spends: Arc<Mutex<BTreeMap<String, Number>>>,
+    spends: Arc<Mutex<BTreeMap<String, Decimal>>>,
     starts: Arc<Mutex<BTreeMap<String, f64>>>,
     read_keys: Arc<Mutex<Vec<String>>>,
     fail: Arc<AtomicBool>,
@@ -57,12 +64,11 @@ pub(super) struct FakeBudgetRedis {
 
 impl FakeBudgetRedis {
     pub(super) fn spend(&self, key: &str) -> Option<Decimal> {
-        self.spends.lock().unwrap().get(key).and_then(decimal)
+        self.spends.lock().unwrap().get(key).copied()
     }
 
     pub(super) fn seed_spend(&self, key: &str, spend: Decimal) {
-        let number = Number::from_f64(spend.as_f64()).unwrap();
-        self.spends.lock().unwrap().insert(key.to_owned(), number);
+        self.spends.lock().unwrap().insert(key.to_owned(), spend);
     }
 
     pub(super) fn read_keys(&self) -> Vec<String> {
@@ -90,7 +96,7 @@ impl FakeBudgetRedis {
     }
 
     pub(super) fn release(&self) {
-        self.release.notify_waiters();
+        self.release.notify_one();
     }
 }
 
@@ -108,9 +114,7 @@ impl WindowRedis for FakeBudgetRedis {
     }
 
     async fn write_spend(&self, key: &str, cost: Decimal, _ttl: Duration) {
-        if let Some(number) = Number::from_f64(cost.as_f64()) {
-            self.spends.lock().unwrap().insert(key.to_owned(), number);
-        }
+        self.spends.lock().unwrap().insert(key.to_owned(), cost);
     }
 
     async fn write_increments(&self, operations: &[QueuedIncrement]) -> bool {
@@ -124,17 +128,11 @@ impl WindowRedis for FakeBudgetRedis {
         let mut spends = self.spends.lock().unwrap();
         let mut working = spends.clone();
         for operation in operations {
-            let current = working
-                .get(&operation.key)
-                .and_then(Number::as_f64)
-                .unwrap_or_default();
-            let total: f64 = [current, operation.increment_value.as_f64()]
-                .into_iter()
-                .sum();
-            let Some(number) = Number::from_f64(total) else {
+            let current = working.get(&operation.key).copied().unwrap_or_default();
+            let Some(total) = current.checked_add(operation.increment_value) else {
                 return false;
             };
-            working.insert(operation.key.clone(), number);
+            working.insert(operation.key.clone(), total);
         }
         *spends = working;
         true
@@ -149,17 +147,14 @@ impl SpendRedis for FakeBudgetRedis {
         }
         let mut recorded = self.read_keys.lock().unwrap();
         recorded.extend(keys.iter().cloned());
-        let spends = self.spends.lock().unwrap().clone();
+        drop(recorded);
+        let spends = self.spends.lock().unwrap();
         SpendRead::Values(
             keys.iter()
-                .map(|key| (key.clone(), spends.get(key).and_then(decimal)))
+                .map(|key| (key.clone(), spends.get(key).copied()))
                 .collect(),
         )
     }
-}
-
-fn decimal(number: &Number) -> Option<Decimal> {
-    Decimal::from_str(&number.to_string()).ok()
 }
 
 pub(super) struct Harness {
@@ -207,6 +202,15 @@ impl Harness {
     }
 }
 
+// one rejected increment for the provider window, so a test can read the error the tiers report
+pub(super) async fn spend_error(harness: &Harness) -> BudgetStateError {
+    harness
+        .state
+        .log_success(&event(Some("openai"), None, &[], cost("1")))
+        .await
+        .unwrap_err()
+}
+
 pub(super) fn harness(windows: BudgetWindows) -> Harness {
     harness_at(windows, TestClock::new(0.0))
 }
@@ -239,7 +243,17 @@ fn harness_with(
         redis: store.clone(),
     });
     Harness {
-        state: Arc::new(RoutingBudgetState::new(windows, cache, clock.clock())),
+        state: Arc::new(RoutingBudgetState {
+            increments: BudgetIncrement {
+                cache,
+                clock: clock.clock(),
+                queue: Arc::default(),
+                flush_lock: Arc::default(),
+            },
+            windows,
+            sync: Mutex::new(JoinSet::new()),
+            flushes: TaskTracker::new(),
+        }),
         memory,
         store,
     }
@@ -303,7 +317,7 @@ pub(super) fn event<'event>(
     response_cost: Decimal,
 ) -> SuccessEvent<'event> {
     SuccessEvent {
-        call_type: None,
+        call_type: CallType::parse(None),
         response_cost,
         model_id,
         custom_llm_provider: provider,

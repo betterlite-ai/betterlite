@@ -6,8 +6,7 @@ use std::time::Duration;
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::{advance, sleep};
 
-use crate::routing_budget_state::SKIPPED_CALL_TYPES;
-use crate::routing_budget_state::event::SuccessEvent;
+use crate::routing_budget_state::event::{CallType, SuccessEvent};
 
 use super::support::{
     DEPLOYMENT_KEY, PROVIDER_KEY, TAG_KEY, all_windows, cost, event, harness,
@@ -72,13 +71,10 @@ async fn every_tier_spends_once() {
 // the wrapper call types return before any tier, because the turns inside them already spent
 async fn websocket_wrappers_spend_nothing() {
     let harness = harness(all_windows());
-    for call_type in SKIPPED_CALL_TYPES {
+    for call_type in ["_aresponses_websocket", "_arealtime"] {
         let wrapped = SuccessEvent {
-            call_type: Some(call_type),
-            response_cost: cost("0.5"),
-            model_id: Some("dep-1"),
-            custom_llm_provider: Some("openai"),
-            tags: &[],
+            call_type: CallType::parse(Some(call_type)),
+            ..event(Some("openai"), Some("dep-1"), &[], cost("0.5"))
         };
         harness.state.log_success(&wrapped).await.unwrap();
     }
@@ -92,7 +88,7 @@ async fn batch_call_types_still_spend() {
     let harness = harness(all_windows());
     for call_type in ["retrieve_batch", "aretrieve_batch"] {
         let batch = SuccessEvent {
-            call_type: Some(call_type),
+            call_type: CallType::parse(Some(call_type)),
             ..event(Some("openai"), None, &[], cost("0.25"))
         };
         harness.state.log_success(&batch).await.unwrap();
@@ -252,7 +248,12 @@ async fn cancelled_sync_still_writes_the_flush() {
     let aborted = syncs.join_next().await.unwrap();
     assert!(aborted.is_err());
     // the next flush waits behind the write the cancelled sync started, then finds the queue cleared
-    assert!(harness.state.flush().await);
+    let flushed = harness
+        .state
+        .increments
+        .flush_increments(&harness.state.flushes)
+        .await;
+    assert!(flushed);
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
     assert!(harness.queued().is_empty());
 }
@@ -296,7 +297,7 @@ async fn shutdown_flushes_the_queue() {
         .log_success(&event(Some("openai"), None, &[], cost("0.5")))
         .await
         .unwrap();
-    harness.state.shutdown().await;
+    harness.state.shutdown().await.unwrap();
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
     assert!(harness.state.sync_with_redis().await);
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
