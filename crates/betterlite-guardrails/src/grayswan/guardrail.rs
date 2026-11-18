@@ -54,15 +54,14 @@ impl GraySwanGuardrail {
             streaming_end_of_stream_only: args.streaming_end_of_stream_only,
             streaming_sampling_rate: resolve_sampling_rate(args.streaming_sampling_rate)?,
         };
-        let base = initialized_base(base, &settings.guardrail_name);
         tracing::debug!(
             "GraySwan __init__: streaming_end_of_stream_only={}, streaming_sampling_rate={}",
             settings.streaming_end_of_stream_only,
             settings.streaming_sampling_rate
         );
         Ok(Self {
+            base: initialized_base(base, &settings.guardrail_name),
             settings,
-            base,
             client,
         })
     }
