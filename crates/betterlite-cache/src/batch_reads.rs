@@ -66,6 +66,7 @@ pub enum BatchReadsError {
 
 impl BatchReadsError {
     // LiteLLM treats an open circuit breaker as a memory-only read and every other failure as no read at all
+    #[must_use]
     pub const fn circuit_open(&self) -> bool {
         matches!(
             self,

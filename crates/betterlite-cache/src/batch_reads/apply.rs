@@ -36,8 +36,8 @@ where
     Memory: MemoryCacheOps,
 {
     for (key, value) in values {
-        if let Some(value) = value {
-            backfill(cache, key, value)?;
+        if let Some(present) = value {
+            backfill(cache, key, present)?;
         }
     }
     Ok(())

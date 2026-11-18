@@ -26,7 +26,7 @@ where
         .into_iter()
         .map(|value| match value {
             None | Some(CacheValue::Null) => Ok(None),
-            Some(stored) => to_json(&stored)
+            Some(present) => to_json(&present)
                 .map(Some)
                 .ok_or(BatchReadsError::UnrepresentableValue),
         })
@@ -49,7 +49,7 @@ where
             // LiteLLM reserves against time.time(), the wall clock in epoch seconds
             let current_time = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_or(0.0, |elapsed| elapsed.as_secs_f64());
+                .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64());
             (redis_keys, previous_access_times) =
                 reserve_redis_batch_keys(cache, current_time, keys, &result);
         } else {

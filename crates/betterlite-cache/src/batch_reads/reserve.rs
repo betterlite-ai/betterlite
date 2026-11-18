@@ -36,6 +36,7 @@ where
             access_times.insert(key.clone(), current_time);
         }
     }
+    drop(access_times);
     (redis_keys, previous_access_times)
 }
 
@@ -78,6 +79,6 @@ where
     };
     let current_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0.0, |elapsed| elapsed.as_secs_f64());
+        .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64());
     reserve_redis_batch_keys(cache, current_time, keys, &result)
 }

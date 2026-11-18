@@ -11,7 +11,11 @@ const NUMBER_KEY: &str = "$serde_json::private::Number";
 pub(super) fn redis_value_json(value: &CachedValue) -> Option<Json> {
     match value {
         CachedValue::Null => None,
-        stored => Some(json_from_cached(stored)),
+        stored @ (CachedValue::Boolean(_)
+        | CachedValue::Number(_)
+        | CachedValue::Text(_)
+        | CachedValue::Array(_)
+        | CachedValue::Object(_)) => Some(json_from_cached(stored)),
     }
 }
 
