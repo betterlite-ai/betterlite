@@ -202,7 +202,7 @@ pub(crate) struct DualToken;
 impl DynamicCacheBackend for DualToken {}
 
 pub(crate) fn dual_token() -> DynamicCacheObject {
-    DynamicCacheObject::shared(Arc::new(DualToken))
+    DynamicCacheObject(Arc::new(DualToken))
 }
 
 pub(crate) struct CacheHandler {
@@ -444,7 +444,7 @@ impl ResponsesStreamSuccessTarget for Success {
             .push(request.clone());
     }
 
-    fn deferred_stream_complete_armed(&self) -> bool {
+    fn deferred_armed(&self) -> bool {
         self.deferred
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::super::logging::{logging_event, restore_provider_response_headers};
+use super::super::logging::{logging_event, restore_headers};
 use super::super::state::ResponsesStreamHookState;
 use super::support::{
     Cache, CacheHandler, END, START, Success, base_state, completed_event, completed_with_hidden,
@@ -88,7 +88,8 @@ async fn completed_logging_once_restores_the_provider_headers() {
         .await
         .expect("the success path logs");
 
-    let payload = success.async_calls()[0].result.response();
+    let calls = success.async_calls();
+    let payload = calls[0].result.response();
     assert_eq!(
         path(
             payload,
@@ -260,7 +261,6 @@ async fn completed_logging_once_defers_an_armed_dispatch() {
 
 #[test]
 fn logging_header_isolation() {
-    let redactor = redactor();
     let event = completed_with_hidden(object(&[
         (
             "additional_headers",
@@ -328,7 +328,6 @@ fn logging_header_isolation() {
 
 #[test]
 fn logging_header_isolation_falls_back_to_the_iterator_snapshots() {
-    let redactor = redactor();
     let event = completed_event();
     let mut state = base_state();
     state.hidden_params.additional_headers = json_object(&[("x-iterator", text("fallback"))]);
@@ -351,7 +350,6 @@ fn logging_header_isolation_falls_back_to_the_iterator_snapshots() {
 
 #[test]
 fn logging_header_isolation_replaces_a_truthy_nonmapping_candidate() {
-    let redactor = redactor();
     let event = completed_with_hidden(object(&[
         ("additional_headers", text("not a mapping")),
         ("headers", Json::List(vec![Json::Null])),
@@ -377,7 +375,6 @@ fn logging_header_isolation_replaces_a_truthy_nonmapping_candidate() {
 
 #[test]
 fn logging_header_isolation_keeps_a_falsy_nonmapping_fallback() {
-    let redactor = redactor();
     let event = completed_with_hidden(object(&[
         ("additional_headers", Json::List(Vec::new())),
         ("headers", Json::Null),
@@ -403,7 +400,6 @@ fn logging_header_isolation_keeps_a_falsy_nonmapping_fallback() {
 
 #[test]
 fn logging_header_isolation_lets_existing_target_keys_win() {
-    let redactor = redactor();
     let mut target = completed_with_hidden(object(&[
         (
             "additional_headers",
@@ -414,14 +410,15 @@ fn logging_header_isolation_lets_existing_target_keys_win() {
     let mut state = base_state();
     state.raw_response_headers = IndexMap::from([("x-raw".to_owned(), "raw".to_owned())]);
 
-    restore_provider_response_headers(
+    restore_headers(
         &mut target,
         &state.hidden_params,
         &state.raw_response_headers,
         None,
     );
 
-    let hidden = path(&event_json(&target), &["response", "_hidden_params"]).expect("restored");
+    let target_json = event_json(&target);
+    let hidden = path(&target_json, &["response", "_hidden_params"]).expect("restored");
     assert_eq!(
         path(hidden, &["additional_headers", "x-target"]),
         Some(&text("target"))
@@ -432,7 +429,6 @@ fn logging_header_isolation_lets_existing_target_keys_win() {
 
 #[test]
 fn logging_header_isolation_ignores_events_without_a_typed_response() {
-    let redactor = redactor();
     let state = base_state();
     let generic = decode(r#"{"type":"response.queued","response":{"id":"resp_1"}}"#);
     let known = decode(

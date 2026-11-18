@@ -257,8 +257,11 @@ fn failed_usage_and_error_raises_the_mapped_error_for_an_ineligible_status() {
         let raised = hooks
             .maybe_raise_for_error_event(&state, &event)
             .expect_err("a 4xx error is raised directly");
-        assert!(!matches!(raised, ErrorClass::MidStreamFallback(_)));
-        assert_eq!(raised.metadata().status_code, status);
+        assert!(!matches!(
+            raised.exception,
+            ErrorClass::MidStreamFallback(_)
+        ));
+        assert_eq!(raised.exception.metadata().status_code, status);
     }
 }
 
@@ -274,7 +277,7 @@ fn failed_usage_and_error_wraps_an_eligible_failure_in_an_error_event() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a 5xx error falls back");
-    let details = fallback(&raised);
+    let details = fallback(&raised.exception);
 
     assert_eq!(details.original_status.0, 500);
     assert_eq!(details.generated_content, "text only");
@@ -297,7 +300,7 @@ fn failed_usage_and_error_uses_the_yielded_chunk_not_the_output_flag() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a 5xx error falls back");
-    let details = fallback(&raised);
+    let details = fallback(&raised.exception);
 
     assert!(!details.is_pre_first_chunk);
 }
@@ -316,7 +319,7 @@ fn failed_usage_and_error_falls_back_for_a_content_policy_violation() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a content policy violation falls back");
-    assert_eq!(fallback(&raised).original_status.0, 400);
+    assert_eq!(fallback(&raised.exception).original_status.0, 400);
 }
 
 #[test]
@@ -332,7 +335,7 @@ fn failed_usage_and_error_maps_a_failed_response_event() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a failed response falls back");
-    assert_eq!(fallback(&raised).original_status.0, 500);
+    assert_eq!(fallback(&raised.exception).original_status.0, 500);
 }
 
 #[test]
@@ -347,8 +350,8 @@ fn failed_usage_and_error_maps_a_generic_error_object() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a generic error is mapped");
-    assert_eq!(raised.metadata().status_code, 400);
-    let ErrorClass::BadRequest(details) = &raised else {
+    assert_eq!(raised.exception.metadata().status_code, 400);
+    let ErrorClass::BadRequest(details) = &raised.exception else {
         panic!("expected a bad request, got {raised:?}");
     };
     assert_eq!(details.message, "OpenAIException - boom");
@@ -364,9 +367,9 @@ fn failed_usage_and_error_defaults_a_generic_error_without_a_body() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a generic error without a body falls back");
-    assert_eq!(fallback(&raised).original_status.0, 500);
+    assert_eq!(fallback(&raised.exception).original_status.0, 500);
     assert_eq!(
-        fallback(&raised).context.message,
+        fallback(&raised.exception).context.message,
         "InternalServerError: OpenAIException - Response API in-stream error"
     );
 }
@@ -381,7 +384,7 @@ fn failed_usage_and_error_defaults_a_generic_failed_response() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a generic failed response falls back");
-    assert_eq!(fallback(&raised).original_status.0, 500);
+    assert_eq!(fallback(&raised.exception).original_status.0, 500);
 }
 
 #[test]
@@ -408,7 +411,7 @@ fn failed_usage_and_error_keeps_the_model_and_provider() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a 4xx error is raised");
-    let metadata = raised.metadata();
+    let metadata = raised.exception.metadata();
     assert_eq!(metadata.model.as_deref(), Some("gpt-4o"));
     assert_eq!(metadata.provider.as_deref(), Some("openai"));
 }
@@ -425,7 +428,7 @@ fn failed_usage_and_error_reads_a_text_only_generated_content() {
     let raised = hooks
         .maybe_raise_for_error_event(&state, &event)
         .expect_err("a rate limit falls back");
-    let details = fallback(&raised);
+    let details = fallback(&raised.exception);
     assert_eq!(details.original_status.0, 429);
     assert_eq!(details.generated_content, "text");
 }
@@ -437,4 +440,21 @@ fn failed_usage_and_error_ignores_a_json_error_of_another_event() {
     let state = base_state();
     let event = decode(r#"{"type":"response.output_text.delta"}"#);
     assert!(hooks.maybe_raise_for_error_event(&state, &event).is_ok());
+}
+
+#[test]
+fn fallback_keeps_original_exception() {
+    let redactor = redactor();
+    let hooks = hooks(&redactor);
+    let state = base_state();
+    let event = error_event("boom", "server_error", "server_error");
+    let failure = hooks
+        .maybe_raise_for_error_event(&state, &event)
+        .unwrap_err();
+    let original = failure.original_exception.as_ref().unwrap();
+    assert!(matches!(original, ErrorClass::InternalServer(_)));
+    assert_eq!(
+        original.metadata().status_code,
+        failure.exception.metadata().status_code
+    );
 }

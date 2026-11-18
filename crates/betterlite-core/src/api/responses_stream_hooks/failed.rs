@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str::FromStr as _;
 
 use betterlite_error::error::details::{MidStreamFallbackDetails, MidStreamStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext};
@@ -10,12 +11,13 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use thiserror::Error;
 
 use super::ResponsesStreamHooks;
+use super::billing::FailurePrice;
 use super::events::nested_response;
 use super::state::ResponsesStreamHookState;
 use crate::api::response_synthetic_events::billing::{UsageSource, usage_as_model};
-use crate::api::response_synthetic_events::stamping::{CostTarget, ResponsesCostCalculator};
 use crate::api::responses_stream_primitives::error_fields::{
     StreamErrorAttributes, StreamErrorObject,
 };
@@ -24,6 +26,13 @@ use crate::api::responses_stream_primitives::failure::{
 };
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 use crate::api::responses_usage::{UsageInput, normalize_and_project};
+
+#[derive(Debug, Error)]
+#[error("responses stream failed")]
+pub struct StreamFailure {
+    pub exception: ErrorClass,
+    pub original_exception: Option<ErrorClass>,
+}
 
 // _handle_logging_failed_response: bill what the failure still carries, then route it to failure handlers
 impl ResponsesStreamHooks<'_> {
@@ -34,12 +43,17 @@ impl ResponsesStreamHooks<'_> {
         details: &mut IndexMap<String, Json>,
         calculator: Option<&C>,
     ) where
-        C: ResponsesCostCalculator,
+        C: FailurePrice,
     {
         let response = state.completed_response.as_ref().and_then(nested_response);
         let error = response.and_then(|response| response.error.as_ref());
-        record_failed_response_usage(response, details, calculator);
-        let mapped = map_response_error(error, &state.model, &provider_of(state), self.redactor);
+        record_failed_response_usage(response, details, calculator).await;
+        let mapped = map_response_error(
+            error,
+            &state.model,
+            state.custom_llm_provider.as_deref().unwrap_or_default(),
+            self.redactor,
+        );
         self.handle_failure(state, callback, &mapped).await;
     }
 
@@ -47,47 +61,51 @@ impl ResponsesStreamHooks<'_> {
         &self,
         state: &ResponsesStreamBaseState,
         event: &ResponsesAPIStreamingResponse,
-    ) -> Result<(), ErrorClass> {
-        let Some(mapped) =
-            mapped_event_error(event, &state.model, &provider_of(state), self.redactor)
-        else {
+    ) -> Result<(), StreamFailure> {
+        let Some(mapped) = mapped_event_error(
+            event,
+            &state.model,
+            state.custom_llm_provider.as_deref().unwrap_or_default(),
+            self.redactor,
+        ) else {
             return Ok(());
         };
         let status = mapped.metadata().status_code;
         if !mid_stream_fallback_eligible(&mapped, Some(status)) {
-            return Err(mapped);
+            return Err(StreamFailure {
+                exception: mapped,
+                original_exception: None,
+            });
         }
         let context = ErrorContext {
             message: exception_message(&mapped),
             model: Some(state.model.clone()),
-            provider: Some(provider_of(state)),
+            provider: Some(state.custom_llm_provider.clone().unwrap_or_default()),
             max_retries: None,
             num_retries: None,
             body_type: None,
             body_param: None,
             body_code: None,
         };
-        Err(ErrorClass::MidStreamFallback(Box::new(
-            MidStreamFallbackDetails {
-                context,
-                original_status: MidStreamStatus(status),
-                generated_content: state.generated_content.clone(),
-                is_pre_first_chunk: !state.yielded_first_chunk,
-            },
-        )))
+        let exception = ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
+            context,
+            original_status: MidStreamStatus(status),
+            generated_content: state.generated_content.clone(),
+            is_pre_first_chunk: !state.yielded_first_chunk,
+        }));
+        Err(StreamFailure {
+            exception,
+            original_exception: Some(mapped),
+        })
     }
 }
 
-fn provider_of(state: &ResponsesStreamBaseState) -> String {
-    state.custom_llm_provider.clone().unwrap_or_default()
-}
-
-fn record_failed_response_usage<C>(
+async fn record_failed_response_usage<C>(
     response: Option<&ResponsesApiResponse>,
     details: &mut IndexMap<String, Json>,
     calculator: Option<&C>,
 ) where
-    C: ResponsesCostCalculator,
+    C: FailurePrice,
 {
     let Some(response) = response else {
         return;
@@ -106,23 +124,20 @@ fn record_failed_response_usage<C>(
             return;
         }
     }
-    let cost = calculator
-        .and_then(|cost_calculator| {
-            cost_calculator
-                .response_cost(&CostTarget::Model(response))
-                .ok()
-                .flatten()
-        })
-        .unwrap_or(Decimal::ZERO);
+    let cost = match calculator {
+        Some(calculator) => calculator.cost(response).await.unwrap_or(Decimal::ZERO),
+        None => Decimal::ZERO,
+    };
     if let Some(recorded) = decimal_json(cost) {
         details.insert("response_cost".to_owned(), recorded);
     }
 }
 
 fn decimal_json(cost: Decimal) -> Option<Json> {
-    serde_json::to_value(cost)
-        .ok()
-        .and_then(|value| serde_json::from_value(value).ok())
+    match serde_json::Number::from_str(&cost.to_string()) {
+        Ok(number) => Some(Json::Number(number)),
+        Err(_) => None,
+    }
 }
 
 fn map_response_error(

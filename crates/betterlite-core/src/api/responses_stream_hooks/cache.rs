@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use super::ResponsesStreamHooks;
 use super::events::completed_response;
-use super::ports::{CACHE_WRITE_TASK, CacheWrite, DynamicCacheObject, PortFailure};
+use super::ports::{CACHE_WRITE_TASK, CacheWrite, PortFailure};
 use crate::api::response_synthetic_events::model_dump::dump_json_safely;
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 use crate::api::responses_stream_primitives::tasks::spawn_logging_task;
@@ -60,49 +60,28 @@ pub fn cache_request_kwargs(
     copied
 }
 
-struct PreparedCacheWrite {
-    payload: String,
-    request_kwargs: IndexMap<String, Json>,
-    dynamic_cache: Option<DynamicCacheObject>,
-}
-
 impl ResponsesStreamHooks<'_> {
-    pub fn persist_completed_response_to_cache(
-        &self,
-        state: &mut ResponsesStreamBaseState,
-    ) -> Result<(), PortFailure> {
+    pub fn persist_cache(&self, state: &mut ResponsesStreamBaseState) -> Result<(), PortFailure> {
         let Some(prepared) = self.prepare_cache_write(state)? else {
             return Ok(());
         };
         let Some(cache) = self.cache.as_ref() else {
             return Ok(());
         };
-        cache.add_cache(CacheWrite {
-            payload: prepared.payload,
-            request_kwargs: prepared.request_kwargs,
-            dynamic_cache: prepared.dynamic_cache,
-        })?;
+        cache.add_cache(prepared)?;
         state.completed_response_cached = true;
         Ok(())
     }
 
     // the is_async=True arm: schedule cache.async_add_cache and mark the response cached once it is scheduled
-    pub fn schedule_completed_response_cache_write(
-        &self,
-        state: &mut ResponsesStreamBaseState,
-    ) -> Result<(), PortFailure> {
+    pub fn schedule_cache(&self, state: &mut ResponsesStreamBaseState) -> Result<(), PortFailure> {
         let Some(prepared) = self.prepare_cache_write(state)? else {
             return Ok(());
         };
         let Some(cache) = self.cache.as_ref().map(Arc::clone) else {
             return Ok(());
         };
-        let write = CacheWrite {
-            payload: prepared.payload,
-            request_kwargs: prepared.request_kwargs,
-            dynamic_cache: prepared.dynamic_cache,
-        };
-        let work = async move { cache.async_add_cache(write).await };
+        let work = async move { cache.async_add_cache(prepared).await };
         if spawn_logging_task(&state.pending_tasks, CACHE_WRITE_TASK, work).is_some() {
             state.completed_response_cached = true;
         }
@@ -112,7 +91,7 @@ impl ResponsesStreamHooks<'_> {
     fn prepare_cache_write(
         &self,
         state: &ResponsesStreamBaseState,
-    ) -> Result<Option<PreparedCacheWrite>, PortFailure> {
+    ) -> Result<Option<CacheWrite>, PortFailure> {
         if state.completed_response_cached {
             return Ok(None);
         }
@@ -143,7 +122,7 @@ impl ResponsesStreamHooks<'_> {
         let Some(payload) = dump_json_safely(response) else {
             return Ok(None);
         };
-        Ok(Some(PreparedCacheWrite {
+        Ok(Some(CacheWrite {
             payload,
             request_kwargs,
             dynamic_cache: handler.dual_cache(),

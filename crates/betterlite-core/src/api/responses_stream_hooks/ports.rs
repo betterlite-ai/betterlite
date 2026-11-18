@@ -25,30 +25,17 @@ pub struct PortFailure {
     pub message: String,
 }
 
-// LiteLLM's dynamic_cache_object: a per-call backend that replaces the configured one, B4297's Dynamic.
-// This module forwards it untouched, so it only needs to be shareable and comparable by identity.
+// The dynamic backend is forwarded to B4297 without changing its identity.
 pub trait DynamicCacheBackend: Send + Sync {}
 
 impl<T: EnvelopeBackend + ?Sized> DynamicCacheBackend for T {}
 
 #[derive(Clone)]
-pub struct DynamicCacheObject(Arc<dyn DynamicCacheBackend>);
-
-impl DynamicCacheObject {
-    #[must_use]
-    pub fn shared(backend: Arc<dyn DynamicCacheBackend>) -> Self {
-        Self(backend)
-    }
-
-    #[must_use]
-    pub fn same_as(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
+pub struct DynamicCacheObject(pub Arc<dyn DynamicCacheBackend>);
 
 impl PartialEq for DynamicCacheObject {
     fn eq(&self, other: &Self) -> bool {
-        self.same_as(other)
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -94,7 +81,7 @@ pub trait ResponsesStreamSuccessTarget: Send + Sync {
 
     fn success_handler(&self, request: &SuccessRequest);
 
-    fn deferred_stream_complete_armed(&self) -> bool;
+    fn deferred_armed(&self) -> bool;
 }
 
 // logging_obj's failure side: async_failure_handler awaited, then failure_handler submitted

@@ -39,7 +39,7 @@ fn valid_call_type(name: &str) -> Option<CallType> {
 }
 
 impl ResponsesStreamHooks<'_> {
-    pub async fn call_post_streaming_deployment_hook(
+    pub async fn chunk_hook(
         &self,
         callback: &mut ResponsesStreamHookState,
         context: ChunkHookContext<'_>,

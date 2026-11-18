@@ -28,19 +28,17 @@ pub fn logging_event(
     match logging_copy(LoggingEvent::Event(event)) {
         LoggedCopy::Same(value) => value.clone(),
         LoggedCopy::Detached(mut copy) => {
-            restore_provider_response_headers(
-                copy.as_mut(),
-                hidden,
-                raw_response_headers,
-                source_hidden,
-            );
+            if let Some(response) = nested_response_mut(copy.as_mut()) {
+                response.extra.remove("_hidden_params");
+            }
+            restore_headers(copy.as_mut(), hidden, raw_response_headers, source_hidden);
             event_json(copy.as_ref())
         }
     }
 }
 
 // _restore_provider_response_headers: headers by value, the source's first and the iterator's as fallback
-pub fn restore_provider_response_headers(
+pub fn restore_headers(
     event: &mut ResponsesAPIStreamingResponse,
     hidden: &ResponsesStreamHiddenParams,
     raw_response_headers: &IndexMap<String, String>,
@@ -142,7 +140,7 @@ impl ResponsesStreamHooks<'_> {
         }
         state.completed_response_logged = true;
         if state.persist_before_logging {
-            self.persist_completed_response_to_cache(state)?;
+            self.persist_cache(state)?;
         }
         let end_time = self.clock.now();
         let request = success_request(state, completed_logging_json(state), end_time, false);
@@ -172,12 +170,12 @@ impl ResponsesStreamHooks<'_> {
         }
         state.completed_response_logged = true;
         if state.persist_before_logging {
-            self.schedule_completed_response_cache_write(state)?;
+            self.schedule_cache(state)?;
         }
         let end_time = self.clock.now();
         let request = success_request(state, completed_logging_json(state), end_time, true);
         if let Some(success) = self.success.as_ref().map(Arc::clone) {
-            if success.deferred_stream_complete_armed() {
+            if success.deferred_armed() {
                 callback.deferred_stream_complete_args = Some(request);
             } else {
                 let dispatch = request.clone();

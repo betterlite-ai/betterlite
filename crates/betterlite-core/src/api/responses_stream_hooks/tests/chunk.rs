@@ -40,7 +40,7 @@ async fn deployment_chunk_hooks() {
     let request_data = json_object(&[("model", text("request-model"))]);
 
     let returned = hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut callback,
             context(
                 Some("responses"),
@@ -78,7 +78,7 @@ async fn deployment_chunk_hooks_fall_back_to_the_logging_call_type() {
     let mut callback = ResponsesStreamHookState::default();
 
     hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut callback,
             context(Some("bogus"), Some("acompletion"), None, &details),
             completed_event(),
@@ -89,7 +89,7 @@ async fn deployment_chunk_hooks_fall_back_to_the_logging_call_type() {
 
     let mut unknown = ResponsesStreamHookState::default();
     hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut unknown,
             context(Some("bogus"), Some("also_bogus"), None, &details),
             completed_event(),
@@ -109,7 +109,7 @@ async fn deployment_chunk_hooks_let_an_explicit_call_type_win() {
     let request_data = json_object(&[("model", text("request-model"))]);
 
     hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut ResponsesStreamHookState::default(),
             context(
                 Some("acompletion"),
@@ -138,14 +138,14 @@ async fn deployment_chunk_hooks_fall_back_to_the_model_call_details() {
     let empty = IndexMap::new();
 
     hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut ResponsesStreamHookState::default(),
             context(None, None, Some(&empty), &details),
             completed_event(),
         )
         .await;
     hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut ResponsesStreamHookState::default(),
             context(None, None, None, &details),
             completed_event(),
@@ -175,7 +175,7 @@ async fn deployment_chunk_hooks_stop_at_a_failing_hook() {
     let mut callback = ResponsesStreamHookState::default();
 
     let returned = hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut callback,
             context(None, None, None, &details),
             completed_event(),
@@ -199,7 +199,7 @@ async fn deployment_chunk_hooks_keep_the_input_when_the_first_hook_fails() {
     let input = completed_event();
 
     let returned = hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut callback,
             context(None, None, None, &details),
             input.clone(),
@@ -219,7 +219,7 @@ async fn deployment_chunk_hooks_without_hooks_leave_the_chunk_alone() {
     let input = completed_event();
 
     let returned = hooks
-        .call_post_streaming_deployment_hook(
+        .chunk_hook(
             &mut callback,
             context(None, None, None, &details),
             input.clone(),

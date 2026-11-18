@@ -40,7 +40,7 @@ async fn terminal_cache_write() {
     let mut state = streaming_state();
 
     hooks
-        .persist_completed_response_to_cache(&mut state)
+        .persist_cache(&mut state)
         .expect("the synchronous write succeeds");
 
     assert!(state.completed_response_cached);
@@ -90,9 +90,7 @@ async fn terminal_cache_write_takes_the_preset_key_over_the_request_key() {
     hooks.cache_handler = Some(handler.clone());
     let mut state = streaming_state();
 
-    hooks
-        .persist_completed_response_to_cache(&mut state)
-        .expect("the write succeeds");
+    hooks.persist_cache(&mut state).expect("the write succeeds");
 
     let writes = cache.writes();
     assert_eq!(
@@ -119,9 +117,7 @@ async fn terminal_cache_write_keeps_nonnull_metadata_and_drops_a_null_key() {
     ]));
     let mut state = streaming_state();
 
-    hooks
-        .persist_completed_response_to_cache(&mut state)
-        .expect("the write succeeds");
+    hooks.persist_cache(&mut state).expect("the write succeeds");
 
     let kwargs = &cache.writes()[0].request_kwargs;
     assert_eq!(
@@ -144,9 +140,7 @@ async fn terminal_cache_write_accepts_a_truthy_converted_stream_flag() {
         ]));
         let mut state = streaming_state();
 
-        hooks
-            .persist_completed_response_to_cache(&mut state)
-            .expect("the write succeeds");
+        hooks.persist_cache(&mut state).expect("the write succeeds");
 
         assert_eq!(cache.writes().len(), 1);
         assert!(state.completed_response_cached);
@@ -169,7 +163,7 @@ async fn terminal_cache_write_requires_stream_exactly_true() {
         let mut state = streaming_state();
 
         hooks
-            .persist_completed_response_to_cache(&mut state)
+            .persist_cache(&mut state)
             .expect("a skipped write is not an error");
 
         assert!(cache.writes().is_empty());
@@ -186,20 +180,20 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
     no_handler.cache = Some(cache.clone());
     let mut state = streaming_state();
     no_handler
-        .persist_completed_response_to_cache(&mut state)
+        .persist_cache(&mut state)
         .expect("a missing handler skips the write");
 
     let mut no_kwargs = hooks(&redactor);
     no_kwargs.cache = Some(cache.clone());
     no_kwargs.cache_handler = Some(Arc::new(CacheHandler::without_request_kwargs()));
     no_kwargs
-        .persist_completed_response_to_cache(&mut state)
+        .persist_cache(&mut state)
         .expect("missing request kwargs skip the write");
 
     let mut no_cache = hooks(&redactor);
     no_cache.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
     no_cache
-        .persist_completed_response_to_cache(&mut state)
+        .persist_cache(&mut state)
         .expect("a missing global cache skips the write");
 
     let mut refuses = hooks(&redactor);
@@ -208,7 +202,7 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
         CacheHandler::new(json_object(&[("stream", Json::Bool(true))])).with_store(false),
     ));
     refuses
-        .persist_completed_response_to_cache(&mut state)
+        .persist_cache(&mut state)
         .expect("a refused store skips the write");
 
     let mut cached = hooks(&redactor);
@@ -218,7 +212,7 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
     let mut cached_state = streaming_state();
     cached_state.completed_response_cached = true;
     cached
-        .persist_completed_response_to_cache(&mut cached_state)
+        .persist_cache(&mut cached_state)
         .expect("an already cached response skips the write");
 
     assert!(cache.writes().is_empty());
@@ -242,13 +236,13 @@ async fn terminal_cache_write_requires_a_completed_typed_response() {
         let mut state = base_state();
         state.completed_response = Some(event);
         hooks
-            .persist_completed_response_to_cache(&mut state)
+            .persist_cache(&mut state)
             .expect("a non terminal event skips the write");
         assert!(!state.completed_response_cached);
     }
     let mut empty = base_state();
     hooks
-        .persist_completed_response_to_cache(&mut empty)
+        .persist_cache(&mut empty)
         .expect("a missing event skips the write");
     assert!(cache.writes().is_empty());
 }
@@ -262,7 +256,7 @@ async fn terminal_cache_write_stays_retryable_after_a_failed_write() {
     hooks.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
     let mut state = streaming_state();
 
-    let rejected = hooks.persist_completed_response_to_cache(&mut state);
+    let rejected = hooks.persist_cache(&mut state);
     assert_eq!(
         rejected,
         Err(PortFailure {
@@ -274,9 +268,7 @@ async fn terminal_cache_write_stays_retryable_after_a_failed_write() {
 
     let succeeding = Cache::succeeding();
     hooks.cache = Some(succeeding.clone());
-    hooks
-        .persist_completed_response_to_cache(&mut state)
-        .expect("a retry succeeds");
+    hooks.persist_cache(&mut state).expect("a retry succeeds");
     assert!(state.completed_response_cached);
     assert_eq!(succeeding.writes().len(), 1);
 }
@@ -295,7 +287,7 @@ fn terminal_cache_write_logs_an_async_failure_and_keeps_the_flag() {
             .build()
             .expect("the runtime builds");
         runtime.block_on(async {
-            hooks.schedule_completed_response_cache_write(&mut state)?;
+            hooks.schedule_cache(&mut state)?;
             state.pending_tasks.close();
             state.pending_tasks.wait().await;
             Ok::<bool, PortFailure>(state.completed_response_cached)

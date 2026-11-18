@@ -33,10 +33,7 @@ impl ResponsesStreamHooks<'_> {
         };
         if Handle::try_current().is_ok() {
             let task_delivery = delivery.clone();
-            let work = async move {
-                run_failure_handlers(failure.as_ref(), &task_delivery).await;
-                Ok::<(), PortFailure>(())
-            };
+            let work = async move { run_failure_handlers(failure.as_ref(), &task_delivery).await };
             if let Some(handle) =
                 spawn_logging_task(&state.pending_tasks, FAILURE_LOGGING_TASK, work)
             {
@@ -45,20 +42,17 @@ impl ResponsesStreamHooks<'_> {
             return;
         }
         // without a loop LiteLLM blocks in run_async_function, then submits the sync handler
-        run_failure_handlers(failure.as_ref(), &delivery).await;
+        let _outcome = run_failure_handlers(failure.as_ref(), &delivery).await;
     }
 }
 
 async fn run_failure_handlers(
     failure: &dyn ResponsesStreamFailureTarget,
     delivery: &FailureDelivery,
-) {
-    if let Err(error) = failure.async_failure_handler(delivery).await {
-        tracing::debug!("the responses stream async failure handler failed: {error}");
-    }
-    if let Err(error) = failure.failure_handler(delivery) {
-        tracing::debug!("the responses stream failure handler was not submitted: {error}");
-    }
+) -> Result<(), PortFailure> {
+    let outcome = failure.async_failure_handler(delivery).await;
+    let _submission = failure.failure_handler(delivery);
+    outcome
 }
 
 // _await_pending_logging: clear the tuple first, then wait for every task and never rethrow one

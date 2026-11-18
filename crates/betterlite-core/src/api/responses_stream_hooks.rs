@@ -9,6 +9,7 @@ use ports::{
     SuccessDeploymentHook,
 };
 
+pub mod billing;
 pub mod cache;
 pub mod deployment;
 pub mod events;
@@ -21,8 +22,7 @@ pub mod state;
 
 mod tests;
 
-// The injected dependencies of the Responses stream hook methods: LiteLLM reaches each through
-// logging_obj, litellm.cache or the callback list, and none of them may be rebuilt here.
+// Dependencies stay injected so this module does not rebuild the cache or callback owners.
 pub struct ResponsesStreamHooks<'context> {
     pub cache: Option<Arc<dyn ResponsesStreamCacheTarget>>,
     pub cache_handler: Option<Arc<dyn ResponsesStreamCacheHandler>>,
