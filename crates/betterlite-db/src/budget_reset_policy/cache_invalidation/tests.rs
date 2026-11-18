@@ -84,6 +84,16 @@ impl ResetCache for FakeCache {
     }
 }
 
+#[test]
+fn cache_invalidation_names_and_global_key_match_litellms_literals() {
+    assert_eq!(InvalidatedCache::SpendCounter.as_str(), "spend counter");
+    assert_eq!(
+        InvalidatedCache::UserApiKeyCache.as_str(),
+        "user_api_key_cache"
+    );
+    assert_eq!(GLOBAL_PROXY_SPEND_CACHE_KEY, "default_user_id:spend");
+}
+
 #[tokio::test]
 async fn cache_invalidation_drops_both_sinks() {
     let cache = fake_cache(Failures::None);

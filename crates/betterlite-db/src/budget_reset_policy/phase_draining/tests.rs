@@ -33,6 +33,12 @@ fn phase_draining_defaults_to_500_rows_and_100_chunks() {
 }
 
 #[test]
+fn phase_draining_reads_litellms_environment_names() {
+    assert_eq!(BATCH_SIZE_ENV, "RESET_BUDGET_JOB_BATCH_SIZE");
+    assert_eq!(MAX_CHUNKS_ENV, "RESET_BUDGET_JOB_MAX_CHUNKS_PER_RUN");
+}
+
+#[test]
 fn phase_draining_reads_both_environment_limits() {
     let configured = environment([(BATCH_SIZE_ENV, "50"), (MAX_CHUNKS_ENV, "7")]);
     assert_eq!(
