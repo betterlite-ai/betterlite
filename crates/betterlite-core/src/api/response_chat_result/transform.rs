@@ -1,19 +1,20 @@
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
+use betterlite_models::usage_sum::{CompletionTokensDetails, PromptTokensDetails};
 use betterlite_openai::api::responses_objects::{
     ResponseApiUsage, ResponseOutputItem, ResponsesApiResponse,
 };
 use serde_json::{Map, Value};
 use tracing::warn;
 
-use super::choices::output_choices;
+use super::choices::{RawMessageMode, output_choices};
 use super::error::{ResponseChatResultError as Error, serialized};
 use super::reasoning::{empty_incomplete_choice, finish_text};
 use super::records::{ChatChoice, ModelResponse};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::response_chat_history::metadata::{SharedOutputMetadata, shared_output_metadata};
 use crate::api::responses_sse_recovery::recover_logged_output;
-use crate::api::responses_usage::{UsageInput, normalize_and_project};
+use crate::api::responses_usage::{Usage, UsageInput, normalize_usage};
 
 pub struct ResponseSource<'source> {
     pub model: &'source str,
@@ -38,7 +39,7 @@ pub fn transform_response(
         });
     }
     recover_output(response, model, logging, limits)?;
-    let mut choices = output_choices(&response.output)?;
+    let mut choices = output_choices(&response.output, RawMessageMode::Convert)?;
     let shared = response_metadata(response)?;
     finish_choices(&mut choices, response, &shared)?;
     result.choices = choices;
@@ -104,7 +105,7 @@ fn finish_choices(
     }
     let finish = finish_text(shared.incomplete_finish);
     for choice in choices.iter_mut() {
-        choice.finish_reason = finish.to_owned();
+        finish.clone_into(&mut choice.finish_reason);
     }
     Ok(())
 }
@@ -125,20 +126,98 @@ fn response_metadata(response: &ResponsesApiResponse) -> Result<SharedOutputMeta
     ))
 }
 
-// Usage.model_dump() keeps its two declared detail fields, so an absent wrapper still prints as null
+// Usage.model_dump() prints every field the detail wrappers keep, so an absent wrapper is null
 fn chat_usage(usage: Option<&ResponseApiUsage>) -> Result<Value, Error> {
-    let mut projected =
-        normalize_and_project(usage.map_or(UsageInput::Absent, UsageInput::Response))
-            .map_err(|source| Error::Usage { source })?;
-    if let Value::Object(fields) = &mut projected {
-        fields
-            .entry("prompt_tokens_details".to_owned())
-            .or_insert(Value::Null);
-        fields
-            .entry("completion_tokens_details".to_owned())
-            .or_insert(Value::Null);
+    let Usage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        prompt_tokens_details,
+        completion_tokens_details,
+        cost,
+        extensions,
+    } = normalize_usage(usage.map_or(UsageInput::Absent, UsageInput::Response))
+        .map_err(|source| Error::Usage { source })?;
+    let mut fields = extensions;
+    fields.insert("prompt_tokens".to_owned(), Value::from(prompt_tokens));
+    fields.insert(
+        "completion_tokens".to_owned(),
+        Value::from(completion_tokens),
+    );
+    fields.insert("total_tokens".to_owned(), Value::from(total_tokens));
+    fields.insert(
+        "prompt_tokens_details".to_owned(),
+        prompt_tokens_details
+            .as_ref()
+            .map_or(Value::Null, prompt_details_value),
+    );
+    fields.insert(
+        "completion_tokens_details".to_owned(),
+        completion_tokens_details
+            .as_ref()
+            .map_or(Value::Null, completion_details_value),
+    );
+    if let Some(cost) = cost {
+        // LiteLLM types cost as a Python float, so model_dump prints an integer cost as 2.0
+        fields.insert("cost".to_owned(), Value::from(cost.as_f64()));
     }
-    Ok(projected)
+    Ok(Value::Object(fields))
+}
+
+// the wrapper keeps five base counters, deletes every unset optional field, and keeps a nested cached_tokens_details
+fn prompt_details_value(details: &PromptTokensDetails) -> Value {
+    let mut fields = Map::new();
+    for (key, counter) in [
+        ("audio_tokens", details.audio_tokens),
+        ("cached_tokens", details.cached_tokens),
+        ("text_tokens", details.text_tokens),
+        ("image_tokens", details.image_tokens),
+        ("video_tokens", details.video_tokens),
+    ] {
+        fields.insert(key.to_owned(), counter.map_or(Value::Null, Value::from));
+    }
+    if let Some(cached) = &details.cached_tokens_details {
+        let mut nested = Map::new();
+        for (key, counter) in [
+            ("text_tokens", cached.text_tokens),
+            ("audio_tokens", cached.audio_tokens),
+            ("image_tokens", cached.image_tokens),
+        ] {
+            nested.insert(key.to_owned(), counter.map_or(Value::Null, Value::from));
+        }
+        fields.insert("cached_tokens_details".to_owned(), Value::Object(nested));
+    }
+    for (key, counter) in [
+        ("cache_write_tokens", details.cache_write_tokens),
+        ("cache_creation_tokens", details.cache_creation_tokens),
+        ("web_search_requests", details.web_search_requests),
+        (
+            "google_maps_grounding_requests",
+            details.google_maps_grounding_requests,
+        ),
+    ] {
+        if let Some(counter) = counter {
+            fields.insert(key.to_owned(), Value::from(counter));
+        }
+    }
+    Value::Object(fields)
+}
+
+// the completion wrapper keeps seven fields, and only the four the conversion passes can be set
+fn completion_details_value(details: &CompletionTokensDetails) -> Value {
+    let mut fields = Map::new();
+    for (key, counter) in [
+        ("accepted_prediction_tokens", None),
+        ("audio_tokens", details.audio_tokens),
+        ("reasoning_tokens", details.reasoning_tokens),
+        ("rejected_prediction_tokens", None),
+        ("text_tokens", details.text_tokens),
+        ("image_tokens", details.image_tokens),
+        ("video_tokens", None),
+    ] {
+        fields.insert(key.to_owned(), counter.map_or(Value::Null, Value::from));
+    }
+    Value::Object(fields)
 }
 
 fn merge_hidden(target: &mut Map<String, Value>, raw: &Map<String, Value>) -> Result<(), Error> {

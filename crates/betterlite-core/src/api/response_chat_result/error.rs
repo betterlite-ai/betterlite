@@ -47,6 +47,9 @@ pub enum ResponseChatResultError {
 }
 
 // ast-grep-ignore: no-one-line-functions - one conversion and error mapping for every reader
-pub(crate) fn serialized<T: Serialize>(value: &T) -> Result<Value, ResponseChatResultError> {
+pub(crate) fn serialized<T>(value: &T) -> Result<Value, ResponseChatResultError>
+where
+    T: Serialize,
+{
     serde_json::to_value(value).map_err(|source| ResponseChatResultError::Json { source })
 }

@@ -4,7 +4,7 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 use crate::api::response_chat_history::metadata::IncompleteFinish;
-use crate::api::response_chat_result::choices::output_choices;
+use crate::api::response_chat_result::choices::{RawMessageMode, output_choices};
 use crate::api::response_chat_result::error::ResponseChatResultError;
 use crate::api::response_chat_result::reasoning::empty_incomplete_choice;
 
@@ -14,7 +14,9 @@ use super::support::{
 };
 
 fn text_with_annotations(content: &str, annotations: Value) -> Value {
-    json!({"type": "output_text", "text": content, "annotations": annotations})
+    let mut part = json!({"type": "output_text", "text": content});
+    part["annotations"] = annotations;
+    part
 }
 
 fn chunk(id: &str, name: &str, arguments: &str, index: usize) -> Value {
@@ -27,7 +29,7 @@ fn chunk(id: &str, name: &str, arguments: &str, index: usize) -> Value {
 }
 
 fn tool_choice(calls: Value, index: usize) -> Value {
-    json!({
+    let mut choice = json!({
         "finish_reason": "tool_calls",
         "index": index,
         "message": {
@@ -35,20 +37,29 @@ fn tool_choice(calls: Value, index: usize) -> Value {
             "function_call": null,
             "provider_specific_fields": null,
             "role": "assistant",
-            "tool_calls": calls,
         },
-    })
+    });
+    choice["message"]["tool_calls"] = calls;
+    choice
 }
 
 fn choices_of(output: Value) -> Value {
+    converted_choices(output, RawMessageMode::Convert)
+}
+
+fn ignored_choices_of(output: Value) -> Value {
+    converted_choices(output, RawMessageMode::Ignore)
+}
+
+fn converted_choices(output: Value, raw_messages: RawMessageMode) -> Value {
     let response = decoded(envelope(output));
-    let choices = output_choices(&response.output).expect("the output converts");
+    let choices = output_choices(&response.output, raw_messages).expect("the output converts");
     serde_json::to_value(&choices).expect("the choices serialize")
 }
 
 fn refusal_of(output: Value) -> ResponseChatResultError {
     let response = decoded(envelope(output));
-    output_choices(&response.output).expect_err("the output is refused")
+    output_choices(&response.output, RawMessageMode::Convert).expect_err("the output is refused")
 }
 
 fn fallback(output: Value, finish: IncompleteFinish) -> Value {
@@ -137,6 +148,25 @@ fn raw_messages_number_their_choices() {
             text_choice("a", "assistant", 0),
             text_choice("b", "assistant", 1),
         ])
+    );
+}
+
+#[test]
+fn raw_messages_need_a_handler_while_raw_tools_accumulate() {
+    let output = json!([
+        {"type": "message", "role": "assistant", "content": [output_text("a")]},
+        {"type": "function_call", "id": "fc_1", "name": "f", "arguments": "{}"},
+    ]);
+    assert_eq!(
+        choices_of(output.clone()),
+        json!([
+            text_choice("a", "assistant", 0),
+            tool_choice(json!([chunk("fc_1", "f", "{}", 0)]), 1),
+        ])
+    );
+    assert_eq!(
+        ignored_choices_of(output),
+        json!([tool_choice(json!([chunk("fc_1", "f", "{}", 0)]), 0)])
     );
 }
 

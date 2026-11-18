@@ -64,6 +64,47 @@ calls:
         id: resp_a
         created_at: 1700000000
         status: completed
+        usage:
+          input_tokens: 10
+          output_tokens: 20
+          total_tokens: 30
+          input_tokens_details: {cached_tokens: 1}
+          output_tokens_details: {reasoning_tokens: 2}
+        output:
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 2}
+        output:
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
         output:
           - type: message
             id: msg_1

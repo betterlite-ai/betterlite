@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::fs;
-use std::iter::once;
 use std::path::{Path, PathBuf};
 
 use rstest::rstest;
@@ -32,7 +31,7 @@ fn replays_the_response_chat_result_seeds() {
     );
     let failures: Vec<String> = seeds
         .iter()
-        .filter_map(|path| check_seed(path).err())
+        .filter_map(|path| replay_case(path).err())
         .collect();
     assert!(failures.is_empty(), "{failures:?}");
 }
@@ -85,20 +84,4 @@ fn replay_case(path: &Path) -> Result<(), String> {
         HelperRun::Match => Ok(()),
         HelperRun::Difference => Err(format!("{} does not match LiteLLM", path.display())),
     }
-}
-
-fn check_seed(path: &Path) -> Result<(), String> {
-    let source = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let seed: HelperCase = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
-    validate_helper(path, &seed).map_err(|error| error.to_string())?;
-    once(&seed.call).chain(&seed.calls).try_for_each(|call| {
-        if call.operation == OPERATION {
-            Op::check(&call.input)
-        } else {
-            Err(format!(
-                "the seed names {} instead of {OPERATION}",
-                call.operation
-            ))
-        }
-    })
 }

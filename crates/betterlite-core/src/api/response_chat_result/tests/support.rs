@@ -54,20 +54,25 @@ pub(super) fn summary_block(content: &str) -> Value {
 }
 
 pub(super) fn reasoning_record(id: &str, blocks: Value, encrypted: Option<&str>) -> Value {
-    json!({"type": "reasoning", "id": id, "encrypted_content": encrypted, "summary": blocks})
+    let mut record = json!({"type": "reasoning", "id": id, "encrypted_content": encrypted});
+    record["summary"] = blocks;
+    record
 }
 
 pub(super) fn reasoning_item(id: &str, blocks: Value, encrypted: Option<&str>) -> Value {
-    json!({"type": "reasoning", "id": id, "encrypted_content": encrypted, "summary": blocks})
+    let mut item = json!({"type": "reasoning", "id": id, "encrypted_content": encrypted});
+    item["summary"] = blocks;
+    item
 }
 
 pub(super) fn envelope(output: Value) -> Value {
-    json!({
+    let mut response = json!({
         "id": "resp_plain",
         "created_at": 1_700_000_000_i64,
-        "output": output,
         "status": "completed",
-    })
+    });
+    response["output"] = output;
+    response
 }
 
 pub(super) fn decoded(response: Value) -> ResponsesApiResponse {

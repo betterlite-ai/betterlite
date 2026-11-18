@@ -259,6 +259,33 @@ fn transform_null_incomplete_reason_is_not_incomplete() {
         "server_side_tool_usage_details": {"web_search": 1}, "cost": 0.5,
     })
 )]
+#[case::integer_cost(
+    json!({"input_tokens": 2, "output_tokens": 3, "total_tokens": 5, "cost": 2}),
+    json!({
+        "prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5,
+        "prompt_tokens_details": null, "completion_tokens_details": null,
+        "cost": 2.0,
+    })
+)]
+#[case::token_details(
+    json!({
+        "input_tokens": 10, "output_tokens": 20, "total_tokens": 30,
+        "input_tokens_details": {"cached_tokens": 1},
+        "output_tokens_details": {"reasoning_tokens": 2},
+    }),
+    json!({
+        "prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30,
+        "prompt_tokens_details": {
+            "audio_tokens": null, "cached_tokens": 1, "text_tokens": null,
+            "image_tokens": null, "video_tokens": null,
+        },
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": null, "audio_tokens": null,
+            "reasoning_tokens": 2, "rejected_prediction_tokens": null,
+            "text_tokens": null, "image_tokens": null, "video_tokens": null,
+        },
+    })
+)]
 fn transform_projects_usage(#[case] usage: Value, #[case] expected: Value) {
     let mut response = decoded_with(json!([typed_message("a")]), json!({"usage": usage}));
     let record = record_of(&mut response);

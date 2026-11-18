@@ -14,8 +14,25 @@ use crate::api::response_chat_content::annotations::{AnnotationValue, annotation
 use crate::api::response_chat_history::tool_fields::output_tool_fields;
 use crate::api::responses_tool_results::records::ToolCallChunk;
 
-pub(crate) fn output_choices(output: &[ResponseOutputItem]) -> Result<Vec<ChatChoice>, Error> {
-    let mut assembly = Assembly::default();
+// LiteLLM asks its raw-dict callback only for messages, so a caller that brings none skips them
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RawMessageMode {
+    Convert,
+    Ignore,
+}
+
+pub(crate) fn output_choices(
+    output: &[ResponseOutputItem],
+    raw_messages: RawMessageMode,
+) -> Result<Vec<ChatChoice>, Error> {
+    let mut assembly = Assembly {
+        choices: Vec::new(),
+        tool_calls: Vec::new(),
+        index: 0,
+        tool_index: 0,
+        reasoning: None,
+        raw_messages,
+    };
     for item in output {
         match item {
             ResponseOutputItem::Sdk(sdk) => assembly.sdk_item(sdk)?,
@@ -30,13 +47,13 @@ pub(crate) fn output_choices(output: &[ResponseOutputItem]) -> Result<Vec<ChatCh
     Ok(assembly.finish())
 }
 
-#[derive(Default)]
 struct Assembly {
     choices: Vec<ChatChoice>,
     tool_calls: Vec<ToolCallChunk>,
     index: usize,
     tool_index: usize,
     reasoning: Option<PendingReasoning>,
+    raw_messages: RawMessageMode,
 }
 
 impl Assembly {
@@ -44,19 +61,12 @@ impl Assembly {
         match output {
             SdkOutput::Reasoning(reasoning) => {
                 self.reasoning = Some(pending(reasoning));
-                Ok(())
+                return Ok(());
             }
-            SdkOutput::OutputMessage(message) => self.message(message),
-            SdkOutput::FunctionCall(call) => {
-                self.tool_calls.push(typed_function_chunk(call)?);
-                self.tool_index = self.tool_index.saturating_add(1);
-                Ok(())
-            }
+            SdkOutput::OutputMessage(message) => return self.message(message),
+            SdkOutput::FunctionCall(call) => self.push_tool(typed_function_chunk(call)?),
             SdkOutput::OutputApplyPatch(call) => {
-                self.tool_calls
-                    .push(apply_patch_chunk(call, self.tool_index));
-                self.tool_index = self.tool_index.saturating_add(1);
-                Ok(())
+                self.push_tool(apply_patch_chunk(call, self.tool_index));
             }
             SdkOutput::FileSearch(_)
             | SdkOutput::FunctionCallOutput(_)
@@ -81,8 +91,14 @@ impl Assembly {
             | SdkOutput::McpApprovalRequest(_)
             | SdkOutput::McpApprovalResponse(_)
             | SdkOutput::CustomCall(_)
-            | SdkOutput::CustomCallOutput(_) => self.raw_value(serialized(output)?),
+            | SdkOutput::CustomCallOutput(_) => return self.raw_value(serialized(output)?),
         }
+        Ok(())
+    }
+
+    fn push_tool(&mut self, chunk: ToolCallChunk) {
+        self.tool_calls.push(chunk);
+        self.tool_index = self.tool_index.saturating_add(1);
     }
 
     // one choice per content block, with the pending reasoning flushed onto the first one
@@ -107,6 +123,9 @@ impl Assembly {
             self.tool_index = self.tool_index.saturating_add(1);
             return Ok(());
         }
+        if self.raw_messages == RawMessageMode::Ignore {
+            return Ok(());
+        }
         let Some(choice) = raw_message_choice(&fields, self.index)? else {
             return Ok(());
         };
@@ -117,7 +136,7 @@ impl Assembly {
 
     // every accumulated tool call goes into one trailing choice, carrying the reasoning no text flushed
     fn finish(self) -> Vec<ChatChoice> {
-        let Assembly {
+        let Self {
             mut choices,
             tool_calls,
             index,
