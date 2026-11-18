@@ -10,7 +10,11 @@ use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::queue::BoundedUpdateQueue;
 
 fn sum_all(items: &[i64]) -> Result<Vec<i64>, SpendQueueError> {
-    Ok(vec![items.iter().sum()])
+    let total = items
+        .iter()
+        .try_fold(0_i64, |total, item| total.checked_add(*item))
+        .ok_or(SpendQueueError::CostOverflow)?;
+    Ok(vec![total])
 }
 
 fn always_fails(_items: &[i64]) -> Result<Vec<i64>, SpendQueueError> {
