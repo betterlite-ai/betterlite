@@ -562,7 +562,8 @@ fn ttl_expiry() {
     assert_eq!(service.local_count_values(&[key]).unwrap(), vec![None]);
 }
 
-async fn behavior(name: &str) -> bool {
+// every case the two tables name, run by the test that owns it
+async fn run_named_case(name: &str) -> bool {
     match name {
         "shared_counts_win" => shared_counts_win().await,
         "local_without_shared" => local_without_shared().await,
@@ -583,6 +584,15 @@ async fn behavior(name: &str) -> bool {
         "local_values_read" => local_values_read(),
         "shared_absent" => shared_absent().await,
         "ttl_expiry" => ttl_expiry(),
+        "key_lengths" => key_lengths(),
+        "missing_deployment_id_index" => missing_deployment_id_index().await,
+        "local_spend_is_error" => local_spend_is_error().await,
+        "empty_pool" => empty_pool().await,
+        "selection_bounds" => selection_bounds(),
+        "shared_missing_is_zero" => shared_missing_is_zero().await,
+        "cancel_drop" => cancel_drop().await,
+        "pre_call_over_limit" => pre_call_over_limit().await,
+        "guard_debug" => guard_debug().await,
         _ => return false,
     }
     true
@@ -737,22 +747,6 @@ async fn guard_debug() {
     assert!(rendered.contains("released: false"), "{rendered}");
 }
 
-async fn boundary(name: &str) -> bool {
-    match name {
-        "key_lengths" => key_lengths(),
-        "missing_deployment_id_index" => missing_deployment_id_index().await,
-        "local_spend_is_error" => local_spend_is_error().await,
-        "empty_pool" => empty_pool().await,
-        "selection_bounds" => selection_bounds(),
-        "shared_missing_is_zero" => shared_missing_is_zero().await,
-        "cancel_drop" => cancel_drop().await,
-        "pre_call_over_limit" => pre_call_over_limit().await,
-        "guard_debug" => guard_debug().await,
-        _ => return false,
-    }
-    true
-}
-
 #[rstest]
 #[case::shared_counts_win("shared_counts_win")]
 #[case::local_without_shared("local_without_shared")]
@@ -774,7 +768,10 @@ async fn boundary(name: &str) -> bool {
 #[case::shared_absent("shared_absent")]
 #[case::ttl_expiry("ttl_expiry")]
 fn least_busy_behaviors(#[case] name: &str) {
-    assert!(runtime().block_on(behavior(name)), "unknown case {name}");
+    assert!(
+        runtime().block_on(run_named_case(name)),
+        "unknown case {name}"
+    );
 }
 
 #[rstest]
@@ -788,5 +785,8 @@ fn least_busy_behaviors(#[case] name: &str) {
 #[case::pre_call_over_limit("pre_call_over_limit")]
 #[case::guard_debug("guard_debug")]
 fn least_busy_boundaries(#[case] name: &str) {
-    assert!(runtime().block_on(boundary(name)), "unknown case {name}");
+    assert!(
+        runtime().block_on(run_named_case(name)),
+        "unknown case {name}"
+    );
 }
