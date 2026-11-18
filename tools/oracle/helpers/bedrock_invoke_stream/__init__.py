@@ -1,5 +1,4 @@
 import asyncio
-from unittest import mock
 
 import litellm
 from litellm.exceptions import MidStreamFallbackError
@@ -31,12 +30,12 @@ litellm.suppress_debug_info = True
 
 
 # Both wrappers pass the same call to B691; async omits the signed body and keeps the client.
-async def async_transport(run: Run) -> JsonValue:
-    recorder = AsyncRecorder()
-    client = async_transport_client(run)
-    with mock.patch.object(
-        base_invoke_transformation, "make_call", recorder
-    ):
+async def transport_case(run: Run) -> JsonValue:
+    if run["wrapper"] == "async":
+        recorder = AsyncRecorder()
+        client = async_transport_client(run)
+        # the seam's keyword-only params differ from make_call's positional ones
+        base_invoke_transformation.make_call = recorder  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L185-L197
         _ = await WRAPPERS.get_async_custom_stream_wrapper(
             model=run["model"],
             custom_llm_provider="openai",
@@ -50,35 +49,25 @@ async def async_transport(run: Run) -> JsonValue:
             signed_json_body=signed_body(run),
             litellm_params=control_params(run["stream_chunk_size"]),
         )
-    return transport_payload(recorder)
-
-
-def sync_transport(run: Run) -> JsonValue:
+        return transport_payload(recorder)
     supplied = sync_transport_client(run)
-    recorder = SyncRecorder(supplied)
-    with mock.patch.object(
-        base_invoke_transformation, "make_sync_call", recorder
-    ):
-        _ = WRAPPERS.get_sync_custom_stream_wrapper(
-            model=run["model"],
-            custom_llm_provider="openai",
-            logging_obj=LoggingRecorder(),
-            api_base=run["api_base"],
-            headers=run["headers"],
-            data=run["data"],
-            messages=run["messages"],
-            client=supplied,
-            json_mode=run["json_mode"],
-            signed_json_body=signed_body(run),
-            litellm_params=control_params(run["stream_chunk_size"]),
-        )
-    return transport_payload(recorder)
-
-
-async def transport_case(run: Run) -> JsonValue:
-    if run["wrapper"] == "async":
-        return await async_transport(run)
-    return sync_transport(run)
+    sync_recorder = SyncRecorder(supplied)
+    # the seam's keyword-only params differ from make_sync_call's positional ones
+    base_invoke_transformation.make_sync_call = sync_recorder  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L274-L287
+    _ = WRAPPERS.get_sync_custom_stream_wrapper(
+        model=run["model"],
+        custom_llm_provider="openai",
+        logging_obj=LoggingRecorder(),
+        api_base=run["api_base"],
+        headers=run["headers"],
+        data=run["data"],
+        messages=run["messages"],
+        client=supplied,
+        json_mode=run["json_mode"],
+        signed_json_body=signed_body(run),
+        litellm_params=control_params(run["stream_chunk_size"]),
+    )
+    return transport_payload(sync_recorder)
 
 
 async def async_identity(

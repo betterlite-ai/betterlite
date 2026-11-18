@@ -210,6 +210,7 @@ def seam_call(params: CommonArguments, signed_json_body: bytes | None, *, sync: 
 
 @runtime_checkable
 class WrapperMethods(Protocol):
+    # ast-grep-ignore: no-long-names
     async def get_async_custom_stream_wrapper(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L443-L480
         self,
         model: str,
