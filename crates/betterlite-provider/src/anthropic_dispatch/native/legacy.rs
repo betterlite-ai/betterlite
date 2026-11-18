@@ -58,15 +58,16 @@ pub enum Reply {
     },
 }
 
-pub async fn complete<Client, ClientFailure>(
+pub async fn complete<Client, ClientFailure, FileFailure>(
     call: &CompletionCall<ClientHandle<Client>, Engine>,
     client: &Client,
     settings: &Legacy<'_>,
     now: DateTime<Utc>,
-) -> Result<Reply, Failure<ClientFailure>>
+) -> Result<Reply, Failure<ClientFailure, FileFailure>>
 where
     Client: Transport,
     ClientFailure: std::error::Error + Send + Sync + 'static,
+    FileFailure: std::error::Error + Send + Sync + 'static,
 {
     let source = PromptSource {
         custom_prompt_dict: &BTreeMap::new(),
@@ -74,17 +75,18 @@ where
         now,
     };
     let messages: Vec<Message> = serde_json::from_value(serde_json::to_value(&call.messages)?)?;
-    let mut body = transform_request(
-        &source,
-        &call.model,
-        &messages,
-        call.optional_params.clone(),
-        settings.defaults,
-    )
-    .await?;
+    let mut optional = call.optional_params.clone();
+    let extra_body = match optional.shift_remove("extra_body") {
+        None | Some(Json::Null) => IndexMap::new(),
+        Some(Json::Object(fields)) => fields,
+        Some(_) => return Err(Failure::ExtraBody),
+    };
+    let mut body =
+        transform_request(&source, &call.model, &messages, optional, settings.defaults).await?;
     if call.stream {
         body.insert("stream".to_owned(), Json::Bool(true));
     }
+    body.extend(extra_body);
     let mut headers = HeaderMap::new();
     for (name, value) in &call.headers {
         let mut value = HeaderValue::try_from(value.expose_secret())?;

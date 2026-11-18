@@ -76,6 +76,8 @@ pub(super) struct Observed {
     pub status: Option<u16>,
     pub logged: String,
     pub tool_name: Option<String>,
+    pub preparation_error:
+        Option<Box<betterlite_anthropic::request::error::RequestError<std::convert::Infallible>>>,
 }
 
 struct Media;
@@ -148,6 +150,7 @@ pub(super) async fn run(
     asynchronous: bool,
     key: bool,
     tag: ChatConfigTag,
+    options: &str,
 ) -> Observed {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -249,7 +252,7 @@ pub(super) async fn run(
     let engine = Engine::Tiktoken(Arc::new(
         TiktokenEngine::from_bpe_file(encoding, &bundled(encoding).unwrap()).unwrap(),
     ));
-    let call = CompletionCall {
+    let mut call = CompletionCall {
         model: match surface {
             Surface::Messages => "claude-3-haiku-20240307",
             Surface::Legacy => "claude-2",
@@ -278,6 +281,10 @@ pub(super) async fn run(
         encoding: engine,
         timeout: TIMEOUT,
     };
+    call.optional_params.extend(
+        serde_json::from_str::<IndexMap<String, betterlite_models::decisions::Json>>(options)
+            .unwrap(),
+    );
     let globals = Globals::default();
     let environment = Environment::default();
     let completion = CompletionSettings {
@@ -338,6 +345,7 @@ pub(super) async fn run(
     )
     .await
     .unwrap();
+    let mut preparation_error = None;
     let (content, status, posted, tool_name) = match outcome {
         Ok(Outcome::Completion(Reply::Messages(
             betterlite_anthropic::chat_call::ChatOutcome::Reply(reply),
@@ -355,6 +363,11 @@ pub(super) async fn run(
         }
         Err(DispatchError::Completion(Failure::Chat(error))) => {
             (None, error.status_code(), false, None)
+        }
+        Err(DispatchError::Completion(Failure::Prepare(error))) => {
+            let status = error.status_code();
+            preparation_error = Some(error);
+            (None, status, false, None)
         }
         Err(DispatchError::Completion(Failure::Config)) => (None, None, false, None),
         _ => panic!("unexpected native outcome"),
@@ -377,6 +390,7 @@ pub(super) async fn run(
             status,
             logged,
             tool_name,
+            preparation_error,
         }
     } else {
         Observed {
@@ -387,6 +401,7 @@ pub(super) async fn run(
             status,
             logged,
             tool_name,
+            preparation_error,
         }
     };
     client.drain(TIMEOUT).await.unwrap();

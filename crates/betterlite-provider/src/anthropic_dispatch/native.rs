@@ -12,6 +12,7 @@ use betterlite_anthropic::chat_call::{
     CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
 };
 use betterlite_anthropic::credentials::AnthropicSettings;
+use betterlite_anthropic::request::error::RequestError;
 use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
@@ -71,9 +72,10 @@ pub enum Reply<ClientFailure> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Failure<ClientFailure>
+pub enum Failure<ClientFailure, FileFailure>
 where
     ClientFailure: std::error::Error + Send + Sync + 'static,
+    FileFailure: std::error::Error + Send + Sync + 'static,
 {
     #[error("the selected config is not an Anthropic Messages config")]
     Config,
@@ -82,7 +84,9 @@ where
     #[error(transparent)]
     Chat(Box<ChatCallError<ClientFailure, EngineError>>),
     #[error("Anthropic request preparation failed")]
-    Prepare(#[source] Box<dyn std::error::Error + Send + Sync>),
+    Prepare(#[source] Box<RequestError<FileFailure>>),
+    #[error("extra_body must be an object")]
+    ExtraBody,
     #[error(transparent)]
     Legacy(#[from] betterlite_anthropic::completion::error::CompletionError),
     #[error(transparent)]
@@ -108,7 +112,7 @@ where
     Ids: Fn() -> String + Sync,
 {
     type Reply = Reply<Client::Failure>;
-    type Failure = Failure<Client::Failure>;
+    type Failure = Failure<Client::Failure, Blocks::Failure>;
 
     fn complete<'call>(
         &'call mut self,
@@ -176,14 +180,15 @@ where
     }
 }
 
-async fn messages<Client>(
+async fn messages<Client, FileFailure>(
     call: &CompletionCall<ClientHandle<Client>, Engine>,
     config: &Config<'_>,
     runtime: &Runtime<'_, Client>,
     log: &mut CallLogging<'_, '_>,
-) -> Result<ChatOutcome<Client::Failure, Counter>, Failure<Client::Failure>>
+) -> Result<ChatOutcome<Client::Failure, Counter>, Failure<Client::Failure, FileFailure>>
 where
     Client: ChatTransport,
+    FileFailure: std::error::Error + Send + Sync + 'static,
 {
     let native = ChatCall {
         model: &call.model,

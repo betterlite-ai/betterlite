@@ -14,6 +14,7 @@ async fn native_messages_uses_preparation_and_transport(#[case] asynchronous: bo
         asynchronous,
         true,
         ChatConfigTag::Anthropic,
+        "{}",
     )
     .await;
     assert_eq!(observed.posts, 1);
@@ -31,14 +32,21 @@ async fn native_messages_uses_preparation_and_transport(#[case] asynchronous: bo
 
 #[tokio::test]
 async fn native_messages_rejects_headers_before_preparation() {
-    let observed = support::run(Surface::Messages, false, false, ChatConfigTag::Anthropic).await;
+    let observed = support::run(
+        Surface::Messages,
+        false,
+        false,
+        ChatConfigTag::Anthropic,
+        "{}",
+    )
+    .await;
     assert_eq!(observed.posts, 0);
     assert_eq!(observed.status, Some(401));
 }
 
 #[tokio::test]
 async fn native_legacy_uses_http_and_response_bridge() {
-    let observed = support::run(Surface::Legacy, false, true, ChatConfigTag::Anthropic).await;
+    let observed = support::run(Surface::Legacy, false, true, ChatConfigTag::Anthropic, "{}").await;
     assert_eq!(observed.posts, 1);
     assert_eq!(observed.content.as_deref(), Some("legacy answer"));
     assert_eq!(observed.body["model"], "claude-2");
@@ -48,7 +56,14 @@ async fn native_legacy_uses_http_and_response_bridge() {
 
 #[tokio::test]
 async fn native_completion_requires_anthropic_config() {
-    let observed = support::run(Surface::Messages, false, true, ChatConfigTag::JsonProvider).await;
+    let observed = support::run(
+        Surface::Messages,
+        false,
+        true,
+        ChatConfigTag::JsonProvider,
+        "{}",
+    )
+    .await;
     assert_eq!(observed.posts, 0);
     assert_eq!(observed.status, None);
     assert_eq!(observed.content, None);
@@ -101,4 +116,50 @@ fn native_counter_uses_supplied_encoding() {
     let counter = super::Counter(Engine::Tiktoken(std::sync::Arc::new(engine)));
     assert_eq!(counter.count_reasoning_tokens("hello world").unwrap(), 2);
     assert_eq!(counter.count_reasoning_tokens("").unwrap(), 0);
+}
+
+#[rstest::rstest]
+#[case::absent(r#"{"max_tokens_to_sample":5}"#, 5)]
+#[case::null(r#"{"max_tokens_to_sample":5,"extra_body":null}"#, 5)]
+#[case::empty(r#"{"max_tokens_to_sample":5,"extra_body":{}}"#, 5)]
+#[case::override_limit(
+    r#"{"max_tokens_to_sample":5,"extra_body":{"max_tokens_to_sample":17,"top_k":3}}"#,
+    17
+)]
+#[tokio::test]
+async fn native_legacy_merges_extra_body(#[case] options: &str, #[case] expected: i64) {
+    let observed = support::run(
+        Surface::Legacy,
+        false,
+        true,
+        ChatConfigTag::Anthropic,
+        options,
+    )
+    .await;
+    assert_eq!(observed.posts, 1);
+    assert_eq!(observed.body["max_tokens_to_sample"], expected);
+    assert!(observed.body.get("extra_body").is_none());
+    if expected == 17 {
+        assert_eq!(observed.body["top_k"], 3);
+    }
+}
+
+#[tokio::test]
+async fn native_preparation_error_retains_its_variant_and_status() {
+    use betterlite_anthropic::request::{error::RequestError, tool_list::ToolListError};
+    let observed = support::run(
+        Surface::Messages,
+        false,
+        true,
+        ChatConfigTag::Anthropic,
+        r#"{"tools":true}"#,
+    )
+    .await;
+    assert_eq!(observed.posts, 0);
+    let error = observed.preparation_error.unwrap();
+    assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(
+        *error,
+        RequestError::ToolList(ToolListError::NotList)
+    ));
 }
