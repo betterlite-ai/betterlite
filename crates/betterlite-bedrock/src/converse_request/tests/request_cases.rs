@@ -253,6 +253,7 @@ pub(super) fn output_format_precedence() {
     json_schema_builds_native_config();
     explicit_output_config_wins();
     unsupported_schema_warns();
+    text_format_on_capable_model_warns();
     scalar_format_is_discarded();
 }
 
@@ -307,6 +308,20 @@ fn unsupported_schema_warns() {
         assert!(field(unsupported.body(), "outputConfig").is_none());
         assert!(warnings.contains(FORMAT_WARNING), "{model}: {warnings}");
     }
+}
+
+fn text_format_on_capable_model_warns() {
+    // Only a json_schema format builds native config, even where the model advertises the capability.
+    let (plain, warnings) = run(
+        &Call::new(
+            CLAUDE_3_5,
+            r#"{"output_config": {"format": {"type": "text"}}}"#,
+        ),
+        &remote(&[]),
+    );
+    assert!(field(plain.body(), "outputConfig").is_none());
+    assert!(field(plain.body(), "additionalModelRequestFields").is_none());
+    assert!(warnings.contains(FORMAT_WARNING), "{warnings}");
 }
 
 fn scalar_format_is_discarded() {
