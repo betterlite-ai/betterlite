@@ -21,8 +21,11 @@ call:
       parallel_tool_calls: true
       client_metadata: {team: x}
       guardrailConfig: {guardrailIdentifier: gr-1}
+      performanceConfig: {latency: optimized}
+      serviceTier: {type: priority}
       requestMetadata: {client_key: caller}
     litellm_params: {}
+    headers: {anthropic-beta: interleaved-thinking-2025-05-14}
     global_drop: false
     modify_params: false
     neutralize_orphaned_blocks: true

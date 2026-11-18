@@ -1,4 +1,4 @@
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import NotRequired, Protocol, TypedDict, runtime_checkable
 
 import litellm
 from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
@@ -12,6 +12,7 @@ class Input(TypedDict):
     model_cost: dict[str, Json]
     optional_params: dict[str, Json]
     litellm_params: dict[str, Json]
+    headers: NotRequired[dict[str, Json]]
     global_drop: bool
     modify_params: bool
     neutralize_orphaned_blocks: bool
@@ -43,7 +44,8 @@ def answer(input_value: Input) -> Json:
     messages: list[Json] = list(input_value["messages"])
     optional_params: dict[str, Json] = dict(input_value["optional_params"])
     litellm_params: dict[str, Json] = dict(input_value["litellm_params"])
-    headers: dict[str, Json] = {}
+    header_values = input_value.get("headers")
+    headers: dict[str, Json] = {} if header_values is None else header_values
     body = transformer.transform_request(
         input_value["model"], messages, optional_params, litellm_params, headers
     )

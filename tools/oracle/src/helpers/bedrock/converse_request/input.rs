@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+
+use betterlite_bedrock::event_frames::beta::BetaHeader;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
@@ -13,6 +16,8 @@ pub(crate) struct Input {
     pub(crate) optional_params: ParamMap,
     #[serde(default)]
     pub(crate) litellm_params: Object,
+    #[serde(default)]
+    pub(crate) headers: BTreeMap<String, BetaHeader>,
     pub(crate) global_drop: bool,
     pub(crate) modify_params: bool,
     pub(crate) neutralize_orphaned_blocks: bool,

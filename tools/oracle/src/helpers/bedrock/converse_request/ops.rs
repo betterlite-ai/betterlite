@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::converse_request::{
-    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseSettings, converse_request,
+    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseRequestOutcome,
+    ConverseSettings, converse_request,
 };
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_bedrock::request_policy::BedrockRequestPolicy;
@@ -123,12 +124,14 @@ fn assemble(
         optional_params,
         litellm_params,
     };
-    current_thread_runtime()?.block_on(assemble_body(assembly))
+    current_thread_runtime()?
+        .block_on(assemble_body(assembly))
+        .map(|outcome| outcome.body)
 }
 
 async fn assemble_body(
     mut assembly: Assembly<'_>,
-) -> Result<ConverseRequestBody, Box<HelperError>> {
+) -> Result<ConverseRequestOutcome, Box<HelperError>> {
     let mut keys = ModelCostKeys::default();
     let dynamic = NoDynamicMetadata;
     let resolution = assembly.fixture.resolution();
@@ -141,7 +144,7 @@ async fn assemble_body(
         messages: &assembly.input.messages,
         optional_params: &mut *assembly.optional_params,
         litellm_params: Some(&mut *assembly.litellm_params),
-        headers: None,
+        headers: Some(&assembly.input.headers),
         settings: ConverseSettings {
             global_drop: assembly.input.global_drop,
             modify_params: assembly.input.modify_params,
