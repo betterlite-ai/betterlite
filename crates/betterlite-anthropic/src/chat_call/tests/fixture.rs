@@ -223,12 +223,18 @@ pub(super) struct Recorded {
     pub(super) headers: IndexMap<String, String>,
 }
 
+pub(super) struct ResponseRecord {
+    pub(super) json_mode: Option<bool>,
+    pub(super) has_vertex_request: bool,
+}
+
 pub(super) struct FixtureConfig {
     pub(super) body: IndexMap<String, Json>,
     pub(super) transform_failure: Option<String>,
     pub(super) filter_failure: Option<String>,
     pub(super) transforms: Mutex<Vec<Recorded>>,
     pub(super) calls: Mutex<Vec<String>>,
+    pub(super) responses: Mutex<Vec<ResponseRecord>>,
 }
 
 impl FixtureConfig {
@@ -319,6 +325,13 @@ impl ChatConfig for FixtureConfig {
             raw,
             request,
         } = response;
+        self.responses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ResponseRecord {
+                json_mode: request.json_mode,
+                has_vertex_request: request.optional_params.contains_key("is_vertex_request"),
+            });
         transform_response(envelope, raw, request, logging, counter)
     }
 }

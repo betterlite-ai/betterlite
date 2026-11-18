@@ -93,6 +93,9 @@ fn messages_post_request() {
     assert_eq!(asynchronous.posts_pooled, 0);
     assert_posted(&asynchronous);
     assert_prepared(&asynchronous, "async");
+    // the reply mapper gets the popped options and the extracted json_mode, not the transform params
+    assert_eq!(asynchronous.responses[0].json_mode, Some(true));
+    assert!(!asynchronous.responses[0].has_vertex_request);
 
     // the sync branch keeps only an HTTPHandler client, so an async one falls back to the pooled client
     let synchronous = execute(&Setup {
@@ -103,6 +106,8 @@ fn messages_post_request() {
     assert_eq!(synchronous.posts_pooled, 1);
     assert_posted(&synchronous);
     assert_prepared(&synchronous, "sync");
+    assert_eq!(synchronous.responses[0].json_mode, Some(true));
+    assert!(!synchronous.responses[0].has_vertex_request);
 }
 
 fn assert_posted(run: &Run) {

@@ -18,7 +18,7 @@ use crate::response::wire::ResponseEnvelope;
 
 use super::fixture::{
     API_BASE, CALLER_KEY, CallError, FixtureConfig, FixtureCounter, FixtureFailure, FixtureIds,
-    FixtureReply, FixtureTransport, MODEL, NOW, Recorded, RecordingLogger, Silent,
+    FixtureReply, FixtureTransport, MODEL, NOW, Recorded, RecordingLogger, ResponseRecord, Silent,
     StreamLoggerCall, TIMEOUT, Trip, logging_env, logging_state, messages, redactor,
     settings_with_key,
 };
@@ -106,6 +106,7 @@ pub(super) struct Run {
     pub(super) posted_headers: Vec<HeaderMap>,
     pub(super) transforms: Vec<Recorded>,
     pub(super) calls: Vec<String>,
+    pub(super) responses: Vec<ResponseRecord>,
     pub(super) logger_calls: Vec<StreamLoggerCall>,
     pub(super) details: IndexMap<String, Json>,
 }
@@ -192,6 +193,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     let outcome = outcome_of(result);
     let (posted_bodies, posted_headers) = posts(&supplied, &pooled);
     let (transforms, calls, logger_calls) = recorded(&config, &logger);
+    let responses = take(&mut *config.responses.lock().unwrap());
     Run {
         outcome,
         posts_supplied: supplied.posts(),
@@ -200,6 +202,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
         posted_headers,
         transforms,
         calls,
+        responses,
         logger_calls,
         details: state.model_call_details.clone(),
     }
@@ -212,6 +215,7 @@ fn fixture_config(setup: &Setup) -> FixtureConfig {
         filter_failure: setup.filter_failure.map(str::to_owned),
         transforms: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
+        responses: Mutex::new(Vec::new()),
     }
 }
 
