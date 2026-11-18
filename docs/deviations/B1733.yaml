@@ -56,14 +56,6 @@ deviations:
       bodies and secrets out of every log line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L72-L74
   - what: >-
-      Entity compaction groups records by the entity kind and id pair. The source joins
-      f"{entity_type}:{entity_id}" into one string, so an id containing a colon, or a kind whose
-      text is None, collides with a different pair whose text matches.
-    why: >-
-      A colon inside an id is data, not a separator; no working setup can rely on two distinct
-      entities sharing one transaction.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L110-L121
-  - what: >-
       Costs are summed as exact decimals, and a counter that arrives as a fractional number is
       truncated toward zero. The source adds Python numbers, so a float sum carries binary
       rounding and a fractional counter keeps its fraction.
