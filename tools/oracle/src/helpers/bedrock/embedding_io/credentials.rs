@@ -80,15 +80,15 @@ fn credentials_object(credentials: &Credentials) -> Result<Object, Failure> {
     let mut object = Object::new();
     object.insert(
         "access_key_id".to_owned(),
-        from_value(json!(credentials.access_key_id.expose_secret()))?,
+        serde_json::from_value(json!(credentials.access_key_id.expose_secret()))?,
     );
     object.insert(
         "secret_access_key".to_owned(),
-        from_value(json!(credentials.secret_access_key.expose_secret()))?,
+        serde_json::from_value(json!(credentials.secret_access_key.expose_secret()))?,
     );
     object.insert(
         "session_token".to_owned(),
-        from_value(json!(
+        serde_json::from_value(json!(
             credentials
                 .session_token
                 .as_ref()
@@ -102,7 +102,7 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     let mut object = Object::new();
     object.insert(
         "aws_access_key_id".to_owned(),
-        from_value(json!(
+        serde_json::from_value(json!(
             settings
                 .access_key_id
                 .as_ref()
@@ -111,7 +111,7 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     );
     object.insert(
         "aws_secret_access_key".to_owned(),
-        from_value(json!(
+        serde_json::from_value(json!(
             settings
                 .secret_access_key
                 .as_ref()
@@ -129,19 +129,19 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     );
     object.insert(
         "aws_session_name".to_owned(),
-        from_value(json!(settings.session_name.as_deref()))?,
+        serde_json::from_value(json!(settings.session_name.as_deref()))?,
     );
     object.insert(
         "aws_profile_name".to_owned(),
-        from_value(json!(settings.profile_name.as_deref()))?,
+        serde_json::from_value(json!(settings.profile_name.as_deref()))?,
     );
     object.insert(
         "aws_role_name".to_owned(),
-        from_value(json!(settings.role_name.as_deref()))?,
+        serde_json::from_value(json!(settings.role_name.as_deref()))?,
     );
     object.insert(
         "aws_web_identity_token".to_owned(),
-        from_value(json!(
+        serde_json::from_value(json!(
             settings
                 .web_identity_token
                 .as_ref()
@@ -150,11 +150,11 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     );
     object.insert(
         "aws_sts_endpoint".to_owned(),
-        from_value(json!(settings.sts_endpoint.as_deref()))?,
+        serde_json::from_value(json!(settings.sts_endpoint.as_deref()))?,
     );
     object.insert(
         "aws_external_id".to_owned(),
-        from_value(json!(settings.external_id.as_deref()))?,
+        serde_json::from_value(json!(settings.external_id.as_deref()))?,
     );
     object.insert(
         "aws_session_tags".to_owned(),
@@ -165,13 +165,9 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
 
 fn tags_value(tags: Option<&SessionTagValue>) -> Result<Json, Failure> {
     match tags {
-        Some(tags) => from_value(serde_json::to_value(tags)?),
+        Some(tags) => Ok(serde_json::from_value(serde_json::to_value(tags)?)?),
         None => Ok(Json::Null),
     }
-}
-
-fn from_value(value: Value) -> Result<Json, Failure> {
-    Ok(serde_json::from_value(value)?)
 }
 
 struct Source {
