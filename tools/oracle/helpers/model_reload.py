@@ -93,7 +93,6 @@ VERDICT_CALL: Final = TypeAdapter(VerdictCall)
 RAISE_CALL: Final = TypeAdapter(RaiseCall)
 CLEAR_CACHE_CALL: Final = TypeAdapter(ClearCacheCall)
 JSON: Final = TypeAdapter(JsonValue)
-OBJECT: Final = TypeAdapter(dict[str, JsonValue])
 ID: Final = TypeAdapter(str)
 
 
@@ -196,12 +195,6 @@ def fake_proxy(
             sys.modules[PROXY_MODULE] = saved
 
 
-def check_environment(environment: dict[str, str]) -> None:
-    declared = environment.get("LITELLM_ENVIRONMENT")
-    if os.environ.get("LITELLM_ENVIRONMENT") != declared:
-        raise ValueError("the case env and the helper input disagree on LITELLM_ENVIRONMENT")
-
-
 def frozen(ids: list[str] | None) -> frozenset[str] | None:
     if ids is None:
         return None
@@ -217,13 +210,6 @@ def live_router(live: LiveInput) -> FakeRouter | None:
         for model_id in router_ids
     ]
     return FakeRouter(models=models, strategy_names=[])
-
-
-def mapping_answer(call: MappingCall) -> JsonValue:
-    mapping = model_info_as_mapping(call["model_info"])
-    if mapping is None:
-        return None
-    return OBJECT.validate_python(mapping)
 
 
 def verdict_answer(call: VerdictCall) -> JsonValue:
@@ -251,12 +237,7 @@ def raise_answer(call: RaiseCall) -> JsonValue:
                 live_after=frozen(call["live"].get("captured")),
             )
         except ProxyException as error:
-            return {
-                "raised": True,
-                "type": error.type,
-                "param": error.param,
-                "code": error.code,
-            }
+            return {"raised": True, "type": error.type, "param": error.param, "code": error.code}
     return {"raised": False, "type": None, "param": None, "code": None}
 
 
@@ -279,20 +260,15 @@ def clear_cache_answer(call: ClearCacheCall) -> JsonValue:
         if call["router_present"]
         else {"adaptive": [], "auto": [], "complexity": [], "quality": []}
     )
+    desired = None if returned.still_desired is None else sorted(returned.still_desired)
+    live = None if returned.live_after is None else sorted(returned.live_after)
     return JSON.validate_python(
         {
             "deleted": deleted,
             "remaining": remaining,
             "registries": registries,
             "reloads": config.reloads,
-            "outcome": {
-                "still_desired": (
-                    None if returned.still_desired is None else sorted(returned.still_desired)
-                ),
-                "live_after": (
-                    None if returned.live_after is None else sorted(returned.live_after)
-                ),
-            },
+            "outcome": {"still_desired": desired, "live_after": live},
         }
     )
 
@@ -300,7 +276,8 @@ def clear_cache_answer(call: ClearCacheCall) -> JsonValue:
 def answer(call: JsonValue) -> JsonValue:
     function = TAG.validate_python(call)["function"]
     if function == "model_info_as_mapping":
-        return mapping_answer(MAPPING_CALL.validate_python(call))
+        mapping = model_info_as_mapping(MAPPING_CALL.validate_python(call)["model_info"])
+        return JSON.validate_python(mapping)
     if function == "reload_serving_verdict":
         return verdict_answer(VERDICT_CALL.validate_python(call))
     if function == "raise_if_reload_degraded_serving":
@@ -311,6 +288,8 @@ def answer(call: JsonValue) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    check_environment(input_value["environment"])
+    declared = input_value["environment"].get("LITELLM_ENVIRONMENT")
+    if os.environ.get("LITELLM_ENVIRONMENT") != declared:
+        raise ValueError("the case env and the helper input disagree on LITELLM_ENVIRONMENT")
     answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
     return {"calls": answers}
