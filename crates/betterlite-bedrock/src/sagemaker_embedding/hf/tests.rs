@@ -282,12 +282,13 @@ fn a_null_embedding_is_not_a_list() {
 // LiteLLM stores such a row unchecked and answers 200; the shared EmbeddingVector cannot hold it
 #[test]
 fn a_row_that_is_not_numbers_or_text_is_refused() {
-    let error = transform_response(br#"[[true]]"#, 200, "model", &Object::new()).unwrap_err();
+    let error = transform_response(br#"{"embedding": [[true]]}"#, 200, "model", &Object::new())
+        .unwrap_err();
 
-    assert_eq!(error.status_code(), 500);
+    assert_eq!(error.status_code(), 422);
     assert_eq!(
         error.to_string(),
-        "the HF reply does not have the declared response shape"
+        "HF response not in expected format - [[true]]"
     );
 }
 
