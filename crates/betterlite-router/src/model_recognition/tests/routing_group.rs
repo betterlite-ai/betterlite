@@ -35,6 +35,7 @@ fn routing_group_returns_after_the_last_shadowing_deployment_is_removed() {
         .with_deployment("cheap", "dep-1")
         .with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("cheap").is_none());
+    assert!(snapshot.recognition().is_recognized("cheap"));
     assert!(snapshot.catalog.remove("dep-1", 0).is_some());
     assert!(snapshot.recognition().routing_group("cheap").is_some());
     assert!(snapshot.recognition().is_recognized("cheap"));
@@ -46,6 +47,7 @@ fn routing_group_returns_after_the_shadowing_alias_is_removed() {
         .with_alias("cheap", "gpt-4o")
         .with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("cheap").is_none());
+    assert!(snapshot.recognition().is_recognized("cheap"));
     assert!(snapshot.aliases.shift_remove("cheap").is_some());
     assert!(snapshot.recognition().routing_group("cheap").is_some());
     assert!(snapshot.recognition().is_recognized("cheap"));
