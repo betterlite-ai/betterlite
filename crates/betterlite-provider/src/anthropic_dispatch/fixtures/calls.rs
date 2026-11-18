@@ -195,7 +195,20 @@ fn outcome_value(
             }
             .to_owned(),
         )),
-        Err(error) => json(&FailureView::from(error)),
+        Err(error) => {
+            let status = match error {
+                DispatchError::Completion(Failure::Status(status)) => Some(status),
+                DispatchError::Count(error) => Some(error.status_code()),
+                DispatchError::Selection(_)
+                | DispatchError::Batch(_)
+                | DispatchError::File(_)
+                | DispatchError::Completion(Failure::Capture(_)) => None,
+            };
+            json(&FailureView {
+                error: true,
+                status,
+            })
+        }
     }
 }
 
@@ -203,22 +216,6 @@ fn outcome_value(
 struct FailureView {
     error: bool,
     status: Option<u16>,
-}
-
-impl From<DispatchError<Failure>> for FailureView {
-    fn from(error: DispatchError<Failure>) -> Self {
-        Self {
-            error: true,
-            status: match error {
-                DispatchError::Completion(Failure::Status(status)) => Some(status),
-                DispatchError::Count(error) => Some(error.status_code()),
-                DispatchError::Selection(_)
-                | DispatchError::Batch(_)
-                | DispatchError::File(_)
-                | DispatchError::Completion(Failure::Capture(_)) => None,
-            },
-        }
-    }
 }
 
 #[derive(serde::Serialize)]

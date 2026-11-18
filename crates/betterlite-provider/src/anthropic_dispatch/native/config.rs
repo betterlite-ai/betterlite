@@ -19,8 +19,7 @@ pub struct Validated {
     pub headers: AnthropicHeaders,
 }
 
-// The first B584 pass stops at its transform boundary, before logging or HTTP.
-// Its owned validation and parameter removal therefore precede B577 preparation.
+// Stop at B584's validated transform boundary before asynchronous B577 preparation.
 #[derive(Debug, thiserror::Error)]
 #[error("request validation completed; asynchronous preparation is required")]
 struct PrepareNext;
