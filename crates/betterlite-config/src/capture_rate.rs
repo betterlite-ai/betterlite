@@ -69,8 +69,10 @@ where
 pub fn decode_capture_rate_settings(
     source: &str,
 ) -> Result<Option<SpendCaptureRateCheckSettings>, CaptureRateSettingsError> {
-    let environment = BTreeMap::new();
-    load_capture_rate_settings(source, &environment)
+    match parse_view::<Raw>(source) {
+        Ok((raw, _ignored)) => raw.convert(&BTreeMap::<String, String>::new()),
+        Err(error) => Err(CaptureRateSettingsError::Config(error)),
+    }
 }
 
 impl Raw {
