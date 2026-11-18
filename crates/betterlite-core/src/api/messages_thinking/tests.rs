@@ -84,13 +84,19 @@ fn response_json_behavior(#[case] status: u16, #[case] body: &str) {
     );
 }
 
-#[test]
-fn response_json_reports_invalid_json_as_an_anthropic_error() {
-    let error = decode_messages_response(b"broken", 502, &LIMITS).expect_err("broken JSON fails");
+#[rstest]
+#[case::broken("broken")]
+// Python's json reads these constants, and the wire format's standard JSON does not
+#[case::nan(r#"{"value": NaN}"#)]
+#[case::infinity(r#"{"value": Infinity}"#)]
+#[case::negative_infinity(r#"{"value": -Infinity}"#)]
+fn response_json_reports_invalid_json_as_an_anthropic_error(#[case] body: &str) {
+    let error =
+        decode_messages_response(body.as_bytes(), 502, &LIMITS).expect_err("the body is not JSON");
     match error {
         ResponseJsonError::Anthropic(anthropic) => {
             assert_eq!(anthropic.status_code, 502);
-            assert_eq!(anthropic.message, "broken");
+            assert_eq!(anthropic.message, body);
         }
         _ => panic!("the failure is the AnthropicError json() raises"),
     }
@@ -166,7 +172,10 @@ fn reasoning_effort_degradation(
 #[case::minimal_floor("minimal", "low")]
 fn reasoning_effort_degradation_without_metadata(#[case] effort: &str, #[case] expected: &str) {
     assert_eq!(degrade_effort(effort, None), expected);
-    assert_eq!(degrade_effort(effort, Some(&[] as &[ReasoningEffort])), expected);
+    assert_eq!(
+        degrade_effort(effort, Some(&[] as &[ReasoningEffort])),
+        expected
+    );
 }
 
 #[rstest]
