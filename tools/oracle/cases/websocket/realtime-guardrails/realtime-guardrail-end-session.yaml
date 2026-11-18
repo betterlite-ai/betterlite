@@ -1,0 +1,82 @@
+kind: helper
+name: realtime-guardrail-end-session
+call:
+  realtime_guardrails_websocket:
+    request_data: {}
+    user_api_key_dict: null
+    guardrails:
+      - kind: custom
+        name: filter
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: raise
+        raised:
+          message: denied
+          value_error: true
+        policy:
+          end_session_after_n_fails: 2
+    callbacks: [0]
+    backend_failures: []
+    client_failures: []
+    close_failure: false
+    runs:
+      - transcript: first
+      - transcript: second
+calls:
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: raise
+          raised:
+            message: denied
+            value_error: true
+          policy:
+            on_violation: end_session
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: true
+      runs:
+        - transcript: hello
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: raise
+          raised:
+            message: denied
+            value_error: true
+      callbacks: [0]
+      backend_failures: [1]
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: hello
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: raise
+          raised:
+            message: denied
+            value_error: true
+          policy:
+            end_session_after_n_fails: 0
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: hello
+env: {}
+compare: {ignore: []}
