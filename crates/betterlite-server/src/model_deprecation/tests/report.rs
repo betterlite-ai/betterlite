@@ -229,7 +229,10 @@ fn negative_window() {
 #[test]
 fn missing_public_name() {
     let info = object(vec![("deprecation_date", text("2026-05-10"))]);
-    let specs = vec![spec("alpha", "raw/a", info.clone()), spec("", "raw/b", info)];
+    let specs = vec![
+        spec("alpha", "raw/a", info.clone()),
+        spec("", "raw/b", info),
+    ];
     let response = collect_from_specs(
         &specs,
         &TestCatalog::new(Vec::new()),

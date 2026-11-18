@@ -12,10 +12,12 @@ pub trait DeprecationCatalog {
 
 impl DeprecationCatalog for ModelCatalog {
     fn deprecation(&self, model_key: &str) -> Option<CatalogDeprecation> {
-        let entry = self.entries.get(model_key)?;
+        let canonical = self.lookup.get(model_key)?;
+        let entry = self.entries.get(canonical.as_ref())?;
         Some(CatalogDeprecation {
             deprecation_date: entry.fields.metadata.deprecation_date?,
-            litellm_provider: Some(entry.fields.metadata.litellm_provider.clone()),
+            litellm_provider: Some(entry.fields.metadata.litellm_provider.clone())
+                .filter(|provider| !provider.is_empty()),
         })
     }
 }

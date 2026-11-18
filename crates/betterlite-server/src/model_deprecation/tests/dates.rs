@@ -2,7 +2,9 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 use serde_json::Number;
 
-use crate::model_deprecation::dates::{decode_deprecation_date, parse_json_date};
+use crate::model_deprecation::dates::{
+    decode_datetime_date, decode_deprecation_date, parse_json_date,
+};
 
 use super::support::{calendar_date, text};
 
@@ -10,6 +12,12 @@ use super::support::{calendar_date, text};
 #[case::calendar_extended("2026-01-02", "2026-01-02")]
 #[case::calendar_basic("20260102", "2026-01-02")]
 #[case::week_extended_with_day("2026-W01-5", "2026-01-02")]
+#[case::week_extended_monday("2026-W01-1", "2025-12-29")]
+#[case::week_extended_tuesday("2026-W01-2", "2025-12-30")]
+#[case::week_extended_wednesday("2026-W01-3", "2025-12-31")]
+#[case::week_extended_thursday("2026-W01-4", "2026-01-01")]
+#[case::week_extended_saturday("2026-W01-6", "2026-01-03")]
+#[case::week_extended_sunday("2026-W01-7", "2026-01-04")]
 #[case::week_basic_with_day("2026W015", "2026-01-02")]
 #[case::week_extended_without_day("2026-W01", "2025-12-29")]
 #[case::week_basic_without_day("2026W01", "2025-12-29")]
@@ -52,6 +60,27 @@ fn decodes_python_isoformats(#[case] source: &str, #[case] expected: &str) {
 #[case::truncated("2026-0")]
 fn rejects_other_text(#[case] source: &str) {
     assert_eq!(decode_deprecation_date(source), None);
+}
+
+#[test]
+fn datetime_dates_keep_the_local_calendar_date() {
+    assert_eq!(
+        decode_datetime_date("2026-05-01T23:30:00-05:00"),
+        Some(calendar_date("2026-05-01"))
+    );
+    assert_eq!(
+        decode_datetime_date("2026-05-02T01:30:00+09:00"),
+        Some(calendar_date("2026-05-02"))
+    );
+    assert_eq!(
+        decode_datetime_date("2026-05-03T10:00:00"),
+        Some(calendar_date("2026-05-03"))
+    );
+    assert_eq!(
+        decode_datetime_date("2026-05-04T00:00:00Z"),
+        Some(calendar_date("2026-05-04"))
+    );
+    assert_eq!(decode_datetime_date("2026-05-03"), None);
 }
 
 #[test]

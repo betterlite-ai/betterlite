@@ -29,6 +29,7 @@ const IMMINENT_ONLY: &str = concat!(
     "\n*Deprecating within 30 days:*\n",
     "• `alpha` (provider: azure, deprecates 2026-05-10, in 9d)\n",
     "• `beta` (provider: unknown, deprecates 2026-05-11, in 10d)\n",
+    "• `gamma` (provider: openai, deprecates 2026-05-01, in 0d)\n",
     "\nPlan migrations to a supported model. See ",
     "https://docs.litellm.ai/docs/proxy/model_management for guidance.",
 );
@@ -103,6 +104,7 @@ fn imminent_only_alert() {
         vec![
             info("alpha", Some("azure"), "2026-05-10", 9),
             info("beta", None, "2026-05-11", 10),
+            info("gamma", Some("openai"), "2026-05-01", 0),
         ],
         Vec::new(),
     );
