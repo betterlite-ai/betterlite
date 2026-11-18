@@ -21,19 +21,22 @@ const URL: &str =
 
 struct PendingReader {
     gate: Arc<(Mutex<bool>, Condvar)>,
-    progress: Arc<AtomicBool>,
-    progressed_while_pending: Arc<AtomicBool>,
+    started: Arc<tokio::sync::Notify>,
+    read_on_runtime: Arc<AtomicBool>,
 }
 
 impl SyncSecretReader for PendingReader {
     fn sync_read_secret(&self, secret_name: &str) -> Option<SecretString> {
+        self.read_on_runtime.store(
+            tokio::runtime::Handle::try_current().is_ok(),
+            Ordering::SeqCst,
+        );
+        self.started.notify_one();
         let (released, ready) = &*self.gate;
         let mut released = released.lock().unwrap();
         while !*released {
             released = ready.wait(released).unwrap();
         }
-        self.progressed_while_pending
-            .store(self.progress.load(Ordering::SeqCst), Ordering::SeqCst);
         (secret_name == "AWS_REGION_NAME").then(|| SecretString::from("eu-north-1"))
     }
 }
@@ -68,19 +71,19 @@ fn bedrock_embedding_io_managed_region_secret_is_read_off_runtime() {
 }
 
 #[test]
-fn bedrock_embedding_io_pending_managed_lookup_yields_tokio_worker() {
+fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
     let gate = Arc::new((Mutex::new(false), Condvar::new()));
-    let progress = Arc::new(AtomicBool::new(false));
-    let progressed_while_pending = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let read_on_runtime = Arc::new(AtomicBool::new(true));
     let secrets = managed_secrets_reader(Arc::new(PendingReader {
         gate: Arc::clone(&gate),
-        progress: Arc::clone(&progress),
-        progressed_while_pending: Arc::clone(&progressed_while_pending),
+        started: Arc::clone(&started),
+        read_on_runtime: Arc::clone(&read_on_runtime),
     }));
-    let (progress_tx, progress_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
     let release_gate = Arc::clone(&gate);
-    let release = std::thread::spawn(move || {
-        let _ = progress_rx.recv_timeout(Duration::from_secs(2));
+    let release_worker = std::thread::spawn(move || {
+        let _ = release_rx.recv_timeout(Duration::from_secs(2));
         let (released, ready) = &*release_gate;
         *released.lock().unwrap() = true;
         ready.notify_all();
@@ -93,28 +96,31 @@ fn bedrock_embedding_io_pending_managed_lookup_yields_tokio_worker() {
     let mut parameters = raw(&[]);
     let variables = environment(&[]);
     let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
-    runtime
-        .block_on(async {
-            let progress = Arc::clone(&progress);
-            tokio::spawn(async move {
-                progress.store(true, Ordering::SeqCst);
-                progress_tx.send(()).expect("the release waiter is alive");
-            });
-            crate::bedrock_embedding_io::credentials::load_credentials(
-                crate::bedrock_embedding_io::credentials::CredentialRequest {
-                    optional_params: &mut parameters,
-                    environment: &variables,
-                    bearer_token: None,
-                },
-                &secrets,
-                source.resolve(),
-            )
+    let loaded = runtime.block_on(async {
+        let lookup = crate::bedrock_embedding_io::credentials::load_credentials(
+            crate::bedrock_embedding_io::credentials::CredentialRequest {
+                optional_params: &mut parameters,
+                environment: &variables,
+                bearer_token: None,
+            },
+            &secrets,
+            source.resolve(),
+        );
+        tokio::pin!(lookup);
+        tokio::select! {
+            () = started.notified() => {}
+            result = &mut lookup => panic!("managed lookup finished before it became pending: {result:?}"),
+        }
+        let timed_out = tokio::time::timeout(Duration::from_millis(50), &mut lookup)
             .await
-            .expect("the managed region lookup completes")
-        })
-        .region;
-    release.join().expect("the release worker completes");
-    assert!(progressed_while_pending.load(Ordering::SeqCst));
+            .is_err();
+        assert!(timed_out, "timeout handling must run while the secret read waits");
+        release_tx.send(()).expect("the release worker is alive");
+        lookup.await.expect("the managed region lookup completes")
+    });
+    release_worker.join().expect("the release worker completes");
+    assert_eq!(loaded.region, "eu-north-1");
+    assert!(!read_on_runtime.load(Ordering::SeqCst));
 }
 
 #[test]

@@ -18,6 +18,11 @@ pub enum EmbeddingIoError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the managed region secret lookup worker failed")]
+    RegionWorker {
+        #[source]
+        source: tokio::task::JoinError,
+    },
     #[error(transparent)]
     Secret(#[from] SecretLookupError),
     #[error(transparent)]

@@ -1,8 +1,12 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::sync::Arc;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
+use betterlite_secret_managers::secret_lookup::manager::ManagerState;
+use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient;
+use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 
@@ -73,11 +77,13 @@ async fn environment_region(
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
 ) -> Result<String, EmbeddingIoError> {
-    // Secret manager reads use synchronous HTTP clients; let Tokio replace this worker while they wait.
+    // Secret manager reads use synchronous HTTP clients; own their inputs and await outside Tokio.
     let (name, standard) = if secrets.manager.is_some() {
         let environment = environment.clone();
-        let secrets = secrets;
-        tokio::task::block_in_place(|| region_secrets(&environment, secrets))?
+        let secrets = owned_secret_lookup(secrets);
+        tokio::task::spawn_blocking(move || region_secrets(&environment, &secrets))
+            .await
+            .map_err(|source| EmbeddingIoError::RegionWorker { source })??
     } else {
         region_secrets(environment, secrets)?
     };
@@ -85,6 +91,55 @@ async fn environment_region(
         || DEFAULT_AWS_REGION.to_owned(),
         |text| text.expose_secret().to_owned(),
     ))
+}
+
+fn owned_secret_lookup(secrets: &SecretLookup) -> SecretLookup {
+    SecretLookup {
+        manager: secrets.manager.as_ref().map(owned_manager_state),
+        oidc_http: Arc::clone(&secrets.oidc_http),
+        azure_tokens: Arc::clone(&secrets.azure_tokens),
+        clock: Arc::clone(&secrets.clock),
+        oidc_cache: Default::default(),
+    }
+}
+
+fn owned_manager_state(manager: &ManagerState) -> ManagerState {
+    ManagerState {
+        client: match &manager.client {
+            SecretManagerClient::AzureKeyVault(client) => {
+                SecretManagerClient::AzureKeyVault(Arc::clone(client))
+            }
+            SecretManagerClient::GoogleKms(client) => {
+                SecretManagerClient::GoogleKms(Arc::clone(client))
+            }
+            SecretManagerClient::AwsKms(client) => SecretManagerClient::AwsKms(Arc::clone(client)),
+            SecretManagerClient::AwsSecretManager(client) => {
+                SecretManagerClient::AwsSecretManager(Arc::clone(client))
+            }
+            SecretManagerClient::GoogleSecretManager(client) => {
+                SecretManagerClient::GoogleSecretManager(Arc::clone(client))
+            }
+            SecretManagerClient::Vault(client) => SecretManagerClient::Vault(Arc::clone(client)),
+            SecretManagerClient::CyberArk(client) => {
+                SecretManagerClient::CyberArk(Arc::clone(client))
+            }
+            SecretManagerClient::Custom(client) => SecretManagerClient::Custom(Arc::clone(client)),
+            SecretManagerClient::Infisical(client) => {
+                SecretManagerClient::Infisical(Arc::clone(client))
+            }
+            SecretManagerClient::Uninitialized => SecretManagerClient::Uninitialized,
+        },
+        settings: manager
+            .settings
+            .as_ref()
+            .map(|settings| SecretManagerSettings {
+                primary_secret_name: settings.primary_secret_name.clone(),
+                optional_params: settings.optional_params.clone(),
+            }),
+        system: manager.system,
+        access_mode: manager.access_mode,
+        hosted_keys: manager.hosted_keys.clone(),
+    }
 }
 
 fn region_secrets(
