@@ -5,6 +5,14 @@ description: >-
   then replay consumed prefixes before the rest of a failed response. Keep trace context and
   team callback setup reusable by HTTP and WebSocket lifecycles.
 
+  Two crates hold this work. The byte-stream helpers (_PrefixReplayStream, _no_more_chunks,
+  _read_error_body_preview, _headers_without_body_framing, _error_body_preview_and_relay) go in
+  betterlite-http's passthrough module and call nothing from betterlite-core, since betterlite-core
+  depends on betterlite-http. Everything else goes in betterlite-server's passthrough module, where its
+  checks run. That includes _init_kwargs_for_pass_through_endpoint, and it calls B1106's
+  get_sanitized_user_information_from_key and get_logged_api_key (betterlite-core
+  api::request_principal_metadata) directly, since betterlite-server depends on betterlite-core.
+
   Implement _init_kwargs_for_pass_through_endpoint to extract litellm_params from the request
   body, merge authenticated-key metadata with request-supplied metadata, stamp internal keys
   (user_api_key, parent_otel_span, budget_reservation, model_access_groups), skip per-model
@@ -333,9 +341,9 @@ out_of_scope:
   The SESSION_ID_OMITTED_METADATA_KEY constant is imported from a shared logging module
   (owned by B206); this task calls it but does not define it.
 - >-
-  The LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key and
-  LiteLLMProxyRequestSetup.get_logged_api_key methods are imported from auth modules
-  (owned by B1106); this task calls them but does not implement them.
+  B1106 owns LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key and
+  LiteLLMProxyRequestSetup.get_logged_api_key in betterlite-core api::request_principal_metadata;
+  this task calls them from betterlite-server's passthrough module but does not implement them.
 - >-
   The request_dispatched_to_pass_through_endpoint function is imported from a shared
   logging module (owned by B746); this task calls it in _init_kwargs_for_pass_through_endpoint
