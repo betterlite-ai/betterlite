@@ -201,6 +201,21 @@ fn an_environment_reference_names_a_deployment() {
 }
 
 #[test]
+fn an_unquoted_price_keeps_the_digits_the_file_writes() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: 0.1000000000000000001
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some("0.1000000000000000001".parse().unwrap())
+    );
+}
+
+#[test]
 fn a_quoted_price_keeps_the_digits_the_file_writes() {
     let source = "\
 model_list:

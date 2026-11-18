@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 
+use rust_decimal::Decimal;
+
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{resolve_number, resolve_string};
+use crate::resolve::{parse_money, resolve_number, resolve_string};
 
 use super::{
-    Preferences, RawPreferences, RawRouterConfig, RouterConfig, default_complexity_to_quality,
+    Preferences, RawPreferences, RawPrice, RawRouterConfig, RouterConfig,
+    default_complexity_to_quality,
 };
 
 impl RawRouterConfig {
@@ -137,6 +140,21 @@ fn reject_quoted_number(value: &RawNumber, path: &str) -> Result<(), ConfigError
         | RawNumber::Boolean(_)
         | RawNumber::Text(_) => Ok(()),
     }
+}
+
+// the price arrives as written text, so the shared number path keeps every digit and resolves os.environ once
+pub(super) fn resolve_price<L>(
+    value: Option<RawPrice>,
+    path: &str,
+    lookup: &L,
+) -> Result<Option<Decimal>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(price) = value else {
+        return Ok(None);
+    };
+    resolve_number(Some(RawNumber::Text(price.0)), path, lookup, parse_money)
 }
 
 fn invalid_scalar(path: &str) -> ConfigError {

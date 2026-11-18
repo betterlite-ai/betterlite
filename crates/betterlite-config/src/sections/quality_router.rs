@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use serde::de::{Deserializer, EnumAccess, VariantAccess, Visitor};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_money, resolve_number, resolve_string};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod resolve;
@@ -35,8 +37,44 @@ struct RawParams {
 #[derive(Debug, Default, Deserialize)]
 struct RawInfo {
     litellm_routing_preferences: Option<RawPreferences>,
-    // a quoted price is read as its written text, so Decimal keeps every digit the file declares
-    input_cost_per_token: Option<RawNumber>,
+    // every price scalar keeps the text the file writes, so Decimal never sees an f64 rounding
+    input_cost_per_token: Option<RawPrice>,
+}
+
+// a price as the scalar's written text, with quotes and tags already resolved
+#[derive(Debug)]
+struct RawPrice(String);
+
+// ast-grep-ignore: no-custom-serde
+impl<'de> Deserialize<'de> for RawPrice {
+    // ast-grep-ignore: no-custom-serde
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // a scalar reaches an enum as its effective text, so a plain or tagged number keeps every digit
+        deserializer.deserialize_enum("RawPrice", &[], PriceVisitor)
+    }
+}
+
+struct PriceVisitor;
+
+// ast-grep-ignore: no-custom-serde
+impl<'de> Visitor<'de> for PriceVisitor {
+    type Value = RawPrice;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a YAML number or an os.environ reference")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: EnumAccess<'de>,
+    {
+        let (text, variant) = data.variant::<String>()?;
+        variant.unit_variant()?;
+        Ok(RawPrice(text))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,12 +182,8 @@ impl RawDeployment {
             })
             .transpose()?;
         let cost_path = format!("{prefix}.model_info.input_cost_per_token");
-        let input_cost_per_token = resolve_number(
-            self.model_info.input_cost_per_token,
-            &cost_path,
-            lookup,
-            parse_money,
-        )?;
+        let input_cost_per_token =
+            resolve::resolve_price(self.model_info.input_cost_per_token, &cost_path, lookup)?;
         Ok(Deployment {
             model_name,
             config,
