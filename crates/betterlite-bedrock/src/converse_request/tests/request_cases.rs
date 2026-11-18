@@ -38,6 +38,23 @@ const ORDER_BODY: &str = r#"{
 
 const ORDER_LITELLM_AFTER: &str = r#"{"metadata": {"user_api_key_alias": "alias-1"}}"#;
 
+const ORDERED_METADATA_OPTIONS: &str = r#"{"requestMetadata": {
+    "z_first": "z",
+    "a00": "0", "a01": "1", "a02": "2", "a03": "3", "a04": "4",
+    "a05": "5", "a06": "6", "a07": "7", "a08": "8", "a09": "9",
+    "a10": "10", "a11": "11", "a12": "12", "a13": "13", "a14": "14"
+}}"#;
+
+const ORDERED_METADATA_LITELLM: &str = r#"{"metadata": {"user_api_key_alias": "alias-1"}}"#;
+
+const ORDERED_METADATA_BODY: &str = r#"{
+    "user_api_key_alias": "alias-1",
+    "z_first": "z",
+    "a00": "0", "a01": "1", "a02": "2", "a03": "3", "a04": "4",
+    "a05": "5", "a06": "6", "a07": "7", "a08": "8", "a09": "9",
+    "a10": "10", "a11": "11", "a12": "12", "a13": "13"
+}"#;
+
 const GUARDED_MESSAGES: &str =
     r#"[{"role": "user", "content": [{"guardContent": {"text": {"text": "hi"}}}]}]"#;
 
@@ -45,6 +62,7 @@ const GUARDED_MESSAGES: &str =
 pub(super) fn system_message_order() {
     system_extracted_and_continue_appended();
     metadata_ownership_empties_caller_copy();
+    metadata_pairs_keep_caller_order();
     guardrail_rewrites_trailing_user_turn();
 }
 
@@ -70,6 +88,20 @@ fn metadata_ownership_empties_caller_copy() {
     };
     let (emptied, _warnings) = run(&call, &remote(&[]));
     assert!(field(emptied.body(), "requestMetadata").is_none());
+}
+
+// The identity pair takes one slot, and the caller's first 15 pairs in caller order take the rest.
+fn metadata_pairs_keep_caller_order() {
+    let call = Call {
+        litellm_params: Some(ORDERED_METADATA_LITELLM),
+        policy: Some(&["user_api_key_alias"]),
+        ..Call::new(CLAUDE_3_5, ORDERED_METADATA_OPTIONS)
+    };
+    let (outcome, _warnings) = run(&call, &remote(&[]));
+    assert_eq!(
+        field(outcome.body(), "requestMetadata"),
+        Some(&expected(ORDERED_METADATA_BODY))
+    );
 }
 
 fn guardrail_rewrites_trailing_user_turn() {
@@ -248,6 +280,13 @@ const NATIVE_CONFIG: &str = r#"{"textFormat": {"type": "json_schema", "structure
     "name": "out"
 }}}}"#;
 
+const VERSIONED_COST: &str = r#"{
+    "anthropic.claude-3-5-test": {
+        "litellm_provider": "bedrock",
+        "supports_native_structured_output": true
+    }
+}"#;
+
 // The native outputConfig comes from a json_schema format candidate unless camel outputConfig is set.
 pub(super) fn output_format_precedence() {
     json_schema_builds_native_config();
@@ -255,6 +294,21 @@ pub(super) fn output_format_precedence() {
     unsupported_schema_warns();
     text_format_on_capable_model_warns();
     scalar_format_is_discarded();
+    versioned_model_does_not_borrow_the_base_entry();
+}
+
+// A versioned id is its own model, so a capability entry under the versionless name does not apply.
+fn versioned_model_does_not_borrow_the_base_entry() {
+    let call = Call {
+        model_cost: VERSIONED_COST,
+        ..Call::new(
+            "anthropic.claude-3-5-test-v1:0",
+            r#"{"output_config": {"format": {"type": "json_schema", "name": "out"}}}"#,
+        )
+    };
+    let (dropped, warnings) = run(&call, &remote(&[]));
+    assert!(field(dropped.body(), "outputConfig").is_none());
+    assert!(warnings.contains(FORMAT_WARNING), "{warnings}");
 }
 
 fn json_schema_builds_native_config() {

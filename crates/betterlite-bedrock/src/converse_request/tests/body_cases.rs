@@ -1,6 +1,8 @@
 use betterlite_prompts::arguments::json::Json;
 
 use super::support::{CLAUDE_3_5, CLAUDE_4_5, Call, LLAMA, expected, field, remote, run};
+use crate::converse_request::error::ConverseRequestError;
+use crate::error::BedrockError;
 use crate::model_routes::get_bedrock_tool_name;
 
 const CALLER_OPTIONS: &str = r#"{
@@ -151,6 +153,19 @@ pub(super) fn converse_body_shape() {
     caller_options_move_and_copy();
     null_options_leave_no_field();
     client_beta_header_reaches_the_request_fields();
+    invalid_request_metadata_is_rejected();
+}
+
+fn invalid_request_metadata_is_rejected() {
+    let (invalid, _warnings) = run(
+        &Call::new(CLAUDE_3_5, r#"{"requestMetadata": {"bad!": "x"}}"#),
+        &remote(&[]),
+    );
+    assert!(matches!(
+        invalid.error(),
+        ConverseRequestError::Metadata(BedrockError::MetadataKeyCharacters { .. })
+    ));
+    assert_eq!(invalid.error().status_code(), Some(400));
 }
 
 fn client_beta_header_reaches_the_request_fields() {
