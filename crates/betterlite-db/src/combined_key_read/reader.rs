@@ -1,6 +1,4 @@
 use std::error::Error;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
@@ -28,10 +26,6 @@ use super::request::{COMBINED_VIEW_TABLE, CombinedKeyRequest, KeyQueryType};
 use super::retry::{parked_lookup_error, retry_wait, take_parked};
 use super::rows::KeyRowRead as _;
 use super::view::{CombinedKeyView, epoch_decimal};
-
-// the deprecated key re-enters read, so its future is boxed to keep the Send proof from cycling
-pub type ReadFuture<'reader> =
-    Pin<Box<dyn Future<Output = Result<Option<CombinedKeyView>, KeyReadError>> + Send + 'reader>>;
 
 pub struct ReadServices<'services> {
     pub clock: &'services dyn WriteClock,
@@ -62,16 +56,9 @@ where
     Reconnect: PlanReconnect,
     Sink: DbServiceEventSink + 'static,
 {
-    #[must_use]
-    pub fn read<'reader>(
-        &'reader self,
-        request: &'reader CombinedKeyRequest,
-    ) -> ReadFuture<'reader> {
-        Box::pin(self.read_attempts(request))
-    }
-
     // the backoff decorator around get_data: at most three attempts and ten seconds, jittered waits
-    async fn read_attempts(
+    #[must_use]
+    pub async fn read(
         &self,
         request: &CombinedKeyRequest,
     ) -> Result<Option<CombinedKeyView>, KeyReadError> {
@@ -138,7 +125,7 @@ where
         let Some(active_token_id) = self.grace_lookup(hash, use_writer).await else {
             return Ok(None);
         };
-        // the deprecated key recurses once with check_deprecated off, so a grace lookup can never chain
+        // the deprecated key recurses once with check_deprecated off, so a grace lookup can never chain; the recursive future is boxed to keep the Send proof from cycling
         let hop = CombinedKeyRequest {
             token: Some(active_token_id),
             query_type: KeyQueryType::FindUnique,
@@ -146,7 +133,7 @@ where
             use_writer: request.use_writer,
             parent_otel_span: request.parent_otel_span.clone(),
         };
-        let found = self.read(&hop).await?;
+        let found = Box::pin(self.read(&hop)).await?;
         if found.is_some() {
             self.services.diagnostics.emit(Diagnostic::DeprecatedUsed);
         }

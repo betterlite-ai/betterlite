@@ -101,7 +101,8 @@ impl CombinedKeyView {
         mut fields: BTreeMap<String, JsonData>,
         refreshed_at: Decimal,
     ) -> Result<Self, ViewError> {
-        drop_null_columns(&mut fields);
+        // the flattened token decodes through serde's buffered Content, where a null option reaches a visitor that rejects it, and LiteLLM reads null as the field's default
+        fields.retain(|_, value| !matches!(value, JsonData::Null));
         let member = select_team_member(&fields)?;
         apply_budget_aliases(&mut fields);
         stringify_end_user_id(&mut fields);
@@ -117,11 +118,6 @@ impl CombinedKeyView {
         }
         Ok(view)
     }
-}
-
-// the flattened token decodes through serde's buffered Content, where a null option reaches a visitor that rejects it, and LiteLLM reads null as the field's default
-fn drop_null_columns(fields: &mut BTreeMap<String, JsonData>) {
-    fields.retain(|_, value| !matches!(value, JsonData::Null));
 }
 
 // LiteLLM walks every role entry and keeps the last whose user_id equals the key's, so an email alone never matches
