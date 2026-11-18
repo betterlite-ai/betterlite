@@ -106,7 +106,10 @@ async fn an_absent_estimate_counts_as_no_tokens() {
 // a count wider than i64 saturates instead of wrapping to a negative that no limit would rule out
 #[tokio::test]
 async fn a_huge_estimate_saturates_at_the_signed_maximum() {
-    let deployments = [spec("dep-a", &[("tpm", number(i64::MAX / 2))])];
+    let deployments = [spec(
+        "dep-a",
+        &[("tpm", number(i64::MAX.saturating_sub(1)))],
+    )];
     assert_eq!(
         outcome(&deployments, Some(usize::MAX)).await.unwrap(),
         deployments.len()
