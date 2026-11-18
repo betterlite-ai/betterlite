@@ -1,12 +1,10 @@
 use std::collections::BTreeSet;
 use std::future::{Future, ready};
 use std::io::{Result as IoResult, Write};
-use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser as _;
 use deadpool_postgres::{Client, Manager, Pool};
 use rust_decimal::Decimal;
@@ -17,17 +15,10 @@ use tracing::Subscriber;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::budget_permission_rows::JsonData;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::ptu::charges::pricing::PtuCharge;
 use crate::ptu::store::sentinel::ChargeWrite;
 use crate::ptu::store::sleeper::Sleeper;
-use crate::schema_agent_identity::MIGRATION_CATALOG as AGENT_IDENTITY;
-use crate::schema_baseline::MIGRATION_CATALOG as BASELINE;
-use crate::schema_budget_windows::MIGRATION_CATALOG as BUDGET_WINDOWS;
-use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE;
-use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY;
-use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES;
-use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES;
-use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 
 #[derive(clap::Parser)]
 struct Environment {
@@ -35,15 +26,13 @@ struct Environment {
     url: Option<String>,
 }
 
-// Each test gets its own database, so concurrent migrations cannot see each other's constraints.
 pub(crate) async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["ptu-store-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_with_name_generator(
+    let fixture = PostgresFixture::provision_with_statements(
         url.as_ref(),
-        &FixtureSeed::default(),
-        &mut RandomDatabaseName,
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
     )
     .resolve()
     .await
@@ -53,22 +42,6 @@ pub(crate) async fn database() -> (PostgresFixture, Pool) {
         tokio_postgres::NoTls,
     );
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
-    let client = pool.get().await.unwrap();
-    for catalog in [
-        BASELINE,
-        DAILY_USAGE,
-        MANAGED_RESOURCES,
-        IDENTITY_HISTORY,
-        POLICY_RESOURCES,
-        ROUTING_STATE,
-        BUDGET_WINDOWS,
-        AGENT_IDENTITY,
-    ] {
-        for migration in catalog.files {
-            let sql = str::from_utf8(migration.bytes).unwrap();
-            client.batch_execute(sql).await.unwrap();
-        }
-    }
     (fixture, pool)
 }
 

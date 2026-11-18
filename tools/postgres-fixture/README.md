@@ -1,7 +1,7 @@
 Postgres fixtures own independent databases and never seed through product repositories.
 POSTGRES_TEST_URL names the server: CI sets it, and cargo nextest starts one per run through .config/nextest.toml. The user needs CREATEDB.
 Each database is a copy of a template that holds its schema, built once per server and schema.
-`PostgresFixture::provision_schema` instead creates an empty database with a schema of the same name, and its connection options set search_path. It shares ProvisionTask cancellation and close semantics.
+`PostgresFixture::provision_with_statements` copies a template built from the statements it is given, and an empty list gives an empty database. Its tables live in public, and it shares ProvisionTask cancellation and close semantics.
 TLS tests generate their certificates at test time and front the configured server, so no certificate or key is checked in.
 
 Async callers retain the `ProvisionTask` returned by `provision_with_name_generator`

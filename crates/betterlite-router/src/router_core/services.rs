@@ -1,5 +1,6 @@
 use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::routing_groups::group::RoutingGroup;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -35,5 +36,11 @@ pub trait RouteServices: Send + Sync {
         deployments: Vec<DeploymentSpec>,
     ) -> Result<Vec<DeploymentSpec>, Cancelled> {
         Ok(deployments)
+    }
+
+    // get_routing_group: the routing group a model name calls, absent when the name is no callable group
+    #[must_use]
+    fn routing_group(&self, _model: &str) -> Option<&RoutingGroup> {
+        None
     }
 }

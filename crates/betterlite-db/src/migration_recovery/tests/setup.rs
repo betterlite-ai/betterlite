@@ -449,12 +449,8 @@ async fn native_legacy_mode_warns_and_runs_v2() {
             "CREATE TABLE legacy_mode_probe (id integer)",
         )];
         let jitter = FakeJitter(0);
-        let url = format!(
-            "{}&schema={}",
-            database.url.expose_secret(),
-            database.schema
-        );
-        let setup = inputs(Some(&url), Some(&url), &catalog, &jitter);
+        let url = database.url.expose_secret();
+        let setup = inputs(Some(url), Some(url), &catalog, &jitter);
         let (logs, subscriber) = capture_logs();
         let guard = set_default(subscriber);
         setup_database_v2(

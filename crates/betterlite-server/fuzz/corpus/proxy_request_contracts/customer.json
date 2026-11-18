@@ -1,0 +1,11 @@
+{
+  "user_id": "u",
+  "alias": "a",
+  "blocked": false,
+  "spend": 1,
+  "allowed_model_region": "eu",
+  "default_model": "gpt-4o",
+  "max_budget": 5,
+  "tpd_limit": 7,
+  "model_max_budget": {"gpt-4o": {"max_budget": "1"}}
+}
