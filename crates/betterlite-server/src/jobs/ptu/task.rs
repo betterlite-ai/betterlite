@@ -29,7 +29,7 @@ pub struct ScheduledPtuRollup<L: LockCache, A: OperatorAlert> {
     inputs: PtuRollupInputs<L, A>,
 }
 
-impl<L: LockCache, A: OperatorAlert> ScheduledPtuRollup<L, A> {
+impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A> {
     #[must_use]
     pub const fn new(inputs: PtuRollupInputs<L, A>) -> Self {
         Self { inputs }
