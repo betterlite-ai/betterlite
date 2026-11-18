@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use opentelemetry::KeyValue;
-use opentelemetry::trace::{Event, SpanId, Status};
+use opentelemetry::trace::{SpanId, Status};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
 use serde_json::{Value, json};
 
@@ -40,7 +40,10 @@ fn line(span: &SpanData, names: &[(SpanId, String)]) -> (i64, i64, String, Strin
         "start": start.to_string(),
         "end": end.to_string(),
         "attributes": attributes_json(&span.attributes),
-        "events": events_json(&span.events),
+        "events": span.events.iter().map(|event| json!({
+            "name": event.name,
+            "attributes": attributes_json(&event.attributes),
+        })).collect::<Vec<Value>>(),
     });
     (start, end, name, parent, value)
 }
@@ -57,18 +60,6 @@ const fn status_name(status: &Status) -> &'static str {
         Status::Ok => "OK",
         Status::Error { .. } => "ERROR",
     }
-}
-
-fn events_json(events: &[Event]) -> Vec<Value> {
-    events
-        .iter()
-        .map(|event| {
-            json!({
-                "name": event.name,
-                "attributes": attributes_json(&event.attributes),
-            })
-        })
-        .collect()
 }
 
 fn attributes_json(attributes: &[KeyValue]) -> BTreeMap<String, String> {

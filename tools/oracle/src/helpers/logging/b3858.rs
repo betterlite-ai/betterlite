@@ -18,7 +18,8 @@ mod harness;
 mod observe;
 mod tests;
 use calls::{
-    end_parent, error_attributes_call, failure_call, management_call, service_call, success_call,
+    CallContext, Outcome, end_parent, error_attributes_call, failure_call, management_failure_call,
+    management_success_call, service_call, success_call,
 };
 use harness::prepare;
 use observe::observed;
@@ -90,16 +91,19 @@ impl Helper for Op {
                 clock: Box::new(SystemClock),
             },
         );
+        let cx = CallContext {
+            lifecycle: &lifecycle,
+            input,
+            parent: parent.as_ref(),
+        };
         let outcome = match input.function.as_str() {
-            "service_success" | "service_failure" => {
-                service_call(&lifecycle, input, parent.as_ref())
-            }
-            "post_call_failure" => failure_call(&lifecycle, input, parent.as_ref()),
-            "post_call_success" => success_call(&lifecycle, input, parent.as_ref()),
-            "management_success" | "management_failure" => {
-                management_call(&lifecycle, input, parent.as_ref())
-            }
-            "error_attributes" => error_attributes_call(input, parent.as_ref()),
+            "service_success" => service_call(&cx, Outcome::Success),
+            "service_failure" => service_call(&cx, Outcome::Failure),
+            "post_call_failure" => failure_call(&cx),
+            "post_call_success" => success_call(&cx),
+            "management_success" => management_success_call(&cx),
+            "management_failure" => management_failure_call(&cx),
+            "error_attributes" => error_attributes_call(&cx),
             other => Err(format!("unknown function {other}")),
         };
         outcome.or_value_error()?;
