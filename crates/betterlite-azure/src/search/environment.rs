@@ -4,23 +4,26 @@ use betterlite_config::sections::azure_search::{
 };
 use secrecy::ExposeSecret as _;
 
+fn lookup_setting(settings: &Settings, name: &str) -> Option<String> {
+    match name {
+        PROJECT_ENDPOINT_ENV => settings.project_endpoint.clone(),
+        MODEL_ENV => settings.model.clone(),
+        CONNECTION_ID_ENV => settings.connection_id.clone(),
+        TOKEN_ENV => settings
+            .token
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
+        _ => None,
+    }
+}
+
 pub(crate) struct SettingsEnvironment<'settings> {
     pub(crate) settings: &'settings Settings,
 }
 
 impl EnvironmentLookup for SettingsEnvironment<'_> {
     fn lookup(&self, name: &str) -> Option<String> {
-        match name {
-            PROJECT_ENDPOINT_ENV => self.settings.project_endpoint.clone(),
-            MODEL_ENV => self.settings.model.clone(),
-            CONNECTION_ID_ENV => self.settings.connection_id.clone(),
-            TOKEN_ENV => self
-                .settings
-                .token
-                .as_ref()
-                .map(|token| token.expose_secret().to_owned()),
-            _ => None,
-        }
+        lookup_setting(self.settings, name)
     }
 }
 
@@ -34,9 +37,6 @@ impl EnvironmentLookup for ProbeEnvironment<'_> {
         if name == TOKEN_ENV {
             return Some(String::from("pending-minted-token"));
         }
-        let environment = SettingsEnvironment {
-            settings: self.settings,
-        };
-        environment.lookup(name)
+        lookup_setting(self.settings, name)
     }
 }

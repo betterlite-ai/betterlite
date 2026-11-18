@@ -59,6 +59,22 @@ pub struct IncompleteDetails {
     pub reason: Option<String>,
 }
 
+impl GroundingEnvelope {
+    #[must_use]
+    pub fn error_message(&self) -> Option<&str> {
+        self.error
+            .as_ref()
+            .and_then(|error| error.message.as_deref())
+    }
+
+    #[must_use]
+    pub fn incomplete_text(&self) -> Option<&str> {
+        self.incomplete_details
+            .as_ref()
+            .and_then(|details| details.reason.as_deref())
+    }
+}
+
 pub fn decode_grounding_reply(
     reply: &AzureSearchReply<'_>,
 ) -> Result<GroundingEnvelope, AzureSearchError> {
