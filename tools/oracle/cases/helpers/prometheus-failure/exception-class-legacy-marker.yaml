@@ -1,0 +1,23 @@
+kind: helper
+name: prometheus-failure-exception-class-legacy-marker
+call:
+  b3880:
+    function: get_exception_class_name
+    exception:
+      kind: proxy_rate_limit
+      message: "rate limited"
+      llm_provider: "litellm_proxy"
+      category: "litellm_rate_limit"
+      rate_limit_type: "requests"
+calls:
+  - b3880:
+      function: get_exception_class_name
+      exception:
+        kind: scripted
+        message: "custom marker"
+        status_code: null
+        code: null
+        llm_provider: "openai"
+        legacy_class_name: "CustomLabel"
+env: {}
+compare: {ignore: []}
