@@ -156,7 +156,4 @@ def run(input_value: Input) -> JsonValue:
     environment = input_value.get("environment")
     apply_environment({} if environment is None else environment)
     search = config()
-    answers: list[JsonValue] = []
-    for call in input_value["calls"]:
-        answers.append(operation_answer(search, call))
-    return answers
+    return [operation_answer(search, call) for call in input_value["calls"]]
