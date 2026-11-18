@@ -1,0 +1,15 @@
+task: B1610
+deviations:
+  - what: 'A tuple or set used as a role''s groups, or a bytes group name inside a list, is refused. pydantic coerces a tuple or set into the declared list[str] and a bytes entry into str, so LiteLLM accepts all three.'
+    why: 'parity stops at the declared types, and a value of the wrong type is an error here; a set would also make the stored group order arbitrary.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1391'
+  - what: 'Two escapes are refused instead of decoded: \N{NAME}, whose Unicode name table betterlite does not carry, and a \u or \U escape naming a lone surrogate, which Rust''s str cannot hold.'
+    why: 'a role name or group containing a lone surrogate could not be stored or served as JSON either.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1382'
+  - what: 'A literal that Python evaluates to something other than a dictionary through a form betterlite does not parse, a bare tuple such as 1, 2 or complex arithmetic such as 1+2j, is refused as a syntax error.'
+    why: 'LiteLLM keeps the database mapping for any non-dictionary value; the grammar here covers the dictionary, list, tuple, set, string and number literals a roles setting can use.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1382'
+  - what: 'A literal whose first token sits on an indented line after a newline is accepted, where literal_eval raises IndentationError; a sign before a parenthesized signed number, such as -(-1), is accepted as a number, where literal_eval raises ValueError.'
+    why: 'no working setup stores either form, since LiteLLM fails on it; betterlite skips indentation as trivia and treats a sign on a parenthesized number as that number.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1382'
+kept_bugs: []
