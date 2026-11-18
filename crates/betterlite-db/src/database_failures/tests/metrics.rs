@@ -88,8 +88,12 @@ async fn exact_keyword_parent_span() {
         table_name: None,
         second_positional: None,
     };
-    run_named_call(&tasks, &sink, &resolver, &present).await;
-    run_named_call(&tasks, &sink, &resolver, &missing).await;
+    run_metric(ready(Ok(1_i32)), &present, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
+    run_metric(ready(Ok(1_i32)), &missing, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 2);
@@ -188,8 +192,12 @@ async fn proxy_substring_case_sensitive() {
     let kwargs = parent_kwargs();
     let lowercase = named_proxy_call("proxy_write", span(4), &kwargs);
     let uppercase = named_proxy_call("PROXY_write", span(4), &kwargs);
-    run_named_call(&tasks, &sink, &resolver, &lowercase).await;
-    run_named_call(&tasks, &sink, &resolver, &uppercase).await;
+    run_metric(ready(Ok(1_i32)), &lowercase, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
+    run_metric(ready(Ok(1_i32)), &uppercase, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 2);
@@ -224,10 +232,16 @@ async fn proxy_args_second_dictionary() {
     let boolean = Json::Bool(true);
     let present = positional_call(Some(&kwargs));
     let absent = positional_call(None);
-    let not_a_dictionary = positional_call(Some(&boolean));
-    run_named_call(&tasks, &sink, &resolver, &present).await;
-    run_named_call(&tasks, &sink, &resolver, &absent).await;
-    run_named_call(&tasks, &sink, &resolver, &not_a_dictionary).await;
+    let malformed = positional_call(Some(&boolean));
+    run_metric(ready(Ok(1_i32)), &present, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
+    run_metric(ready(Ok(1_i32)), &absent, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
+    run_metric(ready(Ok(1_i32)), &malformed, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 1);
@@ -655,7 +669,9 @@ async fn sensitive_metadata_absent() {
         table_name: Some(&table),
         second_positional: Some(&secrets),
     };
-    run_named_call(&tasks, &sink, &resolver, &success).await;
+    run_metric(ready(Ok(1_i32)), &success, &sink, &resolver, &tasks)
+        .await
+        .expect("the successful call returns");
     let failure = DbMetricCall {
         function_name: "query_raw",
         parent_otel_span: None,
@@ -723,23 +739,6 @@ fn failed_data_write(message: &str) -> Result<i32, DbLookupError> {
         ErrorType::Data,
         message,
     )))
-}
-
-async fn run_named_call(
-    tasks: &TaskTracker,
-    sink: &Arc<RecordingSink>,
-    resolver: &RecordingResolver,
-    call: &DbMetricCall<'_>,
-) -> i32 {
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        call,
-        sink,
-        resolver,
-        tasks,
-    )
-    .await
-    .expect("the successful call returns")
 }
 
 async fn run_data_error(
