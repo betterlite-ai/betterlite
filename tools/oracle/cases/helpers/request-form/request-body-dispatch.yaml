@@ -4,11 +4,44 @@ call:
   request_form:
     operation: request_body_dispatch
     method: POST
-    content_type: application/x-www-form-urlencoded
-    body: x=1
-    fields:
-      - [x, "1"]
-    uploads: []
-    annotations: {}
-    prefix: "litellm_metadata["
-    file_size: null
+    content_type: application/json
+    body: '{"x":1}'
+calls:
+  - request_form:
+      operation: request_body_dispatch
+      method: POST
+      content_type: application/x-www-form-urlencoded
+      body: x=1
+  - request_form:
+      operation: request_body_dispatch
+      method: POST
+      content_type: multipart/form-data; boundary=test
+      body: "--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n"
+  - request_form:
+      operation: request_body_dispatch
+      method: POST
+      content_type: text/plain
+      body: hi
+  - request_form:
+      operation: request_body_dispatch
+      method: POST
+      content_type: ""
+      body: "{}"
+  - request_form:
+      operation: request_body_dispatch
+      method: GET
+      content_type: application/json
+      body: '{"x":1}'
+  - request_form:
+      operation: request_body_dispatch
+      method: DELETE
+      content_type: application/json
+      body: '{"x":1}'
+  - request_form:
+      operation: request_body_dispatch
+      method: PUT
+      content_type: application/json
+      body: '{"x":1}'
+env: {}
+compare:
+  ignore: []

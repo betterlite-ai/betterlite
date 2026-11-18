@@ -3,13 +3,77 @@ name: nested-form-metadata
 call:
   request_form:
     operation: nested_form_metadata
-    annotations: {}
-    prefix: "litellm_metadata["
-    file_size: null
-    method: POST
-    content_type: ""
-    body: "{}"
-    fields:
-      - [litellm_metadata[a][b], value]
-      - [litellm_metadata[team], alpha]
-    uploads: []
+    parts:
+      - kind: text
+        name: litellm_metadata[a][b]
+        value: v
+calls:
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
+          name: litellm_metadata[a]
+          value: leaf
+        - kind: text
+          name: litellm_metadata[a][b]
+          value: deep
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
+          name: litellm_metadata[a][b]
+          value: deep
+        - kind: text
+          name: litellm_metadata[a]
+          value: leaf
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
+          name: litellm_metadata[a]]]
+          value: t
+        - kind: text
+          name: litellm_metadata[litellm_metadata[b]]
+          value: n
+        - kind: text
+          name: litellm_metadata[c][]
+          value: k
+        - kind: text
+          name: litellm_metadata[]
+          value: bad
+        - kind: upload
+          name: litellm_metadata[file]
+          filename: a.txt
+          content_type: text/plain
+          content: abc
+        - kind: text
+          name: other
+          value: x
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
+          name: litellm_metadata[c]
+          value: leaf
+        - kind: text
+          name: litellm_metadata[c][d][e]
+          value: deep
+  - request_form:
+      operation: nested_form_metadata
+      prefix: "metadata["
+      parts:
+        - kind: text
+          name: metadata[team]
+          value: t
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
+          name: metadata[team]
+          value: t
+  - request_form:
+      operation: nested_form_metadata
+      parts: []
+env: {}
+compare:
+  ignore: []

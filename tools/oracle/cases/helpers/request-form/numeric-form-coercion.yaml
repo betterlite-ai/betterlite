@@ -3,16 +3,66 @@ name: numeric-form-coercion
 call:
   request_form:
     operation: numeric_form_coercion
-    prefix: "litellm_metadata["
-    file_size: null
-    method: POST
-    content_type: ""
-    body: "{}"
     annotations:
-      count: int
-      ratio: float
+      int_fraction: int
+      int_whitespace: int
+      int_plus: int
+      int_underscore: int
+      int_unicode: int
+      int_nan: int
+      int_inf: int
+      float_whitespace: float
+      float_plus: float
+      float_underscore: float
+      float_bad: float
+      float_exponent: float
+      float_nan: float
+      float_inf: float
+      float_negative_infinity: float
+      optional_int: optional_int
+      optional_float: optional_float
+      annotated_int: annotated_int
+      annotated_optional_float: annotated_optional_float
+      required_int: required_int
+      notrequired_int: notrequired_int
+      readonly_int: readonly_int
+      flag: bool
+      label: str
+      literal: literal
+      items: list
+      number: union
+      other: other
     fields:
-      - [count, " 7 "]
-      - [ratio, nan]
-      - [other, "9"]
-    uploads: []
+      - [int_fraction, "3.5"]
+      - [int_whitespace, " 7 "]
+      - [int_plus, "+3"]
+      - [int_underscore, "1_000"]
+      - [int_unicode, "١٢"]
+      - [int_nan, "nan"]
+      - [int_inf, "inf"]
+      - [float_whitespace, " 7 "]
+      - [float_plus, "+3"]
+      - [float_underscore, "1_000"]
+      - [float_bad, "bad"]
+      - [float_exponent, "1e2"]
+      - [float_nan, "nan"]
+      - [float_inf, "inf"]
+      - [float_negative_infinity, "-Infinity"]
+      - [optional_int, " 4 "]
+      - [optional_float, "2.5"]
+      - [annotated_int, "9"]
+      - [annotated_optional_float, "1.5"]
+      - [required_int, "11"]
+      - [notrequired_int, "12"]
+      - [readonly_int, "13"]
+      - [flag, "true"]
+      - [label, " 8 "]
+      - [literal, "3"]
+      - [items, "1,2"]
+      - [number, "3"]
+      - [other, " 5 "]
+      - [untouched, " 6 "]
+      - [nonstring, true]
+env: {}
+compare:
+  ignore: []

@@ -3,17 +3,54 @@ name: repeated-plain-last-wins
 call:
   request_form:
     operation: form_data
-    annotations: {}
-    prefix: "litellm_metadata["
-    file_size: null
-    method: POST
-    content_type: ""
-    body: "{}"
-    fields:
-      - [model, first]
-      - [model, last]
-    uploads:
-      - name: file
+    parts:
+      - kind: text
+        name: model
+        value: first
+      - kind: text
+        name: model
+        value: last
+      - kind: upload
+        name: file
         filename: a.txt
         content_type: text/plain
         content: abc
+calls:
+  - request_form:
+      operation: form_data
+      parts:
+        - kind: upload
+          name: files[]
+          filename: a.txt
+          content_type: text/plain
+          content: abc
+        - kind: upload
+          name: files[]
+          filename: b.pdf
+          content_type: application/pdf
+          content: def
+  - request_form:
+      operation: form_data
+      parts:
+        - kind: text
+          name: files[]
+          value: plain
+        - kind: upload
+          name: files[]
+          filename: a.txt
+          content_type: text/plain
+          content: abc
+  - request_form:
+      operation: form_data
+      parts:
+        - kind: upload
+          name: files[]
+          filename: a.txt
+          content_type: text/plain
+          content: abc
+        - kind: text
+          name: files[]
+          value: plain
+env: {}
+compare:
+  ignore: []

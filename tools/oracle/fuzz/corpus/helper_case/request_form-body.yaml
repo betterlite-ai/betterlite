@@ -1,11 +1,11 @@
-request_form:
-  operation: form_data
-  annotations: {}
-  prefix: "litellm_metadata["
-  file_size: null
-  method: POST
-  content_type: ""
-  body: "{}"
-  fields:
-    - [model, x]
-  uploads: []
+kind: helper
+name: request-form dispatch seed
+call:
+  request_form:
+    operation: request_body_dispatch
+    method: POST
+    content_type: application/json
+    body: '{"x":1}'
+env: {}
+compare:
+  ignore: []

@@ -3,11 +3,14 @@ name: upload-size-unset
 call:
   request_form:
     operation: upload_size_unset
-    file_size: 1048576
-    fields: []
-    uploads: []
-    annotations: {}
-    prefix: "litellm_metadata["
-    method: POST
-    content_type: ""
-    body: "{}"
+    file_size: null
+    existing_metadata: {}
+calls:
+  - request_form:
+      operation: upload_size_unset
+      file_size: 1048576
+      existing_metadata:
+        team: t
+env: {}
+compare:
+  ignore: []
