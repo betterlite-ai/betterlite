@@ -1,5 +1,4 @@
 import json
-from datetime import UTC, datetime
 from typing import Literal, Protocol, TypedDict
 
 import fastuuid
@@ -8,6 +7,8 @@ from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig
 from litellm.types.llms.openai import OpenAIRealtimeStreamSessionEvents as SessionEvents
 from litellm.types.realtime import RealtimeResponseTransformInput, RealtimeResponseTypedDict
 from pydantic import JsonValue, TypeAdapter, ValidationError
+
+from bedrock_services_realtime_session import FixedFast, make_logging
 
 MODEL = "amazon.nova-sonic-v1:0"
 
@@ -50,28 +51,6 @@ class SessionUpdatedStep(TypedDict):
 class Input(TypedDict):
     ids: list[str]
     steps: list[DispatchStep | SessionUpdatedStep]
-
-
-class FixedFast:
-    def __init__(self, values: list[str]) -> None:
-        self.values = [fastuuid.UUID(value) for value in values]
-
-    def __call__(self) -> fastuuid.UUID:
-        return self.values.pop(0)
-
-
-def make_logging(trace_id: str) -> Logging:
-    messages: list[dict[str, str]] = []
-    return Logging(
-        model="realtime",
-        messages=messages,
-        stream=True,
-        call_type="realtime",
-        start_time=datetime(2020, 1, 1, tzinfo=UTC),
-        litellm_call_id="call-1",
-        function_id="function-1",
-        litellm_trace_id=trace_id,
-    )
 
 
 def dispatch_step(config: RealtimeConfig, step: DispatchStep, logging_obj: Logging) -> JsonObject:
