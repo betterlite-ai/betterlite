@@ -297,10 +297,17 @@ fn catalog_entry_from_unpriced_sibling() {
         &[(INPUT_COST, number("0.3")), (OUTPUT_COST, number("0.4"))],
         &[],
     );
-    let pool = [zero, spec("b", "openai/cheap", &[], &[], &[]), sibling];
+    let other = spec(
+        "y",
+        "openai/other",
+        &[],
+        &[(INPUT_COST, number("0.5")), (OUTPUT_COST, number("0.4"))],
+        &[],
+    );
+    let pool = [zero, other, sibling];
     let costs = DeploymentCosts::from_deployments(&pool);
-    // the zero override falls back to the sibling's catalog entry (0.7), so the cheap deployment wins
-    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+    // the zero override falls back to the sibling's catalog entry (0.7), which beats y at 0.9
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
 }
 
 // a mirrored override hides only its own field, so the other side still reads the catalog for every sibling
@@ -482,8 +489,8 @@ async fn real_counters_feed_selection() {
 
 fn selects_nothing_when_full() {
     let windows = FakeWindows::default();
-    windows.seed("a", MINUTE, usage(5, 0));
-    windows.seed("b", MINUTE, usage(5, 0));
+    windows.seed("a", MINUTE, usage(6, 0));
+    windows.seed("b", MINUTE, usage(6, 0));
     let clock = TestClock::new(MINUTE_MILLIS);
     let router = CostRouter::new(windows, clock.io_clock());
     let pool = [
