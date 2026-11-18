@@ -17,8 +17,8 @@ use super::process_output_streaming_response;
 use crate::guardrails::anthropic_translation::sse_events::SseChunk;
 
 const START: &str = "event: message_start\ndata: {\"message\": {\"id\": \"msg_1\", \"model\": \"claude-test\", \"role\": \"assistant\", \"usage\": {\"input_tokens\": 4, \"output_tokens\": 1}}, \"type\": \"message_start\"}\n\n";
-const TEXT_1: &str = "event: content_block_delta\ndata: {\"delta\": {\"text\": \"Hel\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\n";
-const TEXT_2: &str = "event: content_block_delta\ndata: {\"delta\": {\"text\": \"lo\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\n";
+const TEXT_1: &str = "event: content_block_delta\ndata: {\"delta\": {\"text\": \"Hello\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\n";
+const TEXT_2: &str = "event: content_block_delta\ndata: {\"delta\": {\"text\": \" there\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\n";
 const TOOL_START: &str = "event: content_block_start\ndata: {\"content_block\": {\"id\": \"toolu_1\", \"input\": {}, \"name\": \"get_weather\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}\n\n";
 const TOOL_ARGS: &str = "event: content_block_delta\ndata: {\"delta\": {\"partial_json\": \"{\\\"city\\\": \\\"Paris\\\"}\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\n";
 const STOP_TEXT: &str = "event: message_delta\ndata: {\"delta\": {\"stop_reason\": \"end_turn\"}, \"type\": \"message_delta\", \"usage\": {\"output_tokens\": 9}}\n\n";
@@ -158,14 +158,14 @@ async fn ended_passes_the_assembled_text_and_response() {
     let calls = guardrail.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].input_type, GuardrailInputType::Response);
-    assert_eq!(calls[0].inputs.texts, Some(vec!["Hello".to_owned()]));
+    assert_eq!(calls[0].inputs.texts, Some(vec!["Hello there".to_owned()]));
     assert_eq!(calls[0].inputs.tool_calls, None);
     assert_eq!(calls[0].inputs.model, None);
     assert_eq!(calls[0].inputs.images, None);
     let data = stored.unwrap();
     assert_eq!(
         data["response"]["choices"][0]["message"]["content"],
-        "Hello"
+        "Hello there"
     );
     assert_eq!(data["response"]["usage"]["prompt_tokens"], 4);
 }
@@ -209,7 +209,7 @@ async fn ended_reports_a_modify_response_with_the_assembled_response() {
         panic!("expected a modify response");
     };
     let original = serde_json::to_value(response.original_response.unwrap()).unwrap();
-    assert_eq!(original["choices"][0]["message"]["content"], "Hel");
+    assert_eq!(original["choices"][0]["message"]["content"], "Hello");
 }
 
 #[tokio::test]
@@ -258,7 +258,7 @@ async fn ended_writes_the_text_rewrite() {
     let rewritten = text_of(&responses);
     assert!(rewritten.contains(r#""text": "Rewrite""#));
     assert!(rewritten.contains(r#""text": """#));
-    assert!(!rewritten.contains(r#""text": "Hel""#));
+    assert!(!rewritten.contains(r#""text": "Hello""#));
 }
 
 #[tokio::test]
@@ -304,7 +304,7 @@ async fn ended_ignores_a_returned_tool_list_of_another_length() {
 
 #[tokio::test]
 async fn ended_writes_nothing_when_the_text_is_unchanged() {
-    let guardrail = FakeGuardrail::replying(json!({"texts": ["Hello"]}));
+    let guardrail = FakeGuardrail::replying(json!({"texts": ["Hello there"]}));
     let stream = vec![bytes(&[START, TEXT_1, TEXT_2, STOP_TEXT])];
     let (result, responses, _) = process(stream, &guardrail, None, None, true).await;
     result.unwrap();
@@ -408,7 +408,7 @@ async fn unended_writes_a_changed_text() {
 
 #[tokio::test]
 async fn unended_writes_nothing_for_the_same_text() {
-    let guardrail = FakeGuardrail::replying(json!({"texts": ["Hel"]}));
+    let guardrail = FakeGuardrail::replying(json!({"texts": ["Hello"]}));
     let stream = vec![bytes(&[START, TEXT_1])];
     let (result, responses, _) = process(stream, &guardrail, None, None, true).await;
     result.unwrap();
@@ -434,7 +434,7 @@ async fn unended_writes_the_first_when_more_texts_follow() {
     result.unwrap();
     let rewritten = text_of(&responses);
     assert!(rewritten.contains(r#""text": "Hello""#));
-    assert!(!rewritten.contains(r#""text": "lo""#));
+    assert!(!rewritten.contains(r#""text": " there""#));
 }
 
 #[tokio::test]

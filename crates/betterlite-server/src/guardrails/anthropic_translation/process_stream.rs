@@ -32,7 +32,6 @@ struct StreamContext<'ctx> {
     deliver: bool,
 }
 
-// LiteLLM's process_output_streaming_response: a stream that reported a stop_reason is assembled and scanned whole, and the buffered chunks take the rewrite.
 // ast-grep-ignore: no-long-names
 pub async fn process_output_streaming_response<G>(
     responses_so_far: &mut Vec<SseChunk>,

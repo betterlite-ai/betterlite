@@ -6,7 +6,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::guardrails::anthropic_translation::sse_events::SseChunk;
 use betterlite_server::guardrails::anthropic_translation::stream_rewrite::ended::{
-    write_ended_stream_text_rewrite, write_ended_stream_tool_call_rewrites,
+    rewrite_ended_stream_text, rewrite_ended_tool_calls,
 };
 use betterlite_server::guardrails::anthropic_translation::usage_response::build_streaming_usage_response;
 use betterlite_server::guardrails::tool_call_identity::ToolCallShape;
@@ -101,10 +101,6 @@ fn chunk_of(input: &ChunkInput) -> SseChunk {
     }
 }
 
-fn chunks_of(input: &[ChunkInput]) -> Vec<SseChunk> {
-    input.iter().map(chunk_of).collect()
-}
-
 fn shapes(input: &[ShapeInput]) -> Vec<ToolCallShape> {
     input
         .iter()
@@ -131,9 +127,8 @@ fn encode_chunks(chunks: &[SseChunk]) -> HelperResult {
 }
 
 fn text_answer(scenario: &TextScenario) -> HelperResult {
-    let mut chunks = chunks_of(&scenario.responses_so_far);
-    // ast-grep-ignore: no-long-names
-    let outcome = write_ended_stream_text_rewrite(
+    let mut chunks: Vec<SseChunk> = scenario.responses_so_far.iter().map(chunk_of).collect();
+    let outcome = rewrite_ended_stream_text(
         &mut chunks,
         &scenario.rewritten_text,
         &scenario.guardrail_name,
@@ -146,12 +141,11 @@ fn text_answer(scenario: &TextScenario) -> HelperResult {
 }
 
 fn tool_answer(scenario: &ToolScenario) -> HelperResult {
-    let mut chunks = chunks_of(&scenario.responses_so_far);
+    let mut chunks: Vec<SseChunk> = scenario.responses_so_far.iter().map(chunk_of).collect();
     let pre = shapes(&scenario.pre_guardrail_tool_calls);
     let post = shapes(&scenario.post_guardrail_tool_calls);
     let name = scenario.guardrail_name.as_str();
-    // ast-grep-ignore: no-long-names
-    let outcome = write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, name);
+    let outcome = rewrite_ended_tool_calls(&mut chunks, &pre, &post, name);
     let error = match outcome {
         Ok(()) => Value::Null,
         Err(failure) => Value::String(failure.to_string()),
@@ -160,7 +154,7 @@ fn tool_answer(scenario: &ToolScenario) -> HelperResult {
 }
 
 fn usage_answer(scenario: &UsageScenario) -> HelperResult {
-    let chunks = chunks_of(&scenario.responses_so_far);
+    let chunks: Vec<SseChunk> = scenario.responses_so_far.iter().map(chunk_of).collect();
     let request_data: Option<BTreeMap<String, GuardrailValue>> = scenario
         .request_data
         .as_ref()

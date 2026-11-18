@@ -27,8 +27,12 @@ fn scan_inputs(
     let tool_calls = (!pre.is_empty()).then(|| convert(pre)).transpose()?;
     Ok(GuardrailApiInputs {
         texts,
+        images: None,
+        tools: None,
         tool_calls,
-        ..GuardrailApiInputs::default()
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     })
 }
 
@@ -48,8 +52,7 @@ fn write_text(
     if rewritten.as_str() == original {
         return Ok(());
     }
-    // ast-grep-ignore: no-long-names
-    ended::write_ended_stream_text_rewrite(responses_so_far, rewritten, guardrail_name)?;
+    ended::rewrite_ended_stream_text(responses_so_far, rewritten, guardrail_name)?;
     Ok(())
 }
 
@@ -66,13 +69,7 @@ fn write_tools(
         Some(_) | None => pre.to_vec(),
     };
     let post_shapes = tool_call_shapes(&post_values);
-    // ast-grep-ignore: no-long-names
-    ended::write_ended_stream_tool_call_rewrites(
-        responses_so_far,
-        &pre_shapes,
-        &post_shapes,
-        guardrail_name,
-    )?;
+    ended::rewrite_ended_tool_calls(responses_so_far, &pre_shapes, &post_shapes, guardrail_name)?;
     Ok(())
 }
 

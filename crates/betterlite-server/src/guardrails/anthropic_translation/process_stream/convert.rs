@@ -8,5 +8,8 @@ where
     Source: Serialize,
     Target: DeserializeOwned,
 {
-    Ok(serde_json::from_value(serde_json::to_value(value)?)?)
+    match serde_json::to_value(value) {
+        Ok(encoded) => serde_json::from_value(encoded).map_err(ProcessStreamError::Convert),
+        Err(error) => Err(ProcessStreamError::Convert(error)),
+    }
 }

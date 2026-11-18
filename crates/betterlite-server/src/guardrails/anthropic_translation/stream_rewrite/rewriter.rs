@@ -35,14 +35,17 @@ impl EventRewriter {
     }
 }
 
+fn delta_type(event: &Map<String, Value>) -> Option<&str> {
+    event
+        .get("delta")
+        .and_then(Value::as_object)
+        .and_then(|delta| delta.get("type"))
+        .and_then(Value::as_str)
+}
+
 pub(super) fn is_text_delta(event: &Map<String, Value>) -> bool {
     event.get("type").and_then(Value::as_str) == Some("content_block_delta")
-        && event
-            .get("delta")
-            .and_then(Value::as_object)
-            .and_then(|delta| delta.get("type"))
-            .and_then(Value::as_str)
-            == Some("text_delta")
+        && delta_type(event) == Some("text_delta")
 }
 
 fn text_delta_rewrite(
@@ -59,15 +62,6 @@ fn text_delta_rewrite(
     })
 }
 
-fn is_input_json_delta(event: &Map<String, Value>) -> bool {
-    event
-        .get("delta")
-        .and_then(Value::as_object)
-        .and_then(|delta| delta.get("type"))
-        .and_then(Value::as_str)
-        == Some("input_json_delta")
-}
-
 fn tool_use_rewrite(
     rewrites_by_block: &BTreeMap<i64, ToolCallShape>,
     arguments_sent: &mut BTreeSet<i64>,
@@ -82,7 +76,7 @@ fn tool_use_rewrite(
             value: shape.name.clone()?,
         }),
         Some("content_block_delta") => {
-            if !is_input_json_delta(event) {
+            if delta_type(event) != Some("input_json_delta") {
                 return None;
             }
             let value = if arguments_sent.insert(index) {

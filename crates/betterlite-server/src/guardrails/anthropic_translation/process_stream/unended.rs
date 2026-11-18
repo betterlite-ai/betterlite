@@ -38,7 +38,12 @@ fn chunk_value(chunk: &SseChunk) -> GuardrailValue {
 fn text_inputs(text: &str) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(vec![text.to_owned()]),
-        ..GuardrailApiInputs::default()
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     }
 }
 
@@ -80,8 +85,7 @@ fn deliver_text(
     let Some(rewritten) = texts.first() else {
         return Ok(());
     };
-    // ast-grep-ignore: no-long-names
-    ended::write_ended_stream_text_rewrite(responses_so_far, rewritten, context.guardrail_name)?;
+    ended::rewrite_ended_stream_text(responses_so_far, rewritten, context.guardrail_name)?;
     Ok(())
 }
 

@@ -52,7 +52,7 @@ impl Formatter for PythonFormatter {
 }
 
 // A rewritten data line is `data: ` plus this, so an event's keys keep the order serde_json's map gives them.
-pub fn to_python_json(event: &Map<String, Value>) -> Result<String, serde_json::Error> {
+pub fn dumped_json(event: &Map<String, Value>) -> Result<String, serde_json::Error> {
     let mut serializer = Serializer::with_formatter(Vec::new(), PythonFormatter);
     event.serialize(&mut serializer)?;
     // every non-ASCII character was escaped, so each byte is one character

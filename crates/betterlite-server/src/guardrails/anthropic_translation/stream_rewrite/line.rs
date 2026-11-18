@@ -3,7 +3,7 @@ use std::str;
 use serde_json::Value;
 
 use super::events::rewritten_event;
-use super::json_dumps::to_python_json;
+use super::json_dumps::dumped_json;
 use super::rewriter::EventRewriter;
 
 // LiteLLM's _rewrite_sse_events: framing stays byte for byte, and bytes that are not UTF-8 come back unchanged.
@@ -38,5 +38,5 @@ pub fn rewrite_sse_line(line: &str, rewriter: &mut EventRewriter) -> String {
     let Some(rewritten) = rewritten_event(&event, rewriter) else {
         return line.to_owned();
     };
-    to_python_json(&rewritten).map_or_else(|_error| line.to_owned(), |text| format!("data: {text}"))
+    dumped_json(&rewritten).map_or_else(|_error| line.to_owned(), |text| format!("data: {text}"))
 }

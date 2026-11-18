@@ -3,8 +3,8 @@ from typing import Final, Literal, TypedDict
 import litellm
 from litellm.llms.anthropic.chat.guardrail_translation.handler import (
     AnthropicMessagesHandler,
+    _tool_call_shapes,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L269-L279
 )
-from litellm.llms.anthropic.chat.guardrail_translation.handler import _tool_call_shapes  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L269-L279
 from litellm.proxy.policy_engine.pipeline_executor import UndeliverableStreamRewrite
 from pydantic import JsonValue, TypeAdapter
 
@@ -87,36 +87,30 @@ class UsageCall(TypedDict):
 
 
 Input = TextCall | ToolCall | UsageCall
+Item = bytes | dict[str, JsonValue]
 
 RESPONSE: Final[TypeAdapter[ResponseProjection]] = TypeAdapter(ResponseProjection)
 
 
-def chunk_items(chunks: list[ChunkInput]) -> list[bytes | dict[str, JsonValue]]:
-    items: list[bytes | dict[str, JsonValue]] = []
-    for chunk in chunks:
-        if "bytes" in chunk:
-            items.append(BYTES_CHUNK.validate_python(chunk)["bytes"].encode("utf-8"))
-        else:
-            items.append(EVENT_CHUNK.validate_python(chunk)["event"])
-    return items
+def chunk_items(chunks: list[ChunkInput]) -> list[Item]:
+    return [
+        BYTES_CHUNK.validate_python(chunk)["bytes"].encode("utf-8")
+        if "bytes" in chunk
+        else EVENT_CHUNK.validate_python(chunk)["event"]
+        for chunk in chunks
+    ]
 
 
-def encoded_item(item: bytes | dict[str, JsonValue]) -> JsonValue:
+def encoded_item(item: Item) -> JsonValue:
     match item:
         case bytes():
-            return JSON.validate_python({"bytes": item.decode("utf-8")})
+            return {"bytes": item.decode("utf-8")}
         case dict():
-            return JSON.validate_python({"event": item})
+            return {"event": item}
 
 
-def encoded_chunks(items: list[bytes | dict[str, JsonValue]]) -> JsonValue:
-    return JSON.validate_python([encoded_item(item) for item in items])
-
-
-def text_answer(scenario: TextScenario) -> JsonValue:
-    items = chunk_items(scenario["responses_so_far"])
+def text_error(items: list[Item], scenario: TextScenario) -> str | None:
     write_text = AnthropicMessagesHandler._write_ended_stream_text_rewrite  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1413-L1448
-    error: str | None = None
     try:
         write_text(
             responses_so_far=items,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1414-L1419
@@ -124,12 +118,11 @@ def text_answer(scenario: TextScenario) -> JsonValue:
             guardrail_name=scenario["guardrail_name"],
         )
     except UndeliverableStreamRewrite as failure:
-        error = str(failure)
-    return JSON.validate_python({"chunks": encoded_chunks(items), "error": error})
+        return str(failure)
+    return None
 
 
-def tool_answer(scenario: ToolScenario) -> JsonValue:
-    items = chunk_items(scenario["responses_so_far"])
+def tool_error(items: list[Item], scenario: ToolScenario) -> str | None:
     pre = _tool_call_shapes(
         [
             {"function": {"name": shape["name"], "arguments": shape["arguments"]}}
@@ -143,7 +136,6 @@ def tool_answer(scenario: ToolScenario) -> JsonValue:
         ]
     )
     write_tools = AnthropicMessagesHandler._write_ended_stream_tool_call_rewrites  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1450-L1515
-    error: str | None = None
     try:
         write_tools(
             responses_so_far=items,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1452-L1458
@@ -152,17 +144,34 @@ def tool_answer(scenario: ToolScenario) -> JsonValue:
             guardrail_name=scenario["guardrail_name"],
         )
     except UndeliverableStreamRewrite as failure:
-        error = str(failure)
-    return JSON.validate_python({"chunks": encoded_chunks(items), "error": error})
+        return str(failure)
+    return None
+
+
+def chunks_answer(items: list[Item], error: str | None) -> JsonValue:
+    encoded = [encoded_item(item) for item in items]
+    return {"chunks": encoded, "error": error}
+
+
+def text_answer(scenario: TextScenario) -> JsonValue:
+    items = chunk_items(scenario["responses_so_far"])
+    error = text_error(items, scenario)
+    return chunks_answer(items, error)
+
+
+def tool_answer(scenario: ToolScenario) -> JsonValue:
+    items = chunk_items(scenario["responses_so_far"])
+    error = tool_error(items, scenario)
+    return chunks_answer(items, error)
 
 
 def usage_answer(scenario: UsageScenario) -> JsonValue:
     items = chunk_items(scenario["responses_so_far"])
-    build_usage = AnthropicMessagesHandler._build_streaming_usage_response  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L325
-    response = build_usage(items, scenario["request_data"])
+    response = AnthropicMessagesHandler._build_streaming_usage_response(items, scenario["request_data"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L325
     if response is None:
-        return JSON.validate_python({"response": None})
-    return JSON.validate_python({"response": RESPONSE.validate_json(response.model_dump_json())})
+        return {"response": None}
+    projected = RESPONSE.validate_json(response.model_dump_json())
+    return {"response": JSON.validate_python(projected)}
 
 
 def answers(call: Input) -> list[JsonValue]:

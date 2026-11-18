@@ -9,8 +9,7 @@ use crate::guardrails::anthropic_translation::sse_events::{SseChunk, iter_sse_ev
 use crate::guardrails::tool_call_identity::ToolCallShape;
 
 // LiteLLM's _write_ended_stream_text_rewrite: the first text delta carries the rewrite and the rest are blanked.
-// ast-grep-ignore: no-long-names
-pub fn write_ended_stream_text_rewrite(
+pub fn rewrite_ended_stream_text(
     responses_so_far: &mut [SseChunk],
     rewritten_text: &str,
     guardrail_name: &str,
@@ -44,8 +43,7 @@ fn is_tool_use_block(event: &Map<String, Value>) -> bool {
 }
 
 // LiteLLM's _write_ended_stream_tool_call_rewrites: the nth rewritten call lands on the nth tool_use block.
-// ast-grep-ignore: no-long-names
-pub fn write_ended_stream_tool_call_rewrites(
+pub fn rewrite_ended_tool_calls(
     responses_so_far: &mut [SseChunk],
     pre_guardrail_tool_calls: &[ToolCallShape],
     post_guardrail_tool_calls: &[ToolCallShape],

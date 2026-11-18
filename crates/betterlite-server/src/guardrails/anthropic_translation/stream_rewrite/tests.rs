@@ -5,9 +5,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::str;
 
-use super::ended::{write_ended_stream_text_rewrite, write_ended_stream_tool_call_rewrites};
+use super::ended::{rewrite_ended_stream_text, rewrite_ended_tool_calls};
 use super::events::rewrite_ended_stream_events;
-use super::json_dumps::to_python_json;
+use super::json_dumps::dumped_json;
 use super::line::{rewrite_sse_events, rewrite_sse_line};
 use super::rewriter::EventRewriter;
 use crate::guardrails::anthropic_translation::sse_events::SseChunk;
@@ -64,7 +64,7 @@ fn line_counts(text: &str) -> Vec<usize> {
 #[test]
 fn text_rewrite_puts_the_text_in_the_first_delta_and_blanks_the_rest() {
     let mut chunks = vec![bytes(&format!("{TEXT_DELTA}\n\n{TEXT_DELTA}"))];
-    write_ended_stream_text_rewrite(&mut chunks, "new *text*", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new *text*", "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"delta\": {\"text\": \"new *text*\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"text\": \"\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
@@ -75,7 +75,7 @@ fn text_rewrite_puts_the_text_in_the_first_delta_and_blanks_the_rest() {
 fn text_rewrite_leaves_other_events_and_framing_alone() {
     let source = "event: message_start\ndata: {\"message\": {\"id\": \"msg_1\"}, \"type\": \"message_start\"}\n\nevent: ping\ndata: {\"type\": \"ping\"}\n\ndata: {\"delta\": {\"type\": \"text_delta\", \"text\": \"old\"}, \"index\": 0, \"type\": \"content_block_delta\"}";
     let mut chunks = vec![bytes(source)];
-    write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "event: message_start\ndata: {\"message\": {\"id\": \"msg_1\"}, \"type\": \"message_start\"}\n\nevent: ping\ndata: {\"type\": \"ping\"}\n\ndata: {\"delta\": {\"text\": \"new\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
@@ -91,7 +91,7 @@ fn text_rewrite_rewrites_a_dict_event_and_keeps_a_non_delta_one() {
             "{\"delta\": {\"type\": \"text_delta\", \"text\": \"old\"}, \"index\": 0, \"type\": \"content_block_delta\"}",
         ),
     ];
-    write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
     assert_eq!(chunks[0], untouched);
     assert_eq!(
         chunks[1],
@@ -104,7 +104,7 @@ fn text_rewrite_rewrites_a_dict_event_and_keeps_a_non_delta_one() {
 #[test]
 fn text_rewrite_reports_an_undeliverable_rewrite_without_a_text_delta() {
     let mut chunks = vec![event("{\"type\": \"content_block_start\"}")];
-    let failure = write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap_err();
+    let failure = rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap_err();
     assert_eq!(failure.guardrail_name, "guard");
     assert_eq!(
         failure.reason,
@@ -116,7 +116,7 @@ fn text_rewrite_reports_an_undeliverable_rewrite_without_a_text_delta() {
 fn text_rewrite_keeps_an_indented_data_line_unrewritten() {
     let indented = " data: {\"delta\": {\"type\": \"text_delta\", \"text\": \"old\"}, \"index\": 0, \"type\": \"content_block_delta\"}";
     let mut chunks = vec![bytes(indented)];
-    write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
     assert_eq!(text_of(&chunks[0]), indented);
 }
 
@@ -131,7 +131,7 @@ fn tool_rewrite_lands_the_nth_call_on_the_nth_block() {
         shape(Some("search"), "{\"q\": 2}"),
         shape(Some("keep"), "{}"),
     ];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap();
     assert_eq!(text_of(&chunks[0]), TOOL_STREAM_REWRITTEN);
 }
 
@@ -139,7 +139,7 @@ fn tool_rewrite_lands_the_nth_call_on_the_nth_block() {
 fn tool_rewrite_returns_at_once_when_the_shapes_are_equal() {
     let mut chunks = vec![bytes(TOOL_STREAM)];
     let same = [shape(Some("lookup"), "{\"q\": 1}")];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &same, &same, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &same, &same, "guard").unwrap();
     assert_eq!(text_of(&chunks[0]), TOOL_STREAM);
 }
 
@@ -155,8 +155,7 @@ fn tool_rewrite_reports_a_block_count_mismatch() {
         shape(Some("b"), "{}"),
         shape(Some("c"), "{}"),
     ];
-    let failure =
-        write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap_err();
+    let failure = rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap_err();
     assert_eq!(
         failure.reason,
         "the guardrail returned 3 tool calls for a stream that carried 2 tool_use blocks"
@@ -171,7 +170,7 @@ fn tool_rewrite_keeps_the_name_when_the_rewritten_name_is_none() {
         shape(Some("keep"), "{}"),
     ];
     let post = [shape(None, "{\"q\": 2}"), shape(Some("keep"), "{}")];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"content_block\": {\"name\": \"lookup\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}\n\ndata: {\"delta\": {\"partial_json\": \"{\\\"q\\\": 2}\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"partial_json\": \"\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"content_block\": {\"name\": \"keep\", \"type\": \"tool_use\"}, \"index\": 1, \"type\": \"content_block_start\"}\n\ndata: {\"delta\": {\"partial_json\": \"{}\", \"type\": \"input_json_delta\"}, \"index\": 1, \"type\": \"content_block_delta\"}"
@@ -184,7 +183,7 @@ fn tool_rewrite_ignores_a_text_content_block_start() {
     let mut chunks = vec![bytes(stream)];
     let pre = [shape(Some("lookup"), "{}")];
     let post = [shape(Some("search"), "{}")];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"content_block\": {\"name\": \"search\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}\n\ndata: {\"content_block\": {\"text\": \"hi\", \"type\": \"text\"}, \"index\": 1, \"type\": \"content_block_start\"}"
@@ -203,7 +202,7 @@ fn tool_rewrite_leaves_an_unchanged_block_fragmented() {
         shape(Some("search"), "{}"),
         shape(Some("keep"), "{\"x\": 3}"),
     ];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"content_block\": {\"name\": \"search\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}\n\ndata: {\"content_block\": {\"name\": \"keep\", \"type\": \"tool_use\"}, \"index\": 1, \"type\": \"content_block_start\"}\n\ndata: {\"delta\": {\"partial_json\": \"{\\\"x\\\":\", \"type\": \"input_json_delta\"}, \"index\": 1, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"partial_json\": \"3}\", \"type\": \"input_json_delta\"}, \"index\": 1, \"type\": \"content_block_delta\"}"
@@ -214,7 +213,7 @@ fn tool_rewrite_leaves_an_unchanged_block_fragmented() {
 fn text_rewrite_ignores_events_that_only_look_like_text_deltas() {
     let stream = "data: {\"delta\": {\"text\": \"x\", \"type\": \"text_delta\"}, \"type\": \"content_block_stop\"}\n\ndata: {\"delta\": {\"partial_json\": \"{}\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"text\": \"old\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}";
     let mut chunks = vec![bytes(stream)];
-    write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"delta\": {\"text\": \"x\", \"type\": \"text_delta\"}, \"type\": \"content_block_stop\"}\n\ndata: {\"delta\": {\"partial_json\": \"{}\", \"type\": \"input_json_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"delta\": {\"text\": \"new\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
@@ -228,7 +227,7 @@ fn tool_rewrite_ignores_an_event_of_another_type_for_the_same_index() {
     )];
     let pre = [shape(Some("lookup"), "{\"q\": 1}")];
     let post = [shape(Some("search"), "{\"q\": 2}")];
-    write_ended_stream_tool_call_rewrites(&mut chunks, &pre, &post, "guard").unwrap();
+    rewrite_ended_tool_calls(&mut chunks, &pre, &post, "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"delta\": {\"partial_json\": \"{}\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}\n\ndata: {\"content_block\": {\"name\": \"search\", \"type\": \"tool_use\"}, \"index\": 0, \"type\": \"content_block_start\"}"
@@ -266,7 +265,7 @@ fn bytes_rewrite_writes_a_rewritten_line_as_data_space_and_json_dumps() {
     let mut chunks = vec![bytes(
         "data:{\"delta\":{\"type\":\"text_delta\",\"text\":\"old\"},\"index\":0,\"type\":\"content_block_delta\"}",
     )];
-    write_ended_stream_text_rewrite(&mut chunks, "new", "guard").unwrap();
+    rewrite_ended_stream_text(&mut chunks, "new", "guard").unwrap();
     assert_eq!(
         text_of(&chunks[0]),
         "data: {\"delta\": {\"text\": \"new\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
@@ -286,7 +285,7 @@ fn json_dumps_escapes_non_ascii() {
     let value: Map<String, Value> =
         serde_json::from_str("{\"text\": \"h\u{e9}llo \u{1f600}\"}").unwrap();
     assert_eq!(
-        to_python_json(&value).unwrap(),
+        dumped_json(&value).unwrap(),
         "{\"text\": \"h\\u00e9llo \\ud83d\\ude00\"}"
     );
 }
@@ -296,7 +295,7 @@ fn json_dumps_escapes_the_delete_character_and_keeps_printable_ascii() {
     let value: Map<String, Value> =
         serde_json::from_str("{\"text\": \"a\u{7f} ~\\\"\\\\\"}").unwrap();
     assert_eq!(
-        to_python_json(&value).unwrap(),
+        dumped_json(&value).unwrap(),
         "{\"text\": \"a\\u007f ~\\\"\\\\\"}"
     );
 }
@@ -306,7 +305,7 @@ fn json_dumps_writes_the_default_separators() {
     let value: Map<String, Value> =
         serde_json::from_str("{\"b\": {\"c\": null}, \"a\": [1, 2]}").unwrap();
     assert_eq!(
-        to_python_json(&value).unwrap(),
+        dumped_json(&value).unwrap(),
         "{\"a\": [1, 2], \"b\": {\"c\": null}}"
     );
 }
