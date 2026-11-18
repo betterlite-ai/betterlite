@@ -25,6 +25,11 @@ pub(crate) struct Input {
     runs: Vec<Run>,
 }
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input
+#[derive(Debug, Default, Deserialize)]
+#[serde(transparent)]
+struct CaseFlag(bool);
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Run {
@@ -40,9 +45,9 @@ struct Run {
     #[serde(default)]
     await_error: Option<String>,
     #[serde(default)]
-    block: bool,
+    block: CaseFlag,
     #[serde(default)]
-    cancel: bool,
+    cancel: CaseFlag,
     #[serde(default)]
     bedrock_send_failures: Vec<usize>,
     #[serde(default)]
@@ -50,7 +55,7 @@ struct Run {
     #[serde(default)]
     client_send_failures: Vec<usize>,
     #[serde(default)]
-    bedrock_close_error: bool,
+    bedrock_close_error: CaseFlag,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -85,7 +90,7 @@ struct Runs {
     runs: Vec<BridgeView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 struct BridgeView {
     outcome: &'static str,
     error: Option<&'static str>,
@@ -96,6 +101,17 @@ struct BridgeView {
     scope: Option<ScopeView>,
     state: Option<RealtimeResponseTransformInput>,
     logged: Vec<Json>,
+}
+
+impl BridgeView {
+    // The pump's outcome with nothing observed yet, for the direction that fills only its own side
+    fn from_outcome((outcome, error): (&'static str, Option<&'static str>)) -> Self {
+        Self {
+            outcome,
+            error,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

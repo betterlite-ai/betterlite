@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -8,15 +9,16 @@ use betterlite_bedrock::realtime_bridge::end::ForwardEnd;
 use betterlite_bedrock::realtime_bridge::error::{ClientForwardError, ProviderForwardError};
 use betterlite_bedrock::realtime_bridge::provider::{LoggedEventSink, ProviderForward};
 use betterlite_bedrock::realtime_events::scope::EventScope;
+use betterlite_bedrock::realtime_input::RealtimeInput;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::transports::{TransportClient, TransportStream, states};
+use super::transports::{ClientState, StreamState, TransportClient, TransportStream, states};
 use super::{
     BridgeView, ClosedClient, Input, Kind, Run, ScopeView, empty_state, failure, session_input,
 };
@@ -35,20 +37,6 @@ impl LoggedEventSink for CollectedLog {
     }
 }
 
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(failure)
-}
-
-fn threshold(run: &Run) -> usize {
-    match run.kind {
-        Kind::Client => run.frames.len().saturating_add(1),
-        Kind::Provider => run.chunks.len().saturating_add(1),
-    }
-}
-
 // Cancels once the scripted side has been pulled as many times as the run says
 async fn cancel_at(counter: &AtomicUsize, threshold: usize, cancel: &CancellationToken) {
     while counter.load(Ordering::SeqCst) < threshold {
@@ -59,8 +47,8 @@ async fn cancel_at(counter: &AtomicUsize, threshold: usize, cancel: &Cancellatio
 
 fn parse_sent(values: Vec<String>) -> Result<Vec<Json>, Box<HelperError>> {
     values
-        .iter()
-        .map(|text| serde_json::from_str(text).map_err(failure))
+        .into_iter()
+        .map(|text| serde_json::from_str(&text).map_err(failure))
         .collect()
 }
 
@@ -73,6 +61,9 @@ fn scope_view(scope: &EventScope) -> ScopeView {
         session_committed: matches!(scope.session_committed, Json::Bool(true)),
     }
 }
+
+type ClientRun = Result<ForwardEnd, ClientForwardError<io::Error>>;
+type ProviderRun = Result<ForwardEnd, ProviderForwardError<io::Error>>;
 
 enum PumpResult<'a> {
     Client(&'a Result<ForwardEnd, ClientForwardError<io::Error>>),
@@ -99,6 +90,120 @@ fn pump_outcome(result: PumpResult<'_>) -> (&'static str, Option<&'static str>) 
     }
 }
 
+// Both directions share one scripted transport pair, so one harness builds either pump per run
+struct Harness<'a> {
+    run: &'a Run,
+    shared: Mutex<RealtimeInput>,
+    client: Arc<ClientState>,
+    wire: Arc<StreamState>,
+    stream: TransportStream,
+    transport: TransportClient,
+    token: CancellationToken,
+    events: &'a FixedIds,
+    redactor: &'a Redactor,
+    model: &'a str,
+}
+
+impl Harness<'_> {
+    // A run that cancels stops the pump once the scripted side has been pulled as many times as it says
+    async fn driven<T, F>(&self, counter: &AtomicUsize, pump: F) -> T
+    where
+        F: Future<Output = T>,
+    {
+        if !self.run.cancel.0 {
+            return pump.await;
+        }
+        let pulls = match self.run.kind {
+            Kind::Client => self.run.frames.len(),
+            Kind::Provider => self.run.chunks.len(),
+        };
+        let canceller = cancel_at(counter, pulls.saturating_add(1), &self.token);
+        tokio::pin!(pump);
+        tokio::pin!(canceller);
+        tokio::select! {
+            result = &mut pump => result,
+            () = &mut canceller => pump.await,
+        }
+    }
+
+    // Each direction runs its own pump over this run's scripted transports and observes its own side
+    async fn observe(&self) -> Result<BridgeView, Box<HelperError>> {
+        match self.run.kind {
+            Kind::Client => {
+                let mut scope = EventScope::default();
+                let mut forward: ClientForward<'_, io::Error, io::Error> = ClientForward {
+                    client: &self.transport,
+                    stream: &self.stream,
+                    shared: &self.shared,
+                    scope: &mut scope,
+                    model: self.model,
+                    trace_id: self.run.trace_id.as_deref(),
+                    ids: self.events,
+                    redactor: self.redactor,
+                    initial: self.run.initial.clone(),
+                    cancel: &self.token,
+                };
+                let future = forward.forward_client_to_bedrock();
+                let result = self.driven(&self.client.receives, future).await;
+                self.client_bridge(&scope, result)
+            }
+            Kind::Provider => {
+                let (mut state, mut log) = (empty_state(), CollectedLog::default());
+                let mut pump: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
+                    stream: &self.stream,
+                    client: &self.transport,
+                    shared: &self.shared,
+                    state: &mut state,
+                    logged: &mut log,
+                    logged_types: &LoggedEventTypes::Default,
+                    ids: self.events,
+                    redactor: self.redactor,
+                    cancel: &self.token,
+                };
+                let future = pump.forward_bedrock_to_client();
+                let result = self.driven(&self.wire.receives, future).await;
+                self.provider_bridge(state, log, result)
+            }
+        }
+    }
+
+    fn client_bridge(
+        &self,
+        scope: &EventScope,
+        result: ClientRun,
+    ) -> Result<BridgeView, Box<HelperError>> {
+        let mut view = BridgeView::from_outcome(pump_outcome(PumpResult::Client(&result)));
+        view.sent_to_bedrock = self.wire.sent();
+        view.sent_to_client = parse_sent(self.client.sent())?;
+        view.closed_input = self.wire.closed.load(Ordering::SeqCst);
+        view.scope = Some(scope_view(scope));
+        Ok(view)
+    }
+
+    fn provider_bridge(
+        &self,
+        state: RealtimeResponseTransformInput,
+        log: CollectedLog,
+        result: ProviderRun,
+    ) -> Result<BridgeView, Box<HelperError>> {
+        let mut view = BridgeView::from_outcome(pump_outcome(PumpResult::Provider(&result)));
+        view.sent_to_client = parse_sent(self.client.sent())?;
+        view.closed_client = self.closed_client();
+        view.state = Some(state);
+        view.logged = log.events;
+        Ok(view)
+    }
+
+    // The provider pump closes the client at most once, and only on a normal provider end
+    fn closed_client(&self) -> Option<ClosedClient> {
+        let closes = self.client.closes();
+        closes.first().map(|(code, reason)| ClosedClient {
+            code: *code,
+            reason: reason.clone(),
+        })
+    }
+}
+
 async fn view(
     run: &Run,
     name_ids: &[Uuid],
@@ -106,98 +211,24 @@ async fn view(
     redactor: &Redactor,
     model: &str,
 ) -> Result<BridgeView, Box<HelperError>> {
-    let shared = Mutex::new(session_input(name_ids));
     let (client, wire) = states(run);
     let stream = TransportStream::new(Arc::clone(&wire));
     let transport = TransportClient {
         state: Arc::clone(&client),
     };
-    let token = CancellationToken::new();
-    match run.kind {
-        Kind::Client => {
-            let mut scope = EventScope::default();
-            let mut forward: ClientForward<'_, io::Error, io::Error> = ClientForward {
-                client: &transport,
-                stream: &stream,
-                shared: &shared,
-                scope: &mut scope,
-                model,
-                trace_id: run.trace_id.as_deref(),
-                ids: events,
-                redactor,
-                initial: run.initial.clone(),
-                cancel: &token,
-            };
-            let result = if run.cancel {
-                let canceller = cancel_at(&client.receives, threshold(run), &token);
-                let pump = forward.forward_client_to_bedrock();
-                tokio::pin!(pump);
-                tokio::pin!(canceller);
-                tokio::select! {
-                    result = &mut pump => result,
-                    () = &mut canceller => pump.await,
-                }
-            } else {
-                forward.forward_client_to_bedrock().await
-            };
-            let (outcome, error) = pump_outcome(PumpResult::Client(&result));
-            Ok(BridgeView {
-                outcome,
-                error,
-                sent_to_bedrock: wire.sent(),
-                sent_to_client: parse_sent(client.sent())?,
-                closed_input: wire.closed.load(Ordering::SeqCst),
-                closed_client: None,
-                scope: Some(scope_view(&scope)),
-                state: None,
-                logged: Vec::new(),
-            })
-        }
-        Kind::Provider => {
-            let mut state: RealtimeResponseTransformInput = empty_state();
-            let mut log = CollectedLog::default();
-            let types = LoggedEventTypes::Default;
-            let mut forward: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
-                stream: &stream,
-                client: &transport,
-                shared: &shared,
-                state: &mut state,
-                logged: &mut log,
-                logged_types: &types,
-                ids: events,
-                redactor,
-                cancel: &token,
-            };
-            let result = if run.cancel {
-                let canceller = cancel_at(&wire.receives, threshold(run), &token);
-                let pump = forward.forward_bedrock_to_client();
-                tokio::pin!(pump);
-                tokio::pin!(canceller);
-                tokio::select! {
-                    result = &mut pump => result,
-                    () = &mut canceller => pump.await,
-                }
-            } else {
-                forward.forward_bedrock_to_client().await
-            };
-            let (outcome, error) = pump_outcome(PumpResult::Provider(&result));
-            let closed = client.closes();
-            Ok(BridgeView {
-                outcome,
-                error,
-                sent_to_bedrock: Vec::new(),
-                sent_to_client: parse_sent(client.sent())?,
-                closed_input: false,
-                closed_client: closed.first().map(|(code, reason)| ClosedClient {
-                    code: *code,
-                    reason: reason.clone(),
-                }),
-                scope: None,
-                state: Some(state),
-                logged: log.events,
-            })
-        }
-    }
+    let harness = Harness {
+        run,
+        shared: Mutex::new(session_input(name_ids)),
+        client,
+        wire,
+        stream,
+        transport,
+        token: CancellationToken::new(),
+        events,
+        redactor,
+        model,
+    };
+    harness.observe().await
 }
 
 pub(super) fn runs(
@@ -206,7 +237,10 @@ pub(super) fn runs(
     events: &FixedIds,
     redactor: &Redactor,
 ) -> Result<serde_json::Value, Box<HelperError>> {
-    let executor = runtime()?;
+    let executor = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(failure)?;
     let views = executor.block_on(async {
         let mut views = Vec::with_capacity(input.runs.len());
         for (index, run) in input.runs.iter().enumerate() {

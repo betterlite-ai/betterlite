@@ -31,19 +31,19 @@ fn push_sent<T>(sent: &Mutex<Vec<T>>, failures: &[usize], value: T) -> Option<us
     failures.contains(&index).then_some(index)
 }
 
+// Copies what a scripted side has received so far, so a later failure keeps the earlier values
+fn read<T: Clone>(values: &Mutex<Vec<T>>) -> Vec<T> {
+    let values = values.lock().unwrap_or_else(PoisonError::into_inner);
+    values.clone()
+}
+
 impl ClientState {
     pub(super) fn sent(&self) -> Vec<String> {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        read(&self.sent)
     }
 
     pub(super) fn closes(&self) -> Vec<(u16, Option<String>)> {
-        self.closes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        read(&self.closes)
     }
 }
 
@@ -108,17 +108,14 @@ pub(super) struct StreamState {
 
 impl StreamState {
     pub(super) fn sent(&self) -> Vec<Json> {
-        self.sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        read(&self.sent)
     }
 }
 
 pub(super) fn states(run: &Run) -> (Arc<ClientState>, Arc<StreamState>) {
     let client = ClientState {
         frames: Mutex::new(run.frames.iter().cloned().collect()),
-        block: run.block,
+        block: run.block.0,
         client_send_failures: run.client_send_failures.clone(),
         sent: Mutex::new(Vec::new()),
         closes: Mutex::new(Vec::new()),
@@ -128,12 +125,12 @@ pub(super) fn states(run: &Run) -> (Arc<ClientState>, Arc<StreamState>) {
         sent: Mutex::new(Vec::new()),
         bedrock_send_failures: run.bedrock_send_failures.clone(),
         closed: AtomicBool::new(false),
-        close_error: run.bedrock_close_error,
+        close_error: run.bedrock_close_error.0,
         await_error: run.await_error.clone(),
         chunks: Mutex::new(run.chunks.iter().cloned().collect()),
         receives: AtomicUsize::new(0),
         receive_failures: run.receive_failures.clone(),
-        block: run.block,
+        block: run.block.0,
     };
     (Arc::new(client), Arc::new(wire))
 }
@@ -233,12 +230,10 @@ pub(super) struct TransportStream {
 
 impl TransportStream {
     pub(super) fn new(state: Arc<StreamState>) -> Self {
-        Self {
-            input: TransportInput {
-                state: Arc::clone(&state),
-            },
-            state,
-        }
+        let input = TransportInput {
+            state: Arc::clone(&state),
+        };
+        Self { input, state }
     }
 }
 
