@@ -25,29 +25,15 @@ fn base() -> UvicornSettings {
 
 fn base_with_log(log_config: LogConfig) -> UvicornSettings {
     UvicornSettings {
-        host: "0.0.0.0".to_owned(),
-        port: 4000,
-        server_header: false,
         log_config,
-        timeout_keep_alive: None,
-        timeout_worker_healthcheck: None,
-        limit_max_requests: None,
-        limit_max_requests_jitter: None,
-        loop_type: None,
+        ..base()
     }
 }
 
 fn base_with_healthcheck(timeout_worker_healthcheck: Option<i64>) -> UvicornSettings {
     UvicornSettings {
-        host: "0.0.0.0".to_owned(),
-        port: 4000,
-        server_header: false,
-        log_config: LogConfig::Builtin,
-        timeout_keep_alive: None,
         timeout_worker_healthcheck,
-        limit_max_requests: None,
-        limit_max_requests_jitter: None,
-        loop_type: None,
+        ..base()
     }
 }
 
@@ -56,15 +42,9 @@ fn base_with_limits(
     limit_max_requests_jitter: Option<i64>,
 ) -> UvicornSettings {
     UvicornSettings {
-        host: "0.0.0.0".to_owned(),
-        port: 4000,
-        server_header: false,
-        log_config: LogConfig::Builtin,
-        timeout_keep_alive: None,
-        timeout_worker_healthcheck: None,
         limit_max_requests,
         limit_max_requests_jitter,
-        loop_type: None,
+        ..base()
     }
 }
 
