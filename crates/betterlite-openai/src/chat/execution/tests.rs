@@ -14,7 +14,6 @@ use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use futures_util::StreamExt as _;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -314,14 +313,13 @@ async fn stream_distinguishes_status(#[case] status: u16) {
     );
     assert!(sent.contains("accept: text/event-stream"));
     if status == 200 {
-        let stream = result.unwrap();
-        assert_eq!(stream.headers.get("x-request-id").unwrap(), "r1");
-        let mut body_stream = stream.body;
-        let mut received = Vec::new();
-        while let Some(chunk) = body_stream.next().await {
-            received.extend_from_slice(&chunk.unwrap());
-        }
-        assert_eq!(received, body.as_bytes());
+        let response = result
+            .unwrap()
+            .buffered(chat.client.limits.body_bytes)
+            .await
+            .unwrap();
+        assert_eq!(response.status, status);
+        assert_eq!(response.body, body.as_bytes());
     } else {
         let failure = result.err().unwrap().failure(&chat.redactor);
         assert_eq!(failure.status, status);
@@ -410,11 +408,10 @@ async fn http_pool_chat_regression_behavior(
         let mut server = JoinSet::new();
         server.spawn(staged_provider(listener, Arc::clone(&go)));
         let request = ChatRequest::parse(br#"{"messages":[],"stream":true}"#).unwrap();
-        let stream = chat.stream(deployment, &request).await.unwrap();
-        let mut body_stream = stream.body;
+        let mut response = chat.stream(deployment, &request).await.unwrap();
         let mut chunks = Vec::new();
-        while let Some(chunk) = body_stream.next().await {
-            chunks.push(String::from_utf8(chunk.unwrap()).unwrap().trim().to_owned());
+        while let Some(chunk) = response.response.chunk().await.unwrap() {
+            chunks.push(String::from_utf8(chunk.to_vec()).unwrap().trim().to_owned());
             go.notify_one();
         }
         chunks.join("|")

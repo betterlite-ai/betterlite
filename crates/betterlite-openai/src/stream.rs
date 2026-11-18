@@ -3,18 +3,9 @@ pub mod chunk;
 use std::mem;
 use std::num::NonZeroUsize;
 
-use betterlite_http::error::HttpError;
-use futures_util::stream::BoxStream;
-use http::HeaderMap;
 use thiserror::Error;
 
 const MAX_BUFFER_BYTES: usize = 0x0010_0000;
-
-// the chunks of a provider stream with the upstream response headers the client receives alongside them
-pub struct ChatStream {
-    pub headers: HeaderMap,
-    pub body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-}
 
 #[derive(Debug, Error)]
 pub enum SseError {
