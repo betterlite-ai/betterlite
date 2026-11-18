@@ -74,7 +74,7 @@ impl From<IgnoredAny> for Presence {
 
 // A recognized url decides on its own; any other url stays chat instead of a body guess
 #[must_use]
-pub const fn classify_batch_record(record: &BatchRecord) -> BatchRecordKind {
+pub fn classify_batch_record(record: &BatchRecord) -> BatchRecordKind {
     match record.url.as_ref() {
         Some(RecordUrl::Text(url)) => match url.as_str() {
             EMBEDDINGS_URL => BatchRecordKind::Embedding,
