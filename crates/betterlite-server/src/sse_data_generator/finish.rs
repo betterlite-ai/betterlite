@@ -1,8 +1,8 @@
 use std::io;
 use std::mem::take;
-use std::sync::Arc;
 
 use bytes::Bytes;
+use futures_util::future::BoxFuture;
 
 use super::cleanup::finish;
 use super::failure::failure_frame;
@@ -72,20 +72,20 @@ where
     vec![Ok(Bytes::from(frame))]
 }
 
-async fn call_failure_hook<Key>(
-    drive: &mut Drive<Key>,
-    failure: &StreamFailure,
-) -> Result<(), StreamFailure>
+fn call_failure_hook<'a, Key>(
+    drive: &'a Drive<Key>,
+    failure: &'a StreamFailure,
+) -> BoxFuture<'a, Result<(), StreamFailure>>
 where
     Key: Send + Sync + 'static,
 {
     let Some(key) = drive.session.outcome.as_ref().map(|outcome| &outcome.key) else {
-        return Ok(());
+        return Box::pin(async { Ok(()) });
     };
-    let hooks = Arc::clone(&drive.session.hooks);
-    hooks
+    drive
+        .session
+        .hooks
         .failure_hook(key, failure, drive.session.request_data.as_ref())
-        .await
 }
 
 fn state_failure<Key>(
@@ -105,7 +105,7 @@ where
         .and_then(|state| state.format_failure(failure));
     let mut frames = frame
         .into_iter()
-        .map(|frame| Ok(Bytes::from(frame)))
+        .map(|text| Ok(Bytes::from(text)))
         .collect::<Vec<_>>();
     if !drive.session.setup.skip_done.0 {
         frames.push(Ok(Bytes::from_static(DONE_FRAME.as_bytes())));

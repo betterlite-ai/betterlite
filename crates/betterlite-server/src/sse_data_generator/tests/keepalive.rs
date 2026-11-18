@@ -77,8 +77,10 @@ async fn disabled_keepalive_is_quiet() {
         false,
     );
     let first = body.next().await.expect("chunk");
-    assert!(first.is_ok());
-    assert!(timeout(Duration::from_secs(30), body.next()).await.is_err());
+    first.expect("successful stream frame");
+    timeout(Duration::from_secs(30), body.next())
+        .await
+        .expect_err("stream stays pending");
 }
 
 #[tokio::test(start_paused = true)]
@@ -92,7 +94,7 @@ async fn fallback_turns_pings_on() {
         false,
     );
     let first = body.next().await.expect("chunk");
-    assert!(first.is_ok());
+    first.expect("successful stream frame");
     let ping = timeout(Duration::from_secs(3), body.next())
         .await
         .expect("ping deadline")
@@ -113,8 +115,10 @@ async fn explicit_disable_stops_pings() {
         false,
     );
     let first = body.next().await.expect("chunk");
-    assert!(first.is_ok());
-    assert!(timeout(Duration::from_secs(30), body.next()).await.is_err());
+    first.expect("successful stream frame");
+    timeout(Duration::from_secs(30), body.next())
+        .await
+        .expect_err("stream stays pending");
 }
 
 #[tokio::test(start_paused = true)]
@@ -134,11 +138,11 @@ async fn ping_does_not_reach_chunk_hook() {
         false,
     );
     let chunk = body.next().await.expect("chunk");
-    assert!(chunk.is_ok());
+    chunk.expect("successful stream frame");
     let ping = timeout(Duration::from_secs(3), body.next())
         .await
         .expect("ping deadline")
         .expect("ping");
-    assert!(ping.is_ok());
+    ping.expect("successful stream frame");
     assert_eq!(count_prefix(&recorded(&events), "chunk:"), 1);
 }

@@ -8,7 +8,7 @@ use bytes::Bytes;
 use rstest::rstest;
 
 use super::super::failure::failure_frame;
-use super::super::types::{FailureKind, FailureParam, StreamFailure};
+use super::super::types::{FailureKind, FailureParam, FailureType, StreamFailure};
 use super::{
     EndState, Outcome, body_of, chat_chunk, chunk_frame, collect, count, expected_chunk, frames,
     other_failure, plain_generator, recorded, recorded_outcomes, recording_generator, request,
@@ -42,16 +42,38 @@ fn failure_frame_missing_fields() {
 }
 
 #[rstest]
-#[case::null(
+#[case::null_param(
+    FailureType::Missing,
     FailureParam::Null,
     r#"{"error":{"message":"boom","type":"None","param":null,"code":"500"}}"#
 )]
-#[case::text(
+#[case::text_param(
+    FailureType::Missing,
     FailureParam::Text(String::from("messages")),
     r#"{"error":{"message":"boom","type":"None","param":"messages","code":"500"}}"#
 )]
-fn failure_frame_param_shapes(#[case] param: FailureParam, #[case] expected: &str) {
+#[case::null_type(
+    FailureType::Null,
+    FailureParam::Missing,
+    r#"{"error":{"message":"boom","type":null,"param":"None","code":"500"}}"#
+)]
+#[case::empty_type(
+    FailureType::Text(String::new()),
+    FailureParam::Missing,
+    r#"{"error":{"message":"boom","type":"","param":"None","code":"500"}}"#
+)]
+#[case::empty_param(
+    FailureType::Missing,
+    FailureParam::Text(String::new()),
+    r#"{"error":{"message":"boom","type":"None","param":"","code":"500"}}"#
+)]
+fn failure_frame_attributes(
+    #[case] error_type: FailureType,
+    #[case] param: FailureParam,
+    #[case] expected: &str,
+) {
     let mut failure = other_failure("boom");
+    failure.error_type = error_type;
     failure.param = param;
     assert_eq!(error_frame_payload(&failure), expected);
 }
@@ -59,7 +81,7 @@ fn failure_frame_param_shapes(#[case] param: FailureParam, #[case] expected: &st
 #[test]
 fn failure_keeps_type_and_status() {
     let mut failure = other_failure("boom");
-    failure.error_type = Some(String::from("AuthenticationError"));
+    failure.error_type = FailureType::Text(String::from("AuthenticationError"));
     failure.param = FailureParam::Text(String::from("messages"));
     failure.status_code = Some(422);
     assert_eq!(

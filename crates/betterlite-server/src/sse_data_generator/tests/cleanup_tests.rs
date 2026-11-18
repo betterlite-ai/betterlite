@@ -15,7 +15,7 @@ use super::{
     EndState, Outcome, body_of, chat_chunk, frames, other_failure, quiet_source, recorded_outcomes,
     recording_generator, request, snapshot_handle, source,
 };
-use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
+use crate::data_generator_select::{AsyncDataGenerator as _, GeneratorInput};
 
 fn recording_cleanup() -> (SseDataGenerator<String>, Arc<Mutex<Vec<Outcome>>>) {
     let outcome_log = Arc::new(Mutex::new(Vec::new()));
@@ -69,7 +69,7 @@ fn cleanup_after_client_disconnect() {
     );
     let runtime = Runtime::new().expect("runtime");
     let first = runtime.block_on(body.next()).expect("frame");
-    assert!(first.is_ok());
+    first.expect("successful stream frame");
     drop(body);
     drop(runtime);
     let outcomes = recorded_outcomes(&outcome_log);
@@ -134,7 +134,10 @@ async fn cleanup_waits_for_error_frame() {
         request(&[]),
         false,
     );
-    assert!(body.next().await.expect("error frame").is_ok());
+    body.next()
+        .await
+        .expect("error frame")
+        .expect("successful stream frame");
     assert!(recorded_outcomes(&outcome_log).is_empty());
     assert!(body.next().await.is_none());
     assert_eq!(
@@ -173,7 +176,10 @@ async fn dropping_body_drops_upstream() {
         request(&[]),
         false,
     );
-    assert!(body.next().await.expect("chunk").is_ok());
+    body.next()
+        .await
+        .expect("chunk")
+        .expect("successful stream frame");
     assert!(!dropped.load(Ordering::SeqCst));
     drop(body);
     assert!(dropped.load(Ordering::SeqCst));

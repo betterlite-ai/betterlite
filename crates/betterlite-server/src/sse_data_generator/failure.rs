@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use super::types::{FailureParam, StreamFailure};
+use super::types::{FailureParam, FailureType, StreamFailure};
 use crate::stream_chunks::frames::sse_data_frame;
 
 pub(super) fn unix_timestamp() -> i64 {
@@ -18,8 +18,8 @@ pub(super) fn failure_frame(failure: &StreamFailure) -> String {
     let exception = ProxyException::new(ProxyExceptionInit {
         message: failure.message.clone(),
         error_type: match &failure.error_type {
-            Some(text) => text.clone(),
-            None => "None".to_owned(),
+            FailureType::Text(text) => text.clone(),
+            FailureType::Missing | FailureType::Null => "None".to_owned(),
         },
         param: match &failure.param {
             FailureParam::Text(text) => Some(text.clone()),
@@ -32,7 +32,11 @@ pub(super) fn failure_frame(failure: &StreamFailure) -> String {
     });
     let error = ErrorObject {
         message: exception.message,
-        error_type: WireField::Text(exception.error_type),
+        error_type: match &failure.error_type {
+            FailureType::Missing => WireField::MISSING,
+            FailureType::Null => WireField::Null,
+            FailureType::Text(_) => WireField::Text(exception.error_type),
+        },
         param: wire_param(&failure.param),
         code: WireField::Text(exception.code),
     };

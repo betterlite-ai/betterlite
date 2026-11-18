@@ -1,12 +1,12 @@
 use std::io;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use encoding_rs::UTF_8;
+use futures_util::future::BoxFuture;
 
 use super::failure::unix_timestamp;
 use super::stream::{Drive, Output};
-use super::types::{FailureKind, FailureParam, Flag, StreamFailure};
+use super::types::{FailureKind, FailureParam, FailureType, Flag, StreamFailure};
 use crate::stream_chunks::MAX_RAW_SSE_BUFFER_CHARS;
 use crate::stream_chunks::StreamItem;
 use crate::stream_chunks::fallback::{fallback_event_frame, fallback_metadata};
@@ -47,18 +47,21 @@ where
     output(drive, classified, pending)
 }
 
-async fn hook<Key>(drive: &mut Drive<Key>, item: StreamItem) -> Result<StreamItem, StreamFailure>
+fn hook<Key>(
+    drive: &Drive<Key>,
+    item: StreamItem,
+) -> BoxFuture<'_, Result<StreamItem, StreamFailure>>
 where
     Key: Send + Sync + 'static,
 {
     let Some(key) = drive.session.outcome.as_ref().map(|outcome| &outcome.key) else {
-        return Ok(item);
+        return Box::pin(async move { Ok(item) });
     };
     let so_far = (!drive.chunk_text.is_empty()).then_some(drive.chunk_text.as_str());
-    let hooks = Arc::clone(&drive.session.hooks);
-    hooks
+    drive
+        .session
+        .hooks
         .chunk_hook(item, key, drive.session.request_data.as_ref(), so_far)
-        .await
 }
 
 fn latch_fallback<Key>(drive: &mut Drive<Key>, item: &StreamItem)
@@ -83,7 +86,7 @@ where
     }
 }
 
-fn pending<Key>(drive: &Drive<Key>) -> bool
+const fn pending<Key>(drive: &Drive<Key>) -> bool
 where
     Key: Sync,
 {
@@ -147,7 +150,7 @@ where
             drive.pending_failure = Some(StreamFailure {
                 message: "Raw SSE stream exceeded maximum buffered size without a frame delimiter"
                     .to_owned(),
-                error_type: None,
+                error_type: FailureType::Missing,
                 param: FailureParam::Missing,
                 status_code: None,
                 kind: FailureKind::Other,
@@ -181,6 +184,7 @@ where
     }
 }
 
+#[derive(Clone, Copy)]
 enum TextSource {
     Bytes,
     Text,

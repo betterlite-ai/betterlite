@@ -24,6 +24,13 @@ pub enum FailureParam {
     Text(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FailureType {
+    Missing,
+    Null,
+    Text(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
     Http,
@@ -34,7 +41,7 @@ pub enum FailureKind {
 #[error("{message}")]
 pub struct StreamFailure {
     pub message: String,
-    pub error_type: Option<String>,
+    pub error_type: FailureType,
     pub param: FailureParam,
     pub status_code: Option<u16>,
     pub kind: FailureKind,

@@ -17,16 +17,16 @@ use serde_json::Number;
 use tokio::runtime::Runtime;
 
 use super::types::{
-    CleanupOutcome, CollectedStream, ErrorStateSource, FailureKind, FailureParam, ItemStream,
-    SseDataGenerator, StreamCleanup, StreamErrorState, StreamFailure, StreamHooks, StreamSnapshot,
-    StreamSource,
+    CleanupOutcome, CollectedStream, ErrorStateSource, FailureKind, FailureParam, FailureType,
+    ItemStream, SseDataGenerator, StreamCleanup, StreamErrorState, StreamFailure, StreamHooks,
+    StreamSnapshot, StreamSource,
 };
 use super::{failure, setup};
-use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
+use crate::data_generator_select::{AsyncDataGenerator as _, GeneratorInput};
 use crate::stream_chunks::frames::sse_data_frame;
 use crate::stream_chunks::serialize::serialize_chunk;
 use crate::stream_chunks::{ChunkKind, StreamChunk, StreamItem};
-use crate::stream_keepalive::wrapper::KeepaliveSource;
+use crate::stream_keepalive::wrapper::{KeepaliveSource, keepalive_object};
 use crate::stream_keepalive::{JsonObject as KeepaliveMap, KeepaliveRouter};
 
 struct NoHooks;
@@ -289,7 +289,7 @@ impl KeepaliveRouter for TestRouter {
 fn other_failure(message: &str) -> StreamFailure {
     StreamFailure {
         message: message.to_owned(),
-        error_type: None,
+        error_type: FailureType::Missing,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,
@@ -318,8 +318,8 @@ fn choices_body(container: &str, text: &str) -> JsonObject {
 
 fn expected_chunk(text: &str, model: Option<&str>) -> StreamChunk {
     let mut body = choices_body("delta", text);
-    if let Some(model) = model {
-        body.insert("model".to_owned(), Json::Text(model.to_owned()));
+    if let Some(model_name) = model {
+        body.insert("model".to_owned(), Json::Text(model_name.to_owned()));
     }
     StreamChunk {
         body,
@@ -370,10 +370,10 @@ fn fallback_hidden(model: Option<&str>, errors: &[&str]) -> JsonObject {
         "x-litellm-attempted-fallbacks",
         Json::Number(Number::from(1_i64)),
     )]);
-    if let Some(model) = model {
+    if let Some(model_name) = model {
         headers.insert(
             "x-litellm-model-group".to_owned(),
-            Json::Text(model.to_owned()),
+            Json::Text(model_name.to_owned()),
         );
     }
     if !errors.is_empty() {
@@ -595,11 +595,11 @@ fn keepalive_converts_every_value() {
     let data = object(&[
         ("null", Json::Null),
         ("bool", Json::Bool(true)),
-        ("number", Json::Number(Number::from(7))),
+        ("number", Json::Number(Number::from(7_i32))),
         ("text", Json::Text(String::from("value"))),
         ("list", Json::List(vec![Json::Bool(false)])),
         ("object", Json::Object(object(&[("inner", Json::Null)]))),
     ]);
-    let converted = crate::stream_keepalive::wrapper::keepalive_object(&data);
+    let converted = keepalive_object(&data);
     assert_eq!(setup::request_object(&converted), data);
 }

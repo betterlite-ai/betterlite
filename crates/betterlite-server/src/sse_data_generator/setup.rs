@@ -111,11 +111,11 @@ pub(super) fn list_beats(
     hidden: &JsonObject,
     items: ItemStream,
 ) -> BeatStream {
-    let mut resolver =
-        KeepaliveResolver::new(router.as_ref().map(Arc::clone), request_data, global);
+    let has_router = router.is_some();
+    let mut resolver = KeepaliveResolver::new(router, request_data, global);
     let initial = resolver.resolve(&keepalive_object(hidden));
     let interval = coerce_keepalive_interval(Some(&PingSetting::Seconds(initial)));
-    if router.is_some() || interval.is_some() {
+    if has_router || interval.is_some() {
         return Box::pin(with_keepalive(items, resolver, initial));
     }
     Box::pin(items.map(Beat::Item))

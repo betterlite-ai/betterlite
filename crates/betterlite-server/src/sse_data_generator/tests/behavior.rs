@@ -315,7 +315,7 @@ fn strips_only_when_enabled(#[case] value: JsonValue, #[case] written: usize) {
         false,
     ));
     assert_eq!(out.len(), written);
-    assert_eq!(out[written - 1], DONE_FRAME);
+    assert_eq!(out.last().expect("done frame"), DONE_FRAME);
 }
 
 #[test]
@@ -427,7 +427,7 @@ fn raw_rejects_overflow() {
 fn raw_accepts_limit_characters() {
     let data = request(&[("_litellm_raw_sse_stream", JsonValue::from(true))]);
     let mut payload = String::from("data: complete\n\n");
-    payload.push_str(&"é".repeat(MAX_RAW_SSE_BUFFER_CHARS));
+    payload.push_str(&"\u{e9}".repeat(MAX_RAW_SSE_BUFFER_CHARS));
     let out = frames(body_of(
         &plain_generator(),
         source(
@@ -572,7 +572,10 @@ async fn overflow_yields_before_failure() {
         "data: complete\n\n"
     );
     assert_eq!(count_prefix(&recorded(&events), "failure:"), 0);
-    assert!(body.next().await.expect("error frame").is_ok());
+    body.next()
+        .await
+        .expect("error frame")
+        .expect("successful stream frame");
     assert_eq!(count_prefix(&recorded(&events), "failure:"), 1);
 }
 
