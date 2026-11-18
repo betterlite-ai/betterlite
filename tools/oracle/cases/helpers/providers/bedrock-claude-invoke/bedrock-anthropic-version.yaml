@@ -1,0 +1,24 @@
+kind: helper
+name: bedrock-claude-invoke-bedrock-anthropic-version
+call:
+  bedrock_claude_invoke:
+    function: transform
+    model_cost:
+      bedrock/claude-plain: {litellm_provider: bedrock}
+    calls:
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 64}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 64, anthropic_version: custom-2024-01-01, aws_access_key_id: AKIAEXAMPLE, aws_secret_access_key: secret}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

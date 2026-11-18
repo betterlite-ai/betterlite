@@ -24,12 +24,7 @@ async fn baseline_catalog_columns(#[case] table: &'static str) {
                 .batch_execute(migration_sql())
                 .await
                 .unwrap();
-            client_upstream
-                .batch_execute(include_str!(
-                    "../../../../../tools/postgres-fixture/fixtures/baseline.sql"
-                ))
-                .await
-                .unwrap();
+            client_upstream.batch_execute(BASELINE).await.unwrap();
             let (candidate, candidate_pk) = table_shape(&client_candidate, "public", table).await;
             let (upstream, upstream_pk) = table_shape(&client_upstream, "public", table).await;
             assert_eq!(candidate, upstream, "{table} columns differ from upstream");

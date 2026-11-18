@@ -13,13 +13,11 @@ use super::support::RecordingIdentity;
 use crate::database_replica::availability::Availability;
 use crate::database_replica::pinned::WriterPinnedClient;
 use crate::database_replica::routing::RoutingDatabase;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::worker_heartbeat::{PostgresDatabase, ProxyWorkerHeartbeat, count_live_proxy_workers};
 
 // the Prisma column is timestamp(3); the boundary tests widen it so a frozen NOW() lands exactly on the cutoff
-const SCHEMA: &str = concat!(
-    include_str!("../../../migrations/20260814000000_add_proxy_worker_heartbeat/migration.sql"),
-    r#"ALTER TABLE "LiteLLM_ProxyWorkerHeartbeat" ALTER COLUMN "last_heartbeat_at" TYPE timestamptz USING "last_heartbeat_at" AT TIME ZONE 'UTC';"#,
-);
+const WIDEN_HEARTBEAT: &str = r#"ALTER TABLE "LiteLLM_ProxyWorkerHeartbeat" ALTER COLUMN "last_heartbeat_at" TYPE timestamptz USING "last_heartbeat_at" AT TIME ZONE 'UTC';"#;
 
 // rows just inside and just outside the 180s liveness and 3600s retention cutoffs
 const BOUNDARY_ROWS: &str = r#"INSERT INTO "LiteLLM_ProxyWorkerHeartbeat" (worker_id, hostname, last_heartbeat_at) VALUES
@@ -38,14 +36,14 @@ async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["heartbeat-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let mut statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+    statements.push(WIDEN_HEARTBEAT.to_owned());
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(4).build().unwrap();
-    let client = pool.get().await.unwrap();
-    client.batch_execute(SCHEMA).await.unwrap();
     (fixture, pool)
 }
 

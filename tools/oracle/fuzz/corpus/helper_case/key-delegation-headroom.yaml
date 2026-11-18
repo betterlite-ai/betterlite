@@ -1,0 +1,31 @@
+kind: helper
+name: key-delegation-ceiling-seed
+call:
+  key_delegation:
+    calls:
+      - check: ownership
+        body: {key: sk-seed, user_id: null}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [info_routes]
+        was_provided: true
+        allow_safe_presets: true
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: transition
+        incoming: [info_routes]
+        existing: [info_routes]
+      - check: routes_update
+        body: {key: sk-seed, allowed_routes: []}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: permissions
+        body: {key: sk-seed, permissions: {}}
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 15}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: true, is_ui_session_team_key: false}
+        has_team: false
+env: {}
+compare: {ignore: []}

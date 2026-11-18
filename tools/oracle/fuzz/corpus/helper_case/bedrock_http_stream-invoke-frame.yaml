@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-http-stream-invoke-frame
+call:
+  bedrock_http_stream:
+    cases:
+    - path: invoke_sync
+      api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan/invoke
+      headers:
+        content-type: application/json
+      data: '{"inputText":"hi"}'
+      signed_json_body: null
+      model: bedrock/amazon.titan
+      messages:
+      - role: user
+        content: hi
+      json_mode: null
+      fake_stream: false
+      status: 200
+      response_headers:
+        content-type: application/vnd.amazon.eventstream
+      body: 000000660000002aa8eb94520b3a6576656e742d747970650700056368756e6b0d3a6d6573736167652d747970650700056576656e747b226279746573223a2265794a7664585277645852555a586830496a6f695a6d6c796333516966513d3d227d0bc3a082
+      failure: null
+      consume: none
+      compare:
+        message: false
+        headers: false
+      provider: null
+env: {}
+compare:
+  ignore: []

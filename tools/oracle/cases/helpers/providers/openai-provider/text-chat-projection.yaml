@@ -1,0 +1,45 @@
+kind: helper
+name: openai-provider-text-chat-projection
+call:
+  openai_provider:
+    case: text
+    model: gpt-3.5-turbo-instruct
+    api_base: null
+    api_key: null
+    organization: null
+    headers: null
+    extra_headers: null
+    metadata: null
+    environment:
+      OPENAI_BASE_URL: https://env-base.test/v1
+      OPENAI_API_KEY: sk-env
+    globals:
+      api_base: null
+      api_key: null
+      openai_key: null
+      organization: org-global
+    preview: false
+    chat_defaults: null
+    text_defaults: null
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    status: 200
+    reply:
+      id: cmpl-1
+      object: text_completion
+      created: 1700000000
+      model: gpt-3.5-turbo-instruct
+      choices:
+        - index: 0
+          text: hello
+          finish_reason: stop
+          logprobs: null
+      usage:
+        prompt_tokens: 1
+        completion_tokens: 1
+        total_tokens: 2
+    text_completion: false
+env: {}
+compare: {ignore: []}

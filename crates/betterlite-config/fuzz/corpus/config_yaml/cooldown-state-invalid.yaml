@@ -1,0 +1,4 @@
+general_settings:
+  enable_health_check_routing: maybe
+  health_check_staleness_threshold: soon
+  health_check_ignore_transient_errors: 1

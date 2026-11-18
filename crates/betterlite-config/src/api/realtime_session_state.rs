@@ -1,1 +1,103 @@
+mod tests;
 
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
+use crate::sections::Section;
+use crate::sections::settings::JsonValue;
+
+pub const LOGGED_EVENT_TYPES_PATH: &str = "litellm_settings.logged_real_time_event_types";
+const ENVIRONMENT_PREFIX: &str = "os.environ/";
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Raw {
+    #[serde(default)]
+    pub litellm_settings: Global,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Global {
+    #[serde(default)]
+    pub logged_real_time_event_types: JsonValue,
+}
+
+// LiteLLM's litellm.logged_real_time_event_types is None, a list of event names or "*", and the connection applies its own five defaults for None
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum LoggedEventTypes {
+    #[default]
+    Default,
+    All,
+    Only(Vec<String>),
+}
+
+// boxed so the section adds a pointer to Sections, which sits near clippy's large_futures limit (B9972)
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Settings {
+    pub logged_real_time_event_types: Box<LoggedEventTypes>,
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        Ok(Settings {
+            logged_real_time_event_types: Box::new(logged_event_types(
+                self.litellm_settings.logged_real_time_event_types,
+                lookup,
+            )?),
+        })
+    }
+}
+
+fn logged_event_types<L>(value: JsonValue, lookup: &L) -> Result<LoggedEventTypes, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match value {
+        JsonValue::Null => Ok(LoggedEventTypes::Default),
+        JsonValue::String(text) => string_selection(text, lookup),
+        // LiteLLM's config resolver substitutes os.environ/ in a value but leaves a string entry inside a list as written
+        JsonValue::Array(items) => {
+            let mut types = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    JsonValue::String(event) => types.push(event),
+                    other @ (JsonValue::Null
+                    | JsonValue::Bool(_)
+                    | JsonValue::Number(_)
+                    | JsonValue::Array(_)
+                    | JsonValue::Object(_)) => return Err(invalid_scalar(&other)),
+                }
+            }
+            Ok(LoggedEventTypes::Only(types))
+        }
+        other @ (JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_)) => {
+            Err(invalid_scalar(&other))
+        }
+    }
+}
+
+// LiteLLM's proxy substitutes os.environ/ references before it assigns the setting, and an empty variable counts as unset; a literal "*" and a variable holding one both select everything
+fn string_selection<L>(text: String, lookup: &L) -> Result<LoggedEventTypes, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let from_environment = text.starts_with(ENVIRONMENT_PREFIX);
+    let resolved = resolve_string(text, LOGGED_EVENT_TYPES_PATH, lookup)?;
+    if resolved == "*" {
+        return Ok(LoggedEventTypes::All);
+    }
+    if from_environment && resolved.is_empty() {
+        return Ok(LoggedEventTypes::Default);
+    }
+    Err(invalid_scalar(&JsonValue::String(resolved)))
+}
+
+fn invalid_scalar(value: &JsonValue) -> ConfigError {
+    ConfigError::InvalidScalar {
+        path: LOGGED_EVENT_TYPES_PATH.to_owned(),
+        value: matches!(value, JsonValue::Bool(true)),
+    }
+}

@@ -4,13 +4,16 @@ use std::task::{Context as TaskContext, Poll};
 use betterlite_context::call_context::CallContext;
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::MessageContent;
+use betterlite_openai::completion_chat_bridge::ChatEndpoint;
 use futures_util::stream::{BoxStream, Stream, StreamExt as _};
 
 use super::error::DispatchError;
 use super::log::CallOutcome;
 use super::terminal::Terminal;
 use super::{Dispatch, Entry};
-use crate::operation::chat::{ChatCallInput, ChatRequest, ChatResult, ChatStreamAnswer};
+use crate::operation::chat::{
+    ChatCallInput, ChatRequest, ChatResult, ChatStreamAnswer, TextCallMode,
+};
 
 pub mod mock_stream;
 
@@ -57,16 +60,30 @@ where
     dispatch.evaluate_rules(rules_input(request).as_deref(), model)?;
     // parameter preparation parses the control options before any upstream request is built
     let control = request.calls.prepare(&request.request)?;
+    let endpoint = request.calls.endpoint(&deployment);
     let call = ChatCallInput {
         deployment,
         request: &request.request,
     };
-    if request.request.stream {
-        let answer = request.calls.stream(call, control).await?;
-        Ok(ChatResult::Stream(answer))
-    } else {
-        let answer = request.calls.complete(call, control).await?;
-        Ok(ChatResult::Completion(answer))
+    // main.py sends a text-completion deployment's chat request through the text endpoint
+    match endpoint {
+        ChatEndpoint::Chat => {
+            if request.request.stream {
+                let answer = request.calls.stream(call, control).await?;
+                Ok(ChatResult::Stream(answer))
+            } else {
+                let answer = request.calls.complete(call, control).await?;
+                Ok(ChatResult::Completion(answer))
+            }
+        }
+        ChatEndpoint::Text { convert } => {
+            let mode = if request.request.stream {
+                TextCallMode::Streamed
+            } else {
+                TextCallMode::Buffered { convert }
+            };
+            Ok(request.calls.text(call, mode).await?)
+        }
     }
 }
 

@@ -1,0 +1,47 @@
+kind: helper
+name: openai-provider-chat-seed
+call:
+  openai_provider:
+    case: chat
+    model: gpt-4o
+    api_base: https://fixture.test/v1
+    api_key: sk-fixture
+    organization: null
+    headers:
+      x-caller: "1"
+    extra_headers: null
+    metadata: null
+    environment: {}
+    globals:
+      api_base: null
+      api_key: null
+      openai_key: null
+      organization: null
+    preview: false
+    chat_defaults: null
+    text_defaults: null
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      max_tokens: 4
+    status: 200
+    reply:
+      id: chatcmpl-seed
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+        - index: 0
+          message:
+            role: assistant
+            content: hi
+          logprobs: null
+          finish_reason: stop
+      usage:
+        prompt_tokens: 1
+        completion_tokens: 1
+        total_tokens: 2
+    text_completion: false
+env: {}
+compare: {ignore: []}

@@ -194,15 +194,12 @@ impl Postgres {
         let url = TestEnvironment::parse_from(["database-views-tests"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .expect("a test schema");
+        let fixture =
+            PostgresFixture::provision_with_statements(url.as_ref(), vec![BASE_TABLES.to_owned()])
+                .resolve()
+                .await
+                .expect("a test database");
         let (client, tasks) = Self::connect(&fixture).await;
-        client
-            .batch_execute(BASE_TABLES)
-            .await
-            .expect("the base tables");
         Self {
             fixture,
             client,
@@ -228,7 +225,7 @@ impl Postgres {
         self.fixture
             .close_async()
             .await
-            .expect("the schema is dropped");
+            .expect("the database is dropped");
     }
 }
 

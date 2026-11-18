@@ -48,7 +48,8 @@ impl PostgresRepository {
             .build()
             .map_err(ScenarioError::Io)?;
         let entered = runtime.enter();
-        let mut task = PostgresFixture::provision_schema(self.configured_url.as_ref());
+        let mut task =
+            PostgresFixture::provision_with_statements(self.configured_url.as_ref(), Vec::new());
         let fixture = runtime
             .block_on(task.resolve())
             .map_err(ScenarioError::Fixture)?;
