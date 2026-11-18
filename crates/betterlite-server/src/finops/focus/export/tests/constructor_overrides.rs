@@ -11,7 +11,7 @@ async fn parameters_override_the_environment() {
     params.frequency = Some("Daily".to_owned());
     params.cron_offset_minute = Some(17);
     params.interval_seconds = Some(42);
-    params.prefix = Some("chosen".to_owned());
+    params.prefix = Some("Chosen".to_owned());
     params.destination_config = Some(support::overrides("bucket"));
     let logger = support::build(
         &support::environment(&[
@@ -31,13 +31,13 @@ async fn parameters_override_the_environment() {
     assert_eq!(logger.frequency, "daily");
     assert_eq!(logger.cron_offset_minute, 17);
     assert_eq!(logger.interval_seconds, Some(42));
-    assert_eq!(logger.prefix, "chosen");
+    assert_eq!(logger.prefix, "Chosen");
     logger.export_usage_data(None, None, None).await.unwrap();
     let settings = recorder.settings();
     assert_eq!(settings.len(), 1);
     assert_eq!(settings[0].provider, "gcs");
     assert_eq!(settings[0].export_format, "csv");
-    assert_eq!(settings[0].prefix, "chosen");
+    assert_eq!(settings[0].prefix, "Chosen");
     assert_eq!(settings[0].bucket_name.as_deref(), Some("bucket"));
 }
 
