@@ -26,7 +26,7 @@ pub(super) fn flag(
 }
 
 // an os.environ/ reference resolves once here, and an empty variable counts as unset
-fn reference(
+pub(super) fn reference(
     text: String,
     path: &str,
     lookup: &dyn EnvironmentLookup,
@@ -65,23 +65,8 @@ pub(super) fn definitions(
     Ok(Some(resolved))
 }
 
-pub(super) fn labels(
-    raw: Option<BTreeMap<String, Option<String>>>,
-    prefix: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<BTreeMap<String, String>, ConfigError> {
-    let resolved = resolve_map(
-        raw.unwrap_or_default(),
-        prefix,
-        "tier_labels",
-        lookup,
-        reference,
-    )?;
-    Ok(resolved)
-}
-
 // a tier-keyed map whose null entries are dropped and whose present values resolve once
-fn resolve_map<T>(
+pub(super) fn resolve_map<T>(
     entries: BTreeMap<String, Option<T>>,
     prefix: &str,
     key: &str,

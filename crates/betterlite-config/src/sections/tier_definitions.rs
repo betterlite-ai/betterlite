@@ -138,7 +138,13 @@ impl RawRouterConfig {
                 &format!("{prefix}.non_reasoning_tier"),
                 lookup,
             )?,
-            tier_labels: values::labels(self.tier_labels, &prefix, lookup)?,
+            tier_labels: values::resolve_map(
+                self.tier_labels.unwrap_or_default(),
+                &prefix,
+                "tier_labels",
+                lookup,
+                values::reference,
+            )?,
             tier_models: values::pools(self.tier_models, &prefix, lookup)?,
         })
     }
