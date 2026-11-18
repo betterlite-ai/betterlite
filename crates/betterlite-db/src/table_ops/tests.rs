@@ -4,6 +4,11 @@ use std::convert::Infallible;
 
 use super::{DEFAULT_TEAM_LIST_LIMIT, OperationCallType, TableOpsError, TableSettings};
 
+mod failures;
+mod reads;
+mod support;
+mod writes;
+
 #[test]
 fn each_operation_keeps_litellms_call_type_name() {
     assert_eq!(OperationCallType::GetData.as_str(), "get_data");
