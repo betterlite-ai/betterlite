@@ -1,0 +1,30 @@
+task: B3066
+deviations:
+  - what: The six FocusLogger settings are read through betterlite-config's EnvironmentLookup in a config section instead of os.getenv in __init__, and an empty environment value counts as unset.
+    why: All external configuration in betterlite comes through the config crate for consistency and testability; docs/compatibility.md treats an empty env string as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L44-L61
+  - what: focus_export_schedule::Settings::from_environment parses all six FOCUS_* variables, and both the config section's convert and FocusLogger::new call it. An invalid FOCUS_CRON_OFFSET therefore fails the config load and construction even when a parameter supplies an offset or no FocusLogger is registered, and an invalid FOCUS_INTERVAL_SECONDS warns at load even when a parameter supplies an interval or no FocusLogger exists; LiteLLM reads the environment only inside __init__ and only for a field its parameter left unset.
+    why: betterlite reads its environment in config sections, so a bad value fails at startup instead of when the first logger is built. The offset still has no fallback and its error names the variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L47-L61
+  - what: The export engine is built on first use by an injected FocusEngineFactory instead of constructing FocusExportEngine inside _ensure_engine, and a failed build is not cached, so the next export tries again.
+    why: The destination clients come from the injected factory and the engine never builds a network client itself; leaving the cache empty on failure matches LiteLLM, which leaves _engine None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L66-L77
+  - what: The pod lock, the clock and the registered loggers arrive as constructor and function parameters instead of being read from litellm.proxy.proxy_server.proxy_logging_obj and litellm.logging_callback_manager.
+    why: betterlite has no module-level state; the composition root supplies the pod lock manager and the registered loggers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L112-L122
+  - what: Each registry entry carries a FocusLoggerType tag, and the job picks the first entry tagged Focus, instead of filtering a global callback list with type(cb) is FocusLogger so subclasses like VantageLogger are excluded.
+    why: Rust has no subclass identity; the tag records the same distinction, and the Vantage logger registers with the Vantage tag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L140-L146
+  - what: _build_scheduler_trigger returns a typed ScheduleTrigger (Interval or Cron) instead of a dict of APScheduler keyword arguments, and the scheduler port turns it into add_job.
+    why: betterlite passes typed values between its own modules and has no dicts of mixed int and str values; the trigger and the job registration stay separate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L158-L174
+  - what: Failures are typed thiserror enums (ScheduleError::UnsupportedFrequency, ScheduleError::TimeWindowOutOfRange, FocusError::UnpairedBounds, FocusInitError::Scheduler) instead of ValueError, with LiteLLM's message wording.
+    why: betterlite reports failures as typed errors callers can match; docs/compatibility.md leaves error message text to betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L93-L94
+  - what: All methods are async on tokio instead of asyncio.
+    why: The gateway is built on tokio and the scheduler calls an async job.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L79
+  - what: dry_run_export_usage_data is not ported; the engine wrapper it forwards to is unreachable too.
+    why: It has no caller at the pinned commit; B073 implements the Vantage dry-run route's preview directly, as the task's out-of-scope note says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L107-L110
+kept_bugs: []
