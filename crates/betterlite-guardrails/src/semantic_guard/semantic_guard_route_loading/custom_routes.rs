@@ -87,9 +87,12 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
                 drop(self.collections.pop());
             }
             Event::Scalar(text, ScalarStyle::Plain, _, None) => {
-                if self.scalar_context(Some(text.as_ref()))
-                    && !self.non_text.is_match(text.as_ref())
-                {
+                let route_text = self.scalar_context(Some(text.as_ref()));
+                // serde's inference reads any spelling of null as null, while PyYAML reads only null, Null and NULL
+                if self.non_text.is_match(text.as_ref()) {
+                    return;
+                }
+                if route_text || text.eq_ignore_ascii_case("null") {
                     self.spans.push((span, text.into_owned()));
                 }
             }

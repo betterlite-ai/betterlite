@@ -366,6 +366,26 @@ fn an_aliased_pyyaml_text_scalar_is_read_as_text() {
 }
 
 #[test]
+fn a_mixed_case_null_scalar_is_quoted_before_the_reader_infers_a_null() {
+    let source = b"metadata: {note: &n NuLL}\nroute_name: *n\n";
+    assert_eq!(
+        quote_pyyaml_text_scalars(source).as_ref(),
+        b"metadata: {note: &n 'NuLL'}\nroute_name: *n\n"
+    );
+}
+
+#[test]
+fn an_aliased_mixed_case_null_keeps_its_text_in_the_route_fields() {
+    let (_folder, path) =
+        routes_file("metadata: {note: &n NuLL}\nroute_name: *n\nutterances: [*n]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route("NuLL", None, &["NuLL"], 0.5)]
+    );
+}
+
+#[test]
 fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
     let (_folder, path) = routes_file(
         "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n    - 1:30.5\n",

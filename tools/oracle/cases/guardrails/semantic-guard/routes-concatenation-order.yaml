@@ -9,6 +9,9 @@ call:
         description: from the routes file
         utterances: ["file one", "file two", 1e3]
         similarity_threshold: 0.8
+      - metadata: {note: &n NuLL}
+        route_name: *n
+        utterances: [*n]
     custom_routes:
       - route_name: inline_route
         utterances: ["inline one"]
