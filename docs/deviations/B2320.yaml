@@ -1,0 +1,30 @@
+task: B2320
+deviations:
+  - what: >-
+      The failure boundary prints "Args passed in: [redacted]" instead of the locals() mapping, so the
+      raw token that reached get_data never enters the printed error, the traceback string or the
+      failure_handler payload. The deprecated and cached-plan diagnostics carry no token value either:
+      LiteLLM prints the hashed token in its find_unique debug line.
+    why: >-
+      LiteLLM captures args_passed_in from locals(), which holds the caller's token as given, and puts it
+      in both the printed message and traceback_str, so a live key lands in proxy logs and in every
+      failure-handler consumer. No working setup can rely on reading a leaked key, and a leak is the bug
+      class the rule says to fix without asking. betterlite keeps the class name, the status and the
+      message that names the failure and drops only the argument dump; the token hash is likewise absent
+      from the TokenHash diagnostic, while LiteLLM logs it at debug. The
+      native_database_diagnostics_hide_token_and_hash test pins both redactions at every level of the
+      logged text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4885
+kept_bugs:
+  - what: >-
+      The deprecated-key cache evicts the oldest entry on every remember once it holds
+      DEPRECATED_CACHE_CAPACITY entries, including when the remembered hash is already present. A refresh
+      of the oldest cached key at capacity therefore leaves the cache one entry smaller, and the
+      refreshed key stays present.
+    why: >-
+      LimitedSizeOrderedDict.__setitem__ calls popitem(last=False) whenever len(self) >= max_size, with
+      no membership check, so a working proxied rotation that re-looks a key while the cache is full sees
+      the same shrink. betterlite copies the eviction order and the membership-blind condition;
+      deprecated_ttl60_revoke_equality_and_capacity1000 fills the cache, refreshes the oldest key at
+      capacity and pins the resulting length and eviction order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L43-L49

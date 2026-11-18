@@ -1,7 +1,7 @@
 id: B8131
 milestone: M11 distribution
 title: Standalone Helm chart workloads
-status: todo
+status: done
 depends_on: [B8130, B1232]
 file: tasks/B8131-helm-chart-workloads.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "helm/litellm-helm/templates/service.yaml"
 parent: B151
 split_from: B152
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2478
