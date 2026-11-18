@@ -18,6 +18,9 @@ deviations:
   - what: A pipeline of usage counter increments, the token counters the success callback writes, updates memory at once and reaches the store on the owner's next sync. LiteLLM's cache.async_increment_cache_pipeline writes both caches immediately and then copies each store reply back into memory.
     why: The sink B397 calls is synchronous and cannot await the store; the owner's queue already carries deltas to the same keys, so the increment rides that batch and lands within one sync interval. The local fast path is current on both sides; only the moment another instance's store read sees the increment differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8194-L8200
+  - what: Without a redis store an increment queues no delta; LiteLLM appends every increment to redis_increment_operation_queue even when dual_cache.redis_cache is None, and nothing drains that list in that state.
+    why: The queue only feeds the store push, so with no store it is an unbounded leak. Betterlite still tracks the key, which is what the local-only path reads, and leaves the queue empty.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L92-L99
 kept_bugs:
   - what: A flush whose pipeline raises discards the whole queued batch, so those increments never reach the store. Betterlite logs a warning and discards the batch the same way instead of replaying it.
     why: Replaying after a partial pipeline failure can double-count an increment, and LiteLLM's discard is what a working multi-instance setup has always had; the oracle case failed-flush-warns-and-discards pins it.
