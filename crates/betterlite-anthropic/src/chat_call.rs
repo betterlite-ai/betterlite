@@ -93,48 +93,34 @@ where
         }
         let prepared = prepare::prepare(&call, &mut deps).await?;
         if prepared.options.stream {
-            return send_stream(call, prepared, deps).await;
+            let messages = Json::List(call.messages);
+            let facts = StreamFacts {
+                model: call.model,
+                api_base: call.api_base,
+                messages: &messages,
+                data: prepared.body,
+                headers: prepared.header_map,
+                timeout: call.timeout,
+                json_mode: prepared.options.json_mode,
+                optional_params: &prepared.optional_params,
+                litellm_params: &call.litellm_params,
+            };
+            let build = StreamBuild {
+                ids: deps.ids,
+                counter: deps.counter,
+                max_event_bytes: deps.max_event_bytes,
+                max_error_body_bytes: deps.max_error_body_bytes,
+            };
+            return open_stream(
+                deps.clients,
+                deps.stream_logger,
+                build,
+                facts,
+                call.style == CallStyle::Async,
+            )
+            .await;
         }
         send::buffered(call, prepared, deps).await
     }
     .boxed_local()
-}
-fn send_stream<'call, Config, Client, Counter>(
-    call: ChatCall<'call>,
-    prepared: Prepared,
-    deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
-where
-    Config: ChatConfig,
-    Client: ChatTransport + 'call,
-    Counter: ReasoningTokenCounter + Unpin + Send + 'call,
-{
-    Box::pin(async move {
-        let messages = Json::List(call.messages);
-        let facts = StreamFacts {
-            model: call.model,
-            api_base: call.api_base,
-            messages: &messages,
-            data: prepared.body,
-            headers: prepared.header_map,
-            timeout: call.timeout,
-            json_mode: prepared.options.json_mode,
-            optional_params: &prepared.optional_params,
-            litellm_params: &call.litellm_params,
-        };
-        let build = StreamBuild {
-            ids: deps.ids,
-            counter: deps.counter,
-            max_event_bytes: deps.max_event_bytes,
-            max_error_body_bytes: deps.max_error_body_bytes,
-        };
-        open_stream(
-            deps.clients,
-            deps.stream_logger,
-            build,
-            facts,
-            call.style == CallStyle::Async,
-        )
-        .await
-    })
 }
