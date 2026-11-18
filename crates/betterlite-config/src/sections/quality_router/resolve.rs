@@ -143,18 +143,17 @@ fn reject_quoted_number(value: &RawNumber, path: &str) -> Result<(), ConfigError
 }
 
 // the price arrives as written text, so the shared number path keeps every digit and resolves os.environ once
-pub(super) fn resolve_price<L>(
+pub(super) fn resolve_price(
     value: Option<RawPrice>,
     path: &str,
-    lookup: &L,
-) -> Result<Option<Decimal>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(price) = value else {
-        return Ok(None);
-    };
-    resolve_number(Some(RawNumber::Text(price.0)), path, lookup, parse_money)
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Option<Decimal>, ConfigError> {
+    resolve_number(
+        value.map(|price| RawNumber::Text(price.0)),
+        path,
+        lookup,
+        parse_money,
+    )
 }
 
 fn invalid_scalar(path: &str) -> ConfigError {
