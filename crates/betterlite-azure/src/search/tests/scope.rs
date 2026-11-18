@@ -8,7 +8,9 @@ use crate::search::error::AzureSearchError;
 
 use crate::search::{AzureSearchConfig, ENTRA_SCOPE};
 
-use super::support::{endpoint_token_settings, headers, minter, model_settings, token_settings};
+use super::support::{
+    endpoint_settings, endpoint_token_settings, headers, minter, model_settings, token_settings,
+};
 
 pub(super) fn scope_token_header() {
     api_key_becomes_api_key();
