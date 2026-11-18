@@ -23,7 +23,9 @@ pub(super) fn group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
         }
         (Some('?'), Some('<')) => Err(PatternProblem::Syntax),
         (Some('?'), Some('P')) => named_group(walker),
-        (Some('?'), Some(letter)) if FLAG_LETTERS.contains(&letter) => flags_group(walker),
+        (Some('?'), Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
+            flags_group(walker)
+        }
         _ => {
             walker.output.push('(');
             let verbose = matches!(walker.verbose.last(), Some(true));
