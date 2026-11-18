@@ -80,13 +80,7 @@ where
             now,
         };
         let messages: Vec<Message> = serde_json::from_value(serde_json::to_value(&call.messages)?)?;
-        let body = request_body::<_, ClientFailure, FileFailure>(
-            call,
-            &source,
-            &messages,
-            settings.defaults,
-        )
-        .await?;
+        let body = request_body(call, &source, &messages, settings.defaults).await?;
         let prepared = prepare::<_, ClientFailure, FileFailure>(call, &body, settings.body_limit)?;
         let selected_client = call
             .shared_session
@@ -113,24 +107,41 @@ where
     })
 }
 
-fn request_body<'call, Client, ClientFailure, FileFailure>(
-    call: &'call CompletionCall<ClientHandle<Client>, Engine>,
-    source: &'call PromptSource<'_>,
-    messages: &'call [Message],
-    defaults: &'call OptionValues,
-) -> HandlerFuture<'call, IndexMap<String, Json>, Failure<ClientFailure, FileFailure>>
+#[derive(Debug, thiserror::Error)]
+enum BodyError {
+    #[error("extra_body must be an object")]
+    ExtraBody,
+    #[error(transparent)]
+    Legacy(#[from] CompletionError),
+}
+
+impl<ClientFailure, FileFailure> From<BodyError> for Failure<ClientFailure, FileFailure>
 where
     ClientFailure: StdError + Send + Sync + 'static,
     FileFailure: StdError + Send + Sync + 'static,
 {
+    fn from(source: BodyError) -> Self {
+        match source {
+            BodyError::ExtraBody => Self::ExtraBody,
+            BodyError::Legacy(error) => Self::Legacy(error),
+        }
+    }
+}
+
+fn request_body<'call, Client>(
+    call: &'call CompletionCall<ClientHandle<Client>, Engine>,
+    source: &'call PromptSource<'_>,
+    messages: &'call [Message],
+    defaults: &'call OptionValues,
+) -> HandlerFuture<'call, IndexMap<String, Json>, BodyError> {
     let mut optional = call.optional_params.clone();
     let extra_body = match optional.shift_remove("extra_body") {
         None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Object(fields)) => fields,
-        Some(_) => return ready(Err(Failure::ExtraBody)).boxed_local(),
+        Some(_) => return ready(Err(BodyError::ExtraBody)).boxed_local(),
     };
     transform_request(source, &call.model, messages, optional, defaults)
-        .map_err(Failure::Legacy)
+        .map_err(BodyError::Legacy)
         .map_ok(move |mut body| {
             body.extend(extra_body);
             if call.stream {

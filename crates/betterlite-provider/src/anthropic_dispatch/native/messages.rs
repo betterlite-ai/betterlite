@@ -4,7 +4,7 @@ use super::legacy::Transport;
 use super::{ClientHandle, Counter, Failure, Native, Reply, Runtime, config::Config};
 use betterlite_anthropic::chat_call::transport::{ChatTransport, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{
-    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
+    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, ChatResult, chat_call,
 };
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
@@ -12,7 +12,7 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_tokenizer::engine::Engine;
-use futures_util::{FutureExt as _, TryFutureExt as _};
+use futures_util::future::LocalBoxFuture;
 use secrecy::ExposeSecret as _;
 use std::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
@@ -57,46 +57,44 @@ where
             disable_add_prefix_to_prompt: runtime.disable_add_prefix_to_prompt,
             model_response: call.model_response.clone(),
         };
-        send(native, call, config, runtime, log).await
+        runtime
+            .send(native, call, config, log)
+            .await
+            .map_err(|source| Failure::Chat(Box::new(source)))
     })
 }
 
-fn send<'call, Client, FileFailure>(
-    request: ChatCall<'call>,
-    call: &'call CompletionCall<ClientHandle<Client>, Engine>,
-    config: &'call Config<'_>,
-    runtime: &'call Runtime<'_, Client>,
-    log: &'call mut CallLogging<'_, '_>,
-) -> HandlerFuture<
-    'call,
-    ChatOutcome<Client::Failure, Counter>,
-    Failure<Client::Failure, FileFailure>,
->
+impl<Client> Runtime<'_, Client>
 where
     Client: ChatTransport,
-    FileFailure: StdError + Send + Sync + 'static,
 {
-    let clients = ChatClients {
-        pooled: runtime.pooled,
-        supplied: call.client.as_ref().map(|client| SuppliedChatClient {
-            kind: client.kind,
-            transport: &client.transport,
-        }),
-    };
-    let deps = ChatDeps {
-        config,
-        clients,
-        state: log.state,
-        env: log.env,
-        stream_logger: runtime.stream_logger,
-        counter: Counter(call.encoding.clone()),
-        ids: runtime.ids,
-        max_event_bytes: runtime.max_event_bytes,
-        max_error_body_bytes: runtime.max_error_body_bytes,
-    };
-    chat_call(request, deps)
-        .map_err(|source| Failure::Chat(Box::new(source)))
-        .boxed_local()
+    fn send<'call>(
+        &'call self,
+        request: ChatCall<'call>,
+        call: &'call CompletionCall<ClientHandle<Client>, Engine>,
+        config: &'call Config<'_>,
+        log: &'call mut CallLogging<'_, '_>,
+    ) -> LocalBoxFuture<'call, ChatResult<Client, Counter>> {
+        let clients = ChatClients {
+            pooled: self.pooled,
+            supplied: call.client.as_ref().map(|client| SuppliedChatClient {
+                kind: client.kind,
+                transport: &client.transport,
+            }),
+        };
+        let deps = ChatDeps {
+            config,
+            clients,
+            state: log.state,
+            env: log.env,
+            stream_logger: self.stream_logger,
+            counter: Counter(call.encoding.clone()),
+            ids: self.ids,
+            max_event_bytes: self.max_event_bytes,
+            max_error_body_bytes: self.max_error_body_bytes,
+        };
+        chat_call(request, deps)
+    }
 }
 
 pub(super) fn complete<'call, Client, Source, Metadata, Fetcher, Blocks, Ids>(
