@@ -1,352 +1,29 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+mod support;
+
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::image_variations::Settings;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::multipart::MultipartPart;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::api::image_contracts::records::{
-    ImageData, ImageFile, ImageInputTokens, ImageParams, ImageResponse, ImageUsage,
-};
-use betterlite_openai::image_variations::transport::ImageVariationTransport;
+use betterlite_openai::api::image_contracts::records::{ImageData, ImageResponse};
 use http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
-use super::call::{
-    DEFAULT_MODEL, ImageVariationCall, PendingVariation, VariationAnswer, VariationOptions,
-    VariationResponseFormat, VariationStep,
-};
+use super::call::{DEFAULT_MODEL, VariationAnswer, VariationOptions, VariationResponseFormat};
 use super::credentials::{DEFAULT_OPENAI_API_BASE, DEFAULT_TOPAZ_API_BASE, VariationPolicies};
-use super::entry::{ImageVariationOperation, aimage_variation, image_variation};
+use super::entry::{aimage_variation, image_variation};
 use super::error::ImageVariationError;
-use super::service::ImageVariations;
-use super::topaz::{TopazVariationExecutor, TopazVariationRequest};
 
-const SOURCE: &str = "litellm_settings: {}\n";
-const SUCCESS_BODY: &[u8] = br#"{"created":1,"data":[{"url":"https://example.test/a.png","b64_json":"YWJj","revised_prompt":"a better bird"}]}"#;
-const ERROR_BODY: &[u8] =
-    br#"{"error":{"message":"nope","type":"invalid_request_error","param":null,"code":null}}"#;
-const CATALOG: &str = r#"{
-    "dall-e-2": {"litellm_provider": "openai", "mode": "image_generation"},
-    "dall-e-3": {"litellm_provider": "openai", "mode": "image_generation"},
-    "command-r": {"litellm_provider": "cohere_chat"}
-}"#;
-
-struct Fixture {
-    catalog: ModelCatalog,
-    names: BTreeSet<String>,
-    environment: BTreeMap<String, String>,
-}
-
-impl Fixture {
-    fn new() -> Self {
-        Self {
-            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
-                .expect("the test catalog parses"),
-            names: BTreeSet::new(),
-            environment: BTreeMap::new(),
-        }
-    }
-
-    fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.names,
-            custom_providers: &self.names,
-            environment: &self.environment,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
-    }
-}
-
-fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
-    let lookup: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .expect("the settings load")
-        .sections
-        .image_variations
-}
-
-fn service<'context, Transport, Topaz>(
-    settings: &'context Settings,
-    context: &'context ResolutionContext<'context>,
-    transport: &'context Transport,
-    topaz: &'context Topaz,
-    policies: VariationPolicies,
-) -> ImageVariations<'context, Transport, Topaz> {
-    ImageVariations {
-        settings,
-        resolution: context,
-        transport,
-        topaz,
-        policies,
-        identify: || uuid::Uuid::from_u128(1),
-        clock: || 7,
-    }
-}
-
-fn image() -> ImageFile {
-    ImageFile {
-        filename: Some("a.png".to_owned()),
-        content: b"abc".to_vec(),
-        content_type: Some("image/png".to_owned()),
-    }
-}
-
-fn variation_call() -> ImageVariationCall {
-    ImageVariationCall {
-        image: image(),
-        model: None,
-        options: VariationOptions::default(),
-        api_key: None,
-        api_base: None,
-        custom_llm_provider: None,
-        timeout: None,
-        async_call: false,
-        metadata: ImageParams::new(),
-    }
-}
-
-fn metadata() -> ImageParams {
-    ImageParams::from([("trace".to_owned(), Json::Text("marker".to_owned()))])
-}
-
-// the four signature options a variation accepts but never forwards
-fn ignored_options() -> VariationOptions {
-    VariationOptions {
-        n: 3,
-        response_format: VariationResponseFormat::B64Json,
-        size: Some(String::from("1024x1024")),
-        user: Some(String::from("u")),
-    }
-}
-
-fn response() -> ImageResponse {
-    ImageResponse {
-        created: 1,
-        data: Some(vec![ImageData {
-            b64_json: Some("YWJj".to_owned()),
-            revised_prompt: Some("a better bird".to_owned()),
-            url: Some("https://example.test/a.png".to_owned()),
-        }]),
-        usage: Some(ImageUsage {
-            input_tokens: 0,
-            input_tokens_details: ImageInputTokens {
-                image_tokens: 0,
-                text_tokens: 0,
-            },
-            output_tokens: 0,
-            total_tokens: 0,
-        }),
-    }
-}
-
-fn multipart_parts(request: &OutboundRequest) -> &[MultipartPart] {
-    let RequestBody::Multipart { parts, .. } = &request.body else {
-        panic!("the variation request is multipart");
-    };
-    parts
-}
-
-struct RecordingTransport {
-    requests: Mutex<Vec<OutboundRequest>>,
-    status: u16,
-    body: Vec<u8>,
-}
-
-impl RecordingTransport {
-    fn new(status: u16, body: &[u8]) -> Self {
-        Self {
-            requests: Mutex::new(Vec::new()),
-            status,
-            body: body.to_vec(),
-        }
-    }
-
-    fn take(&self) -> Vec<OutboundRequest> {
-        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *requests)
-    }
-}
-
-impl ImageVariationTransport for RecordingTransport {
-    async fn create_variation(
-        &self,
-        request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        Ok(UpstreamResponse {
-            status: self.status,
-            headers: http::HeaderMap::new(),
-            body: self.body.clone(),
-        })
-    }
-}
-
-struct RecordingTopaz {
-    requests: Mutex<Vec<TopazVariationRequest>>,
-    response: Option<ImageResponse>,
-}
-
-impl RecordingTopaz {
-    fn new(response: Option<ImageResponse>) -> Self {
-        Self {
-            requests: Mutex::new(Vec::new()),
-            response,
-        }
-    }
-
-    fn take(&self) -> Vec<TopazVariationRequest> {
-        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *requests)
-    }
-}
-
-impl TopazVariationExecutor for RecordingTopaz {
-    fn execute(
-        &self,
-        request: TopazVariationRequest,
-    ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        let Some(response) = self.response.clone() else {
-            return Ok(None);
-        };
-        let pending: PendingVariation<'_> = Box::pin(async move { Ok(response) });
-        Ok(Some(pending))
-    }
-}
-
-struct NoTopaz;
-
-impl TopazVariationExecutor for NoTopaz {
-    fn execute(
-        &self,
-        _request: TopazVariationRequest,
-    ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
-        unreachable!("the openai path never reaches topaz")
-    }
-}
-
-enum Scripted {
-    Response(ImageResponse),
-    Mapping(Json),
-    Pending(ImageResponse),
-    Unexpected(Json),
-}
-
-struct ScriptedOperation {
-    steps: Mutex<VecDeque<Scripted>>,
-    calls: Mutex<Vec<ImageVariationCall>>,
-    awaits: AtomicUsize,
-}
-
-impl ScriptedOperation {
-    fn new(steps: Vec<Scripted>) -> Self {
-        Self {
-            steps: Mutex::new(steps.into_iter().collect()),
-            calls: Mutex::new(Vec::new()),
-            awaits: AtomicUsize::new(0),
-        }
-    }
-}
-
-fn recorded_calls(operation: &ScriptedOperation) -> Vec<ImageVariationCall> {
-    let calls = operation
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    calls.clone()
-}
-
-impl ImageVariationOperation for ScriptedOperation {
-    fn begin(&self, call: &ImageVariationCall) -> Result<VariationStep<'_>, ImageVariationError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call.clone());
-        let scripted = self
-            .steps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        let Some(scripted) = scripted else {
-            return Err(ImageVariationError::InvalidProvider {
-                provider: String::from("unscripted"),
-            });
-        };
-        match scripted {
-            Scripted::Response(response) => Ok(VariationStep::Response(response)),
-            Scripted::Mapping(mapping) => Ok(VariationStep::Mapping(mapping)),
-            Scripted::Unexpected(value) => Ok(VariationStep::Unexpected(value)),
-            Scripted::Pending(response) => {
-                let awaited = &self.awaits;
-                Ok(VariationStep::Pending(Box::pin(async move {
-                    awaited.fetch_add(1, Ordering::SeqCst);
-                    Ok(response)
-                })))
-            }
-        }
-    }
-
-    fn inferred_provider(&self, _call: &ImageVariationCall) -> Option<String> {
-        None
-    }
-}
-
-struct FailingOperation {
-    inferred: Option<String>,
-    inferences: AtomicUsize,
-}
-
-impl FailingOperation {
-    fn new(inferred: Option<&str>) -> Self {
-        Self {
-            inferred: inferred.map(str::to_owned),
-            inferences: AtomicUsize::new(0),
-        }
-    }
-}
-
-impl ImageVariationOperation for FailingOperation {
-    fn begin(&self, _call: &ImageVariationCall) -> Result<VariationStep<'_>, ImageVariationError> {
-        Err(ImageVariationError::InvalidProvider {
-            provider: String::from("scripted"),
-        })
-    }
-
-    fn inferred_provider(&self, _call: &ImageVariationCall) -> Option<String> {
-        self.inferences.fetch_add(1, Ordering::SeqCst);
-        self.inferred.clone()
-    }
-}
+use self::support::{
+    ERROR_BODY, FailingOperation, Fixture, NoTopaz, RecordingTopaz, RecordingTransport, SOURCE,
+    SUCCESS_BODY, Scripted, ScriptedOperation, ignored_options, metadata, multipart_parts,
+    recorded_calls, response, service, settings, variation_call,
+};
 
 #[test]
 fn signature_defaults_match_litellm() {
@@ -550,6 +227,45 @@ async fn an_azure_chat_model_reaches_openai_despite_the_declaration() {
         request.url.as_str(),
         "https://api.openai.com/v1/images/variations"
     );
+}
+
+#[tokio::test]
+async fn both_azure_conditions_are_required_to_skip_the_declared_prefix() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let topaz = RecordingTopaz::new(Some(response()));
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &topaz,
+        VariationPolicies::default(),
+    );
+    // an azure prefix over a model the catalog does not give to a chat provider is not the azure branch
+    let mut prefix_only = variation_call();
+    prefix_only.custom_llm_provider = Some("topaz".to_owned());
+    prefix_only.model = Some("azure/mystery".to_owned());
+    let answer = image_variation(&service, &prefix_only)
+        .await
+        .expect("the declared provider handles an azure prefix the catalog does not know");
+    assert_eq!(answer, VariationAnswer::Response(response()));
+    // a chat model under another prefix is not the azure branch either
+    let mut chat_only = variation_call();
+    chat_only.custom_llm_provider = Some("topaz".to_owned());
+    chat_only.model = Some("legacy/command-r".to_owned());
+    let answer = image_variation(&service, &chat_only)
+        .await
+        .expect("the declared provider handles a chat model outside the azure prefix");
+    assert_eq!(answer, VariationAnswer::Response(response()));
+    let requests = topaz.take();
+    let models: Vec<&str> = requests
+        .iter()
+        .map(|request| request.model.as_str())
+        .collect();
+    assert_eq!(models, ["azure/mystery", "legacy/command-r"]);
+    assert_eq!(transport.take().len(), 0);
 }
 
 #[tokio::test]
@@ -867,6 +583,7 @@ async fn bad_request_variations_project_a_bad_request() {
     assert_eq!(metadata.param, WireField::Null);
     assert_eq!(metadata.openai_code, None);
     assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
+    assert!(error.to_string().contains("nope"));
     assert_eq!(transport.take().len(), 1);
 }
 
