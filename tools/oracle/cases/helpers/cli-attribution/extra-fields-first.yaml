@@ -1,0 +1,40 @@
+kind: helper
+name: extra-fields-first
+call:
+  cli_attribution:
+    function: build
+    claim_map: email->email,picture->profile_picture
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: https://img.example/p.png
+      provider: generic
+      team_ids: []
+      user_role: null
+      extra_fields:
+        email: extra@example.com
+        picture: null
+calls:
+- cli_attribution:
+    function: build
+    claim_map: email->email,picture->profile_picture
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: https://img.example/p.png
+      provider: generic
+      team_ids: []
+      user_role: null
+      extra_fields:
+        profile:
+          picture: null
+env:
+  CLI_SSO_CLAIM_MAP: email->email,picture->profile_picture
+compare:
+  ignore: []

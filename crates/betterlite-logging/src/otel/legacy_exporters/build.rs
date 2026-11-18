@@ -11,7 +11,7 @@ use crate::otel::legacy_exporters::selection::{
 };
 use crate::otel::plumbing::exporters::{ExporterFactories, HttpClients, build_log_exporter};
 use crate::otel::plumbing::processors::{ExportProcessor, processor_for};
-use crate::otel::plumbing::providers::build_metric_reader;
+use crate::otel::plumbing::providers::{METRIC_EXPORT_INTERVAL, build_metric_reader};
 use crate::otel::plumbing::sinks::{LogSink, MetricSink, SpanSink};
 
 const fn exporter_kind_text(kind: ExporterKind) -> &'static str {
@@ -118,6 +118,7 @@ impl LegacyExporterBuilder {
         Ok(build_metric_reader(
             &signal_settings(plan.kind, plan.endpoint, &plan.headers),
             &self.clients,
+            METRIC_EXPORT_INTERVAL,
         )?)
     }
 }

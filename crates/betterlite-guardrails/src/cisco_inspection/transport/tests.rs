@@ -153,7 +153,7 @@ async fn post_inspection_wraps_a_response_over_the_byte_limit() {
     server.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn post_inspection_renders_a_whole_number_timeout_with_a_trailing_zero() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}/inspect", listener.local_addr().expect("addr"));

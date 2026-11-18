@@ -1,0 +1,62 @@
+kind: helper
+name: bedrock-converse-messages-consecutive-guarded-user-text
+call:
+  bedrock_converse_messages:
+    function: guarded
+    messages:
+      - {role: system, content: rules}
+      - {role: user, content: first}
+      - {role: assistant, content: reply}
+      - {role: user, content: last}
+    optional_params: {}
+calls:
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - {role: system, content: rules}
+        - {role: user, content: first}
+        - {role: assistant, content: reply}
+        - {role: user, content: last}
+      optional_params: {guardrailConfig: null}
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - {role: user, content: first}
+        - {role: assistant, content: reply}
+        - {role: user, content: last}
+      optional_params: {guardrailConfig: false}
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - {role: user, content: earlier}
+        - {role: assistant, content: reply}
+        - {role: user, content: one}
+        - role: user
+          content:
+            - {type: text, text: two, cache_control: {type: ephemeral}, extra: 1}
+            - {type: image, source: {bytes: AA==}}
+      optional_params: {guardrailConfig: {guardrailIdentifier: abc, trace: enabled}}
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - role: user
+          content:
+            - {type: text, text: keep, cache_control: {type: ephemeral}}
+            - {type: guarded_text, text: already}
+            - {type: text, text: also}
+      optional_params: {guardrailConfig: null}
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - {role: user, content: ''}
+        - {role: user, content: []}
+        - {role: user, name: alice, extra: true}
+      optional_params: {guardrailConfig: null}
+  - bedrock_converse_messages:
+      function: guarded
+      messages:
+        - {role: user, content: question}
+        - {role: assistant, content: answer}
+      optional_params: {guardrailConfig: null}
+env: {}
+compare: {ignore: []}

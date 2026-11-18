@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock_converse_messages-transform-system
+call:
+  bedrock_converse_messages:
+    function: transform_system
+    messages:
+      - {role: system, content: rules, cache_control: {type: ephemeral}}
+      - {role: user, content: question}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    model_cost:
+      anthropic.claude-sonnet-4-5-20250929-v1:0: {supports_prompt_caching: true}
+env: {}
+compare: {ignore: []}

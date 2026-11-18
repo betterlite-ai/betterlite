@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-batches-result-response-seed
+call:
+  anthropic_batches:
+    result_response:
+      now: 1700000000
+      bodies:
+        - |-
+          {"custom_id":"seed","result":{"type":"succeeded","message":{"id":"msg_seed","type":"message","role":"assistant","model":"claude-seed","content":[{"type":"text","text":"seed"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":2,"output_tokens_details":{"thinking_tokens":1}}}}}
+
+          {not json
+        - '{"custom_id":"seed-empty"}'
+env: {}
+compare: {ignore: []}

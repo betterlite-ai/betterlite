@@ -1,0 +1,84 @@
+kind: helper
+name: sso-claims-existing-role-is-kept
+call:
+  sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process:
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ0ZWFtX2lkcyI6IFtdLCAiZ3JvdXBzIjogWyJhZG1pbnMiXSwgInJvbGUiOiAiaW50ZXJuYWxfdXNlciJ9.c2lnbmF0dXJl
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids:
+        - existing
+        user_role: proxy_admin
+        extra_fields: null
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ0ZWFtX2lkcyI6IFsic2VlZC0xIl0sICJ0ZWFtX2lkIjogInNlZWQtMiIsICJyb2xlIjogImludGVybmFsX3VzZXIiLCAiZW1haWwiOiAiQWNjZXNzQEV4YW1wbGUuY29tIn0.c2lnbmF0dXJl
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings: null
+    - access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJncm91cHMiOiBbImFkbWlucyJdLCAidGVhbV9pZHMiOiBbXSwgInJvbGUiOiBudWxsfQ.c2lnbmF0dXJl
+      sso_settings: null
+      identity:
+        id: user-1
+        email: user@example.com
+        first_name: null
+        last_name: null
+        display_name: null
+        picture: null
+        provider: null
+        team_ids: []
+        user_role: null
+        extra_fields: null
+      role_mappings: null
+    convert:
+      response:
+        groups:
+        - admins
+        role: internal_user
+      jwt_settings: {}
+      sso_settings: null
+      role_mappings:
+        provider: google
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+      team_mappings: null
+env: {}
+compare:
+  ignore: []
