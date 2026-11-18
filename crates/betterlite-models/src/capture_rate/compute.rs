@@ -59,6 +59,8 @@ fn daily_totals(request: &CaptureRateRequest<'_>) -> Result<Totals, CaptureRateE
     let mut days = Vec::new();
     let mut captured_total = Decimal::ZERO;
     let mut billed_total = Decimal::ZERO;
+    let captured_by_day = request.captured_by_day;
+    let billed_by_day = request.billed_by_day;
     for offset in 0..=span {
         let back = u64::try_from(offset).map_err(|_error| CaptureRateError::DayOverflow)?;
         let day = request
@@ -66,16 +68,8 @@ fn daily_totals(request: &CaptureRateRequest<'_>) -> Result<Totals, CaptureRateE
             .checked_add_days(Days::new(back))
             .ok_or(CaptureRateError::DayOverflow)?;
         let date = day.format("%Y-%m-%d").to_string();
-        let captured = request
-            .captured_by_day
-            .get(&date)
-            .copied()
-            .unwrap_or(Decimal::ZERO);
-        let billed = request
-            .billed_by_day
-            .get(&date)
-            .copied()
-            .unwrap_or(Decimal::ZERO);
+        let captured = captured_by_day.get(&date).copied().unwrap_or_default();
+        let billed = billed_by_day.get(&date).copied().unwrap_or_default();
         captured_total = captured_total
             .checked_add(captured)
             .ok_or(CaptureRateError::CapturedOverflow)?;
