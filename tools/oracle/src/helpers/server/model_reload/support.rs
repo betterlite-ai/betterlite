@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
@@ -7,13 +6,12 @@ use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::resource_repository::model::ModelRepository;
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
-use betterlite_router::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
-use betterlite_server::model_reload::cache::{ReconcileOutcome, ReloadFailure, ServingRouter};
+use betterlite_server::model_reload::cache::{
+    PublishedModel, ReconcileOutcome, ReloadFailure, ServingRouter,
+};
 use secrecy::SecretString;
 
 use super::ModelEntry;
@@ -39,9 +37,9 @@ impl Strategies {
     }
 }
 
-// The case's fake llm_router: the catalog clear_cache reads and edits, the four strategy registries, and the planted reload outcome.
+// The case's fake llm_router: the published rows clear_cache reads and edits, the four strategy registries, and the planted reload outcome.
 pub(super) struct FakeRouter {
-    pub(super) catalog: CatalogHandle,
+    pub(super) models: Vec<PublishedModel>,
     pub(super) deleted: Vec<String>,
     pub(super) strategies: Strategies,
     pub(super) reloads: usize,
@@ -55,29 +53,38 @@ impl FakeRouter {
         reload_result: Result<ReconcileOutcome, ReloadFailure>,
     ) -> Self {
         Self {
-            catalog: published_catalog(models),
+            models: models
+                .iter()
+                .map(|entry| PublishedModel {
+                    model_name: entry.model_name.clone(),
+                    litellm_params: entry.litellm_params.clone(),
+                    model_info: entry.model_info.clone(),
+                })
+                .collect(),
             deleted: Vec::new(),
             strategies: Strategies::new(strategy_names),
             reloads: 0,
             reload_result,
         }
     }
+
+    pub(super) fn remaining(&self) -> Vec<String> {
+        self.models
+            .iter()
+            .filter_map(|model| model.id().map(str::to_owned))
+            .collect()
+    }
 }
 
 #[async_trait]
 impl ServingRouter for FakeRouter {
-    fn catalog(&self) -> &CatalogHandle {
-        &self.catalog
+    fn published_models(&self) -> Vec<PublishedModel> {
+        self.models.clone()
     }
 
     fn delete_deployment(&mut self, model_id: &str) {
         self.deleted.push(model_id.to_owned());
-        let snapshot = self.catalog.load_full();
-        if let Some(index) = snapshot.id_index.get(model_id).copied() {
-            let mut working = (*snapshot).clone();
-            working.remove(model_id, index);
-            self.catalog.store(Arc::new(working));
-        }
+        self.models.retain(|model| model.id() != Some(model_id));
     }
 
     fn drop_strategy_routers(&mut self, model_names: &BTreeSet<String>) {
@@ -102,19 +109,6 @@ impl ServingRouter for FakeRouter {
         self.reloads = self.reloads.saturating_add(1);
         self.reload_result.clone()
     }
-}
-
-fn published_catalog(models: &[ModelEntry]) -> CatalogHandle {
-    let mut catalog = DeploymentCatalog::default();
-    for entry in models {
-        catalog.push(DeploymentSpec {
-            model_name: entry.model_name.clone(),
-            litellm_params: entry.litellm_params.clone(),
-            model_info: entry.model_info.clone(),
-            extra: JsonObject::new(),
-        });
-    }
-    CatalogHandle::from_pointee(catalog)
 }
 
 // A database connection clear_cache only checks for: a client with no pool never reaches the network.

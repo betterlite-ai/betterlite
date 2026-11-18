@@ -21,7 +21,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::model_reload::cache::{ReconcileOutcome, ReloadFailure, ServingRouter};
+use crate::model_reload::cache::{PublishedModel, ReconcileOutcome, ReloadFailure, ServingRouter};
 use crate::model_reload::verdict::WrittenModel;
 
 #[derive(Clone, Default)]
@@ -134,7 +134,7 @@ pub(crate) struct Strategies {
 }
 
 pub(crate) struct FakeRouter {
-    pub(crate) catalog: CatalogHandle,
+    pub(crate) models: Vec<PublishedModel>,
     pub(crate) deleted: Vec<String>,
     pub(crate) strategies: Strategies,
     pub(crate) reloads: usize,
@@ -155,7 +155,7 @@ impl FakeRouter {
             strategies.quality.insert(name);
         }
         Self {
-            catalog: catalog(models),
+            models: models.iter().map(PublishedModel::from).collect(),
             deleted: Vec::new(),
             strategies,
             reloads: 0,
@@ -167,24 +167,22 @@ impl FakeRouter {
     }
 
     pub(crate) fn remaining(&self) -> Vec<String> {
-        self.catalog.load().id_index.keys().cloned().collect()
+        self.models
+            .iter()
+            .filter_map(|model| model.id().map(str::to_owned))
+            .collect()
     }
 }
 
 #[async_trait]
 impl ServingRouter for FakeRouter {
-    fn catalog(&self) -> &CatalogHandle {
-        &self.catalog
+    fn published_models(&self) -> Vec<PublishedModel> {
+        self.models.clone()
     }
 
     fn delete_deployment(&mut self, model_id: &str) {
         self.deleted.push(model_id.to_owned());
-        let snapshot = self.catalog.load_full();
-        if let Some(index) = snapshot.id_index.get(model_id).copied() {
-            let mut working = (*snapshot).clone();
-            working.remove(model_id, index);
-            self.catalog.store(Arc::new(working));
-        }
+        self.models.retain(|model| model.id() != Some(model_id));
     }
 
     fn drop_strategy_routers(&mut self, model_names: &BTreeSet<String>) {

@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use async_trait::async_trait;
 use betterlite_db::resource_repository::model::ModelRepository;
 use betterlite_models::decisions::Json;
-use betterlite_router::catalog_updates::catalog::CatalogHandle;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use tokio::sync::Mutex;
 
@@ -23,10 +23,40 @@ pub struct ReloadFailure {
     pub message: String,
 }
 
-// This pod's llm_router as clear_cache sees it: the published catalog, the deployment and strategy removals, and the DB reload that rebuilds them.
+// One row this pod's router serves: LiteLLM's model_list entry, which clear_cache classifies as config or DB.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublishedModel {
+    pub model_name: String,
+    pub litellm_params: JsonObject,
+    pub model_info: JsonObject,
+}
+
+impl PublishedModel {
+    #[must_use]
+    pub fn id(&self) -> Option<&str> {
+        match self.model_info.get("id") {
+            Some(Json::Text(id)) => Some(id),
+            _ => None,
+        }
+    }
+}
+
+// The catalog snapshot's deployment as clear_cache reads it: the three fields it inspects, without the passthrough extra.
+impl From<&DeploymentSpec> for PublishedModel {
+    fn from(spec: &DeploymentSpec) -> Self {
+        Self {
+            model_name: spec.model_name.clone(),
+            litellm_params: spec.litellm_params.clone(),
+            model_info: spec.model_info.clone(),
+        }
+    }
+}
+
+// This pod's llm_router as clear_cache sees it: the published rows, the deployment and strategy removals, and the DB reload that rebuilds them.
 #[async_trait]
 pub trait ServingRouter: Send {
-    fn catalog(&self) -> &CatalogHandle;
+    // Owned rows, so the router's own catalog type never crosses this seam and any serving router can implement it.
+    fn published_models(&self) -> Vec<PublishedModel>;
 
     fn delete_deployment(&mut self, model_id: &str);
 
@@ -50,12 +80,13 @@ where
     R: ServingRouter + ?Sized,
 {
     let connected = matches!(repository, Some(found) if found.prisma_client().is_ok());
-    let (Some(router), true, Some(repository)) = (router, connected, repository) else {
+    let (Some(active_router), true, Some(active_repository)) = (router, connected, repository)
+    else {
         tracing::debug!("llm_router or prisma_client is None, skipping cache clear");
         return ReconcileOutcome::default();
     };
     let _serialized = gate.lock().await;
-    match reconcile_locked(router, repository).await {
+    match reconcile_locked(active_router, active_repository).await {
         Ok(outcome) => outcome,
         Err(failure) => {
             tracing::error!("Failed to clear cache and reload models. Due to error - {failure}");
@@ -72,11 +103,11 @@ where
     R: ServingRouter + ?Sized,
 {
     tracing::debug!("Clearing only DB models, preserving config models");
-    let published = router.catalog().load_full();
+    let published = router.published_models();
     let mut config_models = 0_usize;
     let mut db_models = 0_usize;
     let mut db_router_names = BTreeSet::new();
-    for model in &published.models {
+    for model in &published {
         if !is_db_model(model) {
             config_models = config_models.saturating_add(1);
             continue;
@@ -95,16 +126,16 @@ where
     Ok(outcome)
 }
 
-fn is_db_model(model: &DeploymentSpec) -> bool {
+fn is_db_model(model: &PublishedModel) -> bool {
     match model.model_info.get("db_model") {
         Some(Json::Bool(db_model)) => *db_model,
         _ => false,
     }
 }
 
-fn is_auto_router(model: &DeploymentSpec) -> bool {
+fn is_auto_router(model: &PublishedModel) -> bool {
     match model.litellm_params.get("model") {
-        Some(Json::Text(model)) => model.starts_with(AUTO_ROUTER_PREFIX),
+        Some(Json::Text(name)) => name.starts_with(AUTO_ROUTER_PREFIX),
         _ => false,
     }
 }

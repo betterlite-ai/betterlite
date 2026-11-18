@@ -1,10 +1,6 @@
 use std::collections::BTreeSet;
 
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_router::catalog_updates::catalog::{CatalogHandle, DeploymentCatalog};
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_server::model_reload::cache::{ReconcileOutcome, ReloadFailure, clear_cache};
 use betterlite_server::model_reload::model_info::model_info_as_mapping;
 use betterlite_server::model_reload::verdict::{
@@ -91,12 +87,12 @@ async fn clear_cache_answer(call: &ClearCacheCall) -> Value {
     let gate = Mutex::new(());
     let returned = clear_cache(&gate, router.as_mut(), repository.as_ref()).await;
     let (deleted, remaining, registries, reloads) = match &router {
-        Some(fake) => {
-            let published = fake.catalog.load_full();
-            let remaining: Vec<String> = published.id_index.keys().cloned().collect();
-            let registries = registry_answer(&fake.strategies);
-            (fake.deleted.clone(), remaining, registries, fake.reloads)
-        }
+        Some(fake) => (
+            fake.deleted.clone(),
+            fake.remaining(),
+            registry_answer(&fake.strategies),
+            fake.reloads,
+        ),
         None => (
             Vec::new(),
             Vec::new(),
@@ -117,8 +113,7 @@ struct PreparedWrites {
     before: BTreeSet<String>,
     written: Vec<WrittenModel>,
     still_desired: Option<BTreeSet<String>>,
-    captured: Option<BTreeSet<String>>,
-    catalog: CatalogHandle,
+    live_after: Option<BTreeSet<String>>,
 }
 
 impl PreparedWrites {
@@ -132,8 +127,11 @@ impl PreparedWrites {
             before: id_set(before),
             written: written.iter().map(written_model).collect(),
             still_desired: still_desired.map(id_set),
-            captured: live.captured.as_deref().map(id_set),
-            catalog: live_catalog(live.router_ids.as_deref().unwrap_or_default()),
+            live_after: live
+                .captured
+                .as_deref()
+                .or(live.router_ids.as_deref())
+                .map(id_set),
         }
     }
 
@@ -142,8 +140,8 @@ impl PreparedWrites {
             before: &self.before,
             written: &self.written,
             still_desired: self.still_desired.as_ref(),
-            live_after: self.captured.as_ref(),
-            catalog: Some(&self.catalog),
+            live_after: self.live_after.as_ref(),
+            catalog: None,
             environment,
         }
     }
@@ -171,21 +169,6 @@ fn id_set(ids: &[String]) -> BTreeSet<String> {
         set.insert(id.clone());
     }
     set
-}
-
-fn live_catalog(ids: &[String]) -> CatalogHandle {
-    let mut catalog = DeploymentCatalog::default();
-    for id in ids {
-        let mut model_info = JsonObject::new();
-        model_info.insert("id".to_owned(), Json::Text(id.clone()));
-        catalog.push(DeploymentSpec {
-            model_name: id.clone(),
-            litellm_params: JsonObject::new(),
-            model_info,
-            extra: JsonObject::new(),
-        });
-    }
-    CatalogHandle::from_pointee(catalog)
 }
 
 fn reload_result(call: &ClearCacheCall) -> Result<ReconcileOutcome, ReloadFailure> {
