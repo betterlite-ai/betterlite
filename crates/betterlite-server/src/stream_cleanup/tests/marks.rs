@@ -222,42 +222,38 @@ async fn run_cleanup_marks_the_request_and_the_logging_details_on_disconnect() {
     let slots = Arc::new(FakeSlots::default());
     let cleanup = disconnect_cleanup(Arc::clone(&logging), Arc::clone(&slots));
     let mut outcome = cleanup_outcome(Ending::Disconnected);
-    outcome.request_data.insert(
-        "metadata".to_owned(),
-        Json::Object(object(&[("user", text("x"))])),
-    );
+    let user = Json::Object(object(&[("user", text("x"))]));
+    outcome.request_data.insert("metadata".to_owned(), user);
     cleanup.run_cleanup(outcome).await.unwrap();
 
-    let marks = object(&[
+    let marked = Json::Object(object(&[
         ("client_disconnected", Json::Bool(true)),
         ("error_information", expected_error_info()),
-    ]);
+    ]));
     assert_eq!(
         logging.details(),
         Some(object(&[
-            ("metadata", Json::Object(marks.clone())),
+            ("metadata", marked.clone()),
             (
                 "litellm_params",
-                Json::Object(object(&[("metadata", Json::Object(marks.clone()))])),
+                Json::Object(object(&[("metadata", marked.clone())])),
             ),
         ]))
     );
     let fired_with = logging.fired_with().expect("fired request data");
+    let fired_metadata = object(&[
+        ("user", text("x")),
+        ("client_disconnected", Json::Bool(true)),
+        ("error_information", expected_error_info()),
+    ]);
     assert_eq!(
         fired_with,
         object(&[
             ("litellm_call_id", text("call-1")),
-            (
-                "metadata",
-                Json::Object(object(&[
-                    ("client_disconnected", Json::Bool(true)),
-                    ("error_information", expected_error_info()),
-                    ("user", text("x")),
-                ])),
-            ),
+            ("metadata", Json::Object(fired_metadata)),
             (
                 "litellm_params",
-                Json::Object(object(&[("metadata", Json::Object(marks))])),
+                Json::Object(object(&[("metadata", marked)])),
             ),
         ])
     );

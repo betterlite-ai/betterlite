@@ -8,25 +8,20 @@ use super::support::{
     Ending, FakeLogging, FakeSlots, backfilled_usage, billable_outcome, capture_logs,
     cleanup_outcome, disconnect_cleanup, number, object, snapshot, text,
 };
-use crate::sse_data_generator::types::StreamCleanup;
+use crate::sse_data_generator::types::StreamCleanup as _;
 
 #[tokio::test]
 async fn run_cleanup_bills_a_partial_response_with_backfilled_usage() {
-    let partial = object(&[
-        ("model", text("alias")),
+    let usage = object(&[
+        ("prompt_tokens", number(10)),
+        ("completion_tokens", number(5)),
+        ("total_tokens", number(15)),
         (
-            "usage",
-            Json::Object(object(&[
-                ("prompt_tokens", number(10)),
-                ("completion_tokens", number(5)),
-                ("total_tokens", number(15)),
-                (
-                    "prompt_tokens_details",
-                    Json::Object(object(&[("cached_tokens", number(4))])),
-                ),
-            ])),
+            "prompt_tokens_details",
+            Json::Object(object(&[("cached_tokens", number(4))])),
         ),
     ]);
+    let partial = object(&[("model", text("alias")), ("usage", Json::Object(usage))]);
     let logging = Arc::new(FakeLogging::new(Some(object(&[]))).with_assemble(Ok(Some(partial))));
     let slots = Arc::new(FakeSlots::attached_to(&logging));
     let cleanup = disconnect_cleanup(Arc::clone(&logging), Arc::clone(&slots));
