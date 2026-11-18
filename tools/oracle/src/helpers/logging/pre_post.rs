@@ -217,26 +217,30 @@ fn dispatch(
         }
         Ok(())
     };
+    let debug = DebugSettings {
+        verbose: input.flags.verbose,
+        json_logs: false,
+    };
+    let globals = GlobalFlags {
+        log_raw_request_response: false,
+        turn_off_message_logging: input.turn_off_message_logging,
+    };
+    let decision = Decision {
+        content: input.turn_off_message_logging,
+        key_info: false,
+    };
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+        .map_err(|error| failure(error.to_string()))?;
     let env = PrePostEnv {
-        debug: DebugSettings {
-            verbose: input.flags.verbose,
-            json_logs: false,
-        },
-        globals: GlobalFlags {
-            log_raw_request_response: false,
-            turn_off_message_logging: input.turn_off_message_logging,
-        },
-        decision: Decision {
-            content: input.turn_off_message_logging,
-            key_info: false,
-        },
+        debug,
+        globals,
+        decision,
         redactor: scrubber,
         log: recorder,
         input_callbacks: &callbacks,
         sentry: None,
         logger_fn: Some(&logger_fn),
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-            .map_err(|error| failure(error.to_string()))?,
+        now,
     };
     Ok(invoke_hook(input, state, &env))
 }
