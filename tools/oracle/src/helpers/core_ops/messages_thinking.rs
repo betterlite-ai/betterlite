@@ -11,7 +11,7 @@ use betterlite_core::api::messages_thinking::response::{
     ResponseJsonError, decode_messages_response,
 };
 use betterlite_core::api::messages_thinking::session::{SessionKeyError, decode_messages_thinking};
-use betterlite_core::api::messages_thinking::summary::is_reasoning_auto_summary_enabled;
+use betterlite_core::api::messages_thinking::summary::auto_summary_enabled;
 use betterlite_logging::passthrough_stream_logging::object::{
     StreamLoggingObject, StreamSuccessCall, StreamSuccessDispatch,
 };
@@ -36,7 +36,6 @@ const LIMITS: ApiLimits = ApiLimits {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     model_cost: IndexMap<String, Value>,
     calls: Vec<Call>,
 }
@@ -45,8 +44,7 @@ pub(crate) struct Input {
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Call {
     Response {
-        #[serde(default)]
-        model: Option<String>,
+        model: String,
         status: u16,
         body: String,
     },
@@ -99,11 +97,7 @@ impl Helper for Op {
 
 fn answer(call: &Call, model_cost: &IndexMap<String, Value>) -> HelperResult {
     match call {
-        Call::Response {
-            model: _model,
-            status,
-            body,
-        } => response(*status, body),
+        Call::Response { status, body, .. } => response(*status, body),
         Call::SessionCacheKey { user_id } => session_cache_key(user_id),
         Call::LocalModelName {
             model,
@@ -116,7 +110,7 @@ fn answer(call: &Call, model_cost: &IndexMap<String, Value>) -> HelperResult {
             global_value,
             environment,
         } => Ok(json!({
-            "enabled": is_reasoning_auto_summary_enabled(
+            "enabled": auto_summary_enabled(
                 global_value.unwrap_or(false),
                 environment.as_deref(),
             ),
@@ -185,9 +179,9 @@ fn normalize_effort(
     let metadata = Metadata::load(model_cost)?;
     let runtime = Builder::new_current_thread()
         .build()
-        .map_err(|source| invalid(source.to_string()))?;
+        .map_err(|source| helper_error("InvalidInput", None, source.to_string()))?;
     let info = metadata.model_info(model, custom_llm_provider, &runtime);
-    let normalized = normalize_reasoning_effort(effort, info.as_ref(), metadata.model_cost());
+    let normalized = normalize_reasoning_effort(effort, info.as_ref(), &metadata.map);
     Ok(json!({ "effort": normalized }))
 }
 
@@ -218,10 +212,6 @@ fn helper_error(class: &str, status: Option<u16>, message: String) -> Box<Helper
         code: Some(None),
         message,
     })
-}
-
-fn invalid(message: String) -> Box<HelperError> {
-    helper_error("InvalidInput", None, message)
 }
 
 fn text(value: &Json) -> Option<&str> {

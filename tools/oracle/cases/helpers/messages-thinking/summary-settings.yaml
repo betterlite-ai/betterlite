@@ -2,6 +2,7 @@ kind: helper
 name: summary-settings
 call:
   messages_thinking:
+    model_cost: {}
     calls:
       - function: auto_summary
         global_value: null

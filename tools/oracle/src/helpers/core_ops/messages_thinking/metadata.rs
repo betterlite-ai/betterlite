@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 
+use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
@@ -22,20 +23,13 @@ use indexmap::IndexMap;
 use serde_json::Value;
 use tokio::runtime::Runtime;
 
-use super::invalid;
+use super::helper_error;
 use betterlite_oracle_helper_api::error::HelperError;
-
-fn region_model(model: &str) -> (Option<&str>, &str) {
-    match model.split_once('/') {
-        Some((region, rest)) if region == "us-east-1" => (Some(region), rest),
-        Some(_) | None => (None, model),
-    }
-}
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: get_bedrock_base_model,
     bedrock_routing_prefix: strip_bedrock_routing_prefix,
-    mantle_region_split: region_model,
+    mantle_region_split: split_region_prefix,
 };
 
 // The cases name no huggingface model, so the transport refuses instead of reaching the network.
@@ -58,7 +52,7 @@ impl ModelInfoClient for Offline {
 
 // B2225's get_model_info over the case's own cost map, so normalize_reasoning_effort_value's lookup is the production one.
 pub(super) struct Metadata {
-    map: ModelCostMap,
+    pub(super) map: ModelCostMap,
     typed: ModelCatalog,
     generalizations: CatalogGeneralizations,
     known: BTreeSet<String>,
@@ -69,12 +63,14 @@ pub(super) struct Metadata {
 
 impl Metadata {
     pub(super) fn load(model_cost: &IndexMap<String, Value>) -> Result<Self, Box<HelperError>> {
-        let bytes = serde_json::to_vec(model_cost).map_err(|source| invalid(source.to_string()))?;
+        let bytes = serde_json::to_vec(model_cost)
+            .map_err(|source| helper_error("InvalidInput", None, source.to_string()))?;
         Ok(Self {
-            map: ModelCostMap::parse(&bytes).map_err(|source| invalid(source.to_string()))?,
+            map: ModelCostMap::parse(&bytes)
+                .map_err(|source| helper_error("InvalidInput", None, source.to_string()))?,
             // every case names its provider, so resolution never reads the typed catalog
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)
-                .map_err(|source| invalid(source.to_string()))?,
+                .map_err(|source| helper_error("InvalidInput", None, source.to_string()))?,
             generalizations: CatalogGeneralizations::default(),
             known: BTreeSet::new(),
             custom: BTreeSet::new(),
@@ -84,10 +80,6 @@ impl Metadata {
                 base_url: HF_CONFIG_BASE_URL.to_owned(),
             },
         })
-    }
-
-    pub(super) const fn model_cost(&self) -> &ModelCostMap {
-        &self.map
     }
 
     // get_model_info raises for an unmapped model; the caller's facade keeps the chain floor for that None.

@@ -2,6 +2,7 @@ kind: helper
 name: response-json-non-object
 call:
   messages_thinking:
+    model_cost: {}
     calls:
       - function: response
         model: alias

@@ -2,6 +2,7 @@ kind: helper
 name: messages-thinking-response-seed
 call:
   messages_thinking:
+    model_cost: {}
     calls:
       - function: response
         model: alias

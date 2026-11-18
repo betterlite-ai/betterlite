@@ -1,8 +1,9 @@
 import os
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, runtime_checkable
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 import litellm
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.anthropic.pass_through.messages.transformation import (
     AnthropicMessagesConfig,
 )
@@ -13,11 +14,9 @@ from litellm.llms.anthropic.pass_through.utils import (
     normalize_reasoning_effort_value,
     prompt_cache_key_from_user_id,
 )
-from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 ENV = "LITELLM_REASONING_AUTO_SUMMARY"
-NO_COST: Final[dict[str, dict[str, JsonValue]]] = {}
 RESPONSE_FIELDS: Final = TypeAdapter(dict[str, JsonValue])
 ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
 
@@ -31,7 +30,7 @@ class LoggingFixture(Logging):
 
 @runtime_checkable
 class ResponseConfig(Protocol):
-    # the response TypedDict carries Any in its content blocks, so the config enters through this JSON-facing signature
+    # the response type carries Any, so the config enters through this JSON-facing signature
     def transform_anthropic_messages_response(  # ast-grep-ignore: no-long-names
         self, model: str, raw_response: httpx.Response, logging_obj: Logging
     ) -> JsonValue: ...
@@ -83,7 +82,7 @@ Call = (
 
 class Input(TypedDict):
     calls: list[Call]
-    model_cost: NotRequired[dict[str, dict[str, JsonValue]]]
+    model_cost: dict[str, dict[str, JsonValue]]
 
 
 def response_answer(call: ResponseCall) -> JsonValue:
@@ -93,14 +92,6 @@ def response_answer(call: ResponseCall) -> JsonValue:
         model=call["model"], raw_response=reply, logging_obj=LoggingFixture()
     )
     return {"response": RESPONSE_FIELDS.validate_python(transformed)}
-
-
-def session_answer(call: SessionCall) -> JsonValue:
-    return {"key": prompt_cache_key_from_user_id(call["user_id"])}
-
-
-def local_name_answer(call: LocalNameCall) -> JsonValue:
-    return {"value": local_model_name(call["model"], call["custom_llm_provider"])}
 
 
 def logging_answer(call: LoggingCall) -> JsonValue:
@@ -150,9 +141,9 @@ def answer(call: Call, model_cost: dict[str, dict[str, JsonValue]]) -> JsonValue
         case "response":
             return response_answer(call)
         case "session_cache_key":
-            return session_answer(call)
+            return {"key": prompt_cache_key_from_user_id(call["user_id"])}
         case "local_model_name":
-            return local_name_answer(call)
+            return {"value": local_model_name(call["model"], call["custom_llm_provider"])}
         case "logging_object":
             return logging_answer(call)
         case "auto_summary":
@@ -162,6 +153,5 @@ def answer(call: Call, model_cost: dict[str, dict[str, JsonValue]]) -> JsonValue
 
 
 def run(input_value: Input) -> JsonValue:
-    model_cost = input_value.get("model_cost", NO_COST)
-    answers = [answer(call, model_cost) for call in input_value["calls"]]
+    answers = [answer(call, input_value["model_cost"]) for call in input_value["calls"]]
     return {"calls": answers}

@@ -2,6 +2,7 @@ kind: helper
 name: bridge-identity-helpers
 call:
   messages_thinking:
+    model_cost: {}
     calls:
       - function: local_model_name
         model: openai/gpt-4o
