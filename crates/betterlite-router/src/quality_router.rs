@@ -38,8 +38,12 @@ pub struct QualityRouter {
 
 impl QualityRouter {
     #[must_use]
-    pub fn warnings(&self) -> &[String] {
-        &self.warnings
+    pub fn warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::with_capacity(self.warnings.len());
+        for warning in &self.warnings {
+            warnings.push(warning.clone());
+        }
+        warnings
     }
 
     pub fn new(
