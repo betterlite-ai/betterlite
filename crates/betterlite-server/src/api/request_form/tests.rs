@@ -512,20 +512,22 @@ const BOUNDARY_MISMATCH: &str = "multipart-mismatch";
 #[test]
 fn replays_corpus() {
     let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_form");
-    let paths: Vec<_> = std::fs::read_dir(corpus).unwrap().collect();
-    assert!(!paths.is_empty());
-    for entry in paths {
-        let path = entry.unwrap().path();
-        let seed = std::fs::read(&path).unwrap();
-        let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
-        let (header, body) = seed[2..].split_at(header_len);
-        let result = decode_request_form(body, header, &ApiLimits::default());
-        if path.file_stem().and_then(|stem| stem.to_str()) == Some(BOUNDARY_MISMATCH) {
-            assert_eq!(result, Err(RequestFormError::InvalidBody));
-        } else {
-            result.unwrap();
-        }
-    }
+    let replayed = std::fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let seed = std::fs::read(&path).unwrap();
+            let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
+            let (header, body) = seed[2..].split_at(header_len);
+            let result = decode_request_form(body, header, &ApiLimits::default());
+            if path.file_stem().and_then(|stem| stem.to_str()) == Some(BOUNDARY_MISMATCH) {
+                assert_eq!(result, Err(RequestFormError::InvalidBody));
+            } else {
+                result.unwrap();
+            }
+        })
+        .count();
+    assert!(replayed >= 5);
 }
 
 #[rstest]
