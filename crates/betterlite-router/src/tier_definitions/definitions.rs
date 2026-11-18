@@ -1,0 +1,299 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use betterlite_config::sections::tier_definitions as section;
+
+use crate::complexity_scoring::defaults::{self, Defaults};
+use crate::complexity_scoring::tier::ComplexityTier;
+use crate::tier_definitions::checks::{ClassifierFallback, ClassifierKind, TierChecks};
+use crate::tier_definitions::error::{DefinitionConflict, TierDefinitionsError};
+use crate::tier_definitions::model::{
+    MAX_TIER_DEFINITIONS, TierDefinition, TierModelEntry, TierPool,
+};
+
+const MIN_TIER_DEFINITIONS: usize = 2;
+const MAX_TIER_NAME_CHARS: usize = 64;
+const MAX_TIER_DESCRIPTION_CHARS: usize = 500;
+
+pub(super) fn resolve_pools(
+    input: &section::Config,
+) -> Result<BTreeMap<String, TierPool>, TierDefinitionsError> {
+    let Some(configured) = &input.tier_models else {
+        return pinned_pools();
+    };
+    let mut pools = BTreeMap::new();
+    for (tier, pool) in configured {
+        pools.insert(tier.clone(), normalize_pool(tier, pool)?);
+    }
+    Ok(pools)
+}
+
+// tiers is absent, so LiteLLM's pinned default map applies
+fn pinned_pools() -> Result<BTreeMap<String, TierPool>, TierDefinitionsError> {
+    let defaults: Defaults = serde_json::from_str(defaults::SOURCE)
+        .map_err(|source| TierDefinitionsError::Defaults { source })?;
+    Ok(defaults
+        .tier_models
+        .into_iter()
+        .map(|(tier, model)| (tier, TierPool::Single(TierModelEntry::plain(model))))
+        .collect())
+}
+
+fn normalize_pool(tier: &str, pool: &section::TierPool) -> Result<TierPool, TierDefinitionsError> {
+    match pool {
+        section::TierPool::Single(entry) => Ok(TierPool::Single(normalize_entry(entry))),
+        section::TierPool::Pool(entries) => {
+            let normalized: Vec<TierModelEntry> = entries.iter().map(normalize_entry).collect();
+            reject_duplicate_names(tier, &normalized)?;
+            Ok(TierPool::Pool(normalized))
+        }
+    }
+}
+
+// _normalize_tier_entries: one pool cannot name the same model twice with different params
+fn reject_duplicate_names(
+    tier: &str,
+    entries: &[TierModelEntry],
+) -> Result<(), TierDefinitionsError> {
+    let distinct: BTreeSet<&str> = entries.iter().map(TierModelEntry::model_name).collect();
+    if distinct.len() == entries.len() {
+        return Ok(());
+    }
+    Err(TierDefinitionsError::DuplicateModelName {
+        tier: tier.to_owned(),
+    })
+}
+
+fn normalize_entry(entry: &section::TierEntry) -> TierModelEntry {
+    match entry {
+        section::TierEntry::Model(model) => TierModelEntry::plain(model.clone()),
+        section::TierEntry::Detailed(detailed) => TierModelEntry {
+            model_name: detailed.model_name.clone(),
+            params: detailed.litellm_params.clone().unwrap_or_default(),
+        },
+    }
+}
+
+pub(super) fn normalize_definitions(
+    raw: &[section::TierDefinition],
+) -> Result<Vec<TierDefinition>, TierDefinitionsError> {
+    raw.iter().map(normalize_definition).collect()
+}
+
+// TierDefinition._normalize: strip both fields, then enforce the name, description and line rules
+fn normalize_definition(
+    raw: &section::TierDefinition,
+) -> Result<TierDefinition, TierDefinitionsError> {
+    let name = raw.name.trim().to_owned();
+    let description = raw
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned);
+    if name.is_empty() {
+        return Err(TierDefinitionsError::EmptyName);
+    }
+    if name.chars().count() > MAX_TIER_NAME_CHARS {
+        return Err(TierDefinitionsError::NameTooLong {
+            name,
+            max: MAX_TIER_NAME_CHARS,
+        });
+    }
+    if let Some(text) = &description {
+        if text.chars().count() > MAX_TIER_DESCRIPTION_CHARS {
+            return Err(TierDefinitionsError::DescriptionTooLong {
+                name,
+                max: MAX_TIER_DESCRIPTION_CHARS,
+            });
+        }
+    }
+    if description.is_none() && ComplexityTier::built_in(&name.to_uppercase()).is_none() {
+        return Err(TierDefinitionsError::MissingDescription { name });
+    }
+    let has_newline = name.contains('\n')
+        || name.contains('\r')
+        || description
+            .as_deref()
+            .is_some_and(|text| text.contains('\n') || text.contains('\r'));
+    if has_newline {
+        return Err(TierDefinitionsError::Newline { name });
+    }
+    Ok(TierDefinition { name, description })
+}
+
+// _validate_non_reasoning_tier: the flag and the NON_REASONING tier must agree, and only a
+// classifier that can emit the tier may route to it
+pub(super) fn validate_non_reasoning(
+    non_reasoning: bool,
+    custom: bool,
+    classifier: ClassifierKind,
+    pools: &BTreeMap<String, TierPool>,
+) -> Result<(), TierDefinitionsError> {
+    let tier = ComplexityTier::NonReasoning.name();
+    if !non_reasoning {
+        if !custom && pools.contains_key(tier) {
+            return Err(TierDefinitionsError::NonReasoningWithoutFlag { tier });
+        }
+        return Ok(());
+    }
+    if custom {
+        return Err(TierDefinitionsError::NonReasoningWithTiers);
+    }
+    if !classifier.emits_non_reasoning() {
+        return Err(TierDefinitionsError::NonReasoningClassifier { classifier });
+    }
+    if pools.get(tier).is_none_or(TierPool::is_empty) {
+        return Err(TierDefinitionsError::NonReasoningWithoutModel { tier });
+    }
+    Ok(())
+}
+
+// _validate_tier_definitions: the custom ladder, its pools and its fallback
+pub(super) fn validate_definitions(
+    ladder: Option<&[TierDefinition]>,
+    pools: &BTreeMap<String, TierPool>,
+    labels: &BTreeMap<ComplexityTier, String>,
+    checks: &TierChecks<'_>,
+) -> Result<(), TierDefinitionsError> {
+    let Some(ladder) = ladder else {
+        if checks.fallback_tier.is_some() {
+            return Err(TierDefinitionsError::FallbackWithoutTiers);
+        }
+        return validate_opening(checks);
+    };
+    let names: Vec<&str> = ladder.iter().map(TierDefinition::name).collect();
+    validate_definition_names(&names)?;
+    if checks.classifier_type.rejects_custom_tiers() {
+        return Err(TierDefinitionsError::ClassifierCannotEmitTiers {
+            classifier: checks.classifier_type,
+        });
+    }
+    let conflicts = definition_conflicts(checks, labels);
+    if !conflicts.is_empty() {
+        return Err(TierDefinitionsError::Conflicts { conflicts });
+    }
+    validate_defined_pools(&names, pools)?;
+    validate_fallback(checks.fallback_tier, &names)
+}
+
+fn validate_definition_names(names: &[&str]) -> Result<(), TierDefinitionsError> {
+    if !(MIN_TIER_DEFINITIONS..=MAX_TIER_DEFINITIONS).contains(&names.len()) {
+        return Err(TierDefinitionsError::TierCount { count: names.len() });
+    }
+    let duplicated = duplicate_names(names);
+    if duplicated.is_empty() {
+        return Ok(());
+    }
+    Err(TierDefinitionsError::DuplicateNames { names: duplicated })
+}
+
+// the names that repeat a case-insensitive spelling, each listed once and sorted
+fn duplicate_names(names: &[&str]) -> Vec<String> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for name in names {
+        *counts.entry(name.to_lowercase()).or_default() += 1;
+    }
+    let mut duplicated: Vec<String> = names
+        .iter()
+        .filter(|name| counts[&name.to_lowercase()] > 1)
+        .map(|name| (*name).to_owned())
+        .collect();
+    duplicated.sort();
+    duplicated.dedup();
+    duplicated
+}
+
+fn validate_defined_pools(
+    names: &[&str],
+    pools: &BTreeMap<String, TierPool>,
+) -> Result<(), TierDefinitionsError> {
+    let defined: BTreeSet<&str> = names.iter().copied().collect();
+    let missing: Vec<String> = defined
+        .iter()
+        .filter(|name| !pools.contains_key(**name))
+        .map(|name| (*name).to_owned())
+        .collect();
+    if !missing.is_empty() {
+        return Err(TierDefinitionsError::MissingTiers { names: missing });
+    }
+    let unknown: Vec<String> = pools
+        .keys()
+        .filter(|name| !defined.contains(name.as_str()))
+        .cloned()
+        .collect();
+    if !unknown.is_empty() {
+        return Err(TierDefinitionsError::UnknownTiers { names: unknown });
+    }
+    let mut empty: Vec<String> = names
+        .iter()
+        .filter(|name| pools.get(**name).is_none_or(TierPool::is_empty))
+        .map(|name| (*name).to_owned())
+        .collect();
+    empty.sort();
+    if empty.is_empty() {
+        return Ok(());
+    }
+    Err(TierDefinitionsError::EmptyPools { names: empty })
+}
+
+fn validate_fallback(fallback: Option<&str>, names: &[&str]) -> Result<(), TierDefinitionsError> {
+    let Some(fallback) = fallback else {
+        return Err(TierDefinitionsError::FallbackRequired);
+    };
+    if names.contains(&fallback) {
+        return Ok(());
+    }
+    Err(TierDefinitionsError::FallbackUnknown {
+        tier: fallback.to_owned(),
+        defined: names.iter().map(|name| (*name).to_owned()).collect(),
+    })
+}
+
+// _tier_definition_conflicts: the settings that are written against the built-in ladder
+fn definition_conflicts(
+    checks: &TierChecks<'_>,
+    labels: &BTreeMap<ComplexityTier, String>,
+) -> Vec<DefinitionConflict> {
+    let mut conflicts = Vec::new();
+    let features = checks.order_feature_labels();
+    if !features.is_empty() {
+        conflicts.push(DefinitionConflict::OrderFeatures(features));
+    }
+    if checks.llm_system_prompt.is_some() {
+        conflicts.push(DefinitionConflict::SystemPrompt);
+    }
+    if checks.classification_rubric.is_some() {
+        conflicts.push(DefinitionConflict::ClassificationRubric);
+    }
+    if checks.classifier_fallback == ClassifierFallback::DefaultModel {
+        conflicts.push(DefinitionConflict::DefaultModelFallback);
+    }
+    if !labels.is_empty() {
+        conflicts.push(DefinitionConflict::TierLabels);
+    }
+    conflicts
+}
+
+// _built_in_opening_conflicts: a section-shaped rubric needs an LLM classifier and a free prompt slot
+fn validate_opening(checks: &TierChecks<'_>) -> Result<(), TierDefinitionsError> {
+    let field = if checks.classification_prompt.is_some() {
+        Some("classification_prompt")
+    } else if checks.classification_examples.is_some() {
+        Some("classification_examples")
+    } else {
+        None
+    };
+    let Some(field) = field else {
+        return Ok(());
+    };
+    if checks.llm_system_prompt.is_some() {
+        return Err(TierDefinitionsError::OpeningWithSystemPrompt { field });
+    }
+    if !checks.classifier_type.uses_llm() {
+        return Err(TierDefinitionsError::OpeningRequiresClassifier {
+            field,
+            classifier: checks.classifier_type,
+        });
+    }
+    Ok(())
+}
