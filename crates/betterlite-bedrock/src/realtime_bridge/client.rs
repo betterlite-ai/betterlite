@@ -108,7 +108,7 @@ where
         ack.ack_session_update().await
     }
 
-    async fn close_input(&mut self) {
+    async fn close_input(&self) {
         let frames = {
             let mut input = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
             input.session_close_messages()

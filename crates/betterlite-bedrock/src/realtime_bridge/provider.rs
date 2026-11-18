@@ -23,7 +23,7 @@ use crate::realtime_input::RealtimeInput;
 
 // The pump hands each loggable event to the caller before pulling the next one, as the source's generator does
 #[async_trait]
-pub trait LoggedEventSink: Send {
+pub trait LoggedEventSink: Send + Sync {
     async fn record(&mut self, event: Json);
 }
 
@@ -54,10 +54,10 @@ where
     ) -> Result<ForwardEnd, ProviderForwardError<S>> {
         // The token is copied out so the pump's own borrow stays free for the forwarding future
         let cancel = self.cancel;
-        match cancel.run_until_cancelled(self.forward()).await {
-            Some(result) => result,
-            None => Ok(ForwardEnd::Cancelled),
-        }
+        cancel
+            .run_until_cancelled(self.forward())
+            .await
+            .unwrap_or(Ok(ForwardEnd::Cancelled))
     }
 
     async fn forward(&mut self) -> Result<ForwardEnd, ProviderForwardError<S>> {
@@ -134,9 +134,11 @@ where
             ids: self.ids,
             redactor: self.redactor,
         };
-        events
+        let response = events
             .transform_realtime_response(text.as_bytes(), &*self.state)
-            .map_err(ProviderForwardError::Transform)
+            .map_err(ProviderForwardError::Transform);
+        drop(input);
+        response
     }
 
     async fn send_to_client(&self, message: &Json) -> bool {
