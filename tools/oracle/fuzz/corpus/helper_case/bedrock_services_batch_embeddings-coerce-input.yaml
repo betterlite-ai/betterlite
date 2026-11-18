@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-services-batch-embeddings-coerce-input
+call:
+  bedrock_services_batch_embeddings:
+    function: coerce_input
+    model: amazon.titan-embed-text-v2:0
+    input: hello
+env: {}
+compare: {ignore: []}
