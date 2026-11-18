@@ -14,6 +14,7 @@ use crate::otel::v2_callback::registry::V2Registry;
 use self::hooks::RuntimeHooks;
 use self::types::{V2Logger, V2LoggerConstructor};
 
+pub mod construction;
 pub mod error;
 pub mod factory;
 pub mod hooks;

@@ -169,6 +169,12 @@ impl ExporterFactories {
         }
     }
 
+    // The signal clients the factories were built with; a callback's meter and log providers reuse them.
+    #[must_use]
+    pub fn clients(&self) -> HttpClients {
+        self.clients.clone()
+    }
+
     // A registered factory is assumed to build an OTLP exporter, as LiteLLM documents.
     #[must_use]
     pub fn exporter_transport(&self, kind: &str) -> Transport {

@@ -228,6 +228,7 @@ impl V2LoggerConstructor for RecordingConstructor {
         Ok(BuiltLogger {
             callback: Arc::new(FakeLogger { name }),
             provider,
+            recorder_providers: (None, None),
         })
     }
 }
@@ -405,23 +406,20 @@ pub(crate) fn operator_exporter() -> ExporterSpec {
 }
 
 pub(crate) fn destination(callback_name: &str) -> OtelDestination {
-    OtelDestination::from(DestinationFields {
-        endpoint: "https://collector.example/v1/traces".to_owned(),
-        headers: BTreeMap::new(),
-        resource_attributes: BTreeMap::new(),
-        callback_name: Some(callback_name.to_owned()),
-        protocol: None,
-        span_scope: SpanScope::Full,
-    })
+    destination_with_protocol(callback_name, None)
 }
 
 pub(crate) fn tenant_destination(callback_name: &str) -> OtelDestination {
+    destination_with_protocol(callback_name, Some("tenant_sink"))
+}
+
+fn destination_with_protocol(callback_name: &str, protocol: Option<&str>) -> OtelDestination {
     OtelDestination::from(DestinationFields {
         endpoint: "https://collector.example/v1/traces".to_owned(),
         headers: BTreeMap::new(),
         resource_attributes: BTreeMap::new(),
         callback_name: Some(callback_name.to_owned()),
-        protocol: Some("tenant_sink".to_owned()),
+        protocol: protocol.map(str::to_owned),
         span_scope: SpanScope::Full,
     })
 }
@@ -472,7 +470,7 @@ fn clients() -> HttpClients {
     }
 }
 
-struct NoSettings;
+pub(crate) struct NoSettings;
 
 impl CallbackSettingsView for NoSettings {
     fn otel_attributes(&self) -> Option<OtelModelValue> {
@@ -500,8 +498,9 @@ fn callback_parts(fixture: &Fixture, config: Settings, name: &str) -> CallbackPa
         &scope,
         AssemblyOptions {
             exporter: Some(SpanSink::InMemory(fixture.export_sinks.exporter())),
+            baggage_processor: None,
+            use_simple_processor: None,
             tenant_overrides: true,
-            ..AssemblyOptions::default()
         },
         config.excluded_services.clone(),
     )

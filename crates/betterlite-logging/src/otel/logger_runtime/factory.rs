@@ -31,8 +31,10 @@ pub fn build_otel_v2_logger(
             Arc::clone(&runtime.factories),
             &runtime.scope,
             AssemblyOptions {
+                exporter: None,
+                baggage_processor: None,
+                use_simple_processor: None,
                 tenant_overrides: true,
-                ..AssemblyOptions::default()
             },
             excluded_db_systems(runtime, &config),
         )
@@ -51,12 +53,17 @@ pub fn build_otel_v2_logger(
         },
         assembler,
         settings,
+        factories: Arc::clone(&runtime.factories),
+        scope_source: Arc::clone(&runtime.scope),
+        trace: Arc::clone(&runtime.trace),
+        environment: Arc::clone(&runtime.environment),
     };
     let built = runtime.constructor.build(&request)?;
     let logger = Arc::new(V2Logger {
         callback: built.callback,
         provider: built.provider,
         config,
+        recorder_providers: built.recorder_providers,
     });
     loggers(runtime).push(Arc::clone(&logger));
     Ok(logger)

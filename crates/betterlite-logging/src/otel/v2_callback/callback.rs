@@ -97,8 +97,17 @@ pub struct V2Callback {
     pub error_info: ErrorInformationConfig,
 }
 
+// what B3853's callback owns once assembled: V2Callback keeps it whole, a B8250 wrapper owns the logger
+pub struct V2CallbackAssembly {
+    pub provider: SdkTracerProvider,
+    pub logger: OpenTelemetryV2,
+    pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
+    pub error_info: ErrorInformationConfig,
+}
+
 impl V2Callback {
-    pub fn new(parts: CallbackParts, registry: &V2Registry) -> Result<Arc<Self>, CallbackError> {
+    // litellm.integrations.otel.logger.OpenTelemetryV2.__init__ without the proxy's registration
+    pub fn assemble(parts: CallbackParts) -> Result<V2CallbackAssembly, CallbackError> {
         let provider = resolve_tracer_provider(&parts)?;
         let scope = InstrumentationScope::builder(LITELLM_TRACER_NAME)
             .with_version(env!("CARGO_PKG_VERSION"))
@@ -124,12 +133,22 @@ impl V2Callback {
             tenants: parts.tenants,
             trace: parts.trace,
         });
-        let callback = Arc::new(Self {
+        Ok(V2CallbackAssembly {
+            provider,
             logger,
-            tracer_provider: provider,
             recorder_providers: (meter_provider, logger_provider),
-            roots: RootSpans::default(),
             error_info: parts.error_info,
+        })
+    }
+
+    pub fn new(parts: CallbackParts, registry: &V2Registry) -> Result<Arc<Self>, CallbackError> {
+        let assembly = Self::assemble(parts)?;
+        let callback = Arc::new(Self {
+            logger: assembly.logger,
+            tracer_provider: assembly.provider,
+            recorder_providers: assembly.recorder_providers,
+            roots: RootSpans::default(),
+            error_info: assembly.error_info,
         });
         registry.register(&callback);
         Ok(callback)

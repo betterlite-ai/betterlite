@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use betterlite_config::loader::EnvironmentLookup;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
@@ -8,6 +9,9 @@ use crate::callback_logger::CallbackLogger;
 use crate::otel::config::Settings;
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
+use crate::otel::fan_out::scope::RequestScopeSource;
+use crate::otel::logger::v2::RequestTraceSource;
+use crate::otel::plumbing::exporters::ExporterFactories;
 use crate::otel::v2_callback::callback::V2Callback;
 
 use super::error::LoggerRuntimeError;
@@ -52,11 +56,16 @@ pub struct LoggerBuildRequest<'a> {
     pub providers: InjectedProviders<'a>,
     pub assembler: Option<&'a Arc<dyn StreamOutputAssembler>>,
     pub settings: ConstructorSettings,
+    pub factories: Arc<ExporterFactories>,
+    pub scope_source: Arc<dyn RequestScopeSource>,
+    pub trace: Arc<dyn RequestTraceSource>,
+    pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
 pub struct BuiltLogger {
     pub callback: Arc<dyn CallbackLogger>,
     pub provider: SdkTracerProvider,
+    pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
 }
 
 // litellm.integrations.otel.logger._logger_class(...)(config=..., callback_name=..., **providers, **settings)
@@ -69,6 +78,8 @@ pub struct V2Logger {
     pub callback: Arc<dyn CallbackLogger>,
     pub provider: SdkTracerProvider,
     pub config: Settings,
+    // a Langfuse wrapper keeps no V2Callback, so the catalog holds the providers its recorders read
+    pub recorder_providers: (Option<SdkMeterProvider>, Option<SdkLoggerProvider>),
 }
 
 impl V2Logger {
@@ -80,6 +91,7 @@ impl V2Logger {
             config: callback.logger.config.clone(),
             provider: callback.tracer_provider.clone(),
             callback: erased,
+            recorder_providers: callback.recorder_providers.clone(),
         }
     }
 }

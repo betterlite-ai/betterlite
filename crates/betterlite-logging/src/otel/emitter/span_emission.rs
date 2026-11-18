@@ -11,7 +11,12 @@ use crate::otel::emitter::message_fitting::fit_indexed_messages;
 use crate::otel::emitter::span_kind::span_kind;
 use crate::otel::mappers::base::{AttributeMap, AttributeMapper, SpanData};
 use crate::otel::mappers::genai::GenAIMapper;
+use crate::otel::mappers::langfuse::LangfuseMapper;
+use crate::otel::mappers::langtrace::LangtraceMapper;
 use crate::otel::mappers::legacy::LegacyMapper;
+use crate::otel::mappers::openinference::OpenInferenceMapper;
+use crate::otel::mappers::registry::Mapper;
+use crate::otel::mappers::weave::WeaveMapper;
 use crate::otel::model::payloads::error::SpanError;
 use crate::otel::plumbing::events::{GenAIEventRecorder, OperationException};
 use crate::otel::vocabulary::registry::SpanRole;
@@ -66,6 +71,23 @@ impl DedupCache {
 pub enum MapperKind {
     GenAI(GenAIMapper),
     Legacy(LegacyMapper),
+    Langfuse(LangfuseMapper),
+    Langtrace(LangtraceMapper),
+    OpenInference(OpenInferenceMapper),
+    Weave(WeaveMapper),
+}
+
+impl From<Mapper> for MapperKind {
+    fn from(mapper: Mapper) -> Self {
+        match mapper {
+            Mapper::Genai(mapper) => Self::GenAI(mapper),
+            Mapper::Legacy(mapper) => Self::Legacy(mapper),
+            Mapper::Langfuse(mapper) => Self::Langfuse(mapper),
+            Mapper::Langtrace(mapper) => Self::Langtrace(mapper),
+            Mapper::OpenInference(mapper) => Self::OpenInference(mapper),
+            Mapper::Weave(mapper) => Self::Weave(mapper),
+        }
+    }
 }
 
 impl AttributeMapper for MapperKind {
@@ -73,6 +95,10 @@ impl AttributeMapper for MapperKind {
         match self {
             Self::GenAI(mapper) => mapper.map(data, environment),
             Self::Legacy(mapper) => mapper.map(data, environment),
+            Self::Langfuse(mapper) => mapper.map(data, environment),
+            Self::Langtrace(mapper) => mapper.map(data, environment),
+            Self::OpenInference(mapper) => mapper.map(data, environment),
+            Self::Weave(mapper) => mapper.map(data, environment),
         }
     }
 }
