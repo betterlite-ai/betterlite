@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -20,7 +20,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use super::input::{Frame, GuardrailDocument, ProviderDocument};
-use super::transport::{Locked as _, Timeline, WireBackend};
+use super::transport::{Locked as _, Timeline, WireBackend, capture};
 
 #[derive(Debug, Error)]
 #[error("the scripted provider transformation failed")]
@@ -33,10 +33,15 @@ pub(crate) struct ScriptedProvider {
     transforms: Mutex<VecDeque<Vec<Frame>>>,
     fail_transform: bool,
     timeline: Timeline,
+    capture: Arc<Mutex<usize>>,
 }
 
 impl ScriptedProvider {
-    pub(crate) fn new(document: &ProviderDocument, timeline: Timeline) -> Self {
+    pub(crate) fn new(
+        document: &ProviderDocument,
+        timeline: Timeline,
+        capture: Arc<Mutex<usize>>,
+    ) -> Self {
         Self {
             requires_session_configuration: document.requires_session_configuration,
             setup: document.setup.clone(),
@@ -44,6 +49,7 @@ impl ScriptedProvider {
             transforms: Mutex::new(document.transforms.iter().cloned().collect()),
             fail_transform: document.fail_transform,
             timeline,
+            capture,
         }
     }
 }
@@ -66,6 +72,15 @@ impl BaseRealtimeConfig for ScriptedProvider {
         model: &str,
         session_configuration_request: Option<&str>,
     ) -> Result<Vec<RealtimeMessage>, Self::Error> {
+        capture(
+            &self.capture,
+            &[
+                message.len(),
+                model.len(),
+                session_configuration_request.map_or(0, str::len),
+            ],
+        )
+        .map_err(|_error| ScriptError)?;
         let decoded = serde_json::from_str::<Json>(message)
             .unwrap_or_else(|_error| Json::Text(message.to_owned()));
         self.timeline.locked().push(json!({

@@ -62,6 +62,8 @@ class Input(TypedDict):
 
 
 def checked(input_value: Input) -> None:
+    if len(input_value["operations"]) > MAX_OPERATIONS:
+        raise ValueError("the scripted sender input is past its limits")
     provider = input_value["provider"]
     batches = [] if provider is None else provider["transforms"]
     frames = [frame for batch in batches for frame in batch]
@@ -70,12 +72,16 @@ def checked(input_value: Input) -> None:
         for operation in input_value["operations"]
         if operation["kind"] != "disable"
     ]
-    sizes = [len(text) for text in texts] + [
-        len(frame["text"]) if frame["kind"] == "text" else len(frame["bytes"])
+    texts.append(input_value["model"])
+    forced = input_value["force_transcription_model"]
+    if forced is not None:
+        texts.append(forced)
+    sizes = [len(text.encode("utf-8")) for text in texts] + [
+        len(frame["text"].encode("utf-8")) if frame["kind"] == "text" else len(frame["bytes"])
         for frame in frames
     ]
     if (
-        len(texts) > MAX_OPERATIONS
+        len(batches) > MAX_OPERATIONS
         or len(frames) > MAX_FRAMES
         or len(input_value["guardrails"]) > MAX_FRAMES
         or len(input_value["backend_failures"]) > MAX_FRAMES
@@ -99,3 +105,17 @@ def decoded(text: str) -> JsonValue:
         return WIRE.validate_json(text)
     except ValidationError:
         return text
+
+
+class SendFailureError(Exception): ...
+
+
+class Capture:
+    def __init__(self) -> None:
+        self.size = 0
+
+    def reserve(self, sizes: list[int], label: str) -> None:
+        total = self.size + sum(sizes)
+        if any(size > MAX_TEXT_BYTES for size in sizes) or total > MAX_CAPTURE_BYTES:
+            raise SendFailureError(label)
+        self.size = total

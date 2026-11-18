@@ -14,7 +14,7 @@ use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, accept_async};
 
-use super::input::MAX_FRAMES;
+use super::input::{MAX_CAPTURE_BYTES, MAX_FRAMES, MAX_TEXT_BYTES};
 
 pub(crate) type Timeline = Arc<Mutex<Vec<Value>>>;
 
@@ -58,15 +58,17 @@ pub(crate) struct WireLog {
     pub(crate) delivered: usize,
     pub(crate) sent: Vec<String>,
     pub(crate) failures: Vec<usize>,
+    pub(crate) capture: Arc<Mutex<usize>>,
 }
 
 impl WireLog {
-    pub(crate) fn new(failures: &[usize]) -> Self {
+    pub(crate) fn new(failures: &[usize], capture: Arc<Mutex<usize>>) -> Self {
         Self {
             attempts: 0,
             delivered: 0,
             sent: Vec::new(),
             failures: failures.to_vec(),
+            capture,
         }
     }
 
@@ -105,6 +107,7 @@ impl ClientWebSocket for ClientSink {
                 message: String::from("the scripted client capture is full"),
             });
         }
+        capture(&log.capture, &[data.len()])?;
         log.sent.push(data.to_owned());
         Ok(())
     }
@@ -137,6 +140,7 @@ impl RealtimeBackend for WireBackend {
             RealtimeMessage::Text(text) => Message::Text(Utf8Bytes::from(text)),
             RealtimeMessage::Binary(data) => Message::Binary(Bytes::from(data)),
         };
+        capture(&self.log.locked().capture, &[frame.len()])?;
         self.socket
             .send(frame)
             .await
@@ -180,4 +184,18 @@ pub(crate) async fn relay(listener: TcpListener, sender: Sender<Recorded>) {
             return;
         }
     }
+}
+
+pub(crate) fn capture(budget: &Mutex<usize>, sizes: &[usize]) -> Result<(), WebSocketError> {
+    let mut captured = budget.locked();
+    let total = sizes
+        .iter()
+        .fold(*captured, |total, size| total.saturating_add(*size));
+    if sizes.iter().any(|size| *size > MAX_TEXT_BYTES) || total > MAX_CAPTURE_BYTES {
+        return Err(WebSocketError {
+            message: String::from("the scripted capture is past its byte limit"),
+        });
+    }
+    *captured = total;
+    Ok(())
 }

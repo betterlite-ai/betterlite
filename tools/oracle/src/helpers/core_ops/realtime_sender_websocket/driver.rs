@@ -51,7 +51,7 @@ struct Session {
 pub(crate) fn drive(input: &Input) -> HelperResult {
     input
         .check()
-        .map_err(|message| failure("InvalidInput", message))?;
+        .map_err(|message| failure("ValueError", message))?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -111,13 +111,16 @@ async fn run_operations(
 }
 
 fn session(input: &Input, socket: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Session {
+    let capture = Arc::new(Mutex::new(0));
     let timeline: Timeline = Arc::new(Mutex::new(Vec::new()));
-    let provider = input
-        .provider
-        .as_ref()
-        .map(|document| ScriptedProvider::new(document, Arc::clone(&timeline)));
-    let backend_log = Arc::new(Mutex::new(WireLog::new(&input.backend_failures)));
-    let client_log = Arc::new(Mutex::new(WireLog::new(&input.client_failures)));
+    let provider = input.provider.as_ref().map(|document| {
+        ScriptedProvider::new(document, Arc::clone(&timeline), Arc::clone(&capture))
+    });
+    let backend_log = Arc::new(Mutex::new(WireLog::new(
+        &input.backend_failures,
+        Arc::clone(&capture),
+    )));
+    let client_log = Arc::new(Mutex::new(WireLog::new(&input.client_failures, capture)));
     let backend = WireBackend {
         socket,
         log: Arc::clone(&backend_log),

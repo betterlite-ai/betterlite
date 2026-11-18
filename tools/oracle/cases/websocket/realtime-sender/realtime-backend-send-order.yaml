@@ -83,8 +83,8 @@ calls:
           - {type: realtimeInput, text: b}
         transforms:
           - [{kind: text, text: '{"type": "setup", "session": {"model": "a"}}'}]
-          - [{kind: binary, text: '{"type": "realtimeInput", "text": "b"}'}]
-          - [{kind: binary, text: '{"type": "realtimeInput", "text": "c"}'}]
+          - [{kind: binary, bytes: [123, 34, 116, 121, 112, 101, 34, 58, 32, 34, 114, 101, 97, 108, 116, 105, 109, 101, 73, 110, 112, 117, 116, 34, 44, 32, 34, 116, 101, 120, 116, 34, 58, 32, 34, 98, 34, 125]}]
+          - [{kind: binary, bytes: [123, 34, 116, 121, 112, 101, 34, 58, 32, 34, 114, 101, 97, 108, 116, 105, 109, 101, 73, 110, 112, 117, 116, 34, 44, 32, 34, 116, 101, 120, 116, 34, 58, 32, 34, 99, 34, 125]}]
           - [{kind: text, text: '{"type": "setup", "session": {"model": "a"}}'}]
         fail_transform: false
       guardrails: []

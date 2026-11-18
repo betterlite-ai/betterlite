@@ -9,12 +9,11 @@ from pydantic import JsonValue
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.asyncio.server import serve
 
-from .records import WIRE, Input, Operation, checked, recorded
+from .records import WIRE, Capture, Input, Operation, SendFailureError, checked, recorded
 from .scripted import (
     ClientSink,
     Probe,
     ScriptedProvider,
-    SendFailureError,
     Upstream,
     WireBackend,
     WireLog,
@@ -52,11 +51,14 @@ async def session(input_value: Input, upstream: Upstream, socket: ClientConnecti
         callbacks.append(custom if document["custom"] else CustomLogger())
     litellm.callbacks = [*callbacks]
     timeline: list[JsonValue] = []
+    capture = Capture()
     provider_document = input_value["provider"]
-    provider = None if provider_document is None else ScriptedProvider(provider_document, timeline)
-    backend = WireBackend(socket, WireLog(input_value["backend_failures"]), timeline)
+    provider = (
+        None if provider_document is None else ScriptedProvider(provider_document, timeline, capture)
+    )
+    backend = WireBackend(socket, WireLog(input_value["backend_failures"], capture), timeline)
     client = ClientSink(
-        WireLog(input_value["client_failures"]), beta=input_value["client_wants_beta"]
+        WireLog(input_value["client_failures"], capture), beta=input_value["client_wants_beta"]
     )
     probe = Probe(input_value, backend, client, provider)
     results: list[JsonValue] = []

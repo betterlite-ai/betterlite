@@ -87,30 +87,40 @@ impl Input {
             || self.backend_failures.len() > MAX_FRAMES
             || self.client_failures.len() > MAX_FRAMES
         {
-            return Err(String::from("the scripted sender input has too many items"));
+            return Err(String::from("the scripted sender input is past its limits"));
         }
-        let mut captured = 0_usize;
+        let forced = self
+            .force_transcription_model
+            .as_deref()
+            .unwrap_or_default();
+        if self.model.len() > MAX_TEXT_BYTES || forced.len() > MAX_TEXT_BYTES {
+            return Err(String::from("the scripted sender input is past its limits"));
+        }
+        let mut captured = self.model.len().saturating_add(forced.len());
         for operation in &self.operations {
             let size = operation.text().len();
             if size > MAX_TEXT_BYTES {
-                return Err(String::from("a scripted operation is past its size limit"));
+                return Err(String::from("the scripted sender input is past its limits"));
             }
             captured = captured.saturating_add(size);
         }
         let Some(provider) = &self.provider else {
             return checked_capture(captured);
         };
+        if provider.transforms.len() > MAX_OPERATIONS {
+            return Err(String::from("the scripted sender input is past its limits"));
+        }
         let mut frames = 0_usize;
         for frame in provider.transforms.iter().flatten() {
             let size = frame.size();
             if size > MAX_TEXT_BYTES {
-                return Err(String::from("a scripted frame is past its size limit"));
+                return Err(String::from("the scripted sender input is past its limits"));
             }
             frames = frames.saturating_add(1);
             captured = captured.saturating_add(size);
         }
         if frames > MAX_FRAMES {
-            return Err(String::from("the scripted provider has too many frames"));
+            return Err(String::from("the scripted sender input is past its limits"));
         }
         checked_capture(captured)
     }
@@ -118,9 +128,7 @@ impl Input {
 
 fn checked_capture(captured: usize) -> Result<(), String> {
     if captured > MAX_CAPTURE_BYTES {
-        return Err(String::from(
-            "the scripted sender input is past its capture limit",
-        ));
+        return Err(String::from("the scripted sender input is past its limits"));
     }
     Ok(())
 }

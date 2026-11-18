@@ -9,14 +9,21 @@ from typing_extensions import override
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.server import ServerConnection
 
-from .records import EVENT, MAX_FRAMES, Input, ProviderDocument, decoded, recorded
-
-
-class SendFailureError(Exception): ...
+from .records import (
+    EVENT,
+    MAX_FRAMES,
+    Capture,
+    Input,
+    ProviderDocument,
+    SendFailureError,
+    decoded,
+    recorded,
+)
 
 
 class WireLog:
-    def __init__(self, failures: list[int]) -> None:
+    def __init__(self, failures: list[int], capture: Capture) -> None:
+        self.capture = capture
         self.attempts = 0
         self.delivered = 0
         self.sent: list[str] = []
@@ -53,7 +60,10 @@ class ScriptedProviderView(Protocol):
 
 
 class ScriptedProvider(ScriptedProviderView):
-    def __init__(self, document: ProviderDocument, timeline: list[JsonValue]) -> None:
+    def __init__(
+        self, document: ProviderDocument, timeline: list[JsonValue], capture: Capture
+    ) -> None:
+        self._capture = capture
         self._document = document
         self._transforms = list(document["transforms"])
         self._timeline = timeline
@@ -61,6 +71,8 @@ class ScriptedProvider(ScriptedProviderView):
     def transform_realtime_request(
         self, message: str, model: str, session_request: str | None = None
     ) -> list[str | bytes]:
+        texts = [message, model] if session_request is None else [message, model, session_request]
+        self._capture.reserve([len(text.encode("utf-8")) for text in texts], "transform")
         transform: dict[str, JsonValue] = {"message": decoded(message), "model": model}
         transform["session_configuration_request"] = session_request
         self._timeline.append({"transform": transform})
@@ -96,6 +108,12 @@ class WireBackend:
 
     async def send(self, message: str | bytes) -> None:
         self.log.begin("backend")
+        match message:
+            case str():
+                size = len(message.encode("utf-8"))
+            case bytes():
+                size = len(message)
+        self.log.capture.reserve([size], "backend")
         await self._socket.send(message)
         self.log.delivered += 1
         self._timeline.append("backend")
@@ -111,6 +129,7 @@ class ClientSink:
         self.log.begin("client")
         if len(self.log.sent) >= MAX_FRAMES:
             raise SendFailureError("the scripted client capture is full")
+        self.log.capture.reserve([len(data.encode("utf-8"))], "client")
         self.log.sent.append(data)
 
 

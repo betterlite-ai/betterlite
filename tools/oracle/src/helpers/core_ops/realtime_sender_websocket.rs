@@ -1,6 +1,7 @@
 mod driver;
 mod input;
 mod provider;
+mod tests;
 mod transport;
 
 use betterlite_oracle_helper_api::error::HelperError;
