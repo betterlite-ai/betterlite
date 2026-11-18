@@ -11,7 +11,6 @@ from typing_extensions import override
 from betterlite._custom_routing import CustomRoutingStrategyBase
 
 MODEL: Final = "gpt-4o"
-RENAMED: Final = {"input": "input_value"}
 KEYWORD_ONLY: Final = frozenset({"specific_deployment", "request_kwargs"})
 RAW: Final = TypeAdapter(dict[str, list[tuple[str, str, str]]])
 # strict mypy reads LiteLLM's bare list and dict annotations as Any; the probe runs in a subprocess
@@ -50,7 +49,7 @@ def probe(method: str) -> dict[str, list[tuple[str, str, str]]]:
 def normalized(raw: Iterable[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     for name, kind, text in raw:
-        renamed = RENAMED.get(name, name)
+        renamed = "input_value" if name == "input" else name
         default = text.partition(" = " if " = " in text else "=")[2]
         found.append((renamed, "KEYWORD_ONLY" if renamed in KEYWORD_ONLY else kind, default))
     return found
