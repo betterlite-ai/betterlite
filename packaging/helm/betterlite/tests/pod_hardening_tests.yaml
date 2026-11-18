@@ -2,7 +2,7 @@ suite: test pod hardening knobs on the component deployments
 templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml, migrations-job.yaml]
 values: [./values/required.yaml]
 tests:
-  - it: the components render no hardening fields by default
+  - it: the components render no hardening fields and keep their own selectors by default
     templates: [gateway/deployment.yaml, backend/deployment.yaml, ui/deployment.yaml]
     asserts:
       - isNull: { path: 'spec.template.spec.securityContext' }
@@ -10,6 +10,8 @@ tests:
       - isNull: { path: 'spec.template.spec.containers[0].lifecycle' }
       - isNull: { path: 'spec.template.spec.terminationGracePeriodSeconds' }
       - { equal: { path: 'spec.template.metadata.labels', value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/component: gateway } }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.selector.matchLabels', value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/component: backend } }, template: backend/deployment.yaml }
+      - { equal: { path: 'spec.selector.matchLabels', value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/component: ui } }, template: ui/deployment.yaml }
   - it: gateway renders pod-level and container-level securityContext in their own scopes
     template: gateway/deployment.yaml
     set:
@@ -143,7 +145,7 @@ tests:
       - { hasDocuments: { count: 0 }, template: gateway/deployment.yaml }
       - { hasDocuments: { count: 0 }, template: backend/deployment.yaml }
       - { hasDocuments: { count: 0 }, template: ui/deployment.yaml }
-  - it: every Deployment renders its resources and scheduling fields from values
+  - it: every Deployment carries its own name and renders its resources and scheduling fields
     set:
       gateway.resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "3", memory: 6Gi } }
       backend.resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "2", memory: 3Gi } }
@@ -161,6 +163,9 @@ tests:
       backend.topologySpreadConstraints: [{ maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway }]
       ui.topologySpreadConstraints: [{ maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway }]
     asserts:
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-gateway }, template: gateway/deployment.yaml }
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-backend }, template: backend/deployment.yaml }
+      - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-ui }, template: ui/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].resources', value: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "3", memory: 6Gi } } }, template: gateway/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].resources', value: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "2", memory: 3Gi } } }, template: backend/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].resources', value: { requests: { cpu: 100m, memory: 128Mi }, limits: { cpu: "2", memory: 2Gi } } }, template: ui/deployment.yaml }
