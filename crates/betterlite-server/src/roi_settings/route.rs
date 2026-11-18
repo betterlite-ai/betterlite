@@ -49,7 +49,7 @@ async fn get_settings(
     let Some(repository) = state.repository.as_deref() else {
         return Err(RoiSettingsError::Internal(InternalError::DbNotConnected));
     };
-    let settings = load_settings(repository, &state.cipher).await?;
+    let settings = load_settings(repository, state.cipher.as_ref()).await?;
     Ok(Json(public_settings(&settings, state.catalog.as_deref())))
 }
 
@@ -69,11 +69,11 @@ async fn update_settings(
         return Err(RoiSettingsError::Request(issues));
     }
     let stored = load_stored(repository).await?;
-    let current = validate_settings(open_settings(&stored, &state.cipher))?;
+    let current = validate_settings(open_settings(&stored, state.cipher.as_ref()))?;
     if presence.github_api_url == Some(None) {
         return Err(RoiSettingsError::NullUrl);
     }
-    let secrets = patched_secrets(&patch, &presence, &stored, &current, &state.cipher)?;
+    let secrets = patched_secrets(&patch, &presence, &stored, &current, state.cipher.as_ref())?;
     let settings = build_settings(patch, &current, &secrets)?;
     let record = StoredSettings {
         github_api_url: settings.github_api_url.clone(),

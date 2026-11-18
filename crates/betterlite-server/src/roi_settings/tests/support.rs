@@ -283,7 +283,7 @@ pub(crate) fn catalog(names: Vec<String>) -> Arc<dyn RouterCatalog> {
 }
 
 pub(crate) fn erased(memory: &Arc<MemoryRepository>) -> Arc<dyn SettingsRepository> {
-    Arc::clone(memory)
+    Arc::<MemoryRepository>::clone(memory)
 }
 
 pub(crate) fn disconnected_repository() -> DatabaseSettingsRepository {
