@@ -1,8 +1,8 @@
-use betterlite_openai::embedding::EmbeddingRecord;
+use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
-use super::convert::{encode_json, parse_list, parse_one};
+use super::convert::{parse_list, parse_one};
 use super::error::EmbeddingIoError;
 use super::response_projection::{
     ProviderResponse, provider_embedding_reply, titan_embedding_reply,
@@ -10,7 +10,7 @@ use super::response_projection::{
 use crate::aws_endpoints::provider::BedrockEmbeddingProvider;
 use crate::image_models::params::Params;
 use crate::marengo_embeddings::response::{
-    self as marengo, MarengoBilledRequest, MarengoEmbeddingResponse, MarengoInvokeResponse,
+    self as marengo, MarengoBilledRequest, MarengoInvokeResponse,
 };
 use crate::nova_embeddings::response as nova;
 use crate::titan_embeddings::response as titan;

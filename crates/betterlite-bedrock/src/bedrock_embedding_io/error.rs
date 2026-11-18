@@ -1,3 +1,5 @@
+use std::io;
+
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
 
@@ -18,8 +20,11 @@ pub enum EmbeddingIoError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the managed region secret lookup worker failed to start: {message}")]
-    RegionWorkerStart { message: String },
+    #[error("the managed region secret lookup worker failed to start")]
+    RegionWorkerStart {
+        #[source]
+        source: io::Error,
+    },
     #[error("the managed region secret lookup worker is unavailable")]
     RegionWorkerUnavailable,
     #[error(transparent)]

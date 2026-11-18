@@ -36,7 +36,7 @@ impl ManagedRegionWorker {
     // Avoid entering Tokio on the thread that runs synchronous secret reads.
     #[must_use]
     pub fn new() -> Result<Self, EmbeddingIoError> {
-        let (sender, mut receiver) = mpsc::channel(REGION_WORKER_QUEUE_CAPACITY);
+        let (sender, mut receiver) = mpsc::channel::<RegionJob>(REGION_WORKER_QUEUE_CAPACITY);
         let worker_thread = thread::Builder::new()
             .name("bedrock-region-secret-reader".to_owned())
             .spawn(move || {
@@ -44,9 +44,7 @@ impl ManagedRegionWorker {
                     job();
                 }
             })
-            .map_err(|error| EmbeddingIoError::RegionWorkerStart {
-                message: error.to_string(),
-            })?;
+            .map_err(|source| EmbeddingIoError::RegionWorkerStart { source })?;
         Ok(Self {
             sender: Some(sender),
             worker_thread: Some(worker_thread),
