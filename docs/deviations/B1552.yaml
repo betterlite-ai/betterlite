@@ -4,8 +4,9 @@ deviations:
       An APISerpent reply larger than 16 MiB is refused before it is parsed, where LiteLLM hands
       whatever size the provider sends to json and parses it.
     why: >-
-      The reply is untrusted provider input, and the 16 MiB ceiling is the pooled transport's
-      reply cap, so a working reply stays far below it while a hostile one cannot grow memory.
+      The reply is untrusted provider input, and 16 MiB matches the bound the other betterlite
+      search providers put on a reply; a search reply is a short JSON document, so no working
+      setup sends one near the limit while a hostile one cannot grow memory.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L154
 kept_bugs:
   - what: >-
