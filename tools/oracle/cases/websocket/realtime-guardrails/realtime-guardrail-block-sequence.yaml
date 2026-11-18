@@ -1,0 +1,51 @@
+kind: helper
+name: realtime-guardrail-block-sequence
+call:
+  realtime_guardrails_websocket:
+    request_data: {}
+    user_api_key_dict: null
+    guardrails:
+      - kind: custom
+        name: filter
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: raise
+        raised:
+          message: denied
+          value_error: true
+      - kind: custom
+        name: later
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: rewrite
+    callbacks: [0, 1]
+    backend_failures: []
+    client_failures: []
+    close_failure: false
+    runs:
+      - transcript: hello
+        item_id: item-1
+        pre_block_backend_message: tool-safe
+calls:
+  - realtime_guardrails_websocket:
+      request_data: {}
+      user_api_key_dict: null
+      guardrails:
+        - kind: custom
+          hooks: [realtime_input_transcription]
+          default_on: true
+          outcome: raise
+          raised:
+            message: denied
+            status_code: 403
+            detail:
+              error: forbidden
+      callbacks: [0]
+      backend_failures: []
+      client_failures: []
+      close_failure: false
+      runs:
+        - transcript: stop
+          event_hooks: [realtime_input_transcription]
+env: {}
+compare: {ignore: []}
