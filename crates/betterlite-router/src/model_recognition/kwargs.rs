@@ -32,10 +32,10 @@ fn metadata_key(kwargs: &JsonMap) -> &'static str {
 }
 
 // A metadata field of the call: absent and null read as absent, and any other non-object names the field.
-fn optional_object(
-    value: Option<&Json>,
+fn optional_object<'value>(
+    value: Option<&'value Json>,
     field: &'static str,
-) -> Result<Option<&JsonMap>, ModelRecognitionError> {
+) -> Result<Option<&'value JsonMap>, ModelRecognitionError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(fields)) => Ok(Some(fields)),
