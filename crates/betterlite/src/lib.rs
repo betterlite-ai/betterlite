@@ -12,6 +12,7 @@ pub mod job_scheduler;
 pub mod lifespan;
 pub mod listener_flags;
 pub mod metrics_listener;
+pub mod model_read_through;
 pub mod prometheus_mount;
 pub mod provider_selection;
 pub mod proxy_cli;

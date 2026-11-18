@@ -1,0 +1,30 @@
+task: B8131
+deviations:
+  - what: The migration container is named db-migrations and runs ["betterlite-db-admin", "migrate"] with no workingDir, while LiteLLM runs prisma-migrations with ["python", "litellm/proxy/prisma_migration.py"] from /app.
+    why: The chart ships the native image, which has no Python interpreter or Prisma migration script; betterlite-db-admin is the native migration entry point (B5071) and needs no working directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L45-L51
+  - what: The deployment mounts proxy_config from the betterlite-config volume at /etc/betterlite/config.yaml instead of LiteLLM's litellm-config volume at /etc/litellm/config.yaml.
+    why: The native image has no /etc/litellm folder, and B8130 names the ConfigMap volume betterlite-config; the volume key and path stay proxyConfigMap.key and config.yaml.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L126-L128
+  - what: With securityContext.readOnlyRootFilesystem the pod gets only the tmp emptyDir at /tmp, where LiteLLM also mounts separate cache and npm emptyDirs at /.cache and /.npm.
+    why: The native server writes no Python bytecode or npm cache; mounting empty writable dirs there would hide nothing it needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L129-L136
+  - what: The deployment mounts no billingMetrics volumes or volume mounts on the proxy or collector containers.
+    why: The billingMetrics values and helpers are not ported (B8130), because billable-request metering belongs to LiteLLM Enterprise and betterlite has no enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L137-L139
+  - what: When the pod has neither a config checksum nor user pod annotations, and when no Secrets or ConfigMaps are imported, the rendered pod has no annotations or envFrom key, where LiteLLM always writes those keys and renders them as null.
+    why: An absent key and an explicit null mean the same to the API server, the rendered workload behaves identically, and the suites assert the absent key with notExists; the migrations Job's pod annotations follow the same rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L27-L34
+kept_bugs:
+  - what: The migrations Job always sets DISABLE_SCHEMA_UPDATE to "false" and no template reads migrationJob.disableSchemaUpdate, so the values.yaml comment that true makes the Job exit with code 0 describes a switch that does nothing.
+    why: LiteLLM's Job sets the same unconditional "false" and its proxy helper only reads migrationJob.enabled; a setup that sets disableSchemaUpdate true still gets the migration it already got, and the harmless value stays documented until a task gives it behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L90-L91
+  - what: terminationGracePeriodSeconds goes through sprig default, so an explicit 0 renders as 90 instead of the Kubernetes default of 30.
+    why: LiteLLM renders it the same way, and a workload that needs the 30 second default omits the key rather than setting zero; changing it would alter the rendered chart for a configuration LiteLLM already accepted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L246
+  - what: The bundled-database branch builds DATABASE_URL by pasting postgresql.auth.username, password and database into a URI without URL-escaping, so a password containing @, / or a colon produces a URL no client parses correctly.
+    why: LiteLLM builds the same unescaped string; the values ship a password without reserved characters, and a setup that changes it to one with them was already broken, so no working setup relies on the fix here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L78-L79
+  - what: migrationJob.retries is documented in values.yaml but no template reads it; the Job's retry budget comes from migrationJob.backoffLimit.
+    why: LiteLLM's values.yaml carries the same unused key, and a setup that tuned retries was already tuning nothing, so keeping the key changes no rendered object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L548
