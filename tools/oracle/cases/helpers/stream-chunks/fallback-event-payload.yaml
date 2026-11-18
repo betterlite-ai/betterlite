@@ -1,0 +1,20 @@
+kind: helper
+name: stream-chunks-fallback-event-payload
+call:
+  b8602:
+    function: fallback_event
+    events:
+      - model: gpt-4o
+        errors: []
+        created: 1700000000
+      - model: null
+        errors:
+          - {message: boom, type: RateLimitError}
+        created: 1700000001
+      - model: ""
+        errors:
+          - {message: second}
+          - {message: third, code: "500"}
+        created: 1700000002
+env: {}
+compare: {ignore: []}

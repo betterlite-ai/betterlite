@@ -1,0 +1,33 @@
+kind: helper
+name: stream-chunks-requested-model-and-int-like
+call:
+  b8602:
+    function: client_model
+    requests:
+      - {}
+      - {_litellm_client_requested_model: client, model: routed}
+      - {_litellm_client_requested_model: null, model: gpt-4o}
+      - {_litellm_client_requested_model: 7, model: gpt-4o}
+      - {_litellm_client_requested_model: client}
+      - {model: null}
+calls:
+  - b8602:
+      function: int_like
+      values: ["3", 2, 2.7, " +4 ", "1_0", 0, 0.9, "2.5", "abc", null, 18446744073709551615]
+  - b8602:
+      function: include_errors
+      expose: true
+      requests:
+        - {}
+        - {include_fallback_errors: true}
+        - {include_fallback_errors: "true"}
+        - {include_fallback_errors: 1}
+        - {include_fallback_errors: null}
+        - {include_fallback_errors: false}
+  - b8602:
+      function: include_errors
+      expose: false
+      requests:
+        - {include_fallback_errors: true}
+env: {}
+compare: {ignore: []}
