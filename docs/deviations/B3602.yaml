@@ -1,0 +1,6 @@
+task: B3602
+deviations:
+  - what: Region extraction handles AssemblyAI by checking whether api_base contains "eu"; other providers return no region.
+    why: LiteLLM only implements this provider-specific rule at this task boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L314-L327
+kept_bugs: []
