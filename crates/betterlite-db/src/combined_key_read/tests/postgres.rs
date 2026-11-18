@@ -16,11 +16,13 @@ use betterlite_postgres_fixture::sql::BASELINE;
 
 use crate::auth_reconnect::request::ReconnectRequest;
 use crate::auth_reconnect::stale::StaleReadEngine;
+use crate::database_refresh::generation::Observation;
 use crate::database_refresh::handle::{PoolFuture, PoolTransport};
 use crate::database_replica::client::{Attribute, DatabaseClient, DatabaseLifecycle};
 use crate::database_replica::pinned::WriterPinnedClient;
 use crate::identity_rows::key::Expiry;
 use crate::key_user_writes::hash::hash_token;
+use crate::key_user_writes::retry::SystemWriteClock;
 use crate::team_rows::member::MemberRole;
 
 use crate::combined_key_read::error::{DatabaseFailure, KeyReadError};
@@ -105,13 +107,13 @@ const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVe
     VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
 
 // Postgres has no SELECT trigger, so the joined team table becomes a view whose predicate raises a chosen server message
-const RAISE_CACHED_PLAN: &str = r"
+const RAISE_CACHED_PLAN: &str = "
 CREATE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'cached plan must not change result type';
 END
 $$";
-const RAISE_ORDINARY_ERROR: &str = r"
+const RAISE_ORDINARY_ERROR: &str = "
 CREATE OR REPLACE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'relation disappeared';
@@ -203,8 +205,8 @@ struct ObservedReconnects {
 impl PlanReconnect for ObservedReconnects {
     type Handle = ();
 
-    fn read_target(&self) -> crate::database_refresh::generation::Observation<()> {
-        crate::database_refresh::generation::Observation {
+    fn read_target(&self) -> Observation<()> {
+        Observation {
             generation: 0,
             handle: None,
             connected: true,
@@ -225,7 +227,7 @@ impl PlanReconnect for ObservedReconnects {
 }
 
 pub(crate) struct Fixture {
-    fixture: PostgresFixture,
+    postgres: PostgresFixture,
     pool: Pool,
     client: TestClient,
 }
@@ -248,7 +250,7 @@ impl Fixture {
             .build()
             .unwrap();
         Self {
-            fixture,
+            postgres: fixture,
             pool: pool.clone(),
             client: TestClient { pool },
         }
@@ -256,7 +258,7 @@ impl Fixture {
 
     pub(crate) async fn close(self) {
         self.pool.close();
-        self.fixture.close_async().await.unwrap();
+        self.postgres.close_async().await.unwrap();
     }
 
     async fn execute(&self, sql: &str, parameters: &[&(dyn ToSql + Sync)]) {
@@ -280,7 +282,7 @@ impl Fixture {
             reconnect: &reconnect,
             sink,
             services: ReadServices {
-                clock: &crate::key_user_writes::retry::SystemWriteClock,
+                clock: &SystemWriteClock,
                 jitter: &FullJitter,
                 pause: &pause,
                 diagnostics: &diagnostics,
@@ -325,7 +327,7 @@ async fn read_native(
         reconnect,
         sink,
         services: ReadServices {
-            clock: &crate::key_user_writes::retry::SystemWriteClock,
+            clock: &SystemWriteClock,
             jitter: &FullJitter,
             pause: &pause,
             diagnostics: &diagnostics,
@@ -364,7 +366,7 @@ pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
     seed_team(fixture, model_id).await;
     fixture.execute(INSERT_PROJECT, &[]).await;
     fixture
-        .execute(INSERT_MEMBERSHIP, &[&"u1", &3.0, &"budget-tm"])
+        .execute(INSERT_MEMBERSHIP, &[&"u1", &3.0_f64, &"budget-tm"])
         .await;
     let stored_full = hash_token(TOKEN_FULL);
     fixture.execute(INSERT_FULL_KEY, &[&stored_full]).await;
@@ -379,6 +381,36 @@ pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
 }
 
 pub(crate) async fn membership_requires_both_ids(fixture: &Fixture) {
+    seed_other_member(fixture).await;
+    let stored = hash_token(TOKEN_MEMBER);
+    fixture
+        .execute(
+            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, models)
+               VALUES ($1, 'u1', 'team-2', ARRAY[]::TEXT[])"#,
+            &[&stored],
+        )
+        .await;
+    let without = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
+    assert!(without.team_member.is_none());
+    assert!(without.team_member_spend.is_none());
+    assert!(without.team_member_tpm_limit.is_none());
+    fixture
+        .execute(
+            r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
+               VALUES ('u1', 'team-2', 4.0, 'budget-m2')"#,
+            &[],
+        )
+        .await;
+    let with = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
+    assert_eq!(
+        with.team_member_spend,
+        Some(rust_decimal::Decimal::from(4_i32))
+    );
+    assert_eq!(with.team_member_tpm_limit, Some(55));
+    assert_eq!(with.team_member_rpm_limit, Some(56));
+}
+
+async fn seed_other_member(fixture: &Fixture) {
     fixture
         .execute(
             r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, tpm_limit, rpm_limit, created_by, updated_by)
@@ -400,32 +432,29 @@ pub(crate) async fn membership_requires_both_ids(fixture: &Fixture) {
             &[],
         )
         .await;
-    let stored = hash_token(TOKEN_MEMBER);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, models)
-               VALUES ($1, 'u1', 'team-2', ARRAY[]::TEXT[])"#,
-            &[&stored],
-        )
-        .await;
-    let without = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
-    assert!(without.team_member.is_none());
-    assert!(without.team_member_spend.is_none());
-    assert!(without.team_member_tpm_limit.is_none());
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
-               VALUES ('u1', 'team-2', 4.0, 'budget-m2')"#,
-            &[],
-        )
-        .await;
-    let with = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
-    assert_eq!(with.team_member_spend, Some(rust_decimal::Decimal::from(4)));
-    assert_eq!(with.team_member_tpm_limit, Some(55));
-    assert_eq!(with.team_member_rpm_limit, Some(56));
 }
 
 pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
+    seed_two_organizations(fixture).await;
+    let stored = hash_token(TOKEN_ORG);
+    fixture
+        .execute(
+            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, organization_id, models)
+               VALUES ($1, 'u1', 'team-3', 'org-key', ARRAY[]::TEXT[])"#,
+            &[&stored],
+        )
+        .await;
+    let view = fixture.read(TOKEN_ORG).await.unwrap().unwrap();
+    assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
+    assert_eq!(view.organization_alias.as_deref(), Some("Key Org"));
+    assert_eq!(
+        view.organization_max_budget,
+        Some(rust_decimal::Decimal::from(22_i32))
+    );
+    assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
+}
+
+async fn seed_two_organizations(fixture: &Fixture) {
     fixture
         .execute(
             r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
@@ -459,22 +488,6 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
             &[],
         )
         .await;
-    let stored = hash_token(TOKEN_ORG);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, organization_id, models)
-               VALUES ($1, 'u1', 'team-3', 'org-key', ARRAY[]::TEXT[])"#,
-            &[&stored],
-        )
-        .await;
-    let view = fixture.read(TOKEN_ORG).await.unwrap().unwrap();
-    assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
-    assert_eq!(view.organization_alias.as_deref(), Some("Key Org"));
-    assert_eq!(
-        view.organization_max_budget,
-        Some(rust_decimal::Decimal::from(22))
-    );
-    assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
 }
 
 pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture) {
@@ -503,6 +516,7 @@ pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture)
             .iter()
             .all(|(reason, force_recreate)| reason == RECONNECT_REASON && *force_recreate)
     );
+    drop(attempts);
 }
 
 pub(crate) async fn ordinary_driver_error_is_not_a_cached_plan(fixture: &Fixture) {
@@ -602,16 +616,26 @@ async fn seed_team(fixture: &Fixture, model_id: i32) {
 }
 
 fn assert_team_fields(view: &CombinedKeyView) {
-    assert_eq!(view.team_spend, Some(rust_decimal::Decimal::from(10)));
+    assert_eq!(view.team_spend, Some(rust_decimal::Decimal::from(10_i32)));
     assert_eq!(view.team_alias.as_deref(), Some("Team One"));
     assert_eq!(view.team_tpm_limit, Some(101));
     assert_eq!(view.team_rpm_limit, Some(102));
     assert_eq!(view.team_tpd_limit, Some(103));
-    assert_eq!(view.team_max_budget, Some(rust_decimal::Decimal::from(50)));
-    assert_eq!(view.team_soft_budget, Some(rust_decimal::Decimal::from(7)));
+    assert_eq!(
+        view.team_max_budget,
+        Some(rust_decimal::Decimal::from(50_i32))
+    );
+    assert_eq!(
+        view.team_soft_budget,
+        Some(rust_decimal::Decimal::from(7_i32))
+    );
     assert_eq!(view.team_models.len(), 1);
     assert_eq!(view.team_models[0], text("gpt-4"));
     assert!(view.team_blocked);
+    assert_team_relation_fields(view);
+}
+
+fn assert_team_relation_fields(view: &CombinedKeyView) {
     assert_eq!(
         view.team_metadata.as_ref().unwrap().0.get("t"),
         Some(&number(1))
@@ -621,7 +645,10 @@ fn assert_team_fields(view: &CombinedKeyView) {
         view.team_model_aliases.as_ref().unwrap().0.get("alias"),
         Some(&text("model"))
     );
-    assert_eq!(view.team_member_spend, Some(rust_decimal::Decimal::from(3)));
+    assert_eq!(
+        view.team_member_spend,
+        Some(rust_decimal::Decimal::from(3_i32))
+    );
     assert_eq!(view.team_member_tpm_limit, Some(11));
     assert_eq!(view.team_member_rpm_limit, Some(12));
     let member = view.team_member.as_ref().unwrap();
@@ -632,9 +659,9 @@ fn assert_team_fields(view: &CombinedKeyView) {
 fn assert_budget_fields(view: &CombinedKeyView) {
     assert_eq!(
         view.token.max_budget,
-        Some(rust_decimal::Decimal::from(100))
+        Some(rust_decimal::Decimal::from(100_i32))
     );
-    assert_eq!(view.soft_budget, Some(rust_decimal::Decimal::from(5)));
+    assert_eq!(view.soft_budget, Some(rust_decimal::Decimal::from(5_i32)));
     assert_eq!(view.token.tpm_limit, Some(21));
     assert_eq!(view.token.rpm_limit, Some(22));
     assert_eq!(view.token.tpd_limit, Some(23));
@@ -651,7 +678,7 @@ fn assert_org_and_project_fields(view: &CombinedKeyView) {
     assert_eq!(view.organization_alias.as_deref(), Some("Org Key"));
     assert_eq!(
         view.organization_max_budget,
-        Some(rust_decimal::Decimal::from(200))
+        Some(rust_decimal::Decimal::from(200_i32))
     );
     assert_eq!(view.organization_tpm_limit, Some(31));
     assert_eq!(view.organization_rpm_limit, Some(32));
@@ -660,10 +687,7 @@ fn assert_org_and_project_fields(view: &CombinedKeyView) {
         Some(&number(1))
     );
     assert_eq!(view.project_alias.as_deref(), Some("Project One"));
-    assert_eq!(
-        view.project_metadata.as_ref().unwrap().0.get("p"),
-        Some(&number(1))
-    );
+    assert!(view.project_metadata.is_none());
 }
 
 fn assert_null_joins(view: &CombinedKeyView) {

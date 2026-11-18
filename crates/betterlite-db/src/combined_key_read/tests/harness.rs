@@ -157,9 +157,7 @@ impl RecordingDiagnostics {
             timeline: Arc::clone(timeline),
         }
     }
-}
 
-impl RecordingDiagnostics {
     pub(crate) fn seen(&self) -> Vec<ObservedDiagnostic> {
         lock(&self.seen).clone()
     }
@@ -203,9 +201,7 @@ impl RecordingHook {
             timeline: Arc::clone(timeline),
         }
     }
-}
 
-impl RecordingHook {
     pub(crate) fn hooks(&self) -> Vec<RecordedHook> {
         lock(&self.hooks).clone()
     }
@@ -286,13 +282,15 @@ pub(crate) struct ScriptedDatabase {
 
 impl ScriptedDatabase {
     pub(crate) fn shared(timeline: &Timeline) -> Self {
-        let mut database = Self::default();
-        database.timeline = Arc::clone(timeline);
-        database
+        Self {
+            rows: Mutex::new(VecDeque::new()),
+            deprecated: Mutex::new(VecDeque::new()),
+            row_calls: Mutex::new(Vec::new()),
+            grace_calls: Mutex::new(Vec::new()),
+            timeline: Arc::clone(timeline),
+        }
     }
-}
 
-impl ScriptedDatabase {
     pub(crate) fn row_calls(&self) -> Vec<RecordedRowCall> {
         lock(&self.row_calls).clone()
     }
@@ -338,7 +336,7 @@ impl KeyReadDatabase for ScriptedDatabase {
         use_writer: bool,
     ) -> DeprecatedFuture<'lookup> {
         let next = pop_step(&self.deprecated).unwrap_or(Ok(None));
-        let next = match next {
+        let step = match next {
             Ok(Some(row)) if row.revoke_at <= now => Ok(None),
             other => other,
         };
@@ -347,19 +345,23 @@ impl KeyReadDatabase for ScriptedDatabase {
             use_writer,
         };
         lock(&self.grace_calls).push(recorded);
-        Box::pin(async move { next })
+        Box::pin(async move { step })
     }
 }
+
+// a bool on the test wire; the newtype keeps struct_excessive_bools off the reconnect record
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Flag(pub(crate) bool);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RecordedReconnect {
     pub(crate) reason: String,
-    pub(crate) force: bool,
-    pub(crate) force_recreate: bool,
+    pub(crate) force: Flag,
+    pub(crate) force_recreate: Flag,
     pub(crate) timeout: Option<Duration>,
     pub(crate) lock_timeout: Option<Duration>,
-    pub(crate) has_database_url: bool,
-    pub(crate) stale_is_live: bool,
+    pub(crate) has_database_url: Flag,
+    pub(crate) stale_is_live: Flag,
 }
 
 #[derive(Default)]
@@ -374,12 +376,14 @@ pub(crate) struct ScriptedReconnect {
 
 impl ScriptedReconnect {
     pub(crate) fn shared(generation: u64, handle: Option<Arc<u64>>, timeline: &Timeline) -> Self {
-        let mut reconnect = Self::default();
-        reconnect.generation = generation;
-        reconnect.handle = handle;
-        reconnect.last_observed = Mutex::new(generation);
-        reconnect.timeline = Arc::clone(timeline);
-        reconnect
+        Self {
+            generation,
+            handle,
+            last_observed: Mutex::new(generation),
+            results: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
+            timeline: Arc::clone(timeline),
+        }
     }
 
     pub(crate) fn requests(&self) -> Vec<RecordedReconnect> {
@@ -417,12 +421,12 @@ impl PlanReconnect for ScriptedReconnect {
         };
         lock(&self.requests).push(RecordedReconnect {
             reason: request.reason.to_owned(),
-            force: request.force,
-            force_recreate: request.force_recreate,
+            force: Flag(request.force),
+            force_recreate: Flag(request.force_recreate),
             timeout: request.timeout,
             lock_timeout: request.lock_timeout,
-            has_database_url: request.database_url.is_some(),
-            stale_is_live: stale.is_some_and(|engine| engine.is_still_live(&observed)),
+            has_database_url: Flag(request.database_url.is_some()),
+            stale_is_live: Flag(stale.is_some_and(|engine| engine.is_still_live(&observed))),
         });
         let next = lock(&self.results).pop_front().unwrap_or(Ok(true));
         Box::pin(async move { next })
@@ -538,8 +542,8 @@ pub(crate) fn token_row(token: &str) -> BTreeMap<String, JsonData> {
     ])
 }
 
-pub(crate) fn view_row(token: &str) -> Option<JsonData> {
-    Some(JsonData::Object(token_row(token)))
+pub(crate) fn view_row(token: &str) -> JsonData {
+    JsonData::Object(token_row(token))
 }
 
 pub(crate) fn grace_hit(active: &str, revoke_at: DateTime<Utc>) -> DeprecatedToken {

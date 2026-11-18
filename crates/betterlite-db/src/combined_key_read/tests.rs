@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::budget_permission_rows::JsonData;
-use crate::database_failures::metrics::{ProxySpanResolver, WallClock};
+use crate::database_failures::metrics::{ProxySpanResolver as _, WallClock as _};
 use crate::database_faults::ErrorType;
 use crate::key_hash::KeyHash;
 use crate::key_user_writes::hash::hash_token;
@@ -29,15 +29,15 @@ mod postgres;
 mod view;
 
 use harness::{
-    Harness, ObservedDiagnostic, RecordedRowCall, StepClock, cached_plan_fault, events, fault,
-    fixed_now, grace_hit, lock, view_fields, view_row,
+    Harness, ObservedDiagnostic, RecordedHook, RecordedRowCall, StepClock, cached_plan_fault,
+    events, fault, fixed_now, grace_hit, lock, view_fields, view_row,
 };
 
 #[tokio::test]
 async fn token_hash_once_and_missing400() {
     let harness = Harness::new(Duration::ZERO);
     let plaintext = "sk-plaintext";
-    harness.database.push_row(Ok(view_row(plaintext)));
+    harness.database.push_row(Ok(Some(view_row(plaintext))));
     let hashed_request = CombinedKeyRequest {
         token: Some(SecretString::from(plaintext)),
         query_type: KeyQueryType::FindUnique,
@@ -48,7 +48,7 @@ async fn token_hash_once_and_missing400() {
     let found = harness.read(&hashed_request).await.unwrap();
     assert!(found.is_some());
     let stored = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
-    harness.database.push_row(Ok(view_row(stored)));
+    harness.database.push_row(Ok(Some(view_row(stored))));
     let stored_request = CombinedKeyRequest {
         token: Some(SecretString::from(stored)),
         query_type: KeyQueryType::FindUnique,
@@ -56,8 +56,8 @@ async fn token_hash_once_and_missing400() {
         use_writer: false,
         parent_otel_span: None,
     };
-    let found = harness.read(&stored_request).await.unwrap();
-    assert!(found.is_some());
+    let stored_view = harness.read(&stored_request).await.unwrap();
+    assert!(stored_view.is_some());
     let calls = harness.database.row_calls();
     assert_eq!(calls[0].hash, hash_token(plaintext));
     assert_eq!(calls[1].hash, stored);
@@ -130,7 +130,7 @@ async fn key_org_differs_from_team_org() {
 #[tokio::test]
 async fn writer_bypasses_plan_repair() {
     let harness = Harness::new(Duration::ZERO);
-    harness.database.push_row(Ok(view_row("sk-writer")));
+    harness.database.push_row(Ok(Some(view_row("sk-writer"))));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-writer")),
         query_type: KeyQueryType::FindUnique,
@@ -176,7 +176,7 @@ async fn writer_plan_error_is_not_repaired() {
 async fn reader_generation_before_query() {
     let harness = Harness::new(Duration::ZERO);
     harness.database.push_row(Err(cached_plan_fault()));
-    harness.database.push_row(Ok(view_row("sk-plan")));
+    harness.database.push_row(Ok(Some(view_row("sk-plan"))));
     harness.reconnect.push_result(Ok(true));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-plan")),
@@ -193,7 +193,7 @@ async fn reader_generation_before_query() {
     assert!(observed < queried);
     let requests = harness.reconnect.requests();
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].stale_is_live);
+    assert!(requests[0].stale_is_live.0);
 }
 
 #[tokio::test]
@@ -203,7 +203,7 @@ async fn plan_error_exact_substring() {
         ErrorType::RawQuery,
         "error: cached plan must not change result type (copy 1)",
     )));
-    harness.database.push_row(Ok(view_row("sk-plan")));
+    harness.database.push_row(Ok(Some(view_row("sk-plan"))));
     harness.reconnect.push_result(Ok(true));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-plan")),
@@ -252,7 +252,7 @@ async fn plan_error_case_variation_is_not_repaired() {
 async fn same_sql_retry_after_false() {
     let harness = Harness::new(Duration::ZERO);
     harness.database.push_row(Err(cached_plan_fault()));
-    harness.database.push_row(Ok(view_row("sk-retry")));
+    harness.database.push_row(Ok(Some(view_row("sk-retry"))));
     harness.reconnect.push_result(Ok(false));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-retry")),
@@ -268,11 +268,11 @@ async fn same_sql_retry_after_false() {
     assert_eq!(calls[0], calls[1]);
     let reconnect = &harness.reconnect.requests()[0];
     assert_eq!(reconnect.reason, RECONNECT_REASON);
-    assert!(!reconnect.force);
-    assert!(reconnect.force_recreate);
+    assert!(!reconnect.force.0);
+    assert!(reconnect.force_recreate.0);
     assert!(reconnect.timeout.is_none());
     assert!(reconnect.lock_timeout.is_none());
-    assert!(!reconnect.has_database_url);
+    assert!(!reconnect.has_database_url.0);
 }
 
 #[tokio::test]
@@ -293,8 +293,8 @@ async fn ordinary_error_no_plan_retry() {
     };
     let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(
-        error,
-        KeyReadError::Database(DatabaseFailure::Reported(ref fault))
+        &error,
+        KeyReadError::Database(DatabaseFailure::Reported(fault))
             if fault.message == "connection reset"
     ));
     assert!(harness.reconnect.requests().is_empty());
@@ -359,8 +359,18 @@ async fn failure_hook_carries_the_original_failure() {
             assert_eq!(fault.message, "the database is down");
             assert!(fault.code.is_none());
         }
-        other => panic!("expected the reported database failure, got {other:?}"),
+        other @ (KeyReadError::MissingToken
+        | KeyReadError::Database(_)
+        | KeyReadError::View(_)
+        | KeyReadError::Reconnect(_)
+        | KeyReadError::Metrics { .. }) => {
+            panic!("expected the reported database failure, got {other:?}")
+        }
     }
+    malformed_view_failure_is_a_view_error().await;
+}
+
+async fn malformed_view_failure_is_a_view_error() {
     let malformed = Harness::new(Duration::ZERO);
     let fractional = JsonData::Object(view_fields(vec![(
         "end_user_id",
@@ -421,27 +431,46 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
     let hash = KeyHash::from("cached-hash");
     cache.remember(
         hash.clone(),
-        &grace_hit("active", now + TimeDelta::hours(1)),
+        &grace_hit(
+            "active",
+            now.checked_add_signed(TimeDelta::hours(1)).unwrap(),
+        ),
         now,
     );
     let cached = cache.lookup(&hash, now).unwrap();
     assert_eq!(cached.expose_secret(), "active");
     let ttl = TimeDelta::seconds(DEPRECATED_CACHE_TTL_SECONDS);
     let almost = cache
-        .lookup(&hash, now + ttl - TimeDelta::nanoseconds(1))
+        .lookup(
+            &hash,
+            now.checked_add_signed(ttl)
+                .unwrap()
+                .checked_sub_signed(TimeDelta::nanoseconds(1))
+                .unwrap(),
+        )
         .unwrap();
     assert_eq!(almost.expose_secret(), "active");
-    assert!(cache.lookup(&hash, now + ttl).is_none());
+    assert!(
+        cache
+            .lookup(&hash, now.checked_add_signed(ttl).unwrap())
+            .is_none()
+    );
     assert!(cache.entries.is_empty());
     let revoked = KeyHash::from("revoked");
     cache.remember(
         revoked.clone(),
-        &grace_hit("active", now + TimeDelta::seconds(30)),
+        &grace_hit(
+            "active",
+            now.checked_add_signed(TimeDelta::seconds(30)).unwrap(),
+        ),
         now,
     );
     assert!(
         cache
-            .lookup(&revoked, now + TimeDelta::seconds(30))
+            .lookup(
+                &revoked,
+                now.checked_add_signed(TimeDelta::seconds(30)).unwrap()
+            )
             .is_none()
     );
     let mut full = DeprecatedKeyCache::default();
@@ -457,12 +486,12 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
 #[tokio::test]
 async fn writer_bypasses_but_populates_grace_cache() {
     let harness = Harness::new(Duration::ZERO);
-    let revoked = fixed_now() + TimeDelta::hours(1);
+    let revoked = fixed_now().checked_add_signed(TimeDelta::hours(1)).unwrap();
     harness.database.push_row(Ok(None));
     harness
         .database
         .push_grace(Ok(Some(grace_hit("sk-active", revoked))));
-    harness.database.push_row(Ok(view_row("sk-active")));
+    harness.database.push_row(Ok(Some(view_row("sk-active"))));
     let writer_request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-old")),
         query_type: KeyQueryType::FindUnique,
@@ -482,7 +511,7 @@ async fn writer_bypasses_but_populates_grace_cache() {
     assert!(harness.database.grace_calls()[0].use_writer);
     assert_eq!(lock(&harness.cache).entries.len(), 1);
     harness.database.push_row(Ok(None));
-    harness.database.push_row(Ok(view_row("sk-active")));
+    harness.database.push_row(Ok(Some(view_row("sk-active"))));
     let found = harness.read(&reader_request).await.unwrap();
     assert!(found.is_some());
     assert_eq!(harness.database.grace_calls().len(), 1);
@@ -507,9 +536,10 @@ async fn negative_grace_not_cached() {
     assert!(harness.read(&request).await.unwrap().is_none());
     assert!(lock(&harness.cache).entries.is_empty());
     harness.database.push_row(Ok(None));
-    harness
-        .database
-        .push_grace(Ok(Some(grace_hit("", fixed_now() + TimeDelta::hours(1)))));
+    harness.database.push_grace(Ok(Some(grace_hit(
+        "",
+        fixed_now().checked_add_signed(TimeDelta::hours(1)).unwrap(),
+    ))));
     assert!(harness.read(&request).await.unwrap().is_none());
     assert!(lock(&harness.cache).entries.is_empty());
     harness.database.push_row(Ok(None));
@@ -600,11 +630,15 @@ async fn native_database_diagnostics_hide_token_and_hash() {
             .all(|message| !message.contains(token) && !message.contains(&hash))
     );
     let hooks = harness.hook.hooks();
+    assert_hooks_redact(&hooks, token, &hash);
+}
+
+fn assert_hooks_redact(hooks: &[RecordedHook], token: &str, hash: &str) {
     assert!(hooks.iter().all(|hook| {
         !hook.message.contains(token)
-            && !hook.message.contains(&hash)
+            && !hook.message.contains(hash)
             && !hook.traceback.contains(token)
-            && !hook.traceback.contains(&hash)
+            && !hook.traceback.contains(hash)
     }));
     assert!(hooks[0].message.starts_with(
         "LiteLLM Prisma Client Exception: Error with `get_data`. Args passed in: [redacted] "
@@ -684,8 +718,8 @@ async fn second_query_failure_is_returned() {
     };
     let error = harness.read(&request).await.unwrap_err();
     assert!(matches!(
-        error,
-        KeyReadError::Database(DatabaseFailure::Reported(ref fault))
+        &error,
+        KeyReadError::Database(DatabaseFailure::Reported(fault))
             if fault.message == "second query failed"
     ));
     assert_eq!(harness.database.row_calls().len(), 6);
@@ -749,7 +783,14 @@ async fn wait_is_capped_by_remaining_time() {
 fn fill_cache(cache: &mut DeprecatedKeyCache, capacity: usize, now: DateTime<Utc>) {
     for index in 0..=capacity {
         let hash = KeyHash::from(format!("cache-key-{index}"));
-        cache.remember(hash, &grace_hit("active", now + TimeDelta::hours(1)), now);
+        cache.remember(
+            hash,
+            &grace_hit(
+                "active",
+                now.checked_add_signed(TimeDelta::hours(1)).unwrap(),
+            ),
+            now,
+        );
     }
 }
 
@@ -757,7 +798,10 @@ fn refresh_at_capacity(cache: &mut DeprecatedKeyCache, now: DateTime<Utc>) {
     let newest = KeyHash::from(format!("cache-key-{DEPRECATED_CACHE_CAPACITY}"));
     cache.remember(
         newest.clone(),
-        &grace_hit("active", now + TimeDelta::hours(1)),
+        &grace_hit(
+            "active",
+            now.checked_add_signed(TimeDelta::hours(1)).unwrap(),
+        ),
         now,
     );
     assert_eq!(
@@ -774,9 +818,9 @@ async fn grace_returns_the_active_view() {
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(Some(grace_hit(
         "sk-active",
-        fixed_now() + TimeDelta::hours(1),
+        fixed_now().checked_add_signed(TimeDelta::hours(1)).unwrap(),
     ))));
-    harness.database.push_row(Ok(view_row("sk-active")));
+    harness.database.push_row(Ok(Some(view_row("sk-active"))));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-old")),
         query_type: KeyQueryType::FindUnique,
@@ -800,7 +844,7 @@ async fn grace_never_chains() {
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(Some(grace_hit(
         "sk-gone",
-        fixed_now() + TimeDelta::hours(1),
+        fixed_now().checked_add_signed(TimeDelta::hours(1)).unwrap(),
     ))));
     harness.database.push_row(Ok(None));
     let request = CombinedKeyRequest {
@@ -848,7 +892,9 @@ fn metric_clock_reads_the_key_read_clock() {
     clock.advance_wall(Duration::from_secs(5));
     assert_eq!(
         MetricWallClock(&clock).now(),
-        fixed_now() + TimeDelta::seconds(5)
+        fixed_now()
+            .checked_add_signed(TimeDelta::seconds(5))
+            .unwrap()
     );
 }
 

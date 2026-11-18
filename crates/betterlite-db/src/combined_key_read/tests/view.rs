@@ -73,7 +73,7 @@ fn null_token_columns_take_their_defaults() {
 fn epoch_decimal_whole_and_fractional_seconds() {
     assert_eq!(epoch_decimal(fixed_now()), Decimal::from(1_700_000_000_i64));
     let fractional = DateTime::from_timestamp(1_700_000_000, 250_000_000).unwrap();
-    assert_eq!(epoch_decimal(fractional), Decimal::new(1_700_000_000_25, 2));
+    assert_eq!(epoch_decimal(fractional), Decimal::new(170_000_000_025, 2));
 }
 
 #[test]
@@ -128,8 +128,8 @@ fn applies_budget_aliases() {
         ("max_budget", decimal("7")),
     ]);
     let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.token.max_budget, Some(Decimal::from(7)));
-    assert_eq!(view.soft_budget, Some(Decimal::from(5)));
+    assert_eq!(view.token.max_budget, Some(Decimal::from(7_i32)));
+    assert_eq!(view.soft_budget, Some(Decimal::from(5_i32)));
     assert_eq!(view.token.tpm_limit, Some(21));
     assert_eq!(view.token.rpm_limit, Some(22));
     assert_eq!(view.token.tpd_limit, Some(23));
@@ -141,9 +141,12 @@ fn applies_budget_aliases() {
         ),
         ("model_max_budget", object(vec![("k", number(2))])),
     ]);
-    let view = CombinedKeyView::construct(kept, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.token.model_max_budget.0.get("k"), Some(&number(2)));
-    assert!(!view.token.model_max_budget.0.contains_key("b"));
+    let kept_view = CombinedKeyView::construct(kept, epoch_decimal(fixed_now())).unwrap();
+    assert_eq!(
+        kept_view.token.model_max_budget.0.get("k"),
+        Some(&number(2))
+    );
+    assert!(!kept_view.token.model_max_budget.0.contains_key("b"));
 }
 
 fn stringifies_end_user_and_promotes_org() {
@@ -156,8 +159,8 @@ fn stringifies_end_user_and_promotes_org() {
     assert_eq!(view.end_user_id.as_deref(), Some("42"));
     assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
     let flagged = view_fields(vec![("end_user_id", JsonData::Bool(true))]);
-    let view = CombinedKeyView::construct(flagged, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.end_user_id.as_deref(), Some("True"));
+    let flagged_view = CombinedKeyView::construct(flagged, epoch_decimal(fixed_now())).unwrap();
+    assert_eq!(flagged_view.end_user_id.as_deref(), Some("True"));
 }
 
 fn formats_expiry_like_isoformat() {
@@ -168,15 +171,15 @@ fn formats_expiry_like_isoformat() {
         Some(Expiry::Text(String::from("2024-01-02T03:04:05.120000")))
     );
     let zero = view_fields(vec![("expires", text("2024-01-02T03:04:05.000000"))]);
-    let view = CombinedKeyView::construct(zero, epoch_decimal(fixed_now())).unwrap();
+    let zero_view = CombinedKeyView::construct(zero, epoch_decimal(fixed_now())).unwrap();
     assert_eq!(
-        view.token.expires,
+        zero_view.token.expires,
         Some(Expiry::Text(String::from("2024-01-02T03:04:05")))
     );
     let offset = view_fields(vec![("expires", text("2024-01-02T03:04:05+02:00"))]);
-    let view = CombinedKeyView::construct(offset, epoch_decimal(fixed_now())).unwrap();
+    let offset_view = CombinedKeyView::construct(offset, epoch_decimal(fixed_now())).unwrap();
     assert_eq!(
-        view.token.expires,
+        offset_view.token.expires,
         Some(Expiry::Text(String::from("2024-01-02T03:04:05+02:00")))
     );
 }
