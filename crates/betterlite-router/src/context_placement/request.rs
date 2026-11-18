@@ -37,10 +37,7 @@ pub fn out_of_band_text(out_of_band: &OutOfBand<'_>) -> String {
         match system {
             Json::Null => {}
             Json::Text(value) => text.push_str(value),
-            other @ Json::Bool(_)
-            | other @ Json::Number(_)
-            | other @ Json::List(_)
-            | other @ Json::Object(_) => {
+            other @ (Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
                 text.push_str(&serde_json::to_string(other).unwrap_or_default());
             }
         }

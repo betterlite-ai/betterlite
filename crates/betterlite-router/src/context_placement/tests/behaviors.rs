@@ -31,61 +31,108 @@ fn window(input: u64) -> String {
 }
 
 pub(super) fn run(name: &str) {
-    match name {
-        "disabled_gate_skips_the_fit_and_placement" => disabled_gate_skips_the_fit_and_placement(),
-        "compaction_pending_skips_the_fit_and_placement"
-        | "no_messages_skips_the_fit_and_placement" => {
-            an_early_return_skips_the_fit_and_placement();
-        }
-        "a_full_pool_keeps_the_tier" => a_full_pool_keeps_the_tier(),
-        "a_partial_pool_restricts_the_allowed_models" => {
-            a_partial_pool_restricts_the_allowed_models();
-        }
-        "escalation_moves_to_the_first_provable_tier" => {
-            escalation_moves_to_the_first_provable_tier();
-        }
-        "escalation_skips_a_tier_without_proven_models" => {
-            escalation_skips_a_tier_without_proven_models();
-        }
-        "a_group_with_an_unknown_member_is_not_escalated_onto" => {
-            a_group_with_an_unknown_member_is_not_escalated_onto();
-        }
-        "unknown_windows_are_holdable_but_not_provable" => {
-            unknown_windows_are_holdable_but_not_provable();
-        }
-        _ => run_rest(name),
-    }
+    let Some((_, case)) = CASES.iter().copied().find(|(key, _)| *key == name) else {
+        return super::helpers::run(name);
+    };
+    case();
 }
 
-fn run_rest(name: &str) {
-    match name {
-        "a_pool_override_replaces_the_tier_pool" => a_pool_override_replaces_the_tier_pool(),
-        "an_empty_pool_returns_no_placement" => an_empty_pool_returns_no_placement(),
-        "a_named_tier_can_hold_a_partial_pool" => a_named_tier_can_hold_a_partial_pool(),
-        "a_byte_bound_under_the_window_skips_the_count" | "a_byte_bound_over_the_window_counts" => {
-            the_byte_bound_skips_the_count_until_it_reaches_the_window();
-        }
-        "the_count_covers_the_out_of_band_text" => the_count_covers_the_out_of_band_text(),
-        "the_output_ceiling_is_the_smallest_limit"
-        | "an_undeclared_output_limit_removes_the_ceiling" => {
-            the_output_ceiling_is_the_smallest_declared_limit();
-        }
-        "a_declared_limit_beats_the_router_info" => a_declared_limit_beats_the_router_info(),
-        "an_authenticating_provider_has_no_router_limit" => {
-            an_authenticating_provider_has_no_router_limit();
-        }
-        "a_custom_provider_overrides_the_model_prefix" => {
-            a_custom_provider_overrides_the_model_prefix();
-        }
-        "a_match_by_name_returns_the_placement_tier" => {
-            a_match_by_name_returns_the_placement_tier();
-        }
-        "no_placement_leaves_the_tier_and_signals" => no_placement_leaves_the_tier_and_signals(),
-        "the_fit_accepts_an_unknown_group" => the_fit_accepts_an_unknown_group(),
-        "a_disabled_gate_ignores_a_supplied_fit" => a_disabled_gate_ignores_a_supplied_fit(),
-        _ => super::helpers::run(name),
-    }
-}
+// one entry per rstest case name; an alias names the same handler a second time
+const CASES: &[(&str, fn())] = &[
+    (
+        "disabled_gate_skips_the_fit_and_placement",
+        disabled_gate_skips_the_fit_and_placement,
+    ),
+    (
+        "compaction_pending_skips_the_fit_and_placement",
+        an_early_return_skips_the_fit_and_placement,
+    ),
+    (
+        "no_messages_skips_the_fit_and_placement",
+        an_early_return_skips_the_fit_and_placement,
+    ),
+    ("a_full_pool_keeps_the_tier", a_full_pool_keeps_the_tier),
+    (
+        "a_partial_pool_restricts_the_allowed_models",
+        a_partial_pool_restricts_the_allowed_models,
+    ),
+    (
+        "escalation_moves_to_the_first_provable_tier",
+        escalation_moves_to_the_first_provable_tier,
+    ),
+    (
+        "escalation_skips_a_tier_without_proven_models",
+        escalation_skips_a_tier_without_proven_models,
+    ),
+    (
+        "a_group_with_an_unknown_member_is_not_escalated_onto",
+        a_group_with_an_unknown_member_is_not_escalated_onto,
+    ),
+    (
+        "unknown_windows_are_holdable_but_not_provable",
+        unknown_windows_are_holdable_but_not_provable,
+    ),
+    (
+        "a_pool_override_replaces_the_tier_pool",
+        a_pool_override_replaces_the_tier_pool,
+    ),
+    (
+        "an_empty_pool_returns_no_placement",
+        an_empty_pool_returns_no_placement,
+    ),
+    (
+        "a_named_tier_can_hold_a_partial_pool",
+        a_named_tier_can_hold_a_partial_pool,
+    ),
+    (
+        "a_byte_bound_under_the_window_skips_the_count",
+        the_byte_bound_skips_the_count_until_it_reaches_the_window,
+    ),
+    (
+        "a_byte_bound_over_the_window_counts",
+        the_byte_bound_skips_the_count_until_it_reaches_the_window,
+    ),
+    (
+        "the_count_covers_the_out_of_band_text",
+        the_count_covers_the_out_of_band_text,
+    ),
+    (
+        "the_output_ceiling_is_the_smallest_limit",
+        the_output_ceiling_is_the_smallest_declared_limit,
+    ),
+    (
+        "an_undeclared_output_limit_removes_the_ceiling",
+        the_output_ceiling_is_the_smallest_declared_limit,
+    ),
+    (
+        "a_declared_limit_beats_the_router_info",
+        a_declared_limit_beats_the_router_info,
+    ),
+    (
+        "an_authenticating_provider_has_no_router_limit",
+        an_authenticating_provider_has_no_router_limit,
+    ),
+    (
+        "a_custom_provider_overrides_the_model_prefix",
+        a_custom_provider_overrides_the_model_prefix,
+    ),
+    (
+        "a_match_by_name_returns_the_placement_tier",
+        a_match_by_name_returns_the_placement_tier,
+    ),
+    (
+        "no_placement_leaves_the_tier_and_signals",
+        no_placement_leaves_the_tier_and_signals,
+    ),
+    (
+        "the_fit_accepts_an_unknown_group",
+        the_fit_accepts_an_unknown_group,
+    ),
+    (
+        "a_disabled_gate_ignores_a_supplied_fit",
+        a_disabled_gate_ignores_a_supplied_fit,
+    ),
+];
 
 fn disabled_gate_skips_the_fit_and_placement() {
     let config = config(false, 0.95);

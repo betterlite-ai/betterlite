@@ -37,11 +37,11 @@ pub(super) fn json(raw: &str) -> Json {
     serde_json::from_str(raw).unwrap()
 }
 
-pub(super) fn request_facts<'a>(
-    messages: Option<&'a [ChatMessage]>,
-    out_of_band: OutOfBand<'a>,
+pub(super) fn request_facts<'request>(
+    messages: Option<&'request [ChatMessage]>,
+    out_of_band: OutOfBand<'request>,
     compaction_pending: bool,
-) -> RequestFacts<'a> {
+) -> RequestFacts<'request> {
     RequestFacts {
         messages,
         out_of_band,
@@ -49,11 +49,11 @@ pub(super) fn request_facts<'a>(
     }
 }
 
-pub(super) fn placement_request<'a>(
-    tier: &'a Tier,
-    set: &'a TierSet,
-    request: RequestFacts<'a>,
-) -> PlacementRequest<'a> {
+pub(super) fn placement_request<'request>(
+    tier: &'request Tier,
+    set: &'request TierSet,
+    request: RequestFacts<'request>,
+) -> PlacementRequest<'request> {
     PlacementRequest {
         tier,
         set,

@@ -16,7 +16,7 @@ impl ContextFit {
     // _RequestContextFit.accepts: a group with no declared window accepts, as does a fit with no count
     #[must_use]
     pub fn accepts(&self, model: &str) -> bool {
-        self.needed.map_or(true, |needed| {
+        self.needed.is_none_or(|needed| {
             window_holds(
                 window_facts(&self.facts, model).window,
                 Some(needed),
