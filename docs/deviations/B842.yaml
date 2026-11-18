@@ -1,0 +1,46 @@
+task: B842
+deviations:
+  - what: >-
+      A wildcard pattern that would not compile is rejected when the catalog registers it, with a typed
+      PatternCatalogError, and is never stored; listing cannot fail on an invalid internal pattern.
+      LiteLLM keeps the raw pattern strings and re-compiles them per listing inside
+      _undiscoverable_patterns, so a bad record makes the listing raise re.error.
+    why: >-
+      B302 owns the pattern catalog and compiles each key once at add_pattern, so the invalid state
+      LiteLLM can carry at listing time does not exist in betterlite. The invalid-pattern-propagates
+      oracle case injects the nearest failure each side can carry: Python stores a raw invalid regex
+      key and fails in re.compile; the Rust snapshot registers a deployment-less candidate under a
+      valid wildcard and fails with UnindexedCandidate when the backing lookup reads it. Both answers
+      are the same error envelope, so neither side fails open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L58-L70
+  - what: >-
+      When the provider cannot be inferred, the wildcard channel of get_model_list does not retry the
+      literal "None/<name>" candidate. LiteLLM's PatternMatchRouter.get_pattern builds
+      f"{provider}/{model}" with provider None and still tries "None/<name>".
+    why: >-
+      B844 owns the listing wildcard channel and PatternCatalog::get_pattern_rows stops the retry when
+      the provider is None. The owned pattern decision still builds the literal "None/<name>"
+      candidate exactly as the source does, so undiscoverable_model_names matches LiteLLM's filter;
+      only the backing get_model_list call differs, and only for a name whose provider is unknown and
+      whose sole wildcard is the literal "None/*". The oracle helper supplies "None" as the resolved
+      provider so the case exercises the source path end to end rather than this gap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L221-L222
+  - what: >-
+      A model_group_alias item without a "model" key serves no target: _alias_target reads it as no
+      name, so the alias is neither a served name nor a hidden row's alias. LiteLLM's _alias_target
+      indexes alias["model"] and raises KeyError from the listing.
+    why: >-
+      The alias snapshot keeps the target optional, so a malformed alias record cannot crash a
+      listing; no working configuration relies on the KeyError. The alias-object-and-chain case
+      carries well-formed items only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L40-L41
+kept_bugs:
+  - what: >-
+      The pattern decision still tries the literal "None/<name>" candidate when no provider resolves.
+      LiteLLM gets that string by interpolating a None provider into an f-string; betterlite builds
+      the same text deliberately.
+    why: >-
+      A working wildcard configuration can rely on a "None/*" pattern matching unknown names, and the
+      task names this candidate, so the quirky text is copied and pinned by
+      unresolved_provider_matches_the_literal_none_prefix and the unknown-provider-none-prefix case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L85-L86
