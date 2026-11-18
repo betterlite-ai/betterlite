@@ -1,0 +1,95 @@
+kind: helper
+name: bedrock-invoke-stream-wrapper-identity
+call:
+  bedrock_invoke_stream:
+    scenario: wrapper_identity
+    runs:
+      - wrapper: async
+        client: async
+        model: "anthropic.claude-3-haiku-20240307-v1:0"
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: 'say "hi"'
+          max_tokens: 5
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: c2lnbmVk
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-1
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: c2lnbmVk
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-2
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: ""
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-3
+      - wrapper: sync
+        client: sync
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-4
+      - wrapper: async
+        client: async
+        model: amazon.titan-text-express-v1
+        api_base: https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-text-express-v1/invoke
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+        messages:
+          - role: user
+            content: hi
+        json_mode: null
+        signed_json_body: null
+        stream_chunk_size: null
+        response_headers:
+          content-type: application/vnd.amazon.eventstream
+          x-amzn-requestid: req-5
+env: {}
+compare:
+  ignore: []

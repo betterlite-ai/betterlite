@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-invoke-stream-transport-arguments
+call:
+  bedrock_invoke_stream:
+    scenario: transport_arguments
+    runs:
+      - wrapper: async
+        client: none
+        model: "anthropic.claude-3-haiku-20240307-v1:0"
+        api_base: "https://bedrock-runtime.us-east-1.amazonaws.com/model/anthropic.claude-3-haiku-20240307-v1:0/invoke"
+        headers:
+          content-type: application/json
+        data:
+          inputText: hi
+          max_tokens: 5
+        messages:
+          - role: user
+            content: hi
+        json_mode: true
+        signed_json_body: null
+        stream_chunk_size: 7
+        response_headers: {}
+env: {}
+compare:
+  ignore: []
