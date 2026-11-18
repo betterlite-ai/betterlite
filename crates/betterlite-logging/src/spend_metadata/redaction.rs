@@ -17,11 +17,11 @@ pub fn redact_logged_api_key(
     already_redacted: bool,
     key_alias: Option<&str>,
 ) -> Option<String> {
-    let value = value?;
-    if value.is_empty() {
+    let raw_value = value?;
+    if raw_value.is_empty() {
         return None;
     }
-    let stripped = strip_bearer(value);
+    let stripped = strip_bearer(raw_value);
     if stripped.is_empty() {
         return None;
     }

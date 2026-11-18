@@ -123,7 +123,7 @@ fn forged_stamped_values_never_win(#[case] name: &str) {
             "model_map_information": {"model": "forged"},
             "cold_storage_object_key": "forged",
             "litellm_overhead_time_ms": 9.5,
-            "cost_breakdown": {"total": 9},
+            "cost_breakdown": {"total_cost": 9},
             "litellm_call_id": "forged"
         }"#,
     );
@@ -149,7 +149,7 @@ fn enriched_arguments() -> SpendMetadataArguments {
         model_map_information: Some(object(r#"{"model":"mapped"}"#)),
         cold_storage_object_key: Some("cold".to_owned()),
         litellm_overhead_time_ms: Some(Decimal::new(225, 2)),
-        cost_breakdown: Some(object(r#"{"total":0.5}"#)),
+        cost_breakdown: Some(serde_json::from_str(r#"{"total_cost":0.5}"#).unwrap()),
         litellm_call_id: Some("call".to_owned()),
         autorouter_savings: Some(Decimal::new(75, 2)),
         autorouter_savings_estimate: Some(object(r#"{"saved":2}"#)),
@@ -191,7 +191,7 @@ fn trusted_arguments_are_projected() {
     let value = serde_json::to_value(project(Some(&metadata), enriched_arguments(), true)).unwrap();
     assert_eq!(value["cold_storage_object_key"], "cold");
     assert_eq!(value["litellm_overhead_time_ms"], 2.25);
-    assert_eq!(value["cost_breakdown"]["total"], 0.5);
+    assert_eq!(value["cost_breakdown"]["total_cost"], 0.5);
     assert_eq!(value["litellm_call_id"], "call");
     assert_eq!(value["autorouter_savings"], 0.75);
     assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
@@ -405,4 +405,11 @@ fn savings_preserve_decimal_precision() {
         value["autorouter_savings"].to_string(),
         "0.1234567890123456789012345678"
     );
+}
+
+#[test]
+fn cost_breakdown_rejects_non_numeric_amounts() {
+    let fixture = r#"{"cost_breakdown":{"total_cost":{"unexpected":0.5}}}"#;
+    assert!(serde_json::from_str::<SpendMetadataArguments>(fixture).is_err());
+    assert!(serde_json::from_str::<SpendLogsMetadata>(fixture).is_err());
 }

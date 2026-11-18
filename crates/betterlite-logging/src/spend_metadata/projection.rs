@@ -1,3 +1,4 @@
+use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
@@ -55,7 +56,7 @@ pub struct SpendMetadataArguments {
     pub cold_storage_object_key: Option<String>,
     #[serde(default, with = "arbitrary_precision_option")]
     pub litellm_overhead_time_ms: Option<Decimal>,
-    pub cost_breakdown: Option<JsonObject>,
+    pub cost_breakdown: Option<CostBreakdown>,
     pub litellm_call_id: Option<String>,
     #[serde(default, with = "arbitrary_precision_option")]
     pub autorouter_savings: Option<Decimal>,
@@ -72,10 +73,10 @@ pub fn project_spend_logs_metadata(
     arguments: SpendMetadataArguments,
     policy: &SpendSanitizePolicy,
 ) -> Result<SpendLogsMetadata, SpendMetadataError> {
-    let Some(metadata) = metadata else {
+    let Some(present_metadata) = metadata else {
         return Ok(absent_metadata(&arguments));
     };
-    let mut record = project_identity(metadata)?;
+    let mut record = project_identity(present_metadata)?;
     supply_provenance(&mut record, &arguments);
     enrich_record(&mut record, arguments, policy);
     Ok(record)
@@ -131,7 +132,7 @@ fn enrich_record(
     record.usage_object = arguments.usage_object.map(Json::Object);
     record.model_map_information = arguments.model_map_information.map(Json::Object);
     record.litellm_overhead_time_ms = arguments.litellm_overhead_time_ms;
-    record.cost_breakdown = arguments.cost_breakdown.map(Json::Object);
+    record.cost_breakdown = arguments.cost_breakdown;
 }
 
 fn supply_provenance(record: &mut SpendLogsMetadata, arguments: &SpendMetadataArguments) {

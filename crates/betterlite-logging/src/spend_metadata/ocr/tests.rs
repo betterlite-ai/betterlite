@@ -91,10 +91,10 @@ fn extracts_pages_instead_of_tokens(
     #[case] attribute_usage_info: Option<&str>,
     #[case] expected: &str,
 ) {
-    let usage_info = usage_info.map(json);
-    let attribute_usage_info = attribute_usage_info.map(json);
+    let usage = usage_info.map(json);
+    let attribute_usage = attribute_usage_info.map(json);
     assert_eq!(
-        extract_usage_for_ocr_call(usage_info.as_ref(), attribute_usage_info.as_ref()),
+        extract_usage_for_ocr_call(usage.as_ref(), attribute_usage.as_ref()),
         object(expected)
     );
 }

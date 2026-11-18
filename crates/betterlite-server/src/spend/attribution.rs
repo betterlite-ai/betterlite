@@ -56,10 +56,10 @@ pub fn catalog_group_provider(
     settings: &SpendAttributionSettings,
     resolution: &ResolutionContext<'_>,
 ) -> Result<Option<String>, AttributionError> {
-    let Some(catalog) = catalog.filter(|_| !model_group.is_empty()) else {
+    let Some(lookup) = catalog.filter(|_| !model_group.is_empty()) else {
         return Ok(None);
     };
-    let rows = catalog.get_model_list(Some(model_group), None)?;
+    let rows = lookup.get_model_list(Some(model_group), None)?;
     let deployments: Vec<_> = rows
         .iter()
         .map(|row| DeploymentIdentity::from_litellm_params(&row.litellm_params))

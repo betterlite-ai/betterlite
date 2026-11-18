@@ -1,3 +1,4 @@
+use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use rust_decimal::serde::arbitrary_precision_option;
@@ -68,7 +69,7 @@ pub struct SpendLogsMetadata {
     pub max_retries: Option<i64>,
     pub attempted_fallbacks: Option<i64>,
     pub original_model_group: Option<String>,
-    pub cost_breakdown: Option<Json>,
+    pub cost_breakdown: Option<CostBreakdown>,
     pub compression_savings: Option<Json>,
     #[serde(default, with = "arbitrary_precision_option")]
     pub autorouter_savings: Option<Decimal>,

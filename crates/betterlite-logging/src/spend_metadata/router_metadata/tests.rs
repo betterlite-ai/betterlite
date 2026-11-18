@@ -17,10 +17,10 @@ fn object(text: &str) -> JsonObject {
 #[case::marker_as_text(Some(r#"{"model_info": {"internal_router_model": "true"}}"#))]
 #[case::marker_as_number(Some(r#"{"model_info": {"internal_router_model": 1}}"#))]
 fn without_the_internal_router_marker_there_is_no_provenance(#[case] metadata: Option<&str>) {
-    let metadata = metadata.map(object);
+    let parsed_metadata = metadata.map(object);
     assert_eq!(
         router_metadata_for_spend_log(
-            metadata.as_ref(),
+            parsed_metadata.as_ref(),
             Some("requested"),
             Some("selected"),
             Some("openai"),
