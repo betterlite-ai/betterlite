@@ -15,7 +15,7 @@ use crate::otel::logger_runtime::construction::CallbackConstructor;
 use crate::otel::logger_runtime::error::LoggerRuntimeError;
 use crate::otel::logger_runtime::types::{
     BuiltLogger, ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass,
-    V2LoggerConstructor,
+    V2LoggerConstructor as _,
 };
 use crate::otel::v2_callback::error::CallbackError;
 
@@ -197,10 +197,10 @@ fn every_production_callback_reports_the_constructor_logging_settings() {
     };
     let generic = build(&fixture, LoggerClass::Generic, &config, &provider, options)
         .expect("the generic logger builds");
-    assert_quiet(&generic.callback);
+    assert_quiet(generic.callback.as_ref());
     let langfuse = build(&fixture, LoggerClass::Langfuse, &config, &provider, options)
         .expect("the Langfuse logger builds");
-    assert_quiet(&langfuse.callback);
+    assert_quiet(langfuse.callback.as_ref());
     let content = build(
         &fixture,
         LoggerClass::LangfuseContent,
@@ -212,7 +212,7 @@ fn every_production_callback_reports_the_constructor_logging_settings() {
         },
     )
     .expect("the content logger builds");
-    assert_quiet(&content.callback);
+    assert_quiet(content.callback.as_ref());
 }
 
 #[test]
@@ -223,10 +223,10 @@ fn every_production_callback_keeps_the_default_logging_controls() {
     let options = BuildOptions::default();
     let generic = build(&fixture, LoggerClass::Generic, &config, &provider, options)
         .expect("the generic logger builds");
-    assert_default_controls(&generic.callback);
+    assert_default_controls(generic.callback.as_ref());
     let langfuse = build(&fixture, LoggerClass::Langfuse, &config, &provider, options)
         .expect("the Langfuse logger builds");
-    assert_default_controls(&langfuse.callback);
+    assert_default_controls(langfuse.callback.as_ref());
     let content = build(
         &fixture,
         LoggerClass::LangfuseContent,
@@ -238,5 +238,5 @@ fn every_production_callback_keeps_the_default_logging_controls() {
         },
     )
     .expect("the content logger builds");
-    assert_default_controls(&content.callback);
+    assert_default_controls(content.callback.as_ref());
 }

@@ -23,14 +23,14 @@ use super::support::{Fixture, attribute, fixture, lock, register_callback, setti
 fn absent_hooks_noop() {
     let fixture = fixture();
     let trace = RequestTraceContext::default();
-    let calls = Arc::new(Mutex::new(0));
+    let calls = Arc::new(Mutex::new(0_u32));
     let result = phase_span(&fixture.runtime, "phase", &trace, |span| {
-        *lock(&calls) += 1;
+        *lock(&calls) += 1_u32;
         assert!(span.is_none());
         Ok::<u8, SpanError>(7)
     });
     assert_eq!(result, Ok(7));
-    assert_eq!(*lock(&calls), 1);
+    assert_eq!(*lock(&calls), 1_u32);
     let auth = Auth::default();
     let seed = IdentitySeed {
         auth: &auth,

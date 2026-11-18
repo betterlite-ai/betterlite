@@ -80,8 +80,8 @@ fn legacy_parent_start_time(#[case] start_time: SpanTime, #[case] expected_secon
     assert_eq!(spans.len(), 1);
     let data = &spans[0];
     assert_eq!(
-        data.start_time,
-        UNIX_EPOCH + Duration::from_secs(expected_seconds)
+        Some(data.start_time),
+        UNIX_EPOCH.checked_add(Duration::from_secs(expected_seconds))
     );
     assert_eq!(data.span_kind, SpanKind::Server);
     assert_eq!(data.name.as_ref(), PROXY_REQUEST_SPAN_NAME);

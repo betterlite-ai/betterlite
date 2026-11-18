@@ -31,8 +31,7 @@ use crate::otel::logger_runtime::construction::CallbackConstructor;
 use crate::otel::logger_runtime::error::LoggerRuntimeError;
 use crate::otel::logger_runtime::hooks::RuntimeHooks;
 use crate::otel::logger_runtime::types::{
-    BuiltLogger, ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass,
-    V2LoggerConstructor,
+    BuiltLogger, ConstructorSettings, LoggerBuildRequest, LoggerClass, V2LoggerConstructor,
 };
 use crate::otel::mappers::genai::GenAIMapper;
 use crate::otel::mappers::utils::tool_attr_budget;
@@ -180,10 +179,10 @@ impl CallbackLogger for FakeLogger {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct BuildRecord {
     pub(crate) class: LoggerClass,
     pub(crate) callback_name: Option<String>,
-    pub(crate) providers: Vec<&'static str>,
     pub(crate) assembler: Option<Arc<dyn StreamOutputAssembler>>,
     pub(crate) config: Settings,
     pub(crate) settings: ConstructorSettings,
@@ -196,8 +195,8 @@ pub(crate) struct RecordingConstructor {
 }
 
 impl RecordingConstructor {
-    pub(crate) fn records(&self) -> MutexGuard<'_, Vec<BuildRecord>> {
-        lock(&self.records)
+    pub(crate) fn records(&self) -> Vec<BuildRecord> {
+        lock(&self.records).clone()
     }
 
     pub(crate) fn fail_with(&self, error: CallbackError) {
@@ -213,7 +212,6 @@ impl V2LoggerConstructor for RecordingConstructor {
         lock(&self.records).push(BuildRecord {
             class: request.class,
             callback_name: request.callback_name.map(str::to_owned),
-            providers: injected_providers(request.providers),
             assembler: request.assembler.cloned(),
             config: request.config.clone(),
             settings: request.settings,
@@ -234,20 +232,6 @@ impl V2LoggerConstructor for RecordingConstructor {
             recorder_providers: (None, None),
         })
     }
-}
-
-fn injected_providers(providers: InjectedProviders<'_>) -> Vec<&'static str> {
-    let mut names = Vec::new();
-    if providers.tracer_provider.is_some() {
-        names.push("tracer");
-    }
-    if providers.meter_provider.is_some() {
-        names.push("meter");
-    }
-    if providers.logger_provider.is_some() {
-        names.push("logger");
-    }
-    names
 }
 
 pub(crate) struct Fixture {
@@ -332,16 +316,20 @@ fn build_fixture_on(
     hooks: Option<Arc<dyn RuntimeHooks>>,
 ) -> Fixture {
     let parts = fixture_parts();
+    let constructor: Arc<RecordingConstructor> = Arc::clone(&parts.constructor);
+    let environment: Arc<TestEnvironment> = Arc::clone(&parts.environment);
+    let trace: Arc<FixedTrace> = Arc::clone(&parts.trace);
+    let scope: Arc<FixedScope> = Arc::clone(&parts.scope);
     let runtime = LoggerRuntime {
         registered: Arc::clone(&parts.registered),
         loggers: Mutex::new(Vec::new()),
         fan_out: Arc::new(Mutex::new(TenantFanOutRegistry::default())),
-        constructor: Arc::clone(&parts.constructor),
+        constructor,
         base,
-        environment: Arc::clone(&parts.environment),
-        trace: Arc::clone(&parts.trace),
+        environment,
+        trace,
         factories: Arc::clone(&parts.factories),
-        scope: Arc::clone(&parts.scope),
+        scope,
         assembler: Arc::clone(&parts.assembler),
         hooks,
         configured_exclusions,

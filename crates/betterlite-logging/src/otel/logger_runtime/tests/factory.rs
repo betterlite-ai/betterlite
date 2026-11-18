@@ -400,8 +400,8 @@ fn constructor_failure_propagates() {
         .err()
         .expect("the constructor failure surfaces");
     assert!(matches!(
-        error,
-        LoggerRuntimeError::Constructor(CallbackError::Mapper(MapperError::Unknown { ref name, .. }))
+        &error,
+        LoggerRuntimeError::Constructor(CallbackError::Mapper(MapperError::Unknown { name, .. }))
             if name == "boom"
     ));
 }
