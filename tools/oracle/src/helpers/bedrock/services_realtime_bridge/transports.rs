@@ -15,19 +15,20 @@ use betterlite_models::decisions::Json;
 use super::{Chunk, ChunkKind, Run};
 
 pub(super) struct ClientState {
-    frames: Mutex<VecDeque<Option<String>>>,
-    block: bool,
-    client_send_failures: Vec<usize>,
-    sent: Mutex<Vec<String>>,
-    closes: Mutex<Vec<(u16, Option<String>)>>,
+    pub(super) frames: Mutex<VecDeque<Option<String>>>,
+    pub(super) block: bool,
+    pub(super) client_send_failures: Vec<usize>,
+    pub(super) sent: Mutex<Vec<String>>,
+    pub(super) closes: Mutex<Vec<(u16, Option<String>)>>,
     pub(super) receives: AtomicUsize,
 }
 
 // Records the value and answers the index when the case asked this send to fail
 fn push_sent<T>(sent: &Mutex<Vec<T>>, failures: &[usize], value: T) -> Option<usize> {
-    let mut sent = sent.lock().unwrap_or_else(PoisonError::into_inner);
-    let index = sent.len();
-    sent.push(value);
+    let mut values = sent.lock().unwrap_or_else(PoisonError::into_inner);
+    let index = values.len();
+    values.push(value);
+    drop(values);
     failures.contains(&index).then_some(index)
 }
 
@@ -95,15 +96,15 @@ impl RealtimeClientWebSocket for TransportClient {
 }
 
 pub(super) struct StreamState {
-    sent: Mutex<Vec<Json>>,
-    bedrock_send_failures: Vec<usize>,
+    pub(super) sent: Mutex<Vec<Json>>,
+    pub(super) bedrock_send_failures: Vec<usize>,
     pub(super) closed: AtomicBool,
-    close_error: bool,
-    await_error: Option<String>,
-    chunks: Mutex<VecDeque<Chunk>>,
+    pub(super) close_error: bool,
+    pub(super) await_error: Option<String>,
+    pub(super) chunks: Mutex<VecDeque<Chunk>>,
     pub(super) receives: AtomicUsize,
-    receive_failures: Vec<usize>,
-    block: bool,
+    pub(super) receive_failures: Vec<usize>,
+    pub(super) block: bool,
 }
 
 impl StreamState {
@@ -208,13 +209,13 @@ impl BedrockOutputStream for TransportOutput {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         match chunk {
-            Some(chunk) => match chunk.kind {
+            Some(pulled) => match pulled.kind {
                 ChunkKind::End => Ok(None),
                 ChunkKind::MissingValue => Ok(Some(Box::new(WireChunk(None)))),
                 ChunkKind::MissingBytes => Ok(Some(Box::new(WireChunk(Some(Part(None)))))),
                 ChunkKind::Empty => Ok(Some(Box::new(WireChunk(Some(Part(Some(Vec::new()))))))),
                 ChunkKind::Bytes => Ok(Some(Box::new(WireChunk(Some(Part(Some(
-                    chunk.text.into_bytes(),
+                    pulled.text.into_bytes(),
                 ))))))),
                 ChunkKind::InvalidUtf8 => {
                     Ok(Some(Box::new(WireChunk(Some(Part(Some(vec![0xff])))))))

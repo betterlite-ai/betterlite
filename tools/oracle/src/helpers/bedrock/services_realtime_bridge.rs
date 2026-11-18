@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use betterlite_bedrock::realtime_input::RealtimeInput;
+use betterlite_bedrock::realtime_session::RealtimeSession;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -140,7 +141,7 @@ fn parse_ids(values: &[String]) -> Result<Vec<Uuid>, Box<HelperError>> {
         .map_err(failure)
 }
 
-fn empty_state() -> RealtimeResponseTransformInput {
+const fn empty_state() -> RealtimeResponseTransformInput {
     RealtimeResponseTransformInput {
         session_configuration_request: None,
         current_output_item_id: None,
@@ -155,9 +156,7 @@ fn empty_state() -> RealtimeResponseTransformInput {
 // Session names and event ids come from two generators in LiteLLM, so each run seeds names and events apart
 fn session_input(name_ids: &[Uuid]) -> RealtimeInput {
     RealtimeInput {
-        session: betterlite_bedrock::realtime_session::RealtimeSession::new(&FixedIds::new(
-            name_ids,
-        )),
+        session: RealtimeSession::new(&FixedIds::new(name_ids)),
         open_audio: None,
     }
 }

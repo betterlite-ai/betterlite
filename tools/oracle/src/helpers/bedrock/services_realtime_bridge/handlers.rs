@@ -4,17 +4,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_bedrock::realtime_bridge::client::ClientForward;
-use betterlite_bedrock::realtime_bridge::end::ForwardEnd;
 use betterlite_bedrock::realtime_bridge::error::{ClientForwardError, ProviderForwardError};
 use betterlite_bedrock::realtime_bridge::provider::{LoggedEventSink, ProviderForward};
-use betterlite_bedrock::realtime_events::scope::EventScope;
-use betterlite_bedrock::realtime_input::RealtimeInput;
+use betterlite_bedrock::realtime_bridge::{client::ClientForward, end::ForwardEnd};
+use betterlite_bedrock::{realtime_events::scope::EventScope, realtime_input::RealtimeInput};
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use tokio::runtime::Builder;
+use futures_util::future::{Either, select};
+use tokio::{runtime::Builder, task::yield_now};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,7 +39,7 @@ impl LoggedEventSink for CollectedLog {
 // Cancels once the scripted side has been pulled as many times as the run says
 async fn cancel_at(counter: &AtomicUsize, threshold: usize, cancel: &CancellationToken) {
     while counter.load(Ordering::SeqCst) < threshold {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     cancel.cancel();
 }
@@ -65,15 +64,15 @@ fn scope_view(scope: &EventScope) -> ScopeView {
 type ClientRun = Result<ForwardEnd, ClientForwardError<io::Error>>;
 type ProviderRun = Result<ForwardEnd, ProviderForwardError<io::Error>>;
 
-enum PumpResult<'a> {
-    Client(&'a Result<ForwardEnd, ClientForwardError<io::Error>>),
-    Provider(&'a Result<ForwardEnd, ProviderForwardError<io::Error>>),
+enum PumpResult<'result> {
+    Client(&'result ClientRun),
+    Provider(&'result ProviderRun),
 }
 
 // The pump's outcome with nothing observed yet, for the direction that fills only its own side
-fn pump_outcome(result: PumpResult<'_>) -> BridgeView {
-    let (outcome, error) = match result {
-        PumpResult::Client(result) => match result {
+const fn pump_outcome(pump: PumpResult<'_>) -> BridgeView {
+    let (outcome, error) = match pump {
+        PumpResult::Client(run) => match run {
             Ok(ForwardEnd::Ended) => ("ended", None),
             Ok(ForwardEnd::Cancelled) => ("cancelled", None),
             Err(ClientForwardError::Input(_)) => ("error", Some("input")),
@@ -81,7 +80,7 @@ fn pump_outcome(result: PumpResult<'_>) -> BridgeView {
             Err(ClientForwardError::Send(_)) => ("error", Some("stream")),
             Err(ClientForwardError::Encode { .. }) => ("error", Some("encode")),
         },
-        PumpResult::Provider(result) => match result {
+        PumpResult::Provider(run) => match run {
             Ok(ForwardEnd::Ended) => ("ended", None),
             Ok(ForwardEnd::Cancelled) => ("cancelled", None),
             Err(ProviderForwardError::Stream(_)) => ("error", Some("stream")),
@@ -103,17 +102,17 @@ fn pump_outcome(result: PumpResult<'_>) -> BridgeView {
 }
 
 // Both directions share one scripted transport pair, so one harness builds either pump per run
-struct Harness<'a> {
-    run: &'a Run,
+struct Harness<'case> {
+    run: &'case Run,
     shared: Mutex<RealtimeInput>,
     client: Arc<ClientState>,
     wire: Arc<StreamState>,
     stream: TransportStream,
     transport: TransportClient,
     token: CancellationToken,
-    events: &'a FixedIds,
-    redactor: &'a Redactor,
-    model: &'a str,
+    events: &'case FixedIds,
+    redactor: &'case Redactor,
+    model: &'case str,
 }
 
 impl Harness<'_> {
@@ -132,9 +131,9 @@ impl Harness<'_> {
         let canceller = cancel_at(counter, pulls.saturating_add(1), &self.token);
         tokio::pin!(pump);
         tokio::pin!(canceller);
-        tokio::select! {
-            result = &mut pump => result,
-            () = &mut canceller => pump.await,
+        match select(pump, canceller).await {
+            Either::Left((result, _canceller)) => result,
+            Either::Right(((), pinned)) => pinned.await,
         }
     }
 
@@ -157,7 +156,7 @@ impl Harness<'_> {
                 };
                 let future = forward.forward_client_to_bedrock();
                 let result = self.driven(&self.client.receives, future).await;
-                self.client_bridge(&scope, result)
+                self.client_bridge(&scope, &result)
             }
             Kind::Provider => {
                 let (mut state, mut log) = (empty_state(), CollectedLog::default());
@@ -174,7 +173,7 @@ impl Harness<'_> {
                 };
                 let future = pump.forward_bedrock_to_client();
                 let result = self.driven(&self.wire.receives, future).await;
-                self.provider_bridge(state, log, result)
+                self.provider_bridge(state, log, &result)
             }
         }
     }
@@ -182,9 +181,9 @@ impl Harness<'_> {
     fn client_bridge(
         &self,
         scope: &EventScope,
-        result: ClientRun,
+        result: &ClientRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = pump_outcome(PumpResult::Client(&result));
+        let mut view = pump_outcome(PumpResult::Client(result));
         view.sent_to_bedrock = self.wire.sent();
         view.sent_to_client = parse_sent(self.client.sent())?;
         view.closed_input = self.wire.closed.load(Ordering::SeqCst);
@@ -196,9 +195,9 @@ impl Harness<'_> {
         &self,
         state: RealtimeResponseTransformInput,
         log: CollectedLog,
-        result: ProviderRun,
+        result: &ProviderRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = pump_outcome(PumpResult::Provider(&result));
+        let mut view = pump_outcome(PumpResult::Provider(result));
         view.sent_to_client = parse_sent(self.client.sent())?;
         // The provider pump closes the client at most once, and only on a normal provider end
         view.closed_client = self
