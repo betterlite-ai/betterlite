@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use opentelemetry::Context;
 use opentelemetry::propagation::TextMapPropagator as _;
@@ -8,10 +9,13 @@ use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
 
+use betterlite_logging::exporter_options::failure_counter::CallbackFailureCounter;
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::{
     LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
 };
 use betterlite_logging::otel::legacy_lifecycle::tracer::DynamicOtel;
+use betterlite_logging::otel::legacy_metrics::events::SemanticEventEmitter;
+use betterlite_logging::otel::legacy_metrics::recorder::LegacyMetricRecorder;
 use betterlite_logging::otel::legacy_policy::capture::LoggingFlags;
 use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
@@ -79,12 +83,15 @@ impl Rig {
         dynamic: Option<Arc<dyn DynamicOtel>>,
         use_request_span: bool,
     ) -> LegacyLifecycle {
-        self.with_clock(
+        self.with_services(
             config,
             callback_name,
             dynamic,
             use_request_span,
             Box::new(SystemClock),
+            None,
+            None,
+            Vec::new(),
         )
     }
 
@@ -95,6 +102,29 @@ impl Rig {
         dynamic: Option<Arc<dyn DynamicOtel>>,
         use_request_span: bool,
         clock: Box<dyn Clock>,
+    ) -> LegacyLifecycle {
+        self.with_services(
+            config,
+            callback_name,
+            dynamic,
+            use_request_span,
+            clock,
+            None,
+            None,
+            Vec::new(),
+        )
+    }
+
+    pub(super) fn with_services(
+        &self,
+        config: OpenTelemetryConfig,
+        callback_name: Option<&str>,
+        dynamic: Option<Arc<dyn DynamicOtel>>,
+        use_request_span: bool,
+        clock: Box<dyn Clock>,
+        metrics: Option<LegacyMetricRecorder>,
+        events: Option<SemanticEventEmitter>,
+        failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
     ) -> LegacyLifecycle {
         let init = LegacyOtelInit {
             config: Some(config),
@@ -116,6 +146,9 @@ impl Rig {
             otel,
             LegacyLifecycleOptions {
                 dynamic: dynamic.unwrap_or_else(|| Arc::new(BaseDynamic)),
+                metrics,
+                events,
+                failure_counters,
                 live: Arc::clone(&self.roots),
                 use_request_span,
                 clock,
@@ -154,6 +187,14 @@ impl Rig {
         );
         self.roots.register(&live);
         live
+    }
+}
+
+pub(super) struct CountingFailureCounter(pub AtomicUsize);
+
+impl CallbackFailureCounter for CountingFailureCounter {
+    fn increment_callback_logging_failure(&self, _callback_name: &str) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

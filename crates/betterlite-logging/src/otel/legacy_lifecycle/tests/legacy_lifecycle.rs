@@ -1,12 +1,37 @@
 use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status};
+use std::sync::Arc;
 use std::time::SystemTime;
 
+use crate::support::CountingFailureCounter;
 use crate::support::{END, Rig, START, attach, call, in_memory_config, instant, simple_kwargs};
+use betterlite_logging::otel::legacy_lifecycle::state::RequestDedupe;
+use betterlite_logging::otel::legacy_metrics::events::SemanticEventEmitter;
+use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
+use betterlite_logging::otel::legacy_metrics::recorder::LegacyMetricRecorder;
+use betterlite_logging::otel::legacy_policy::dedupe::ScopeValue;
 use betterlite_logging::otel::legacy_policy::error_recording::RecordedException;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
+use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::events::Clock;
 use betterlite_logging::otel::vocabulary::semconv::OTELSemconvCategory;
+use betterlite_logging::otel_provider_assembly::metric_instruments::create_instruments;
+use chrono::FixedOffset;
+use opentelemetry::logs::LoggerProvider as _;
+use opentelemetry::metrics::MeterProvider as _;
+use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLoggerProvider};
+use opentelemetry_sdk::metrics::data::{
+    AggregatedMetrics, MetricData, ResourceMetrics, ScopeMetrics,
+};
+use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
+
+struct NoCallbackSettings;
+
+impl CallbackSettingsView for NoCallbackSettings {
+    fn otel_attributes(&self) -> Option<OtelModelValue> {
+        None
+    }
+}
 
 struct FixedClock(SystemTime);
 
@@ -251,6 +276,19 @@ fn legacy_lifecycle_keeps_distinct_request_ids_independent() {
 }
 
 #[test]
+fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
+    let dedupe = RequestDedupe::new("OpenTelemetry".to_owned());
+    let scope = [ScopeValue::Text("success".to_owned())];
+    for index in 0..10_000 {
+        let key = format!("call-{index}");
+        assert!(dedupe.emit_once(Some(&key), &scope));
+    }
+
+    assert!(dedupe.emit_once(Some("call-0"), &scope));
+    assert!(!dedupe.emit_once(Some("call-1"), &scope));
+}
+
+#[test]
 fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
     let rig = Rig::new();
     let clock_time = instant(START + 12.25);
@@ -273,4 +311,113 @@ fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
     let primary = rig.span("litellm_request");
     assert_eq!(primary.start_time, clock_time);
     assert_eq!(primary.end_time, clock_time);
+}
+
+#[test]
+fn legacy_lifecycle_reports_attribute_failures_to_callback_counter() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let rig = Rig::new();
+    let counter = Arc::new(CountingFailureCounter(AtomicUsize::new(0)));
+    let lifecycle = rig.with_services(
+        in_memory_config(),
+        None,
+        None,
+        false,
+        Box::new(FixedClock(instant(START))),
+        None,
+        None,
+        vec![counter.clone()],
+    );
+    let mut kwargs = simple_kwargs("call-missing-standard-log");
+    kwargs.remove("standard_logging_object");
+
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("lifecycle handles attribute failure");
+
+    assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn legacy_lifecycle_records_metrics_for_success() {
+    let rig = Rig::new();
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_reader(PeriodicReader::builder(exporter.clone()).build())
+        .build();
+    let config = in_memory_config();
+    let recorder = LegacyMetricRecorder::new(
+        create_instruments(&provider.meter("legacy-lifecycle-test")),
+        &config,
+        None,
+        Arc::new(NoCallbackSettings),
+        FixedOffset::east_opt(0).expect("UTC offset"),
+    )
+    .expect("metric recorder");
+    let lifecycle = rig.with_services(
+        config,
+        None,
+        None,
+        false,
+        Box::new(FixedClock(instant(START))),
+        Some(recorder),
+        None,
+        Vec::new(),
+    );
+    let kwargs = simple_kwargs("call-metrics");
+
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+    provider.force_flush().expect("flush metrics");
+    let metrics = exporter.get_finished_metrics().expect("metrics");
+    let duration = metrics
+        .iter()
+        .flat_map(ResourceMetrics::scope_metrics)
+        .flat_map(ScopeMetrics::metrics)
+        .find(|metric| metric.name() == "gen_ai.client.operation.duration")
+        .expect("operation duration metric");
+    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = duration.data() else {
+        panic!("operation duration must be a histogram");
+    };
+    assert!(histogram.data_points().any(|point| point.sum() == 1.5));
+}
+
+#[test]
+fn legacy_lifecycle_emits_semantic_logs_on_success() {
+    let rig = Rig::new();
+    let exporter = InMemoryLogExporter::default();
+    let provider = SdkLoggerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let events = SemanticEventEmitter {
+        event_logger: provider.logger("legacy-lifecycle-test"),
+        clock: Box::new(FixedClock(instant(END))),
+        enable_events: true,
+        semconv_latest: false,
+    };
+    let lifecycle = rig.with_services(
+        in_memory_config(),
+        None,
+        None,
+        false,
+        Box::new(FixedClock(instant(START))),
+        None,
+        Some(events),
+        Vec::new(),
+    );
+    let kwargs = simple_kwargs("call-events");
+
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+    provider.force_flush().expect("flush logs");
+
+    assert!(
+        !exporter
+            .get_emitted_logs()
+            .expect("emitted logs")
+            .is_empty()
+    );
 }
