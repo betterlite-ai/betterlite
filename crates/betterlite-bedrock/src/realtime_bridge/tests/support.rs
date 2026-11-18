@@ -277,10 +277,8 @@ struct ScriptedChunk {
 
 impl BedrockOutputChunk for ScriptedChunk {
     fn value(&self) -> Option<&dyn BedrockPayloadPart> {
-        match &self.part {
-            Some(part) => Some(part),
-            None => None,
-        }
+        let part: &dyn BedrockPayloadPart = self.part.as_ref()?;
+        Some(part)
     }
 }
 

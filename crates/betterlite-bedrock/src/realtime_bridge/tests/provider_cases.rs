@@ -1,4 +1,3 @@
-use betterlite_core::api::realtime_contracts::events::AllDeltaType;
 use betterlite_models::decisions::Json;
 
 use super::support::{self, Chunk, ProviderFixture, ScriptedClient, ScriptedStream};
@@ -48,19 +47,15 @@ pub(super) async fn provider_event_forwarding() {
         ]
     );
     assert_eq!(event_text(&sent[5], "text"), Some("Hello world"));
-    assert_eq!(
-        fixture.state.current_response_id,
-        Some(format!("resp_{}", support::numbered(4)))
-    );
-    assert_eq!(
-        fixture.state.current_output_item_id,
-        Some(format!("item_{}", support::numbered(5)))
-    );
+    // The end turn resets the response, its item and the delta type; the conversation stays for the next one
+    assert_eq!(fixture.state.current_response_id, None);
+    assert_eq!(fixture.state.current_output_item_id, None);
     assert_eq!(
         fixture.state.current_conversation_id,
         Some(format!("conv_{}", support::numbered(6)))
     );
-    assert_eq!(fixture.state.current_delta_type, Some(AllDeltaType::Text));
+    assert_eq!(fixture.state.current_delta_type, None);
+    assert_eq!(fixture.state.current_delta_chunks, None);
     assert_eq!(
         fixture.state.session_configuration_request.as_deref(),
         Some(r#"{"configured": true}"#)

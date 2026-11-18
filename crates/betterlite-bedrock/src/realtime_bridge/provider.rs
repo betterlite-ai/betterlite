@@ -92,7 +92,9 @@ where
             };
             let messages = match value {
                 Json::List(items) => items,
-                other => vec![other],
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                    vec![value]
+                }
             };
             for message in messages {
                 if !self.send_to_client(&message).await {
