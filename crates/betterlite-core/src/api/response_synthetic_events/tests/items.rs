@@ -134,7 +134,8 @@ fn reasoning_summaries_emit_done_events_with_sequence_numbers() {
 #[test]
 fn many_empty_summaries_with_a_huge_item_id_exceed_the_event_budget() {
     let item_id = "i".repeat(64 * 1024);
-    let summaries = vec![r#"{"type":"summary_text","text":""}"#; 16_384].join(",");
+    // 2500 empty summaries pass the byte limit at two id copies each, so the done charge counts
+    let summaries = vec![r#"{"type":"summary_text","text":""}"#; 2_500].join(",");
     let output = format!(r#"[{{"type":"reasoning","id":"{item_id}","summary":[{summaries}]}}]"#);
     let mut transformed = response(&output);
     let error =
