@@ -2,12 +2,14 @@ use std::fmt::Display;
 
 use betterlite_bedrock::realtime_events::dispatch::RealtimeEvents;
 use betterlite_bedrock::realtime_events::error::EventError;
+use betterlite_bedrock::realtime_events::scope::EventScope;
 use betterlite_bedrock::realtime_session::RealtimeSession;
-use betterlite_bedrock::realtime_session::records::{SessionEvent, SessionEventType};
 use betterlite_core::api::realtime_contracts::events::{
     RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -15,6 +17,7 @@ use super::services_realtime_session::FixedIds;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod handlers;
 mod tests;
 
 const MODEL: &str = "amazon.nova-sonic-v1:0";
@@ -33,10 +36,35 @@ enum Step {
         message: String,
         state: RealtimeResponseTransformInput,
     },
-    SessionUpdated {
-        trace_id: String,
-        modalities: Option<Vec<String>>,
+    ClientMessages {
+        initial: Option<String>,
+        received: Vec<Option<String>>,
     },
+    ParseClientMessage {
+        message: String,
+    },
+    Pending {
+        scope: EventScope,
+    },
+    ProviderFailure {
+        class_name: String,
+        message: String,
+        scope: EventScope,
+    },
+    Ack(AckStep),
+    ShouldLog {
+        configured: serde_json::Value,
+        event: IndexMap<String, Json>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct AckStep {
+    trace_id: Option<String>,
+    client_message: IndexMap<String, Json>,
+    stream_error: Option<String>,
+    send_error: Option<String>,
+    scope: EventScope,
 }
 
 #[derive(Serialize)]
@@ -51,9 +79,7 @@ enum StepOutput {
         response: Option<RealtimeResponseTypedDict>,
         raised: Option<&'static str>,
     },
-    SessionUpdated {
-        event: SessionEvent,
-    },
+    Other(serde_json::Value),
 }
 
 pub(crate) struct Op;
@@ -122,21 +148,23 @@ fn run_step(
     session: &mut RealtimeSession,
     ids: &FixedIds,
     redactor: &Redactor,
-) -> StepOutput {
+) -> Result<StepOutput, Box<HelperError>> {
     match step {
-        Step::Dispatch { message, state } => dispatch_step(message, state, session, ids, redactor),
-        Step::SessionUpdated {
-            trace_id,
-            modalities,
-        } => StepOutput::SessionUpdated {
-            event: RealtimeSession::session_event(
-                SessionEventType::Updated,
-                Some(MODEL),
-                trace_id,
-                modalities.as_deref(),
-                ids,
-            ),
-        },
+        Step::Dispatch { message, state } => {
+            Ok(dispatch_step(message, state, session, ids, redactor))
+        }
+        Step::ClientMessages { initial, received } => {
+            handlers::client_messages(initial.clone(), received.clone(), redactor)
+        }
+        Step::ParseClientMessage { message } => Ok(handlers::parse_client(message)),
+        Step::Pending { scope } => Ok(handlers::pending(scope)),
+        Step::ProviderFailure {
+            class_name,
+            message,
+            scope,
+        } => Ok(handlers::provider(class_name, message, scope, redactor)),
+        Step::Ack(ack) => handlers::ack(ack, ids, redactor),
+        Step::ShouldLog { configured, event } => Ok(handlers::should_log(configured, event)),
     }
 }
 
@@ -152,7 +180,7 @@ impl Helper for Op {
             .steps
             .iter()
             .map(|step| run_step(step, &mut session, &source, &redactor))
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
         serde_json::to_value(Steps { steps }).map_err(failure)
     }
 }
