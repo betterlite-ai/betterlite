@@ -1,11 +1,5 @@
 from betterlite.types.llms.base import BaseLiteLLMOpenAIResponseObject, CachedTokensDetails
-from betterlite.types.responses.api_response import (
-    ResponseAPIUsage,
-    ResponsesAPIResponse,
-    ResponsesToolUsage,
-    WebSearchToolUsage,
-)
-from .chat import (
+from betterlite.types.llms.openai.chat import (
     ChatCompletionDeltaChunk,
     ChatCompletionNamedToolChoiceParam,
     ChatCompletionResponseMessage,
@@ -33,13 +27,12 @@ from .chat import (
     GenericResponseOutputItem,
     ImageGenerationPartialImageEvent,
     InputTokensDetails,
+    LiteLLMFineTuningJobCreate,
     MCPCallArgumentsDeltaEvent,
     MCPCallArgumentsDoneEvent,
     MCPCallCompletedEvent,
-    MCPCallFailedEvent,
     MCPCallInProgressEvent,
     MCPListToolsCompletedEvent,
-    MCPListToolsFailedEvent,
     MCPListToolsInProgressEvent,
     OpenAIChatCompletionChunk,
     OpenAIChatCompletionLogprobsContent,
@@ -54,7 +47,6 @@ from .chat import (
     OutputTextDeltaEvent,
     OutputTextDoneEvent,
     OutputTokensDetails,
-    PromptObject,
     ReasoningSummaryPartDoneEvent,
     ReasoningSummaryTextDeltaEvent,
     ReasoningSummaryTextDoneEvent,
@@ -69,16 +61,17 @@ from .chat import (
     ResponsesAPIOptionalRequestParams,
     ResponsesAPIRequestParams,
     ResponsesAPIStreamOptions,
-    ShellToolParam,
     WebSearchCallCompletedEvent,
     WebSearchCallInProgressEvent,
     WebSearchCallSearchingEvent,
 )
-from .chat.chat_request import ChatCompletionRequest
-from .chat.event_types import ResponsesAPIStreamEvents
-from .chat.fine_tuning import FineTuningJobCreate, Hyperparameters, LiteLLMFineTuningJobCreate
-from .chat.streaming import GenericEvent
-from .core.batches import (
+from betterlite.types.llms.openai.chat.chat_request import ChatCompletionRequest
+from betterlite.types.llms.openai.chat.event_types import ResponsesAPIStreamEvents
+from betterlite.types.llms.openai.chat.fine_tuning import FineTuningJobCreate, Hyperparameters
+from betterlite.types.llms.openai.chat.mcp_events import MCPCallFailedEvent, MCPListToolsFailedEvent
+from betterlite.types.llms.openai.chat.responses_request import PromptObject, ShellToolParam
+from betterlite.types.llms.openai.chat.streaming import GenericEvent
+from betterlite.types.llms.openai.core.batches import (
     CancelBatchRequest,
     CreateBatchRequest,
     ListBatchRequest,
@@ -86,8 +79,8 @@ from .core.batches import (
     OpenAIErrorBody,
     RetrieveBatchRequest,
 )
-from .core.binary import BinaryResponseSummary
-from .core.chat_blocks import (
+from betterlite.types.llms.openai.core.binary import BinaryResponseSummary
+from betterlite.types.llms.openai.core.chat_blocks import (
     ChatCompletionAnnotation,
     ChatCompletionAnnotationURLCitation,
     ChatCompletionAssistantToolCall,
@@ -119,7 +112,7 @@ from .core.chat_blocks import (
     WebSearchOptionsUserLocation,
     WebSearchOptionsUserLocationApproximate,
 )
-from .core.files import (
+from betterlite.types.llms.openai.core.files import (
     BATCH_GUARDRAIL_RESPONSE_FIELD,
     BatchGuardrailRecord,
     BatchGuardrailReport,
@@ -129,7 +122,7 @@ from .core.files import (
     FileListPage,
     OpenAIFileObject,
 )
-from .core.messages import (
+from betterlite.types.llms.openai.core.messages import (
     ChatCompletionAssistantMessage,
     ChatCompletionDeveloperMessage,
     ChatCompletionFunctionMessage,
@@ -147,8 +140,8 @@ from .core.messages import (
     ValidChatCompletionMessageContentTypes,
     ValidUserMessageContentTypes,
 )
-from .core.not_given import NOT_GIVEN, NotGiven
-from .core.threads import (
+from betterlite.types.llms.openai.core.not_given import NOT_GIVEN, NotGiven
+from betterlite.types.llms.openai.core.threads import (
     Attachment,
     CodeInterpreterToolParam,
     FileSearchToolParam,
@@ -165,10 +158,8 @@ from .core.threads import (
     ToolResourcesFileSearch,
     ToolResourcesFileSearchVectorStore,
 )
-from .realtime import (
+from betterlite.types.llms.openai.realtime import (
     ImageGenerationRequestQuality,
-    OpenAIBatchResponse,
-    OpenAIBatchResult,
     OpenAIChatCompletionChoices,
     OpenAIChatCompletionLogprobs,
     OpenAIChatCompletionResponse,
@@ -215,9 +206,12 @@ from .realtime import (
     OpenAIWebSearchUserLocation,
     OpenAIWebSearchUserLocationApproximate,
 )
-from .realtime.events import OpenAIRealtimeEventTypes
-from .realtime.mcp import OpenAIMcpServerTool
-from .realtime.video import CreateVideoRequest, OpenAIVideoObject
+from betterlite.types.llms.openai.realtime.chat import OpenAIBatchResponse, OpenAIBatchResult
+from betterlite.types.llms.openai.realtime.events import OpenAIRealtimeEventTypes
+from betterlite.types.llms.openai.realtime.mcp import OpenAIMcpServerTool
+from betterlite.types.llms.openai.realtime.video import CreateVideoRequest, OpenAIVideoObject
+from betterlite.types.responses import ResponseAPIUsage, ResponsesToolUsage, WebSearchToolUsage
+from betterlite.types.responses.api_response import ResponsesAPIResponse
 
 __all__ = [
     "BATCH_GUARDRAIL_RESPONSE_FIELD", "NOT_GIVEN", "Attachment", "BaseLiteLLMOpenAIResponseObject",
