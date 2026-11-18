@@ -32,22 +32,32 @@ struct CaptureImport {
     completed_on_poll: bool,
 }
 
+impl CaptureImport {
+    // Every stub method records its request and replies with the operation the test set up
+    fn record_and_reply<Request>(
+        &self,
+        slot: &Mutex<Vec<Request>>,
+        request: Request,
+        operation: Operation,
+    ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
+        let mut requests = slot.lock().expect("the capture lock");
+        requests.push(request);
+        ready(Ok(Response::from(operation)))
+    }
+}
+
 impl VertexRagDataStub for CaptureImport {
     fn import_rag_files(
         &self,
         request: ImportRagFilesRequest,
         _options: RequestOptions,
     ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
-        self.requests
-            .lock()
-            .expect("the capture lock")
-            .push(request);
         let operation = if self.completed_on_poll {
             pending_operation()
         } else {
             done_operation(3)
         };
-        ready(Ok(Response::from(operation)))
+        self.record_and_reply(&self.requests, request, operation)
     }
 
     fn get_operation(
@@ -55,11 +65,7 @@ impl VertexRagDataStub for CaptureImport {
         request: GetOperationRequest,
         _options: RequestOptions,
     ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
-        self.operations
-            .lock()
-            .expect("the capture lock")
-            .push(request);
-        ready(Ok(Response::from(done_operation(7))))
+        self.record_and_reply(&self.operations, request, done_operation(7))
     }
 }
 

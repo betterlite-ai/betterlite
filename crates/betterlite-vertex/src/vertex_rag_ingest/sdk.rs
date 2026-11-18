@@ -67,6 +67,58 @@ impl VertexRagDataImport {
             .await
             .map_err(|source| ImportError::Client { source })
     }
+
+    // The submission RPC, built as the SDK's import_files request and sent before any wait
+    async fn start_import(&self, request: ImportRequest) -> Result<Submitted, ImportError> {
+        let client = self.open().await?;
+        let chunking = request.chunking.chunking_config;
+        let fixed = fixed_length_chunking(chunking.chunk_size, chunking.chunk_overlap)?;
+        let transformation = RagFileTransformationConfig::new().set_rag_file_chunking_config(
+            RagFileChunkingConfig::new()
+                .set_chunking_config(Some(ChunkingConfig::FixedLengthChunking(Box::new(fixed)))),
+        );
+        let config = ImportRagFilesConfig::new()
+            .set_rag_file_transformation_config(transformation)
+            .set_import_source(ImportSource::GcsSource(Box::new(
+                GcsSource::new().set_uris([request.gcs_uri]),
+            )));
+        let operation = client
+            .import_rag_files()
+            .set_parent(request.corpus)
+            .set_import_rag_files_config(config)
+            .send()
+            .await
+            .map_err(|source| ImportError::Rpc { source })?;
+        Ok((client, Operation::new(operation)))
+    }
+
+    // The wait after the submission: poll the operation the SDK handed back until it is done
+    async fn finish_import(handle: Submitted) -> Result<ImportOutcome, ImportError> {
+        let (client, operation) = handle;
+        let start = move || async move { Ok::<_, GaxError>(operation) };
+        let query = move |name: String| {
+            let poll_client = client.clone();
+            async move {
+                let polled = poll_client.get_operation().set_name(name).send().await?;
+                Ok::<_, GaxError>(Operation::<ImportRagFilesResponse, ImportMetadata>::new(
+                    polled,
+                ))
+            }
+        };
+        let poller = new_poller(
+            Arc::new(Aip194Strict),
+            Arc::new(ExponentialBackoff::default()),
+            start,
+            query,
+        );
+        let response = poller
+            .until_done()
+            .await
+            .map_err(|source| ImportError::Rpc { source })?;
+        Ok(ImportOutcome {
+            imported_rag_files_count: response.imported_rag_files_count,
+        })
+    }
 }
 
 type Submitted = (
@@ -81,58 +133,11 @@ impl CorpusImport for VertexRagDataImport {
         &'request self,
         request: ImportRequest,
     ) -> SubmitFuture<'request, Self::Handle> {
-        Box::pin(async move {
-            let client = self.open().await?;
-            let chunking = request.chunking.chunking_config;
-            let fixed = fixed_length_chunking(chunking.chunk_size, chunking.chunk_overlap)?;
-            let transformation = RagFileTransformationConfig::new().set_rag_file_chunking_config(
-                RagFileChunkingConfig::new().set_chunking_config(Some(
-                    ChunkingConfig::FixedLengthChunking(Box::new(fixed)),
-                )),
-            );
-            let config = ImportRagFilesConfig::new()
-                .set_rag_file_transformation_config(transformation)
-                .set_import_source(ImportSource::GcsSource(Box::new(
-                    GcsSource::new().set_uris([request.gcs_uri]),
-                )));
-            let operation = client
-                .import_rag_files()
-                .set_parent(request.corpus)
-                .set_import_rag_files_config(config)
-                .send()
-                .await
-                .map_err(|source| ImportError::Rpc { source })?;
-            Ok((client, Operation::new(operation)))
-        })
+        Box::pin(self.start_import(request))
     }
 
     fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request> {
-        Box::pin(async move {
-            let (client, operation) = handle;
-            let start = move || async move { Ok::<_, GaxError>(operation) };
-            let query = move |name: String| {
-                let poll_client = client.clone();
-                async move {
-                    let polled = poll_client.get_operation().set_name(name).send().await?;
-                    Ok::<_, GaxError>(Operation::<ImportRagFilesResponse, ImportMetadata>::new(
-                        polled,
-                    ))
-                }
-            };
-            let poller = new_poller(
-                Arc::new(Aip194Strict),
-                Arc::new(ExponentialBackoff::default()),
-                start,
-                query,
-            );
-            let response = poller
-                .until_done()
-                .await
-                .map_err(|source| ImportError::Rpc { source })?;
-            Ok(ImportOutcome {
-                imported_rag_files_count: response.imported_rag_files_count,
-            })
-        })
+        Box::pin(VertexRagDataImport::finish_import(handle))
     }
 }
 
