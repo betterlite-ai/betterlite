@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
+use betterlite_http_fixture::server::serve;
 use betterlite_models::identity::provider_id::ProviderId;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 
@@ -17,7 +20,7 @@ use crate::proxy::base_builder;
 
 #[test]
 fn client_create_resolves_a_blocking_client() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -34,12 +37,12 @@ fn client_create_resolves_a_blocking_client() {
 
     assert_eq!(clients.sync_clients.len(), 1);
     assert!(clients.sync_clients.contains_key(&None));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_create_uses_a_supplied_blocking_client() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_url = format!(
         "http://agent.invalid:{}/v1beta/agents",
@@ -63,12 +66,12 @@ fn client_create_uses_a_supplied_blocking_client() {
     .unwrap();
 
     assert!(clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_create_resolves_an_async_client() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -90,12 +93,12 @@ async fn client_create_resolves_an_async_client() {
         .map(|key| key.provider)
         .collect();
     assert_eq!(providers, vec![ProviderId::Gemini]);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_create_uses_a_supplied_async_client() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_url = format!(
         "http://agent.invalid:{}/v1beta/agents",
@@ -120,12 +123,12 @@ async fn client_create_uses_a_supplied_async_client() {
     .unwrap();
 
     assert!(clients.async_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_list_resolves_a_blocking_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -141,12 +144,12 @@ fn client_list_resolves_a_blocking_client() {
     .unwrap();
 
     assert_eq!(clients.sync_clients.len(), 1);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_list_uses_a_supplied_blocking_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.list.url = format!(
         "http://agent.invalid:{}/v1beta/agents",
@@ -170,12 +173,12 @@ fn client_list_uses_a_supplied_blocking_client() {
     .unwrap();
 
     assert!(clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_list_resolves_an_async_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -192,12 +195,12 @@ async fn client_list_resolves_an_async_client() {
     .unwrap();
 
     assert_eq!(clients.async_clients.len(), 1);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_list_builds_the_async_client_for_the_named_provider() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = base::params(&format!(
         r#"{{"api_base": "http://{}", "custom_llm_provider": "openai"}}"#,
@@ -222,12 +225,12 @@ async fn client_list_builds_the_async_client_for_the_named_provider() {
         .map(|key| key.provider)
         .collect();
     assert_eq!(providers, vec![ProviderId::Openai]);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_list_uses_a_supplied_async_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.list.url = format!(
         "http://agent.invalid:{}/v1beta/agents",
@@ -252,12 +255,12 @@ async fn client_list_uses_a_supplied_async_client() {
     .unwrap();
 
     assert!(clients.async_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_get_resolves_a_blocking_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -273,12 +276,12 @@ fn client_get_resolves_a_blocking_client() {
     .unwrap();
 
     assert_eq!(clients.sync_clients.len(), 1);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_get_uses_a_supplied_blocking_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.item.url = format!(
         "http://agent.invalid:{}/v1beta/agents/agent-1",
@@ -302,12 +305,12 @@ fn client_get_uses_a_supplied_blocking_client() {
     .unwrap();
 
     assert!(clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_get_resolves_an_async_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut clients = clients();
@@ -324,12 +327,12 @@ async fn client_get_resolves_an_async_client() {
     .unwrap();
 
     assert_eq!(clients.async_clients.len(), 1);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn client_get_uses_a_supplied_async_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.item.url = format!(
         "http://agent.invalid:{}/v1beta/agents/agent-1",
@@ -354,7 +357,7 @@ async fn client_get_uses_a_supplied_async_client() {
     .unwrap();
 
     assert!(clients.async_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]

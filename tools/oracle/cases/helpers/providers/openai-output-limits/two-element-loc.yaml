@@ -1,0 +1,11 @@
+kind: helper
+name: output-limits-two-element-loc
+call:
+  openai_output_limits:
+    drop:
+      channel: sdk
+      body:
+        message: '{"detail":[{"loc":["body","temperature"],"type":"extra_forbidden"}]}'
+      data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": [{"role": "user", "content": "hi"}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: model-deprecation-invalid-override-falls-through
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      suffix-model: {deprecation_date: "2026-05-20", litellm_provider: 7}
+    deployments:
+      - model_name: bad-override
+        litellm_params: {model: openai/suffix-model}
+        model_info: {deprecation_date: "not a date", litellm_provider: ignored}
+      - model_name: null-override
+        litellm_params: {model: openai/suffix-model}
+        model_info: {deprecation_date: null}
+env: {}
+compare: {ignore: []}
