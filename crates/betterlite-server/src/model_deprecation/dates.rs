@@ -8,14 +8,8 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
     let trimmed = text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     });
+    // Week layouts match first: the basic calendar pattern matches any eight bytes
     let parsed = match trimmed.as_bytes() {
-        &[y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] | &[y0, y1, y2, y3, m0, m1, d0, d1] => {
-            NaiveDate::from_ymd_opt(
-                calendar_year(&[y0, y1, y2, y3])?,
-                number(&[m0, m1])?,
-                number(&[d0, d1])?,
-            )?
-        }
         &[y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', d] | &[y0, y1, y2, y3, b'W', w0, w1, d] => {
             NaiveDate::from_isoywd_opt(
                 calendar_year(&[y0, y1, y2, y3])?,
@@ -28,6 +22,13 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
                 calendar_year(&[y0, y1, y2, y3])?,
                 number(&[w0, w1])?,
                 Weekday::Mon,
+            )?
+        }
+        &[y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] | &[y0, y1, y2, y3, m0, m1, d0, d1] => {
+            NaiveDate::from_ymd_opt(
+                calendar_year(&[y0, y1, y2, y3])?,
+                number(&[m0, m1])?,
+                number(&[d0, d1])?,
             )?
         }
         _ => return None,
@@ -86,7 +87,6 @@ pub fn decode_datetime_date(text: &str) -> Option<NaiveDate> {
     if let Ok(moment) = DateTime::parse_from_rfc3339(text) {
         return Some(moment.date_naive());
     }
-    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S")
-        .ok()
-        .map(|moment| moment.date_naive())
+    let moment = NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S").ok()?;
+    Some(moment.date())
 }
