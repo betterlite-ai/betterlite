@@ -1,0 +1,42 @@
+task: B1003
+deviations:
+  - what: >-
+      Speech media-type sniffing reports no media type for an audio body longer than AudioDecodeLimits.max_bytes;
+      LiteLLM's speech_media_type_from_audio_bytes reads the whole bytes object with no size cap.
+    why: >-
+      The sniffer is a production entry point fed by untrusted provider bodies, so it takes B1087's bound. The
+      limit is far above any real speech body, and a body under it is sniffed byte for byte as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L389-L403
+  - what: >-
+      A PCM16 body whose length or RIFF size does not fit the WAV header's 32-bit fields fails with
+      SpeechTransformError::WavTooLarge; LiteLLM's struct.pack raises struct.error.
+    why: >-
+      The Python error escapes uncaught and becomes a generic 500. betterlite refuses with a typed error before
+      building the header, and a chat audio part cannot reach 4 GiB through the base64 response field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L128-L145
+  - what: >-
+      The response audio part is read as a typed object holding data as a string, and a missing or non-string
+      data fails with SpeechTransformError::AudioPart, which names the field. LiteLLM reaches the same audio
+      through a pydantic ChatCompletionAudio that the ModelResponse parse already validated.
+    why: >-
+      betterlite's chat response keeps the audio object as passthrough JSON that B004 owns, so this bridge has to
+      read the field itself. docs/compatibility.md's wrong-type rule applies, and the failure is an error that
+      names the field rather than a pydantic ValidationError from another layer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L166-L169
+  - what: >-
+      A response audio data string that is not valid base64 fails with a typed SpeechAudioError whose message is
+      CPython binascii's exact text; LiteLLM lets base64.b64decode raise binascii.Error.
+    why: >-
+      binascii.Error is a ValueError subclass, and the oracle failure projection reports the class name Error
+      with that text, so a caller sees the same class and message through the API layer's mapping. Keeping the
+      text exact is what lets the two sides compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L169
+  - what: >-
+      A retained response cost is a rust_decimal Decimal built from the hidden response_cost float; LiteLLM keeps
+      the Python float and stores it in the binary response's hidden params.
+    why: >-
+      betterlite represents money as Decimal throughout, and the task asks for the retained cost to be a
+      Decimal. Only a Python float is retained, so an int, bool, string or missing cost still drops exactly as in
+      LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L15-L21
+kept_bugs: []
