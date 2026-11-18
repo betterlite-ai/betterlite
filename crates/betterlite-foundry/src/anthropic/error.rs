@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 
 use betterlite_anthropic::anthropic_http_stream::completion::{CompletionError, ParameterError};
 use betterlite_anthropic::anthropic_http_stream::error::StreamOpenError;
-use betterlite_anthropic::chat_call::error::{ChatCallError, ConfigError};
+use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use thiserror::Error;

@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Final, Protocol, TypedDict, Unpack, override, runtime_checkable
+from typing import Final, Protocol, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
@@ -8,6 +8,7 @@ from litellm.llms.azure_ai.anthropic.handler import AzureAnthropicChatCompletion
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import ModelResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
+from typing_extensions import override
 
 litellm.suppress_debug_info = True
 TIMEOUT: Final[float] = 1.5
