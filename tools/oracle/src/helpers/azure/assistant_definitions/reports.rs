@@ -1,8 +1,11 @@
+use std::mem;
+use std::sync::PoisonError;
+
 use betterlite_azure::azure_assistant_definitions::client::AzureAssistantsClient;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
+use betterlite_azure::azure_assistant_definitions::operations::AssistantsReply;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
-use serde::Serialize;
 use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::HelperError;
@@ -45,16 +48,17 @@ const fn kind_name(kind: ClientKind) -> &'static str {
     }
 }
 
-pub(super) fn operation<T: Serialize>(
+// The facade's own reply and kind, plus everything the wire saw before answering.
+pub(super) fn operation(
     wire: &Wire,
-    outcome: Result<(ClientKind, T), DefinitionsError>,
+    outcome: Result<AssistantsReply, DefinitionsError>,
 ) -> HelperResult {
-    let requests = wire.take();
+    let requests = mem::take(&mut *wire.seen.lock().unwrap_or_else(PoisonError::into_inner));
     match outcome {
-        Ok((kind, reply)) => Ok(json!({
+        Ok(reply) => Ok(json!({
             "requests": requests,
-            "kind": kind_name(kind),
-            "result": serde_json::to_value(reply).unwrap_or(Value::Null),
+            "kind": kind_name(reply.kind),
+            "result": serde_json::to_value(&reply.reply).unwrap_or(Value::Null),
         })),
         Err(error) => Ok(json!({"requests": requests, "error": failure(&error)?})),
     }

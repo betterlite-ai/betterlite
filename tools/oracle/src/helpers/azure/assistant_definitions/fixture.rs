@@ -1,5 +1,4 @@
 use std::future::{Future, ready};
-use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -24,7 +23,7 @@ pub(super) const DELETED: &str = r#"{"id":"asst_1","deleted":true,"object":"assi
 
 // The transport the SDK calls in place of the network: records what reached it and replies with the case body.
 pub(super) struct Wire {
-    seen: Mutex<Vec<Value>>,
+    pub(super) seen: Mutex<Vec<Value>>,
     status: u16,
     body: String,
 }
@@ -37,16 +36,6 @@ impl Wire {
             body: reply.map_or_else(|| canned.to_owned(), |reply| reply.body.clone()),
         })
     }
-
-    pub(super) fn take(&self) -> Vec<Value> {
-        let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        mem::take(&mut seen)
-    }
-}
-
-fn header(headers: &HeaderMap, name: &str) -> Option<String> {
-    let value = headers.get(name)?;
-    value.to_str().ok().map(str::to_owned)
 }
 
 impl AssistantsTransport for Wire {
@@ -62,15 +51,19 @@ impl AssistantsTransport for Wire {
                 Value::Null
             }
         };
-        let content_type = header(&request.headers, "content-type")
+        let content_type = request
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned)
             .or_else(|| (!body.is_null()).then_some(String::from("application/json")));
         let recorded = json!({
             "method": request.method.as_str(),
             "url": url.as_str(),
-            "api-key": header(&request.headers, "api-key"),
-            "authorization": header(&request.headers, "authorization"),
-            "openai-beta": header(&request.headers, "openai-beta"),
-            "accept": header(&request.headers, "accept"),
+            "api-key": request.headers.get("api-key").and_then(|value| value.to_str().ok()),
+            "authorization": request.headers.get("authorization").and_then(|value| value.to_str().ok()),
+            "openai-beta": request.headers.get("openai-beta").and_then(|value| value.to_str().ok()),
+            "accept": request.headers.get("accept").and_then(|value| value.to_str().ok()),
             "content-type": content_type,
             "body": body,
         });

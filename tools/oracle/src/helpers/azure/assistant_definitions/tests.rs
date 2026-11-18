@@ -40,11 +40,13 @@ fn helper_seeds_select_azure_assistant_definitions() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no azure_assistant_definitions seeds");
-    let mut seen = BTreeSet::new();
-    for (stem, source) in seeds {
-        let variant = selected_variant(&stem, &source);
-        assert_eq!(stem, variant);
-        seen.insert(variant);
-    }
-    assert_eq!(seen.len(), VARIANTS.len());
+    let variants: BTreeSet<String> = seeds
+        .iter()
+        .map(|(stem, source)| {
+            let variant = selected_variant(stem, source);
+            assert_eq!(stem, &variant);
+            variant
+        })
+        .collect();
+    assert_eq!(variants.len(), VARIANTS.len());
 }
