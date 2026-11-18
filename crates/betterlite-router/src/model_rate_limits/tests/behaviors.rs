@@ -8,8 +8,8 @@ use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
     FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, check_async, coexist_warning_lines,
-    exceeded, hooked_check, read_count, request, rpm_key, run_case_table, service, spec, tiers,
-    tpm_cache, tpm_key, with_info, with_param,
+    exceeded, hooked_check, read_count, request, rpm_cache, rpm_key, run_case_table, service, spec,
+    tiers, tpm_cache, tpm_key, with_info, with_param,
 };
 
 pub(super) fn run(name: &str) {
@@ -177,7 +177,7 @@ async fn rpm_increments_first_and_rejects_over_limit() {
     let cache = Arc::new(FakeCache::new());
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 2);
-    for _attempt in 0..2 {
+    for _attempt in 0..2_u8 {
         check
             .async_pre_call_check(&deployment, &mut request())
             .await
@@ -278,7 +278,7 @@ async fn io_reservation_before_the_checks() {
 
 async fn rejection_without_io_limits_refunds_nothing() {
     let io = Arc::new(FakeIo::new());
-    let cache = Arc::new(FakeCache::new().seed_local(&rpm_key("openai/gpt-4o"), 1));
+    let cache = Arc::new(rpm_cache(1, 1));
     let recorder = Arc::clone(&io);
     let hook: Arc<dyn IoTokenReservationHook> = io;
     let check = service(Arc::clone(&cache), Some(hook));
