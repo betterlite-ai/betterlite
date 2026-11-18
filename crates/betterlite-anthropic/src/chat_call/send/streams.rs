@@ -13,7 +13,7 @@ use crate::anthropic_http_stream::completion::{
 };
 use crate::chat_call::error::ChatCallError;
 use crate::chat_call::transport::{ChatTransport, ClientKind};
-use crate::chat_call::{ChatClients, ChatOutcome};
+use crate::chat_call::{ChatClients, ChatOutcome, SyncStreamNames};
 use crate::headers::response::process_anthropic_headers;
 use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
@@ -30,9 +30,9 @@ pub struct StreamFacts<'facts> {
     pub litellm_params: &'facts IndexMap<String, Json>,
     // The sync wrapper stamps the provider its handler passes; the async helper always stamps anthropic
     pub custom_llm_provider: &'static str,
-    // make_sync_call's optional arguments, and the async helper reads them from the params instead
-    pub speed: Option<String>,
-    pub tool_name_reverse_map: IndexMap<String, String>,
+    // Whether make_sync_call receives the caller's speed and reverse map; the parent passes them, Azure's
+    // override passes neither, and the async helper reads them from the params itself
+    pub names: SyncStreamNames,
 }
 pub async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
@@ -92,6 +92,11 @@ where
 {
     let model = facts.model.to_owned();
     let body = python_json::dumps_object(&facts.data);
+    // make_sync_call takes the speed and the reverse name map as arguments, so this branch types them first
+    let (speed, reverse) = match facts.names {
+        SyncStreamNames::FromParams => stream_names(facts.optional_params, facts.litellm_params)?,
+        SyncStreamNames::Omitted => (None, IndexMap::new()),
+    };
     let request = StreamCall {
         api_base: facts.api_base,
         headers: facts.headers,
@@ -99,8 +104,8 @@ where
         messages: facts.messages,
         timeout: facts.timeout,
         json_mode: facts.json_mode,
-        speed: facts.speed.as_deref(),
-        tool_name_reverse_map: &facts.tool_name_reverse_map,
+        speed: speed.as_deref(),
+        tool_name_reverse_map: &reverse,
     };
     let opened = StreamOpening {
         clients,
@@ -116,8 +121,7 @@ where
         response_headers: process_anthropic_headers(&opened.headers),
     })
 }
-// make_sync_call takes the speed and the reverse name map as arguments, so this branch types them before the call
-pub(crate) fn stream_names(
+fn stream_names(
     optional_params: &IndexMap<String, Json>,
     litellm_params: &IndexMap<String, Json>,
 ) -> Result<(Option<String>, IndexMap<String, String>), ParameterError> {

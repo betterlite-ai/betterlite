@@ -26,7 +26,7 @@ use crate::usage::ReasoningTokenCounter;
 use config::ChatConfig;
 use error::ChatCallError;
 use prepare::Prepared;
-use send::streams::{StreamFacts, open_stream, stream_names};
+use send::streams::{StreamFacts, open_stream};
 use transport::{ChatTransport, SuppliedChatClient};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
@@ -150,13 +150,6 @@ where
         if !prepared.stream {
             return send::buffered(facts, prepared, deps).await;
         }
-        // only make_sync_call reads these arguments; the async helper takes them from the params itself
-        let (speed, tool_name_reverse_map) = match facts.sync_stream.names {
-            SyncStreamNames::FromParams if facts.style == CallStyle::Sync => {
-                stream_names(&prepared.optional_params, &facts.litellm_params)?
-            }
-            SyncStreamNames::FromParams | SyncStreamNames::Omitted => (None, IndexMap::new()),
-        };
         let messages = Json::List(facts.messages);
         let stream_facts = StreamFacts {
             model: facts.model,
@@ -169,8 +162,7 @@ where
             optional_params: &prepared.optional_params,
             litellm_params: &facts.litellm_params,
             custom_llm_provider: facts.sync_stream.custom_llm_provider,
-            speed,
-            tool_name_reverse_map,
+            names: facts.sync_stream.names,
         };
         let build = StreamBuild {
             ids: deps.ids,
