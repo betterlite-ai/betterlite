@@ -330,7 +330,7 @@ fn numeric_coercion_parses_only_the_listed_fields() {
 }
 
 #[test]
-fn an_unparseable_text_for_a_numeric_field_stays_a_string() {
+fn an_unparsable_text_for_a_numeric_field_stays_a_string() {
     let numeric = numeric_form_fields(
         &[
             ("count".to_owned(), FormAnnotation::Int),

@@ -1,7 +1,6 @@
 use betterlite_core::api::request_form::convert::{FileData, FileDataValue, FileTuple};
 use betterlite_core::api::request_form::values::{FormFields, FormValue, UploadFile};
-use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Map, Number, Value};
 
@@ -42,24 +41,8 @@ pub(super) fn form_value(value: &FormValue) -> HelperResult {
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         FormValue::Upload(upload) => upload_value(upload)?,
-        FormValue::Other(json) => json_value(json),
+        FormValue::Other(json) => serde_json::to_value(json).or_value_error()?,
     })
-}
-
-pub(super) fn json_value(value: &Json) -> Value {
-    match value {
-        Json::Null => Value::Null,
-        Json::Bool(flag) => Value::Bool(*flag),
-        Json::Number(number) => Value::Number(number.clone()),
-        Json::Text(text) => Value::String(text.clone()),
-        Json::List(items) => Value::Array(items.iter().map(json_value).collect()),
-        Json::Object(entries) => Value::Object(
-            entries
-                .iter()
-                .map(|(key, value)| (key.clone(), json_value(value)))
-                .collect(),
-        ),
-    }
 }
 
 fn file_tuple_value(file: &FileTuple) -> HelperResult {

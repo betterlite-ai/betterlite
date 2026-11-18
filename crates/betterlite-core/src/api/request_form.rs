@@ -6,5 +6,4 @@ pub mod metadata;
 pub mod scalars;
 pub mod values;
 
-#[cfg(test)]
 mod tests;

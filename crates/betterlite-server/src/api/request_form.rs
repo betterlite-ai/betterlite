@@ -267,5 +267,4 @@ fn find_boundary(haystack: &[u8], marker: &[u8], allow_start: bool) -> Option<(u
     None
 }
 
-#[cfg(test)]
 mod tests;

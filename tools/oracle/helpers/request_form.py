@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 from fastapi import UploadFile as FastApiUploadFile
 from litellm.proxy.common_utils.http_parsing_utils import (
-    check_file_size_under_limit,
+    check_file_size_under_limit,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L390-L450
     coerce_numeric_form_fields,
     convert_upload_files_to_file_data,
     extract_nested_form_metadata,
@@ -57,10 +57,10 @@ ANNOTATIONS = {
 class Part(TypedDict):
     kind: Literal["text", "upload"]
     name: str
-    value: NotRequired[str]
-    filename: NotRequired[str]
-    content_type: NotRequired[str | None]
-    content: NotRequired[str]
+    value: str
+    filename: str
+    content_type: str | None
+    content: str
 
 
 class Operation(TypedDict):
@@ -71,15 +71,15 @@ class Operation(TypedDict):
         "upload_size_unset",
         "request_body_dispatch",
     ]
-    parts: NotRequired[list[Part]]
-    fields: NotRequired[list[tuple[str, JsonValue]]]
-    annotations: NotRequired[dict[str, str]]
-    prefix: NotRequired[str]
-    file_size: NotRequired[int | None]
-    existing_metadata: NotRequired[dict[str, JsonValue]]
-    method: NotRequired[str]
-    content_type: NotRequired[str]
-    body: NotRequired[str]
+    parts: list[Part]
+    fields: list[tuple[str, JsonValue]]
+    annotations: dict[str, str]
+    prefix: str | None
+    file_size: int | None
+    existing_metadata: dict[str, JsonValue]
+    method: str
+    content_type: str
+    body: str
 
 
 UploadedFile: TypeAlias = tuple[str, bytes, str | None]
@@ -137,18 +137,22 @@ def form_map(parts: list[Part]) -> dict[str, str | StarletteUploadFile]:
     form: dict[str, str | StarletteUploadFile] = {}
     for part in parts:
         if part["kind"] == "upload":
-            content = part["content"].encode()
-            content_type = part["content_type"]
-            headers = None if content_type is None else Headers({"content-type": content_type})
-            form[part["name"]] = FastApiUploadFile(
-                file=BytesIO(content),
-                size=len(content),
-                filename=part["filename"],
-                headers=headers,
-            )
+            form[part["name"]] = upload_file(part)
         else:
             form[part["name"]] = part["value"]
     return form
+
+
+def upload_file(part: Part) -> FastApiUploadFile:
+    content = part["content"].encode()
+    content_type = part["content_type"]
+    headers = None if content_type is None else Headers({"content-type": content_type})
+    return FastApiUploadFile(
+        file=BytesIO(content),
+        size=len(content),
+        filename=part["filename"],
+        headers=headers,
+    )
 
 
 def wire_float(number: float) -> JsonValue:
@@ -160,28 +164,24 @@ def wire_float(number: float) -> JsonValue:
 
 
 async def wire(value: FormMember) -> JsonValue:
+    if value is None:
+        return None
     wired: JsonValue = None
     match value:
         case StarletteUploadFile() as upload:
             content = await upload.read()
-            upload_entry: dict[str, JsonValue] = {
+            wired = {
                 "filename": upload.filename,
                 "content": content.decode(),
                 "content_type": upload.content_type,
                 "size": upload.size,
             }
-            wired = upload_entry
         case tuple() as file:
-            file_entry: list[JsonValue] = [file[0], file[1].decode(), file[2]]
-            wired = file_entry
+            wired = [file[0], file[1].decode(), file[2]]
         case list() as items:
-            items_wired: list[JsonValue] = [await wire(item) for item in items]
-            wired = items_wired
+            wired = [await wire(item) for item in items]
         case dict() as entries:
-            entries_wired: dict[str, JsonValue] = {
-                key: await wire(item) for key, item in entries.items()
-            }
-            wired = entries_wired
+            wired = {key: await wire(item) for key, item in entries.items()}
         case float() as number:
             wired = wire_float(number)
         case bool() as flag:
@@ -190,8 +190,6 @@ async def wire(value: FormMember) -> JsonValue:
             wired = number
         case str() as text:
             wired = text
-        case None:
-            wired = None
     return wired
 
 
@@ -218,11 +216,12 @@ async def metadata_call(call: Operation) -> JsonValue:
     warnings = FormWarnings()
     logger = logging.getLogger("LiteLLM Proxy")
     logger.addHandler(warnings)
+    prefix = call.get("prefix")
     try:
-        if "prefix" in call:
-            extracted = extract_nested_form_metadata(form, call["prefix"])
-        else:
+        if prefix is None:
             extracted = extract_nested_form_metadata(form)
+        else:
+            extracted = extract_nested_form_metadata(form, prefix)
     finally:
         logger.removeHandler(warnings)
     metadata = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L530-L615
@@ -250,12 +249,13 @@ async def numeric_call(call: Operation) -> JsonValue:
 
 
 async def upload_size_call(call: Operation) -> JsonValue:
-    size = call["file_size"]
+    size = call.get("file_size")
     content = b"A" * size if size is not None else b""
     upload = FastApiUploadFile(file=BytesIO(content), size=size, filename="audio.wav")
     request_data: dict[str, JsonValue] = {"model": "whisper"}
-    if call["existing_metadata"]:
-        request_data["metadata"] = dict(call["existing_metadata"])
+    existing = call.get("existing_metadata")
+    if existing:
+        request_data["metadata"] = dict(existing)
     proceeded = check_file_size_under_limit(request_data, upload, [])
     result: dict[str, JsonValue] = {"proceeded": proceeded, "metadata": request_data["metadata"]}
     return result
@@ -275,15 +275,14 @@ async def dispatch_call(call: Operation) -> JsonValue:
 
 
 def run(input_value: Operation) -> JsonValue:
-    operation = input_value["operation"]
-    if operation == "form_data":
-        return asyncio.run(form_data_call(input_value))
-    if operation == "numeric_form_coercion":
-        return asyncio.run(numeric_call(input_value))
-    if operation == "nested_form_metadata":
-        return asyncio.run(metadata_call(input_value))
-    if operation == "upload_size_unset":
-        return asyncio.run(upload_size_call(input_value))
-    if operation == "request_body_dispatch":
-        return asyncio.run(dispatch_call(input_value))
-    raise ValueError(f"unknown request_form operation: {operation}")
+    match input_value["operation"]:
+        case "form_data":
+            return asyncio.run(form_data_call(input_value))
+        case "numeric_form_coercion":
+            return asyncio.run(numeric_call(input_value))
+        case "nested_form_metadata":
+            return asyncio.run(metadata_call(input_value))
+        case "upload_size_unset":
+            return asyncio.run(upload_size_call(input_value))
+        case "request_body_dispatch":
+            return asyncio.run(dispatch_call(input_value))
