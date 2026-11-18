@@ -28,6 +28,11 @@ class SearchReply(TypedDict):
     object: str
 
 
+class UrlView(TypedDict):
+    address: str
+    params: list[str]
+
+
 class HeadersCall(TypedDict):
     kind: Literal["headers"]
     headers: dict[str, str]
@@ -99,21 +104,22 @@ def logging_object() -> Logging:
 
 
 def result_value(result: ResultView) -> JsonValue:
-    return JSON.validate_python(
-        {
-            "title": result["title"],
-            "url": result["url"],
-            "snippet": result["snippet"],
-            "date": result["date"],
-            "last_updated": result["last_updated"],
-        }
-    )
+    view: ResultView = {
+        "title": result["title"],
+        "url": result["url"],
+        "snippet": result["snippet"],
+        "date": result["date"],
+        "last_updated": result["last_updated"],
+    }
+    return JSON.validate_python(view)
 
 
 def split_url(url: str) -> JsonValue:
     address, separator, query = url.partition("?")
     parts = query.split("&") if separator else []
-    return JSON.validate_python({"address": address, "params": sorted(parts)})
+    ordered = sorted(parts)
+    view: UrlView = {"address": address, "params": ordered}
+    return JSON.validate_python(view)
 
 
 def headers_value(call: HeadersCall) -> JsonValue:
@@ -142,12 +148,11 @@ def reply_value(call: ReplyCall) -> JsonValue:
         raw_response=response, logging_obj=logging_object()
     )
     view = TypeAdapter(SearchReply).validate_json(transformed.model_dump_json())
-    return JSON.validate_python(
-        {
-            "results": [result_value(item) for item in view["results"]],
-            "object": view["object"],
-        }
-    )
+    reply: dict[str, JsonValue] = {
+        "results": [result_value(item) for item in view["results"]],
+        "object": view["object"],
+    }
+    return JSON.validate_python(reply)
 
 
 def answer(call: Call) -> JsonValue:
@@ -162,10 +167,12 @@ def answer(call: Call) -> JsonValue:
 
 def outcome(call: Call) -> JsonValue:
     try:
-        return JSON.validate_python({"ok": True, "value": answer(call)})
+        value: dict[str, JsonValue] = {"ok": True, "value": answer(call)}
+        return JSON.validate_python(value)
     # the source raises these for a reply that is not a JSON object or carries a wrong typed field
     except (AttributeError, TypeError, ValueError):
-        return JSON.validate_python({"ok": False})
+        failure: dict[str, JsonValue] = {"ok": False}
+        return JSON.validate_python(failure)
 
 
 def run(input_value: Input) -> JsonValue:
@@ -173,9 +180,9 @@ def run(input_value: Input) -> JsonValue:
     os.environ.clear()
     os.environ.update(input_value["environment"])
     try:
-        return JSON.validate_python(
-            {"calls": [outcome(call) for call in input_value["calls"]]}
-        )
+        calls = [outcome(call) for call in input_value["calls"]]
+        value: dict[str, JsonValue] = {"calls": calls}
+        return JSON.validate_python(value)
     finally:
         os.environ.clear()
         os.environ.update(previous)
