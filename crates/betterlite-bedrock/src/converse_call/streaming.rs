@@ -9,9 +9,9 @@ use indexmap::IndexMap;
 
 use crate::agentcore_stream::IdSource;
 use crate::agentcore_stream::adapter::header_pairs;
-use crate::bedrock_http_stream::StreamDeps;
 use crate::bedrock_http_stream::converse::{ConverseCall as WireCall, make_sync_call, open_call};
 use crate::bedrock_http_stream::stream::{ChunkStream, OpenedStream};
+use crate::bedrock_http_stream::{StreamDeps, invoke};
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::rerank::transport::ClientKind;
@@ -31,8 +31,7 @@ pub struct StreamParts<'parts, 'supplied> {
     pub now: SystemTime,
 }
 
-// The B005 CustomStreamWrapper shape: the iterator, the provider name and the headers the wrapper
-// stores, with no frame read before the caller takes it.
+// The B005 CustomStreamWrapper shape: the iterator, the provider name and the headers the wrapper stores, with no frame read before the caller takes it.
 pub struct WrappedStream<'deps> {
     pub completion_stream: ChunkStream<'deps>,
     pub model: String,
@@ -41,10 +40,10 @@ pub struct WrappedStream<'deps> {
     pub stream_chunk_size: Option<u64>,
 }
 
-pub(crate) async fn open_stream<'parts, 'supplied, Factory>(
+pub(crate) async fn open_stream<'parts, Factory>(
     call: &ConverseCall<'_>,
     plan: &CallPlan,
-    parts: &StreamParts<'parts, 'supplied>,
+    parts: &StreamParts<'parts, '_>,
     factory: &Factory,
     log: &mut LogContext<'_, '_>,
 ) -> Result<WrappedStream<'parts>, ConverseCallError>
@@ -70,13 +69,22 @@ where
         json_mode: plan.json_mode,
         fake_stream: plan.fake_stream,
     };
-    let pending = open_call(&wire, &deps).await?;
-    let opened = make_sync_call(&wire, &deps, pending, log)?;
-    Ok(wrap(opened, call, plan))
+    let opened = if parts.route == ClientKind::Async {
+        open_async(&wire, &deps, log).await?
+    } else {
+        let pending = open_call(&wire, &deps).await?;
+        make_sync_call(&wire, &deps, pending, log)?
+    };
+    Ok(WrappedStream {
+        response_headers: header_pairs(&opened.headers).into_iter().collect(),
+        completion_stream: opened.chunks,
+        model: call.model.to_owned(),
+        custom_llm_provider: "bedrock",
+        stream_chunk_size: plan.stream_chunk_size,
+    })
 }
 
-// The async streaming path accepts the call timeout but never hands it to make_call; a sync call
-// builds its client with it, and a supplied client of the route keeps what it was built with.
+// The async streaming path accepts the call timeout but never hands it to make_call; a sync call builds its client with it, and a supplied client of the route keeps what it was built with.
 fn client_for<Factory>(factory: &Factory, parts: &StreamParts<'_, '_>) -> StreamClient
 where
     Factory: ConverseClientFactory,
@@ -112,16 +120,26 @@ fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, ConverseCallError
     Ok(map)
 }
 
-fn wrap<'deps>(
-    opened: OpenedStream<'deps>,
-    call: &ConverseCall<'_>,
-    plan: &CallPlan,
-) -> WrappedStream<'deps> {
-    WrappedStream {
-        response_headers: header_pairs(&opened.headers).into_iter().collect(),
-        completion_stream: opened.chunks,
-        model: call.model.to_owned(),
-        custom_llm_provider: "bedrock",
-        stream_chunk_size: plan.stream_chunk_size,
-    }
+async fn open_async<'deps>(
+    wire: &WireCall<'_>,
+    deps: &StreamDeps<'deps>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<OpenedStream<'deps>, ConverseCallError> {
+    let call = invoke::InvokeCall {
+        model: wire.model,
+        api_base: wire.api_base,
+        headers: wire.headers.clone(),
+        data: wire.data,
+        signed_json_body: None,
+        messages: wire.messages,
+        fake_stream: wire.fake_stream,
+        json_mode: wire.json_mode,
+        provider: None,
+        sync: false,
+    };
+    let pending = invoke::open_call(&call, deps).await?;
+    Ok(invoke::make_call(&call, deps, pending, log)?)
 }
+
+#[path = "tests/streaming.rs"]
+mod tests;

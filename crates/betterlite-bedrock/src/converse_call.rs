@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -18,8 +19,6 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::Redactor;
-use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -27,6 +26,7 @@ use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::{ConverseMedia, ConverseSettings};
 use crate::converse_response::wire::ModelResponse;
+use crate::converse_usage::transform::ReasoningTokenCounter;
 use crate::image_call::plan::LogContext;
 use crate::invoke_events::DecoderClock;
 use crate::model_routes::ParamMap;
@@ -43,7 +43,7 @@ pub mod transport;
 
 mod tests;
 
-use self::buffered::{BufferedParts, BufferedReply, BufferedTail, send_buffered};
+use self::buffered::{BufferedReply, dispatch_buffered};
 use self::error::ConverseCallError;
 use self::prepare::{CallPlan, ExtractInput};
 use self::streaming::{StreamParts, WrappedStream, open_stream};
@@ -58,8 +58,7 @@ pub struct ConverseEnvironment<'text> {
     pub bearer_token: Option<&'text SecretString>,
 }
 
-// The option maps stay owned so their pops, the stored region and the internal marker are visible to
-// the caller once the call returns.
+// The option maps stay owned so their pops, the stored region and the internal marker are visible to the caller once the call returns.
 pub struct ConverseCall<'text> {
     pub model: &'text str,
     pub messages: &'text [Message],
@@ -80,14 +79,15 @@ pub struct ConverseCall<'text> {
 
 // The auth parameters and the api key are credentials, so Debug names neither their keys nor values.
 impl Debug for ConverseCall<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         let header_names: Vec<&str> = self
             .extra_headers
             .unwrap_or_default()
             .iter()
             .map(|(name, _value)| name.as_str())
             .collect();
-        f.debug_struct("ConverseCall")
+        formatter
+            .debug_struct("ConverseCall")
             .field("model", &self.model)
             .field("acompletion", &self.acompletion)
             .field("timeout", &self.timeout)
@@ -103,9 +103,8 @@ impl Debug for ConverseCall<'_> {
     }
 }
 
-// Everything a call reaches outside itself: the credential source, the signer, the clients, the beta
-// matrix, the clock the conversion reads and the logging hooks.
-pub struct ConverseDeps<'deps, Factory, Cred>
+// Everything a call reaches outside itself: the credential source, the signer, the clients, the beta matrix, the clock the conversion reads and the logging hooks.
+pub struct ConverseDeps<'deps, 'stream, Factory, Cred>
 where
     Factory: ConverseClientFactory,
 {
@@ -116,9 +115,10 @@ where
     pub supplied_stream: Option<SuppliedStream>,
     pub ids: Arc<dyn IdSource>,
     pub clock: DecoderClock,
-    pub redactor: &'deps Redactor,
+    pub redactor: &'stream Redactor,
     pub betas: &'deps BetaMatrix,
     pub now: SystemTime,
+    pub reasoning_counter: &'deps dyn ReasoningTokenCounter<Failure = Infallible>,
     pub state: &'deps mut LoggingState,
     pub env: &'deps PrePostEnv<'deps>,
 }
@@ -138,12 +138,11 @@ pub enum ConverseOutput<'deps> {
     Stream(Box<WrappedStream<'deps>>),
 }
 
-// completion() with both routes; a local future because the logging env is not Sync.
-pub fn converse_call<'run, Cred, Source, Transport, Factory, Lookup, R, Ids>(
-    call: &'run mut ConverseCall<'run>,
-    deps: ConverseDeps<'run, Factory, Cred>,
-    assembly: ConverseAssembly<'run, 'run, Source, Transport, Lookup, R, Ids>,
-) -> LocalBoxFuture<'run, Result<ConverseOutput<'run>, ConverseCallError>>
+pub async fn converse_call<'stream, Cred, Source, Transport, Factory, Lookup, R, Ids>(
+    call: &mut ConverseCall<'_>,
+    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
+    assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
+) -> Result<ConverseOutput<'stream>, ConverseCallError>
 where
     Cred: CredentialSource + Sync,
     Source: DynamicMetadataSource,
@@ -153,31 +152,27 @@ where
     R: Resolve,
     Ids: Fn() -> String + Sync,
 {
-    async move {
-        let prepared = prepare::extract(
-            ExtractInput {
-                params: &mut call.optional_params,
-                model: call.model,
-                extra_headers: call.extra_headers,
-                control: call.control,
-                api_key: call.api_key,
-                environment: call.environment,
-            },
-            deps.betas,
-        )?;
-        let plan =
-            prepare::prepare(call, prepared, deps.signer, deps.credentials, assembly).await?;
-        dispatch(&*call, plan, deps).await
-    }
-    .boxed_local()
+    let prepared = prepare::extract(
+        ExtractInput {
+            params: &mut call.optional_params,
+            model: call.model,
+            extra_headers: call.extra_headers,
+            control: call.control,
+            api_key: call.api_key,
+            environment: call.environment,
+        },
+        deps.betas,
+    )?;
+    let plan = prepare::prepare(call, prepared, deps.signer, deps.credentials, assembly).await?;
+    dispatch(call, plan, deps).await
 }
 
 // async_completion alone honours skip_pre_call_logging; the streaming and sync routes always log.
-async fn dispatch<'run, Factory, Cred>(
+async fn dispatch<'stream, Factory, Cred>(
     call: &ConverseCall<'_>,
     plan: CallPlan,
-    mut deps: ConverseDeps<'run, Factory, Cred>,
-) -> Result<ConverseOutput<'run>, ConverseCallError>
+    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
+) -> Result<ConverseOutput<'stream>, ConverseCallError>
 where
     Factory: ConverseClientFactory,
 {
@@ -206,24 +201,7 @@ where
         let stream = open_stream(call, &plan, &parts, deps.factory, &mut log).await?;
         return Ok(ConverseOutput::Stream(Box::new(stream)));
     }
-    let parts = BufferedParts {
-        route,
-        timeout: call.timeout,
-        supplied: deps.supplied_buffered.as_ref(),
-    };
-    let reply = send_buffered(
-        call,
-        &plan,
-        &parts,
-        deps.factory,
-        BufferedTail {
-            now: deps.now,
-            ids: deps.ids.as_ref(),
-            log,
-        },
-    )
-    .await?;
-    Ok(ConverseOutput::Reply(reply))
+    dispatch_buffered(call, &plan, deps, route).await
 }
 
 // pre_call gets api_key="" and the signed headers, body and api_base the provider receives.

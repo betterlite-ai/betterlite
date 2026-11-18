@@ -25,12 +25,11 @@ pub(crate) struct ConverseModelId {
     pub(crate) region: Option<String>,
 }
 
-// An explicit model_id is encoded as given; otherwise one wrapper comes off a working copy, the
-// first slash segment names a region only from the pinned list, and a nova prefix leaves the id.
+// An explicit model_id is encoded as given; otherwise one wrapper comes off a working copy, the first slash segment names a region only from the pinned list, and a nova prefix leaves the id.
 pub(crate) fn converse_model_id(model: &str, explicit: Option<&str>) -> ConverseModelId {
     if let Some(model_id) = explicit {
         return ConverseModelId {
-            model_id: encode(model_id),
+            model_id: utf8_percent_encode(model_id, &MODEL_ID_SAFE).to_string(),
             region: None,
         };
     }
@@ -41,7 +40,7 @@ pub(crate) fn converse_model_id(model: &str, explicit: Option<&str>) -> Converse
             break;
         }
     }
-    let mut model_for_id = model;
+    let mut model_for_id = model.to_owned();
     let mut region = None;
     if let Some((candidate, rest)) = stripped.split_once('/')
         && AmazonBedrockGlobalConfig
@@ -50,7 +49,7 @@ pub(crate) fn converse_model_id(model: &str, explicit: Option<&str>) -> Converse
     {
         region = Some(candidate.to_owned());
         stripped = rest;
-        model_for_id = rest;
+        model_for_id = rest.to_owned();
     }
     for prefix in NOVA_PREFIXES {
         if stripped.starts_with(prefix) {
@@ -60,13 +59,9 @@ pub(crate) fn converse_model_id(model: &str, explicit: Option<&str>) -> Converse
         }
     }
     ConverseModelId {
-        model_id: encode(model_for_id),
+        model_id: utf8_percent_encode(&model_for_id, &MODEL_ID_SAFE).to_string(),
         region,
     }
-}
-
-fn encode(model_id: &str) -> String {
-    utf8_percent_encode(model_id, &MODEL_ID_SAFE).to_string()
 }
 
 pub(crate) struct TargetInput<'text> {
@@ -119,8 +114,7 @@ where
     })
 }
 
-// No configured proxy endpoint means the runtime endpoint is also the proxy endpoint, and the path
-// is appended without trimming a trailing slash.
+// No configured proxy endpoint means the runtime endpoint is also the proxy endpoint, and the path is appended without trimming a trailing slash.
 fn endpoint_url(
     input: &TargetInput<'_>,
     configured_endpoint: Option<&str>,

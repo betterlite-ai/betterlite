@@ -25,10 +25,10 @@ use crate::rerank::transport::{
     TransferError,
 };
 
-use super::ConverseCall;
 use super::error::ConverseCallError;
 use super::prepare::CallPlan;
 use super::transport::ConverseClientFactory;
+use super::{ConverseCall, ConverseDeps, ConverseOutput};
 
 pub struct BufferedParts<'parts, 'deps, Client> {
     pub route: ClientKind,
@@ -39,6 +39,7 @@ pub struct BufferedParts<'parts, 'deps, Client> {
 pub struct BufferedTail<'log, 'env> {
     pub now: SystemTime,
     pub ids: &'log dyn IdSource,
+    pub counter: &'log dyn ReasoningTokenCounter<Failure = Infallible>,
     pub log: LogContext<'log, 'env>,
 }
 
@@ -58,13 +59,13 @@ pub(crate) async fn send_buffered<Factory>(
 where
     Factory: ConverseClientFactory,
 {
-    let reply = post(factory, parts, call, plan, &*tail.log.state).await?;
+    let reply = post(factory, parts, plan, &*tail.log.state).await?;
     if !(200..=299).contains(&reply.status) {
         return Err(provider_error(&plan.url, &reply)?);
     }
-    let provider_headers: IndexMap<String, String> = reply.headers.iter().cloned().collect();
+    let raw_headers: IndexMap<String, String> = reply.headers.iter().cloned().collect();
     let provider_headers =
-        set_provider_response_headers(&AdditionalHeaders::default(), &provider_headers);
+        set_provider_response_headers(&AdditionalHeaders::default(), &raw_headers);
     let response = transform_reply(call, plan, &reply, &mut tail)?;
     Ok(BufferedReply {
         response,
@@ -72,12 +73,10 @@ where
     })
 }
 
-// A matching supplied client keeps its own timeout; the factory's client gets the call's, and the
-// async route asks it for the logging transport while the sync route posts without one.
+// A matching supplied client keeps its own timeout; the factory's client gets the call's, and the async route asks it for the logging transport while the sync route posts without one.
 async fn post<Factory>(
     factory: &Factory,
     parts: &BufferedParts<'_, '_, Factory::Buffered>,
-    call: &ConverseCall<'_>,
     plan: &CallPlan,
     state: &LoggingState,
 ) -> Result<RerankHttpReply, ConverseCallError>
@@ -110,8 +109,7 @@ where
     }
 }
 
-// The reply conversion reads api_key as the empty string and takes stream only from the bool the
-// caller passed, which the handler already turned into false unless it was a literal bool.
+// The reply conversion reads api_key as the empty string and takes stream only from the bool the caller passed, which the handler already turned into false unless it was a literal bool.
 fn transform_reply(
     call: &ConverseCall<'_>,
     plan: &CallPlan,
@@ -142,7 +140,7 @@ fn transform_reply(
         &raw,
         call.model_response.clone(),
         tail.ids,
-        &NoReasoningTokens,
+        &ReasoningCounter(tail.counter),
     )?)
 }
 
@@ -198,13 +196,48 @@ fn response_text(body: &[u8]) -> String {
     )
 }
 
-// The buffered conversion owns no tokenizer, so it answers every reasoning estimate with zero.
-struct NoReasoningTokens;
+struct ReasoningCounter<'counter>(&'counter dyn ReasoningTokenCounter<Failure = Infallible>);
 
-impl ReasoningTokenCounter for NoReasoningTokens {
+impl ReasoningTokenCounter for ReasoningCounter<'_> {
     type Failure = Infallible;
 
-    fn count_reasoning_tokens(&self, _text: &str) -> Result<i64, Self::Failure> {
-        Ok(0)
+    fn count_reasoning_tokens(&self, text: &str) -> Result<i64, Self::Failure> {
+        self.0.count_reasoning_tokens(text)
     }
 }
+
+pub(super) async fn dispatch_buffered<'stream, Factory, Cred>(
+    call: &ConverseCall<'_>,
+    plan: &CallPlan,
+    deps: ConverseDeps<'_, 'stream, Factory, Cred>,
+    route: ClientKind,
+) -> Result<ConverseOutput<'stream>, ConverseCallError>
+where
+    Factory: ConverseClientFactory,
+{
+    let parts = BufferedParts {
+        route,
+        timeout: call.timeout,
+        supplied: deps.supplied_buffered.as_ref(),
+    };
+    let reply = send_buffered(
+        call,
+        plan,
+        &parts,
+        deps.factory,
+        BufferedTail {
+            now: deps.now,
+            ids: deps.ids.as_ref(),
+            counter: deps.reasoning_counter,
+            log: LogContext {
+                state: deps.state,
+                env: deps.env,
+            },
+        },
+    )
+    .await?;
+    Ok(ConverseOutput::Reply(reply))
+}
+
+#[path = "tests/buffered.rs"]
+mod tests;

@@ -9,8 +9,7 @@ use crate::converse_response::transform::TransformError;
 use crate::rerank::transport::TransferError;
 use crate::signing::error::SigningError;
 
-// The failures completion() can raise: the source error types stay themselves, and only the buffered
-// status reply and the timeout become a BedrockError here.
+// The failures completion() can raise: the source error types stay themselves, and only the buffered status reply and the timeout become a BedrockError here.
 #[derive(Debug, Error)]
 pub enum ConverseCallError {
     #[error("the {field} parameter has the wrong type")]

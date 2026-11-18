@@ -10,7 +10,6 @@ use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
-use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
 
 use crate::aws_endpoints::region::DEFAULT_AWS_REGION;
@@ -33,7 +32,6 @@ use super::request::{BodyRequest, PreparedBody, build_body};
 use super::target::{PreparedTarget, TargetInput, converse_model_id, resolve_target};
 use super::transport::ConverseSigner;
 
-const CONVERSE_PROVIDER: &str = "bedrock_converse";
 const REGION_FIELD: &str = "aws_region_name";
 
 pub(super) struct ExtractInput<'call> {
@@ -68,8 +66,6 @@ pub(super) struct CallPlan {
     pub(super) stream_chunk_size: Option<u64>,
 }
 
-// completion()'s setup: the popped routing switches, the path id and region derived from the model,
-// the bearer that replaces credentials, and the beta-filtered headers signing sees.
 pub(super) fn extract(
     input: ExtractInput<'_>,
     betas: &BetaMatrix,
@@ -87,7 +83,7 @@ pub(super) fn extract(
     }
     let bearer = bedrock_bearer_token(input.api_key, input.environment.bearer_token);
     let mut headers = merged_headers(input.extra_headers);
-    filter_header_betas(&mut headers, betas, CONVERSE_PROVIDER)?;
+    filter_header_betas(&mut headers, betas, "bedrock_converse")?;
     let stream_chunk_size = if stream == Some(true) {
         input.control.stream_chunk_size
     } else {
@@ -104,8 +100,6 @@ pub(super) fn extract(
     })
 }
 
-// The region depends on the original model or the explicit id, the URL on the encoded path id; the
-// body follows the target, so the auth params and endpoint are gone before it is transformed.
 pub(super) async fn prepare<Cred, Source, Transport, Lookup, R, Ids>(
     call: &mut ConverseCall<'_>,
     prepared: Prepared,
@@ -142,7 +136,7 @@ where
         url: target.url,
         signed,
         data: body.data,
-        messages: messages_json(call.messages)?,
+        messages: serde_json::from_value(serde_json::to_value(call.messages)?)?,
         json_mode,
         optional: body.optional,
         tool_name_mappings: body.tool_name_mappings,
@@ -192,7 +186,6 @@ where
     .await?)
 }
 
-// Async transforms with the filtered merged headers; sync hands the transform the original extras.
 fn transform_headers(
     call: &ConverseCall<'_>,
     prepared: &Prepared,
@@ -204,8 +197,6 @@ fn transform_headers(
         .map(|pairs| beta_headers(pairs.iter().map(|(name, value)| (name, value))))
 }
 
-// Async signs the filtered merged headers as both sources and reads the stored region; sync signs
-// with the resolved region, the merged headers and the original extras as its override source.
 fn sign_payload(
     call: &ConverseCall<'_>,
     prepared: &Prepared,
@@ -213,15 +204,15 @@ fn sign_payload(
     data: &str,
     signer: &dyn ConverseSigner,
 ) -> Result<AwsSignedRequest, ConverseCallError> {
-    let (extra_headers, headers) = signed_header_sources(call, prepared);
+    let sources = signed_header_sources(call, prepared);
     let region = signing_region(call, target);
     Ok(signer.sign(RequestHeaders {
         credentials: target.credentials.as_ref(),
         region: &region,
-        extra_headers: &extra_headers,
+        extra_headers: &sources.extra,
         endpoint: &target.url,
         data: Body::Text(data),
-        headers: &headers,
+        headers: &sources.headers,
         api_key: call.api_key,
         configured_bearer: call.environment.bearer_token,
         supports_bearer_token: true,
@@ -229,10 +220,12 @@ fn sign_payload(
     })?)
 }
 
-fn signed_header_sources(
-    call: &ConverseCall<'_>,
-    prepared: &Prepared,
-) -> (Vec<(String, String)>, Vec<(String, Option<String>)>) {
+struct HeaderSources {
+    extra: Vec<(String, String)>,
+    headers: Vec<(String, Option<String>)>,
+}
+
+fn signed_header_sources(call: &ConverseCall<'_>, prepared: &Prepared) -> HeaderSources {
     let extra_headers: Vec<(String, String)> = if call.acompletion {
         prepared
             .headers
@@ -247,7 +240,10 @@ fn signed_header_sources(
         .iter()
         .map(|(name, value)| (name.clone(), Some(value.clone())))
         .collect();
-    (extra_headers, headers)
+    HeaderSources {
+        extra: extra_headers,
+        headers,
+    }
 }
 
 fn signing_region(call: &ConverseCall<'_>, target: &PreparedTarget) -> String {
@@ -265,8 +261,6 @@ fn stored_region(params: &PromptObject) -> String {
         .map_or_else(|| DEFAULT_AWS_REGION.to_owned(), str::to_owned)
 }
 
-// {"Content-Type": "application/json", **extra_headers}: a same-case caller key replaces the value
-// in place, and only the key "anthropic-beta" is filtered afterwards.
 fn merged_headers(extra: Option<&[(String, String)]>) -> Headers {
     let mut headers = Headers::from([("Content-Type".to_owned(), "application/json".to_owned())]);
     for (name, value) in extra.unwrap_or_default() {
@@ -283,11 +277,6 @@ fn beta_headers<'pair>(
         .collect()
 }
 
-fn messages_json(messages: &[Message]) -> Result<Json, serde_json::Error> {
-    serde_json::from_value(serde_json::to_value(messages)?)
-}
-
-// Absent or null is absent; any other JSON type is a parameter error that names the field.
 fn pop_bool(params: &mut ParamMap, field: &'static str) -> Result<Option<bool>, ConverseCallError> {
     match params.shift_remove(field) {
         None | Some(ParamValue::Null) => Ok(None),
@@ -306,3 +295,6 @@ fn pop_text(
         Some(_) => Err(ConverseCallError::Param { field }),
     }
 }
+
+#[path = "tests/prepare.rs"]
+mod tests;

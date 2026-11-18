@@ -9,7 +9,6 @@ use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::bedrock_images::remote::RemoteImage;
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use betterlite_prompts::message_content::Message;
 
@@ -42,8 +41,7 @@ pub struct PreparedBody {
     pub optional: OptionalParams,
 }
 
-// transform_request or _async_transform_request, whichever headers the route hands the config, then
-// json.dumps' spacing and escaping over the typed body.
+// transform_request or _async_transform_request, whichever headers the route hands the config, then json.dumps' spacing and escaping over the typed body.
 pub(crate) async fn build_body<Source, Transport, Lookup, R, Ids>(
     request: BodyRequest<'_>,
     lookup: &Lookup,
@@ -93,8 +91,7 @@ where
     })
 }
 
-// The reply conversion reads json_mode from the caller's options and the tools the json-mode
-// filtering needs, both under the names request preparation left them.
+// The reply conversion reads json_mode from the caller's options and the tools the json-mode filtering needs, both under the names request preparation left them.
 fn reply_options(params: &ParamMap) -> Result<OptionalParams, ConverseCallError> {
     let json_mode = match params.get("json_mode") {
         None | Some(ParamValue::Null) => None,
@@ -118,3 +115,6 @@ fn body_text(body: &ConverseRequestBody) -> Result<String, ConverseCallError> {
     let value: Json = serde_json::from_str(&serde_json::to_string(body)?)?;
     Ok(python_json::dumps(&value))
 }
+
+#[path = "tests/request.rs"]
+mod tests;
