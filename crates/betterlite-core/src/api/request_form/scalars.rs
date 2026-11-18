@@ -8,9 +8,6 @@ const PYTHON_SEPARATORS: [char; 4] = ['\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}'];
 #[must_use]
 pub fn scalar_int(text: &str) -> Option<Number> {
     let normalized = normalized_digits(text)?;
-    if !normalized.is_ascii() {
-        return None;
-    }
     let canonical = canonical_integer(&normalized)?;
     serde_json::from_str::<Number>(&canonical).ok()
 }
@@ -19,9 +16,6 @@ pub fn scalar_int(text: &str) -> Option<Number> {
 #[must_use]
 pub fn scalar_float(text: &str) -> Option<f64> {
     let normalized = normalized_digits(text)?;
-    if !normalized.is_ascii() {
-        return None;
-    }
     let plain = without_underscores(&normalized)?;
     plain.parse::<f64>().ok()
 }
