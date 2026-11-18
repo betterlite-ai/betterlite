@@ -263,14 +263,17 @@ fn required_failure(name: &str) -> Failure {
 // LiteLLM raises plain exceptions for these, so the class is the exception type the Python side would report
 fn transform_failure(error: &SpeechTransformError) -> Failure {
     match error {
-        SpeechTransformError::UnsupportedResponseFormat { .. } => Failure {
-            class: String::from("BadRequestError"),
-            status: 400,
-            kind: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: format!("litellm.BadRequestError: {error}"),
-        },
+        SpeechTransformError::UnsupportedResponseFormat { .. } => error.error_fields().map_or_else(
+            || named_failure("BadRequestError", error),
+            |fields| Failure {
+                class: String::from("BadRequestError"),
+                status: fields.status,
+                kind: Some(fields.error_type.map(String::from)),
+                param: Some(fields.param.map(String::from)),
+                code: Some(fields.code.map(String::from)),
+                message: format!("litellm.BadRequestError: {error}"),
+            },
+        ),
         SpeechTransformError::MissingAudio => named_failure("ValueError", error),
         SpeechTransformError::NoChoices => named_failure("IndexError", error),
         SpeechTransformError::Unmapped { .. } => named_failure("Exception", error),

@@ -17,7 +17,7 @@ use thiserror::Error;
 use tokio::runtime::{Builder, Runtime};
 
 use super::arguments::SpeechBridgeArguments;
-use super::error::{SpeechBridgeError, SpeechTransformError};
+use super::error::{SpeechBridgeError, SpeechErrorFields, SpeechTransformError};
 use super::response::SpeechBinaryResponse;
 use super::{
     SpeechCompletionAnswer, SpeechCompletionCall, SpeechCompletionOutput, SpeechCompletions,
@@ -497,7 +497,59 @@ fn gemini_defaults_to_wav() {
 }
 
 #[test]
+fn gemini_needs_both_substrings() {
+    let (plain, calls) = completed(
+        answered(responded("gemini-2.0-flash", Some("YQ=="))),
+        Call {
+            model: Json::Text(String::from("gemini-2.0-flash")),
+            optional_params: json_value(r#"{"response_format": "mp3"}"#),
+            ..Call::valid()
+        }
+        .arguments(),
+    );
+    assert_eq!(
+        calls[0].get("audio"),
+        Some(&json_value(r#"{"voice": "alloy", "format": "mp3"}"#))
+    );
+    assert_eq!(plain.content.body, b"a");
+    assert_eq!(content_type(&plain), Some("audio/mpeg"));
+    let (tts, calls) = completed(
+        answered(responded("gpt-4o-mini-tts", Some("YQ=="))),
+        Call {
+            model: Json::Text(String::from("gpt-4o-mini-tts")),
+            optional_params: json_value(r#"{"response_format": "mp3"}"#),
+            ..Call::valid()
+        }
+        .arguments(),
+    );
+    assert_eq!(
+        calls[0].get("audio"),
+        Some(&json_value(r#"{"voice": "alloy", "format": "mp3"}"#))
+    );
+    assert_eq!(tts.content.body, b"a");
+    assert_eq!(content_type(&tts), Some("audio/mpeg"));
+}
+
+#[test]
 fn gemini_rejects_other_formats() {
+    let fields = transform_failure(
+        answered(responded("m", Some("YQ=="))),
+        Call {
+            model: Json::Text(String::from(GEMINI_TTS_MODEL)),
+            optional_params: json_value(r#"{"response_format": "mp3"}"#),
+            ..Call::valid()
+        }
+        .arguments(),
+    );
+    assert_eq!(
+        fields.error_fields(),
+        Some(SpeechErrorFields {
+            status: 400,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    );
     let message = rejected(
         Call {
             model: Json::Text(String::from(GEMINI_TTS_MODEL)),

@@ -3,6 +3,15 @@ use std::error::Error;
 use betterlite_openai::api::speech_chat_bridge::audio_base64::SpeechAudioError;
 use thiserror::Error;
 
+// litellm's BadRequestError carries the status alone: openai's APIError leaves type, param and code null
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpeechErrorFields {
+    pub status: u16,
+    pub error_type: Option<&'static str>,
+    pub param: Option<&'static str>,
+    pub code: Option<&'static str>,
+}
+
 // everything the transformation raises before the completion call or while reading its answer
 #[derive(Debug, Error)]
 pub enum SpeechTransformError {
@@ -25,6 +34,27 @@ pub enum SpeechTransformError {
     },
     #[error("the PCM16 audio is too large to wrap in a WAV container")]
     WavTooLarge,
+}
+
+impl SpeechTransformError {
+    // the rejection litellm raises as a BadRequestError; every other variant is an untyped Python error
+    #[must_use]
+    pub const fn error_fields(&self) -> Option<SpeechErrorFields> {
+        match self {
+            Self::UnsupportedResponseFormat { .. } => Some(SpeechErrorFields {
+                status: 400,
+                error_type: None,
+                param: None,
+                code: None,
+            }),
+            Self::Unmapped { .. }
+            | Self::MissingAudio
+            | Self::NoChoices
+            | Self::Audio(_)
+            | Self::AudioPart { .. }
+            | Self::WavTooLarge => None,
+        }
+    }
 }
 
 // a missing argument fails validation exactly like LiteLLM's isinstance check, before any provider traffic
