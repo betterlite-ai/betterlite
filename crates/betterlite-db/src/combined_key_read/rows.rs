@@ -2,19 +2,18 @@ use std::collections::BTreeMap;
 use std::sync::PoisonError;
 
 use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::auth_reconnect::request::ReconnectRequest;
 use crate::auth_reconnect::stale::StaleReadEngine;
 use crate::budget_permission_rows::JsonData;
 use crate::database_availability::classification::STALE_PLAN_MARKER;
 use crate::database_failures::metrics::DbServiceEventSink;
-use crate::database_faults::DbError;
 use crate::key_hash::KeyHash;
-use crate::key_user_writes::retry::WriteClock;
 
-use super::error::KeyReadError;
+use super::error::{DatabaseFailure, KeyReadError};
 use super::grace::DeprecatedToken;
-use super::ports::{Diagnostic, KeyReadDatabase, KeyReadDiagnostics, PlanReconnect};
+use super::ports::{Diagnostic, KeyReadDatabase, PlanReconnect};
 use super::reader::KeyReader;
 use super::view::ViewError;
 
@@ -66,7 +65,11 @@ where
     }
 
     // a writer read still fills the grace cache, but it never reads a value another request cached
-    pub(super) async fn grace_lookup(&self, hash: &KeyHash, use_writer: bool) -> Option<String> {
+    pub(super) async fn grace_lookup(
+        &self,
+        hash: &KeyHash,
+        use_writer: bool,
+    ) -> Option<SecretString> {
         let now = self.services.clock.now();
         if !use_writer {
             let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
@@ -92,12 +95,13 @@ where
         hash: &KeyHash,
         deprecated: &DeprecatedToken,
         now: DateTime<Utc>,
-    ) -> Option<String> {
-        if deprecated.active_token_id.is_empty() {
+    ) -> Option<SecretString> {
+        if deprecated.active_token_id.expose_secret().is_empty() {
             return None;
         }
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache.remember(hash.clone(), deprecated, now);
+        drop(cache);
         Some(deprecated.active_token_id.clone())
     }
 }
@@ -110,9 +114,16 @@ fn row_fields(row: Option<JsonData>) -> Result<Option<BTreeMap<String, JsonData>
     }
 }
 
-fn is_cached_plan(error: &DbError) -> bool {
-    // LiteLLM matches the marker as written, case-sensitively, unlike the availability classifier
-    error.message.contains(STALE_PLAN_MARKER)
+fn is_cached_plan(error: &DatabaseFailure) -> bool {
+    // LiteLLM matches the marker against the exception text, case-sensitively; for a server error
+    // that text is the database message, which the driver keeps out of its own Display impl
+    match error {
+        DatabaseFailure::Reported(fault) => fault.message.contains(STALE_PLAN_MARKER),
+        DatabaseFailure::Driver(error) => error
+            .driver
+            .as_db_error()
+            .is_some_and(|database| database.message().contains(STALE_PLAN_MARKER)),
+    }
 }
 
 fn reconnect_request<'request>() -> ReconnectRequest<'request> {

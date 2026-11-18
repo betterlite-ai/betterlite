@@ -2,12 +2,9 @@ use std::error::Error as _;
 use std::time::Instant;
 
 use crate::database_failures::metrics::DbServiceEventSink;
-use crate::key_user_writes::retry::WriteClock;
 
 use super::error::{KeyReadError, READ_CALL_TYPE};
-use super::ports::{
-    Diagnostic, FailureHook, KeyFailureHook, KeyReadDatabase, KeyReadDiagnostics, PlanReconnect,
-};
+use super::ports::{Diagnostic, FailureHook, KeyReadDatabase, PlanReconnect};
 use super::reader::KeyReader;
 
 pub(crate) const FAILURE_HEADING: &str =
@@ -38,10 +35,10 @@ where
             });
         let hook = FailureHook {
             call_type: READ_CALL_TYPE,
-            class: error.class(),
             message,
             traceback,
             duration,
+            failure: error.clone(),
         };
         drop(self.services.tasks.spawn(self.services.hook.schedule(hook)));
     }

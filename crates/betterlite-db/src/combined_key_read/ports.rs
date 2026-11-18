@@ -11,21 +11,21 @@ use crate::auth_reconnect::request::ReconnectRequest;
 use crate::auth_reconnect::stale::StaleReadEngine;
 use crate::budget_permission_rows::JsonData;
 use crate::database_failures::metrics::{ProxySpanResolver, WallClock};
-use crate::database_faults::DbError;
 use crate::database_refresh::generation::Observation;
 use crate::key_hash::KeyHash;
 use crate::key_user_writes::retry::WriteClock;
 
-use super::error::ReconnectFailure;
+use super::error::{DatabaseFailure, KeyReadError, ReconnectFailure};
 use super::grace::DeprecatedToken;
 
 pub const QUERY_FIRST_METHOD: &str = "query_first";
 
 pub type RowFuture<'lookup> =
-    Pin<Box<dyn Future<Output = Result<Option<JsonData>, DbError>> + Send + 'lookup>>;
+    Pin<Box<dyn Future<Output = Result<Option<JsonData>, DatabaseFailure>> + Send + 'lookup>>;
 
-pub type DeprecatedFuture<'lookup> =
-    Pin<Box<dyn Future<Output = Result<Option<DeprecatedToken>, DbError>> + Send + 'lookup>>;
+pub type DeprecatedFuture<'lookup> = Pin<
+    Box<dyn Future<Output = Result<Option<DeprecatedToken>, DatabaseFailure>> + Send + 'lookup>,
+>;
 
 pub type ReconnectFuture<'reconnect> =
     Pin<Box<dyn Future<Output = Result<bool, ReconnectFailure>> + Send + 'reconnect>>;
@@ -78,10 +78,11 @@ pub trait KeyReadDiagnostics: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct FailureHook {
     pub call_type: &'static str,
-    pub class: &'static str,
     pub message: String,
     pub traceback: String,
     pub duration: Duration,
+    // the original typed failure, alongside the redacted message and traceback the hook also carries
+    pub failure: KeyReadError,
 }
 
 // the source detaches failure_handler from the failed lookup, so the hook is scheduled and never awaited here

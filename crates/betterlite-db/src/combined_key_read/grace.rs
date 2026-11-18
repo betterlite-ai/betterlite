@@ -1,14 +1,16 @@
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
 use crate::key_hash::KeyHash;
 
 pub const DEPRECATED_CACHE_TTL_SECONDS: i64 = 60;
 pub const DEPRECATED_CACHE_CAPACITY: usize = 1000;
 
+// the active token is a secret: it never appears in Debug output or a rendered diagnostic
 #[derive(Debug, Clone)]
 pub struct DeprecatedToken {
-    pub active_token_id: String,
+    pub active_token_id: SecretString,
     pub revoke_at: DateTime<Utc>,
 }
 
@@ -28,7 +30,7 @@ impl DeprecatedToken {
         let active_token_id = active_token_id.ok_or(DeprecatedRowError::MissingActiveTokenId)?;
         let revoke_at = revoke_at.ok_or(DeprecatedRowError::MissingRevokeAt)?;
         Ok(Self {
-            active_token_id,
+            active_token_id: SecretString::from(active_token_id),
             revoke_at: revoke_at.and_utc(),
         })
     }
@@ -36,7 +38,7 @@ impl DeprecatedToken {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CachedDeprecatedKey {
-    active_token_id: String,
+    active_token_id: SecretString,
     expires_at: DateTime<Utc>,
     revoke_at: DateTime<Utc>,
 }
@@ -48,7 +50,7 @@ pub struct DeprecatedKeyCache {
 }
 
 impl DeprecatedKeyCache {
-    pub fn lookup(&mut self, hash: &KeyHash, now: DateTime<Utc>) -> Option<String> {
+    pub fn lookup(&mut self, hash: &KeyHash, now: DateTime<Utc>) -> Option<SecretString> {
         let entry = self.entries.get(hash)?;
         if now < entry.expires_at && now < entry.revoke_at {
             return Some(entry.active_token_id.clone());

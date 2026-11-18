@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
@@ -10,13 +12,22 @@ use crate::database_replica::pinned::{WriterPinnedClient, writer_wrapper};
 use crate::database_replica::routing::Route;
 use crate::key_hash::KeyHash;
 use crate::key_repository::TokenTableAccess;
+use crate::postgres_store::diagnostics::DriverError;
 
+use super::error::{DatabaseFailure, database_fault};
 use super::grace::DeprecatedToken;
 use super::ports::{DeprecatedFuture, KeyReadDatabase, QUERY_FIRST_METHOD, RowFuture};
 use super::sql::{COMBINED_KEY_SQL, DEPRECATED_KEY_SQL};
 
 pub const DEPRECATED_TOKEN_TABLE: &str = "litellm_deprecatedverificationtoken";
 const FIND_FIRST_METHOD: &str = "find_first";
+
+// the client attribute a query resolves through and the method name its pool selection reads
+#[derive(Clone, Copy)]
+struct TableSpec {
+    attribute: &'static str,
+    method: &'static str,
+}
 
 pub struct PostgresKeyDatabase<'db, Client> {
     pub database: Option<WriterPinnedClient<'db, Client>>,
@@ -54,24 +65,22 @@ where
         &self,
         hash: &KeyHash,
         use_writer: bool,
-    ) -> Result<Option<JsonData>, DbError> {
+    ) -> Result<Option<JsonData>, DatabaseFailure> {
+        let table = TableSpec {
+            attribute: QUERY_FIRST_METHOD,
+            method: QUERY_FIRST_METHOD,
+        };
         let found = self
-            .fetch_row(
-                use_writer,
-                QUERY_FIRST_METHOD,
-                QUERY_FIRST_METHOD,
-                COMBINED_KEY_SQL,
-                &[hash],
-            )
+            .fetch_row(use_writer, table, COMBINED_KEY_SQL, &[hash])
             .await?;
         let Some(row) = found else {
             return Ok(None);
         };
         let text: String = row
             .try_get(0)
-            .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+            .map_err(|source| database_fault(ErrorType::Data, source.to_string()))?;
         let fields = serde_json::from_str(&text)
-            .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+            .map_err(|source| database_fault(ErrorType::Data, source.to_string()))?;
         Ok(Some(fields))
     }
 
@@ -80,87 +89,74 @@ where
         hash: &KeyHash,
         now: DateTime<Utc>,
         use_writer: bool,
-    ) -> Result<Option<DeprecatedToken>, DbError> {
+    ) -> Result<Option<DeprecatedToken>, DatabaseFailure> {
         let naive_now = now.naive_utc();
+        let table = TableSpec {
+            attribute: DEPRECATED_TOKEN_TABLE,
+            method: FIND_FIRST_METHOD,
+        };
         let found = self
-            .fetch_row(
-                use_writer,
-                DEPRECATED_TOKEN_TABLE,
-                FIND_FIRST_METHOD,
-                DEPRECATED_KEY_SQL,
-                &[hash, &naive_now],
-            )
+            .fetch_row(use_writer, table, DEPRECATED_KEY_SQL, &[hash, &naive_now])
             .await?;
         found
             .map(|row| {
                 let active_token_id = row
                     .try_get(0)
-                    .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+                    .map_err(|source| database_fault(ErrorType::Data, source.to_string()))?;
                 let revoke_at = row
                     .try_get(1)
-                    .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+                    .map_err(|source| database_fault(ErrorType::Data, source.to_string()))?;
                 DeprecatedToken::from_columns(active_token_id, revoke_at)
-                    .map_err(|source| fault(ErrorType::Data, source.to_string()))
+                    .map_err(|source| database_fault(ErrorType::Data, source.to_string()))
             })
             .transpose()
+            .map_err(DatabaseFailure::from)
     }
 
     async fn fetch_row(
         &self,
         use_writer: bool,
-        attribute: &str,
-        method: &str,
+        table: TableSpec,
         sql: &str,
         parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<Row>, DbError> {
-        let route = route_for(&self.database, use_writer, attribute)?;
-        let client = connection(&route, method).await?;
-        client
+    ) -> Result<Option<Row>, DatabaseFailure> {
+        let Some(pinned) = self.database.as_ref() else {
+            return Err(DatabaseFailure::from(database_fault(
+                ErrorType::NoDbConnection,
+                String::from(
+                    "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys",
+                ),
+            )));
+        };
+        // a writer-pinned read goes to the raw writer client, so it never consults the replica routing
+        let route = if use_writer {
+            let found = writer_wrapper(*pinned)
+                .attribute(table.attribute)
+                .map_err(|source| database_fault(ErrorType::Other, source.to_string()))?;
+            match found {
+                Some(Attribute::Direct(accessor) | Attribute::Model(accessor)) => {
+                    Route::Direct(accessor)
+                }
+                None => return Err(missing_attribute(table.attribute)),
+            }
+        } else {
+            pinned
+                .attribute(table.attribute)
+                .map_err(|source| database_fault(ErrorType::Other, source.to_string()))?
+        };
+        connection(&route, table.method)
+            .await?
             .query_opt(sql, parameters)
             .await
-            .map_err(|source| fault(ErrorType::RawQuery, source.to_string()))
+            .map_err(|source| DatabaseFailure::Driver(Arc::new(DriverError { driver: source })))
     }
 }
 
-fn route_for<'db, Client>(
-    database: &'db Option<WriterPinnedClient<'db, Client>>,
-    use_writer: bool,
-    attribute: &str,
-) -> Result<Route<'db, Client::Attribute>, DbError>
-where
-    Client: DatabaseClient,
-{
-    let Some(pinned) = database.as_ref() else {
-        return Err(no_database());
-    };
-    if use_writer {
-        return direct_route(writer_wrapper(*pinned), attribute);
-    }
-    pinned
-        .attribute(attribute)
-        .map_err(|source| fault(ErrorType::Other, source.to_string()))
-}
-
-// a writer-pinned read goes to the raw writer client, so it never consults the replica routing
-fn direct_route<'db, Client>(
-    client: &'db Client,
-    attribute: &str,
-) -> Result<Route<'db, Client::Attribute>, DbError>
-where
-    Client: DatabaseClient,
-{
-    let attribute_result = client
-        .attribute(attribute)
-        .map_err(|source| fault(ErrorType::Other, source.to_string()))?;
-    match attribute_result {
-        Some(Attribute::Direct(accessor) | Attribute::Model(accessor)) => {
-            Ok(Route::Direct(accessor))
-        }
-        None => Err(fault(
-            ErrorType::Other,
-            format!("the database has no attribute named {attribute}"),
-        )),
-    }
+fn missing_attribute(attribute: &str) -> DatabaseFailure {
+    DatabaseFailure::from(database_fault(
+        ErrorType::Other,
+        format!("the database has no attribute named {attribute}"),
+    ))
 }
 
 async fn connection<Accessor>(
@@ -172,27 +168,9 @@ where
 {
     let pool: &Pool = route.select(method).pool();
     pool.get().await.map_err(|source| {
-        fault(
+        database_fault(
             ErrorType::Connect,
             format!("database pool unavailable: {source}"),
         )
     })
-}
-
-fn no_database() -> DbError {
-    fault(
-        ErrorType::NoDbConnection,
-        String::from("No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys"),
-    )
-}
-
-fn fault(error_type: ErrorType, message: String) -> DbError {
-    DbError {
-        error_type,
-        message,
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
 }

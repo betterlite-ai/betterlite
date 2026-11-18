@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use rust_decimal::Decimal;
@@ -83,16 +84,16 @@ pub struct CombinedKeyView {
     pub last_refreshed_at: Option<Decimal>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum ViewError {
     #[error("failed to decode a verification token view")]
-    Json(#[source] serde_json::Error),
+    Json(#[source] Arc<serde_json::Error>),
     #[error("the stored key row is not a JSON object")]
     NotAnObject,
     #[error("a team member entry is not an object")]
     MemberShape,
     #[error("a team member entry is invalid: {0}")]
-    Member(#[source] TeamRowError),
+    Member(#[source] Arc<TeamRowError>),
 }
 
 impl CombinedKeyView {
@@ -105,8 +106,10 @@ impl CombinedKeyView {
         apply_budget_aliases(&mut fields);
         stringify_end_user_id(&mut fields);
         promote_key_organization(&mut fields);
-        let text = serde_json::to_string(&JsonData::Object(fields)).map_err(ViewError::Json)?;
-        let mut view: Self = serde_json::from_str(&text).map_err(ViewError::Json)?;
+        let text = serde_json::to_string(&JsonData::Object(fields))
+            .map_err(|error| ViewError::Json(Arc::new(error)))?;
+        let mut view: Self =
+            serde_json::from_str(&text).map_err(|error| ViewError::Json(Arc::new(error)))?;
         view.team_member = member;
         view.last_refreshed_at = Some(refreshed_at);
         if let Some(expires) = view.token.expires.take() {
@@ -126,22 +129,20 @@ fn select_team_member(fields: &BTreeMap<String, JsonData>) -> Result<Option<Memb
     };
     let mut selected = None;
     for entry in entries {
-        if matching_user(entry, key_user)? {
-            let member = Member::try_from(entry.clone()).map_err(ViewError::Member)?;
-            selected = Some(member);
+        let JsonData::Object(entry_fields) = entry else {
+            return Err(ViewError::MemberShape);
+        };
+        if !matches!(
+            entry_fields.get("user_id"),
+            Some(JsonData::String(user)) if user == key_user
+        ) {
+            continue;
         }
+        let member =
+            Member::try_from(entry.clone()).map_err(|error| ViewError::Member(Arc::new(error)))?;
+        selected = Some(member);
     }
     Ok(selected)
-}
-
-fn matching_user(entry: &JsonData, key_user: &str) -> Result<bool, ViewError> {
-    let JsonData::Object(entry_fields) = entry else {
-        return Err(ViewError::MemberShape);
-    };
-    Ok(matches!(
-        entry_fields.get("user_id"),
-        Some(JsonData::String(user)) if user == key_user
-    ))
 }
 
 fn default_team_columns(fields: &mut BTreeMap<String, JsonData>) {
@@ -159,29 +160,23 @@ fn apply_budget_aliases(fields: &mut BTreeMap<String, JsonData>) {
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     for (key, value) in originals {
-        let Some(target) = budget_alias_target(&key, &value) else {
+        let Some(alias) = key.strip_prefix(BUDGET_TABLE_PREFIX) else {
             continue;
         };
-        if budget_alias_wins(fields.get(&target), &target) {
+        if matches!(value, JsonData::Null) {
+            continue;
+        }
+        let target = alias.to_owned();
+        let wins = match fields.get(&target) {
+            None | Some(JsonData::Null) => true,
+            Some(JsonData::Object(entry)) => target == "model_max_budget" && entry.is_empty(),
+            Some(
+                JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Array(_),
+            ) => false,
+        };
+        if wins {
             fields.insert(target, value);
         }
-    }
-}
-
-fn budget_alias_target(key: &str, value: &JsonData) -> Option<String> {
-    if matches!(value, JsonData::Null) || !key.starts_with(BUDGET_TABLE_PREFIX) {
-        return None;
-    }
-    Some(key.replace(BUDGET_TABLE_PREFIX, ""))
-}
-
-fn budget_alias_wins(current: Option<&JsonData>, target: &str) -> bool {
-    match current {
-        None | Some(JsonData::Null) => true,
-        Some(JsonData::Object(entry)) => target == "model_max_budget" && entry.is_empty(),
-        Some(
-            JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Array(_),
-        ) => false,
     }
 }
 
@@ -192,7 +187,7 @@ fn stringify_end_user_id(fields: &mut BTreeMap<String, JsonData>) {
     };
     let text = match value {
         JsonData::Bool(flag) => String::from(if *flag { "True" } else { "False" }),
-        JsonData::Number(number) if number.is_i64() || number.is_u64() => number.to_string(),
+        JsonData::Number(number) if !number.is_f64() => number.to_string(),
         JsonData::Number(_)
         | JsonData::Null
         | JsonData::String(_)
@@ -214,26 +209,21 @@ fn promote_key_organization(fields: &mut BTreeMap<String, JsonData>) {
 
 fn expires_isoformat(expires: Expiry) -> Expiry {
     match expires {
-        Expiry::Text(text) => match parsed_isoformat(&text) {
-            Some(formatted) => Expiry::Text(formatted),
-            None => Expiry::Text(text),
-        },
+        Expiry::Text(text) => {
+            if let Ok(value) = DateTime::parse_from_rfc3339(&text) {
+                return Expiry::Text(format_naive(value.naive_local(), Some(*value.offset())));
+            }
+            for pattern in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
+                if let Ok(value) = NaiveDateTime::parse_from_str(&text, pattern) {
+                    return Expiry::Text(format_naive(value, None));
+                }
+            }
+            Expiry::Text(text)
+        }
         Expiry::DateTime(value) => {
             Expiry::Text(format_naive(value.naive_local(), Some(*value.offset())))
         }
     }
-}
-
-fn parsed_isoformat(text: &str) -> Option<String> {
-    if let Ok(value) = DateTime::parse_from_rfc3339(text) {
-        return Some(format_naive(value.naive_local(), Some(*value.offset())));
-    }
-    for pattern in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
-        if let Ok(value) = NaiveDateTime::parse_from_str(text, pattern) {
-            return Some(format_naive(value, None));
-        }
-    }
-    None
 }
 
 fn format_naive(value: NaiveDateTime, offset: Option<FixedOffset>) -> String {
