@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod defaults;
+mod modes;
 mod support;
 
 use std::collections::BTreeMap;
@@ -21,7 +23,7 @@ use self::support::{
 };
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
-    FailureFacts, HeaderMap, ResponseFacts, WriteError, handle_error,
+    FailureFacts, HeaderMap, ResponseFacts, WriteError, body_text, handle_error, header_text,
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
@@ -267,6 +269,7 @@ async fn delete_http_ignores_body(#[case] case: DeleteCase) {
 
 #[derive(Debug, Clone, Copy)]
 enum FailureCase {
+    Http400,
     Http429,
     ClosedTransport,
     NoStatus,
@@ -275,12 +278,16 @@ enum FailureCase {
     EmptyHeaders,
     ResponseText,
     NoConfig,
+    MalformedReply,
     TimeoutAsyncUpdate,
     TimeoutSyncUpdate,
+    TimeoutAsyncDefault,
     TimeoutAsyncDelete,
+    TimeoutSyncDelete,
 }
 
 #[rstest]
+#[case::http_400(FailureCase::Http400)]
 #[case::http_429(FailureCase::Http429)]
 #[case::closed_transport(FailureCase::ClosedTransport)]
 #[case::no_status(FailureCase::NoStatus)]
@@ -289,9 +296,12 @@ enum FailureCase {
 #[case::empty_headers(FailureCase::EmptyHeaders)]
 #[case::response_text(FailureCase::ResponseText)]
 #[case::no_config(FailureCase::NoConfig)]
+#[case::malformed_reply(FailureCase::MalformedReply)]
 #[case::timeout_async_update(FailureCase::TimeoutAsyncUpdate)]
 #[case::timeout_sync_update(FailureCase::TimeoutSyncUpdate)]
+#[case::timeout_async_default(FailureCase::TimeoutAsyncDefault)]
 #[case::timeout_async_delete(FailureCase::TimeoutAsyncDelete)]
+#[case::timeout_sync_delete(FailureCase::TimeoutSyncDelete)]
 #[tokio::test]
 async fn transport_failure(#[case] case: FailureCase) {
     match case {
@@ -556,6 +566,7 @@ async fn transport_failure(#[case] case: FailureCase) {
                 "litellm.Timeout: Connection timed out. Timeout passed=0.1, time taken="
             ));
             assert!(error.message.ends_with(" seconds"));
+            assert!(!error.message.contains("time taken=0.000"));
             assert!(error.headers.is_empty());
         }
         FailureCase::TimeoutSyncUpdate => {
@@ -639,389 +650,196 @@ async fn transport_failure(#[case] case: FailureCase) {
             assert!(error.message.contains("read timeout"));
             assert!(error.headers.is_empty());
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ModeCase {
-    SuppliedSync,
-    SuppliedAsynchronous,
-    Mismatch,
-    QueryBase,
-    LoggingOrder,
-}
-
-#[rstest]
-#[case::supplied_sync(ModeCase::SuppliedSync)]
-#[case::supplied_asynchronous(ModeCase::SuppliedAsynchronous)]
-#[case::mismatch(ModeCase::Mismatch)]
-#[case::query_base(ModeCase::QueryBase)]
-#[case::logging_order(ModeCase::LoggingOrder)]
-#[tokio::test]
-async fn execution_mode(#[case] case: ModeCase) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
-    let optional = UpdateParams::default();
-    let params = params("http://unused.test");
-    let supplied = Wire::replying(Reply::json(200, STORE), &events);
-    let pooled = Wire::replying(Reply::json(200, STORE), &events);
-    let source = Source::new(pooled.clone());
-    let mut fixture = Fixture::new("vector_store_update");
-    match case {
-        ModeCase::SuppliedSync => {
+        FailureCase::Http400 => {
+            let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
+            let events = Events::new();
+            let wire = Wire::replying(Reply::json(400, r#"{"id":"vs_a"}"#), &events);
+            let source = Source::new(wire.clone());
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Sync,
-                    transport: &supplied,
-                }),
+                supplied: None,
             };
+            let params = params("http://mock.test/v1");
+            let optional = UpdateParams::default();
+            let mut fixture = Fixture::new("vector_store_update");
             let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, Some(Duration::from_secs(7))),
+                target: target("vs_a", &params, None, None),
                 optional_params: &optional,
                 extra_body: None,
             });
-            let value = run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-                .await
-                .expect("the update succeeds");
-            assert_eq!(value, json(STORE));
-            assert!(source.calls().is_empty());
-            let requests = supplied.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].timeout, None);
+            let result = run(
+                &mut fixture,
+                &deps,
+                ClientKind::Asynchronous,
+                &call,
+                &events,
+            )
+            .await;
+            let Err(WriteError::Provider(error)) = result else {
+                panic!("a 400 is a provider error");
+            };
+            assert_eq!(error.status_code, 400);
+            assert!(!error.status_code_is_synthesized);
+            assert_eq!(error.message, r#"{"id":"vs_a"}"#);
+            assert_eq!(wire.requests().len(), 1);
         }
-        ModeCase::SuppliedAsynchronous => {
+        FailureCase::MalformedReply => {
+            let settings = openai_settings();
+            let config = openai_config(&settings, "sk-provider");
+            let events = Events::new();
+            let wire = Wire::replying(
+                Reply::json(200, "{not json").with_header("retry-after", "3"),
+                &events,
+            );
+            let source = Source::new(wire.clone());
+            let deps = WriteDeps {
+                config: &config,
+                source: &source,
+                supplied: None,
+            };
+            let params = params("http://mock.test/v1");
+            let optional = UpdateParams::default();
+            let mut fixture = Fixture::new("vector_store_update");
+            let call = WriteCall::Update(UpdateCall {
+                target: target("vs_a", &params, None, None),
+                optional_params: &optional,
+                extra_body: None,
+            });
+            let result = run(
+                &mut fixture,
+                &deps,
+                ClientKind::Asynchronous,
+                &call,
+                &events,
+            )
+            .await;
+            let Err(WriteError::Provider(error)) = result else {
+                panic!("a reply that does not convert is a provider error");
+            };
+            assert_eq!(error.status_code, 200);
+            assert!(!error.status_code_is_synthesized);
+            assert_eq!(
+                error.headers.get("retry-after"),
+                Some(&Json::Text("3".to_owned()))
+            );
+            assert_eq!(wire.requests().len(), 1);
+        }
+        FailureCase::TimeoutAsyncDefault => {
+            let serving = serve(
+                reply("200 OK", [("content-type", "application/json")], "{}"),
+                Duration::from_millis(500),
+            )
+            .expect("the fixture serves");
+            let client = proxied_client(TransportLimits {
+                read_timeout: Duration::from_millis(100),
+                ..TransportLimits::DEFAULT
+            });
+            let config =
+                RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
+            let events = Events::new();
+            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
                 supplied: Some(SuppliedClient {
                     kind: ClientKind::Asynchronous,
-                    transport: &supplied,
+                    transport: &client,
                 }),
             };
+            let params = params("http://unused.test");
+            let optional = UpdateParams::default();
+            let mut fixture = Fixture::new("vector_store_update");
             let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, Some(Duration::from_secs(7))),
+                target: target("vs_a", &params, None, None),
                 optional_params: &optional,
                 extra_body: None,
             });
-            run(
+            let result = run(
                 &mut fixture,
                 &deps,
                 ClientKind::Asynchronous,
                 &call,
                 &events,
             )
-            .await
-            .expect("the update succeeds");
-            assert!(source.calls().is_empty());
-            let requests = supplied.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
+            .await;
+            let Err(WriteError::Provider(error)) = result else {
+                panic!("the client's own read timeout is a provider error");
+            };
+            assert_eq!(error.status_code, 408);
+            assert!(error.message.starts_with(
+                "litellm.Timeout: Connection timed out. Timeout passed=0.1, time taken="
+            ));
         }
-        ModeCase::Mismatch => {
-            let mut params = params("http://unused.test");
-            params.ssl_verify = Some(false);
+        FailureCase::TimeoutSyncDelete => {
+            let serving = serve(
+                reply("200 OK", [("content-type", "application/json")], "{}"),
+                Duration::from_millis(500),
+            )
+            .expect("the fixture serves");
+            let client = proxied_client(TransportLimits {
+                read_timeout: Duration::from_millis(100),
+                ..TransportLimits::DEFAULT
+            });
+            let config =
+                RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
+            let events = Events::new();
+            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
                 supplied: Some(SuppliedClient {
                     kind: ClientKind::Sync,
-                    transport: &supplied,
+                    transport: &client,
                 }),
             };
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, Some(Duration::from_secs(7))),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            assert_eq!(source.calls(), vec![Some(false)]);
-            assert!(supplied.requests().is_empty());
-            let requests = pooled.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
-        }
-        ModeCase::QueryBase => {
-            let config = RecordingConfig::new("https://mock.test/vector_stores?api-version=v1");
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            let requests = pooled.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(requests[0].url.path(), "/vector_stores");
-            assert_eq!(requests[0].url.query(), Some("api-version=v1/vs_a"));
-            assert_eq!(
-                requests[0].url.as_str(),
-                "https://mock.test/vector_stores?api-version=v1/vs_a"
-            );
-        }
-        ModeCase::LoggingOrder => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let update = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &update,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            assert_eq!(events.recorded(), ["log", "send"]);
-            assert!(fixture.logged("complete_input_dict").is_some());
-            let delete = WriteCall::Delete(DeleteCall {
-                target: target("vs_a", &params, None, None),
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &delete,
-                &events,
-            )
-            .await
-            .expect("the delete succeeds");
-            assert_eq!(events.recorded(), ["log", "send", "log", "send"]);
-            assert!(fixture.logged("complete_input_dict").is_none());
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DefaultsCase {
-    EmptyParams,
-    MetadataNull,
-    MetadataAbsent,
-    MetadataEmpty,
-    ExtraEmpty,
-    SuppliedBypassesPool,
-    DeleteOmitted,
-}
-
-#[rstest]
-#[case::empty_params(DefaultsCase::EmptyParams)]
-#[case::metadata_null(DefaultsCase::MetadataNull)]
-#[case::metadata_absent(DefaultsCase::MetadataAbsent)]
-#[case::metadata_empty(DefaultsCase::MetadataEmpty)]
-#[case::extra_empty(DefaultsCase::ExtraEmpty)]
-#[case::supplied_bypasses_pool(DefaultsCase::SuppliedBypassesPool)]
-#[case::delete_omitted(DefaultsCase::DeleteOmitted)]
-#[tokio::test]
-async fn write_argument_defaults(#[case] case: DefaultsCase) {
-    let events = Events::new();
-    let config = RecordingConfig::new("http://mock.test/v1/vector_stores");
-    let wire = Wire::replying(Reply::json(200, STORE), &events);
-    let source = Source::new(wire.clone());
-    let params = params("http://unused.test");
-    let mut fixture = Fixture::new("vector_store_update");
-    match case {
-        DefaultsCase::EmptyParams => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let optional = UpdateParams::default();
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            let value = run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            assert_eq!(value, json(STORE));
-            assert_eq!(source.calls(), vec![None]);
-            let requests = wire.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(body_json(&requests[0]), json("{}"));
-            assert_eq!(requests[0].timeout, None);
-        }
-        DefaultsCase::MetadataNull => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let optional = update_params(r#"{"metadata":null}"#);
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            let requests = wire.requests();
-            assert_eq!(body_json(&requests[0]), json(r#"{"metadata":null}"#));
-        }
-        DefaultsCase::MetadataAbsent => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let optional = update_params(r#"{"name":"notes"}"#);
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            let requests = wire.requests();
-            assert_eq!(body_json(&requests[0]), json(r#"{"name":"notes"}"#));
-        }
-        DefaultsCase::MetadataEmpty => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let optional = update_params(r#"{"metadata":{}}"#);
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            let requests = wire.requests();
-            assert_eq!(body_json(&requests[0]), json(r#"{"metadata":{}}"#));
-        }
-        DefaultsCase::ExtraEmpty => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
-            let optional = UpdateParams::default();
-            let no_headers = caller_headers(&[]);
-            let no_body = extra_body("{}");
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, Some(&no_headers), None),
-                optional_params: &optional,
-                extra_body: Some(&no_body),
-            });
-            run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the update succeeds");
-            let requests = wire.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(body_json(&requests[0]), json("{}"));
-            assert_eq!(requests[0].headers.len(), 3);
-        }
-        DefaultsCase::SuppliedBypassesPool => {
-            let supplied = Wire::replying(Reply::json(200, STORE), &events);
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Sync,
-                    transport: &supplied,
-                }),
-            };
-            let optional = UpdateParams::default();
-            let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, None),
-                optional_params: &optional,
-                extra_body: None,
-            });
-            run(&mut fixture, &deps, ClientKind::Sync, &call, &events)
-                .await
-                .expect("the update succeeds");
-            assert!(source.calls().is_empty());
-            assert_eq!(supplied.requests().len(), 1);
-        }
-        DefaultsCase::DeleteOmitted => {
-            let deps = WriteDeps {
-                config: &config,
-                source: &source,
-                supplied: None,
-            };
+            let params = params("http://unused.test");
+            let mut fixture = Fixture::new("vector_store_delete");
             let call = WriteCall::Delete(DeleteCall {
                 target: target("vs_a", &params, None, None),
                 extra_body: None,
             });
-            let value = run(
-                &mut fixture,
-                &deps,
-                ClientKind::Asynchronous,
-                &call,
-                &events,
-            )
-            .await
-            .expect("the delete succeeds");
-            assert_eq!(value, json(STORE));
-            let requests = wire.requests();
-            assert_eq!(requests.len(), 1);
-            assert_eq!(body_bytes(&requests[0]), None);
+            let result = run(&mut fixture, &deps, ClientKind::Sync, &call, &events).await;
+            let Err(WriteError::Provider(error)) = result else {
+                panic!("a sync delete timeout is a provider error");
+            };
+            assert_eq!(error.status_code, 408);
+            assert!(!error.status_code_is_synthesized);
+            assert_eq!(
+                error.message,
+                "litellm.Timeout: Connection timed out after None seconds."
+            );
         }
     }
+}
+
+#[test]
+fn binary_bodies_and_headers_are_named_by_their_length() {
+    assert_eq!(body_text(&[0xff, 0xfe]), "2 bytes that are not UTF-8");
+    let value = http::HeaderValue::from_bytes(&[0xff, 0xfe]).expect("the bytes form a value");
+    assert_eq!(header_text(&value), "2 bytes that are not UTF-8");
+}
+
+#[rstest]
+#[case::supplied_sync(modes::ModeCase::SuppliedSync)]
+#[case::supplied_asynchronous(modes::ModeCase::SuppliedAsynchronous)]
+#[case::mismatch(modes::ModeCase::Mismatch)]
+#[case::query_base(modes::ModeCase::QueryBase)]
+#[case::logging_order(modes::ModeCase::LoggingOrder)]
+#[tokio::test]
+async fn execution_mode(#[case] case: modes::ModeCase) {
+    modes::execution_mode_case(case).await;
+}
+
+#[rstest]
+#[case::empty_params(defaults::DefaultsCase::EmptyParams)]
+#[case::metadata_null(defaults::DefaultsCase::MetadataNull)]
+#[case::metadata_absent(defaults::DefaultsCase::MetadataAbsent)]
+#[case::metadata_empty(defaults::DefaultsCase::MetadataEmpty)]
+#[case::extra_empty(defaults::DefaultsCase::ExtraEmpty)]
+#[case::supplied_bypasses_pool(defaults::DefaultsCase::SuppliedBypassesPool)]
+#[case::delete_omitted(defaults::DefaultsCase::DeleteOmitted)]
+#[tokio::test]
+async fn write_argument_defaults(#[case] case: defaults::DefaultsCase) {
+    defaults::write_argument_defaults_case(case).await;
 }

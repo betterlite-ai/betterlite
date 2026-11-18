@@ -1,58 +1,21 @@
 task: B2402
 deviations:
-  - what: >-
-      A missing or non-integer source status marks the resulting error's
-      status_code_is_synthesized true, for the provider config path too. LiteLLM asks
-      provider_config.get_error_class for the error and then sets the flag on the value it
-      returns, but the vector-store base get_error_class raises instead of returning, so the
-      assignment never runs and an OpenAI setup always observes the flag false.
-    why: >-
-      The flag is the only signal that the 500 is made up rather than reported by the
-      provider; leaving it false on a synthesized status tells a caller the provider answered
-      500. No working setup can rely on the flag staying false, because LiteLLM never
-      produces it true on this path.
+  - what: A missing or non-integer source status marks status_code_is_synthesized true on the provider path too. LiteLLM sets the flag on whatever get_error_class returns, but the vector-store base get_error_class raises, so an OpenAI setup always observes false.
+    why: The flag is the only signal that the 500 was made up; false would claim the provider answered 500, and no working setup can rely on LiteLLM's unreachable true.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6104-L6111
-  - what: >-
-      An integer status outside 0..=65535 is not kept: it counts as no status at all, so the
-      error becomes a synthesized 500. LiteLLM keeps whatever integer the exception carries,
-      however large.
-    why: >-
-      betterlite's status is a u16 on every provider error record, and no HTTP response can
-      produce an out-of-range status; mapping it to the synthesized 500 says the status was
-      not a real one instead of overflowing or truncating it.
+  - what: An integer status outside 0..=65535 counts as no status, so the error becomes a synthesized 500. LiteLLM keeps whatever integer the exception carries.
+    why: betterlite's status is a u16 on every provider error record and no HTTP response can produce an out-of-range status; the synthesized 500 says it was not a real one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6080
-  - what: >-
-      An error body that is not UTF-8 becomes the message "{bytes} bytes that are not
-      UTF-8", while LiteLLM's response.text decodes it with replacement characters.
-    why: >-
-      betterlite records the error text as JSON text in its provider error, and replacement
-      characters hide that the body was binary; naming the byte count keeps the record
-      truthful without inventing text.
+  - what: An error body that is not UTF-8 becomes "{bytes} bytes that are not UTF-8", where LiteLLM's response.text decodes it with replacement characters.
+    why: betterlite records the text as JSON; replacement characters hide that the body was binary, and the byte count keeps the record truthful without inventing text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6085
 kept_bugs:
-  - what: >-
-      Caller extra_headers cannot override Authorization or Content-Type. Validation mutates
-      the caller's header map in place (setting the provider's Bearer key and
-      application/json), and the handler's later headers.update(extra_headers) re-applies
-      that same mutated map, so the caller's values are gone before the provider sees them.
-    why: >-
-      A setup that passes its own Authorization to these handlers gets the configured
-      provider key on the wire, and code that depends on that behavior would send the wrong
-      credential if betterlite let the caller's header win.
+  - what: Caller extra_headers cannot override Authorization or Content-Type. Validation mutates the caller's map in place (provider Bearer key, application/json), and the handler's later headers.update re-applies that same map, so the caller's values are gone.
+    why: A setup passing its own Authorization gets the provider key on the wire, and code depending on that would send the wrong credential if the caller's header won.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L50-L66
-  - what: >-
-      The vector store id is appended as a literal slash plus one encoded segment after the
-      whole base URL, so a base that already carries a query string gets the id after the
-      query instead of in the path.
-    why: >-
-      The task text requires the literal append, and moving the id before the query would
-      change the URL a working setup has always sent for such a base.
+  - what: The vector store id is appended as a literal slash plus one encoded segment after the whole base URL, so a base carrying a query string gets the id after the query.
+    why: The task text requires the literal append, and moving the id before the query would change the URL a working setup has always sent for such a base.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10606-L10609
-  - what: >-
-      The sync update and delete handlers accept a timeout and never pass it to the send, so
-      a sync call runs on the selected client's own timeout whatever the caller asked for.
-    why: >-
-      A sync deployment that sets a short per-call timeout relies on the handler ignoring it
-      and on the client default applying; honoring it in betterlite would time out calls the
-      LiteLLM deployment lets run.
+  - what: The sync update and delete handlers accept a timeout and never pass it to the send, so a sync call runs on the selected client's own timeout whatever the caller asked for.
+    why: A sync deployment setting a short per-call timeout relies on the handler ignoring it and on the client default applying; honoring it would time out calls LiteLLM lets run.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L10632-L10632
