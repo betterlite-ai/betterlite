@@ -18,8 +18,8 @@ use crate::database_failures::metrics::{
 use crate::database_faults::ErrorType;
 
 use super::support::{
-    PARENT_SPAN_KEY, RecordingResolver, RecordingSink, RecordingWallClock, SharedSpanResolver,
-    SinkFault, capture_logs, database_error, drain, failures, metric_call, run_metric, span,
+    PARENT_SPAN_KEY, RecordingResolver, RecordingSink, RecordingWallClock, SinkFault, capture_logs,
+    database_error, drain, failures, metric_call, run_metric, shared_span_resolver, span,
     successes,
 };
 
@@ -337,6 +337,7 @@ fn spanned(value: &str) -> Json {
 async fn proxy_span_uses_shared_resolver() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());
+    let resolver = shared_span_resolver();
     let metadata_trace = "4bf92f3577b34da6a3ce929d0e0e4736";
     let params_trace = "0af7651916cd43dd8448eb211c80319c";
     let top_level_trace = "11111111111111111111111111111111";
@@ -387,7 +388,7 @@ async fn proxy_span_uses_shared_resolver() {
         async { Ok::<_, DbLookupError>(1) },
         &from_metadata,
         &sink,
-        &SharedSpanResolver,
+        &resolver,
         &tasks,
     )
     .await
@@ -396,7 +397,7 @@ async fn proxy_span_uses_shared_resolver() {
         async { Ok::<_, DbLookupError>(2) },
         &from_params,
         &sink,
-        &SharedSpanResolver,
+        &resolver,
         &tasks,
     )
     .await
@@ -405,7 +406,7 @@ async fn proxy_span_uses_shared_resolver() {
         async { Ok::<_, DbLookupError>(3) },
         &from_top_level,
         &sink,
-        &SharedSpanResolver,
+        &resolver,
         &tasks,
     )
     .await

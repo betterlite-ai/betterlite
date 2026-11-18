@@ -78,6 +78,17 @@ pub trait ProxySpanResolver: Send + Sync {
     fn parent_span(&self, passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext>;
 }
 
+pub struct InjectedSpanResolver<Resolve>(pub Resolve);
+
+impl<Resolve> ProxySpanResolver for InjectedSpanResolver<Resolve>
+where
+    Resolve: Fn(&IndexMap<String, Json>) -> Option<SpanContext> + Send + Sync,
+{
+    fn parent_span(&self, passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext> {
+        (self.0)(passed_kwargs)
+    }
+}
+
 pub trait WallClock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
 }

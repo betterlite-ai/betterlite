@@ -26,8 +26,8 @@ use crate::database_failures::deadline::{DbLookupError, LookupRequest};
 use crate::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use crate::database_failures::metrics::{
     DbMetricCall, DbMetricContext, DbMetricError, DbMetricFuture, DbServiceEvent,
-    DbServiceEventSink, DbServiceFailureEvent, ProxySpanResolver, SystemWallClock, WallClock,
-    log_db_metrics,
+    DbServiceEventSink, DbServiceFailureEvent, InjectedSpanResolver, ProxySpanResolver,
+    SystemWallClock, WallClock, log_db_metrics,
 };
 use crate::database_faults::{DbError, ErrorType};
 
@@ -181,18 +181,19 @@ struct MetricKwargs {
     litellm_parent_otel_span: Option<OtelModelValue>,
 }
 
-pub(super) struct SharedSpanResolver;
+fn shared_parent_span(passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext> {
+    let text = serde_json::to_string(passed_kwargs).ok()?;
+    let kwargs: MetricKwargs = decode(&text).ok()?;
+    parent_otel_span_from_kwargs(&ParentSpanSources {
+        metadata: kwargs.metadata.as_ref(),
+        params: kwargs.litellm_params.as_ref(),
+        span: kwargs.litellm_parent_otel_span.as_ref(),
+    })
+}
 
-impl ProxySpanResolver for SharedSpanResolver {
-    fn parent_span(&self, passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext> {
-        let text = serde_json::to_string(passed_kwargs).ok()?;
-        let kwargs: MetricKwargs = decode(&text).ok()?;
-        parent_otel_span_from_kwargs(&ParentSpanSources {
-            metadata: kwargs.metadata.as_ref(),
-            params: kwargs.litellm_params.as_ref(),
-            span: kwargs.litellm_parent_otel_span.as_ref(),
-        })
-    }
+pub(super) fn shared_span_resolver()
+-> InjectedSpanResolver<fn(&IndexMap<String, Json>) -> Option<SpanContext>> {
+    InjectedSpanResolver(shared_parent_span)
 }
 
 pub(super) const fn metric_call(function_name: &str) -> DbMetricCall<'_> {
