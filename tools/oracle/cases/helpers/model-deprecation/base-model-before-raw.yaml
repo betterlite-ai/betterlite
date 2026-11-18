@@ -1,0 +1,20 @@
+kind: helper
+name: model-deprecation-base-model-before-raw
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      openai/raw: {deprecation_date: "2026-05-10", litellm_provider: openai}
+      azure/base: {deprecation_date: "2026-05-20", litellm_provider: azure}
+    deployments:
+      - model_name: base-wins
+        litellm_params: {model: openai/raw}
+        model_info: {base_model: azure/base}
+      - model_name: base-missing
+        litellm_params: {model: openai/raw}
+        model_info: {base_model: missing/base}
+      - model_name: base-nonstring
+        litellm_params: {model: openai/raw}
+        model_info: {base_model: 7}
+env: {}
+compare: {ignore: []}
