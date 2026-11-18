@@ -16,7 +16,7 @@ from .fakes import (
     FakeClient,
     FakeStream,
 )
-from .models import ErrorKind, JsonAdapter, Outcome, Run, RunResult
+from .models import ErrorKind, Outcome, Run, RunResult
 from .views import empty_state, scope_view
 
 HANDLER = BedrockRealtime()
@@ -84,7 +84,9 @@ async def bridge_run(run_value: Run, model: str) -> RunResult:
         await task
     except asyncio.CancelledError:
         outcome = "cancelled"
-    except (BedrockAwaitError, BedrockReceiveError, BedrockSendError):
+    except BedrockSendError:
+        outcome, error = "error", "stream"
+    except (BedrockAwaitError, BedrockReceiveError):
         outcome, error = "error", "ack" if run_value["kind"] == "client" else "stream"
     except UnicodeDecodeError:
         outcome, error = "error", "utf8"
