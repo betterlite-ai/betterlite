@@ -25,6 +25,7 @@ fn runtime() -> Runtime {
 #[case::success_event_skips_absent_fields("success_event_skips_absent_fields")]
 #[case::failure_event_refunds("failure_event_refunds")]
 #[case::io_reservation_before_the_checks("io_reservation_before_the_checks")]
+#[case::rejection_without_io_limits_refunds_nothing("rejection_without_io_limits_refunds_nothing")]
 #[case::coexist_warning_logs_once("coexist_warning_logs_once")]
 #[case::coexist_warning_without_id_logs_every_time("coexist_warning_without_id_logs_every_time")]
 #[case::sync_facade_counts_local_only("sync_facade_counts_local_only")]
