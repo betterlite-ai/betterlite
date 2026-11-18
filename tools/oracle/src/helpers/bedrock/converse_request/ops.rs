@@ -4,6 +4,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::converse_request::{
     ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseSettings, converse_request,
 };
@@ -89,6 +90,17 @@ fn remote() -> Result<RemoteImage<Refusing>, Box<HelperError>> {
     })
 }
 
+struct Assembly<'request> {
+    input: &'request Input,
+    fixture: &'request Fixture,
+    media: &'request RemoteImage<Refusing>,
+    lookup: CaseLookup<'request>,
+    policy: Option<BedrockRequestPolicy>,
+    catalogs: CatalogSources<'request>,
+    optional_params: &'request mut ParamMap,
+    litellm_params: &'request mut Object,
+}
+
 fn assemble(
     input: &Input,
     fixture: &Fixture,
@@ -96,48 +108,61 @@ fn assemble(
     optional_params: &mut ParamMap,
     litellm_params: &mut Object,
 ) -> Result<ConverseRequestBody, Box<HelperError>> {
-    let lookup = CaseLookup {
-        model_cost: &input.model_cost,
-    };
-    let policy = input
-        .request_metadata_fields
-        .as_deref()
-        .and_then(request_policy);
-    let catalogs = fixture.catalogs();
-    current_thread_runtime()?.block_on(async {
-        let mut keys = ModelCostKeys::default();
-        let dynamic = NoDynamicMetadata;
-        let resolution = fixture.resolution();
-        let mut environment = fixture.capability_environment(&resolution, &mut keys, &dynamic);
-        let new_id = || "call_generated".to_owned();
-        let request = ConverseRequestInput {
-            model: &input.model,
-            messages: &input.messages,
-            optional_params: &mut *optional_params,
-            litellm_params: Some(&mut *litellm_params),
-            headers: None,
-            settings: ConverseSettings {
-                global_drop: input.global_drop,
-                modify_params: input.modify_params,
-                neutralize_orphans: input.neutralize_orphaned_blocks,
-                request_metadata: policy.as_ref(),
-            },
+    let assembly = Assembly {
+        input,
+        fixture,
+        media,
+        lookup: CaseLookup {
             model_cost: &input.model_cost,
-            catalogs: &catalogs,
-            lookup: &lookup,
-            packaged: &fixture.packaged,
-        };
-        converse_request(
-            request,
-            ConverseMedia {
-                remote: media,
-                new_id: &new_id,
-            },
-            &mut environment,
-        )
-        .await
-        .map_err(|error| helper_error(&error, error.status_code()))
-    })
+        },
+        policy: input
+            .request_metadata_fields
+            .as_deref()
+            .and_then(request_policy),
+        catalogs: fixture.catalogs(),
+        optional_params,
+        litellm_params,
+    };
+    current_thread_runtime()?.block_on(assemble_body(assembly))
+}
+
+async fn assemble_body(
+    mut assembly: Assembly<'_>,
+) -> Result<ConverseRequestBody, Box<HelperError>> {
+    let mut keys = ModelCostKeys::default();
+    let dynamic = NoDynamicMetadata;
+    let resolution = assembly.fixture.resolution();
+    let mut environment = assembly
+        .fixture
+        .capability_environment(&resolution, &mut keys, &dynamic);
+    let new_id = || "call_generated".to_owned();
+    let request = ConverseRequestInput {
+        model: &assembly.input.model,
+        messages: &assembly.input.messages,
+        optional_params: &mut *assembly.optional_params,
+        litellm_params: Some(&mut *assembly.litellm_params),
+        headers: None,
+        settings: ConverseSettings {
+            global_drop: assembly.input.global_drop,
+            modify_params: assembly.input.modify_params,
+            neutralize_orphans: assembly.input.neutralize_orphaned_blocks,
+            request_metadata: assembly.policy.as_ref(),
+        },
+        model_cost: &assembly.input.model_cost,
+        catalogs: &assembly.catalogs,
+        lookup: &assembly.lookup,
+        packaged: &assembly.fixture.packaged,
+    };
+    converse_request(
+        request,
+        ConverseMedia {
+            remote: assembly.media,
+            new_id: &new_id,
+        },
+        &mut environment,
+    )
+    .await
+    .map_err(|error| helper_error(&error, error.status_code()))
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
