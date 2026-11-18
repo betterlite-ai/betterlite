@@ -2,12 +2,12 @@ use rust_decimal::serde::arbitrary_precision::serialize;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serializer;
 
-// JSON writes an integral money value with one fractional zero, the way Python's float text does.
+// JSON writes money the way Python's float text does: trailing zeros trimmed, an integral value with one fractional zero.
 pub fn serialize_money<S>(amount: &Decimal, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let mut value = *amount;
+    let mut value = amount.normalize();
     if value.scale() == 0 {
         value.rescale(1);
     }
@@ -31,14 +31,18 @@ pub fn format_percent(value: Decimal, decimals: u32) -> String {
     let mut rounded =
         scaled.round_dp_with_strategy(decimals, RoundingStrategy::MidpointNearestEven);
     rounded.rescale(decimals);
-    format!("{rounded}%")
+    if value.is_sign_negative() {
+        format!("-{}%", rounded.abs())
+    } else {
+        format!("{rounded}%")
+    }
 }
 
 // Python's {value:,.2f}: two fractional digits, half-even, with thousands separators.
 #[must_use]
 pub fn format_usd(amount: Decimal) -> String {
     let rounded = amount.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    let text = format!("{rounded:.2}");
+    let text = format!("{:.2}", rounded.abs());
     let whole_len = text
         .chars()
         .take_while(|character| *character != '.')
@@ -56,5 +60,9 @@ pub fn format_usd(amount: Decimal) -> String {
         }
         grouped.push(character);
     }
-    grouped
+    if amount.is_sign_negative() {
+        format!("-{grouped}")
+    } else {
+        grouped
+    }
 }

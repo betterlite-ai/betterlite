@@ -29,7 +29,7 @@ fn days(pairs: &[(&str, &str)]) -> BTreeMap<String, Decimal> {
 fn request(
     start: &str,
     end: &str,
-    captured: (BTreeMap<String, Decimal>, BTreeMap<String, Decimal>),
+    captured: &(BTreeMap<String, Decimal>, BTreeMap<String, Decimal>),
     threshold: &str,
 ) -> CaptureRateReport {
     compute_capture_rate(&CaptureRateRequest {
@@ -47,7 +47,7 @@ fn captured(
     captured: BTreeMap<String, Decimal>,
     billed: BTreeMap<String, Decimal>,
 ) -> CaptureRateReport {
-    request("2026-11-10", "2026-11-12", (captured, billed), "0.9")
+    request("2026-11-10", "2026-11-12", &(captured, billed), "0.9")
 }
 
 #[test]
@@ -67,6 +67,14 @@ fn computes_days_over_the_inclusive_window() {
     assert_eq!(report.days[1].captured_spend, Decimal::ZERO);
     assert_eq!(report.days[1].provider_spend, Decimal::ZERO);
     assert_eq!(report.days[1].capture_rate, None);
+}
+
+#[test]
+fn sums_the_window_and_flags_it_below_the_threshold() {
+    let report = captured(
+        days(&[("2026-11-10", "2.0")]),
+        days(&[("2026-11-10", "1.0"), ("2026-11-12", "4.0")]),
+    );
     assert_eq!(report.days[2].date, "2026-11-12");
     assert_eq!(report.days[2].capture_rate, Some(Decimal::ZERO));
     assert_eq!(report.captured_spend, dec("2.0"));
@@ -80,7 +88,7 @@ fn a_single_day_window_counts_that_day() {
     let report = request(
         "2026-11-16",
         "2026-11-16",
-        (
+        &(
             days(&[("2026-11-16", "0.5")]),
             days(&[("2026-11-16", "1.0")]),
         ),
@@ -96,7 +104,7 @@ fn a_window_that_ends_before_it_starts_has_no_days() {
     let report = request(
         "2026-11-16",
         "2026-11-10",
-        (
+        &(
             days(&[("2026-11-12", "2.0")]),
             days(&[("2026-11-12", "1.0")]),
         ),
@@ -114,7 +122,7 @@ fn equality_with_the_threshold_is_healthy() {
     let report = request(
         "2026-11-10",
         "2026-11-10",
-        (
+        &(
             days(&[("2026-11-10", "90")]),
             days(&[("2026-11-10", "100")]),
         ),
@@ -138,7 +146,7 @@ fn a_zero_or_negative_bill_has_no_ratio() {
     let zero = request(
         "2026-11-10",
         "2026-11-10",
-        (days(&[("2026-11-10", "5")]), days(&[("2026-11-10", "0")])),
+        &(days(&[("2026-11-10", "5")]), days(&[("2026-11-10", "0")])),
         "0.9",
     );
     assert_eq!(zero.capture_rate, None);
@@ -148,7 +156,7 @@ fn a_zero_or_negative_bill_has_no_ratio() {
     let negative = request(
         "2026-11-10",
         "2026-11-10",
-        (days(&[("2026-11-10", "5")]), days(&[("2026-11-10", "-1")])),
+        &(days(&[("2026-11-10", "5")]), days(&[("2026-11-10", "-1")])),
         "0.9",
     );
     assert_eq!(negative.capture_rate, None);
@@ -228,7 +236,7 @@ fn alert_message_formats_a_below_threshold_report() {
     let report = request(
         "2026-11-10",
         "2026-11-12",
-        (
+        &(
             days(&[("2026-11-11", "45")]),
             days(&[("2026-11-12", "100")]),
         ),
@@ -245,7 +253,7 @@ fn alert_message_groups_thousands() {
     let report = request(
         "2026-11-10",
         "2026-11-10",
-        (
+        &(
             days(&[("2026-11-10", "1234567.5")]),
             days(&[("2026-11-10", "2000000")]),
         ),
@@ -278,7 +286,7 @@ fn serializes_money_as_a_decimal_json_number() {
     let report = request(
         "2026-11-10",
         "2026-11-10",
-        (
+        &(
             days(&[("2026-11-10", "90")]),
             days(&[("2026-11-10", "100")]),
         ),
@@ -297,7 +305,7 @@ fn serializes_money_as_a_decimal_json_number() {
 
 #[test]
 fn serializes_a_missing_ratio_as_null() {
-    let report = request("2026-11-10", "2026-11-10", (days(&[]), days(&[])), "0.9");
+    let report = request("2026-11-10", "2026-11-10", &(days(&[]), days(&[])), "0.9");
     let value = serde_json::to_value(&report).unwrap();
     assert_eq!(value["capture_rate"].to_string(), "null");
     assert_eq!(value["days"][0]["capture_rate"].to_string(), "null");
@@ -309,7 +317,7 @@ fn published_rate_and_provider_cover_every_outcome() {
     let report = request(
         "2026-11-10",
         "2026-11-10",
-        (days(&[("2026-11-10", "1")]), days(&[("2026-11-10", "1")])),
+        &(days(&[("2026-11-10", "1")]), days(&[("2026-11-10", "1")])),
         "0.9",
     );
     let outcome = CheckResult::Report(report);
@@ -352,6 +360,7 @@ fn formats_percent_with_half_even_rounding() {
     assert_eq!(format_percent(dec("1"), 1), "100.0%");
     assert_eq!(format_percent(dec("2"), 1), "200.0%");
     assert_eq!(format_percent(dec("-0.1"), 1), "-10.0%");
+    assert_eq!(format_percent(dec("-0.0001"), 1), "-0.0%");
     assert_eq!(format_percent(dec("0.9"), 0), "90%");
     assert_eq!(format_percent(dec("1"), 0), "100%");
     assert_eq!(format_percent(dec("0.05"), 0), "5%");
