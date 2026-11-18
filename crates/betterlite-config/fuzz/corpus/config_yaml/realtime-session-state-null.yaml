@@ -1,0 +1,4 @@
+litellm_settings:
+  logged_real_time_event_types: null
+  request_timeout: 30
+  num_retries: 2
