@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::semantic_math::{MathError, cosine_similarity, mean};
 
 // SemanticRouter's top_k default: how many utterances reach route scoring
@@ -6,7 +8,7 @@ pub const TOP_K: usize = 5;
 // a routed row with its group threshold, so scoring never looks a route up again
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltEntry {
-    pub route: String,
+    pub route: Arc<str>,
     pub threshold: f64,
     pub vector: Vec<f64>,
 }
@@ -51,7 +53,7 @@ fn top_scores<'row>(
     for (index, entry) in entries.iter().enumerate() {
         let score = cosine_similarity(query, &entry.vector, index)?;
         scored.push(Scored {
-            route: entry.route.as_str(),
+            route: &entry.route,
             score,
             threshold: entry.threshold,
             index,

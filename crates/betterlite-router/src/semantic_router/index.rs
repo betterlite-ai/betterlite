@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Error, Read as _};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -52,14 +54,15 @@ impl RouteIndexError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteGroup {
-    pub name: String,
+    // one allocation per route name, shared by every row the route expands into
+    pub name: Arc<str>,
     pub threshold: f64,
 }
 
 // one indexed utterance with the threshold of the first route of its name, so scoring never looks a route up
 #[derive(Debug, Clone, PartialEq)]
 pub struct UtteranceRow {
-    pub route: String,
+    pub route: Arc<str>,
     pub threshold: f64,
     pub text: String,
 }
@@ -146,30 +149,61 @@ fn assemble(routes: Vec<IndexedRoute>) -> Result<RouteIndex, RouteIndexError> {
             return Err(RouteIndexError::NonFiniteThreshold { name: route.name });
         }
         // a repeated route name keeps the first route's threshold, as the router's first-name lookup does
-        let first_threshold = groups
+        let first = groups
             .iter()
-            .find(|group| group.name == route.name)
-            .map(|group| group.threshold);
-        let threshold = first_threshold.unwrap_or_else(|| {
-            let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
-            groups.push(RouteGroup {
-                name: route.name.clone(),
-                threshold,
-            });
-            threshold
-        });
-        for text in route.utterances {
+            .find(|group| group.name.as_ref() == route.name.as_str())
+            .map(|group| (Arc::clone(&group.name), group.threshold));
+        let (name, threshold) = match first {
+            Some(found) => found,
+            None => {
+                let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
+                let name: Arc<str> = Arc::from(route.name.as_str());
+                groups.push(RouteGroup {
+                    name: Arc::clone(&name),
+                    threshold,
+                });
+                (name, threshold)
+            }
+        };
+        // one row per distinct text, so a repeated utterance never turns into a second row or a second name clone
+        let mut utterances = route.utterances;
+        utterances.sort_unstable();
+        utterances.dedup();
+        for text in utterances {
             rows.push(UtteranceRow {
-                route: route.name.clone(),
+                route: Arc::clone(&name),
                 threshold,
                 text,
             });
         }
     }
     // the sync diff orders utterances by Utterance.to_str(include_metadata=True), not by their two fields
-    rows.sort_by_key(|row| format!("{}: {} | None | {{}}", row.route, row.text));
+    rows.sort_by(compare_sync_keys);
     rows.dedup();
     Ok(RouteIndex { groups, rows })
+}
+
+// the composed sync string compared byte by byte, so a long route name is never copied per row or walked per comparison
+fn compare_sync_keys(left: &UtteranceRow, right: &UtteranceRow) -> Ordering {
+    // one allocation per route name, so two rows of one route share it and their separator and tail decide alone
+    if Arc::ptr_eq(&left.route, &right.route) {
+        let left_tail = left.text.bytes().chain(*b" | None | {}");
+        let right_tail = right.text.bytes().chain(*b" | None | {}");
+        return left_tail.cmp(right_tail);
+    }
+    let left_key = left
+        .route
+        .bytes()
+        .chain(*b": ")
+        .chain(left.text.bytes())
+        .chain(*b" | None | {}");
+    let right_key = right
+        .route
+        .bytes()
+        .chain(*b": ")
+        .chain(right.text.bytes())
+        .chain(*b" | None | {}");
+    left_key.cmp(right_key)
 }
 
 pub fn parse_inline(config: &str) -> Result<RouteIndex, RouteIndexError> {

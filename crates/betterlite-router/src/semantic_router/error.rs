@@ -23,6 +23,8 @@ where
         #[source]
         source: E,
     },
+    #[error("the {stage} embedding call did not finish within {seconds} seconds")]
+    Timeout { stage: EmbeddingStage, seconds: u64 },
     #[error("the {stage} embedding call returned {found} vectors for {expected} inputs")]
     VectorCount {
         stage: EmbeddingStage,

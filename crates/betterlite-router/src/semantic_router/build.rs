@@ -2,11 +2,12 @@ use std::error::Error;
 use std::sync::Arc;
 
 use tokio::sync::watch;
+use tokio::time::timeout;
 
 use super::error::{EmbeddingStage, RouterError};
 use super::index::RouteIndex;
 use super::select::BuiltEntry;
-use super::service::RouteEmbedder;
+use super::service::{EMBEDDING_TIMEOUT, RouteEmbedder};
 use super::text::clamp;
 use crate::semantic_math::validate_documents;
 
@@ -96,13 +97,22 @@ where
     E: RouteEmbedder,
 {
     let expected = texts.len();
-    let vectors = embedder
-        .embed_documents(model, texts)
-        .await
-        .map_err(|source| RouterError::Embedding {
-            stage: EmbeddingStage::Documents,
-            source,
-        })?;
+    let answer = timeout(EMBEDDING_TIMEOUT, embedder.embed_documents(model, texts)).await;
+    let vectors = match answer {
+        Ok(Ok(vectors)) => vectors,
+        Ok(Err(source)) => {
+            return Err(RouterError::Embedding {
+                stage: EmbeddingStage::Documents,
+                source,
+            });
+        }
+        Err(_elapsed) => {
+            return Err(RouterError::Timeout {
+                stage: EmbeddingStage::Documents,
+                seconds: EMBEDDING_TIMEOUT.as_secs(),
+            });
+        }
+    };
     if vectors.len() != expected {
         return Err(RouterError::VectorCount {
             stage: EmbeddingStage::Documents,

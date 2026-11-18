@@ -2,11 +2,13 @@ use std::error::Error;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 use indexmap::IndexMap;
 use tokio::sync::watch;
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use super::build::{BuildSlot, BuildState, build_entries, wait_for_build};
@@ -16,6 +18,8 @@ use super::select::{BuiltEntry, select};
 use super::text::{clamp, last_user_text};
 
 pub const DEFAULT_MAX_INPUT_CHARS: i64 = 2000;
+// litellm.request_timeout's pinned default, the deadline every embedding call behind the encoder gets
+pub const EMBEDDING_TIMEOUT: Duration = Duration::from_secs(6000);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CallerContext {
@@ -182,19 +186,26 @@ where
     // any query-embedding failure warns and takes the default model; only a build failure reaches the caller
     async fn query_vector(&self, text: &str, caller: &CallerContext) -> Option<Vec<f64>> {
         let clamped = clamp(text, self.max_input_chars);
-        let vectors = match self
-            .embedder
-            .embed_query(
+        let answer = timeout(
+            EMBEDDING_TIMEOUT,
+            self.embedder.embed_query(
                 &self.settings.embedding_model,
                 clamped.to_owned(),
                 text,
                 caller,
-            )
-            .await
-        {
-            Ok(vectors) => vectors,
-            Err(error) => {
+            ),
+        )
+        .await;
+        let vectors = match answer {
+            Ok(Ok(vectors)) => vectors,
+            Ok(Err(error)) => {
                 tracing::warn!(%error, "semantic routing failed, falling back to the default model");
+                return None;
+            }
+            Err(_elapsed) => {
+                tracing::warn!(
+                    "semantic routing failed: the query embedding call timed out, falling back to the default model"
+                );
                 return None;
             }
         };
