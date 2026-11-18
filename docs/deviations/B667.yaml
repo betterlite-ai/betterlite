@@ -21,4 +21,4 @@ kept_bugs:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L521-L529
   - what: A provider failure leaves the client websocket open; only a receive() that returns None closes it, with code 1000.
     why: LiteLLM closes the websocket only on normal end so the bridge can apply its fallback policy before the client sees a close, and the bridge owns the failure path.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L556-L562
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L540-L544

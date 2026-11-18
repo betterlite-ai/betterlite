@@ -38,7 +38,9 @@ async def consume(events: AsyncIterator[JsonValue], logged: list[JsonValue]) -> 
         logged.append(event)  # noqa: PERF401 - a later failure keeps the events already yielded  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L581-L589
 
 
-async def bridge_run(run_value: Run, model: str, config: BedrockRealtimeConfig) -> RunResult:
+async def bridge_run(run_value: Run, model: str) -> RunResult:
+    # Each run gets its own config, as a fresh session does: the config holds the three session names and the per-session flags
+    config = BedrockRealtimeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L83-L87
     state = empty_state()
     client = FakeClient(run_value)
     stream = FakeStream(run_value)
