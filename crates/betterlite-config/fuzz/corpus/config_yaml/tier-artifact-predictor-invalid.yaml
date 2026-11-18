@@ -1,0 +1,8 @@
+model_list:
+  - model_name: tier-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        classifier_type: heuristic_v2
+        heuristic_v2_artifact: ultrafeedback
+        heuristic_v2_success_threshold: 1.5

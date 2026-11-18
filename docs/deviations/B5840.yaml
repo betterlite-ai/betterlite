@@ -1,0 +1,24 @@
+task: B5840
+deviations:
+  - what: Embeddings are signed and posted natively instead of through boto3 invoke_endpoint.
+    why: betterlite has no boto3. The body, path and status match; boto3 AWS_ENDPOINT_URL and shared-config lookups are not used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L533-L620
+  - what: A failing sync completion call returns SagemakerError with the upstream status.
+    why: LiteLLM's sync branch calls get on an httpx.Response and raises AttributeError; betterlite returns the intended wire error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L200-L260
+  - what: Async completion also preserves the upstream error status instead of replacing it with 500.
+    why: LiteLLM catches its own wire error and wraps it in a generic 500; the shared execution keeps the actionable upstream status, including 429 throttling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L491-L520
+  - what: A transport timeout opening a completion stream returns SagemakerError 408.
+    why: AsyncHTTPHandler converts httpx timeouts into litellm.Timeout, bypassing the handler's timeout catch and reaching its generic 500; betterlite keeps the timeout-specific status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L373-L376
+  - what: Sync and async completion share one async execution path.
+    why: A single transport path keeps the stream decoder and error policies consistent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L118-L560
+  - what: A failed streamed reply reports SagemakerError with the wire status and the body read up to a fixed limit.
+    why: LiteLLM reads response.text on a streamed response it never read, so httpx raises ResponseNotRead and the caller gets a 500 instead of the endpoint's status; betterlite reads the bounded body and keeps the status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L170-L171
+  - what: Non-UTF-8 error bodies report their byte length instead of replacement characters.
+    why: Repository policy forbids lossy UTF-8 conversion; the wire status is preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L171
+kept_bugs: []
