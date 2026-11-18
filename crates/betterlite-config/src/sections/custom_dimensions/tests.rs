@@ -628,6 +628,15 @@ fn normalized_flags_keep_their_scope(#[case] pattern: &str, #[case] expected: &s
 }
 
 #[test]
+fn normalization_keeps_escapes_boundaries_and_flags() {
+    assert_eq!(pattern_work("\\_").unwrap().0, "\\_");
+    assert_eq!(pattern_work("\\ba").unwrap().0, "\\ba");
+    assert_eq!(pattern_work("\\123").unwrap().0, "\\x{53}");
+    assert_eq!(pattern_work("(?i)a$").unwrap().0, "(?i)a(?:\\n?\\z)");
+    assert_eq!(pattern_work("(?i:a)").unwrap().0, "(?i:a)");
+}
+
+#[test]
 fn thirty_two_matchers_are_allowed_and_thirty_three_are_not() {
     let mut allowed = dimension("domain", &[], &[], "binary");
     allowed.keywords = (0_i32..32_i32).map(|index| format!("k{index}")).collect();
@@ -662,6 +671,18 @@ fn matcher_lengths_are_bounded(#[case] length: usize, #[case] expected: bool) {
         ..dimension("domain", &[], &[], "binary")
     };
     assert_eq!(valid(&config).is_ok(), expected);
+}
+
+#[test]
+fn names_start_with_a_letter_and_stop_at_sixty_four_characters() {
+    let longest = "a".repeat(64);
+    let longer = "a".repeat(65);
+    assert_eq!(valid(&named("a_b")), Ok(()));
+    assert_eq!(valid(&named(&longest)), Ok(()));
+    assert_eq!(valid(&named("_a")), Err(()));
+    assert_eq!(valid(&named("1a")), Err(()));
+    assert_eq!(valid(&named("a-b")), Err(()));
+    assert_eq!(valid(&named(&longer)), Err(()));
 }
 
 #[test]
