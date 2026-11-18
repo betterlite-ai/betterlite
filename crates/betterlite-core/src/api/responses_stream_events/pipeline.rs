@@ -112,7 +112,7 @@ where
             | EventKind::ArgsDelta
             | EventKind::Other => {}
         }
-        affinity::wrap_cipher(&mut event, state, kind);
+        affinity::wrap_cipher(&mut event, state);
         if is_terminal(kind) {
             return self
                 .store_terminal(event, kind, state, callback)

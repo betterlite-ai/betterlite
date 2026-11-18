@@ -1,19 +1,14 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
 
-use super::EventKind;
 use super::record::{Target, item_target};
 use crate::api::response_id_codecs::encrypted::wrap_encrypted_content;
 use crate::api::response_id_traversal::metadata::{AffinityMetadata, ModelInfo};
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 
 // only an added/done item the provider transform turned into a typed record carries cipher text here
-pub fn wrap_cipher(
-    event: &mut ResponsesAPIStreamingResponse,
-    state: &ResponsesStreamBaseState,
-    kind: EventKind,
-) {
-    if kind != EventKind::Item || !enabled(state) {
+pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesStreamBaseState) {
+    if !enabled(state) {
         return;
     }
     let Some(model_id) = state
