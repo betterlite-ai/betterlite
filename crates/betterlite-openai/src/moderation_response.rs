@@ -24,7 +24,7 @@ pub struct ModerationResult {
     pub extra: IndexMap<String, Value>,
 }
 
-// the provider names a category "harassment/threatening"; LiteLLM dumps the SDK model, which writes both that key and the field name
+// the provider names a category "harassment/threatening"; LiteLLM dumps the SDK model, which writes the field name only
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModerationCategories {
     pub harassment: bool,

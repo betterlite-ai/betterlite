@@ -91,6 +91,15 @@ fn the_client_body_uses_the_names_litellm_dumps() {
 }
 
 #[test]
+fn a_category_the_provider_flags_true_stays_true() {
+    let mut result = result_with(every_category(json!(0.5)));
+    result["categories"]["hate"] = json!(true);
+    let response = ModerationResponse::parse(&body_with(result)).expect("moderation response");
+    assert!(response.results[0].categories.hate);
+    assert!(!response.results[0].categories.harassment);
+}
+
+#[test]
 fn keeps_provider_extras_at_every_level() {
     let mut result = result_with(every_category(json!(0.5)));
     result

@@ -9,22 +9,6 @@ use super::{
 };
 
 // the SDK model dumps its field names; a provider slash key fills its field through the alias and is not dumped again
-const CATEGORY_FIELDS: [&str; 13] = [
-    "harassment",
-    "harassment_threatening",
-    "hate",
-    "hate_threatening",
-    "illicit",
-    "illicit_violent",
-    "self_harm",
-    "self_harm_instructions",
-    "self_harm_intent",
-    "sexual",
-    "sexual_minors",
-    "violence",
-    "violence_graphic",
-];
-
 const ALIASES: [(&str, &str); 13] = [
     ("harassment", "harassment"),
     ("harassment_threatening", "harassment/threatening"),
@@ -134,7 +118,7 @@ impl Serialize for ModerationCategories {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(CATEGORY_FIELDS.len() + self.extra.len()))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("harassment", &self.harassment)?;
         map.serialize_entry("harassment_threatening", &self.harassment_threatening)?;
         map.serialize_entry("hate", &self.hate)?;
@@ -187,7 +171,7 @@ impl Serialize for AppliedInputTypes {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(CATEGORY_FIELDS.len() + self.extra.len()))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("harassment", &self.harassment)?;
         map.serialize_entry("harassment_threatening", &self.harassment_threatening)?;
         map.serialize_entry("hate", &self.hate)?;
@@ -240,7 +224,7 @@ impl Serialize for CategoryScores {
     where
         S: Serializer,
     {
-        let mut map = serializer.serialize_map(Some(CATEGORY_FIELDS.len() + self.extra.len()))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("harassment", &self.harassment)?;
         map.serialize_entry("harassment_threatening", &self.harassment_threatening)?;
         map.serialize_entry("hate", &self.hate)?;

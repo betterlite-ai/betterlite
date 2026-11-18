@@ -235,6 +235,8 @@ enum Scenario {
     SmallestScore,
     MalformedBody,
     MissingInput,
+    ModelRequired,
+    UnknownModel,
     RequestSuppliedDestination,
     CallIdInErrorBody,
     CallIdLeftOutOfErrorBody,
@@ -259,6 +261,8 @@ enum Scenario {
 #[case::smallest_score(Scenario::SmallestScore)]
 #[case::malformed_body(Scenario::MalformedBody)]
 #[case::missing_input(Scenario::MissingInput)]
+#[case::model_required(Scenario::ModelRequired)]
+#[case::unknown_model(Scenario::UnknownModel)]
 #[case::request_supplied_destination(Scenario::RequestSuppliedDestination)]
 #[case::call_id_in_error_body(Scenario::CallIdInErrorBody)]
 #[case::call_id_left_out_of_error_body(Scenario::CallIdLeftOutOfErrorBody)]
@@ -283,6 +287,8 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
         Scenario::SmallestScore => smallest_score().await,
         Scenario::MalformedBody => malformed_body().await,
         Scenario::MissingInput => missing_input().await,
+        Scenario::ModelRequired => model_required().await,
+        Scenario::UnknownModel => unknown_model().await,
         Scenario::RequestSuppliedDestination => request_supplied_destination().await,
         Scenario::CallIdInErrorBody => call_id_in_error_body().await,
         Scenario::CallIdLeftOutOfErrorBody => call_id_left_out_of_error_body().await,
@@ -565,6 +571,40 @@ async fn missing_input() {
     .await;
     assert_refused(&reply, StatusCode::BAD_REQUEST);
     assert_eq!(error_of(&reply)["code"], json!("400"));
+}
+
+async fn model_required() {
+    let reply = call(
+        "",
+        "/v1",
+        "/v1/moderations",
+        r#"{"input":"hello"}"#,
+        (200, answer("0.5")),
+    )
+    .await;
+    assert_refused(&reply, StatusCode::BAD_REQUEST);
+    assert_eq!(error_of(&reply)["param"], json!("model"));
+    assert_eq!(error_of(&reply)["code"], json!("moderation_model_required"));
+}
+
+async fn unknown_model() {
+    let reply = call(
+        "",
+        "/v1",
+        "/v1/moderations",
+        r#"{"model":"ghost","input":"hello"}"#,
+        (200, answer("0.5")),
+    )
+    .await;
+    assert_refused(&reply, StatusCode::BAD_REQUEST);
+    assert_eq!(error_of(&reply)["code"], json!("400"));
+    assert!(
+        reply
+            .raw
+            .contains("no model_list entry serves the model ghost"),
+        "{}",
+        reply.raw
+    );
 }
 
 async fn request_supplied_destination() {
