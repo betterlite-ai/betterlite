@@ -244,11 +244,25 @@ fn alias_targets_hide_their_hidden_target() {
                 hidden: Some(Json::Bool(false)),
             },
         )
+        .with_alias(
+            "secret-alias",
+            AliasTarget::Item {
+                model: Some(text("global-hidden")),
+                hidden: Some(Json::Bool(true)),
+            },
+        )
         .with_alias("alias-visible", AliasTarget::Name("visible".to_owned()));
-    let asked = ["alias-name", "alias-item", "alias-visible", "visible"];
+    let asked = [
+        "alias-name",
+        "alias-item",
+        "alias-visible",
+        "secret-alias",
+        "visible",
+    ];
+    // a hidden alias item is absent from the full listing, so only the served-name scan marks it hidden
     assert_eq!(
         hidden_names(&fixture, &asked, Some("internal_user"), None),
-        ["alias-item", "alias-name"]
+        ["alias-item", "alias-name", "secret-alias"]
     );
 }
 
