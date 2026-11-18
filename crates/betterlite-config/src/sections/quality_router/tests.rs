@@ -340,6 +340,9 @@ model_list:
   - model_name: negative
     model_info:
       input_cost_per_token: -0x10
+  - model_name: positive
+    model_info:
+      input_cost_per_token: +0x10
 ";
     let resolved = settings(source, &[]).unwrap();
     let deployments = &resolved.deployments;
@@ -354,6 +357,40 @@ model_list:
     assert_eq!(
         deployments[2].input_cost_per_token,
         Some(Decimal::new(-16, 0))
+    );
+    assert_eq!(
+        deployments[3].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+}
+
+#[test]
+fn uppercase_radix_prefixes_are_read_as_their_integer_values() {
+    let source = "\
+model_list:
+  - model_name: hex
+    model_info:
+      input_cost_per_token: 0X10
+  - model_name: octal
+    model_info:
+      input_cost_per_token: 0O20
+  - model_name: binary
+    model_info:
+      input_cost_per_token: 0B10000
+";
+    let resolved = settings(source, &[]).unwrap();
+    let deployments = &resolved.deployments;
+    assert_eq!(
+        deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+    assert_eq!(
+        deployments[1].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+    assert_eq!(
+        deployments[2].input_cost_per_token,
+        Some(Decimal::new(16, 0))
     );
 }
 
