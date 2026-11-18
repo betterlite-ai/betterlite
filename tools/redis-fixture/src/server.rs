@@ -46,6 +46,7 @@ impl RedisFixture {
             .tempdir()
             .map_err(|source| RedisFixtureError::Folder { source })?;
         let socket = folder.path().join("redis.sock");
+        let url = socket_url(&socket)?;
         let log_path = folder.path().join("redis.log");
         let log = File::create(&log_path).map_err(|source| RedisFixtureError::Log { source })?;
         let diagnostics = log
@@ -56,7 +57,6 @@ impl RedisFixture {
             .stderr(Stdio::from(diagnostics))
             .spawn()
             .map_err(spawn_error)?;
-        let url = socket_url(&socket)?;
         let mut fixture = Self {
             url,
             child,
