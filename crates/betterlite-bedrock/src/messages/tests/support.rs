@@ -44,25 +44,23 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use super::super::agentcore_stream::transport::Chunks;
-use super::super::aws_settings::sources::Credentials;
-use super::super::bedrock_model_capabilities::ModelInfoLookup;
-use super::super::credentials::error::CredentialError;
-use super::super::event_frames::beta::BetaHeader;
-use super::super::invoke_primitives::config::Params as InvokeParams;
-use super::super::mantle_inputs::region::split_region_prefix;
-use super::super::messages::stream::{
-    MessagesStreamError, MessagesStreamRequest, messages_sse_stream,
-};
-use super::super::messages::transform::body::drop_unsupported_output_config;
-use super::super::messages::transform::{
+use crate::agentcore_stream::transport::Chunks;
+use crate::aws_settings::sources::Credentials;
+use crate::bedrock_model_capabilities::ModelInfoLookup;
+use crate::credentials::error::CredentialError;
+use crate::event_frames::beta::BetaHeader;
+use crate::invoke_primitives::config::Params as InvokeParams;
+use crate::mantle_inputs::region::split_region_prefix;
+use crate::messages::stream::{MessagesStreamError, MessagesStreamRequest, messages_sse_stream};
+use crate::messages::transform::body::drop_unsupported_output_config;
+use crate::messages::transform::{
     MessagesRequest, MessagesTransformError, TransformSources, transform_request,
 };
-use super::super::messages::transport::{MessagesSignRequest, sign_messages_request};
-use super::super::model_routes::ParamMap;
-use super::super::signing::error::SigningError;
-use super::super::signing::request::AwsSignedRequest;
-use super::super::signing::target::RegionInputs;
+use crate::messages::transport::{MessagesSignRequest, sign_messages_request};
+use crate::model_routes::ParamMap;
+use crate::signing::error::SigningError;
+use crate::signing::request::AwsSignedRequest;
+use crate::signing::target::RegionInputs;
 
 const BUNDLED_BETA_CONFIG: &str = include_str!(
     "../../../../../crates/betterlite-core/src/api/anthropic_beta_config/anthropic_beta_headers_config.json"
