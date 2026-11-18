@@ -685,6 +685,16 @@ fn sse_recovers_text_only_output() {
 }
 
 #[test]
+fn sse_fills_a_null_completed_output() {
+    let body = vec![
+        text(0, "hello"),
+        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response","output":null}"#),
+    ];
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
+    assert_eq!(typed(&reply).output_text(), "hello");
+}
+
+#[test]
 fn sse_keeps_a_nonempty_completed_output() {
     let body = vec![
         text(0, "ignored"),

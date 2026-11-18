@@ -110,7 +110,8 @@ fn build_completed(
     let mut payload = given.clone();
     let missing_output = match payload.get("output") {
         Some(Json::List(items)) => items.is_empty(),
-        None | Some(_) => true,
+        None | Some(Json::Null) => true,
+        Some(_) => false,
     };
     if missing_output {
         let merged = merged_output_items(output_items, text_only_items, limits)
