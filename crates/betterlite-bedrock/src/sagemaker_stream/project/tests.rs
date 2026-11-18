@@ -1,26 +1,36 @@
 #![cfg(test)]
 
 use betterlite_openai::stream::chunk::Chunk;
-use betterlite_prompts::arguments::json::Json;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 
+use crate::sagemaker_stream::SagemakerChunk;
 use crate::sagemaker_stream::error::SagemakerStreamError;
 use crate::sagemaker_stream::project::{
-    CHUNK_OBJECT, END_OF_TEXT, STOP_REASON, chat_chunk, token_chunk,
+    CHUNK_OBJECT, END_OF_TEXT, Projection, STOP_REASON, project,
 };
 
 const MODEL: &str = "decoder-model";
 
-fn json(text: &str) -> Json {
-    serde_json::from_str(text).expect("the fixture is JSON")
-}
-
 fn chat(text: &str) -> Result<Chunk, SagemakerStreamError> {
-    chat_chunk(MODEL, &json(text))
+    match project(MODEL, true, text) {
+        Ok(Projection::Ready(SagemakerChunk::Chat(chunk))) => Ok(chunk),
+        Ok(Projection::Ready(SagemakerChunk::Token(_))) => {
+            panic!("a messages event yields a chat chunk")
+        }
+        Ok(Projection::Pending) => panic!("the fixture is JSON"),
+        Err(error) => Err(error),
+    }
 }
 
 fn token(text: &str) -> Result<GenericChunk, SagemakerStreamError> {
-    token_chunk(&json(text))
+    match project(MODEL, false, text) {
+        Ok(Projection::Ready(SagemakerChunk::Token(chunk))) => Ok(chunk),
+        Ok(Projection::Ready(SagemakerChunk::Chat(_))) => {
+            panic!("a token event yields a token chunk")
+        }
+        Ok(Projection::Pending) => panic!("the fixture is JSON"),
+        Err(error) => Err(error),
+    }
 }
 
 #[test]
@@ -74,22 +84,97 @@ fn a_chunk_without_choices_is_refused() {
     assert!(matches!(error, SagemakerStreamError::Json(_)));
     assert_eq!(
         error.to_string(),
-        "the SageMaker stream chunk does not have the chat chunk shape"
+        "the SageMaker stream chunk does not have the declared shape"
     );
 }
 
+// the OpenAI chunk models set extra="allow", so an extra key is read past instead of failing the chunk
 #[test]
-fn an_unknown_chunk_field_is_refused() {
-    let error = chat(r#"{"id": "1", "created": 2, "choices": [], "extra": 1}"#).unwrap_err();
+fn an_unknown_chunk_field_is_ignored() {
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [], "extra": 1}"#).unwrap();
 
-    assert!(matches!(error, SagemakerStreamError::Json(_)));
+    assert_eq!(chunk.id, "1");
+    assert_eq!(chunk.choices.len(), 0);
 }
 
 #[test]
 fn a_non_object_messages_chunk_is_refused() {
     let error = chat("[1]").unwrap_err();
 
-    assert!(matches!(error, SagemakerStreamError::NotObject));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
+}
+
+#[test]
+fn a_partial_object_is_pending() {
+    assert!(matches!(
+        project(MODEL, true, r#"{"id": "1", "choices": ["#),
+        Ok(Projection::Pending)
+    ));
+}
+
+// StreamingChoices.__init__ maps an alias through map_finish_reason before the chunk reaches a client
+#[test]
+fn an_alias_finish_reason_maps_to_stop() {
+    let chunk =
+        chat(r#"{"id": "1", "created": 2, "choices": [{"finish_reason": "eos_token"}]}"#).unwrap();
+
+    assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some(STOP_REASON));
+}
+
+// StreamingChoices defaults index to 0 and delta to an empty Delta when the choice omits them
+#[test]
+fn a_choice_without_index_or_delta_takes_the_defaults() {
+    let chunk = chat(r#"{"id": "1", "created": 2, "choices": [{}]}"#).unwrap();
+    let choice = &chunk.choices[0];
+
+    assert_eq!(choice.index, 0);
+    assert!(choice.delta.role.is_none());
+    assert!(choice.delta.content.is_none());
+    assert!(choice.delta.tool_calls.is_none());
+}
+
+// StreamingChoices stores None when the stop reason is falsy, so an empty one never reaches a client
+#[test]
+fn a_null_delta_and_an_empty_finish_reason_take_the_defaults() {
+    let chunk =
+        chat(r#"{"id": "1", "created": 2, "choices": [{"delta": null, "finish_reason": ""}]}"#)
+            .unwrap();
+
+    assert!(chunk.choices[0].delta.content.is_none());
+    assert_eq!(chunk.choices[0].finish_reason, None);
+}
+
+// Delta.__init__ numbers a tool call without an index and types it function
+#[test]
+fn a_tool_call_without_index_or_type_takes_the_defaults() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": "{}"}}]}}]}"#,
+    )
+    .unwrap();
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].index, 0);
+    assert_eq!(calls[0].kind.as_deref(), Some("function"));
+    assert_eq!(
+        calls[0].function.as_ref().unwrap().name.as_deref(),
+        Some("f")
+    );
+}
+
+// the counter advances only for a call that had no index, so an explicit 7 is followed by 0
+#[test]
+fn an_explicit_tool_call_index_leaves_the_counter_alone() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"index": 7, "type": "custom", "function": {}}, {}]}}]}"#,
+    )
+    .unwrap();
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].index, 7);
+    assert_eq!(calls[0].kind.as_deref(), Some("custom"));
+    assert_eq!(calls[1].index, 0);
+    assert_eq!(calls[1].kind.as_deref(), Some("function"));
 }
 
 #[test]
@@ -168,47 +253,33 @@ fn a_null_index_is_zero() {
 fn a_text_index_is_refused() {
     let error = token(r#"{"index": "first"}"#).unwrap_err();
 
-    assert!(matches!(
-        error,
-        SagemakerStreamError::Field { field: "index" }
-    ));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_float_index_is_refused() {
     let error = token(r#"{"index": 1.5}"#).unwrap_err();
 
-    assert!(matches!(
-        error,
-        SagemakerStreamError::Field { field: "index" }
-    ));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_list_token_is_refused() {
     let error = token(r#"{"token": []}"#).unwrap_err();
 
-    assert!(matches!(
-        error,
-        SagemakerStreamError::Field { field: "token" }
-    ));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_number_text_is_refused() {
     let error = token(r#"{"token": {"text": 5}}"#).unwrap_err();
 
-    assert!(matches!(
-        error,
-        SagemakerStreamError::Field {
-            field: "token.text"
-        }
-    ));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]
 fn a_non_object_token_is_refused() {
     let error = token("[1]").unwrap_err();
 
-    assert!(matches!(error, SagemakerStreamError::NotObject));
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
