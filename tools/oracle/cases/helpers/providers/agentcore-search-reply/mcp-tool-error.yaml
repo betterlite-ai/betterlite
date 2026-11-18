@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-tool-error
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result":{"content":[{"type":"text","text":"first"},{"type":"text","text":"second"}],"isError":true}}'
+calls:
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":"a"},{"type":"text","text":""}],"isError":true}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":""}],"isError":true}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":7},{"type":"text","text":"kept"},{"type":"text","text":null}],"isError":true}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"isError":true,"content":[{"type":"image","text":"x"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"isError":true,"content":"nope"}}'
+env: {}
+compare: {ignore: []}

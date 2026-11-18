@@ -22,7 +22,7 @@ description: >-
   B733's cache under user_id using get_management_object_ttl. Next compute claim-team sets: with
   fallback_to_db_teams off use only plural claims, with it on use the combined singular/plural reader.
   Add missing teams and remove stored teams absent from claims, except that fallback enabled with no
-  claims preserves database teams. If any difference exists call B064.patch_team_membership with its
+  claims preserves database teams. If any difference exists call B1637's patch_team_membership with its
   default raise_on_error=False, then assign the user object's teams to the claim set and cache it. The
   SCIM helper attempts every add/remove and logs roster failures; its success return does not prove all
   writes landed. Preserve this possible partial database/cache divergence, not an invented transaction.
@@ -145,7 +145,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5395-L5436
     why: user_id_upsert and sync_user_role_and_teams defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2288-L2322
-    why: B064's awaited roster patch and default suppression of collected write failures.
+    why: B1637's awaited roster patch and default suppression of collected write failures.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
@@ -219,7 +219,7 @@ deviations: []
 out_of_scope:
   - JWTAuthManager._canonical_user_id_from_db has no caller at the pin; live identity canonicalization is B871's.
   - B891 owns team_id_upsert and single/database-team fallback selection; B877 owns provisional header-team authorization.
-  - B064 owns SCIM roster patching in scim_v2.py; B808 owns the team_member_add service and its effects.
+  - B1637 owns SCIM roster patching (patch_team_membership) in scim_v2.py; B808 owns the team_member_add service and its effects.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin

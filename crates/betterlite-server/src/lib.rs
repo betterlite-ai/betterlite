@@ -301,6 +301,7 @@ pub mod roi_spend;
 pub mod roi_sync;
 pub mod root_routes;
 pub mod route_inspection;
+pub mod route_read_through;
 pub mod router_dependencies;
 pub mod router_preview_validation;
 pub mod router_settings;
