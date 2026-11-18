@@ -1,0 +1,48 @@
+kind: helper
+name: model-catalog-lookup-duplicate-wildcard-id
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: anthropic/*
+        litellm_params:
+          model: anthropic/claude-*
+        model_info:
+          id: x
+          team_id: t1
+      - model_name: openai/*
+        litellm_params:
+          model: openai/*
+        model_info:
+          id: x
+          team_id: t2
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: anthropic/claude-3
+calls:
+  - model_catalog_lookup:
+      function: get_model_list
+      model_list:
+        - model_name: anthropic/*
+          litellm_params:
+            model: anthropic/claude-*
+          model_info:
+            id: x
+            team_id: t1
+        - model_name: openai/*
+          litellm_params:
+            model: openai/*
+          model_info:
+            id: x
+            team_id: t2
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: openai/gpt-4o
+env: {}
+compare: {ignore: []}

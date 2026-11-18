@@ -1,0 +1,25 @@
+kind: helper
+name: model-catalog-lookup-unsupported-alias-skipped
+call:
+  model_catalog_lookup:
+    function: get_model_list_from_model_alias
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+    model_group_alias:
+      bad: 5
+      worse:
+        model: 7
+        hidden: false
+      none: null
+      good: gpt-4o
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: null
+env: {}
+compare: {ignore: []}

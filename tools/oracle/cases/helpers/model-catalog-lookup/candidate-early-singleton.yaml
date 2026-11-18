@@ -1,0 +1,22 @@
+kind: helper
+name: model-catalog-lookup-candidate-early-singleton
+call:
+  model_catalog_lookup:
+    function: get_candidate_model_ids_for_route
+    model_list:
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+          team_public_model_name: team-gpt
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: team-gpt
+      team_id: t1
+env: {}
+compare: {ignore: []}
