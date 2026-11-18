@@ -525,7 +525,7 @@ async fn the_lookup_deadline_covers_the_whole_get() {
     assert!(transport.requests().is_empty());
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_lookup_body_read_timeout_is_a_500_like_litellms_raw_timeout() {
     let server = stalled_server(Some(STALLED_BODY_HEAD)).await;
     let policy = Arc::new(

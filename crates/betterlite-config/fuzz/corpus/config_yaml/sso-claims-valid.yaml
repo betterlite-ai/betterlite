@@ -1,0 +1,7 @@
+model_list:
+  - model_name: sso-claims-seed
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/SSO_CLAIMS_SEED_KEY
+general_settings:
+  master_key: sk-sso-claims-seed

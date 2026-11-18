@@ -210,12 +210,12 @@ async fn run_times_out_and_kills_the_docker_client() {
     );
     let sandbox = sandbox(program);
     let error = sandbox
-        .run(&command(&["sleep", "30"]), Duration::from_secs(1), 1024)
+        .run(&command(&["sleep", "30"]), Duration::from_millis(200), 1024)
         .await
         .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "the sandbox failed: command timed out after 1s: sleep"
+        "the sandbox failed: command timed out after 200ms: sleep"
     );
     assert!(sandbox.state.lock().await.processes.is_empty());
     let marker = fs::read_to_string(dir.path().join("killed")).unwrap();
