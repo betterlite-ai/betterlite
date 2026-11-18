@@ -82,20 +82,14 @@ impl LeaseCommands {
     }
 
     fn evalsha(&self, command: &Command) -> Option<Vec<u8>> {
-        let sha = command.args.get(1)?;
-        let loaded = locked(&self.scripts).get(sha).cloned();
-        let Some(source) = loaded else {
+        let [_, sha, count, rest @ ..] = command.args.as_slice() else {
+            return None;
+        };
+        let Some(source) = locked(&self.scripts).get(sha).cloned() else {
             return Some(b"-NOSCRIPT No matching script. Please use EVAL.\r\n".to_vec());
         };
-        let key_count = command.args.get(2)?.parse::<usize>().ok()?;
-        let first_argument = key_count.checked_add(3)?;
-        let keys = command.args.get(3..first_argument)?.to_vec();
-        let arguments = command
-            .args
-            .get(first_argument..)
-            .unwrap_or_default()
-            .to_vec();
-        Some(run_script(&source, &keys, &arguments, &self.entries))
+        let (keys, arguments) = rest.split_at_checked(count.parse::<usize>().ok()?)?;
+        Some(run_script(&source, keys, arguments, &self.entries))
     }
 }
 
