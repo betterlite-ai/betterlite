@@ -9,6 +9,28 @@ deviations:
       non-finite duration; a timeout that can never be a deadline is refused instead of handed to the HTTP client.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L52-L60
+  - what: >-
+      The OpenAI SDK's implicit retries of 408, 409, 429 and 5xx replies are not repeated: a failed list,
+      create or delete returns the first status error, and max_retries is carried on the client's inputs
+      but not acted on here.
+    why: >-
+      Retry and backoff policy belongs to the shared transport task B173, so this module sends each
+      request once and leaves retry planning to that layer; the async getter takes the same max_retries at
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L77-L87
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L51-L60
+  - what: >-
+      The SDK constructor's OPENAI_ORG_ID and OPENAI_PROJECT_ID fallbacks are not read, so betterlite
+      sends neither an OpenAI-Organization nor an OpenAI-Project header on assistants requests, while
+      LiteLLM's AzureOpenAI inherits both from the SDK constructor.
+    why: >-
+      The environment is resolved by betterlite-config and a provider leaf may not read it, so this
+      client takes only what its caller passes. The SDK reads the variables at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L235-L240 and builds
+      its default_headers from them at
+      https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L541-L542.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L51-L60
 kept_bugs:
   - what: >-
       Only the literal True async flag selects the async SDK client: any other truthy facade value, such as 1 or
