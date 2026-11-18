@@ -365,14 +365,23 @@ pub(crate) fn written(log: &NamedTempFile) -> String {
 
 pub(crate) fn key_auth(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> UserAPIKeyAuth {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::from([
-        ("token".to_owned(), json!("cached-token")),
-        ("key_alias".to_owned(), json!("alias")),
-        ("user_id".to_owned(), json!("user-1")),
-        ("spend".to_owned(), json!(spend)),
-        ("soft_budget_cooldown".to_owned(), json!(cooldown)),
+        (
+            "token".to_owned(),
+            JsonData::String("cached-token".to_owned()),
+        ),
+        ("key_alias".to_owned(), JsonData::String("alias".to_owned())),
+        ("user_id".to_owned(), JsonData::String("user-1".to_owned())),
+        (
+            "spend".to_owned(),
+            JsonData::Number(serde_json::Number::from(spend)),
+        ),
+        ("soft_budget_cooldown".to_owned(), JsonData::Bool(cooldown)),
     ]);
     if let Some(soft_budget) = soft_budget {
-        fields.insert("soft_budget".to_owned(), json!(soft_budget));
+        fields.insert(
+            "soft_budget".to_owned(),
+            JsonData::Number(serde_json::Number::from(soft_budget)),
+        );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the auth fixture builds")
 }
