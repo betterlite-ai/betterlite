@@ -127,7 +127,10 @@ impl Section for Raw {
                 host: variable(lookup, HOST_VARIABLE).unwrap_or_else(|| DEFAULT_HOST.to_owned()),
                 port: parse(lookup, PORT_VARIABLE, number::<u16>)?.unwrap_or(DEFAULT_PORT),
                 server_header: false,
-                log_config: log_config(lookup),
+                log_config: log_config(
+                    variable(lookup, LOG_LEVEL_VARIABLE).as_deref(),
+                    variable(lookup, JSON_LOGS_VARIABLE).as_deref(),
+                ),
                 timeout_keep_alive: parse(lookup, KEEPALIVE_VARIABLE, number::<i64>)?,
                 timeout_worker_healthcheck: parse(lookup, HEALTHCHECK_VARIABLE, number::<i64>)?,
                 limit_max_requests: parse(lookup, MAX_REQUESTS_VARIABLE, number::<i64>)?,
@@ -171,17 +174,10 @@ where
     Ok(parser(name, &value)?)
 }
 
-fn log_config<L>(lookup: &L) -> LogConfig
-where
-    L: EnvironmentLookup,
-{
-    // LiteLLM's logging module resolves LITELLM_LOG even when JSON_LOGS gives uvicorn its JSON config
-    let resolved = variable(lookup, LOG_LEVEL_VARIABLE)
-        .as_deref()
-        .map(resolve_log_level);
-    let json =
-        variable(lookup, JSON_LOGS_VARIABLE).is_some_and(|value| value.to_lowercase() == "true");
-    match resolved {
+// LiteLLM's logging module resolves LITELLM_LOG even when JSON_LOGS gives uvicorn its JSON config
+fn log_config(level: Option<&str>, json_logs: Option<&str>) -> LogConfig {
+    let json = json_logs.is_some_and(|value| value.to_lowercase() == "true");
+    match level.map(resolve_log_level) {
         Some(Err(error)) => LogConfig::Invalid(error),
         Some(Ok(level)) if json => LogConfig::Json { level },
         Some(Ok(level)) => LogConfig::Level(level),
