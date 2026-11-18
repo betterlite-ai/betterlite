@@ -34,10 +34,6 @@ class Output(Strict):
     cause: str | None = None
 
 
-def _message(error: ValidationError) -> str:
-    return "; ".join(detail["msg"] for detail in error.errors())
-
-
 def _entry(pattern: str) -> Entry:
     try:
         work = custom_pattern_work(pattern)
@@ -75,7 +71,9 @@ class CustomDimensions(Operation):
             )
             outcome = asyncio.run(router.aclassify(self.prompt, self.system_prompt))
         except ValidationError as error:
-            raise ProbeError("invalid_request", _message(error)) from error
+            raise ProbeError(
+                "invalid_request", "; ".join(detail["msg"] for detail in error.errors())
+            ) from error
         score = outcome.score
         return Output(
             tier=_TIER.validate_python(outcome.tier).name,
