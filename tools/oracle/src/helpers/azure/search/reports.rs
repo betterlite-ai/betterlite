@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 
 use betterlite_azure::search::AzureSearchConfig;
 use betterlite_azure::search::reply::AzureSearchReply;
+use betterlite_config::sections::azure_search::Settings;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -29,6 +30,20 @@ pub(super) fn run(input: &Input) -> HelperResult {
     }
 }
 
+const fn no_minter(settings: &Settings) -> AzureSearchConfig<'_> {
+    AzureSearchConfig {
+        settings,
+        minter: None,
+    }
+}
+
+fn header_pairs(headers: &BTreeMap<String, String>) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
+}
+
 fn request_report(input: &RequestInput) -> Value {
     json!({
         "requests": input.scenarios.iter().map(request_outcome).collect::<Vec<Value>>(),
@@ -37,11 +52,8 @@ fn request_report(input: &RequestInput) -> Value {
 
 fn request_outcome(scenario: &RequestScenario) -> Value {
     let resolved = settings(&scenario.environment);
-    let config = AzureSearchConfig {
-        settings: &resolved,
-        minter: None,
-    };
-    match config.transform_search_request(&scenario.query, &scenario.optional_params) {
+    match no_minter(&resolved).transform_search_request(&scenario.query, &scenario.optional_params)
+    {
         Ok(request) => json!({
             "ok": true,
             "body": serde_json::to_value(&request).unwrap_or(Value::Null),
@@ -64,10 +76,8 @@ fn header_outcome(scenario: &HeaderScenario) -> Value {
         minter: Some(&minter),
     };
     let api_key = scenario.api_key.clone().map(SecretString::from);
-    let headers = scenario
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
+    let headers = header_pairs(&scenario.headers)
+        .into_iter()
         .collect::<Headers>();
     match config.validate_environment(headers, api_key.as_ref(), scenario.api_base.as_deref()) {
         Ok(merged) => json!({
@@ -91,20 +101,13 @@ fn reply_report(input: &ReplyInput) -> Value {
 
 fn reply_outcome(scenario: &ReplyScenario) -> Value {
     let resolved = settings(&scenario.environment);
-    let config = AzureSearchConfig {
-        settings: &resolved,
-        minter: None,
-    };
-    let headers: Vec<(String, String)> = scenario
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect();
+    let headers = header_pairs(&scenario.headers);
     let reply = AzureSearchReply {
         status_code: scenario.status.unwrap_or(200),
         headers: &headers,
         body: scenario.body.as_bytes(),
     };
+    let config = no_minter(&resolved);
     match config.transform_search_response(&reply, scenario.optional_params.as_ref()) {
         Ok(response) => json!({
             "ok": true,
@@ -149,12 +152,8 @@ fn settings_report(input: &SettingsInput) -> Value {
 
 fn url_outcome(scenario: &UrlScenario) -> Value {
     let resolved = settings(&scenario.environment);
-    let config = AzureSearchConfig {
-        settings: &resolved,
-        minter: None,
+    let Ok(url) = no_minter(&resolved).complete_url(scenario.api_base.as_deref()) else {
+        return json!({"ok": false, "status": Value::Null});
     };
-    match config.complete_url(scenario.api_base.as_deref()) {
-        Ok(url) => json!({"ok": true, "url": url}),
-        Err(_) => json!({"ok": false, "status": Value::Null}),
-    }
+    json!({"ok": true, "url": url})
 }
