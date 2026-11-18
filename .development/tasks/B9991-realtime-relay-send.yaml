@@ -17,14 +17,28 @@ description: >-
 
 
   Add the bounds as supertraits on the trait definitions. In crates/betterlite-core/src/api/realtime_contracts/transport.rs,
-  ClientWebSocket becomes pub trait ClientWebSocket: ScopedWebSocket + Send, and RealtimeEventNormalizer becomes
-  pub trait RealtimeEventNormalizer: Send + Sync. In crates/betterlite-core/src/api/realtime_guardrail_policy.rs,
-  RealtimeGuardrailCallback becomes pub trait RealtimeGuardrailCallback: Send + Sync. In realtime_sender.rs, RealtimeSend
-  becomes pub trait RealtimeSend: Send, so relay code that is generic over a sender can hold it across an await. The
-  two socket traits get Send and not Sync. The relay only reaches a socket through &mut, so Send is all its futures
-  need, and the client socket B1125 wraps, axum::extract::ws::WebSocket, is not Sync, because hyper's Upgraded holds a
-  Box<dyn Io + Send>. RealtimeStreaming is then Send but not Sync, so RealtimeSend stops at Send. The other four trait
-  objects already carry their bounds; leave them and realtime_session_state.rs as they are.
+  ClientWebSocket becomes pub trait ClientWebSocket: ScopedWebSocket + Send. In
+  crates/betterlite-core/src/api/realtime_guardrail_policy.rs, RealtimeGuardrailCallback becomes
+  pub trait RealtimeGuardrailCallback: Send + Sync. In realtime_sender.rs, RealtimeSend becomes
+  pub trait RealtimeSend: Send, so relay code that is generic over a sender can hold it across an await.
+  ClientWebSocket gets Send and not Sync, and RealtimeBackend keeps the Send it already has. The relay only reaches a
+  socket through &mut, so Send is all its futures need, and the client socket B1125 wraps,
+  axum::extract::ws::WebSocket, is not Sync, because hyper's Upgraded holds a Box<dyn Io + Send>. RealtimeStreaming is
+  then Send but not Sync, so RealtimeSend stops at Send. RealtimeLogging, RealtimeSuccessQueue and
+  RealtimeProviderConfig already carry their bounds; leave them as they are.
+
+
+  RealtimeEventNormalizer gets its bound by losing its copy. B1004 put the trait in
+  crates/betterlite-core/src/api/realtime_contracts/transport.rs, and B528 later wrote the same three methods as
+  pub trait RealtimeEventNormalizer: Send + Sync in crates/betterlite-openai/src/realtime/normalizer.rs and left the
+  core copy in place. betterlite-core depends on betterlite-openai, so the openai trait is the one home. Delete the
+  trait from transport.rs, and the use line for betterlite_models::decisions::Json there, which only the trait used.
+  Every user of the core copy imports betterlite_openai::realtime::normalizer::RealtimeEventNormalizer instead:
+  realtime_session_state.rs for the event_normalizer fields of RealtimeStreaming and ConnectionSetup,
+  realtime_sender/tests.rs for its Normalizer, and tools/oracle/src/helpers/core_ops/realtime_sender_websocket/provider.rs
+  for the oracle's Normalizer. Their impl bodies stay as they are, since the methods match. Add no re-export or alias;
+  no other path to the core trait exists in crates or tools. The core code that calls should_drop and normalize goes
+  through the trait object and needs no import.
 
 
   The new bounds reach 15 implementations in crates and tools: 5 of ClientWebSocket, 2 of RealtimeEventNormalizer,
@@ -62,6 +76,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/src/api/realtime_contracts/transport.rs
+  - crates/betterlite-core/src/api/realtime_session_state.rs
   - crates/betterlite-core/src/api/realtime_guardrail_policy.rs
   - crates/betterlite-core/src/api/realtime_guardrail_policy/tests.rs
   - crates/betterlite-core/src/api/realtime_sender.rs
@@ -70,6 +85,7 @@ scope:
   - crates/betterlite-core/src/api/realtime_sender/backend.rs
   - crates/betterlite-core/src/api/realtime_sender/tests.rs
   - crates/betterlite-core/src/api/realtime_sender/tests/send.rs
+  - tools/oracle/src/helpers/core_ops/realtime_sender_websocket/provider.rs
   lint_tables: false
 references:
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/.development/decisions/2026-11-18-provider-futures-send.md
@@ -77,7 +93,9 @@ references:
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_session_state.rs#L41-L64
   why: RealtimeStreaming and its six trait-object fields, which decide whether the relay state is Send.
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_contracts/transport.rs#L14-L44
-  why: ClientWebSocket with no Send bound, RealtimeBackend already Send and RealtimeEventNormalizer with no bound.
+  why: ClientWebSocket with no Send bound, RealtimeBackend already Send and the core copy of RealtimeEventNormalizer with no bound.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-openai/src/realtime/normalizer.rs#L3-L10
+  why: The RealtimeEventNormalizer B528 wrote, already Send + Sync, which stays as the only one.
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_guardrail_policy.rs#L14-L25
   why: RealtimeGuardrailCallback, which RealtimeSender borrows as a trait object and which has no Sync bound.
 - url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_sender.rs#L21-L48
@@ -94,10 +112,14 @@ references:
   why: Upgraded holds Box<dyn Io + Send>, the reason ClientWebSocket gets Send and not Sync.
 dod:
 - text: >-
-    ClientWebSocket requires Send, RealtimeEventNormalizer and RealtimeGuardrailCallback require Send + Sync, and
-    RealtimeSend requires Send. The sender's source files hold no async_trait(?Send), LocalBoxFuture, boxed_local or
-    disallowed_types expect, SenderFuture is a BoxFuture, and no comment there blames a missing Send.
+    ClientWebSocket and RealtimeSend require Send, and RealtimeGuardrailCallback requires Send + Sync. The sender's
+    source files hold no async_trait(?Send), LocalBoxFuture, boxed_local or disallowed_types expect, SenderFuture is a
+    BoxFuture, and no comment there blames a missing Send.
   proof: [no-local-futures]
+- text: >-
+    RealtimeEventNormalizer is defined once, as the Send + Sync trait in crates/betterlite-openai/src/realtime/normalizer.rs,
+    and the core copy in transport.rs is gone.
+  proof: [one-normalizer]
 - text: >-
     Each RealtimeSend method runs on a second thread inside a block that holds the sender, and gives the result its
     existing test expects for the same script.
@@ -118,8 +140,12 @@ checks:
       && grep -q -F 'futures_util::future::BoxFuture' crates/betterlite-core/src/api/realtime_sender.rs
       && grep -q -E 'pub trait RealtimeSend: Send \{' crates/betterlite-core/src/api/realtime_sender.rs
       && grep -q -E 'pub trait ClientWebSocket: ScopedWebSocket \+ Send \{' crates/betterlite-core/src/api/realtime_contracts/transport.rs
-      && grep -q -E 'pub trait RealtimeEventNormalizer: Send \+ Sync \{' crates/betterlite-core/src/api/realtime_contracts/transport.rs
       && grep -q -E 'pub trait RealtimeGuardrailCallback: Send \+ Sync \{' crates/betterlite-core/src/api/realtime_guardrail_policy.rs
+  - id: one-normalizer
+    why: The core copy of RealtimeEventNormalizer is still there, or the openai trait lost its Send + Sync bound.
+    run: >-
+      test "$(git grep -n 'pub trait RealtimeEventNormalizer' -- crates tools | wc -l)" -eq 1
+      && grep -q -F 'pub trait RealtimeEventNormalizer: Send + Sync {' crates/betterlite-openai/src/realtime/normalizer.rs
   - id: send-tests
     why: A RealtimeSend future still cannot move to another thread with its sender, or gives a different result there.
     run: >-
@@ -137,17 +163,17 @@ oracle_cases: []
 deviations: []
 out_of_scope:
 - Sync on ClientWebSocket, RealtimeBackend and RealtimeSend. The relay owns each socket and reaches it through &mut, and axum's WebSocket, which B1125 wraps, cannot be Sync.
-- The relay modules that are not on main at aaf027816b, realtime_setup_buffer (B1124), realtime_backend_relay (B1008), realtime_client_relay (B1009), realtime_backend_transport (B2457) and realtime_connect (B1011). They build on the Send traits. The route itself is B1125.
+- The relay modules that are not on main at aaf027816b, realtime_setup_buffer (B1124), realtime_backend_relay (B1008), realtime_client_relay (B1009), realtime_backend_transport (B2457) and realtime_connect (B1011). B1124 waits for this task and the others wait for B1124, so they all build on the Send traits. The route itself is B1125.
 - The oracle driver's DriverFuture in tools/oracle/src/helpers/core_ops/realtime_sender_websocket/driver.rs. It boxes its own futures without Send on a current-thread runtime, and a Send future still fits it.
-- The implementors that already meet the new bounds and need no edit, in realtime_contracts/tests.rs, realtime_sender/tests.rs, tools/oracle/src/helpers/core_ops/realtime_sender_websocket/provider.rs and transport.rs, tools/oracle/src/helpers/core_ops/realtime_guardrail_policy.rs, tools/oracle/src/helpers/openai/realtime/probe.rs and tools/oracle/src/helpers/provider/openai_assistant_dispatch/realtime.rs.
-- The second RealtimeEventNormalizer trait in crates/betterlite-openai/src/realtime/normalizer.rs, added by B528 and already Send + Sync. Merging it with the core trait is separate work.
+- The implementors that already meet the new bounds and need no edit, in realtime_contracts/tests.rs, tools/oracle/src/helpers/core_ops/realtime_sender_websocket/transport.rs, tools/oracle/src/helpers/core_ops/realtime_guardrail_policy.rs, tools/oracle/src/helpers/openai/realtime/probe.rs and tools/oracle/src/helpers/provider/openai_assistant_dispatch/realtime.rs. In realtime_sender/tests.rs and the oracle's provider.rs only the RealtimeEventNormalizer import changes.
+- Any change to the openai RealtimeEventNormalizer or to crates/betterlite-openai/src/realtime/connect.rs, which already holds that trait.
 - LoggingWorker in transport.rs, which has no implementor and already takes Send work, and BaseRealtimeHttpConfig, which is already Send + Sync and is not part of the relay state.
 pitfalls:
 - 'Put the bound on the trait definition, as in pub trait ClientWebSocket: ScopedWebSocket + Send, and never write Box<dyn ClientWebSocket + Send> in RealtimeStreaming or ConnectionSetup. A supertrait makes every implementor prove it once.'
 - Do not add Sync to ClientWebSocket, RealtimeBackend or RealtimeSend. B1125 implements ClientWebSocket over axum's WebSocket, and that type is not Sync.
 - 'If .boxed() or #[async_trait] reports a type that is not Send, bound that type''s own trait. Going back to boxed_local or to a Pin<Box<dyn Future>> without Send defeats the task.'
 - 'B9984 lands first, so the alias is written with the full path futures_util::future::LocalBoxFuture under #[expect(clippy::disallowed_types, ...)] when this task starts. Remove both; the expect fails the build once nothing fires it.'
-- If a relay task merged after aaf027816b, such as B1124's realtime_setup_buffer, returns SenderFuture through boxed_local or uses async_trait(?Send), the alias change breaks a file outside this scope. Answer blocked and name the file and line.
+- Import RealtimeEventNormalizer from betterlite_openai::realtime::normalizer in each user. A pub use in transport.rs would keep a second path to the trait and costs a clippy::pub_use expect the budget does not have.
 - 'Run each send test as a plain #[test] that builds its runtime on the second thread. A block_on on the thread of a #[tokio::test] panics, since that thread already runs a runtime.'
 - Keep the words the no-local-futures check looks for out of the comments in realtime_sender.rs, methods.rs, client.rs and backend.rs.
 review_level: standard
