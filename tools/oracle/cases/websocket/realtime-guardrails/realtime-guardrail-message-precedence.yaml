@@ -1,0 +1,111 @@
+kind: helper
+name: realtime-guardrail-message-precedence
+call:
+  realtime_guardrails_websocket:
+    request_data: {}
+    user_api_key_dict: null
+    guardrails:
+      - kind: custom
+        hooks: [pre_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: custom-via-policy
+        raised:
+          message: denied
+          value_error: true
+          detail:
+            error: detail-error
+      - kind: custom
+        hooks: [post_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: denied
+          value_error: true
+          detail:
+            error: detail-error
+      - kind: custom
+        hooks: [during_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: denied
+          value_error: true
+          detail:
+            error: ''
+      - kind: custom
+        hooks: [logging_only]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: ''
+          value_error: true
+      - kind: custom
+        hooks: [pre_mcp_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: denied
+          value_error: true
+          detail: plain-detail
+      - kind: custom
+        hooks: [during_mcp_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: denied
+          value_error: true
+          detail:
+            error: 42
+      - kind: custom
+        hooks: [post_mcp_call]
+        default_on: true
+        outcome: raise
+        policy:
+          violation_message: ''
+        raised:
+          message: denied
+          status_code: 418
+          detail:
+            error: status-error
+      - kind: custom
+        hooks: [realtime_input_transcription]
+        default_on: true
+        outcome: raise
+        raised:
+          message: boom
+          detail:
+            error: not-a-block
+    callbacks: [0, 1, 2, 3, 4, 5, 6, 7]
+    backend_failures: []
+    client_failures: []
+    close_failure: false
+    runs:
+      - transcript: hello
+        event_hooks: [pre_call]
+      - transcript: hello
+        event_hooks: [post_call]
+      - transcript: hello
+        event_hooks: [during_call]
+      - transcript: hello
+        event_hooks: [logging_only]
+      - transcript: hello
+        event_hooks: [pre_mcp_call]
+      - transcript: hello
+        event_hooks: [during_mcp_call]
+      - transcript: hello
+        event_hooks: [post_mcp_call]
+      - transcript: hello
+env: {}
+compare: {ignore: []}

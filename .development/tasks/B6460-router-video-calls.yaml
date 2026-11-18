@@ -12,7 +12,7 @@ description: >-
   including `model`, `video_id`, `prompt`, `extra_headers`), `uploads: Vec<VideoUpload>` and `specific_deployment: bool` (default false). `VideoUpload` has `field` (the key it belongs to, such as
   "input_reference" or "video"), `filename`, `content_type: Option<String>` and `bytes: Vec<u8>`. (3) `VideoReply`, an enum: `Json(Value)` for a video object, a list page or a character, and `Bytes(Vec<u8>)` for avideo_content.
   (4) `VideoRouterCalls`, an async trait with nine methods named exactly like the LiteLLM calls, each `async fn avideo_status(&self, model: &str, args: VideoCallArgs) -> Result<VideoReply, VideoRouterError>`.
-  The route dispatch entries call these. `VideoRouterError` wraps the router error and the SDK error as two cases, each by `#[from]`, and reports `NotFound` for an unmatched model.
+  The route dispatch entries call these. `VideoRouterError` wraps the router error and the SDK error as two cases, each by `#[from]`. Its third case, `NotFound`, wraps B9964's `ProxyModelNotFoundError` (betterlite_error::proxy_model_not_found) by `#[from]`. `VideoRouterError::not_found(kind: VideoCallKind, model: &str) -> Self` builds it with the route name `route_endpoint(kind.name()).unwrap_or(kind.name())` from B9964 (all nine calls have an entry, L93-L103), the model and the retry flag true. The video route entries B3343, B3344, B3345 and B6360 call it for a `NotFound` plan.
 
   Route choice, the same module. `VideoRouteView` is a trait the server implements over B8351's `CatalogQueries` and B302's catalog (`is_recognized_model` and `map_team_model` forward to `CatalogQueries::is_recognized_model` and `CatalogQueries::map_team_model`); its methods are `is_recognized_model(&self, model: &str) -> bool`,
   `map_team_model(&self, model: &str, team_id: &str) -> Option<String>`, `team_public_model_names_has(&self, model: &str) -> bool`, `model_names_has(&self, model: &str) -> bool`,
@@ -62,9 +62,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L682-L723
     why: The video try/except around the router call, the A2A branch, the user_model branch and the final ProxyModelNotFoundError.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L93-L103
-    why: The route type to path map for the nine video call types.
+    why: The route type to path map for the nine video call types; B9964 builds it.
 dod:
-  - text: VideoCallKind names the nine calls with LiteLLM's call type text, and VideoRouterCalls has one method per call with the signature in the description.
+  - text: VideoCallKind names the nine calls with LiteLLM's call type text, VideoRouterCalls has one method per call with the signature in the description, and VideoRouterError::not_found names each call's path from B9964's map.
     proof: [plan-types]
   - text: With no model (none or empty) and a router, every kind except Generation plans Direct, and Generation plans NotFound with an empty model when the model is missing.
     proof: [plan-no-model]
