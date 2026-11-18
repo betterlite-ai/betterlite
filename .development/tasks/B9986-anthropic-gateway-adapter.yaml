@@ -194,8 +194,8 @@ description: >-
   (a file_data URL the loopback answers with 404 becomes OperationError::Provider with status 400, a body naming the
   URL, and no Messages request upstream). In crates/betterlite-provider/src/provider/tests.rs the case anthropic
   becomes anthropic_text, built with Surface::Legacy and still asserting the refusal. Test configs set
-  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta matrix never leaves the machine, and turn user_url_validation off
-  so the fetcher reaches the loopback.
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta matrix never leaves the machine, and set litellm_settings.user_url_validation:
+  false so the fetcher reaches the loopback.
 scope:
   paths:
   - crates/betterlite-provider/src/anthropic_dispatch.rs

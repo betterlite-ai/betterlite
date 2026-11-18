@@ -149,8 +149,8 @@ oracle_cases: []
 deviations: []
 out_of_scope:
 - >-
-  The OpenAI path keeps dropping an unsupported known param without raising, whatever drop_params says; that is
-  chat_fields' behavior since B010, and this task changes only which names it removes.
+  What chat_fields does with an unsupported known param stays as it is; this task changes only which names it
+  removes before the supported filter.
 - >-
   The 422 resend is gated by the proxy-wide flag only (B9988); a deployment's drop_params does not turn it on there
   either.
