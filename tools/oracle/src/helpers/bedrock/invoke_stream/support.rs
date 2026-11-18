@@ -193,11 +193,11 @@ pub(super) fn wrapper_of<'deps>(
 }
 
 // The supplied slot is the case's caller client; the default one stands for the module's own client.
-pub(super) fn stream_deps<'deps>(
+pub(super) fn stream_deps(
     supplied: Option<Arc<dyn StreamHandler>>,
     default: Arc<dyn StreamHandler>,
-    redactor: &'deps Redactor,
-) -> StreamDeps<'deps> {
+    redactor: &Redactor,
+) -> StreamDeps<'_> {
     StreamDeps {
         supplied,
         default,

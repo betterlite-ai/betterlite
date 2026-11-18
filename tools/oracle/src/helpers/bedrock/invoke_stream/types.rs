@@ -53,7 +53,7 @@ pub(crate) enum Client {
 
 impl Run {
     // A real POST needs a fixture of the wrapper's own kind, the pair LiteLLM's typed client argument allows.
-    pub(crate) fn identity_kind(&self) -> Result<HandlerKind, &'static str> {
+    pub(crate) const fn identity_kind(&self) -> Result<HandlerKind, &'static str> {
         match (self.wrapper, self.client) {
             (Wrapper::Async, Client::Async) => Ok(HandlerKind::Async),
             (Wrapper::Sync, Client::Sync) => Ok(HandlerKind::Sync),
