@@ -14,7 +14,7 @@ pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 20] = [
+const CASES: [(&str, fn()); 21] = [
     ("limits_disabled_allows", || {
         super::runtime().block_on(limits_disabled_allows());
     }),
@@ -53,6 +53,9 @@ const CASES: [(&str, fn()); 20] = [
     }),
     ("io_reservation_before_the_checks", || {
         super::runtime().block_on(io_reservation_before_the_checks());
+    }),
+    ("rejection_without_io_limits_refunds_nothing", || {
+        super::runtime().block_on(rejection_without_io_limits_refunds_nothing());
     }),
     ("coexist_warning_logs_once", || {
         super::runtime().block_on(coexist_warning_logs_once());
@@ -310,6 +313,20 @@ async fn io_reservation_before_the_checks() {
         body.get("reserved"),
         Some(&betterlite_models::decisions::Json::Bool(true))
     );
+}
+
+async fn rejection_without_io_limits_refunds_nothing() {
+    let io = Arc::new(FakeIo::new());
+    let cache = Arc::new(FakeCache::new().seed_local(&rpm_key("openai/gpt-4o"), 1));
+    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let check = service(Arc::clone(&cache), Some(hook));
+    let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 1);
+    let error = check
+        .async_pre_call_check(&deployment, &mut request())
+        .await
+        .unwrap_err();
+    assert_eq!(exceeded(error).channel, RateLimitChannel::Rpm);
+    assert_eq!(io.calls.lock().unwrap().refunds, 0);
 }
 
 async fn coexist_warning_logs_once() {
