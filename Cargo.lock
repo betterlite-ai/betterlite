@@ -4422,6 +4422,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
