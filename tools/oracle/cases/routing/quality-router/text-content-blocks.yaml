@@ -1,0 +1,47 @@
+kind: probe
+name: quality-router-text-content-blocks
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  complexity_to_quality: {SIMPLE: 2}
+                  default_model: fb
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [code]}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: please}
+              - {type: image_url, image_url: {url: x}}
+              - {type: text, text: code}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  complexity_to_quality: {SIMPLE: 2}
+                  default_model: fb
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [code]}
+        messages:
+          - role: user
+            content:
+              - {type: text, text: "  "}
