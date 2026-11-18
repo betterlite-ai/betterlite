@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Final, TypeAlias, TypedDict
+from typing import Final, NotRequired, TypeAlias, TypedDict
 
 from litellm.llms.sagemaker.common_utils import AWSEventStreamDecoder
 from litellm.types.utils import GenericStreamingChunk, StreamingChatCompletionChunk
@@ -15,9 +15,22 @@ CHUNKS: Final = TypeAdapter(Chunk)  # type: ignore[misc]  # https://github.com/B
 JSON: Final = TypeAdapter(JsonValue)
 
 
+class FunctionView(TypedDict):
+    name: str | None
+    arguments: str
+
+
+class ToolCallView(TypedDict):
+    index: int
+    function: FunctionView
+    id: NotRequired[str | None]
+    type: NotRequired[str | None]
+
+
 class DeltaView(TypedDict, total=False):
     content: str | None
     role: str | None
+    tool_calls: list[ToolCallView] | None
 
 
 class ChoiceView(TypedDict):
@@ -45,17 +58,35 @@ CHAT: Final = TypeAdapter(ChatView)
 TOKEN: Final = TypeAdapter(TokenView)
 
 
+def tool_calls_value(calls: list[ToolCallView]) -> JsonValue:
+    return [
+        {
+            "index": call["index"],
+            "id": call.get("id"),
+            "type": call.get("type"),
+            "function": {
+                "name": call["function"]["name"],
+                "arguments": call["function"]["arguments"],
+            },
+        }
+        for call in calls
+    ]
+
+
+def choice_value(choice: ChoiceView) -> JsonValue:
+    calls = choice["delta"].get("tool_calls")
+    return {
+        "index": choice["index"],
+        "finish_reason": choice["finish_reason"],
+        "content": choice["delta"].get("content"),
+        "role": choice["delta"].get("role"),
+        "tool_calls": None if calls is None else tool_calls_value(calls),
+    }
+
+
 def chat_value(value: JsonValue) -> JsonValue:
     view = CHAT.validate_python(value)
-    choices: list[JsonValue] = [
-        {
-            "index": choice["index"],
-            "finish_reason": choice["finish_reason"],
-            "content": choice["delta"].get("content"),
-            "role": choice["delta"].get("role"),
-        }
-        for choice in view["choices"]
-    ]
+    choices: list[JsonValue] = [choice_value(choice) for choice in view["choices"]]
     return {
         "kind": "stream",
         "id": view["id"],

@@ -9,5 +9,6 @@ calls:
   - b5961: {"function": "hf_reply", "body": "{\"x\": 1}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "{\"embedding\": 5}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "{\"embedding\": \"abc\"}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
+  - b5961: {"function": "hf_reply", "body": "{\"embedding\": null}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
 env: {}
 compare: {ignore: []}

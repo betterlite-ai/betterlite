@@ -11,10 +11,20 @@ deviations:
       AllEmbeddingInputValues declares token arrays, and a working embeddings call with one would fail instead of reporting usage, so betterlite counts the string entries and leaves token entries at zero.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L132-L142
   - what: >-
-      A messages-API stream chunk that carries a field betterlite's shared Chunk type does not declare fails with a JSON error, while LiteLLM builds its chunk from the raw event and keeps the undeclared field.
+      A messages-API stream chunk that carries a field betterlite's shared Chunk type does not declare is read past and dropped, while LiteLLM builds its chunk from the raw event and keeps the undeclared field in its response JSON.
     why: >-
-      betterlite's Chunk derives deny_unknown_fields for every provider projection. It lives in betterlite-openai, outside this task, so the SageMaker projection cannot widen it. A chunk of the declared shape projects unchanged.
+      betterlite's Chunk declares the fields every provider projection shares. It lives in betterlite-openai, outside this task, so the SageMaker projection cannot carry an undeclared field further.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L62-L65
+  - what: >-
+      A messages-API stream tool call with a type other than "function", such as "tool" or "custom", passes through with that type, while LiteLLM's OpenAI chunk validation rejects it and the stream ends with an error.
+    why: >-
+      The OpenAI chunk type allows only the literal "function", and LiteLLM's custom tool-call branch needs a custom payload betterlite's shared ToolCall lacks. A chunk of the declared type carries "function" and projects the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1553-L1572
+  - what: >-
+      A Hugging Face reply whose embeddings list holds a row that is neither a list of numbers nor a string fails the reply reader, while LiteLLM stores the row unchecked and answers 200.
+    why: >-
+      betterlite models a reply row as the shared EmbeddingVector, a number list or a base64 string, which is what the OpenAI embeddings API declares; LiteLLM's Embedding.embedding is an unchecked `list | str` and its assignment never validates, so a row outside that shape only fails where a client later reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283
 kept_bugs:
   - what: >-
       Both SageMaker embedding configs answer validate_environment with only Content-Type: application/json, dropping every caller header.

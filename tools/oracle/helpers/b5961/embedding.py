@@ -1,7 +1,9 @@
-from typing import Final
+from typing import Final, cast
 
 import httpx
+import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.litellm_core_utils.tokenizer import Encoding as Tokenizer
 from litellm.llms.base_llm.embedding.transformation import BaseEmbeddingConfig
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
@@ -95,6 +97,12 @@ def cohere_request(input_value: dict[str, JsonValue]) -> JsonValue:
     }
 
 
+# LiteLLM counts unbilled usage with litellm.encoding; counting characters matches the Rust helper
+class Encoding:
+    def encode(self, text: str, /) -> list[int]:
+        return list(range(len(text)))
+
+
 def cohere_reply(input_value: dict[str, JsonValue]) -> JsonValue:
     case = COHERE_REPLY_INPUT.validate_python(input_value)
     raw = httpx.Response(200, content=case["body"].encode())
@@ -108,6 +116,7 @@ def cohere_reply(input_value: dict[str, JsonValue]) -> JsonValue:
         function_id="fn-1",
     )
     empty: Object = {}
+    litellm.encoding = cast(Tokenizer, Encoding())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L118
     response = COHERE.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L89-L120
         case["model"], raw, EmbeddingResponse(), logging_obj, None, case["request_data"], empty, empty
     )

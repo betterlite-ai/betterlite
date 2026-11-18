@@ -59,7 +59,7 @@ class CohereReply(TypedDict):
     function: Literal["cohere_reply"]
     model: str
     body: str
-    input: JsonValue
+    input: AllEmbeddingInputValues | None
     request_data: Object
 
 
