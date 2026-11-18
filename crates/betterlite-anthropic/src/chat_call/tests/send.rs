@@ -64,6 +64,6 @@ fn chat_call_completes_on_a_second_thread() {
     let content = envelope
         .choices
         .first()
-        .and_then(|c| c.message.content.as_deref());
+        .and_then(|choice| choice.message.content.as_deref());
     assert_eq!(content, Some("hello"));
 }

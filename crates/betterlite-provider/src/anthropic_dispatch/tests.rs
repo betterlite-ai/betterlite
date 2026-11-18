@@ -111,5 +111,6 @@ fn single_chat_case() -> Calls {
     );
     let mut case: Calls = serde_saphyr::from_str(source).unwrap();
     case.call.anthropic_provider.inputs.truncate(1);
+    case.call.anthropic_provider.expected.truncate(1);
     case
 }
