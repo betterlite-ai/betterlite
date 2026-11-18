@@ -127,7 +127,9 @@ fn outcome_value(
     });
     let mut fields = IndexMap::new();
     for name in BODY_KEYS {
-        fields.insert(name, body.get(name).cloned());
+        if let Some(value) = body.get(name) {
+            fields.insert(name, value.clone());
+        }
     }
     match outcome {
         Ok(ChatOutcome::Reply(_) | ChatOutcome::Stream(_)) => Ok(json!({

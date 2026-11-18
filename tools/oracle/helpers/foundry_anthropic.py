@@ -177,6 +177,6 @@ def run(input_value: Input) -> JsonValue:
         }
         fields = POSTED.validate_json(request.content)
         answer["body"] = {
-            name: fields.get(name, None) for name in BODY_KEYS
+            name: fields[name] for name in BODY_KEYS if name in fields
         }
     return answer
