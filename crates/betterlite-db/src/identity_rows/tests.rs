@@ -5,7 +5,8 @@ use super::{
     key::LiteLLMVerificationToken, user::LiteLLMUserTable,
 };
 use crate::budget_permission_rows::JsonData;
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -152,22 +153,20 @@ async fn postgres_identity_rows_preserve_storage_types() {
 
 async fn setup_identity_database() -> (PostgresFixture, tokio_postgres::Client, ConnectionTasks) {
     let url = postgres_test_url();
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
     let (client, connection) =
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
             .await
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
     client
         .batch_execute(
             r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend, max_budget, models, aliases, model_spend)

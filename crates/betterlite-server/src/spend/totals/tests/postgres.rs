@@ -60,18 +60,15 @@ async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["spend-totals-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let views = format!(
+        "{SCHEMA_SQL}\n{MONTHLY_GLOBAL_SPEND_SQL}\n{SPEND_PER_KEY_SQL}\n{USER_KEY_SPEND_SQL}\n{LAST_30D_KEYS_BY_SPEND_SQL}\n{LAST_30D_MODELS_BY_SPEND_SQL}"
+    );
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), vec![views])
         .resolve()
         .await
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
-    let client = pool.get().await.unwrap();
-    let views = format!(
-        "{SCHEMA_SQL}\n{MONTHLY_GLOBAL_SPEND_SQL}\n{SPEND_PER_KEY_SQL}\n{USER_KEY_SPEND_SQL}\n{LAST_30D_KEYS_BY_SPEND_SQL}\n{LAST_30D_MODELS_BY_SPEND_SQL}"
-    );
-    client.batch_execute(&views).await.unwrap();
-    drop(client);
     (fixture, pool)
 }
 

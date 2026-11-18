@@ -1,12 +1,11 @@
 #![cfg(test)]
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::DATABASE_REPAIR_TABLES;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, NoTls, Row};
-
-pub const SCHEMA_SQL: &str = include_str!("fixtures/schema.sql");
 
 const SEED_TOKEN_SQL: &str = r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "team_id", "key_name") VALUES ($1::text, $2::text, $3::text)"#;
 
@@ -45,20 +44,17 @@ impl RepairCase {
         let url = Environment::parse_from(["database-repair"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
+        let tables = vec![DATABASE_REPAIR_TABLES.to_owned()];
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), tables)
             .resolve()
             .await
-            .expect("a test schema");
+            .expect("a test database");
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(SCHEMA_SQL)
-            .await
-            .expect("the pinned LiteLLM schema");
         Self {
             fixture,
             client,
@@ -74,7 +70,10 @@ impl RepairCase {
         } = self;
         drop(client);
         drop(tasks);
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 
     pub async fn seed_token(&self, token: &str, team_id: Option<&str>) {

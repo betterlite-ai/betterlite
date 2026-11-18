@@ -10,6 +10,7 @@ use tokio::time::error::Elapsed;
 
 pub mod catalog;
 pub mod comparison;
+pub(crate) mod history;
 mod tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

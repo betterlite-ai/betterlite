@@ -3,13 +3,8 @@ use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{DailyActivityScope, DailyActivityScopeInput};
 use crate::daily_activity_repository::DailyActivityRepository;
 use crate::daily_activity_repository::database::PostgresDailyActivityDatabase;
-use crate::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
@@ -19,7 +14,6 @@ use rust_decimal::prelude::FromPrimitive as _;
 use secrecy::SecretString;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, resume_unwind};
-use std::str;
 use tokio_postgres::NoTls;
 
 #[derive(Parser)]
@@ -65,17 +59,17 @@ where
     let mut resources: Vec<(PostgresFixture, Pool)> = Vec::new();
     let outcome = AssertUnwindSafe(async {
         for _ in 0..count {
-            let mut task = PostgresFixture::provision_with_name_generator(
+            let fixture = PostgresFixture::provision_with_statements(
                 url.as_ref(),
-                &FixtureSeed::default(),
-                &mut RandomDatabaseName,
-            );
-            let fixture = task.resolve().await.unwrap();
+                catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+            )
+            .resolve()
+            .await
+            .unwrap();
             let pool = Pool::builder(Manager::new(fixture.options.config.clone(), NoTls))
                 .max_size(6)
                 .build()
                 .unwrap();
-            migrate(&pool).await;
             resources.push((fixture, pool));
         }
         body(resources.iter().map(|(_, pool)| pool.clone()).collect()).await;
@@ -88,31 +82,6 @@ where
     }
     if let Err(payload) = outcome {
         resume_unwind(payload);
-    }
-}
-
-async fn migrate(pool: &Pool) {
-    let client = pool.get().await.unwrap();
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
-        .await
-        .unwrap();
-    for catalog in [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ] {
-        for migration in catalog.files {
-            client
-                .batch_execute(str::from_utf8(migration.bytes).unwrap())
-                .await
-                .unwrap();
-        }
     }
 }
 
