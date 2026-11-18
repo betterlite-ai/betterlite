@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use tracing::Level;
@@ -15,7 +16,8 @@ use crate::coord_redis_boot::attach::{CLI_SSO_SESSION_TTL_SECONDS, UsageAttach};
 use crate::coord_redis_boot::env_refs::ResolveContext;
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::coord_redis_boot::init::{
-    AdminPing, UsageRedisProbe, buffer_redis, init_env_fallback, init_from_config, init_from_db,
+    AdminPing, PING_TIMEOUT, UsageRedisProbe, buffer_redis, init_env_fallback, init_from_config,
+    init_from_db,
 };
 use crate::coord_redis_boot::settings::{
     CoordinationGeneralSettings, CoordinationLitellmSettings, CoordinationRedisSettings,
@@ -478,6 +480,11 @@ async fn init_env_fallback_warns_when_the_ping_fails() {
     );
     assert!(warning.ends_with(STAYS_IN_MEMORY), "{warning}");
     assert!(caches.calls().is_empty());
+}
+
+#[test]
+fn ping_timeout_is_two_seconds() {
+    assert_eq!(PING_TIMEOUT, Duration::from_secs(2));
 }
 
 #[tokio::test(start_paused = true)]

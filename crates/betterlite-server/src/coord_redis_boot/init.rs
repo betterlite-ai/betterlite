@@ -18,7 +18,7 @@ use super::settings::{
 use crate::proxy_request_contracts::coordination_redis::{BoolOrText, CoordinationRedisParams};
 use crate::redis_cache_wiring::build::RedisCacheWiring;
 
-const PING_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const PING_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[async_trait]
 pub trait UsageRedisProbe: Send + Sync {

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_redis::redis_cache::RedisCache;
 use tracing::Level;
@@ -46,6 +47,14 @@ async fn attach_usage_redis_backs_spend_cli_sso_and_config() {
     );
     assert_eq!(caches.calls().last(), Some(&AttachCall::Replaced));
     assert!(caches.auth.calls().is_empty());
+}
+
+#[test]
+fn cli_sso_session_ttl_is_ten_minutes() {
+    assert_eq!(
+        Duration::from_secs_f64(CLI_SSO_SESSION_TTL_SECONDS),
+        Duration::from_secs(600)
+    );
 }
 
 #[tokio::test]
