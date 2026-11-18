@@ -19,6 +19,8 @@ const MODEL: &str = "amazon.titan-text-express-v1";
 const DEEPSEEK_MODEL: &str = "deepseek_r1/deepseek.r1-v1:0";
 // A DeepSeek reply before its </think>: LiteLLM's decoder reports the text as reasoning content.
 const DEEPSEEK: &str = r#"{"generation":"hello","stop_reason":null,"prompt_token_count":1,"generation_token_count":2}"#;
+// The same reply with the provider's stop reason, so the chunk carries a finish reason.
+const DEEPSEEK_FINISH: &str = r#"{"generation":"done","stop_reason":"end_turn","prompt_token_count":1,"generation_token_count":2}"#;
 const ERROR_BODY: &str = r#"{"message":"boom"}"#;
 const RESPONSE_HEADERS: [(&str, &str); 2] = [
     ("content-type", "application/vnd.amazon.eventstream"),
@@ -317,18 +319,20 @@ fn timing_on_success_and_failure() {
     assert_eq!(failed.timings, vec![timing(ASYNC_TIMING)]);
 }
 
-// B691's read timeout is litellm.Timeout: 408, raised as is instead of becoming a fallback.
+// B691's read timeout is litellm.Timeout: 408, raised as is even after the finish reason, which only a dropped connection ends.
 fn read_timeouts_are_a_timeout() {
     let messages = messages();
     let data = data();
-    let call = call(MODEL, BASE, &data, &messages);
+    let plain = call(MODEL, BASE, &data, &messages);
+    let finished = call(DEEPSEEK_MODEL, BASE, &data, &messages);
+
     let fixture = Fixture::failing(
         HandlerKind::Async,
         &RESPONSE_HEADERS,
         vec![Err(HttpError::Timeout)],
     );
     let opened = run(
-        &call,
+        &plain,
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
@@ -338,6 +342,22 @@ fn read_timeouts_are_a_timeout() {
     assert!(opened.chunks.is_empty());
     assert_eq!(opened.failure_status, Some(408));
     assert!(!opened.fallback);
+
+    let late = Fixture::failing(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        vec![Ok(chunk_frame(DEEPSEEK_FINISH)), Err(HttpError::Timeout)],
+    );
+    let timed_out = run(
+        &finished,
+        Some(Arc::clone(&late)),
+        Arc::clone(&late),
+        false,
+        None,
+    );
+    assert_eq!(timed_out.chunks.len(), 1);
+    assert_eq!(timed_out.failure_status, Some(408));
+    assert!(!timed_out.fallback);
 }
 
 // A read that is not a timeout is APIConnectionError 500, which the wrapper wraps for a fallback.
